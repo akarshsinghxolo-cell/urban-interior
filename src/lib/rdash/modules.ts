@@ -181,11 +181,12 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             {
                 id: "contractorDetail",
                 label: "Contractor Detail",
-                description: "Contractor profiles, categories, capabilities, work assignments and RA bills",
+                description: "Contractor profiles, categories, capabilities, work assignments, RA bills and performance",
                 icon: "👷",
                 renderer: "contractor-detail",
                 dataSource: "contractors",
                 submodules: [
+                    { id: "contractors", label: "Contractors", renderer: "masters-v2", dataSource: "contractors", hint: "Contractor master data: profiles, categories, capabilities and rate agreements" },
                     { id: "contractorPerformance", label: "Contractor Performance", renderer: "contractor-performance", dataSource: "contractors" },
                 ],
             },
@@ -213,7 +214,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             {
                 id: "masterSetup",
                 label: "Master Setup",
-                description: "Work categories, articles, rates, vendors, contractors, units and configuration",
+                description: "Work categories, articles, rates, vendors, units and configuration",
                 icon: "🧱",
                 renderer: "masters",
                 activePredicate: (db) => db.master.articles.length > 0 || db.master.vendors.length > 0 || db.master.contractors.length > 0,
@@ -222,7 +223,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                     { id: "vendorRates", label: "Vendor Price Matrix", renderer: "masters-v2", dataSource: "vendors" },
                     { id: "rateFinder", label: "Rate Finder", renderer: "rate-finder", dataSource: "none" },
                     { id: "vendors", label: "Vendors", renderer: "masters-v2", dataSource: "vendors" },
-                    { id: "contractors", label: "Contractors", renderer: "masters-v2", dataSource: "contractors" },
                 ],
             },
         ],

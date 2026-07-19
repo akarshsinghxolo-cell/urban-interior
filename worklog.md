@@ -3874,3 +3874,29 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. `calendarRecurring` (Calendar) under Workdesk Dashboard uses `filter: { view: "recurring" }` — the "recurring" filter name is misleading (it shows all tasks in calendar view, not just recurring ones). Could rename to `{ view: "calendar" }`.
 4. The Reports module has 11 submodules — a lot to scroll. Could be grouped into sub-categories (Sales reports, Finance reports, Operations reports) in a future round.
 5. `userApprovals` in System Settings could arguably be in HR & Staff (it's about approving new users/staff). But it's about access management (system security), not staff management. Defensible in System.
+
+---
+Task ID: 20
+Agent: orchestrator (user-reported: Contractors still in Master Setup)
+Task: User sent a screenshot showing "Contractors" submodule still under Master Setup. VLM analysis confirmed the misplacement. Fixed by moving Contractors from Master Setup → Contractor Detail.
+
+Work Log:
+- User uploaded a screenshot (Screenshot 2026-07-19 200726.jpg) showing the sidebar with Contractor Detail expanded (showing only Contractor Performance) and Master Setup expanded (showing Vendor Price Matrix, Rate Finder, Vendors, Contractors).
+- VLM analysis (glm-4.6v): "Contractors is under Master Setup but should be under Contractor Detail. Contractor Detail is the dedicated module for contractor management (profiles, categories, capabilities, work assignments, RA bills). Placing Contractors under Master Setup is illogical — it's a functional submodule of contractor management, not a master data item."
+- Confirmed in modules.ts: `contractors` submodule was under `masterSetup` (Master Setup) with renderer "masters-v2", dataSource "contractors". The `contractorDetail` module only had `contractorPerformance` as a submodule.
+- FIXED: moved `contractors` submodule from `masterSetup` → `contractorDetail`. Now Contractor Detail has: Contractors (master data: profiles, categories, capabilities) + Contractor Performance (operational evaluation). Master Setup now has: Vendor Price Matrix, Rate Finder, Vendors (vendor-focused master data only). Updated both modules' descriptions.
+
+Implementation:
+- `src/lib/rdash/modules.ts`:
+  - `contractorDetail` submodules: added `{ id: "contractors", label: "Contractors", renderer: "masters-v2", dataSource: "contractors", hint: "Contractor master data: profiles, categories, capabilities and rate agreements" }` as the first submodule (before Contractor Performance). Updated description to "Contractor profiles, categories, capabilities, work assignments, RA bills and performance".
+  - `masterSetup` submodules: removed the `contractors` entry. Updated description from "Work categories, articles, rates, vendors, contractors, units and configuration" → "Work categories, articles, rates, vendors, units and configuration" (removed "contractors").
+
+Verification:
+- Lint: clean.
+- Contractor Detail expanded: shows "Contractors" (e20) + "Contractor Performance" (e21). ✅
+- Master Setup expanded: shows "Vendor Price Matrix" (e26) + "Rate Finder" (e27) + "Vendors" (e28). NO Contractors. ✅
+- Contractors route: navigated via command palette, h1 shows "Contractors", renders correctly. ✅
+- No errors.
+
+Stage Summary:
+- Contractors submodule moved from Master Setup → Contractor Detail. All contractor management is now consolidated under the Contractor Detail module. Master Setup is now vendor-focused (Vendor Price Matrix, Rate Finder, Vendors) + work categories/articles/units (the main Master Setup view).
