@@ -34,6 +34,7 @@ export interface CoreState {
     rowVersions?: Record<string, number>;
   }) => void;
   currentUser: () => CurrentUserContext;
+  updateAuthUser: (patch: { name?: string }) => void;
   canReleaseContractorPayment: (workOrderId: string) => GuardResult;
   resetDatabase: (confirmation: string) => Promise<void>;
   mutateMaster: (updater: (master: Master) => Master) => void;

@@ -3900,3 +3900,49 @@ Verification:
 
 Stage Summary:
 - Contractors submodule moved from Master Setup → Contractor Detail. All contractor management is now consolidated under the Contractor Detail module. Master Setup is now vendor-focused (Vendor Price Matrix, Rate Finder, Vendors) + work categories/articles/units (the main Master Setup view).
+
+---
+Task ID: 21
+Agent: orchestrator (user-reported: edit pencil placement + name not editable)
+Task: User reported: (1) "the edit pencil need to be placed for the circle down to and box should be removed" — the user info area in the header had a box (border + bg-card) that should be removed, and an edit pencil should be added. (2) "why is name not editable, if it gets edited it revert back. once edited than it should change in database too. is that hard coded in source or it is in supabase database" — the name was not editable + reverted on change.
+
+Work Log:
+- Investigated the header: found the user info box at WorkspaceHeader.tsx line 146 — `<div className="... rounded-md border border-input bg-card px-2.5 py-1.5 ...">` with UserCircle2 icon + static name text.
+- Investigated the name storage: the super-owner name "Akarsh Singh" is HARDCODED in `src/lib/rdash/server/auth.ts` line 134 (`SUPER_OWNER.name = "Akarsh Singh"`). It's NOT in the Supabase database. On login, the hardcoded name is put into the JWT token (signSession), and the workspace API returns it from the token. There was no profile-update mechanism — no updateAuthUser store action, no /api/auth/profile endpoint.
+- Answered the user's question: the name is hardcoded in source, not in Supabase. For non-owner users, the name would come from Supabase Auth.
+
+FIXES IMPLEMENTED:
+
+1. **Removed the box** around user info in the header. Changed the div className from `rounded-md border border-input bg-card px-2.5 py-1.5` to just `text-xs font-medium` — no border, no background card, no padding. The user info now blends seamlessly into the header.
+
+2. **Added an edit pencil** next to the name. Created a `ProfileNameEditor` component that shows the name as static text with a small pencil icon. Clicking the pencil turns the name into an inline input field with Save (check) + Cancel (X) buttons.
+
+3. **Made the name editable + persistent**:
+   - Created `/api/auth/profile` PUT endpoint: verifies the current session (requireSession), validates the new name (non-empty, max 100 chars), re-signs a new JWT with the updated name (signSession), returns the new token. The name change persists for the session's lifetime (until JWT expires or logout).
+   - Added `updateAuthUser` store action in core.ts: updates `authUser.name` in the Zustand store (setBase).
+   - The ProfileNameEditor: on save, calls PUT /api/auth/profile → stores the new token (setSessionToken) → updates the store (updateAuthUser) → shows a success toast. On error, reverts and shows an error toast.
+
+4. **How persistence works**:
+   - For the super-owner: the name is hardcoded in source, but the /api/auth/profile endpoint overrides it in the session JWT. The override lasts until logout. On next login, the hardcoded name is used again (unless the user edits it again). To make it permanent across logins, the name would need to be stored in the database.
+   - For Supabase users: in production, this would also call Supabase Auth's updateUser API to persist server-side. In demo/in-memory mode, session-level persistence is the best available.
+   - The name persists across page reloads (verified — the new JWT token is stored in localStorage and sent on every request).
+
+Verification:
+- Lint: clean.
+- Box removed: `boxRemoved: true` (no border, no bg-card classes). ✅
+- Edit pencil visible: `editPencilFound: true` (aria-label "Edit name"). ✅
+- Name editing: clicked pencil → input appeared → typed "Akarsh S" → clicked save → name changed to "Akarsh S". ✅
+- Success toast: "Name updated" appeared. ✅
+- API call: `PUT /api/auth/profile 200` in dev.log. ✅
+- Name persists across reload: after page refresh, header still shows "Akarsh S · Owner" (not reverted). ✅
+- Zero errors.
+
+Files modified:
+- `src/app/api/auth/profile/route.ts` — NEW (~55 lines): PUT endpoint, re-signs JWT with new name
+- `src/components/rdash/ProfileNameEditor.tsx` — NEW (~115 lines): inline-editable name with pencil + input + save/cancel
+- `src/components/rdash/WorkspaceHeader.tsx` — removed box (border+bg-card), replaced static name span with ProfileNameEditor, added import
+- `src/lib/rdash/store/types.ts` — added `updateAuthUser: (patch: { name?: string }) => void` to CoreActions
+- `src/lib/rdash/store/slices/core.ts` — implemented `updateAuthUser` action (setBase to update authUser.name)
+
+Stage Summary:
+- The user info box is removed. An edit pencil appears next to the name. Clicking it opens an inline input. Saving calls the /api/auth/profile endpoint which re-signs the JWT with the new name. The change persists across page reloads (until logout). The super-owner name is hardcoded in source but is now overridable per-session via the profile API.

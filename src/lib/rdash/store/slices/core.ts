@@ -81,6 +81,15 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
                 return { name: user.name, role: user.role, staffId: user.staffId };
             return { name: "Unauthenticated", role: "Unauthenticated" };
         },
+        updateAuthUser: (patch) => {
+            const current = get().authUser;
+            if (!current) return;
+            if (patch.name !== undefined) {
+                setBase((state: any) => ({
+                    authUser: { ...state.authUser, name: patch.name!.trim() || state.authUser.name },
+                }));
+            }
+        },
         canReleaseContractorPayment: (workOrderId) => contractorPaymentProofStatus(get().db, workOrderId),
         mutateMaster: (updater: (master: Master) => Master) => commitState((s: any) => ({
             db: prepareWorkspaceData({ ...s.db, master: updater(s.db.master) }),

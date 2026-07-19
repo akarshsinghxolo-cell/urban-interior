@@ -10,6 +10,7 @@ import { NotificationCenter } from "./NotificationCenter";
 import { CreateMenu } from "./CreateMenu";
 import { WorkspaceHealthPill } from "./WorkspaceHealthPill";
 import { DemoModeBadge } from "./DemoModeBadge";
+import { ProfileNameEditor } from "./ProfileNameEditor";
 import { EnhancedSearch } from "./EnhancedSearch";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, } from "@/components/ui/dropdown-menu";
@@ -143,9 +144,9 @@ export function WorkspaceHeader() {
         <NotificationCenter />
 
         <ThemeToggle />
-        <div className="hidden shrink-0 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 py-1.5 text-xs font-medium text-foreground md:flex" title="Server-assigned role">
+        <div className="hidden shrink-0 items-center gap-1.5 text-xs font-medium text-foreground md:flex" title="Server-assigned role">
           <UserCircle2 className="h-3.5 w-3.5 shrink-0 text-primary"/>
-          <span className="max-w-[140px] truncate">{authUser?.name || role}</span>
+          <ProfileNameEditor />
           <span className="shrink-0 text-muted-foreground">· {role}</span>
         </div>
         <button type="button" className="hidden text-xs font-semibold text-muted-foreground hover:text-foreground md:inline-flex" onClick={() => { clearSessionToken(); void fetch("/api/auth/logout", { method: "POST" }).finally(() => window.location.assign("/signin")); }}>Sign out</button>
