@@ -3589,3 +3589,70 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The health-badge popover could show a mini revenue sparkline (Task 11 rec #5, Task 14 rec #5) in the footer alongside the cash position for a richer at-a-glance summary.
 4. VLM suggested a "Quick Actions" dropdown replacing the text "QUICK ADD" button in the greeting strip — would make the quick-add more discoverable.
 5. VLM suggested status badges on the Exceptions & Decisions list rows (red/yellow/green for urgency) — a small polish opportunity.
+
+---
+Task ID: 16
+Agent: orchestrator (cron-triggered webDevReview — CHANGELOG.md file + popover sparkline + trust footer mobile)
+Task: Recurring webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read worklog (3,591 lines, through Task ID 15). Project stable: 52 modules, integrity 100/100, ActivityFeed mobile spacing + empty states + copy summary done. Task 15's unresolved recs: (1) signin changelog from file [recurred 8+ rounds — the longest-standing rec], (2) signin trust footer mobile, (3) mini sparkline in popover [recurred 4 rounds], (4) Quick Actions dropdown, (5) status badges on Exceptions rows.
+- Verified dev server: ALIVE (PID 20977). .env intact. Health checks 200.
+- QA via agent-browser (desktop 1440×900): login works, Task 15 features intact (greeting, synced indicator, health widget, activity feed 6 items). Customer Desk, Data Integrity — all render with zero errors. Lint clean.
+- VLM analysis (glm-4.6v): "Top 3 improvements: (1) Quick Action shortcuts in greeting, (2) expandable Needs Attention with inline filters, (3) Last Updated timestamps on metric cards." Decided to prioritize the longest-standing unresolved recs (changelog file, popover sparkline, trust footer) since they've recurred across many rounds.
+
+WORK FOCUS (addresses the 3 longest-standing unresolved recs):
+1. NEW FEATURE: Drive the signin changelog from a CHANGELOG.md file (Task 15 rec #1, recurred 8+ rounds). Created CHANGELOG.md at the project root with 9 versioned entries (v0.3.0 → v0.4.2) covering all the work from Tasks 7-15. Created a new public /api/changelog endpoint that reads + parses CHANGELOG.md into structured entries (version, date, items with tag/description). Updated the signin page to fetch from /api/changelog instead of using the hardcoded CHANGELOG array. Added /api/changelog to the middleware PUBLIC set. Now the "What's new" panel stays in sync with actual releases — adding a new entry is just editing CHANGELOG.md. Verified: panel shows 20 items (6 entries flattened), first item "FEATURE — Copy summary button...", version label "v0.4.2" (dynamically read).
+2. NEW FEATURE + STYLING: Mini revenue sparkline in the health badge popover footer (Task 15 rec #3, recurred 4 rounds). Added a MiniSparkline component (48×16 SVG, color-coded: green=up, amber=down, muted=flat) to the popover footer, between the cash position and the Open button. Shows the 7-day revenue trend from the /api/health/summary revenueSeries (already computed). Added "7d" label + tooltip. Added revenueSeries to the WorkspacePulseStrip health state. Verified: sparkline SVG (width=48) renders in the popover with path "M 0.0,15.0 L 8.0,15.0..." + "7d" label.
+3. STYLING: Hide signin trust footer on mobile (Task 15 rec #2, recurred 3 rounds). The trust footer (Owner-approved · 178 FK rules · Next.js 16) was tiny on mobile and added scroll length. Changed from `flex` to `hidden sm:flex` — hidden on small screens, shown on sm+. Verified: footer `found: false` on mobile (390×844), `visible: true, w: 800` on desktop.
+
+Implementation details:
+- `CHANGELOG.md` (NEW, ~80 lines): 9 versioned entries (v0.3.0 → v0.4.2) with FEATURE/FIX/POLISH tags. Format: `## v0.4.2 — Jul 2026` followed by `- **FEATURE** — description` items.
+- `src/app/api/changelog/route.ts` (NEW, ~75 lines): public GET handler. Reads CHANGELOG.md via fs.promises, parses with a tolerant regex parser (version header `## v0.X — date`, items `- **TAG** — description`), returns the latest 6 entries as JSON. Cache-Control: public, max-age=300 (5 min). Graceful fallback: returns empty array if file can't be read.
+- `middleware.ts`: added `/api/changelog` to the PUBLIC set.
+- `src/app/signin/page.tsx` (modified, ~30 lines changed): removed the hardcoded CHANGELOG array. Added ChangelogEntry interface. Added `changelog` state + fetch from /api/changelog. Updated TAG_STYLES to use uppercase tags (FEATURE/FIX/POLISH). Updated the changelog panel render to flatten entries→items (changelog.slice(0,6).flatMap(entry => entry.items.map(...))). Version label now reads `changelog[0]?.version` dynamically. Panel only renders when changelog.length > 0. Trust footer changed from `flex` to `hidden sm:flex`.
+- `src/components/rdash/WorkspacePulseStrip.tsx` (modified, ~40 lines added): added MiniSparkline component (48×16 SVG, self-contained). Added revenueSeries to health state interface + setHealth call. Added the sparkline to the popover cash-footer row (between cash + Open button) with a "7d" label + tooltip "7-day revenue trend".
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- /api/changelog endpoint: returns 6 entries with correct parsing (v0.4.2 → v0.3.0, 3-4 items each).
+- Signin changelog panel: 20 items rendered (6 entries × ~3-4 items), first item "FEATURE — Copy summary button...", version label "v0.4.2" (dynamically read from API, not hardcoded). ✅
+- Popover sparkline: SVG width=48 renders with path "M 0.0,15.0 L 8.0,15.0 L 16.0,15.0 L 24.0..." + "7d" label. ✅
+- Mobile trust footer: `found: false` on 390×844 (hidden), `visible: true, w: 800` on desktop. ✅
+- Regression: Customer Desk, Data Integrity — all render with zero errors on desktop.
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — changelog file-driven + popover sparkline + mobile trust footer
+
+## What was done this round (addresses the 3 longest-standing recs)
+1. **NEW FEATURE**: Signin changelog now driven by CHANGELOG.md (Task 15 rec #1, recurred 8+ rounds). New /api/changelog endpoint reads + parses the file. Adding a release is now just editing CHANGELOG.md — no code changes needed. Verified: 20 items, dynamic version label "v0.4.2".
+2. **NEW FEATURE + STYLING**: Mini revenue sparkline in the health badge popover footer (Task 15 rec #3, recurred 4 rounds). 48×16 SVG with 7-day trend, color-coded by direction. Verified: renders with "7d" label.
+3. **STYLING**: Signin trust footer hidden on mobile (Task 15 rec #2, recurred 3 rounds). Verified: hidden on 390×844, visible on desktop.
+
+## Files modified
+- `CHANGELOG.md` — NEW (~80 lines, 9 versioned entries)
+- `src/app/api/changelog/route.ts` — NEW (~75 lines, public endpoint reading CHANGELOG.md)
+- `middleware.ts` — added `/api/changelog` to PUBLIC set
+- `src/app/signin/page.tsx` — removed hardcoded CHANGELOG, added fetch + ChangelogEntry type + flattened render + dynamic version label + trust footer `hidden sm:flex`
+- `src/components/rdash/WorkspacePulseStrip.tsx` — MiniSparkline component + revenueSeries state + sparkline in popover footer
+
+## Verification
+- Lint: clean
+- /api/changelog: 6 entries parsed correctly
+- Signin changelog: 20 items from API, version "v0.4.2" dynamic ✅
+- Popover sparkline: renders (width=48 SVG + "7d" label) ✅
+- Mobile trust footer: hidden ✅
+- Regression: Customer Desk, Data Integrity — all pass
+- Zero errors throughout
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM) — restarted with the daemon pattern.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. VLM suggested a "Quick Actions" dropdown replacing the text "QUICK ADD" button in the greeting strip (Task 15 rec #4) — would make the quick-add more discoverable. Still unresolved.
+2. VLM suggested status badges on the Exceptions & Decisions list rows (red/yellow/green for urgency) (Task 15 rec #5) — a small polish opportunity. Still unresolved.
+3. The signin changelog panel is now file-driven but the CHANGELOG.md is manually maintained. A future round could auto-generate it from git-log or the worklog.
+4. The /api/changelog endpoint could support a `?limit=N` query param for pagination if the changelog grows long.
+5. The popover sparkline could show a tooltip on hover with the exact daily values (currently just shows "7-day revenue trend").

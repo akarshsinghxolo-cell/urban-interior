@@ -21,6 +21,39 @@ function timeAgoShort(ms: number): string {
   return `${hrs}h ago`;
 }
 
+/**
+ * Mini Sparkline — a tiny inline SVG line chart (48×16) for the health-badge
+ * popover footer. Renders a 7-point revenue trend from the /api/health/summary
+ * revenueSeries. Color: green (up), amber (down/flat), muted (zero-variance).
+ * End dot for emphasis. Kept self-contained (no imports) so it can render in
+ * the popover without extra dependencies.
+ */
+function MiniSparkline({ values }: { values: number[] }) {
+  const W = 48;
+  const H = 16;
+  const n = values.length;
+  if (n < 2) return null;
+  const max = Math.max(...values, 0);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const step = W / (n - 1);
+  const points = values.map((v, i) => {
+    const x = i * step;
+    const y = H - 1 - ((v - min) / range) * (H - 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const pathD = `M ${points.join(" L ")}`;
+  const trendUp = values[n - 1] > values[0];
+  const trendFlat = values[n - 1] === values[0];
+  const stroke = trendFlat ? "text-muted-foreground/50" : trendUp ? "text-success" : "text-amber-600 dark:text-amber-400";
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className={cn("shrink-0 overflow-visible", stroke)} aria-hidden>
+      <path d={pathD} fill="none" stroke="currentColor" strokeWidth={1.25} strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={W} cy={(H - 1 - ((values[n - 1] - min) / range) * (H - 2)).toFixed(1)} r={1.5} fill="currentColor" />
+    </svg>
+  );
+}
+
 /** Count-up hook: animates a number from 0→value over ~600ms once mounted. */
 function useCountUp(value: number, duration = 650) {
   const [display, setDisplay] = React.useState(0);
@@ -188,6 +221,7 @@ export function WorkspacePulseStrip() {
     monthRevenue: number;
     totalRecords: number;
     totalReferences: number;
+    revenueSeries: Array<{ date: string; value: number }>;
   } | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [lastFetchedAt, setLastFetchedAt] = React.useState<number | null>(null);
@@ -215,6 +249,7 @@ export function WorkspacePulseStrip() {
         monthRevenue: data.finance?.monthRevenue ?? 0,
         totalRecords: data.integrity?.totalRecords ?? 0,
         totalReferences: data.integrity?.totalReferences ?? 0,
+        revenueSeries: data.finance?.revenueSeries ?? [],
       });
       setLastFetchedAt(Date.now());
     } catch {
@@ -335,6 +370,14 @@ export function WorkspacePulseStrip() {
                           {formatINRShort(health.cashPosition)}
                         </span>
                       </div>
+                      {/* Mini revenue sparkline — 7-day trend from revenueSeries.
+                          Shows the revenue direction at a glance alongside cash. */}
+                      {health.revenueSeries && health.revenueSeries.length >= 2 ? (
+                        <div className="flex items-center gap-1.5" title="7-day revenue trend">
+                          <span className="text-[9px] text-muted-foreground">7d</span>
+                          <MiniSparkline values={health.revenueSeries.map((p) => p.value)} />
+                        </div>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => setActiveModule(health.badge === "healthy" ? "integrity" : "blockedRisks")}

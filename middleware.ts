@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-const PUBLIC = new Set(["/signin", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/health/config", "/logo.svg", "/sw.js", "/manifest.json"]);
+const PUBLIC = new Set(["/signin", "/api/auth/login", "/api/auth/signup", "/api/auth/logout", "/api/auth/session", "/api/health/config", "/api/changelog", "/logo.svg", "/sw.js", "/manifest.json"]);
 export function middleware(request: NextRequest) {
     const path = request.nextUrl.pathname;
     if (PUBLIC.has(path) || path.startsWith("/_next/"))

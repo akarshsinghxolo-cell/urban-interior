@@ -81,18 +81,17 @@ const HERO_FEATURES: Array<{ title: string; description: string; icon: LucideIco
   },
 ];
 
-const CHANGELOG: Array<{ version: string; date: string; title: string; tag: "feature" | "fix" | "polish" }> = [
-  { version: "0.3.0", date: "Jul 2026", title: "Workspace Health ribbon + /api/health/summary endpoint", tag: "feature" },
-  { version: "0.2.9", date: "Jul 2026", title: "Signin dev-fallback secret + config health panel", tag: "fix" },
-  { version: "0.2.8", date: "Jul 2026", title: "Data Integrity module (cascade-delete, repair, 178 FK rules)", tag: "feature" },
-  { version: "0.2.7", date: "Jul 2026", title: "Premium WorkspacePulseStrip with animated KPI tiles", tag: "polish" },
-];
-
-const TAG_STYLES: Record<CHANGELOG[number]["tag"], string> = {
-  feature: "bg-primary/10 text-primary ring-1 ring-primary/20",
-  fix: "bg-success/10 text-success ring-1 ring-success/20",
-  polish: "bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400",
+const TAG_STYLES: Record<string, string> = {
+  FEATURE: "bg-primary/10 text-primary ring-1 ring-primary/20",
+  FIX: "bg-success/10 text-success ring-1 ring-success/20",
+  POLISH: "bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400",
 };
+
+interface ChangelogEntry {
+  version: string;
+  date: string;
+  items: Array<{ tag: string; description: string }>;
+}
 
 /* ─────────────────────────────────────────────────────────────────────── */
 /*  Page                                                                    */
@@ -109,6 +108,7 @@ export default function SignInPage() {
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [config, setConfig] = React.useState<ConfigHealth | null>(null);
+  const [changelog, setChangelog] = React.useState<ChangelogEntry[]>([]);
   const [activeFeature, setActiveFeature] = React.useState(0);
 
   React.useEffect(() => {
@@ -118,6 +118,15 @@ export default function SignInPage() {
       .then((data: ConfigHealth) => setConfig(data))
       .catch(() => {
         // Non-fatal — the sign-in form still works without config health.
+      });
+    // Fetch the changelog from /api/changelog (reads CHANGELOG.md) so the
+    // "What's new" panel stays in sync with actual releases instead of
+    // being hardcoded.
+    fetch("/api/changelog")
+      .then((r) => r.json())
+      .then((data: { entries: ChangelogEntry[] }) => setChangelog(data.entries || []))
+      .catch(() => {
+        // Non-fatal — the changelog panel just won't render.
       });
     // Rotate the highlighted feature on the hero every 3.5s for a "living" feel.
     const id = setInterval(() => {
@@ -434,36 +443,44 @@ export default function SignInPage() {
           </div>
 
           {/* What's new / changelog panel — hidden on very small screens to
-              reduce mobile scroll length; shown on sm+ where there's more room. */}
-          <div className="mt-4 hidden rounded-2xl border border-border bg-card/70 p-4 shadow-sm backdrop-blur-sm sm:block">
-            <div className="mb-3 flex items-center justify-between">
-              <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground">
-                <Zap className="h-3.5 w-3.5 text-primary" />
-                What's new
-              </p>
-              <span className="text-[10px] text-muted-foreground">v0.3.0</span>
+              reduce mobile scroll length; shown on sm+ where there's more room.
+              Content is fetched from /api/changelog (reads CHANGELOG.md) so it
+              stays in sync with actual releases. */}
+          {changelog.length > 0 ? (
+            <div className="mt-4 hidden rounded-2xl border border-border bg-card/70 p-4 shadow-sm backdrop-blur-sm sm:block">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground">
+                  <Zap className="h-3.5 w-3.5 text-primary" />
+                  What's new
+                </p>
+                <span className="text-[10px] text-muted-foreground">{changelog[0]?.version}</span>
+              </div>
+              <ul className="space-y-2.5">
+                {changelog.slice(0, 6).flatMap((entry) =>
+                  entry.items.map((item, i) => (
+                    <li key={`${entry.version}-${i}`} className="flex items-start gap-2.5">
+                      <span
+                        className={`mt-0.5 inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${TAG_STYLES[item.tag] || "bg-muted text-muted-foreground ring-1 ring-border"}`}
+                      >
+                        {item.tag}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs leading-relaxed text-foreground/90">{item.description}</p>
+                        <p className="mt-0.5 text-[10px] text-muted-foreground">
+                          {entry.version} · {entry.date}
+                        </p>
+                      </div>
+                    </li>
+                  )),
+                )}
+              </ul>
             </div>
-            <ul className="space-y-2.5">
-              {CHANGELOG.map((c) => (
-                <li key={c.version + c.title} className="flex items-start gap-2.5">
-                  <span
-                    className={`mt-0.5 inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${TAG_STYLES[c.tag]}`}
-                  >
-                    {c.tag}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs leading-relaxed text-foreground/90">{c.title}</p>
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      v{c.version} · {c.date}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
+          ) : null}
 
-          {/* Trust footer */}
-          <div className="mt-4 flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+          {/* Trust footer — hidden on very small screens (the auth card +
+              changelog already convey trust; this would just add scroll
+              length on mobile). Shown on sm+ where there's room. */}
+          <div className="mt-4 hidden items-center justify-center gap-4 text-[11px] text-muted-foreground sm:flex">
             <span className="flex items-center gap-1">
               <Users className="h-3 w-3" /> Owner-approved
             </span>
