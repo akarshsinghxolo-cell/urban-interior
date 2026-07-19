@@ -10,6 +10,7 @@ import { buildApprovalActions, buildBlockedActions, buildFollowupActions, buildR
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from "recharts";
 import { toast } from "sonner";
 import { WorkspacePulseStrip } from "../WorkspacePulseStrip";
+import { WorkspaceHealthWidget } from "../WorkspaceHealthWidget";
 import { ConversationActivityWidget } from "../ConversationActivityWidget";
 import { ExceptionDashboard } from "../ExceptionDashboard";
 import { ProfitabilitySnapshot } from "../ProfitabilitySnapshot";
@@ -606,6 +607,7 @@ export function DailyWork() {
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     return (<div className="flex flex-col gap-6">
       <WorkspacePulseStrip />
+      <WorkspaceHealthWidget />
       <ExceptionDashboard onNavigateAudit={() => setActiveModule("auditLog")} />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <DailyKpiBanner />

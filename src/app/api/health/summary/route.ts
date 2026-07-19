@@ -81,6 +81,49 @@ export async function GET(request: NextRequest) {
         timestamp: e.timestamp,
       }));
 
+    // ── Financial metrics ──────────────────────────────────────────────
+    // Cash position = received customer receipts − vendor payments made.
+    const now = Date.now();
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const monthStartMs = monthStart.getTime();
+
+    const customerReceipts = db.customerReceipts || [];
+    const vendorPayments = db.vendorPayments || [];
+    const invoices = db.invoices || [];
+    const vendorBills = db.vendorBills || [];
+
+    const totalReceived = customerReceipts.reduce((s, r) => s + (r.amount || 0), 0);
+    const totalPaidOut = vendorPayments.reduce((s, p: any) => s + (p.amount || 0), 0);
+    const cashPosition = totalReceived - totalPaidOut;
+
+    // Overdue invoice value (issued/partial + past due_date)
+    const overdueInvoices = invoices.filter(
+      (inv) =>
+        (inv.status === "issued" || inv.status === "partial" || inv.status === "overdue") &&
+        inv.due_date &&
+        isDateOnlyOverdue(inv.due_date),
+    );
+    const overdueInvoiceValue = overdueInvoices.reduce((s, inv) => s + (inv.balance_amount || 0), 0);
+
+    // Pending vendor bills (awaiting payment)
+    const pendingVendorBills = vendorBills.filter(
+      (b) => b.status === "pending" || b.status === "approved" || b.status === "partly_paid",
+    );
+    const pendingVendorBillValue = pendingVendorBills.reduce(
+      (s, b) => s + (b.balance_amount || 0),
+      0,
+    );
+
+    // Revenue this month (receipts received this month)
+    const monthRevenue = customerReceipts
+      .filter((r) => {
+        const t = new Date(r.received_at).getTime();
+        return !isNaN(t) && t >= monthStartMs && t <= now;
+      })
+      .reduce((s, r) => s + (r.amount || 0), 0);
+
     // Overall workspace health badge
     const attentionCount =
       pendingApprovals.length + unresolvedBlocked.length + overdueTasks.length + openRisks.length;
@@ -129,6 +172,16 @@ export async function GET(request: NextRequest) {
           directAwardPOs: directAwardPOs.length,
           variations: variations.length,
           total: directAwardPOs.length + variations.length,
+        },
+        finance: {
+          cashPosition,
+          monthRevenue,
+          overdueInvoiceValue,
+          overdueInvoiceCount: overdueInvoices.length,
+          pendingVendorBillValue,
+          pendingVendorBillCount: pendingVendorBills.length,
+          totalReceived,
+          totalPaidOut,
         },
         recentActivity,
       },

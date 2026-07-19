@@ -9,9 +9,12 @@ import {
   Clock,
   Eye,
   HeartPulse,
+  RefreshCw,
   ShieldCheck,
   Sparkles,
+  TrendingDown,
   TrendingUp,
+  Wallet,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -21,19 +24,23 @@ import { initAuthFetch, getSessionToken } from "@/lib/rdash/client-auth";
 
 /**
  * WorkspaceHealthWidget — a slim, premium "status ribbon" shown at the top of
- * the Workdesk dashboard (right under the WorkspacePulseStrip). It fetches
- * `/api/health/summary` and surfaces, in one glance:
+ * the Workdesk dashboard AND the Daily Work module (right under the
+ * WorkspacePulseStrip). It fetches `/api/health/summary` and surfaces, in one
+ * glance:
  *   - overall health badge (healthy / watch / attention) with integrity score
  *   - the single most important attention count (overdue + blocked + approvals + risks)
  *   - pipeline value + active work orders + live visits
+ *   - financial metrics: cash position, month revenue, overdue invoices, pending vendor bills
  *   - the latest audit-log entry ("last activity")
+ *   - a manual refresh button
  *
  * Design goals:
- *   - ONE row of high-signal info, no scroll.
+ *   - ONE row of high-signal info, no scroll (wraps on small screens).
  *   - Color-coded health badge (green / amber / red).
  *   - Subtle gradient + animated pulse dot to feel "alive".
  *   - Clickable cells deep-link to the relevant module.
  *   - Graceful loading + error states (never blocks the dashboard).
+ *   - Auto-refreshes every 60s; manual refresh button for immediate updates.
  */
 
 type HealthBadge = "healthy" | "watch" | "attention";
@@ -73,6 +80,16 @@ interface SummaryResponse {
     directAwardPOs: number;
     variations: number;
     total: number;
+  };
+  finance?: {
+    cashPosition: number;
+    monthRevenue: number;
+    overdueInvoiceValue: number;
+    overdueInvoiceCount: number;
+    pendingVendorBillValue: number;
+    pendingVendorBillCount: number;
+    totalReceived: number;
+    totalPaidOut: number;
   };
   recentActivity: Array<{
     id: string;
@@ -126,10 +143,13 @@ function timeAgo(iso: string): string {
 export function WorkspaceHealthWidget() {
   const [summary, setSummary] = React.useState<SummaryResponse | null>(null);
   const [loading, setLoading] = React.useState(true);
+  const [refreshing, setRefreshing] = React.useState(false);
   const [error, setError] = React.useState(false);
+  const [lastFetchedAt, setLastFetchedAt] = React.useState<number | null>(null);
   const setActiveModule = useRDashStore((s) => s.setActiveModule);
 
-  const fetchSummary = React.useCallback(async () => {
+  const fetchSummary = React.useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
     try {
       initAuthFetch();
       const token = getSessionToken();
@@ -140,10 +160,12 @@ export function WorkspaceHealthWidget() {
       const data = (await res.json()) as SummaryResponse;
       setSummary(data);
       setError(false);
+      setLastFetchedAt(Date.now());
     } catch {
       setError(true);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -234,8 +256,8 @@ export function WorkspaceHealthWidget() {
         {/* Vertical divider (desktop) */}
         <span aria-hidden className="hidden h-10 w-px shrink-0 bg-border lg:inline-block" />
 
-        {/* ── Operations metrics row ── */}
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+        {/* ── Operations + finance metrics row ── */}
+        <div className="flex flex-1 flex-wrap items-center gap-x-5 gap-y-2.5">
           <MetricChip
             icon={<AlertTriangle className="h-3.5 w-3.5" />}
             value={summary.attentionCount}
@@ -280,6 +302,49 @@ export function WorkspaceHealthWidget() {
             tone="violet"
             onClick={() => setActiveModule("fieldOperations")}
           />
+
+          {/* Financial metrics — only render when finance block is present */}
+          {summary.finance ? (
+            <>
+              <span aria-hidden className="hidden h-5 w-px shrink-0 bg-border/60 sm:inline-block" />
+              <MetricChip
+                icon={<Wallet className="h-3.5 w-3.5" />}
+                value={formatINRShort(summary.finance.cashPosition)}
+                label="cash"
+                tone={summary.finance.cashPosition >= 0 ? "success" : "destructive"}
+                title={`Received ${formatINRShort(summary.finance.totalReceived)} − Paid ${formatINRShort(summary.finance.totalPaidOut)}`}
+                onClick={() => setActiveModule("financeOverview")}
+              />
+              <MetricChip
+                icon={<TrendingUp className="h-3.5 w-3.5" />}
+                value={formatINRShort(summary.finance.monthRevenue)}
+                label="month"
+                tone="success"
+                title="Customer receipts received this month"
+                onClick={() => setActiveModule("financeOverview")}
+              />
+              {summary.finance.overdueInvoiceValue > 0 ? (
+                <MetricChip
+                  icon={<TrendingDown className="h-3.5 w-3.5" />}
+                  value={formatINRShort(summary.finance.overdueInvoiceValue)}
+                  label="overdue"
+                  tone="destructive"
+                  title={`${summary.finance.overdueInvoiceCount} overdue invoice(s)`}
+                  onClick={() => setActiveModule("paymentRecovery")}
+                />
+              ) : null}
+              {summary.finance.pendingVendorBillValue > 0 ? (
+                <MetricChip
+                  icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                  value={formatINRShort(summary.finance.pendingVendorBillValue)}
+                  label="payable"
+                  tone="warning"
+                  title={`${summary.finance.pendingVendorBillCount} pending vendor bill(s)`}
+                  onClick={() => setActiveModule("vendorBills")}
+                />
+              ) : null}
+            </>
+          ) : null}
         </div>
 
         {/* ── Last activity (right, desktop only) ── */}
@@ -287,7 +352,7 @@ export function WorkspaceHealthWidget() {
           <button
             type="button"
             onClick={() => setActiveModule("auditLog")}
-            className="hidden min-w-0 max-w-[280px] flex-1 items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted/60 xl:flex"
+            className="hidden min-w-0 max-w-[260px] items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-muted/60 xl:flex"
             title={lastActivity.reason || lastActivity.action}
           >
             <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary/70" />
@@ -302,26 +367,38 @@ export function WorkspaceHealthWidget() {
           </button>
         ) : null}
 
-        {/* ── Integrity deep-link (far right) ── */}
-        <button
-          type="button"
-          onClick={() => setActiveModule("integrity")}
-          className="ml-auto flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-background/50 px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-          title="Open Data Integrity module"
-        >
-          <ShieldCheck className="h-3.5 w-3.5 text-success" />
-          <span className="hidden sm:inline">
-            <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalRecords.toLocaleString("en-IN")}</span> rec ·{" "}
-            <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalReferences.toLocaleString("en-IN")}</span> refs
-          </span>
-          <span className="sm:hidden">Integrity</span>
-        </button>
+        {/* ── Right-side actions: refresh + integrity deep-link ── */}
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => fetchSummary(true)}
+            disabled={refreshing}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 bg-background/50 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+            title={lastFetchedAt ? `Last refreshed ${timeAgo(new Date(lastFetchedAt).toISOString())}` : "Refresh workspace health"}
+            aria-label="Refresh workspace health"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveModule("integrity")}
+            className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/50 px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            title="Open Data Integrity module"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-success" />
+            <span className="hidden sm:inline">
+              <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalRecords.toLocaleString("en-IN")}</span> rec ·{" "}
+              <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalReferences.toLocaleString("en-IN")}</span> refs
+            </span>
+            <span className="sm:hidden">Integrity</span>
+          </button>
+        </div>
       </div>
     </section>
   );
 }
 
-type MetricTone = "primary" | "success" | "warning" | "amber" | "violet";
+type MetricTone = "primary" | "success" | "warning" | "amber" | "violet" | "destructive";
 
 const METRIC_TONE: Record<MetricTone, string> = {
   primary: "text-primary",
@@ -329,6 +406,7 @@ const METRIC_TONE: Record<MetricTone, string> = {
   warning: "text-warning",
   amber: "text-amber-600 dark:text-amber-400",
   violet: "text-violet-600 dark:text-violet-400",
+  destructive: "text-destructive",
 };
 
 function MetricChip({

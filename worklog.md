@@ -3014,3 +3014,84 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The signin changelog panel is hardcoded — it could be driven by a CHANGELOG.md file or a git-log-derived JSON so it stays in sync with actual releases.
 4. A "run integrity check on login" hook (recommended in Task 6 #3) is still not implemented — would surface integrity issues immediately after login via the new /api/health/summary endpoint (which already returns the integrity score).
 5. The dashboard's WorkspacePulseStrip KPI tiles were perceived as "flat" by VLM even though styles are correctly applied — consider adding subtle hover lift (translate-y) + gradient overlays to make them feel more tactile, matching the premium feel of the new health widget.
+
+---
+Task ID: 8
+Agent: orchestrator (cron-triggered webDevReview — Daily Work health widget + financial metrics + keyboard-shortcuts bug fix)
+Task: Recurring 15-min webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read /home/z/my-project/worklog.md (3,016 lines, through Task ID 7). Project is stable: 52 modules, integrity 100/100, premium split-screen signin, WorkspaceHealthWidget on Workdesk Dashboard, /api/health/summary endpoint. Task 7's #1 unresolved recommendation was: "The WorkspaceHealthWidget could be added to the 'Daily Work' (today) module too — it's currently only on the Workdesk Dashboard parent. Most users land on 'Daily Work' by default, so they won't see the ribbon unless they click 'Workdesk Dashboard'."
+- Verified dev server: ALIVE (PID 5848). .env intact (4 key vars). Health checks 200.
+- QA via agent-browser (desktop 1440×900):
+  * Signin: renders with split-screen + demo button + config health. ✅
+  * Login flow (fill @e5/@e6 + click @e7): redirected to /. ✅
+  * DEFAULT landing = "Daily Work" (h1: "Daily Work"). Verified `hasHealthWidget: false` — confirmed the gap from Task 7 rec #1. The WorkspaceHealthWidget was ONLY on the Workdesk Dashboard parent, which users don't see by default.
+  * Command palette (Ctrl+K): works. ✅
+  * Keyboard shortcuts overlay: opens via `?` key. ✅
+- VLM analysis of Daily Work dashboard (glm-4.6v): "No clear 'workspace health' element exists. The area between the pulse strip and 'Exceptions & Decisions' feels underutilized — it could host a status summary." Confirmed the exact gap.
+- BUG FOUND: The "Keyboard shortcuts" item in the workspace header's "More" (⋯) dropdown was BROKEN. It dispatched `new KeyboardEvent("keydown", { key: "/", metaKey: true, ctrlKey: true })`, but the KeyboardShortcutsHelp listener expects `key === "?"` (or `/` + shiftKey) with `!metaKey && !ctrlKey && !altKey`. The dispatched event failed ALL three checks (wrong key, had modifiers) → clicking the dropdown item did nothing. The overlay was only reachable via the physical `?` key, which nothing in the UI advertises.
+
+WORK FOCUS SELECTED (fixes the biggest UX gap + a real bug + adds financial insight):
+1. FIX BUG: Keyboard shortcuts dropdown dispatch — changed `{ key: "/", metaKey: true, ctrlKey: true }` → `{ key: "?" }` so it actually triggers the overlay.
+2. NEW FEATURE: Discoverable `?` keyboard-shortcuts button in the workspace header — a visible icon button (Keyboard icon + small "?" badge) next to the refresh button, so the shortcuts overlay is now discoverable without knowing the `?` hotkey. Both the header button and the dropdown item now dispatch the correct `?` event.
+3. NEW FEATURE: Add WorkspaceHealthWidget to the Daily Work module (default landing) — inserted `<WorkspaceHealthWidget />` right after `<WorkspacePulseStrip />` in DailyWork.tsx. Users now see the health ribbon immediately on login, not buried on a separate module.
+4. NEW FEATURE: Extend /api/health/summary with financial metrics (Task 7 rec #2) — added `finance` block: cashPosition (received − paid), monthRevenue (receipts this month), overdueInvoiceValue + count, pendingVendorBillValue + count, totalReceived, totalPaidOut.
+5. NEW FEATURE: Financial chips on the WorkspaceHealthWidget — cash (green if ≥0, red if negative), month revenue, overdue invoices (only if >0, red), pending vendor bills (only if >0, amber). All clickable → deep-link to financeOverview / paymentRecovery / vendorBills.
+6. NEW FEATURE: Manual refresh button on the WorkspaceHealthWidget — a spinning RefreshCw icon button that re-fetches /api/health/summary on demand, with a `refreshing` state and a tooltip showing "Last refreshed Xm ago". Useful after commits to see updated metrics immediately.
+
+Implementation details:
+- `src/app/api/health/summary/route.ts` (modified, +~45 lines): added financial computation block before the return — customerReceipts, vendorPayments, invoices, vendorBills from db. cashPosition = totalReceived − totalPaidOut. overdueInvoices = invoices with status issued/partial/overdue + isDateOnlyOverdue(due_date), summed by balance_amount. pendingVendorBills = vendorBills with status pending/approved/partly_paid, summed by balance_amount. monthRevenue = customerReceipts received this month. Added `finance` field to the JSON response.
+- `src/components/rdash/WorkspaceHealthWidget.tsx` (modified, +~90 lines): added `finance?` to SummaryResponse interface. Added `refreshing` + `lastFetchedAt` state. fetchSummary now accepts `manual` param to set refreshing. Added 4 new financial MetricChips (cash/month/overdue/payable) with conditional rendering (overdue + payable only show if value > 0). Added `destructive` to MetricTone. Added a refresh button (RefreshCw with animate-spin when refreshing) + wrapped integrity button in a right-side actions div. Added `Wallet`, `TrendingDown`, `RefreshCw` to lucide imports.
+- `src/components/rdash/modules/DailyWork.tsx` (modified, +2 lines): imported WorkspaceHealthWidget, inserted `<WorkspaceHealthWidget />` after `<WorkspacePulseStrip />`.
+- `src/components/rdash/WorkspaceHeader.tsx` (modified, +~25 lines): added `Keyboard` to lucide imports. Added a visible keyboard-shortcuts button (Keyboard icon + "?" badge) between the command-palette button and the refresh button — dispatches `{ key: "?" }` on click. Fixed the broken dropdown item: changed dispatch from `{ key: "/", metaKey: true, ctrlKey: true }` → `{ key: "?" }`, and the kbd hint from `⌘/` → `?`.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings) after all changes.
+- /api/health/summary: tested via curl → HTTP 200 with new `finance` block: { cashPosition: -607, monthRevenue: 8411, overdueInvoiceValue: 0, overdueInvoiceCount: 0, pendingVendorBillValue: 0, pendingVendorBillCount: 0, totalReceived: 8411, totalPaidOut: 9018 }.
+- Daily Work (default landing): WorkspaceHealthWidget now renders (verified via eval — `found: true, hasCash: true, hasMonth: true, hasRefresh: true`). Widget text: "Needs attention | Integrity 100/100 | 7 attention | 8 due today | 2 approvals | ₹2.93L pipeline | 1 live work | 2 visits | ₹-607 cash | ₹8.4k month | last activity | 2,520 rec · 6,089 refs". Negative cash position (₹-607) correctly shown in red.
+- Workdesk Dashboard (parent): widget still renders (no regression — `h1: "Workdesk Dashboard", hasWidget: true`).
+- Refresh button: clicked → 4 GET /api/health/summary requests in dev.log, no errors.
+- Keyboard shortcuts `?` button: clicked → overlay opened (h2 "Keyboard Shortcuts" appeared in DOM). Both the new header button AND the fixed dropdown item now correctly trigger the overlay.
+- Customer Desk: still works, no errors (regression check).
+- VLM review of Daily Work with widget: "8/10 — fills the space well, financial chips add value, negative cash clearly signaled, dense but scannable, clear hierarchy (alert → integrity → metrics → divider → financials)".
+- No runtime errors in dev.log or browser console.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — health widget now on default landing + financial insight + keyboard bug fixed
+
+## What was done this round
+1. **BUG FIX**: Keyboard shortcuts dropdown item was broken (dispatched `⌘/` which the listener rejected). Now dispatches `?` — overlay opens correctly from both the dropdown and the new header button.
+2. **NEW FEATURE**: Discoverable `?` keyboard-shortcuts button in the workspace header (Keyboard icon + "?" badge). The shortcuts overlay is now visible/discoverable, not hidden behind an undocumented hotkey.
+3. **NEW FEATURE**: WorkspaceHealthWidget added to the Daily Work module (default landing page). Users now see the health ribbon immediately on login — the #1 gap from Task 7.
+4. **NEW FEATURE**: /api/health/summary extended with financial metrics (cashPosition, monthRevenue, overdueInvoiceValue/Count, pendingVendorBillValue/Count, totalReceived, totalPaidOut).
+5. **NEW FEATURE**: 4 financial chips on the WorkspaceHealthWidget (cash / month / overdue / payable) with conditional rendering + color-coding (negative cash = red). All clickable → deep-link to finance modules.
+6. **NEW FEATURE**: Manual refresh button on the WorkspaceHealthWidget (spinning RefreshCw, tooltip with last-refreshed time).
+
+## Files modified
+- `src/app/api/health/summary/route.ts` — added financial computation + `finance` field in response (~45 lines added)
+- `src/components/rdash/WorkspaceHealthWidget.tsx` — added finance type, refreshing state, 4 financial chips, refresh button, destructive tone (~90 lines added)
+- `src/components/rdash/modules/DailyWork.tsx` — imported + inserted `<WorkspaceHealthWidget />` after `<WorkspacePulseStrip />` (2 lines)
+- `src/components/rdash/WorkspaceHeader.tsx` — added Keyboard import, visible `?` button in header, fixed broken dropdown dispatch (~25 lines added/changed)
+
+## Verification
+- Lint: clean
+- /api/health/summary: HTTP 200 with finance block (cashPosition -607, monthRevenue 8411)
+- Daily Work: widget renders with all ops + finance chips + refresh button
+- Workdesk Dashboard: widget still renders (no regression)
+- Refresh button: works (4 summary requests after clicks)
+- Keyboard `?` button: opens overlay (verified via DOM h2 check)
+- Customer Desk: no regression
+- VLM: 8/10 polish, dense but scannable, financial chips add value
+- Zero console/page errors throughout
+
+## Dev-server note
+The sandbox has 4GB RAM. Next.js dev (Turbopack, 52 modules) + Chromium (agent-browser) + eslint together can OOM-kill the dev server. Restart pattern (works, survives bash-command boundaries): `cd /home/z/my-project && setsid bash -c 'NODE_OPTIONS="--max-old-space-size=3072" NEXT_TELEMETRY_DISABLED=1 /home/z/my-project/node_modules/.bin/next dev -p 3000 > /home/z/my-project/dev.log 2>&1 & disown; exit' < /dev/null > /dev/null 2>&1`. The recurring webDevReview cron should check `pgrep -f "next dev"` at start and restart if dead. Server died once this round during lint → restarted successfully.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (Task 7 rec #3) — could be driven by a CHANGELOG.md file or git-log-derived JSON so it stays in sync with actual releases. Now that there are 8+ task entries, a real changelog would be more maintainable.
+2. A "run integrity check on login" hook (Task 6 #3, Task 7 #4) is still not implemented — the /api/health/summary endpoint already returns the integrity score, so a useEffect on login could surface a toast/banner if healthScore < 100 or attentionCount > threshold.
+3. The WorkspacePulseStrip KPI tiles were perceived as "flat" by VLM (Task 7) — consider adding subtle hover lift (translate-y) + gradient overlays to match the premium feel of the health widget.
+4. The financial chips could be extended with a sparkline / trend indicator (e.g., monthRevenue vs last month) for at-a-glance trend direction.
+5. The health widget currently shows on both Daily Work AND Workdesk Dashboard — consider whether this is redundant or desirable. If redundant, remove from WorkdeskDashboard (keep only on Daily Work, the default landing). If desirable as a "always visible" anchor, keep both.

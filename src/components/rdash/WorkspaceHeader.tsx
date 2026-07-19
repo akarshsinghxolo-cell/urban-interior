@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Home, CalendarDays, Command, UserCircle2, Sparkles, } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Home, CalendarDays, Command, UserCircle2, Sparkles, Keyboard, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer, MODULE_GROUPS } from "@/lib/rdash/modules";
 import { clearSessionToken } from "@/lib/rdash/client-auth";
@@ -112,6 +112,27 @@ export function WorkspaceHeader() {
           <Command className="h-4 w-4"/>
         </Button>
 
+        {/* Visible keyboard-shortcuts hint button — dispatches the "?" keydown
+            that KeyboardShortcutsHelp listens for. Previously this was only
+            reachable via the "More" dropdown, and the dropdown's dispatched
+            event (Cmd+/) didn't match the listener (expects "?" with no
+            modifiers), so the overlay never opened. Now it's a first-class
+            header button with a discoverable "?" badge. */}
+        <Button
+          variant="outline"
+          size="icon"
+          className="relative h-9 w-9"
+          onClick={() => {
+            const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true });
+            window.dispatchEvent(e);
+          }}
+          aria-label="Show keyboard shortcuts"
+          title="Keyboard shortcuts (?)"
+        >
+          <Keyboard className="h-4 w-4" />
+          <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[8px] font-bold text-primary-foreground">?</span>
+        </Button>
+
         <Button variant="outline" size="icon" className="h-9 w-9" onClick={refresh} aria-label="Refresh">
           <RefreshCw className="h-4 w-4"/>
         </Button>
@@ -135,9 +156,9 @@ export function WorkspaceHeader() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem onClick={() => { const e = new KeyboardEvent("keydown", { key: "/", metaKey: true, ctrlKey: true, bubbles: true, cancelable: true }); window.dispatchEvent(e); }}>
-              <Command className="mr-2 h-4 w-4"/> Keyboard shortcuts
-              <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[9px] text-muted-foreground">⌘/</kbd>
+            <DropdownMenuItem onClick={() => { const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true }); window.dispatchEvent(e); }}>
+              <Keyboard className="mr-2 h-4 w-4"/> Keyboard shortcuts
+              <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[9px] text-muted-foreground">?</kbd>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { window.dispatchEvent(new Event("rdash-restart-tour")); toast.success("Onboarding tour restarted"); }}>
               <Sparkles className="mr-2 h-4 w-4"/> Restart onboarding tour
