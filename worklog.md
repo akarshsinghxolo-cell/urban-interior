@@ -3465,3 +3465,66 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The signin trust footer text is still tiny on mobile — could be hidden on very small screens or enlarged.
 4. VLM noted the ActivityFeedWidget still feels "cramped" on mobile (Task 12 rec) — a mobile-specific spacing pass would help.
 5. A full mobile-specific styling pass on the queue sections (My action queue, Approvals, etc.) — verify card padding + text sizes are comfortable on 390px.
+
+---
+Task ID: 14
+Agent: orchestrator (cron-triggered webDevReview — tooltips + mobile horizontal-scroll + freshness indicator)
+Task: Recurring webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read worklog (3,467 lines, through Task ID 13). Project stable: 52 modules, integrity 100/100, mobile touch targets + greeting badge + signin polish done. Task 13's unresolved recs: (1) hide keyboard button on mobile, (2) health ribbon chips horizontal scroll on mobile, (3) signin trust footer, (4) ActivityFeedWidget cramped, (5) queue sections mobile pass.
+- Verified dev server: ALIVE (PID 17702). .env intact. Health checks 200.
+- QA via agent-browser (desktop 1440×900): login works, Task 13 features intact (greeting, health widget, activity feed 6 items). Command palette (Ctrl+K) works. Sales Pipeline renders. No errors.
+- VLM analysis of desktop dashboard (glm-4.6v): "Top 3 improvements: (1) reduce redundant alerts/density + standardize hierarchy, (2) unify card borders + add hover states, (3) add tooltips for abbreviations (rec/refs), empty states for zero values, progress/sync indicators." Aligned with Task 13 recs #1, #2 + VLM point #3.
+
+WORK FOCUS (addresses Task 13 recs #1, #2 + VLM tooltips/sync point):
+1. NEW FEATURE + STYLING: Rich tooltips on the health widget (Task 13 rec + VLM point #3). Wrapped all MetricChips (when they have a `title`) in shadcn Tooltip — provides a faster, richer hover explanation than the native `title` attribute (which is slow + missing on mobile). Added a detailed multi-line tooltip to the integrity "rec/refs" button explaining what rec/refs mean + the 178 FK rules + click-to-open. Added a tooltip to the refresh button showing "Last refreshed Xm ago". Wrapped the whole section in TooltipProvider.
+2. STYLING: Health ribbon horizontal-scroll on mobile (Task 13 rec #2). The metric chips wrapped to 230px tall on mobile. Changed the metrics row container to `overflow-x-auto sm:overflow-visible sm:flex-wrap` — on mobile, chips stay on one row with horizontal scroll (like the Sales Pipeline kanban); on sm+, they wrap normally. Added `shrink-0` to MetricChip so chips don't compress in the scroll. Verified: row height dropped from 230px → 22px on mobile (scrollW 1005 vs clientW 332 → horizontal scroll works).
+3. FIX: Hide keyboard-shortcuts button on mobile (Task 13 rec #1). Keyboard shortcuts are less relevant on touch devices. Changed the `?` button from `h-10 w-10 shrink-0` → `hidden h-10 w-10 shrink-0 md:inline-flex`. Still reachable via the "More" dropdown. Verified: button is `visible: false, w: 0` on mobile, `visible: true, w: 40` on desktop.
+4. NEW FEATURE: Data-freshness indicator on the greeting (VLM point #3 — sync indicator). Added a subtle "synced Xs ago" next to the clock in the WorkspacePulseStrip greeting (green dot + "synced just now"). Uses the existing `lastFetchedAt` state from the health fetch. Tooltip shows "Workspace data synced Xs ago". Verified: "synced just now" appears in the greeting after "10:00 am ·".
+
+Implementation details:
+- `src/components/rdash/WorkspaceHealthWidget.tsx`: imported Tooltip/TooltipContent/TooltipProvider/TooltipTrigger. Wrapped the `<section>` in `<TooltipProvider>`. MetricChip: when `title` is provided, wraps the button in `<Tooltip>` + `<TooltipTrigger asChild>` + `<TooltipContent side="bottom">`. Added `shrink-0` to MetricChip button (replaced `min-w-0`). Wrapped the refresh button + integrity button in Tooltips with rich content (integrity tooltip: "Data Integrity" bold + "X records · Y references across 178 FK rules. Click to open the Integrity module."). Metrics row container: `flex flex-1 items-center gap-x-5 gap-y-2.5 overflow-x-auto rd-scroll pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0`.
+- `src/components/rdash/WorkspaceHeader.tsx`: keyboard-shortcuts button `className` changed to `relative hidden h-10 w-10 shrink-0 md:inline-flex`.
+- `src/components/rdash/WorkspacePulseStrip.tsx`: added a "synced {timeAgoShort(lastFetchedAt)}" span (green dot + text-[10px] text-muted-foreground/70) to the greeting's date/time row, after the timeStr. Conditional on `lastFetchedAt` being set.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- Desktop: freshness "synced just now" in greeting ✅. Keyboard button visible (40px) ✅. Integrity button title updated to "Open Data Integrity module — rec = records, refs = references" ✅. Tooltips render on hover.
+- Mobile (390×844): keyboard button hidden (visible: false, w: 0) ✅. Health ribbon horizontal scroll works (scrollW 1005 vs clientW 332, rowH 22px — was 230px) ✅. No errors.
+- Regression: Customer Desk, Data Integrity — all render with zero errors on desktop.
+- VLM review (mobile): "8/10 — health ribbon now compact (one row) with horizontal scroll, header less crowded without keyboard button, improvements enhance usability."
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — tooltips + mobile compact ribbon + freshness indicator
+
+## What was done this round
+1. **NEW FEATURE + STYLING**: Rich shadcn Tooltips on all health-widget metric chips + refresh button + integrity button. The integrity tooltip explains "rec = records, refs = references" + the 178 FK rules. Faster + richer than native `title`.
+2. **STYLING**: Health ribbon horizontal-scroll on mobile — chips stay on one row (22px tall, was 230px) instead of wrapping. Desktop still wraps normally.
+3. **FIX**: Keyboard-shortcuts button hidden on mobile (less relevant on touch; still in "More" dropdown).
+4. **NEW FEATURE**: "synced Xs ago" freshness indicator in the greeting (green dot + relative time), so users know the data is current.
+
+## Files modified
+- `src/components/rdash/WorkspaceHealthWidget.tsx` — Tooltip imports + TooltipProvider wrapper + MetricChip tooltip wrapper + refresh/integrity button tooltips + metrics row horizontal-scroll + MetricChip shrink-0
+- `src/components/rdash/WorkspaceHeader.tsx` — keyboard button `hidden md:inline-flex`
+- `src/components/rdash/WorkspacePulseStrip.tsx` — "synced Xs ago" freshness span in greeting
+
+## Verification
+- Lint: clean
+- Desktop: freshness indicator ✅, keyboard button visible ✅, integrity tooltip ✅, metric chip tooltips ✅
+- Mobile: keyboard button hidden ✅, health ribbon 22px (was 230px) with horizontal scroll ✅
+- Regression: Customer Desk, Data Integrity — all pass
+- VLM: 8/10 mobile polish
+- Zero errors throughout
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM) — restarted with the daemon pattern.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (recurred through Task 13) — could be driven by a CHANGELOG.md file. Now 14+ task entries.
+2. VLM noted the ActivityFeedWidget still feels "cramped" on mobile (Task 12 rec, Task 13 rec #4) — a mobile-specific spacing pass (more padding, larger avatars) would help.
+3. The signin trust footer text is still tiny on mobile (Task 13 rec #3) — could be hidden on very small screens or enlarged.
+4. VLM suggested empty states for zero values (e.g., "RENEGOTIATION: 0" → grayed "—") in the Exceptions & Decisions tabs — a small polish opportunity.
+5. The health-badge popover could show a mini revenue sparkline (Task 11 rec #5) in the footer alongside the cash position for a richer at-a-glance summary.

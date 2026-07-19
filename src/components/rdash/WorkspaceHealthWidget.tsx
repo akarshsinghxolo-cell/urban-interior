@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import { initAuthFetch, getSessionToken } from "@/lib/rdash/client-auth";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * WorkspaceHealthWidget — a slim, premium "status ribbon" shown at the top of
@@ -265,6 +266,7 @@ export function WorkspaceHealthWidget() {
   const lastActivity = summary.recentActivity[0];
 
   return (
+    <TooltipProvider delayDuration={200}>
     <section
       aria-label="Workspace health"
       className="group relative overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card px-5 py-4 shadow-card transition-shadow hover:shadow-soft"
@@ -310,8 +312,10 @@ export function WorkspaceHealthWidget() {
         {/* Vertical divider (desktop) */}
         <span aria-hidden className="hidden h-10 w-px shrink-0 bg-border lg:inline-block" />
 
-        {/* ── Operations + finance metrics row ── */}
-        <div className="flex flex-1 flex-wrap items-center gap-x-5 gap-y-2.5">
+        {/* ── Operations + finance metrics row ──
+            On mobile: horizontal scroll (overflow-x-auto) so all chips stay
+            on one row and the ribbon doesn't grow tall. On sm+: wrap normally. */}
+        <div className="flex flex-1 items-center gap-x-5 gap-y-2.5 overflow-x-auto rd-scroll pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0">
           <MetricChip
             icon={<AlertTriangle className="h-3.5 w-3.5" />}
             value={summary.attentionCount}
@@ -428,32 +432,49 @@ export function WorkspaceHealthWidget() {
 
         {/* ── Right-side actions: refresh + integrity deep-link ── */}
         <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => fetchSummary(true)}
-            disabled={refreshing}
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 bg-background/50 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
-            title={lastFetchedAt ? `Last refreshed ${timeAgo(new Date(lastFetchedAt).toISOString())}` : "Refresh workspace health"}
-            aria-label="Refresh workspace health"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveModule("integrity")}
-            className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/50 px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-            title="Open Data Integrity module"
-          >
-            <ShieldCheck className="h-3.5 w-3.5 text-success" />
-            <span className="hidden sm:inline">
-              <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalRecords.toLocaleString("en-IN")}</span> rec ·{" "}
-              <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalReferences.toLocaleString("en-IN")}</span> refs
-            </span>
-            <span className="sm:hidden">Integrity</span>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => fetchSummary(true)}
+                disabled={refreshing}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border/60 bg-background/50 text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+                title={lastFetchedAt ? `Last refreshed ${timeAgo(new Date(lastFetchedAt).toISOString())}` : "Refresh workspace health"}
+                aria-label="Refresh workspace health"
+              >
+                <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {lastFetchedAt ? `Last refreshed ${timeAgo(new Date(lastFetchedAt).toISOString())}` : "Refresh workspace health"}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setActiveModule("integrity")}
+                className="flex items-center gap-1.5 rounded-lg border border-border/60 bg-background/50 px-2.5 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                title="Open Data Integrity module — rec = records, refs = references"
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                <span className="hidden sm:inline">
+                  <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalRecords.toLocaleString("en-IN")}</span> rec ·{" "}
+                  <span className="rd-tabular font-semibold text-foreground">{summary.integrity.totalReferences.toLocaleString("en-IN")}</span> refs
+                </span>
+                <span className="sm:hidden">Integrity</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-[260px] text-xs">
+              <span className="font-semibold">Data Integrity</span>
+              <br />
+              <span className="text-muted-foreground">{summary.integrity.totalRecords.toLocaleString("en-IN")} records · {summary.integrity.totalReferences.toLocaleString("en-IN")} references across 178 FK rules. Click to open the Integrity module.</span>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
     </section>
+    </TooltipProvider>
   );
 }
 
@@ -485,17 +506,29 @@ function MetricChip({
   title?: string;
   trailing?: React.ReactNode;
 }) {
-  return (
+  const btn = (
     <button
       type="button"
       onClick={onClick}
       title={title}
-      className="group/chip flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted/40"
+      className="group/chip flex shrink-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-muted/40"
     >
       <span className={cn("shrink-0", METRIC_TONE[tone])}>{icon}</span>
       <span className="rd-tabular text-sm font-bold leading-none text-foreground">{value}</span>
       <span className="text-[11px] leading-none text-muted-foreground">{label}</span>
       {trailing}
     </button>
+  );
+  // When a title is provided, wrap in a Tooltip for a richer, faster hover
+  // explanation than the native `title` attribute (which is slow + missing
+  // on mobile). The native title is kept as a fallback for no-JS contexts.
+  if (!title) return btn;
+  return (
+    <Tooltip delayDuration={200}>
+      <TooltipTrigger asChild>{btn}</TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+        {title}
+      </TooltipContent>
+    </Tooltip>
   );
 }

@@ -118,10 +118,13 @@ export function WorkspaceHeader() {
             event (Cmd+/) didn't match the listener (expects "?" with no
             modifiers), so the overlay never opened. Now it's a first-class
             header button with a discoverable "?" badge. */}
+        {/* Keyboard-shortcuts button — hidden on mobile (keyboard shortcuts are
+            less relevant on touch devices; still reachable via the "More"
+            dropdown). Shown on md+ where a physical keyboard is likely. */}
         <Button
           variant="outline"
           size="icon"
-          className="relative h-10 w-10 shrink-0"
+          className="relative hidden h-10 w-10 shrink-0 md:inline-flex"
           onClick={() => {
             const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true });
             window.dispatchEvent(e);

@@ -370,6 +370,17 @@ export function WorkspacePulseStrip() {
               <span className="whitespace-nowrap">{dateStr}</span>
               <span className="text-muted-foreground/40">·</span>
               <span className="rd-tabular font-semibold text-foreground/80">{timeStr}</span>
+              {/* Data-freshness indicator: shows when the workspace health was
+                  last synced, so users know the numbers are current. */}
+              {lastFetchedAt ? (
+                <>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span className="flex items-center gap-0.5 whitespace-nowrap" title={`Workspace data synced ${timeAgoShort(lastFetchedAt)}`}>
+                    <span className="h-1 w-1 rounded-full bg-success" />
+                    <span className="text-[10px] text-muted-foreground/70">synced {timeAgoShort(lastFetchedAt)}</span>
+                  </span>
+                </>
+              ) : null}
             </p>
           </div>
         </div>
