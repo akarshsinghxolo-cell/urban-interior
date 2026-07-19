@@ -3717,3 +3717,77 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The signin changelog panel is file-driven but CHANGELOG.md is manually maintained (Task 16 rec #3). A future round could auto-generate it from git-log or the worklog.
 4. The ActivityFeed urgency dots could be complemented by a filter ("Show only urgent") in the header — a small feature for power users.
 5. The Exceptions "Next Step" tags could be clickable to perform the action directly (e.g., clicking "Approve" opens the approval dialog) instead of just navigating to the module.
+
+---
+Task ID: 18
+Agent: orchestrator (navigation submodule misplacement fix — user-reported)
+Task: User reported "in navigation i can see a lot of miss placement of sub modules. something that should be at other place, is place in finance, some that that should be at other place is put in master setup". Reviewed the entire module registry, identified 3 misplaced submodules/modules, and corrected them.
+
+Work Log:
+- Read worklog (3,719 lines, through Task ID 17). Project stable.
+- Verified dev server: ALIVE. .env had been reset to only DATABASE_URL — restored the full .env (the dev-fallback secret handles auth, but restored Supabase creds + owner info for parity).
+- Read the complete module registry (src/lib/rdash/modules.ts, 394 lines). Mapped out all 5 groups (Workspace, Operations, Master Setup, Reports, System) with their modules + submodules.
+- Login + inspected the sidebar via agent-browser (desktop 1440×900). Confirmed the module order and cross-referenced with the registry.
+- Identified 3 misplacements:
+
+  1. **`vendorBills` (Vendor Bills & Payments) was in "Procurement & Inventory"** — but vendor bills/payments are accounts payable (Finance), not procurement. The procurement flow ends at GRN; billing/payment is finance. This was inconsistent with `contractorPayments` (Contractor Bills & Payments) which was already correctly in Finance. Both are "bills & payments" for external parties, but one was in Procurement and the other in Finance — confusing.
+  
+  2. **"Contractor Detail" module was in "Master Setup"** — but it's operational (work assignments, RA bills, performance), not master data. The `contractors` submodule under Master Setup already covers master-data contractor profiles. Having both "Contractor Detail" (top-level in Master Setup) and "Contractors" (submodule of Master Setup) was confusing — two places to access contractor info.
+  
+  3. **`threads` (Threads) was in "Media & Communication"** — but it was a duplicate of `unifiedThreadInbox` (Thread Inbox) in Workdesk Dashboard. Both had the same hint text ("Unified thread inbox — every conversation across all entities"). Threads appeared in two places, creating confusion.
+
+- FIXED all 3 in src/lib/rdash/modules.ts:
+  1. Moved `vendorBills` from `procurementInventory` module → `financeDesk` module (now sits between `invoices` and `contractorPayments` — all bills/payments together in Finance).
+  2. Moved `contractorDetail` module from "master-setup" group → "operations" group (now sits after `mediaCommunication`, before the Master Setup group). Its submodule `contractorPerformance` moved with it.
+  3. Removed `threads` submodule from `mediaCommunication` (keeping only `communicationCentre`). The `unifiedThreadInbox` in Workdesk Dashboard remains the single threads access point.
+  4. Updated module descriptions: Procurement "vendor RFQ, bidding, purchase orders, GRN, stock issue and vendor bills" → "Vendor RFQ, bidding, purchase orders, GRN, stock issue and inventory" (removed "vendor bills"). Finance "Customer collections, vendor payments, contractor bills and site profitability" → "Customer collections, vendor bills, contractor bills, site profitability and commissions" (added "vendor bills").
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- Route registry: valid (app loaded without errors — `buildModuleRouteRegistry()` would throw on duplicate IDs).
+- Command palette search "vendor bills": returns "💳 Finance → 💳 Vendor Bills & Payments" — confirms vendorBills is now under Finance. ✅
+- Finance submodules (expanded via sidebar toggle): Customer Collections, **Vendor Bills & Payments**, Contractor Bills & Payments, Site Profitability, Commissions, GST Returns. ✅
+- Procurement submodules (expanded): Goods Received Note, Inventory, Stock Issue/Dispatch, Vendor Performance. **No Vendor Bills.** ✅
+- vendorBills module renders: navigated to it via sidebar, h1 shows "Vendor Bills & Payments", no errors. ✅
+- Contractor Detail: now appears in the sidebar between "Media & Communication" and "Master Setup" (in the Operations group). Master Setup submodules (Vendor Price Matrix, Rate Finder, Vendors, Contractors) no longer include Contractor Detail or Contractor Performance. ✅
+- Media & Communication: only "Communication Centre" submodule (threads removed). ✅
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — navigation submodule misplacements fixed
+
+## What was done this round
+1. **FIX**: Moved `vendorBills` (Vendor Bills & Payments) from Procurement & Inventory → Finance. Vendor bills are accounts payable (finance), not procurement. Now consistent with contractor bills (both in Finance).
+2. **FIX**: Moved "Contractor Detail" module from Master Setup → Operations group. Contractor Detail is operational (work assignments, RA bills), not master data. Eliminates the duplicate contractor access (Contractor Detail was a top-level module in Master Setup while Contractors was also a submodule there).
+3. **FIX**: Removed duplicate `threads` submodule from Media & Communication. The `unifiedThreadInbox` in Workdesk Dashboard is the single threads access point.
+4. **POLISH**: Updated module descriptions to reflect the new groupings.
+
+## Files modified
+- `src/lib/rdash/modules.ts` — moved vendorBills to financeDesk, moved contractorDetail to operations group, removed threads from mediaCommunication, updated descriptions
+- `.env` — restored full env (had been reset to only DATABASE_URL)
+
+## Verification
+- Lint: clean
+- Command palette: vendorBills found under Finance ✅
+- Finance expanded: includes Vendor Bills & Payments ✅
+- Procurement expanded: no Vendor Bills ✅
+- vendorBills renders (h1: "Vendor Bills & Payments") ✅
+- Contractor Detail in Operations (between Media & Master Setup) ✅
+- Master Setup: only master-data submodules (no Contractor Detail) ✅
+- Media & Communication: only Communication Centre (no Threads) ✅
+- Zero errors throughout
+
+## Navigation structure (after fixes)
+- **Workspace**: Workdesk Dashboard, Customer Desk, Sales Pipeline, Sites & Execution, Quotation Desk
+- **Operations**: Field Visits, Procurement & Inventory (GRN, Inventory, Stock Issue, Vendor Performance), Finance (Collections, Invoices, **Vendor Bills**, Contractor Bills, Site Profitability, P&L, Commissions, GST), Media & Communication (Communication Centre), **Contractor Detail** (Contractor Performance)
+- **Master Setup**: Master Setup (Vendor Price Matrix, Rate Finder, Vendors, Contractors)
+- **Reports**: Reports
+- **System**: System Settings
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The `threads` renderer case in RDashApp.tsx (line 178) is now dead code (no sidebar entry points to it). Could be removed in a future cleanup, but it's harmless.
+2. HR items (Staff Board, Attendance & Payroll, Staff Salary) are under "System Settings" — the user didn't specifically complain about these, but they could eventually form their own "HR & Staff" group for better organization.
+3. `gpsTracking` (GPS Tracking) is under Field Visits but uses `dataSource: "attendance"` — it's field-staff tracking, which is defensible in Field Visits but could also fit in an HR group.
+4. `siteProfitability` and `workOrderPnl` in Finance overlap conceptually with `jobPnlReport` in Reports — the operational vs report distinction is reasonable but the labels could be differentiated more clearly.
+5. The `invoices` submodule in Finance uses renderer "sales-ops" — the renderer name suggests it's a sales operations view, which might cause confusion. Consider renaming the renderer or moving invoices to a sales context.

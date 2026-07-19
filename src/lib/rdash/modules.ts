@@ -136,7 +136,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             {
                 id: "procurementInventory",
                 label: "Procurement & Inventory",
-                description: "Vendor RFQ, bidding, purchase orders, GRN, stock issue and vendor bills",
+                description: "Vendor RFQ, bidding, purchase orders, GRN, stock issue and inventory",
                 icon: "📦",
                 renderer: "procurement",
                 activePredicate: (db) => db.purchaseOrders.some((p) => p.status === "draft" || p.status === "pending_approval" || p.status === "sent") || db.grns.length > 0 || db.inventory.length > 0 || db.vendorBills.length > 0,
@@ -145,14 +145,13 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                     { id: "grn", label: "Goods Received Note", renderer: "grn", dataSource: "grns" },
                     { id: "inventory", label: "Inventory", renderer: "inventory", dataSource: "inventory" },
                     { id: "dispatch", label: "Stock Issue / Dispatch", renderer: "dispatch", dataSource: "dispatches" },
-                    { id: "vendorBills", label: "Vendor Bills & Payments", renderer: "vendor-bills", dataSource: "vendorBills" },
                     { id: "vendorPerformance", label: "Vendor Performance", renderer: "vendor-performance", dataSource: "vendors" },
                 ],
             },
             {
                 id: "financeDesk",
                 label: "Finance",
-                description: "Customer collections, vendor payments, contractor bills and site profitability",
+                description: "Customer collections, vendor bills, contractor bills, site profitability and commissions",
                 icon: "💳",
                 renderer: "finance-overview",
                 activePredicate: (db) => db.quotations.some((q) => q.status === "accepted") || db.commissions.some((c) => c.status === "accrued" || c.status === "payable") || db.payments.some((p) => p.status === "pending" || p.status === "overdue"),
@@ -160,6 +159,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 submodules: [
                     { id: "payments", label: "Customer Collections", renderer: "payment-recovery", dataSource: "payments" },
                     { id: "invoices", label: "Customer Invoices", renderer: "sales-ops", dataSource: "invoices", filter: { sub: "invoices" } },
+                    { id: "vendorBills", label: "Vendor Bills & Payments", renderer: "vendor-bills", dataSource: "vendorBills" },
                     { id: "contractorPayments", label: "Contractor Bills & Payments", renderer: "contractor-payments", dataSource: "workOrders" },
                     { id: "siteProfitability", label: "Site Profitability", renderer: "site-profitability", dataSource: "sites" },
                     { id: "workOrderPnl", label: "Site / Work Order P&L", renderer: "workOrder-pnl", dataSource: "workOrders" },
@@ -176,16 +176,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 dataSource: "none",
                 submodules: [
                     { id: "communicationCentre", label: "Communication Centre", renderer: "communication-centre", dataSource: "none" },
-                    { id: "threads", label: "Threads", renderer: "threads", dataSource: "threads", hint: "Unified thread inbox — every conversation across all entities. Use the entity-type filter to browse by record type." },
                 ],
             },
-        ],
-    },
-    {
-        id: "master-setup",
-        label: "Master Setup",
-        icon: "🧱",
-        modules: [
             {
                 id: "contractorDetail",
                 label: "Contractor Detail",
@@ -197,6 +189,13 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                     { id: "contractorPerformance", label: "Contractor Performance", renderer: "contractor-performance", dataSource: "contractors" },
                 ],
             },
+        ],
+    },
+    {
+        id: "master-setup",
+        label: "Master Setup",
+        icon: "🧱",
+        modules: [
             {
                 id: "masterSetup",
                 label: "Master Setup",
