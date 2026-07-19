@@ -3095,3 +3095,78 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The WorkspacePulseStrip KPI tiles were perceived as "flat" by VLM (Task 7) — consider adding subtle hover lift (translate-y) + gradient overlays to match the premium feel of the health widget.
 4. The financial chips could be extended with a sparkline / trend indicator (e.g., monthRevenue vs last month) for at-a-glance trend direction.
 5. The health widget currently shows on both Daily Work AND Workdesk Dashboard — consider whether this is redundant or desirable. If redundant, remove from WorkdeskDashboard (keep only on Daily Work, the default landing). If desirable as a "always visible" anchor, keep both.
+
+---
+Task ID: 9
+Agent: orchestrator (cron-triggered webDevReview — login health banner + sparkline + pulse tile polish)
+Task: Recurring 15-min webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read /home/z/my-project/worklog.md (3,097 lines, through Task ID 8). Project is stable: 52 modules, integrity 100/100, premium split-screen signin, WorkspaceHealthWidget on both Daily Work (default landing) + Workdesk Dashboard, /api/health/summary with finance block, discoverable `?` keyboard button. Task 8's unresolved recommendations: (1) login integrity/health banner hook, (2) sparkline/trend for financial chips, (3) pulse strip tile hover lift + gradients, (4) drive signin changelog from a file, (5) health widget on both modules — consider redundancy.
+- Verified dev server: ALIVE (PID 7748). .env intact. Health checks 200.
+- QA via agent-browser (desktop 1440×900):
+  * Signin: renders with split-screen + demo button + config health. ✅
+  * Login flow (fill @e5/@e6 + click @e7): redirected to /. ✅
+  * Daily Work (default landing): WorkspaceHealthWidget renders with all ops + finance chips (₹-607 cash, ₹8.4k month). ✅ (regression check — Task 8's work intact)
+  * No errors in console/dev.log. ✅
+- VLM analysis of Daily Work dashboard (glm-4.6v): "KPI tiles feel flat and static — lack depth and interactivity. No visible toast/banner confirms login or session start. Top 3 improvements: (1) Interactive KPI tiles with hover + sparklines, (2) Integrated health ribbon, (3) Toast notification for session feedback." Confirmed Task 8 recs #2, #3, #4 as the right focus.
+
+WORK FOCUS SELECTED (addresses 3 of Task 8's 5 unresolved recs + VLM feedback):
+1. NEW FEATURE: Login welcome toast + workspace health banner (Task 8 rec #2 — unresolved across 3 rounds). After the secure workspace hydrates, fire a "Good morning/afternoon/evening, {firstName}" success toast, then fetch /api/health/summary and surface a contextual warning toast if: integrity < 100, attentionCount > 0, overdueInvoiceValue > 0, or cashPosition < 0. If everything is healthy, show a "Workspace healthy" success toast. This makes the integrity + finance layers visible at the exact login moment.
+2. STYLING: WorkspacePulseStrip KPI tile polish (Task 8 rec #3, VLM point #1). Strengthened hover lift from -translate-y-0.5 → -translate-y-1, added shadow-sm → hover:shadow-md, added a subtle radial gradient overlay (accent-colored blur) that fades in on hover, added icon scale-110 on hover. Made the 4 KPI tiles feel tactile and premium.
+3. NEW FEATURE: 7-day revenue sparkline on the health widget's "month" chip (Task 8 rec #4, VLM point #1). Extended /api/health/summary with a `revenueSeries` field (last 7 days of customer receipts, oldest first). Added a Sparkline component (36×14 inline SVG, color-coded: green=up, amber=flat/down, muted=zero-variance). Rendered as the `trailing` prop on the month MetricChip.
+4. SEED DATA: Added 2 recent customer receipts (₹18k on day-3, ₹25k on day-0) so the sparkline shows a real upward trend instead of a flat line. Previously the only seed receipt was 11 days old (outside the 7-day window). This also makes cashPosition positive (₹42.4k) and monthRevenue meaningful (₹51.4k), improving the demo.
+
+Implementation details:
+- `src/components/rdash/RDashApp.tsx` (modified, +~65 lines): added `getSessionToken` to client-auth import. Added a new useEffect that fires once when `secureWorkspaceReady` becomes true (guarded by `welcomedRef`). Immediately fires a `toast.success("{greeting}, {firstName}", { description: "Signed in as {role}" })`. Then fetches /api/health/summary and surfaces: (a) `toast.warning("Workspace needs attention", { description: warnings.join(" "), action: { label: "Open Daily Work", onClick: ... } })` if any warnings, or (b) `toast.success("Workspace healthy", { description: "Integrity {score}/100 · {records} records in sync" })` if healthBadge === "healthy". Warnings checked: integrity < 100, attentionCount > 0, overdueInvoiceValue > 0, cashPosition < 0.
+- `src/components/rdash/WorkspacePulseStrip.tsx` (modified, +~10 lines): PulseTile button className changed `hover:-translate-y-0.5` → `hover:-translate-y-1`, added `shadow-sm` + `hover:shadow-md`, `bg-card/70` → `bg-card/80`. Added a radial gradient overlay span (absolute, -right-6 -top-6, h-16 w-16, rounded-full, blur-2xl, opacity-0 group-hover:opacity-20, accent-colored). Added `group-hover:scale-110` to the icon span. Added `relative` to inner spans so they stack above the overlay.
+- `src/app/api/health/summary/route.ts` (modified, +~18 lines): added `revenueSeries` computation — loops i=6..0, builds dayKey (YYYY-MM-DD), filters customerReceipts by received_at.slice(0,10) === dayKey, sums amounts. Added `revenueSeries` to the `finance` response field.
+- `src/components/rdash/WorkspaceHealthWidget.tsx` (modified, +~55 lines): added `revenueSeries?` to the finance interface. Added a `Sparkline` component (36×14 SVG, path from values, end-circle, color-coded by trend). Added optional `trailing` prop to MetricChip. Rendered the sparkline as `trailing` on the month chip.
+- `src/lib/rdash/seed.ts` (modified, +~6 lines): added 2 new customerReceipts: `receipt-das-ceiling-milestone-1` (₹18k, date(-3), RTGS) and `receipt-aarav-kitchen-advance` (₹25k, date(0), UPI). Fixed site_id to `site-aarav-home` (not `site-aarav-villa` which doesn't exist).
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings) after all changes.
+- /api/health/summary: HTTP 200 with `revenueSeries: [{date:"2026-07-13",value:0},...,{date:"2026-07-16",value:18000},...,{date:"2026-07-19",value:25000}]`. cashPosition now ₹42,393 (positive), monthRevenue ₹51,411.
+- Login welcome toast: verified via eval — `toastCount: 1, toasts: [{ title: "Workspace needs attention", desc: "7 item(s) need attention (overdue tasks, blockers, approvals, risks).", type: "warning" }]`. The welcome success toast (4s) dismissed before the eval; the health warning toast (9s) was captured. Correct behavior — attentionCount > 0 triggered the warning.
+- Sparkline: verified via eval — SVG width=36 height=14, path `M 0.0,13.0 L 6.0,13.0 L 12.0,13.0 L 18.0,4.4 L 24.0,13.0 L 30.0,13.0 L 36.0,1.0`, end circle at (36.0, 1.0), strokeColor rgb(21,127,60) = green (text-success, trendUp). The path correctly shows: flat baseline (3 zeros) → spike at x=18 (₹18k) → back to baseline → higher spike at x=36 (₹25k).
+- Pulse strip tiles: hover lift + gradient overlay + icon scale confirmed in DOM (class changes applied).
+- Regression: Customer Desk, Procurement, Data Integrity all render with zero errors. Daily Work widget still renders with all metrics + new sparkline.
+- VLM review: "8/10 — sparkline adds value (quick trend insight), KPI tiles feel more tactile/premium with hover lift + gradients + icon scaling. Strong micro-interactions."
+- No runtime errors in dev.log or browser console.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — login health banner + revenue sparkline + tactile pulse tiles
+
+## What was done this round
+1. **NEW FEATURE**: Login welcome toast + workspace health banner (Task 8 rec #2, unresolved across 3 rounds). On login: immediate "Good morning, {name}" toast, then a contextual health toast (warning if attention/integrity/overdue/cash issues, success if healthy). Makes the integrity + finance layers visible at the exact login moment.
+2. **STYLING**: WorkspacePulseStrip KPI tile polish (Task 8 rec #3). Stronger hover lift (-translate-y-1), shadow progression, radial gradient overlay on hover, icon scale-110 on hover. Tiles now feel tactile and premium.
+3. **NEW FEATURE**: 7-day revenue sparkline on the health widget's "month" chip (Task 8 rec #4). Extended /api/health/summary with `revenueSeries` (last 7 days). New Sparkline component (36×14 SVG, color-coded by trend: green=up, amber=down, muted=flat). Renders a real upward trend from seed data.
+4. **SEED DATA**: Added 2 recent customer receipts (₹18k day-3, ₹25k day-0) so the sparkline shows meaningful data. cashPosition now ₹42.4k (positive), monthRevenue ₹51.4k.
+
+## Files modified
+- `src/components/rdash/RDashApp.tsx` — added getSessionToken import + login welcome/health-banner useEffect (~65 lines)
+- `src/components/rdash/WorkspacePulseStrip.tsx` — PulseTile hover lift + gradient overlay + icon scale (~10 lines)
+- `src/app/api/health/summary/route.ts` — added revenueSeries computation + response field (~18 lines)
+- `src/components/rdash/WorkspaceHealthWidget.tsx` — added Sparkline component + trailing prop on MetricChip + sparkline on month chip (~55 lines)
+- `src/lib/rdash/seed.ts` — added 2 recent customerReceipts for demo-worthy sparkline (~6 lines)
+
+## Verification
+- Lint: clean
+- /api/health/summary: revenueSeries correct (7-day array with ₹18k + ₹25k spikes)
+- Login toast: fires correctly (warning toast captured via eval — "Workspace needs attention, 7 item(s) need attention")
+- Sparkline: renders with correct path + green stroke (trendUp) + end circle
+- Pulse tiles: hover lift + gradient + icon scale applied
+- Regression: Customer Desk, Procurement, Data Integrity — all pass, zero errors
+- VLM: 8/10 polish, sparkline + tactile tiles confirmed as improvements
+- Zero console/page errors throughout
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM under lint + browser load) — restarted with the daemon pattern. The recurring webDevReview cron should check `pgrep -f "next dev"` at start and restart if dead.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (Task 7 rec #3, Task 8 rec #1) — could be driven by a CHANGELOG.md file or a JSON config so it stays in sync with actual releases. Now that there are 9+ task entries, a real changelog would be more maintainable.
+2. The health widget currently shows on both Daily Work AND Workdesk Dashboard (Task 8 rec #5) — consider whether this is redundant. If so, remove from WorkdeskDashboard (keep only on Daily Work, the default landing).
+3. The login health banner currently shows a generic "Open Daily Work" action — could deep-link to the specific module needing attention (e.g., integrity module if healthScore < 100, paymentRecovery if overdue invoices, etc.) for more targeted navigation.
+4. The sparkline could be extended to the "cash" chip (showing cash-position trend over time) and a "pipeline" sparkline (quotation value trend) — but these would require additional historical data not currently tracked in the seed.
+5. The WorkspacePulseStrip greeting could show a contextual message based on the health badge (e.g., "You have 7 items needing attention" in amber) instead of just "Good morning, Akarsh" — tying the greeting to the health state.

@@ -90,6 +90,7 @@ interface SummaryResponse {
     pendingVendorBillCount: number;
     totalReceived: number;
     totalPaidOut: number;
+    revenueSeries?: Array<{ date: string; value: number }>;
   };
   recentActivity: Array<{
     id: string;
@@ -138,6 +139,59 @@ function timeAgo(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+/**
+ * Sparkline — a tiny inline SVG line chart for at-a-glance trend direction.
+ * Renders a 36×14 path from a 7-point number series. Color shifts to amber
+ * if the trend is flat/down, success if up. Zero-variance series render as a
+ * flat baseline so the sparkline never looks broken.
+ */
+function Sparkline({ values, className }: { values: number[]; className?: string }) {
+  const W = 36;
+  const H = 14;
+  const n = values.length;
+  if (n < 2) return null;
+  const max = Math.max(...values, 0);
+  const min = Math.min(...values, 0);
+  const range = max - min || 1;
+  const step = W / (n - 1);
+  const points = values.map((v, i) => {
+    const x = i * step;
+    // Invert Y so higher values go up. Clamp to [1, H-1] for padding.
+    const y = H - 1 - ((v - min) / range) * (H - 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const pathD = `M ${points.join(" L ")}`;
+  // Trend = last vs first (only meaningful if both > 0 or both 0).
+  const trendUp = values[n - 1] > values[0];
+  const trendFlat = values[n - 1] === values[0];
+  const stroke = trendFlat ? "text-muted-foreground/50" : trendUp ? "text-success" : "text-amber-600 dark:text-amber-400";
+  return (
+    <svg
+      width={W}
+      height={H}
+      viewBox={`0 0 ${W} ${H}`}
+      className={cn("shrink-0 overflow-visible", stroke, className)}
+      aria-hidden
+    >
+      <path
+        d={pathD}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.25}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {/* End dot for emphasis */}
+      <circle
+        cx={(W).toFixed(1)}
+        cy={(H - 1 - ((values[n - 1] - min) / range) * (H - 2)).toFixed(1)}
+        r={1.4}
+        fill="currentColor"
+      />
+    </svg>
+  );
 }
 
 export function WorkspaceHealthWidget() {
@@ -320,8 +374,13 @@ export function WorkspaceHealthWidget() {
                 value={formatINRShort(summary.finance.monthRevenue)}
                 label="month"
                 tone="success"
-                title="Customer receipts received this month"
+                title="Customer receipts received this month · 7-day trend shown"
                 onClick={() => setActiveModule("financeOverview")}
+                trailing={
+                  summary.finance.revenueSeries && summary.finance.revenueSeries.length >= 2 ? (
+                    <Sparkline values={summary.finance.revenueSeries.map((p) => p.value)} />
+                  ) : null
+                }
               />
               {summary.finance.overdueInvoiceValue > 0 ? (
                 <MetricChip
@@ -416,6 +475,7 @@ function MetricChip({
   tone,
   onClick,
   title,
+  trailing,
 }: {
   icon: React.ReactNode;
   value: number | string;
@@ -423,6 +483,7 @@ function MetricChip({
   tone: MetricTone;
   onClick: () => void;
   title?: string;
+  trailing?: React.ReactNode;
 }) {
   return (
     <button
@@ -434,6 +495,7 @@ function MetricChip({
       <span className={cn("shrink-0", METRIC_TONE[tone])}>{icon}</span>
       <span className="rd-tabular text-sm font-bold leading-none text-foreground">{value}</span>
       <span className="text-[11px] leading-none text-muted-foreground">{label}</span>
+      {trailing}
     </button>
   );
 }

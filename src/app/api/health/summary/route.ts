@@ -124,6 +124,21 @@ export async function GET(request: NextRequest) {
       })
       .reduce((s, r) => s + (r.amount || 0), 0);
 
+    // 7-day revenue series for the sparkline on the health widget.
+    // Returns [{date: 'YYYY-MM-DD', value: number}, ...] for the last 7 days
+    // (oldest first). Days with no receipts show 0.
+    const revenueSeries: Array<{ date: string; value: number }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      const dayKey = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const dayTotal = customerReceipts
+        .filter((r) => (r.received_at || "").slice(0, 10) === dayKey)
+        .reduce((s, r) => s + (r.amount || 0), 0);
+      revenueSeries.push({ date: dayKey, value: dayTotal });
+    }
+
     // Overall workspace health badge
     const attentionCount =
       pendingApprovals.length + unresolvedBlocked.length + overdueTasks.length + openRisks.length;
@@ -182,6 +197,7 @@ export async function GET(request: NextRequest) {
           pendingVendorBillCount: pendingVendorBills.length,
           totalReceived,
           totalPaidOut,
+          revenueSeries,
         },
         recentActivity,
       },

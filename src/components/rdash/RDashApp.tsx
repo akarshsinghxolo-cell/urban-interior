@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { Compass, MapPin, Pin, Zap, Menu, Plus } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer } from "@/lib/rdash/modules";
-import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
+import { initAuthFetch, clearSessionToken, getSessionToken } from "@/lib/rdash/client-auth";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -268,6 +268,73 @@ export function RDashApp() {
         });
         return () => { active = false; };
     }, [hydrateSecureWorkspace]);
+
+    // ── Login welcome + workspace health banner ─────────────────────────
+    // Once the secure workspace is hydrated, fetch /api/health/summary once
+    // and surface a contextual welcome toast:
+    //   - greeting + role
+    //   - integrity score (warn if < 100)
+    //   - attention count (warn if > 0)
+    //   - overdue invoices (warn if > 0)
+    //   - negative cash position (warn)
+    // This makes the integrity + finance layers visible at the exact moment
+    // the user logs in, rather than requiring them to navigate to a module.
+    const welcomedRef = React.useRef(false);
+    React.useEffect(() => {
+        if (!secureWorkspaceReady || welcomedRef.current) return;
+        welcomedRef.current = true;
+        const authUser = useRDashStore.getState().authUser;
+        const firstName = authUser?.name?.split(" ")[0] || "there";
+        const hour = new Date().getHours();
+        const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : hour < 21 ? "Good evening" : "Working late";
+        // Fire an immediate welcome toast (don't wait for the summary fetch).
+        toast.success(`${greeting}, ${firstName}`, {
+            description: authUser?.role ? `Signed in as ${authUser.role}` : "Session active",
+            duration: 4000,
+        });
+        // Then fetch the health summary and surface any warnings.
+        const token = getSessionToken();
+        fetch("/api/health/summary", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((summary: any) => {
+            if (!summary) return;
+            const warnings: string[] = [];
+            if (summary.integrity?.healthScore != null && summary.integrity.healthScore < 100) {
+                warnings.push(`Data integrity at ${summary.integrity.healthScore}/100 — ${summary.integrity.totalIssues} issue(s) detected.`);
+            }
+            if (summary.attentionCount > 0) {
+                warnings.push(`${summary.attentionCount} item(s) need attention (overdue tasks, blockers, approvals, risks).`);
+            }
+            if (summary.finance) {
+                if (summary.finance.overdueInvoiceValue > 0) {
+                    warnings.push(`${summary.finance.overdueInvoiceCount} overdue invoice(s) totalling ₹${summary.finance.overdueInvoiceValue.toLocaleString("en-IN")}.`);
+                }
+                if (summary.finance.cashPosition < 0) {
+                    warnings.push(`Negative cash position (₹${summary.finance.cashPosition.toLocaleString("en-IN")}) — payments exceed receipts.`);
+                }
+            }
+            if (warnings.length > 0) {
+                toast.warning("Workspace needs attention", {
+                    description: warnings.join(" "),
+                    duration: 9000,
+                    action: {
+                        label: "Open Daily Work",
+                        onClick: () => useRDashStore.getState().setActiveModule("today"),
+                    },
+                });
+            } else if (summary.healthBadge === "healthy") {
+                toast.success("Workspace healthy", {
+                    description: `Integrity ${summary.integrity.healthScore}/100 · ${summary.integrity.totalRecords} records in sync`,
+                    duration: 5000,
+                });
+            }
+        })
+            .catch(() => {
+            // Non-fatal — the welcome toast already fired.
+        });
+    }, [secureWorkspaceReady]);
     // Surface workspace sync errors as a visible toast so users know when an
     // edit was rejected by the server (validation, conflict, or permission).
     // Without this, rejections only show as a tiny "Save rejected" header text

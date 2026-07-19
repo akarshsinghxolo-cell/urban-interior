@@ -92,23 +92,31 @@ function PulseTile({ label, value, display, icon, accent, onClick }: PulseTilePr
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex min-w-0 flex-col gap-1.5 overflow-hidden rounded-xl border border-border bg-card/70 px-3 py-2.5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        "group relative flex min-w-0 flex-col gap-1.5 overflow-hidden rounded-xl border border-border bg-card/80 px-3 py-2.5 text-left shadow-sm transition-all duration-200 hover:-translate-y-1 hover:bg-card hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         a.ring,
         a.glow,
       )}
     >
       {/* Accent top bar */}
       <span className={cn("absolute inset-x-0 top-0 h-0.5 opacity-70 transition-opacity group-hover:opacity-100", a.bar)} aria-hidden />
-      <span className="flex items-center justify-between gap-2">
-        <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1", a.icon)} aria-hidden>
+      {/* Subtle radial gradient overlay that fades in on hover for depth */}
+      <span
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full opacity-0 blur-2xl transition-opacity duration-300 group-hover:opacity-20",
+          a.bar,
+        )}
+      />
+      <span className="relative flex items-center justify-between gap-2">
+        <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1 transition-transform duration-200 group-hover:scale-110", a.icon)} aria-hidden>
           {icon}
         </span>
         <ArrowUpRight className="h-3 w-3 shrink-0 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground/70" />
       </span>
-      <span className="rd-tabular text-lg font-bold leading-tight text-foreground">
+      <span className="relative rd-tabular text-lg font-bold leading-tight text-foreground">
         {shown}
       </span>
-      <span className="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+      <span className="relative truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
     </button>
