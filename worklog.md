@@ -3241,3 +3241,74 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. VLM noted the ActivityFeedWidget placement "feels disconnected from the main flow" — consider moving it higher (right after the health widget) or making it a sidebar element. Alternatively, pair it with ExceptionDashboard instead of DailyKpiBanner.
 4. The ActivityFeedWidget could show a "live" indicator (pulsing dot) when a new entry arrives within the last 60s, to make it feel real-time.
 5. The health-aware greeting badge could expand on click to show a mini health summary (integrity score, attention breakdown) as a popover, rather than just navigating away.
+
+---
+Task ID: 11
+Agent: orchestrator (cron-triggered webDevReview — activity feed live indicator + health badge popover + redundancy fix)
+Task: Recurring 15-min webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read /home/z/my-project/worklog.md (3,243 lines, through Task ID 10). Project is stable: 52 modules, integrity 100/100, premium signin, WorkspaceHealthWidget on Daily Work, ActivityFeedWidget, health-aware greeting badge, login toast deep-linking, sparkline. Task 10's unresolved recs: (1) signin changelog from file, (2) health widget redundancy on WorkdeskDashboard, (3) ActivityFeedWidget placement, (4) live indicator for activity feed, (5) greeting badge popover.
+- Verified dev server: ALIVE (PID 12188). .env intact. Health checks 200.
+- Investigated a `POST /api/tracking/ping 403` in dev.log — root cause: the GPS tracking ping is sent by the browser without a valid session token (requireSession throws). The route already has a graceful demo-mode fallback (returns 200 with `ignored: true` when Supabase isn't configured), but the 403 happens BEFORE that check when there's no session. It's a minor issue (the client handles it, no console errors surfaced in the browser), not a blocking bug. Noted for a future round.
+- QA via agent-browser (desktop 1440×900):
+  * Login flow: works, redirected to /. ✅
+  * Task 10 features intact: greeting badge ("!7 item(s) need attention"), ActivityFeedWidget (6 items), health widget on Daily Work. ✅
+  * Confirmed WorkdeskDashboard redundancy: `healthWidgetCount: 1` on Workdesk Dashboard (the gap from Task 10 rec #2).
+  * Regression: Sales Pipeline, Field Visits, command palette, keyboard `?` — all work, zero errors. ✅
+- VLM analysis of Daily Work dashboard (glm-4.6v): "Top 3 improvements: (1) Premium-ify the Recent Activity card with a pulsing live indicator + better avatar/icon polish, (2) Integrate the health badge more seamlessly (it feels tacked on), (3) Optimize card spacing/density." Confirmed Task 10 recs #2, #4, #5 as the right focus.
+
+WORK FOCUS SELECTED (addresses Task 10 recs #2, #4, #5 + VLM points #1, #2):
+1. FIX: Remove redundant WorkspaceHealthWidget from WorkdeskDashboard (Task 10 rec #2). The widget now shows on both Daily Work (default landing) AND Workdesk Dashboard — duplicate. Removed from WorkdeskDashboard (kept only on Daily Work, where users actually land).
+2. NEW FEATURE + STYLING: ActivityFeedWidget live indicator (Task 10 rec #4, VLM point #1). Added: (a) a pulsing green dot on the header Activity icon to signal a "live feed", (b) a count badge next to the "Recent Activity" title showing the entry count, (c) a "Live workspace events" sub-line with a green dot, (d) for the most recent entry (if within 60s): a pulsing green dot on the avatar, a subtle green background highlight on the row, and a "LIVE" tag in the metadata row, (e) shadow-sm + ring-1 on avatars and kind icons for depth.
+3. NEW FEATURE: Health badge popover (Task 10 rec #5, VLM point #2). The greeting health badge previously just navigated away on click. Now opens a popover (shadcn/ui Popover) showing a mini health summary: header with ShieldCheck icon + "Workspace Health" + integrity score (color-coded), a 2×3 stat grid (Integrity issues, Approvals, Overdue tasks, Blocked, Open risks, Overdue invoices — each color-coded by tone), and a footer with cash position (green/red) + an "Open" button that deep-links to the relevant module. Makes the badge informational, not just a link.
+
+Implementation details:
+- `src/components/rdash/WorkdeskDashboard.tsx` (modified, -2 lines): removed the `import { WorkspaceHealthWidget }` line and the `<WorkspaceHealthWidget />` usage after `<WorkspacePulseStrip />`. The widget is now ONLY on Daily Work (the default landing).
+- `src/components/rdash/ActivityFeedWidget.tsx` (modified, +~30 lines): header icon now has a pulsing green dot (absolute -right-0.5 -top-0.5, animate-ping). Header title now shows a count badge (`entries.length` in a muted pill). Sub-line changed from "Latest workspace events" to a green-dot + "Live workspace events". List items: the most recent entry (idx === 0) with entryAgeMs < 60_000 gets `isLive = true` → row gets `bg-success/[0.03]` highlight, avatar gets a pulsing green dot overlay, metadata row gets a "LIVE" tag (ml-auto, bg-success/10, text-success). Avatars + kind icons got `shadow-sm ring-1 ring-background` for depth.
+- `src/components/rdash/WorkspacePulseStrip.tsx` (modified, +~90 lines): added Popover + ShieldCheck + TrendingUp imports. Extended the health state to include integrityIssues, pendingApprovals, overdueTasks, unresolvedBlocked, openRisks, cashPosition, overdueInvoiceValue, monthRevenue, totalRecords. Replaced the badge `<button>` with a `<Popover>` + `<PopoverTrigger>` + `<PopoverContent>` structure. PopoverContent (w-72, p-0): header with ShieldCheck icon + "Workspace Health" + integrity score (color-coded), a 2-col grid (gap-px bg-border/60 for 1px dividers) of 6 PopoverStat cells, and a footer with cash position + "Open" button (deep-links to integrity if healthy, blockedRisks otherwise). Added a PopoverStat helper component (label + value with tone-based color: success/warning/destructive/muted).
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings) after all changes.
+- Health badge popover: verified via eval — clicked the badge, popover opened (hasPopover: true), contains "Workspace Health", "Integrity", "Approvals", "Cash" (all confirmed in DOM). ✅
+- ActivityFeedWidget live indicator: verified via eval — `header: "Recent Activity 6"` (count badge), `hasCountBadge: true`, `headerHasPulse: true`, `firstLiHighlighted: true` (bg-success), `firstAvatarHasPulse: true`, `firstLiHasLiveTag: true`. All live-indicator elements present. ✅
+- WorkdeskDashboard redundancy removed: verified via eval — `h1: "Workdesk Dashboard", healthWidgetCount: 0` (was 1 before). Widget is now ONLY on Daily Work. ✅
+- Regression: Customer Desk, Data Integrity — all render with zero errors.
+- VLM review: "8/10 — pulsing green dot + count badge effectively signal real-time activity, giving the feed a premium, dynamic feel. Popover well-designed: condenses key health metrics into a scannable summary with clear labels and actionable Open button. Clean, purposeful updates that enhance usability without clutter."
+- No runtime errors in dev.log or browser console.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — activity feed feels live + health badge is informational + redundancy removed
+
+## What was done this round
+1. **FIX**: Removed redundant WorkspaceHealthWidget from WorkdeskDashboard (Task 10 rec #2). The widget is now ONLY on Daily Work (the default landing), not duplicated.
+2. **NEW FEATURE + STYLING**: ActivityFeedWidget live indicator (Task 10 rec #4). Pulsing green dot on the header icon, count badge, "Live workspace events" sub-line, and for the most recent entry (within 60s): avatar pulse + row highlight + "LIVE" tag. Avatars + kind icons got shadow-sm + ring-1 for depth.
+3. **NEW FEATURE**: Health badge popover (Task 10 rec #5). The greeting badge now opens a mini health-summary popover (integrity score, 6-stat grid, cash position, Open button) instead of just navigating away.
+
+## Files modified
+- `src/components/rdash/WorkdeskDashboard.tsx` — removed WorkspaceHealthWidget import + usage (-2 lines)
+- `src/components/rdash/ActivityFeedWidget.tsx` — live indicator (header pulse + count badge + sub-line + first-item highlight/avatar pulse/LIVE tag) + avatar/icon shadow+ring (+~30 lines)
+- `src/components/rdash/WorkspacePulseStrip.tsx` — Popover + PopoverStat helper + extended health state + popover UI (header + 2×3 stat grid + footer with cash + Open button) (+~90 lines)
+
+## Verification
+- Lint: clean
+- Health badge popover: opens on click, contains Workspace Health + Integrity + Approvals + Cash (verified via DOM)
+- Activity feed live indicator: header pulse + count badge + first-item highlight + avatar pulse + LIVE tag (all verified via DOM)
+- WorkdeskDashboard: healthWidgetCount 0 (was 1) — redundancy removed
+- Regression: Customer Desk, Data Integrity — all pass, zero errors
+- VLM: 8/10 (premium dynamic feel, well-designed popover, clean purposeful updates)
+- Zero console/page errors throughout
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM) — restarted with the daemon pattern. The recurring webDevReview cron should check `pgrep -f "next dev"` at start and restart if dead.
+
+## Minor issue noted (not blocking)
+`POST /api/tracking/ping 403` appears in dev.log — the GPS tracking ping is sent without a valid session token (requireSession throws before the demo-mode fallback). The browser handles it silently (no console errors). A future round could add a session-check guard in the route or suppress the retry on 403.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (Task 7 rec #3, Task 8 rec #1, Task 9 rec #1, Task 10 rec #1) — could be driven by a CHANGELOG.md file. Now 11+ task entries; a real changelog would be more maintainable.
+2. VLM noted the ActivityFeedWidget placement "feels disconnected from the main flow" (Task 10 rec #3) — consider moving it higher (right after the health widget) or pairing it with ExceptionDashboard instead of DailyKpiBanner.
+3. The `POST /api/tracking/ping 403` (noted above) could be fixed by adding a session-optional mode to the route, or by having the client suppress retries on 403.
+4. The health badge popover could show a "last updated" timestamp + a manual refresh button, so users know the data is fresh.
+5. The ActivityFeedWidget "live" indicator currently only highlights the first entry if it's < 60s old. Could add a "new entry" animation (slide-in + flash) when a fresh audit log entry arrives via polling, for a true real-time feel.

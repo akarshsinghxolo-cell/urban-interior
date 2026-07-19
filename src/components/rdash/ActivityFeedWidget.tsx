@@ -148,12 +148,25 @@ export function ActivityFeedWidget() {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-gradient-to-r from-primary/[0.04] to-transparent px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <span className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Activity className="h-4 w-4" />
+            {/* Subtle pulsing dot on the header icon to signal "live feed" */}
+            <span className="absolute -right-0.5 -top-0.5 flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-success ring-1 ring-card" />
+            </span>
           </span>
           <div>
-            <h3 className="text-sm font-bold leading-tight">Recent Activity</h3>
-            <p className="text-[10px] text-muted-foreground">Latest workspace events</p>
+            <h3 className="flex items-center gap-1.5 text-sm font-bold leading-tight">
+              Recent Activity
+              <span className="rd-tabular rounded-full bg-muted/70 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                {entries.length}
+              </span>
+            </h3>
+            <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="h-1 w-1 rounded-full bg-success" />
+              Live workspace events
+            </p>
           </div>
         </div>
         <button
@@ -176,24 +189,37 @@ export function ActivityFeedWidget() {
       ) : (
         <div className="max-h-72 overflow-y-auto rd-scroll">
           <ul className="divide-y divide-border/60">
-            {entries.map((entry) => {
+            {entries.map((entry, idx) => {
               const cfg = KIND_CONFIG[entry.kind] || KIND_CONFIG.system;
               const Icon = cfg.icon;
               const entityLabel = entry.entity_label || shortEntityType(entry.entity_type);
+              // "Live" indicator: the most recent entry (idx === 0) is "live"
+              // if it occurred within the last 60 seconds. Renders a pulsing
+              // green dot on the avatar to signal real-time freshness.
+              const entryAgeMs = Date.now() - new Date(entry.timestamp).getTime();
+              const isLive = idx === 0 && entryAgeMs < 60_000;
               return (
-                <li key={entry.id}>
+                <li key={entry.id} className={cn(isLive && "bg-success/[0.03]")}>
                   <button
                     type="button"
                     onClick={() => setActiveModule(entry.source_module || "auditLog")}
                     className="group flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-muted/40"
                     title={entry.reason || entry.action}
                   >
-                    {/* Actor avatar */}
-                    <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", avatarColor(entry.actor))}>
-                      {initials(entry.actor)}
+                    {/* Actor avatar with optional live indicator */}
+                    <span className="relative shrink-0">
+                      <span className={cn("flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm ring-1 ring-background", avatarColor(entry.actor))}>
+                        {initials(entry.actor)}
+                      </span>
+                      {isLive ? (
+                        <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success ring-1 ring-card" />
+                        </span>
+                      ) : null}
                     </span>
                     {/* Kind icon */}
-                    <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md", cfg.bg)}>
+                    <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md shadow-sm", cfg.bg)}>
                       <Icon className={cn("h-3 w-3", cfg.tone)} />
                     </span>
                     {/* Content */}
@@ -208,6 +234,11 @@ export function ActivityFeedWidget() {
                         </span>
                         <span className="text-muted-foreground/40">·</span>
                         <span className="rd-tabular">{timeAgo(entry.timestamp)}</span>
+                        {isLive ? (
+                          <span className="ml-auto inline-flex items-center gap-0.5 rounded-full bg-success/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-success">
+                            <span className="h-1 w-1 rounded-full bg-success" /> Live
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                     <ArrowRight className="mt-1 h-3 w-3 shrink-0 text-muted-foreground/30 transition-all group-hover:translate-x-0.5 group-hover:text-muted-foreground/60" />

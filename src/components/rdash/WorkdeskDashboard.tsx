@@ -13,7 +13,6 @@ import { MetricCard, WorkflowStepRich, Avatar } from "./primitives";
 import { FinancialPositionCard } from "./FinancialPositionCard";
 import { TodaysScheduleCard } from "./TodaysScheduleCard";
 import { WorkspacePulseStrip } from "./WorkspacePulseStrip";
-import { WorkspaceHealthWidget } from "./WorkspaceHealthWidget";
 import { ExceptionSummaryCard } from "./ExceptionSummaryCard";
 import { CashFlowChart } from "./CashFlowChart";
 type DashboardTone = "primary" | "success" | "warning" | "danger" | "default";
@@ -150,7 +149,6 @@ export function WorkdeskDashboard() {
     ];
     return (<div className="flex flex-col gap-5">
       <WorkspacePulseStrip />
-      <WorkspaceHealthWidget />
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-bold tracking-tight">

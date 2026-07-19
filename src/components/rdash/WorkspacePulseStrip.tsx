@@ -1,11 +1,12 @@
 "use client";
 import * as React from "react";
-import { Activity, ArrowUpRight, CalendarClock, FileText, PhoneCall, PlusCircle, Sparkles, Users, Wrench, Zap } from "lucide-react";
+import { Activity, ArrowUpRight, CalendarClock, FileText, PhoneCall, PlusCircle, ShieldCheck, Sparkles, TrendingUp, Users, Wrench, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate } from "@/lib/rdash/date";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 /** Count-up hook: animates a number from 0→value over ~600ms once mounted. */
 function useCountUp(value: number, duration = 650) {
@@ -124,6 +125,22 @@ function PulseTile({ label, value, display, icon, accent, onClick }: PulseTilePr
 }
 
 /**
+ * PopoverStat — a single stat cell for the health-summary popover grid.
+ * Renders a label + value with color-coding by tone (success/warning/
+ * destructive/muted). The gap-px + bg-border/60 parent creates a 1px grid
+ * divider effect between cells.
+ */
+function PopoverStat({ label, value, tone }: { label: string; value: string; tone: "success" | "warning" | "destructive" | "muted" }) {
+  const toneClass = tone === "success" ? "text-success" : tone === "warning" ? "text-warning" : tone === "destructive" ? "text-destructive" : "text-foreground";
+  return (
+    <div className="flex items-center justify-between gap-2 bg-card px-3 py-1.5">
+      <span className="text-[10px] text-muted-foreground">{label}</span>
+      <span className={cn("rd-tabular text-[11px] font-bold", toneClass)}>{value}</span>
+    </div>
+  );
+}
+
+/**
  * WorkspacePulseStrip — premium gradient hero strip shown at the top of the
  * Workdesk dashboard. Combines a live greeting + clock, four animated KPI
  * mini-tiles, and quick-action buttons into one visually rich surface.
@@ -142,10 +159,20 @@ export function WorkspacePulseStrip() {
   // Health-aware greeting: fetch the workspace health summary once on mount
   // so the greeting can show a contextual sub-line ("You have N items needing
   // attention" or "All clear — workspace healthy") instead of a static label.
+  // Also powers the mini health-summary popover on the badge.
   const [health, setHealth] = React.useState<{
     badge: "healthy" | "watch" | "attention";
     attentionCount: number;
     integrityScore: number;
+    integrityIssues: number;
+    pendingApprovals: number;
+    overdueTasks: number;
+    unresolvedBlocked: number;
+    openRisks: number;
+    cashPosition: number;
+    overdueInvoiceValue: number;
+    monthRevenue: number;
+    totalRecords: number;
   } | null>(null);
   React.useEffect(() => {
     let active = true;
@@ -163,6 +190,15 @@ export function WorkspacePulseStrip() {
           badge: data.healthBadge,
           attentionCount: data.attentionCount,
           integrityScore: data.integrity?.healthScore ?? 100,
+          integrityIssues: data.integrity?.totalIssues ?? 0,
+          pendingApprovals: data.operations?.pendingApprovals ?? 0,
+          overdueTasks: data.operations?.overdueTasks ?? 0,
+          unresolvedBlocked: data.operations?.unresolvedBlocked ?? 0,
+          openRisks: data.operations?.openRisks ?? 0,
+          cashPosition: data.finance?.cashPosition ?? 0,
+          overdueInvoiceValue: data.finance?.overdueInvoiceValue ?? 0,
+          monthRevenue: data.finance?.monthRevenue ?? 0,
+          totalRecords: data.integrity?.totalRecords ?? 0,
         });
       } catch {
         // Non-fatal — greeting falls back to the static "Live" badge.
@@ -225,22 +261,68 @@ export function WorkspacePulseStrip() {
                 <span className="whitespace-nowrap text-primary">{firstName}</span>
               </h2>
               {healthMsg ? (
-                <button
-                  type="button"
-                  onClick={() => setActiveModule(health?.badge === "healthy" ? "integrity" : "blockedRisks")}
-                  className={cn(
-                    "hidden items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 sm:inline-flex",
-                    health.badge === "healthy"
-                      ? "bg-success/10 text-success ring-success/20"
-                      : health.badge === "watch"
-                        ? "bg-warning/10 text-warning ring-warning/20"
-                        : "bg-destructive/10 text-destructive ring-destructive/20",
-                  )}
-                  title={healthMsg.text}
-                >
-                  <span className="rd-tabular">{healthMsg.icon}</span>
-                  {healthMsg.text}
-                </button>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        "hidden items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:inline-flex",
+                        health.badge === "healthy"
+                          ? "bg-success/10 text-success ring-success/20"
+                          : health.badge === "watch"
+                            ? "bg-warning/10 text-warning ring-warning/20"
+                            : "bg-destructive/10 text-destructive ring-destructive/20",
+                      )}
+                      title={healthMsg.text}
+                    >
+                      <span className="rd-tabular">{healthMsg.icon}</span>
+                      {healthMsg.text}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" sideOffset={6} className="w-72 p-0">
+                    {/* Mini health summary popover */}
+                    <div className="border-b border-border bg-gradient-to-r from-primary/[0.05] to-transparent px-3 py-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn("flex h-6 w-6 items-center justify-center rounded-md",
+                            health.badge === "healthy" ? "bg-success/10 text-success" : health.badge === "watch" ? "bg-warning/10 text-warning" : "bg-destructive/10 text-destructive")}>
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="text-xs font-bold">Workspace Health</span>
+                        </div>
+                        <span className={cn("rd-tabular text-sm font-bold",
+                          health.badge === "healthy" ? "text-success" : health.badge === "watch" ? "text-warning" : "text-destructive")}>
+                          {health.integrityScore}/100
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-px bg-border/60">
+                      <PopoverStat label="Integrity" value={health.integrityIssues === 0 ? "Clean" : `${health.integrityIssues} issue${health.integrityIssues === 1 ? "" : "s"}`} tone={health.integrityIssues === 0 ? "success" : "destructive"} />
+                      <PopoverStat label="Approvals" value={String(health.pendingApprovals)} tone={health.pendingApprovals > 0 ? "warning" : "muted"} />
+                      <PopoverStat label="Overdue tasks" value={String(health.overdueTasks)} tone={health.overdueTasks > 0 ? "destructive" : "muted"} />
+                      <PopoverStat label="Blocked" value={String(health.unresolvedBlocked)} tone={health.unresolvedBlocked > 0 ? "warning" : "muted"} />
+                      <PopoverStat label="Open risks" value={String(health.openRisks)} tone={health.openRisks > 0 ? "destructive" : "muted"} />
+                      <PopoverStat label="Overdue invoices" value={health.overdueInvoiceValue > 0 ? formatINRShort(health.overdueInvoiceValue) : "None"} tone={health.overdueInvoiceValue > 0 ? "destructive" : "muted"} />
+                    </div>
+                    <div className="flex items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <TrendingUp className="h-3 w-3 text-success" />
+                        <span className="text-[10px] text-muted-foreground">Cash</span>
+                        <span className={cn("rd-tabular text-xs font-bold", health.cashPosition >= 0 ? "text-success" : "text-destructive")}>
+                          {formatINRShort(health.cashPosition)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setActiveModule(health.badge === "healthy" ? "integrity" : "blockedRisks")}
+                        className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+                      >
+                        Open
+                        <ArrowUpRight className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               ) : (
                 <span className="hidden items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20 sm:inline-flex">
                   <Activity className="h-2.5 w-2.5" /> Live
