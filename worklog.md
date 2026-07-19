@@ -3791,3 +3791,86 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. `gpsTracking` (GPS Tracking) is under Field Visits but uses `dataSource: "attendance"` — it's field-staff tracking, which is defensible in Field Visits but could also fit in an HR group.
 4. `siteProfitability` and `workOrderPnl` in Finance overlap conceptually with `jobPnlReport` in Reports — the operational vs report distinction is reasonable but the labels could be differentiated more clearly.
 5. The `invoices` submodule in Finance uses renderer "sales-ops" — the renderer name suggests it's a sales operations view, which might cause confusion. Consider renaming the renderer or moving invoices to a sales context.
+
+---
+Task ID: 19
+Agent: orchestrator (additional navigation misplacement review — duplicate label + HR split)
+Task: User requested "any more such issues review entire app" after Task 18's navigation fixes. Reviewed every module/submodule placement in the registry, found + fixed 2 more issues.
+
+Work Log:
+- Read worklog (3,793 lines, through Task ID 18). Task 18 fixed: vendorBills (Procurement→Finance), Contractor Detail (Master Setup→Operations), Threads (duplicate removed from Media).
+- Re-read the complete module registry (src/lib/rdash/modules.ts) after Task 18 fixes. Analyzed every module/submodule placement systematically — checked each item's renderer, dataSource, and description against its parent module + group.
+- Checked for duplicate labels: found "Site / Work Order P&L" appearing TWICE (in Finance `workOrderPnl` AND Reports `jobPnlReport`) — confusing for users.
+- Checked System Settings submodules: found 3 HR items (Staff Board, Attendance & Payroll Rules, Staff Salary) mixed with 6 system-config items (User Approvals, Control Brain, Approval Policies, Audit Log, Data Import, Data Export, Data Integrity). The System Settings description said "Users, roles, staff, attendance policies, data tools and system controls" — mixing HR with system config is a conceptual misplacement.
+- Verified SalesOpsModule renders `InvoicesView` for `sub: "invoices"` — the `invoices` submodule placement in Finance is correct (renderer name "sales-ops" is just a shared component, the filter differentiates the view).
+- Verified `gpsTracking` in Field Visits (`dataSource: "attendance"`) — defensible: GPS tracking is part of field execution (tracking where field teams are). The dataSource is "attendance" because pings are stored with attendance records, but the feature is operational. ✅ No change needed.
+
+ISSUES FOUND + FIXED:
+
+1. **FIX: Duplicate "Site / Work Order P&L" label** — appeared in BOTH Finance (workOrderPnl) AND Reports (jobPnlReport). Two modules with the exact same label is confusing. Fixed: renamed Finance one to "Work Order P&L" (the operational/live P&L view) and Reports one to "Site P&L Report" (the formatted report). Now users can distinguish the operational view from the report.
+
+2. **FIX: HR items misplaced in System Settings** — Staff Board, Attendance & Payroll Rules, and Staff Salary are HR/people-management functions, not system settings. They were mixed with system-config items (Control Brain, Audit Log, Data Integrity, etc.). Fixed: created a new "HR & Staff" module (icon 🧑‍💼) in the Operations group, with Staff Board, Attendance & Payroll Rules, and Staff Salary as its submodules. System Settings now contains only pure system-admin items (User Approvals, Control Brain, Approval Policies, Audit Log, Data Import, Data Export, Data Integrity) — its description updated to "Users, roles, automation, approval policies, data tools and system controls" (removed "staff, attendance policies").
+
+Implementation details:
+- `src/lib/rdash/modules.ts` (modified):
+  - Line 165: `workOrderPnl` label "Site / Work Order P&L" → "Work Order P&L"
+  - Line 246: `jobPnlReport` label "Site / Work Order P&L" → "Site P&L Report"
+  - Lines 192-205: NEW `hrStaff` module added to Operations group (after Contractor Detail), with 3 submodules: staff (Staff Board), attendancePayroll (Attendance & Payroll Rules), staffSalary (Staff Salary). Icon 🧑‍💼, description "Staff board, attendance policies, payroll rules and salary computation", activePredicate checks for active staff.
+  - Lines 264-280: `systemSettings` submodules reduced from 10 to 7 (removed staff, attendancePayroll, staffSalary). Description updated.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- Route registry: valid (app loaded, no duplicate ID errors from buildModuleRouteRegistry).
+- Sidebar: "🧑‍💼 HR & Staff" appears between "👷 Contractor Detail" and "🧱 Master Setup" in the Operations group. ✅
+- HR & Staff submodules (expanded): Staff Board, Attendance & Payroll Rules, Staff Salary. ✅
+- System Settings submodules (expanded): User Approvals, Control Brain, Approval Policies, Audit Log, Data Import, Data Export, Data Integrity. NO Staff Board/Attendance/Salary. ✅
+- Staff Board route: navigated via command palette, h1 shows "Staff Board", renders correctly. ✅ (route ID "staff" unchanged, only parent module changed)
+- Data Integrity route: h1 shows "Data Integrity", renders correctly. ✅
+- No duplicate "Site / Work Order P&L" label: Finance has "Work Order P&L", Reports has "Site P&L Report". ✅
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — 2 more navigation issues fixed (duplicate label + HR split)
+
+## What was done this round
+1. **FIX**: Renamed duplicate "Site / Work Order P&L" — Finance one → "Work Order P&L" (operational), Reports one → "Site P&L Report" (formatted report). Eliminates label confusion.
+2. **FIX**: Created "HR & Staff" module (🧑‍💼) in Operations group — moved Staff Board, Attendance & Payroll Rules, Staff Salary from System Settings. System Settings now contains only system-admin items.
+
+## Files modified
+- `src/lib/rdash/modules.ts` — renamed 2 duplicate labels + added hrStaff module + reduced systemSettings submodules
+
+## Verification
+- Lint: clean
+- HR & Staff: appears in sidebar with 3 submodules ✅
+- System Settings: 7 system-admin submodules (no HR items) ✅
+- Staff Board route: renders (h1: "Staff Board") ✅
+- Data Integrity route: renders ✅
+- No duplicate labels ✅
+- Zero errors throughout
+
+## Navigation structure (after all fixes — Task 18 + 19)
+- **Workspace**: Workdesk Dashboard, Customer Desk, Sales Pipeline, Sites & Execution, Quotation Desk
+- **Operations**: Field Visits, Procurement & Inventory, Finance, Media & Communication, Contractor Detail, **HR & Staff** (Staff Board, Attendance & Payroll, Staff Salary)
+- **Master Setup**: Master Setup (Vendor Price Matrix, Rate Finder, Vendors, Contractors)
+- **Reports**: Reports (incl. "Site P&L Report" — renamed from duplicate)
+- **System**: System Settings (User Approvals, Control Brain, Approval Policies, Audit Log, Data Import, Data Export, Data Integrity)
+
+## Items reviewed + determined CORRECT (no change needed)
+- `gpsTracking` in Field Visits — dataSource "attendance" but feature is field-staff tracking (operational). ✅
+- `vendorPerformance` in Procurement — evaluates vendors based on procurement data. ✅
+- `contractorPerformance` under Contractor Detail — operational evaluation. ✅
+- `rateFinder` under Master Setup — rate tool using master data. ✅
+- `quotationConfig` under Quotation Desk — quotation-specific config, contextually close. ✅
+- `invoices` (Customer Invoices) in Finance — renderer "sales-ops" is shared, filter `sub: "invoices"` renders InvoicesView. ✅
+- `commissions` in Finance — payables to sales partners. ✅
+- `siteProfitability` + `workOrderPnl` in Finance — P&L is a finance metric. ✅
+- `staffProductivity` in Reports — report view. ✅
+- All Workspace group modules — correctly grouped. ✅
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The `threads` renderer case in RDashApp.tsx (line 178) is dead code (no sidebar entry) — harmless but could be cleaned up.
+2. `salesPipeline` has `submodules: []` — could be a submodule of Customer Desk, but it's a major standalone kanban workflow. Defensible as top-level.
+3. `calendarRecurring` (Calendar) under Workdesk Dashboard uses `filter: { view: "recurring" }` — the "recurring" filter name is misleading (it shows all tasks in calendar view, not just recurring ones). Could rename to `{ view: "calendar" }`.
+4. The Reports module has 11 submodules — a lot to scroll. Could be grouped into sub-categories (Sales reports, Finance reports, Operations reports) in a future round.
+5. `userApprovals` in System Settings could arguably be in HR & Staff (it's about approving new users/staff). But it's about access management (system security), not staff management. Defensible in System.
