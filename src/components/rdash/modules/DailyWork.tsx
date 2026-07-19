@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 
 import { toast } from "sonner";
 import { WorkspacePulseStrip } from "../WorkspacePulseStrip";
 import { WorkspaceHealthWidget } from "../WorkspaceHealthWidget";
+import { ActivityFeedWidget } from "../ActivityFeedWidget";
 import { ConversationActivityWidget } from "../ConversationActivityWidget";
 import { ExceptionDashboard } from "../ExceptionDashboard";
 import { ProfitabilitySnapshot } from "../ProfitabilitySnapshot";
@@ -611,20 +612,21 @@ export function DailyWork() {
       <ExceptionDashboard onNavigateAudit={() => setActiveModule("auditLog")} />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <DailyKpiBanner />
+        <ActivityFeedWidget />
+      </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <TeamPerformance />
-      </div>
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <TodaysPrioritiesBanner items={todaysPriorities} onSnooze={handleSnooze}/>
+      </div>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <ProfitabilitySnapshot />
-      </div>
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <CashFlowForecast />
-        <RecentActivityTimeline onOpenInbox={() => setActiveModule("unifiedThreadInbox")} />
       </div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+        <RecentActivityTimeline onOpenInbox={() => setActiveModule("unifiedThreadInbox")} />
         <CustomerSatisfaction />
-        <MaterialPriceTracker />
       </div>
+      <MaterialPriceTracker />
       <ConversationActivityWidget onOpenInbox={() => setActiveModule("unifiedThreadInbox")}/>
       <QueueSection title="My action queue" icon={<ListTodo className="h-4 w-4 text-primary"/>} records={queueRecords} columns={3} emptyTone="primary" emptyTitle="No active tasks" emptyDescription="Assigned work that needs action will appear here. Create a task to get started." collapsible={false} emptyAction={<EmptyCta label="Create task" onClick={() => openCreateDialog({ kind: "task" })}/>}/>
       <QueueSection title="Approvals requiring decision" icon={<CheckCircle2 className="h-4 w-4 text-success"/>} records={approvalRecords} columns={3} emptyTone="success" emptyTitle="No pending approvals" emptyDescription="Approval requests that need a decision will appear here. You are all caught up." collapsible={false}/>

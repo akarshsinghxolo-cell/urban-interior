@@ -139,6 +139,40 @@ export function WorkspacePulseStrip() {
   const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
   const now = useLiveClock();
 
+  // Health-aware greeting: fetch the workspace health summary once on mount
+  // so the greeting can show a contextual sub-line ("You have N items needing
+  // attention" or "All clear — workspace healthy") instead of a static label.
+  const [health, setHealth] = React.useState<{
+    badge: "healthy" | "watch" | "attention";
+    attentionCount: number;
+    integrityScore: number;
+  } | null>(null);
+  React.useEffect(() => {
+    let active = true;
+    const fetchHealth = async () => {
+      try {
+        const { getSessionToken } = await import("@/lib/rdash/client-auth");
+        const token = getSessionToken();
+        const res = await fetch("/api/health/summary", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active) return;
+        setHealth({
+          badge: data.healthBadge,
+          attentionCount: data.attentionCount,
+          integrityScore: data.integrity?.healthScore ?? 100,
+        });
+      } catch {
+        // Non-fatal — greeting falls back to the static "Live" badge.
+      }
+    };
+    fetchHealth();
+    const id = setInterval(fetchHealth, 60_000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
   const liveWorkOrders = db.workOrders.filter(
     (w) => w.status === "in_progress" || w.status === "scheduled",
   );
@@ -152,6 +186,15 @@ export function WorkspacePulseStrip() {
   const firstName = role.split(" ")[0] || "Owner";
   const dateStr = now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" });
   const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+  // Contextual health message for the greeting sub-line.
+  const healthMsg = health
+    ? health.badge === "healthy"
+      ? { text: "All clear — workspace healthy", tone: "text-success", icon: "✓" }
+      : health.badge === "watch"
+        ? { text: `${health.attentionCount} item(s) to review`, tone: "text-amber-600 dark:text-amber-400", icon: "!" }
+        : { text: `${health.attentionCount} item(s) need attention`, tone: "text-destructive", icon: "!" }
+    : null;
 
   const quickActions: Array<
     | { label: string; icon: React.ReactNode; kind: CreateDialogKind }
@@ -181,9 +224,28 @@ export function WorkspacePulseStrip() {
                 <span className="whitespace-nowrap">{greeting(now)},</span>{" "}
                 <span className="whitespace-nowrap text-primary">{firstName}</span>
               </h2>
-              <span className="hidden items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20 sm:inline-flex">
-                <Activity className="h-2.5 w-2.5" /> Live
-              </span>
+              {healthMsg ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveModule(health?.badge === "healthy" ? "integrity" : "blockedRisks")}
+                  className={cn(
+                    "hidden items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 sm:inline-flex",
+                    health.badge === "healthy"
+                      ? "bg-success/10 text-success ring-success/20"
+                      : health.badge === "watch"
+                        ? "bg-warning/10 text-warning ring-warning/20"
+                        : "bg-destructive/10 text-destructive ring-destructive/20",
+                  )}
+                  title={healthMsg.text}
+                >
+                  <span className="rd-tabular">{healthMsg.icon}</span>
+                  {healthMsg.text}
+                </button>
+              ) : (
+                <span className="hidden items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20 sm:inline-flex">
+                  <Activity className="h-2.5 w-2.5" /> Live
+                </span>
+              )}
             </div>
             <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
               <CalendarClock className="h-3 w-3 shrink-0" />

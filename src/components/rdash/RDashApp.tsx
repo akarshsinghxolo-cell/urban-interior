@@ -316,12 +316,31 @@ export function RDashApp() {
                 }
             }
             if (warnings.length > 0) {
+                // Deep-link the toast action to the MOST URGENT module needing
+                // attention, prioritized: integrity < 100 → overdue invoices →
+                // negative cash → general attention (blocked/risks/approvals).
+                // The action label reflects the target so users know where they'll land.
+                let targetModule = "today";
+                let actionLabel = "Open Daily Work";
+                if (summary.integrity?.healthScore != null && summary.integrity.healthScore < 100) {
+                    targetModule = "integrity";
+                    actionLabel = "Open Integrity";
+                } else if (summary.finance?.overdueInvoiceValue > 0) {
+                    targetModule = "paymentRecovery";
+                    actionLabel = "Open Recovery";
+                } else if (summary.finance?.cashPosition < 0) {
+                    targetModule = "financeOverview";
+                    actionLabel = "Open Finance";
+                } else if (summary.attentionCount > 0) {
+                    targetModule = "blockedRisks";
+                    actionLabel = "Open Blockers";
+                }
                 toast.warning("Workspace needs attention", {
                     description: warnings.join(" "),
                     duration: 9000,
                     action: {
-                        label: "Open Daily Work",
-                        onClick: () => useRDashStore.getState().setActiveModule("today"),
+                        label: actionLabel,
+                        onClick: () => useRDashStore.getState().setActiveModule(targetModule),
                     },
                 });
             } else if (summary.healthBadge === "healthy") {

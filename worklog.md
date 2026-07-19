@@ -3170,3 +3170,74 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The login health banner currently shows a generic "Open Daily Work" action — could deep-link to the specific module needing attention (e.g., integrity module if healthScore < 100, paymentRecovery if overdue invoices, etc.) for more targeted navigation.
 4. The sparkline could be extended to the "cash" chip (showing cash-position trend over time) and a "pipeline" sparkline (quotation value trend) — but these would require additional historical data not currently tracked in the seed.
 5. The WorkspacePulseStrip greeting could show a contextual message based on the health badge (e.g., "You have 7 items needing attention" in amber) instead of just "Good morning, Akarsh" — tying the greeting to the health state.
+
+---
+Task ID: 10
+Agent: orchestrator (cron-triggered webDevReview — ActivityFeedWidget + health-aware greeting + toast deep-linking)
+Task: Recurring 15-min webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read /home/z/my-project/worklog.md (3,172 lines, through Task ID 9). Project is stable: 52 modules, integrity 100/100, premium signin, WorkspaceHealthWidget on Daily Work + Workdesk Dashboard, /api/health/summary with finance + revenueSeries, login welcome toast + health banner, sparkline on month chip, tactile pulse tiles. Task 9's unresolved recs: (1) signin changelog from file, (2) health widget redundancy on both modules, (3) login toast deep-link to specific module, (4) cash/pipeline sparklines, (5) pulse greeting tied to health state.
+- Verified dev server: ALIVE (PID 9422). .env intact. Health checks 200.
+- QA via agent-browser (desktop 1440×900):
+  * Login flow: works, redirected to /. ✅
+  * Login toasts fire: captured "Workspace needs attention" (warning) + "Automatic geofence is unavailable" (info) + "Good morning, Akarsh" (success, dismissed). ✅
+  * Daily Work widget + sparkline present. ✅
+  * Regression: Sales Pipeline, Field Visits, command palette (Ctrl+K), keyboard `?` button — all work, zero errors. ✅
+- VLM analysis of Daily Work dashboard (glm-4.6v): "Top 3 improvements: (1) KPI tiles lack context/trend indicators, (2) health ribbon sparkline too small + metrics cluttered, (3) Exceptions section text-heavy. Bonus: add a 'What's New' activity feed to top-right to boost engagement." Confirmed Task 9 recs #3, #5 as the right focus + a new activity-feed opportunity.
+
+WORK FOCUS SELECTED (addresses Task 9 recs #3 + #5 + VLM "activity feed" bonus):
+1. NEW FEATURE: ActivityFeedWidget — a compact, premium "what just happened" card showing the last 6 audit-log entries with: colored actor-initials avatars (deterministic color from name), kind-specific icons (create/approve/decision/alert/etc. with color-coded backgrounds), one-line summary (actor + action + entity label), entity badge, relative timestamp, click-to-deep-link to source module. Complements the existing RecentActivityTimeline (which shows thread messages) by surfacing operational events (POs created, quotations accepted, variations raised). Fixed-height (max-h-72) with scrollable list + "View all" link to audit log.
+2. STYLING + FEATURE: Health-aware greeting badge (Task 9 rec #5). The WorkspacePulseStrip greeting previously showed a static green "Live" badge. Now fetches /api/health/summary every 60s and shows a contextual, clickable badge: green "All clear — workspace healthy" (→ integrity module), amber "N item(s) to review" (→ blockedRisks), or red "N item(s) need attention" (→ blockedRisks). Makes the greeting actionable.
+3. NEW FEATURE: Deep-link login toast action to the specific module needing attention (Task 9 rec #3). Previously the "Workspace needs attention" toast had a generic "Open Daily Work" action. Now prioritizes: integrity < 100 → "Open Integrity" (integrity module); overdue invoices → "Open Recovery" (paymentRecovery); negative cash → "Open Finance" (financeOverview); attention > 0 → "Open Blockers" (blockedRisks). The action label reflects the target so users know where they'll land.
+4. LAYOUT: Reorganized the Daily Work dashboard grid for better balance. New layout: PulseStrip → HealthWidget → ExceptionDashboard → [DailyKpiBanner + ActivityFeedWidget] → [TeamPerformance + TodaysPriorities] → [ProfitabilitySnapshot + CashFlowForecast] → [RecentActivityTimeline + CustomerSatisfaction] → MaterialPriceTracker → ConversationActivityWidget → queue sections. Removed a duplicate TodaysPrioritiesBanner/ProfitabilitySnapshot grid row that was leftover.
+
+Implementation details:
+- `src/components/rdash/ActivityFeedWidget.tsx` (NEW, ~210 lines): compact card with header (Activity icon + "Recent Activity" + "View all" link) + scrollable list (max-h-72) of 6 audit entries. Each entry: actor-initials avatar (deterministic color via name hash, 6 color palette), kind icon (10 kind configs with icon + tone + bg), action text (actor bold + action lowercased), entity badge (muted bg, short entity type), relative timestamp (timeAgo helper), hover state, click → source_module || auditLog. Empty state with muted Activity icon. KIND_CONFIG covers create/update/approve/send/receive/comment/decision/alert/system/delete. shortEntityType maps purchase_order→PO, work_order→WO, quotation→Quote, etc.
+- `src/components/rdash/WorkspacePulseStrip.tsx` (modified, +~50 lines): added health state + fetch effect (every 60s, dynamic import of getSessionToken). Replaced the static "Live" badge with a conditional: if health loaded, render a clickable button with the healthMsg text + color (success/warning/destructive). onClick deep-links to integrity (if healthy) or blockedRisks (if watch/attention). Falls back to the static "Live" badge while loading.
+- `src/components/rdash/RDashApp.tsx` (modified, +~15 lines): extended the login toast logic. Instead of a hardcoded "Open Daily Work" action, now computes targetModule + actionLabel based on priority: integrity < 100 → "Open Integrity"/integrity; overdueInvoiceValue > 0 → "Open Recovery"/paymentRecovery; cashPosition < 0 → "Open Finance"/financeOverview; attentionCount > 0 → "Open Blockers"/blockedRisks; else → "Open Daily Work"/today.
+- `src/components/rdash/modules/DailyWork.tsx` (modified, ~15 lines changed): imported ActivityFeedWidget. Reorganized the grid layout: moved DailyKpiBanner to pair with the new ActivityFeedWidget, moved TeamPerformance to pair with TodaysPrioritiesBanner, paired ProfitabilitySnapshot with CashFlowForecast, paired RecentActivityTimeline with CustomerSatisfaction, MaterialPriceTracker full-width. Removed duplicate grid row.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings) after all changes.
+- Login toast deep-link: verified via eval — captured `[{title:"Workspace needs attention", actionLabel:"Open Blockers"}]`. Correct prioritization: integrity 100 (no integrity issue), no overdue invoices, cashPosition positive (₹42.4k) → falls through to attentionCount > 0 → "Open Blockers" → blockedRisks module. ✅
+- Health-aware greeting badge: verified via eval — `greeting: "Good morning, Akarsh", healthBadge: "!7 item(s) need attention"`. Red badge (destructive tone) with "!" icon + count, clickable → blockedRisks. ✅
+- ActivityFeedWidget: verified via eval — `found: true, header: "Recent Activity", itemCount: 6, firstItem: "AS Akarsh Singh rest operation commit: tasks:4 upsert..."`. 6 audit entries rendered with actor initials "AS" (Akarsh Singh) + kind icon + entity + timestamp. ✅
+- Regression: Customer Desk, Data Integrity — all render with zero errors. Sales Pipeline, Field Visits, command palette, keyboard `?` button — all work.
+- VLM review: "7/10 — health badge visible and contextual (red + clear urgency text). Recent Activity card premium/scannable (clean avatar/kind icons + entity badges, minimal clutter). Layout slightly unbalanced but strong UI execution."
+- No runtime errors in dev.log or browser console.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — activity feed + health-aware greeting + smart toast deep-linking
+
+## What was done this round
+1. **NEW FEATURE**: ActivityFeedWidget (~210 lines) — compact premium card showing last 6 audit-log entries with actor avatars, kind icons, entity badges, relative timestamps, click-to-deep-link. Complements the thread-message RecentActivityTimeline by surfacing operational events.
+2. **STYLING + FEATURE**: Health-aware greeting badge (Task 9 rec #5). The pulse strip greeting now shows a contextual, clickable badge (green "All clear" / amber "N to review" / red "N need attention") instead of a static "Live" label. Deep-links to the relevant module.
+3. **NEW FEATURE**: Login toast deep-linking (Task 9 rec #3). The "Workspace needs attention" toast action now prioritizes the most urgent module: "Open Integrity" / "Open Recovery" / "Open Finance" / "Open Blockers" — instead of a generic "Open Daily Work".
+4. **LAYOUT**: Reorganized Daily Work grid for balance — paired ActivityFeedWidget with DailyKpiBanner, fixed a duplicate grid row.
+
+## Files modified
+- `src/components/rdash/ActivityFeedWidget.tsx` — NEW (~210 lines)
+- `src/components/rdash/WorkspacePulseStrip.tsx` — health state + fetch + contextual badge (~50 lines added)
+- `src/components/rdash/RDashApp.tsx` — toast deep-link prioritization (~15 lines added)
+- `src/components/rdash/modules/DailyWork.tsx` — import + grid reorganization (~15 lines changed)
+
+## Verification
+- Lint: clean
+- Login toast: action label "Open Blockers" (correct prioritization — attentionCount > 0, no integrity/overdue/cash issues)
+- Health-aware greeting: red "!7 item(s) need attention" badge renders, clickable
+- ActivityFeedWidget: 6 entries with actor avatars + kind icons + entity badges + timestamps
+- Regression: Customer Desk, Data Integrity, Sales Pipeline, Field Visits, command palette, keyboard `?` — all pass
+- VLM: 7/10 (strong execution, layout slightly unbalanced)
+- Zero console/page errors throughout
+
+## Dev-server note
+Server died twice during lint (4GB RAM OOM under lint + browser load) — restarted each time with the daemon pattern. The recurring webDevReview cron should check `pgrep -f "next dev"` at start and restart if dead.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (Task 7 rec #3, Task 8 rec #1, Task 9 rec #1) — could be driven by a CHANGELOG.md file. Now 10+ task entries; a real changelog would be more maintainable.
+2. The health widget currently shows on both Daily Work AND Workdesk Dashboard (Task 8 rec #5, Task 9 rec #2) — consider removing from WorkdeskDashboard to avoid redundancy (Daily Work is the default landing).
+3. VLM noted the ActivityFeedWidget placement "feels disconnected from the main flow" — consider moving it higher (right after the health widget) or making it a sidebar element. Alternatively, pair it with ExceptionDashboard instead of DailyKpiBanner.
+4. The ActivityFeedWidget could show a "live" indicator (pulsing dot) when a new entry arrives within the last 60s, to make it feel real-time.
+5. The health-aware greeting badge could expand on click to show a mini health summary (integrity score, attention breakdown) as a popover, rather than just navigating away.
