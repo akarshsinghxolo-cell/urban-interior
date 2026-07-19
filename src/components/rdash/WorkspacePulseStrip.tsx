@@ -283,7 +283,7 @@ export function WorkspacePulseStrip() {
                     <button
                       type="button"
                       className={cn(
-                        "hidden items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:inline-flex",
+                        "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         health.badge === "healthy"
                           ? "bg-success/10 text-success ring-success/20"
                           : health.badge === "watch"
@@ -293,7 +293,10 @@ export function WorkspacePulseStrip() {
                       title={healthMsg.text}
                     >
                       <span className="rd-tabular">{healthMsg.icon}</span>
-                      {healthMsg.text}
+                      {/* On mobile, show only the count (e.g. "7") to save space.
+                          On sm+, show the full text (e.g. "7 item(s) need attention"). */}
+                      <span className="sm:hidden">{health.attentionCount}</span>
+                      <span className="hidden sm:inline">{healthMsg.text}</span>
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="start" sideOffset={6} className="w-72 p-0">
@@ -357,7 +360,7 @@ export function WorkspacePulseStrip() {
                   </PopoverContent>
                 </Popover>
               ) : (
-                <span className="hidden items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20 sm:inline-flex">
+                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20">
                   <Activity className="h-2.5 w-2.5" /> Live
                 </span>
               )}

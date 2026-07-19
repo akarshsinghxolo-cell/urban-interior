@@ -179,7 +179,7 @@ export function NotificationCenter() {
         info: CheckCircle2,
     };
     return (<div className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="relative inline-flex h-9 w-9 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-all hover:bg-accent hover:text-foreground" aria-label={`Notifications (${unread.length} unread)`}>
+      <button type="button" onClick={() => setOpen((o) => !o)} className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-all hover:bg-accent hover:text-foreground" aria-label={`Notifications (${unread.length} unread)`}>
         <Bell className="h-4 w-4"/>
         {unread.length > 0 && (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[9px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
             {unread.length > 9 ? "9+" : unread.length}

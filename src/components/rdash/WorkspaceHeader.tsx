@@ -64,7 +64,7 @@ export function WorkspaceHeader() {
     return (<header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-border bg-background/85 backdrop-blur-md">
       <CreateMenu showTrigger={false} enableHotkeys={false}/>
       <div className="flex items-center gap-3 px-[var(--page-pad)] py-2.5">
-        <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
+        <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
           <Menu className="h-5 w-5"/>
         </Button>
 
@@ -108,7 +108,7 @@ export function WorkspaceHeader() {
         <WorkspaceHealthPill />
 
         <EnhancedSearch />
-        <Button variant="outline" size="icon" className="h-9 w-9 md:hidden" onClick={() => setCommandPaletteOpen(true)} aria-label="Open command palette" title="Command palette (Cmd+K)">
+        <Button variant="outline" size="icon" className="h-10 w-10 shrink-0 md:hidden" onClick={() => setCommandPaletteOpen(true)} aria-label="Open command palette" title="Command palette (Cmd+K)">
           <Command className="h-4 w-4"/>
         </Button>
 
@@ -121,7 +121,7 @@ export function WorkspaceHeader() {
         <Button
           variant="outline"
           size="icon"
-          className="relative h-9 w-9"
+          className="relative h-10 w-10 shrink-0"
           onClick={() => {
             const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true });
             window.dispatchEvent(e);
@@ -133,7 +133,7 @@ export function WorkspaceHeader() {
           <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[8px] font-bold text-primary-foreground">?</span>
         </Button>
 
-        <Button variant="outline" size="icon" className="h-9 w-9" onClick={refresh} aria-label="Refresh">
+        <Button variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={refresh} aria-label="Refresh">
           <RefreshCw className="h-4 w-4"/>
         </Button>
 
@@ -151,7 +151,7 @@ export function WorkspaceHeader() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-9 w-9" aria-label="More workspace actions">
+            <Button variant="outline" size="icon" className="h-10 w-10 shrink-0" aria-label="More workspace actions">
               <MoreHorizontal className="h-4 w-4"/>
             </Button>
           </DropdownMenuTrigger>

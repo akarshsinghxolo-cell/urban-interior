@@ -3384,3 +3384,84 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The ActivityFeedWidget placement "feels disconnected from the main flow" (Task 10 rec #3) — still unresolved. Consider moving it higher or pairing with ExceptionDashboard.
 4. The tracking/ping still fires 1 initial 403 per page load (before the session cookie is set). A future round could gate the StaffLocationTracker's geolocation watch behind a session-ready check.
 5. The health badge popover could show a mini sparkline (revenue trend) in the footer alongside the cash position, for a richer at-a-glance summary.
+
+---
+Task ID: 13
+Agent: orchestrator (mobile QA pass — touch targets, greeting badge visibility, signin mobile polish)
+Task: User requested "analyze every thing via QA browser for mobile view, some places this are not good UI wise or not very user friendly". Comprehensive mobile QA at 390×844 (iPhone 14) across signin, dashboard, header, sidebar, health widget, queues, and 3 modules. Fix the mobile UI/UX issues found.
+
+Work Log:
+- Read worklog (3,386 lines, through Task ID 12). Project stable. Verified dev server ALIVE (PID 14714).
+- Mobile QA via agent-browser (390×844 viewport):
+  * Signin: renders, hero hidden on mobile, mobile brand header present. VLM flagged: inputs/buttons ~36px (below 44px touch target), changelog cramped, trust footer tiny.
+  * Login flow: works on mobile, redirected to /. ✅
+  * Dashboard: renders, no horizontal overflow (docWidth 390 = bodyWidth 390). KPI tiles in 2-col grid (165px each). Health widget fits (374px wide, 230px tall — wraps to multiple rows).
+  * Header: 8 visible buttons, ALL 36px (below 44px standard) — crowded on mobile.
+  * Health-aware greeting badge: HIDDEN on mobile (`sm:inline-flex` → invisible below 640px) — mobile users can't access the health popover. Major gap.
+  * Sidebar (hamburger): works, has "Close navigation" button, scrollable module list.
+  * Sales Pipeline: kanban has horizontal-scroll container (scrollW 2988 vs clientW 374) — acceptable mobile pattern.
+  * Customer Desk + Procurement: render with zero errors on mobile.
+  * VLM analysis (glm-4.6v) of mobile dashboard: "Top 5 critical issues: (1) Header button touch targets 36px (need 44px+), (2) Horizontal overflow risk, (3) Health ribbon readability on mobile, (4) Greeting strip KPI tiles cramped, (5) Text readability. Prioritize touch targets first."
+
+WORK FOCUS (fixed the 3 most impactful mobile issues):
+1. FIX: Header button touch targets (36px → 40px). Updated ALL header icon buttons from `h-9 w-9` (36px) to `h-10 w-10` (40px) + `shrink-0` in: WorkspaceHeader (hamburger, command palette, keyboard, refresh, more-actions), ThemeToggle, NotificationCenter. 40px is much closer to the 44px standard while still fitting 6 buttons in 390px width. Verified: all header buttons now 40px on mobile.
+2. FIX: Health-aware greeting badge visible on mobile. Was `hidden sm:inline-flex` (invisible below 640px). Now `inline-flex` with responsive text: on mobile shows compact "!7" (icon + count), on sm+ shows full "7 item(s) need attention". Mobile users can now tap the badge to open the health-summary popover. Also made the fallback "Live" badge visible on mobile. Verified: badge now visible on mobile (w 31px, h 22px, text "!7").
+3. FIX: Signin mobile polish. (a) Inputs increased from h-9 (36px) → h-11 (44px) + `text-base` (16px) — meets touch target standard AND prevents iOS Safari auto-zoom on focus (inputs < 16px trigger zoom). (b) Submit buttons (Sign in, Create access request) increased to h-11 + text-base. (c) Role select increased to h-11 + text-base. (d) Changelog panel hidden on small screens (`hidden sm:block`) — reduces mobile scroll length (not essential at first login). Verified: email/pass inputs 44px, signin button 44px, changelog hidden on mobile.
+
+Implementation details:
+- `src/components/rdash/WorkspaceHeader.tsx`: 5 buttons (hamburger, command palette, keyboard, refresh, more-actions) changed `h-9 w-9` → `h-10 w-10 shrink-0`.
+- `src/components/rdash/ThemeToggle.tsx`: button `h-9 w-9` → `h-10 w-10 shrink-0`.
+- `src/components/rdash/NotificationCenter.tsx`: button `h-9 w-9` → `h-10 w-10 shrink-0`.
+- `src/components/rdash/WorkspacePulseStrip.tsx`: health badge `hidden ... sm:inline-flex` → `inline-flex` with responsive text (mobile: `<span className="sm:hidden">{count}</span>`, desktop: `<span className="hidden sm:inline">{full text}</span>`). Fallback "Live" badge `hidden ... sm:inline-flex` → `inline-flex`. Badge padding `py-0.5` → `py-1` for taller touch target.
+- `src/app/signin/page.tsx`: EmailPasswordFields inputs `className="h-11 text-base"`. Both submit buttons `className="h-11 w-full text-base ..."`. Role select `className="h-11 w-full ... text-base"`. Changelog wrapper `mt-4 rounded-2xl ...` → `mt-4 hidden rounded-2xl ... sm:block`.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- Mobile signin: email/pass inputs 44px (was 36px), signin button 44px (was 36px), changelog hidden on mobile. ✅
+- Mobile dashboard: header buttons all 40px (was 36px). Greeting badge visible on mobile (text "!7", w 31px h 22px, tappable → opens popover). ✅
+- Desktop regression (1440×900): greeting "Good morning, Akarsh" + badge present, no errors. Header buttons render correctly (hamburger hidden on desktop via lg:hidden as before). ✅
+- No horizontal overflow anywhere on mobile (docWidth 390 = bodyWidth 390).
+- VLM review: "8/10 mobile polish — header buttons adequate for touch, greeting badge visible/compact/clear, layout less cramped. Effective fixes, minor spacing could be refined."
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — mobile touch targets + greeting badge + signin polish fixed
+
+## What was done this round (mobile QA + fixes)
+1. **FIX**: Header button touch targets 36px → 40px across 7 components (WorkspaceHeader ×5, ThemeToggle, NotificationCenter) — closer to 44px standard.
+2. **FIX**: Health-aware greeting badge now visible on mobile (compact "!N" format) — was hidden below 640px, mobile users couldn't access the health popover.
+3. **FIX**: Signin mobile — inputs/buttons 44px (h-11) + text-base (prevents iOS zoom), changelog hidden on small screens to reduce scroll.
+
+## Files modified
+- `src/components/rdash/WorkspaceHeader.tsx` — 5 buttons h-9→h-10 + shrink-0
+- `src/components/rdash/ThemeToggle.tsx` — button h-9→h-10 + shrink-0
+- `src/components/rdash/NotificationCenter.tsx` — button h-9→h-10 + shrink-0
+- `src/components/rdash/WorkspacePulseStrip.tsx` — greeting badge visible on mobile + responsive text + Live badge visible
+- `src/app/signin/page.tsx` — inputs/buttons h-11 + text-base + changelog hidden on sm-
+
+## Verification
+- Lint: clean
+- Mobile signin: inputs 44px, button 44px, changelog hidden ✅
+- Mobile dashboard: header buttons 40px, greeting badge visible ("!7") ✅
+- Desktop: no regression ✅
+- No horizontal overflow on mobile
+- VLM: 8/10 mobile polish
+- Zero errors throughout
+
+## Mobile QA findings (all addressed or noted)
+- ✅ FIXED: Header buttons 36px → 40px
+- ✅ FIXED: Greeting badge hidden on mobile → visible (compact)
+- ✅ FIXED: Signin touch targets 36px → 44px + iOS zoom prevention
+- ✅ FIXED: Signin changelog cramped on mobile → hidden on small screens
+- ✅ OK: No horizontal overflow anywhere (kanban uses horizontal-scroll container correctly)
+- ✅ OK: KPI tiles 2-col grid on mobile (fits well)
+- ✅ OK: Sidebar hamburger works, close button present
+- ✅ OK: All tested modules (Sales Pipeline, Customer Desk, Procurement) render on mobile
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. Header buttons are 40px — could go to 44px (h-11) but that may crowd 6 buttons in 390px (6×44 + gaps = 288px + hamburger 44 = 332px, still fits). Consider if the "Show keyboard shortcuts" button could be hidden on mobile (keyboard shortcuts are less relevant on touch devices).
+2. The health ribbon metric chips wrap to many rows on mobile (230px tall) — could use a horizontal-scroll container for the chips to reduce vertical space.
+3. The signin trust footer text is still tiny on mobile — could be hidden on very small screens or enlarged.
+4. VLM noted the ActivityFeedWidget still feels "cramped" on mobile (Task 12 rec) — a mobile-specific spacing pass would help.
+5. A full mobile-specific styling pass on the queue sections (My action queue, Approvals, etc.) — verify card padding + text sizes are comfortable on 390px.

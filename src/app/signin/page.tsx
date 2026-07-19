@@ -348,7 +348,7 @@ export default function SignInPage() {
                     <span className="leading-relaxed">{success}</span>
                   </div>
                 ) : null}
-                <Button type="submit" className="w-full transition-all hover:shadow-md hover:shadow-primary/20" disabled={busy}>
+                <Button type="submit" className="h-11 w-full text-base transition-all hover:shadow-md hover:shadow-primary/20" disabled={busy}>
                   {busy ? "Signing in..." : "Sign in"}
                 </Button>
 
@@ -374,7 +374,7 @@ export default function SignInPage() {
                 <EmailPasswordFields email={email} password={password} onEmail={setEmail} onPassword={setPassword} passwordAutoComplete="new-password" />
                 <div className="space-y-1.5">
                   <Label htmlFor="requestedRole">Requested role</Label>
-                  <select id="requestedRole" value={requestedRole} onChange={(event) => setRequestedRole(event.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm">
+                  <select id="requestedRole" value={requestedRole} onChange={(event) => setRequestedRole(event.target.value)} className="h-11 w-full rounded-md border border-input bg-card px-3 text-base">
                     {ROLE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </div>
@@ -384,7 +384,7 @@ export default function SignInPage() {
                     <span className="leading-relaxed">{error}</span>
                   </div>
                 ) : null}
-                <Button type="submit" className="w-full transition-all hover:shadow-md hover:shadow-primary/20" disabled={busy}>
+                <Button type="submit" className="h-11 w-full text-base transition-all hover:shadow-md hover:shadow-primary/20" disabled={busy}>
                   {busy ? "Creating request..." : "Create access request"}
                 </Button>
               </form>
@@ -433,8 +433,9 @@ export default function SignInPage() {
             ) : null}
           </div>
 
-          {/* What's new / changelog panel */}
-          <div className="mt-4 rounded-2xl border border-border bg-card/70 p-4 shadow-sm backdrop-blur-sm">
+          {/* What's new / changelog panel — hidden on very small screens to
+              reduce mobile scroll length; shown on sm+ where there's more room. */}
+          <div className="mt-4 hidden rounded-2xl border border-border bg-card/70 p-4 shadow-sm backdrop-blur-sm sm:block">
             <div className="mb-3 flex items-center justify-between">
               <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground">
                 <Zap className="h-3.5 w-3.5 text-primary" />
@@ -517,11 +518,11 @@ function EmailPasswordFields({ email, password, onEmail, onPassword, passwordAut
     <>
       <div className="space-y-1.5">
         <Label htmlFor="email">Work email</Label>
-        <Input id="email" type="email" autoComplete="email" value={email} onChange={(event) => onEmail(event.target.value)} required />
+        <Input id="email" type="email" autoComplete="email" value={email} onChange={(event) => onEmail(event.target.value)} required className="h-11 text-base" />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="password">Password</Label>
-        <Input id="password" type="password" autoComplete={passwordAutoComplete} value={password} onChange={(event) => onPassword(event.target.value)} required />
+        <Input id="password" type="password" autoComplete={passwordAutoComplete} value={password} onChange={(event) => onPassword(event.target.value)} required className="h-11 text-base" />
       </div>
     </>
   );
