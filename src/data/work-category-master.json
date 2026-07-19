@@ -1,0 +1,3031 @@
+[
+  {
+    "id": "fc",
+    "name": "False Ceiling",
+    "items": [
+      {
+        "id": "fc_gyp",
+        "name": "Gypsum False Ceiling",
+        "unit": "sqft",
+        "matRate": 45,
+        "labRate": 55,
+        "notes": "Smooth finish, premium residential",
+        "mats": [
+          {
+            "n": "Gypsum Board 12mm",
+            "u": "sqft",
+            "r": 22,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Main GI Channel (CD 0.55mm)",
+            "u": "rft",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Cross GI Channel",
+            "u": "rft",
+            "r": 12,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wall Angle L-section",
+            "u": "rft",
+            "r": 8,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hanger Rod",
+            "u": "pcs",
+            "r": 15,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Main Channel Clip",
+            "u": "pcs",
+            "r": 4,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Drywall Screw 25mm (100pcs)",
+            "u": "box",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Drywall Screw 35mm (100pcs)",
+            "u": "box",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Jointing Compound",
+            "u": "kg",
+            "r": 12,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Jointing Tape",
+            "u": "roll",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc_pvc",
+        "name": "PVC False Ceiling",
+        "unit": "sqft",
+        "matRate": 30,
+        "labRate": 25,
+        "notes": "Bathareas, low-budget areas",
+        "mats": [
+          {
+            "n": "PVC Panel",
+            "u": "sqft",
+            "r": 32,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "L Angle / Border",
+            "u": "rft",
+            "r": 10,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "T Section",
+            "u": "rft",
+            "r": 12,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Staple / Nail Pins",
+            "u": "box",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc_grid",
+        "name": "Grid False Ceiling",
+        "unit": "sqft",
+        "matRate": 35,
+        "labRate": 25,
+        "notes": "Offices, commercial spaces",
+        "mats": [
+          {
+            "n": "Armstrong Tile (2x2ft)",
+            "u": "pcs",
+            "r": 85,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Main T Runner",
+            "u": "rft",
+            "r": 22,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Cross T Runner",
+            "u": "rft",
+            "r": 15,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wall Angle",
+            "u": "rft",
+            "r": 8,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hanger Wire",
+            "u": "kg",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Suspension Clip",
+            "u": "pcs",
+            "r": 5,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc_pop",
+        "name": "POP False Ceiling",
+        "unit": "sqft",
+        "matRate": 25,
+        "labRate": 45,
+        "notes": "Classic designs, curves",
+        "mats": [
+          {
+            "n": "POP Powder (40kg bag)",
+            "u": "bag",
+            "r": 200,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hessian Cloth",
+            "u": "sqft",
+            "r": 4,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Binding Wire",
+            "u": "kg",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MS Binding Rod",
+            "u": "kg",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer",
+            "u": "ltr",
+            "r": 55,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc_wood",
+        "name": "Wooden False Ceiling",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 80,
+        "notes": "Luxury interiors",
+        "mats": [
+          {
+            "n": "MDF Board 18mm",
+            "u": "sqft",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Teak Wood Strip",
+            "u": "rft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Batten / Furring Channel",
+            "u": "rft",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wood Screw",
+            "u": "box",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wood Primer",
+            "u": "ltr",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "PU Polish / Lacquer",
+            "u": "ltr",
+            "r": 250,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc_metal",
+        "name": "Metal / Aluminium Ceiling",
+        "unit": "sqft",
+        "matRate": 100,
+        "labRate": 80,
+        "notes": "Airports, showareas",
+        "mats": [
+          {
+            "n": "Aluminium Tile / Panel",
+            "u": "sqft",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Suspension System",
+            "u": "rft",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Rivet / Screw",
+            "u": "pcs",
+            "r": 2,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fl",
+    "name": "Flooring & Tiles",
+    "items": [
+      {
+        "id": "fl_cer",
+        "name": "Ceramic Tiles",
+        "unit": "sqft",
+        "matRate": 35,
+        "labRate": 25,
+        "notes": "Budget residential",
+        "mats": [
+          {
+            "n": "White Cement",
+            "u": "kg",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Tile Adhesive (20kg)",
+            "u": "bag",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grout (colour)",
+            "u": "kg",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Tile Spacer (bag)",
+            "u": "bag",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "L Border Tile",
+            "u": "rft",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fl_vit",
+        "name": "Vitrified Tiles",
+        "unit": "sqft",
+        "matRate": 40,
+        "labRate": 30,
+        "notes": "Mid to premium residential",
+        "mats": [
+          {
+            "n": "White Cement",
+            "u": "kg",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Tile Adhesive (20kg)",
+            "u": "bag",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grout",
+            "u": "kg",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Spacer",
+            "u": "bag",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Marble / Tile Border",
+            "u": "rft",
+            "r": 40,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fl_mar",
+        "name": "Marble Flooring",
+        "unit": "sqft",
+        "matRate": 50,
+        "labRate": 60,
+        "notes": "Luxury residential / lobbies",
+        "mats": [
+          {
+            "n": "White Cement",
+            "u": "kg",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Marble Adhesive",
+            "u": "bag",
+            "r": 320,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Marble Polish (machine)",
+            "u": "sqft",
+            "r": 15,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grout (marble)",
+            "u": "kg",
+            "r": 150,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fl_wood",
+        "name": "Wooden / Laminate Flooring",
+        "unit": "sqft",
+        "matRate": 60,
+        "labRate": 30,
+        "notes": "Bedareas, offices",
+        "mats": [
+          {
+            "n": "Laminate Flooring",
+            "u": "sqft",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Underlayment / Foam",
+            "u": "sqft",
+            "r": 8,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Skirting",
+            "u": "rft",
+            "r": 25,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Flooring Adhesive",
+            "u": "ltr",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Transition Strip",
+            "u": "rft",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fl_epoxy",
+        "name": "Epoxy Flooring",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 60,
+        "notes": "Industrial, showareas, hospitals",
+        "mats": [
+          {
+            "n": "Epoxy Resin (base)",
+            "u": "kg",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Epoxy Hardener",
+            "u": "kg",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Quartz Aggregate",
+            "u": "kg",
+            "r": 25,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Epoxy Primer",
+            "u": "ltr",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Roller Brush",
+            "u": "pcs",
+            "r": 80,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fl_carpet",
+        "name": "Carpet / Carpet Tiles",
+        "unit": "sqft",
+        "matRate": 50,
+        "labRate": 20,
+        "notes": "Offices, hotels",
+        "mats": [
+          {
+            "n": "Carpet Tile",
+            "u": "sqft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Carpet Adhesive",
+            "u": "ltr",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Carpet Border / Edge",
+            "u": "rft",
+            "r": 20,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fl_park",
+        "name": "Parking Tiles / Pavers",
+        "unit": "sqft",
+        "matRate": 30,
+        "labRate": 25,
+        "notes": "Outdoor, driveways",
+        "mats": [
+          {
+            "n": "White Cement",
+            "u": "kg",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand",
+            "u": "cft",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Tile Adhesive",
+            "u": "bag",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grout",
+            "u": "kg",
+            "r": 80,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "wt",
+    "name": "Wall Treatments",
+    "items": [
+      {
+        "id": "wt_wp",
+        "name": "Wallpaper",
+        "unit": "sqft",
+        "matRate": 50,
+        "labRate": 20,
+        "notes": "Feature walls, bedareas, offices",
+        "mats": [
+          {
+            "n": "Wallpaper (standard)",
+            "u": "roll",
+            "r": 800,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wallpaper (premium)",
+            "u": "roll",
+            "r": 2000,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wallpaper Paste / Adhesive",
+            "u": "kg",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer (wall)",
+            "u": "ltr",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Corner Bead (if needed)",
+            "u": "rft",
+            "r": 15,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "wt_tex",
+        "name": "Texture Paint (Interior)",
+        "unit": "sqft",
+        "matRate": 12,
+        "labRate": 20,
+        "notes": "Budget to mid-range feature walls",
+        "mats": [
+          {
+            "n": "Texture Paint",
+            "u": "kg",
+            "r": 85,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer",
+            "u": "ltr",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wall Putty",
+            "u": "kg",
+            "r": 16,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "wt_pvc",
+        "name": "Wall Panels — PVC / WPC",
+        "unit": "sqft",
+        "matRate": 45,
+        "labRate": 25,
+        "notes": "Bathareas, kitchens",
+        "mats": [
+          {
+            "n": "PVC / WPC Wall Panel",
+            "u": "sqft",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "L Angle / Trim",
+            "u": "rft",
+            "r": 12,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Adhesive / Screw",
+            "u": "box",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "wt_wood",
+        "name": "Wooden Wall Cladding",
+        "unit": "sqft",
+        "matRate": 100,
+        "labRate": 60,
+        "notes": "Luxury accent walls",
+        "mats": [
+          {
+            "n": "Teak / Pine Wood Strip",
+            "u": "sqft",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Batten / MS Frame",
+            "u": "rft",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wood Polish / Lacquer",
+            "u": "ltr",
+            "r": 250,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Screw",
+            "u": "box",
+            "r": 40,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "wt_stone",
+        "name": "Stone Cladding (Interior)",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 50,
+        "notes": "Feature walls, TV units",
+        "mats": [
+          {
+            "n": "Natural / Artificial Stone",
+            "u": "sqft",
+            "r": 70,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Stone Adhesive",
+            "u": "bag",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grout (stone)",
+            "u": "kg",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sealer / Polish",
+            "u": "ltr",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "wt_putty",
+        "name": "Wall Putty + Paint",
+        "unit": "sqft",
+        "matRate": 10,
+        "labRate": 12,
+        "notes": "Standard interior finish",
+        "mats": [
+          {
+            "n": "Wall Putty (20kg bag)",
+            "u": "bag",
+            "r": 320,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer",
+            "u": "ltr",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Emulsion Paint",
+            "u": "ltr",
+            "r": 140,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand Paper 120 grit",
+            "u": "sheet",
+            "r": 10,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Masking Tape",
+            "u": "roll",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "pw",
+    "name": "Paint Work",
+    "items": [
+      {
+        "id": "pw_int",
+        "name": "Interior Emulsion Paint",
+        "unit": "sqft",
+        "matRate": 8,
+        "labRate": 8,
+        "notes": "All residential / commercial",
+        "mats": [
+          {
+            "n": "Wall Putty (20kg)",
+            "u": "bag",
+            "r": 320,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer (white)",
+            "u": "ltr",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Interior Emulsion",
+            "u": "ltr",
+            "r": 140,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand Paper 80 grit",
+            "u": "sheet",
+            "r": 8,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Masking Tape",
+            "u": "roll",
+            "r": 25,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Paint Roller",
+            "u": "pcs",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Paint Brush",
+            "u": "pcs",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "pw_ext",
+        "name": "Exterior Weather Shield Paint",
+        "unit": "sqft",
+        "matRate": 12,
+        "labRate": 10,
+        "notes": "Outdoor walls, facades",
+        "mats": [
+          {
+            "n": "Exterior Primer",
+            "u": "ltr",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Weather Shield Paint",
+            "u": "ltr",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand Paper",
+            "u": "sheet",
+            "r": 8,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "pw_tex",
+        "name": "Texture Paint (Exterior)",
+        "unit": "sqft",
+        "matRate": 15,
+        "labRate": 20,
+        "notes": "Exterior feature finish",
+        "mats": [
+          {
+            "n": "Exterior Texture Paint",
+            "u": "kg",
+            "r": 95,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Exterior Primer",
+            "u": "ltr",
+            "r": 65,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "pw_ena",
+        "name": "Enamel Paint",
+        "unit": "sqft",
+        "matRate": 10,
+        "labRate": 12,
+        "notes": "Wood, metal surfaces",
+        "mats": [
+          {
+            "n": "Red Oxide Primer",
+            "u": "ltr",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Enamel Paint",
+            "u": "ltr",
+            "r": 160,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Thinner",
+            "u": "ltr",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand Paper",
+            "u": "sheet",
+            "r": 8,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "pw_epoxy",
+        "name": "Epoxy Paint (Floor)",
+        "unit": "sqft",
+        "matRate": 40,
+        "labRate": 30,
+        "notes": "Floors, industrial surfaces",
+        "mats": [
+          {
+            "n": "Epoxy Primer",
+            "u": "ltr",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Epoxy Paint (2-part)",
+            "u": "kg",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Roller",
+            "u": "pcs",
+            "r": 80,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "pw_anti",
+        "name": "Anti-fungal / Moisture Paint",
+        "unit": "sqft",
+        "matRate": 18,
+        "labRate": 10,
+        "notes": "Bathareas, basements",
+        "mats": [
+          {
+            "n": "Anti-fungal Primer",
+            "u": "ltr",
+            "r": 85,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Moisture-resistant Paint",
+            "u": "ltr",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "pw_dis",
+        "name": "Distemper Paint",
+        "unit": "sqft",
+        "matRate": 5,
+        "labRate": 7,
+        "notes": "Low-budget projects",
+        "mats": [
+          {
+            "n": "Distemper (dry/oil)",
+            "u": "kg",
+            "r": 30,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer",
+            "u": "ltr",
+            "r": 45,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "rw",
+    "name": "Railing Work",
+    "items": [
+      {
+        "id": "rw_ms",
+        "name": "MS Railing",
+        "unit": "rft",
+        "matRate": 200,
+        "labRate": 200,
+        "notes": "Budget, traditional",
+        "mats": [
+          {
+            "n": "MS Square Tube 1\"",
+            "u": "kg",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MS Square Tube 1.5\"",
+            "u": "kg",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MS Flat Bar",
+            "u": "kg",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Welding Rod 3.15mm",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Red Oxide Primer",
+            "u": "ltr",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Enamel Paint",
+            "u": "ltr",
+            "r": 160,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grinder Disc",
+            "u": "pcs",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "rw_ss",
+        "name": "SS Railing",
+        "unit": "rft",
+        "matRate": 600,
+        "labRate": 300,
+        "notes": "Mid to premium",
+        "mats": [
+          {
+            "n": "SS Pipe 38mm dia",
+            "u": "rft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Pipe 25mm dia",
+            "u": "rft",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Square Tube",
+            "u": "rft",
+            "r": 150,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Elbow Fitting",
+            "u": "pcs",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Wall Bracket",
+            "u": "pcs",
+            "r": 150,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS End Cap",
+            "u": "pcs",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Screw",
+            "u": "pcs",
+            "r": 5,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "rw_glass",
+        "name": "Toughened Glass Railing",
+        "unit": "rft",
+        "matRate": 1200,
+        "labRate": 600,
+        "notes": "Luxury, modern",
+        "mats": [
+          {
+            "n": "Toughened Glass 12mm",
+            "u": "sqft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Top Rail",
+            "u": "rft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Glass Clamp Fitting",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant (clear)",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Base Plate SS",
+            "u": "pcs",
+            "r": 250,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "rw_wood",
+        "name": "Wooden Railing",
+        "unit": "rft",
+        "matRate": 700,
+        "labRate": 600,
+        "notes": "Classic, villa style",
+        "mats": [
+          {
+            "n": "Teak Wood Baluster",
+            "u": "rft",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Teak Handrail",
+            "u": "rft",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Newel Post",
+            "u": "pcs",
+            "r": 800,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wood Screw",
+            "u": "box",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "PU Polish",
+            "u": "ltr",
+            "r": 250,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "rw_wpc",
+        "name": "WPC Railing",
+        "unit": "rft",
+        "matRate": 600,
+        "labRate": 300,
+        "notes": "Outdoor, weatherproof",
+        "mats": [
+          {
+            "n": "WPC Railing Profile",
+            "u": "rft",
+            "r": 250,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "WPC Post",
+            "u": "pcs",
+            "r": 450,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Insert",
+            "u": "rft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Screw / Anchor",
+            "u": "set",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "rw_wi",
+        "name": "Wrought Iron Railing",
+        "unit": "rft",
+        "matRate": 400,
+        "labRate": 400,
+        "notes": "Heritage, ornate style",
+        "mats": [
+          {
+            "n": "Wrought Iron (custom)",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Welding Rod",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Red Oxide Primer",
+            "u": "ltr",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Enamel Paint",
+            "u": "ltr",
+            "r": 160,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sr",
+    "name": "Staircase Railing",
+    "items": [
+      {
+        "id": "sr_ms",
+        "name": "MS Staircase Railing",
+        "unit": "rft",
+        "matRate": 220,
+        "labRate": 220,
+        "notes": "Most common, budget",
+        "mats": [
+          {
+            "n": "MS Square Tube 1\"",
+            "u": "kg",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MS Flat Bar",
+            "u": "kg",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Welding Rod",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Red Oxide Primer",
+            "u": "ltr",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Enamel Paint",
+            "u": "ltr",
+            "r": 160,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sr_ss",
+        "name": "SS Staircase Railing",
+        "unit": "rft",
+        "matRate": 700,
+        "labRate": 350,
+        "notes": "Premium, hygienic",
+        "mats": [
+          {
+            "n": "SS Handrail Pipe 38mm",
+            "u": "rft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Baluster 25mm",
+            "u": "rft",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Wall Bracket",
+            "u": "pcs",
+            "r": 150,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Screw",
+            "u": "pcs",
+            "r": 5,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "End Cap",
+            "u": "pcs",
+            "r": 45,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sr_glass",
+        "name": "Toughened Glass Staircase",
+        "unit": "rft",
+        "matRate": 1500,
+        "labRate": 700,
+        "notes": "Luxury, floating look",
+        "mats": [
+          {
+            "n": "Toughened Glass 12mm",
+            "u": "sqft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "SS Top Rail",
+            "u": "rft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Glass Clamp",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sr_wood",
+        "name": "Wooden Balustrade",
+        "unit": "rft",
+        "matRate": 1000,
+        "labRate": 600,
+        "notes": "Villa, bungalow style",
+        "mats": [
+          {
+            "n": "Teak Baluster",
+            "u": "rft",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Handrail",
+            "u": "rft",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Newel Post",
+            "u": "pcs",
+            "r": 800,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "PU Polish",
+            "u": "ltr",
+            "r": 250,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sr_comb",
+        "name": "Combined (SS + Glass / SS + Wood)",
+        "unit": "rft",
+        "matRate": 1800,
+        "labRate": 800,
+        "notes": "Modern luxury",
+        "mats": [
+          {
+            "n": "SS Pipe",
+            "u": "rft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Toughened Glass",
+            "u": "sqft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Glass Clamp",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fe",
+    "name": "Facade & Exterior Cladding",
+    "items": [
+      {
+        "id": "fe_acp",
+        "name": "ACP Cladding",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 50,
+        "notes": "Modern commercial",
+        "mats": [
+          {
+            "n": "ACP Sheet 4mm PVDF",
+            "u": "sqft",
+            "r": 85,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "ACP Sheet 4mm PE",
+            "u": "sqft",
+            "r": 60,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Section 2\"",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Pop Rivet",
+            "u": "pcs",
+            "r": 3,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "PE Foam Tape",
+            "u": "roll",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fe_cnc",
+        "name": "CNC Jali (MS/SS/Al)",
+        "unit": "sqft",
+        "matRate": 100,
+        "labRate": 60,
+        "notes": "Decorative screens",
+        "mats": [
+          {
+            "n": "MS / SS Sheet (for CNC)",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Primer",
+            "u": "ltr",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Powder Coat Paint",
+            "u": "kg",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Welding Rod",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fe_stone",
+        "name": "Stone Cladding (Exterior)",
+        "unit": "sqft",
+        "matRate": 100,
+        "labRate": 60,
+        "notes": "Premium residential",
+        "mats": [
+          {
+            "n": "Natural Stone Cladding",
+            "u": "sqft",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Stone Adhesive",
+            "u": "bag",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Grout",
+            "u": "kg",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Stone Sealer",
+            "u": "ltr",
+            "r": 250,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fe_hpl",
+        "name": "HPL Cladding",
+        "unit": "sqft",
+        "matRate": 120,
+        "labRate": 60,
+        "notes": "Offices, schools",
+        "mats": [
+          {
+            "n": "HPL Sheet",
+            "u": "sqft",
+            "r": 110,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Sub-frame",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Rivet",
+            "u": "pcs",
+            "r": 3,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fe_glaze",
+        "name": "Glazing Work",
+        "unit": "sqft",
+        "matRate": 200,
+        "labRate": 100,
+        "notes": "Commercial, showareas",
+        "mats": [
+          {
+            "n": "Float Glass 6mm",
+            "u": "sqft",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Toughened Glass 8mm",
+            "u": "sqft",
+            "r": 60,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Frame",
+            "u": "rft",
+            "r": 85,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "EPDM Rubber Seal",
+            "u": "rft",
+            "r": 15,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fe_tex",
+        "name": "Texture Paint (Exterior)",
+        "unit": "sqft",
+        "matRate": 15,
+        "labRate": 20,
+        "notes": "Budget exterior",
+        "mats": [
+          {
+            "n": "Exterior Texture Paint",
+            "u": "kg",
+            "r": 95,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Exterior Primer",
+            "u": "ltr",
+            "r": 65,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gw",
+    "name": "Glass Work",
+    "items": [
+      {
+        "id": "gw_part",
+        "name": "Toughened Glass Partitions",
+        "unit": "sqft",
+        "matRate": 150,
+        "labRate": 80,
+        "notes": "Office cabins, areas",
+        "mats": [
+          {
+            "n": "Toughened Glass 10mm",
+            "u": "sqft",
+            "r": 70,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Frame",
+            "u": "rft",
+            "r": 85,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "EPDM Seal",
+            "u": "rft",
+            "r": 15,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "gw_door",
+        "name": "Frameless Glass Doors",
+        "unit": "sqft",
+        "matRate": 200,
+        "labRate": 150,
+        "notes": "Showareas, offices",
+        "mats": [
+          {
+            "n": "Toughened Glass 12mm",
+            "u": "sqft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Patch Fitting Set",
+            "u": "set",
+            "r": 800,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Glass Hinge",
+            "u": "pair",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Glass Handle",
+            "u": "pcs",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Door Closer",
+            "u": "pcs",
+            "r": 650,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Glass Lock Set",
+            "u": "set",
+            "r": 450,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "gw_mirror",
+        "name": "Mirror Work",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 50,
+        "notes": "Gyms, salons, interiors",
+        "mats": [
+          {
+            "n": "Mirror (5mm)",
+            "u": "sqft",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Mirror Adhesive",
+            "u": "tube",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Mirror Clips / Screws",
+            "u": "set",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "gw_frost",
+        "name": "Frosted / Printed Glass",
+        "unit": "sqft",
+        "matRate": 120,
+        "labRate": 60,
+        "notes": "Bathareas, partitions",
+        "mats": [
+          {
+            "n": "Frosted Glass 8mm",
+            "u": "sqft",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Vinyl Frosted Film",
+            "u": "sqft",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "gw_canopy",
+        "name": "Glass Canopy / Shelter",
+        "unit": "sqft",
+        "matRate": 200,
+        "labRate": 150,
+        "notes": "Entrances, car porches",
+        "mats": [
+          {
+            "n": "Toughened Glass 12mm",
+            "u": "sqft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Spider Fitting",
+            "u": "pcs",
+            "r": 450,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MS / SS Frame",
+            "u": "kg",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Silicon Sealant",
+            "u": "tube",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "uw",
+    "name": "UPVC & Aluminium Windows/Doors",
+    "items": [
+      {
+        "id": "uw_ups",
+        "name": "UPVC Sliding Windows",
+        "unit": "sqft",
+        "matRate": 180,
+        "labRate": 70,
+        "notes": "Residential, weatherproof",
+        "mats": [
+          {
+            "n": "UPVC Profile (sliding)",
+            "u": "rft",
+            "r": 90,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Float Glass 4mm",
+            "u": "sqft",
+            "r": 28,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Toughened Glass 5mm",
+            "u": "sqft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Rubber Gasket",
+            "u": "rft",
+            "r": 12,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Handle / Lock Set",
+            "u": "pcs",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Roller",
+            "u": "pcs",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "uw_upc",
+        "name": "UPVC Casement Windows",
+        "unit": "sqft",
+        "matRate": 220,
+        "labRate": 80,
+        "notes": "Premium residential",
+        "mats": [
+          {
+            "n": "UPVC Profile (casement)",
+            "u": "rft",
+            "r": 110,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Toughened Glass 5mm",
+            "u": "sqft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Rubber Gasket",
+            "u": "rft",
+            "r": 12,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Casement Handle",
+            "u": "pcs",
+            "r": 220,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hinge",
+            "u": "pair",
+            "r": 150,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "uw_als",
+        "name": "Aluminium Sliding Windows",
+        "unit": "sqft",
+        "matRate": 140,
+        "labRate": 60,
+        "notes": "Commercial, budget",
+        "mats": [
+          {
+            "n": "Aluminium Profile",
+            "u": "rft",
+            "r": 75,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Float Glass 4mm",
+            "u": "sqft",
+            "r": 28,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Rubber Seal",
+            "u": "rft",
+            "r": 10,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Handle",
+            "u": "pcs",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Roller",
+            "u": "pcs",
+            "r": 25,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "uw_door",
+        "name": "UPVC / Aluminium Doors",
+        "unit": "unit",
+        "matRate": 8000,
+        "labRate": 2000,
+        "notes": "Main door, balcony door",
+        "mats": [
+          {
+            "n": "UPVC / Al Door Profile",
+            "u": "rft",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Toughened Glass 8mm",
+            "u": "sqft",
+            "r": 60,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Door Handle Set",
+            "u": "set",
+            "r": 550,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hinge (heavy duty)",
+            "u": "pair",
+            "r": 280,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Door Lock",
+            "u": "set",
+            "r": 450,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "bl",
+    "name": "Blinds & Window Treatments",
+    "items": [
+      {
+        "id": "bl_rol",
+        "name": "Roller Blinds",
+        "unit": "sqft",
+        "matRate": 65,
+        "labRate": 20,
+        "notes": "Offices, modern homes",
+        "mats": [
+          {
+            "n": "Roller Blind Fabric",
+            "u": "sqft",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Roller Mechanism",
+            "u": "pcs",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Bracket Set",
+            "u": "set",
+            "r": 45,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "bl_zeb",
+        "name": "Zebra Blinds",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 25,
+        "notes": "Living areas, dual light control",
+        "mats": [
+          {
+            "n": "Zebra Fabric",
+            "u": "sqft",
+            "r": 70,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Mechanism",
+            "u": "pcs",
+            "r": 200,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Bracket",
+            "u": "set",
+            "r": 45,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "bl_ven",
+        "name": "Venetian Blinds",
+        "unit": "sqft",
+        "matRate": 60,
+        "labRate": 20,
+        "notes": "Offices, kitchens",
+        "mats": [
+          {
+            "n": "Aluminium Slat",
+            "u": "sqft",
+            "r": 50,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Cord / Ladder Tape",
+            "u": "set",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Head Rail",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "bl_mot",
+        "name": "Motorized Blinds",
+        "unit": "sqft",
+        "matRate": 200,
+        "labRate": 50,
+        "notes": "Luxury, smart homes",
+        "mats": [
+          {
+            "n": "Motorized Fabric (blackout)",
+            "u": "sqft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Motor Unit",
+            "u": "pcs",
+            "r": 1800,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Remote / Switch",
+            "u": "pcs",
+            "r": 450,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Power Supply",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "bl_cur",
+        "name": "Curtains + Tracks",
+        "unit": "sqft",
+        "matRate": 50,
+        "labRate": 25,
+        "notes": "Traditional residential",
+        "mats": [
+          {
+            "n": "Curtain Fabric",
+            "u": "sqft",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Curtain Track (PVC)",
+            "u": "rft",
+            "r": 25,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Curtain Track (SS)",
+            "u": "rft",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hook / Ring Set",
+            "u": "set",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "fc2",
+    "name": "Furniture & Carpentry",
+    "items": [
+      {
+        "id": "fc2_ward",
+        "name": "Wardrobe (Sliding/Swing)",
+        "unit": "sqft",
+        "matRate": 600,
+        "labRate": 400,
+        "notes": "Laminate / lacquer / veneer",
+        "mats": [
+          {
+            "n": "Plywood 18mm BWR",
+            "u": "sheet",
+            "r": 2100,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Plywood 12mm BWR",
+            "u": "sheet",
+            "r": 1500,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MDF 18mm",
+            "u": "sheet",
+            "r": 1400,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Laminate (standard)",
+            "u": "sheet",
+            "r": 850,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Laminate (premium)",
+            "u": "sheet",
+            "r": 1400,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Edge Banding Tape",
+            "u": "rft",
+            "r": 3,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Concealed Hinge 35mm",
+            "u": "pair",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Soft Close Hinge",
+            "u": "pair",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Handle (zinc)",
+            "u": "pcs",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wood Screw 1.5\" (100pcs)",
+            "u": "box",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Fevicol SH",
+            "u": "kg",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sliding Door Hardware Set",
+            "u": "set",
+            "r": 1800,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc2_kit",
+        "name": "Kitchen Cabinets (Modular)",
+        "unit": "sqft",
+        "matRate": 900,
+        "labRate": 500,
+        "notes": "Shutters, countertop included",
+        "mats": [
+          {
+            "n": "Plywood 18mm BWR (carcase)",
+            "u": "sheet",
+            "r": 2100,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MDF 18mm (shutters)",
+            "u": "sheet",
+            "r": 1400,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Laminate (kitchen grade)",
+            "u": "sheet",
+            "r": 1200,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Soft Close Hinge",
+            "u": "pair",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Drawer Channel (soft close)",
+            "u": "pair",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Handle",
+            "u": "pcs",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Fevicol SH",
+            "u": "kg",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Granite Countertop",
+            "u": "sqft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sink",
+            "u": "pcs",
+            "r": 1800,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Faucet",
+            "u": "pcs",
+            "r": 800,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc2_tv",
+        "name": "TV Unit",
+        "unit": "sqft",
+        "matRate": 800,
+        "labRate": 400,
+        "notes": "Wall-mounted, floor unit, with cladding",
+        "mats": [
+          {
+            "n": "Plywood 18mm BWR",
+            "u": "sheet",
+            "r": 2100,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "MDF 18mm",
+            "u": "sheet",
+            "r": 1400,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Laminate",
+            "u": "sheet",
+            "r": 850,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "LED Strip Light",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "LED Driver",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Edge Banding",
+            "u": "rft",
+            "r": 3,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hinge / Handle",
+            "u": "pcs",
+            "r": 45,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "fc2_bed",
+        "name": "Bed Design",
+        "unit": "unit",
+        "matRate": 20000,
+        "labRate": 8000,
+        "notes": "Headboard, storage bed, box bed",
+        "mats": [
+          {
+            "n": "Plywood 18mm BWR",
+            "u": "sheet",
+            "r": 2100,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Fabric / Leatherette",
+            "u": "sqft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Foam (headboard)",
+            "u": "sqft",
+            "r": 80,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Laminate",
+            "u": "sheet",
+            "r": 850,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Drawer Channel",
+            "u": "pair",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Hydraulic Hinge (storage)",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sg",
+    "name": "Signage Work",
+    "items": [
+      {
+        "id": "sg_acr",
+        "name": "Acrylic Letter Signage",
+        "unit": "sqft",
+        "matRate": 150,
+        "labRate": 80,
+        "notes": "Shops, offices",
+        "mats": [
+          {
+            "n": "Acrylic Sheet 8mm",
+            "u": "sqft",
+            "r": 180,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Acrylic Sheet 5mm",
+            "u": "sqft",
+            "r": 120,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "LED Strip (backlit)",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Standoff Bolt",
+            "u": "pcs",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Double-sided Tape 3M",
+            "u": "roll",
+            "r": 180,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sg_led",
+        "name": "LED Glow Sign Board",
+        "unit": "sqft",
+        "matRate": 250,
+        "labRate": 120,
+        "notes": "Shops, restaurants",
+        "mats": [
+          {
+            "n": "ACP Sheet 3mm",
+            "u": "sqft",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "LED Strip",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "LED Driver",
+            "u": "pcs",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Box Frame",
+            "u": "rft",
+            "r": 60,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Vinyl Print",
+            "u": "sqft",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sg_ss",
+        "name": "SS Letter Signage",
+        "unit": "sqft",
+        "matRate": 300,
+        "labRate": 150,
+        "notes": "Premium offices, showareas",
+        "mats": [
+          {
+            "n": "SS Sheet 1.5mm",
+            "u": "sqft",
+            "r": 250,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "LED Strip",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Welding Rod SS",
+            "u": "kg",
+            "r": 380,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Standoff Bolt",
+            "u": "pcs",
+            "r": 35,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "sg_acp",
+        "name": "ACP Signage Board",
+        "unit": "sqft",
+        "matRate": 80,
+        "labRate": 50,
+        "notes": "Hoardings, office fronts",
+        "mats": [
+          {
+            "n": "ACP Sheet 4mm",
+            "u": "sqft",
+            "r": 60,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Aluminium Frame",
+            "u": "rft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Vinyl Print",
+            "u": "sqft",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Rivet",
+            "u": "pcs",
+            "r": 3,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "mw",
+    "name": "Modification Work",
+    "items": [
+      {
+        "id": "mw_wall",
+        "name": "Wall Breaking / Reconstruction",
+        "unit": "sqft",
+        "matRate": 50,
+        "labRate": 180,
+        "notes": "Area layout changes",
+        "mats": [
+          {
+            "n": "Brick",
+            "u": "pcs",
+            "r": 8,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Cement (50kg bag)",
+            "u": "bag",
+            "r": 380,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand",
+            "u": "cft",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Binding Wire",
+            "u": "kg",
+            "r": 80,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "mw_dry",
+        "name": "Drywall Partitions",
+        "unit": "sqft",
+        "matRate": 45,
+        "labRate": 35,
+        "notes": "Gypsum / glass partitions",
+        "mats": [
+          {
+            "n": "Gypsum Board 12mm",
+            "u": "sqft",
+            "r": 22,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "GI Channel",
+            "u": "rft",
+            "r": 18,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Wall Angle",
+            "u": "rft",
+            "r": 8,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Drywall Screw",
+            "u": "box",
+            "r": 35,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Jointing Compound",
+            "u": "kg",
+            "r": 12,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "mw_bath",
+        "name": "Bathroom Renovation",
+        "unit": "unit",
+        "matRate": 30000,
+        "labRate": 15000,
+        "notes": "Tile change, fitting replacement",
+        "mats": [
+          {
+            "n": "Tiles (wall)",
+            "u": "sqft",
+            "r": 55,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Tiles (floor)",
+            "u": "sqft",
+            "r": 45,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "WC / Indian Commode",
+            "u": "set",
+            "r": 3500,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Washbasin",
+            "u": "pcs",
+            "r": 2200,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "CP Fittings Set",
+            "u": "set",
+            "r": 3500,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Mirror",
+            "u": "sqft",
+            "r": 65,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Waterproofing",
+            "u": "ltr",
+            "r": 350,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Exhaust Fan",
+            "u": "pcs",
+            "r": 800,
+            "v": "",
+            "p": ""
+          }
+        ]
+      },
+      {
+        "id": "mw_level",
+        "name": "Floor Levelling",
+        "unit": "sqft",
+        "matRate": 20,
+        "labRate": 25,
+        "notes": "Before tile / wood flooring",
+        "mats": [
+          {
+            "n": "Screed / Self Levelling Compound",
+            "u": "bag",
+            "r": 380,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Sand",
+            "u": "cft",
+            "r": 40,
+            "v": "",
+            "p": ""
+          },
+          {
+            "n": "Cement",
+            "u": "bag",
+            "r": 380,
+            "v": "",
+            "p": ""
+          }
+        ]
+      }
+    ]
+  }
+]

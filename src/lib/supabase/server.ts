@@ -1,0 +1,173 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+type RDashUserRoleRow = {
+  id: string;
+  user_id: string;
+  email: string | null;
+  role: string;
+  staff_id: string | null;
+  display_name: string | null;
+  status: "pending" | "active" | "rejected" | "inactive";
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type GenericRecordRow = {
+  collection: string;
+  id: string;
+  dataJson: string;
+};
+
+export type WorkspaceMetaRow = {
+  id: string;
+  revision: number;
+  updatedAt: string;
+};
+
+export type StaffProfileRow = {
+  id: string;
+  code: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  roleId: string;
+  department: string | null;
+  designation: string | null;
+  reportingManagerId: string | null;
+  status: string;
+  joiningDate: string | null;
+  exitDate: string | null;
+  city: string | null;
+  address: string | null;
+  emergencyContact: string | null;
+  attendancePolicyId: string | null;
+  salaryType: string;
+  monthlySalary: number | null;
+  dailyWage: number | null;
+  bankDetailsJson: string | null;
+  gpsTrackingEnabled: boolean;
+  dataJson: string;
+};
+
+export type StaffLocationPingRow = {
+  id: string;
+  staffId: string;
+  latitude: number;
+  longitude: number;
+  accuracyM: number | null;
+  speed: number | null;
+  battery: number | null;
+  capturedAt: string;
+  source: string;
+  dataJson: string;
+};
+
+type RDashSupabaseSchema = {
+  public: {
+    Tables: {
+      rdash_user_roles: {
+        Row: RDashUserRoleRow;
+        Insert: Partial<RDashUserRoleRow> & Pick<RDashUserRoleRow, "user_id" | "role">;
+        Update: Partial<RDashUserRoleRow>;
+        Relationships: [];
+      };
+      GenericRecord: {
+        Row: GenericRecordRow;
+        Insert: GenericRecordRow;
+        Update: Partial<GenericRecordRow>;
+        Relationships: [];
+      };
+      WorkspaceMeta: {
+        Row: WorkspaceMetaRow;
+        Insert: Partial<WorkspaceMetaRow> & Pick<WorkspaceMetaRow, "id">;
+        Update: Partial<WorkspaceMetaRow>;
+        Relationships: [];
+      };
+      StaffProfile: {
+        Row: StaffProfileRow;
+        Insert: Partial<StaffProfileRow> & Pick<StaffProfileRow, "id" | "code" | "name" | "roleId" | "status" | "salaryType" | "dataJson">;
+        Update: Partial<StaffProfileRow>;
+        Relationships: [];
+      };
+      StaffLocationPing: {
+        Row: StaffLocationPingRow;
+        Insert: StaffLocationPingRow;
+        Update: Partial<StaffLocationPingRow>;
+        Relationships: [];
+      };
+      [key: string]: {
+        Row: Record<string, unknown>;
+        Insert: Record<string, unknown>;
+        Update: Record<string, unknown>;
+        Relationships: [];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: {
+      write_workspace_snapshot: {
+        Args: { p_workspace_id: string; p_data_json: string; p_revision: number };
+        Returns: void;
+      };
+    };
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
+};
+
+type SupabaseEnvName =
+  | "SUPABASE_URL"
+  | "SUPABASE_PUBLISHABLE_KEY"
+  | "SUPABASE_SECRET_KEY"
+  | "SUPABASE_ANON_KEY"
+  | "SUPABASE_SERVICE_ROLE_KEY";
+
+let authClient: SupabaseClient<RDashSupabaseSchema> | null = null;
+let adminClient: SupabaseClient<RDashSupabaseSchema> | null = null;
+
+function configuredValue(name: SupabaseEnvName) {
+  const value = process.env[name]?.trim();
+  if (!value) return null;
+  if (value.startsWith("replace-with-")) return null;
+  if (value.includes("<") || value.includes(">")) return null;
+  if (name === "SUPABASE_URL" && value.includes("replace-with-project-ref")) return null;
+  return value;
+}
+
+function supabaseUrl() {
+  const value = configuredValue("SUPABASE_URL");
+  if (!value) throw new Error("SUPABASE_URL is required for Supabase authentication.");
+  return value;
+}
+
+function publishableKey() {
+  const value = configuredValue("SUPABASE_PUBLISHABLE_KEY") || configuredValue("SUPABASE_ANON_KEY");
+  if (!value) throw new Error("SUPABASE_PUBLISHABLE_KEY is required for Supabase authentication. SUPABASE_ANON_KEY is also accepted as a legacy alias.");
+  return value;
+}
+
+function secretKey() {
+  const value = configuredValue("SUPABASE_SECRET_KEY") || configuredValue("SUPABASE_SERVICE_ROLE_KEY");
+  if (!value) throw new Error("SUPABASE_SECRET_KEY is required for Supabase admin authentication. SUPABASE_SERVICE_ROLE_KEY is also accepted as a legacy alias.");
+  return value;
+}
+
+export function isSupabaseConfigured() {
+  return Boolean(configuredValue("SUPABASE_URL") && (configuredValue("SUPABASE_PUBLISHABLE_KEY") || configuredValue("SUPABASE_ANON_KEY")) && (configuredValue("SUPABASE_SECRET_KEY") || configuredValue("SUPABASE_SERVICE_ROLE_KEY")));
+}
+
+export function getSupabaseAuthClient() {
+  authClient ??= createClient<RDashSupabaseSchema>(supabaseUrl(), publishableKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return authClient;
+}
+
+export function getSupabaseAdminClient() {
+  adminClient ??= createClient<RDashSupabaseSchema>(supabaseUrl(), secretKey(), {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return adminClient;
+}
