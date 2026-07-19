@@ -2943,3 +2943,74 @@ Unresolved / Next-phase recommendations:
 1. The dev server is NOT supervised — if it crashes or is killed, nothing restarts it. A watchdog/supervisor (or re-running .zscripts/dev.sh) would be needed to recover. The recurring webDevReview cron (every 15 min) will catch a dead server and can restart it.
 2. `.env` Supabase creds are placeholders — app runs on in-memory seed data. Data resets on server restart. This is expected for dev/preview.
 3. First-compile latency for some modules is 2–8s (Turbopack, 52 modules) — subsequent loads are ~30ms. Acceptable for dev.
+
+---
+Task ID: 7
+Agent: orchestrator (cron-triggered webDevReview — premium signin + workspace health widget)
+Task: Recurring 15-min webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read /home/z/my-project/worklog.md (2,945 lines, Tasks 0–6 + run-app). Project is mature: 52 modules, integrity layer at 100/100, signin resilient to .env resets (dev-fallback secret), config-health panel on signin. Last task (6) recommended: changelog panel on signin, run-integrity-on-login hook, more config checks.
+- Verified dev server: was ALIVE (PID 1943 from run-app). .env intact. Lint clean.
+- QA via agent-browser (desktop 1440×900):
+  * Signin: renders, demo-owner button + config health panel present. ✅
+  * Login flow: filled creds → redirected to /. ✅
+  * Dashboard (Daily Work): 19 module groups in sidebar, workspace pulse, exceptions, today's priorities, team performance, profitability snapshot all render. ✅
+  * Tested 6 modules: Customer Desk, Procurement & Inventory, Finance, Sales Pipeline, Master Setup, Data Integrity — ALL render with zero console/page errors. ✅
+  * Command palette (Ctrl+K): works. ✅
+  * Lint: clean (0 errors, 0 warnings).
+  * Mobile (390×844): responsive. ✅
+- VLM analysis of dashboard screenshot (glm-4.6v): identified styling polish opportunities — flat cards lack depth, low contrast on metric numbers, inconsistent spacing, sidebar items lack active states, long exception text needs truncation. Scored the workspace pulse KPI tiles as visually flat.
+- Investigated the KPI tile styling in WorkspacePulseStrip.tsx: source uses valid Tailwind v4 arbitrary-value syntax `bg-[hsl(217_91%_96%)]`. Verified via computed-style inspection that the styles ARE applied (iconBg rgb(236,243,254), iconColor rgb(10,90,219), barBg rgb(36,116,245)). The "flat" appearance was a VLM perception, not a bug. No code change needed there.
+
+WORK FOCUS SELECTED (high-impact, self-contained, no risk to stable core):
+1. NEW FEATURE: /api/health/summary endpoint — authenticated, read-only aggregate of workspace KPIs (integrity score, pending approvals, overdue/due-today tasks, pipeline value, active work orders, visits, exceptions, last 5 audit entries). Useful for the dashboard widget AND for future recurring QA cron to fast-assess health.
+2. NEW FEATURE: WorkspaceHealthWidget component — slim premium "status ribbon" on the Workdesk Dashboard, fetches /api/health/summary every 60s, shows color-coded health badge (healthy/watch/attention with pulsing dot), 6 metric chips (attention, due today, approvals, pipeline, live work, visits), last-activity card, and integrity record-count deep-link. All clickable → deep-links to relevant module.
+3. STYLING: Premium signin redesign — split-screen layout with branded left hero panel (animated gradient, rotating feature highlight with progress dots, brand stats: 52 modules / 56 collections / 178 FK rules) + right auth card with config health + NEW "What's new" changelog panel (4 entries with feature/fix/polish tags) + trust footer. Mobile-responsive (hero hides on small screens, mobile brand header appears).
+4. VLM-driven iteration: first widget version was "cramped" per VLM → redesigned v2 with left accent bar, vertical divider, MetricChip sub-component, more padding, better hierarchy. VLM scored v2 at 8/10 polish.
+
+Implementation details:
+- src/app/api/health/summary/route.ts (NEW, ~135 lines): GET handler, requireSession → getWorkspace → checkWorkspaceIntegrity → computes ops/commercial/exceptions aggregates → returns JSON with healthBadge, attentionCount, integrity, operations, commercial, exceptions, recentActivity (5 entries with correct AuditLogEntry field names: actor, entity_label, entity_type, kind, reason, source_module, timestamp).
+- src/components/rdash/WorkspaceHealthWidget.tsx (NEW, ~360 lines): fetches /api/health/summary with Bearer token every 60s. States: loading (pulse), error (retry), ready. BADGE_CONFIG for healthy/watch/attention (green/amber/red with pulsing dot). MetricChip sub-component with 5 tones (primary/success/warning/amber/violet). timeAgo() helper. Last-activity card with truncate + deep-link to auditLog module. Integrity deep-link button with locale-formatted record/ref counts.
+- src/components/rdash/WorkdeskDashboard.tsx (modified): imported WorkspaceHealthWidget, inserted <WorkspaceHealthWidget /> directly after <WorkspacePulseStrip /> at the top of the dashboard.
+- src/app/signin/page.tsx (rewritten, ~470 lines): split-screen layout. Left aside (hidden below lg): brand header (UC logo + name), headline "One workspace for the entire build.", rotating feature highlight (4 features: CRM & Sales Pipeline, Site Execution & Field, Procurement & Finance, Data Integrity Engine — auto-rotates every 3.5s, clickable, progress dots), stats row (52 modules / 56 collections / 178 FK rules). Right side: mobile brand header (lg:hidden), auth card (sign-in/request-access tabs, email/password, demo-owner button, owner-approval note, config health panel), "What's new" changelog panel (4 entries: v0.3.0 health ribbon, v0.2.9 signin dev-fallback, v0.2.8 integrity module, v0.2.7 pulse strip — each with feature/fix/polish color tag), trust footer (Owner-approved · 178 FK rules · Next.js 16 link).
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings) after all changes.
+- /api/health/summary endpoint: tested via curl with session cookie → HTTP 200, returns correct JSON (healthBadge "attention", attentionCount 7, integrity healthScore 100, operations {openTasks:4, dueTodayTasks:4, pendingApprovals:2, activeWorkOrders:1, activeVisits:2}, commercial {pipelineValue:292687.2, customers:3}, exceptions {directAwardPOs:1, variations:1}, recentActivity with 5 correctly-shaped entries).
+- Signin page (new): renders with split-screen on desktop, hero hides on mobile (verified via eval: heroAsidePresent:true, heroVisible:false at 390×844). VLM review: "polished, premium, modern, production-ready" — clean split-screen, strong typography, engaging rotating feature, well-structured auth card, cohesive palette.
+- WorkspaceHealthWidget: renders on Workdesk Dashboard (verified via eval — widget found with all 8 chips: "7 attention, 8 due today, 2 approvals, ₹2.93L pipeline, 1 live work, 2 visits" + last-activity card + "2,520 rec · 6,089 refs" integrity button). VLM review v1: "cramped" → redesigned v2 → VLM review v2: "8/10 polish, well-spaced, scannable, clear hierarchy".
+- Login flow end-to-end: signin → fill creds → submit → redirect to / → workspace loads → navigate to Workdesk Dashboard → widget renders. Zero console/page errors throughout.
+- No runtime errors in dev.log.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — enhanced with premium signin + workspace health ribbon
+
+## What was added this round
+1. **/api/health/summary** (NEW endpoint, ~135 lines) — authenticated read-only workspace KPI aggregate. Single source of truth for "how is the workspace doing right now". Returns healthBadge, attentionCount, integrity (score + issue counts + record/ref totals), operations (9 metrics), commercial (pipeline value + quotation/customer counts), exceptions (direct-award POs + variations), and recentActivity (last 5 audit entries, compact). Used by the dashboard widget; also usable by future recurring QA cron for fast health assessment.
+2. **WorkspaceHealthWidget** (NEW component, ~360 lines) — premium status ribbon at the top of the Workdesk Dashboard. Color-coded health badge (healthy/watch/attention) with pulsing dot, left accent bar, 6 clickable metric chips (attention / due today / approvals / pipeline / live work / visits), last-activity card, integrity deep-link. Auto-refreshes every 60s. Loading/error/ready states. All metrics deep-link to their owning module.
+3. **Premium signin redesign** (rewritten, ~470 lines) — split-screen: branded left hero (gradient, rotating feature highlight, stats) + right auth card with config health + NEW "What's new" changelog panel (4 versioned entries with feature/fix/polish tags). Mobile-responsive (hero hides, mobile brand header appears). VLM-verified as "polished, premium, production-ready".
+
+## Files modified
+- `src/app/api/health/summary/route.ts` — NEW (~135 lines)
+- `src/components/rdash/WorkspaceHealthWidget.tsx` — NEW (~360 lines)
+- `src/components/rdash/WorkdeskDashboard.tsx` — added import + `<WorkspaceHealthWidget />` after `<WorkspacePulseStrip />`
+- `src/app/signin/page.tsx` — rewritten with split-screen premium layout (~470 lines)
+
+## Verification
+- Lint: clean
+- /api/health/summary: HTTP 200, correct payload
+- Signin: split-screen desktop, responsive mobile, VLM "polished/premium"
+- WorkspaceHealthWidget: renders with all metrics, VLM 8/10 polish after v2 redesign
+- Login → dashboard → widget: end-to-end zero errors
+
+## Dev-server note
+The sandbox has 4GB RAM. Next.js dev (Turbopack, 52 modules) + Chromium (agent-browser) together can OOM-kill the dev server during heavy parallel activity (e.g. lint + browser). Restart pattern that works: `cd /home/z/my-project && setsid bash -c 'NODE_OPTIONS="--max-old-space-size=3072" NEXT_TELEMETRY_DISABLED=1 /home/z/my-project/node_modules/.bin/next dev -p 3000 > /home/z/my-project/dev.log 2>&1 & disown; exit' < /dev/null > /dev/null 2>&1` (double-fork daemon, reparents to PID 1, survives bash-command boundaries). The recurring webDevReview cron should check `pgrep -f "next dev"` at the start and restart if dead.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The WorkspaceHealthWidget could be added to the "Daily Work" (today) module too — it's currently only on the Workdesk Dashboard parent. Most users land on "Daily Work" by default, so they won't see the ribbon unless they click "Workdesk Dashboard". Consider adding it to DailyWork.tsx as well, or moving the default module to "workdesk".
+2. The /api/health/summary endpoint could be extended to include FINANCIAL metrics (cash position, overdue invoice value, pending vendor bill value) for a more complete "business health" view.
+3. The signin changelog panel is hardcoded — it could be driven by a CHANGELOG.md file or a git-log-derived JSON so it stays in sync with actual releases.
+4. A "run integrity check on login" hook (recommended in Task 6 #3) is still not implemented — would surface integrity issues immediately after login via the new /api/health/summary endpoint (which already returns the integrity score).
+5. The dashboard's WorkspacePulseStrip KPI tiles were perceived as "flat" by VLM even though styles are correctly applied — consider adding subtle hover lift (translate-y) + gradient overlays to make them feel more tactile, matching the premium feel of the new health widget.
