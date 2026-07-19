@@ -1,12 +1,24 @@
 "use client";
 import * as React from "react";
-import { Activity, ArrowUpRight, CalendarClock, FileText, PhoneCall, PlusCircle, ShieldCheck, Sparkles, TrendingUp, Users, Wrench, Zap } from "lucide-react";
+import { Activity, ArrowUpRight, CalendarClock, FileText, PhoneCall, PlusCircle, RefreshCw, ShieldCheck, Sparkles, TrendingUp, Users, Wrench, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate } from "@/lib/rdash/date";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+/** Compact "Xs/m/h ago" for the health-popover last-updated timestamp. */
+function timeAgoShort(ms: number): string {
+  const diff = Math.max(0, Date.now() - ms);
+  const secs = Math.floor(diff / 1000);
+  if (secs < 5) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ago`;
+}
 
 /** Count-up hook: animates a number from 0→value over ~600ms once mounted. */
 function useCountUp(value: number, duration = 650) {
@@ -159,7 +171,8 @@ export function WorkspacePulseStrip() {
   // Health-aware greeting: fetch the workspace health summary once on mount
   // so the greeting can show a contextual sub-line ("You have N items needing
   // attention" or "All clear — workspace healthy") instead of a static label.
-  // Also powers the mini health-summary popover on the badge.
+  // Also powers the mini health-summary popover on the badge. The fetchHealth
+  // callback is extracted so the popover's manual refresh button can call it.
   const [health, setHealth] = React.useState<{
     badge: "healthy" | "watch" | "attention";
     attentionCount: number;
@@ -174,40 +187,44 @@ export function WorkspacePulseStrip() {
     monthRevenue: number;
     totalRecords: number;
   } | null>(null);
-  React.useEffect(() => {
-    let active = true;
-    const fetchHealth = async () => {
-      try {
-        const { getSessionToken } = await import("@/lib/rdash/client-auth");
-        const token = getSessionToken();
-        const res = await fetch("/api/health/summary", {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!active) return;
-        setHealth({
-          badge: data.healthBadge,
-          attentionCount: data.attentionCount,
-          integrityScore: data.integrity?.healthScore ?? 100,
-          integrityIssues: data.integrity?.totalIssues ?? 0,
-          pendingApprovals: data.operations?.pendingApprovals ?? 0,
-          overdueTasks: data.operations?.overdueTasks ?? 0,
-          unresolvedBlocked: data.operations?.unresolvedBlocked ?? 0,
-          openRisks: data.operations?.openRisks ?? 0,
-          cashPosition: data.finance?.cashPosition ?? 0,
-          overdueInvoiceValue: data.finance?.overdueInvoiceValue ?? 0,
-          monthRevenue: data.finance?.monthRevenue ?? 0,
-          totalRecords: data.integrity?.totalRecords ?? 0,
-        });
-      } catch {
-        // Non-fatal — greeting falls back to the static "Live" badge.
-      }
-    };
-    fetchHealth();
-    const id = setInterval(fetchHealth, 60_000);
-    return () => { active = false; clearInterval(id); };
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [lastFetchedAt, setLastFetchedAt] = React.useState<number | null>(null);
+  const fetchHealth = React.useCallback(async (manual = false) => {
+    if (manual) setRefreshing(true);
+    try {
+      const { getSessionToken } = await import("@/lib/rdash/client-auth");
+      const token = getSessionToken();
+      const res = await fetch("/api/health/summary", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setHealth({
+        badge: data.healthBadge,
+        attentionCount: data.attentionCount,
+        integrityScore: data.integrity?.healthScore ?? 100,
+        integrityIssues: data.integrity?.totalIssues ?? 0,
+        pendingApprovals: data.operations?.pendingApprovals ?? 0,
+        overdueTasks: data.operations?.overdueTasks ?? 0,
+        unresolvedBlocked: data.operations?.unresolvedBlocked ?? 0,
+        openRisks: data.operations?.openRisks ?? 0,
+        cashPosition: data.finance?.cashPosition ?? 0,
+        overdueInvoiceValue: data.finance?.overdueInvoiceValue ?? 0,
+        monthRevenue: data.finance?.monthRevenue ?? 0,
+        totalRecords: data.integrity?.totalRecords ?? 0,
+      });
+      setLastFetchedAt(Date.now());
+    } catch {
+      // Non-fatal — greeting falls back to the static "Live" badge.
+    } finally {
+      if (manual) setRefreshing(false);
+    }
   }, []);
+  React.useEffect(() => {
+    fetchHealth();
+    const id = setInterval(() => fetchHealth(), 60_000);
+    return () => clearInterval(id);
+  }, [fetchHealth]);
 
   const liveWorkOrders = db.workOrders.filter(
     (w) => w.status === "in_progress" || w.status === "scheduled",
@@ -319,6 +336,22 @@ export function WorkspacePulseStrip() {
                       >
                         Open
                         <ArrowUpRight className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                    {/* Footer: last-updated timestamp + manual refresh button */}
+                    <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
+                      <span className="text-[9px] text-muted-foreground">
+                        {lastFetchedAt ? `Updated ${timeAgoShort(lastFetchedAt)}` : "Loading…"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => fetchHealth(true)}
+                        disabled={refreshing}
+                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                        title="Refresh health summary"
+                      >
+                        <RefreshCw className={cn("h-2.5 w-2.5", refreshing && "animate-spin")} />
+                        {refreshing ? "Refreshing" : "Refresh"}
                       </button>
                     </div>
                   </PopoverContent>

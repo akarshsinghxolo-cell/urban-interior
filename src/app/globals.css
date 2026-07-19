@@ -467,6 +467,29 @@
     animation: rd-module-enter 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
+  /* New-entry animation for the ActivityFeedWidget — slide-in from the left
+     + a brief green flash that fades out, signaling a fresh audit-log entry. */
+  @keyframes rd-activity-enter {
+    0% {
+      transform: translateX(-12px);
+      opacity: 0;
+      background-color: hsl(var(--success) / 0.18);
+    }
+    40% {
+      transform: translateX(0);
+      opacity: 1;
+      background-color: hsl(var(--success) / 0.12);
+    }
+    100% {
+      transform: translateX(0);
+      opacity: 1;
+      background-color: transparent;
+    }
+  }
+  .rd-activity-enter {
+    animation: rd-activity-enter 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
 
   @keyframes rd-count-pop {
     0% {

@@ -3312,3 +3312,75 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The `POST /api/tracking/ping 403` (noted above) could be fixed by adding a session-optional mode to the route, or by having the client suppress retries on 403.
 4. The health badge popover could show a "last updated" timestamp + a manual refresh button, so users know the data is fresh.
 5. The ActivityFeedWidget "live" indicator currently only highlights the first entry if it's < 60s old. Could add a "new entry" animation (slide-in + flash) when a fresh audit log entry arrives via polling, for a true real-time feel.
+
+---
+Task ID: 12
+Agent: orchestrator (cron-triggered webDevReview — tracking/ping 403 fix + popover refresh + activity animation + critical bug fix)
+Task: Recurring 15-min webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read /home/z/my-project/worklog.md (3,314 lines, through Task ID 11). Project is stable: 52 modules, integrity 100/100, premium signin, WorkspaceHealthWidget on Daily Work, ActivityFeedWidget with live indicator, health badge popover. Task 11's unresolved recs: (1) signin changelog from file, (2) ActivityFeedWidget placement, (3) tracking/ping 403 spam, (4) popover "last updated" + refresh, (5) activity feed new-entry animation.
+- Verified dev server: ALIVE (PID 13194). .env intact. Health checks 200.
+- QA via agent-browser: login flow works, Task 11 features intact (greeting badge, activity feed 6 items, health widget). Confirmed tracking/ping 403 still appearing in dev.log (the spam issue from Task 11).
+- Investigated tracking/ping 403 root cause: the route's demo-mode fallback returns `{ point: null, ignored: true }`, but the client's `postPoint` checks `!payload.point` → throws LocationPostError → `send` returns "retry" → client retries forever on every geolocation update. The 403 specifically happens when requireSession fails (session cookie not yet set on the first ping after page load).
+
+WORK FOCUS SELECTED (addresses Task 11 recs #3, #4, #5):
+1. BUG FIX: tracking/ping 403 spam (Task 11 rec #3). Fixed the client `postPoint` function: (a) recognize `ignored: true` (demo-mode) as success — returns a synthetic StaffLocationPing so the client stops retrying; (b) treat 401/403 as terminal (map to status 422 so `send` returns "invalid" instead of "retry") — no more infinite retry loop on auth failures. Verified: 403 count dropped from continuous retries to just 1 per page load (the initial ping before the session cookie is set).
+2. NEW FEATURE: Health badge popover "last updated" + refresh (Task 11 rec #4). Refactored the health fetch into a `useCallback` (fetchHealth) with `manual` param + `refreshing` + `lastFetchedAt` state. Added a footer row to the popover: "Updated Xs/m/h ago" (timeAgoShort helper) + a "Refresh" button with a spinning RefreshCw icon when refreshing. Users can now force-update the health summary on demand and see when it was last fetched.
+3. NEW FEATURE + STYLING: ActivityFeedWidget new-entry animation (Task 11 rec #5). Added new-entry detection: tracks the most-recent entry ID across renders (prevTopIdRef), and when a fresh ID appears at position 0, sets `newEntryId` state for 1.2s. The matching `<li>` gets the `rd-activity-enter` class → slide-in from left (-12px) + green flash (background-color hsl(var(--success)/0.18) → transparent) over 1.2s. Defined the `@keyframes rd-activity-enter` + `.rd-activity-enter` class in globals.css.
+4. CRITICAL BUG FIX (introduced + fixed this round): While adding the timeAgoShort helper, I accidentally removed the `const [display, setDisplay] = React.useState(0);` line from the `useCountUp` hook in WorkspacePulseStrip.tsx. This caused a `ReferenceError: display is not defined` runtime error that crashed the entire Daily Work dashboard (Application error). Caught it via the Next.js error overlay (agent-browser eval on the portal's shadowRoot), restored the missing line. Verified the dashboard renders correctly after the fix.
+
+Implementation details:
+- `src/components/rdash/StaffLocationTracker.tsx` (modified, +~25 lines): `postPoint` now (a) checks `payload.ignored` and returns a synthetic StaffLocationPing (id `demo-${captured_at}`, staff_id "demo", the point's coords) so the client treats demo-mode as success; (b) on `!response.ok`, checks for 401/403 and throws with status 422 (so `send` returns "invalid", stopping retries) instead of the original status.
+- `src/components/rdash/WorkspacePulseStrip.tsx` (modified, +~50 lines): added `RefreshCw` to imports. Refactored health fetch: extracted `fetchHealth` as `useCallback` with `manual` param, added `refreshing` + `lastFetchedAt` state. Added `timeAgoShort(ms)` helper (compact "Xs/m/h ago"). Added a new footer row to the popover (below the cash + Open row): "Updated {timeAgoShort}" + Refresh button (RefreshCw with animate-spin when refreshing, disabled state). RESTORED the accidentally-removed `const [display, setDisplay] = React.useState(0);` in useCountUp.
+- `src/components/rdash/ActivityFeedWidget.tsx` (modified, +~20 lines): added `prevTopIdRef` (useRef) + `newEntryId` state. useEffect tracks entries[0].id — when it changes (and prevTopIdRef.current !== null), sets newEntryId for 1.2s then clears. In the list render, `isNew = entry.id === newEntryId` → adds `rd-activity-enter` class to the `<li>`.
+- `src/app/globals.css` (modified, +~20 lines): added `@keyframes rd-activity-enter` (0%: translateX(-12px) + opacity 0 + bg success/0.18; 40%: translateX(0) + opacity 1 + bg success/0.12; 100%: translateX(0) + opacity 1 + bg transparent) + `.rd-activity-enter` class (1.2s cubic-bezier animation).
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings) after all changes.
+- CRITICAL BUG FIX: the `display is not defined` ReferenceError was caught via the Next.js error overlay (shadowRoot eval) and fixed by restoring the missing useState line. Dashboard now renders correctly ("Good morning, Akarsh" + badge found).
+- tracking/ping 403 spam: reduced from continuous retries to 1 per page load (verified — tail -100 shows 1 entry, was 4+ before). The client now treats 401/403 as terminal.
+- Health badge popover refresh + last-updated: verified via eval — popover contains "Updated just now" + "Refresh" button. Refresh button is clickable. Text tail: "Cash ₹42.4k Open Updated just now Refresh".
+- Activity feed animation: the `rd-activity-enter` CSS class is found in the stylesheets. The new-entry detection logic is in place (prevTopIdRef + newEntryId state).
+- Regression: Customer Desk, Data Integrity — all render with zero errors.
+- VLM review: "6/10 — functional but the activity card needs cleaner spacing. The popover footer adds some value." (Lower score this round due to VLM perceiving the activity card as cramped — a styling refinement opportunity for the next round.)
+- No runtime errors in dev.log or browser console after the fix.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — tracking spam fixed + popover refreshable + activity animates + critical crash fixed
+
+## What was done this round
+1. **BUG FIX**: tracking/ping 403 spam (Task 11 rec #3). Client now treats demo-mode `ignored: true` as success (stops retrying) and treats 401/403 as terminal (no infinite retry loop). 403 count dropped from continuous to 1 per page load.
+2. **NEW FEATURE**: Health badge popover "last updated" + refresh (Task 11 rec #4). Footer row with "Updated Xs ago" + Refresh button (spinning icon when refreshing). Users can force-update on demand.
+3. **NEW FEATURE + STYLING**: ActivityFeedWidget new-entry animation (Task 11 rec #5). Slide-in from left + green flash when a fresh audit-log entry appears. Defined `rd-activity-enter` keyframes in globals.css.
+4. **CRITICAL BUG FIX**: Caught + fixed a `ReferenceError: display is not defined` crash in WorkspacePulseStrip's useCountUp hook (accidentally removed the useState line while adding timeAgoShort). The error crashed the entire Daily Work dashboard. Restored the line; verified the dashboard renders correctly.
+
+## Files modified
+- `src/components/rdash/StaffLocationTracker.tsx` — postPoint: demo-mode success + 401/403 terminal (+~25 lines)
+- `src/components/rdash/WorkspacePulseStrip.tsx` — fetchHealth useCallback + refreshing/lastFetchedAt state + timeAgoShort + popover footer + RESTORED useCountUp useState (+~50 lines)
+- `src/components/rdash/ActivityFeedWidget.tsx` — newEntryId detection + rd-activity-enter class on new entry (+~20 lines)
+- `src/app/globals.css` — @keyframes rd-activity-enter + .rd-activity-enter class (+~20 lines)
+
+## Verification
+- Lint: clean
+- Critical crash: fixed (dashboard renders "Good morning, Akarsh" + badge)
+- tracking/ping 403: 1 per page load (was continuous)
+- Popover: "Updated just now" + Refresh button present + clickable
+- Activity animation: rd-activity-enter CSS class in stylesheets
+- Regression: Customer Desk, Data Integrity — all pass
+- VLM: 6/10 (functional; activity card spacing noted as refinement opportunity)
+- Zero console/page errors after the fix
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM) — restarted with the daemon pattern.
+
+## Lesson learned
+When adding a helper function above an existing function, ensure the edit doesn't accidentally remove lines from the existing function body. The Next.js error overlay (accessible via `document.querySelector('nextjs-portal').shadowRoot`) is invaluable for diagnosing client-side ReferenceErrors that agent-browser's error capture misses.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (Task 7 rec #3, recurred through Task 11) — could be driven by a CHANGELOG.md file. Now 12+ task entries.
+2. VLM noted the ActivityFeedWidget feels "cramped" with "inconsistent spacing" — a styling refinement pass (more padding, better visual hierarchy, larger avatars) would improve the score.
+3. The ActivityFeedWidget placement "feels disconnected from the main flow" (Task 10 rec #3) — still unresolved. Consider moving it higher or pairing with ExceptionDashboard.
+4. The tracking/ping still fires 1 initial 403 per page load (before the session cookie is set). A future round could gate the StaffLocationTracker's geolocation watch behind a session-ready check.
+5. The health badge popover could show a mini sparkline (revenue trend) in the footer alongside the cash position, for a richer at-a-glance summary.

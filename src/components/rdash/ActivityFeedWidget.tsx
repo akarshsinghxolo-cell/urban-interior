@@ -140,6 +140,24 @@ export function ActivityFeedWidget() {
       }));
   }, [db.auditLog]);
 
+  // New-entry detection: track the most-recent entry ID across renders. When a
+  // fresh entry appears at position 0 (one we haven't seen before), mark it as
+  // "isNew" so it gets a slide-in + flash animation. The animation is a one-shot
+  // (the flag clears after the render). This gives the feed a true real-time feel.
+  const prevTopIdRef = React.useRef<string | null>(null);
+  const [newEntryId, setNewEntryId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const topId = entries[0]?.id ?? null;
+    if (topId && topId !== prevTopIdRef.current && prevTopIdRef.current !== null) {
+      setNewEntryId(topId);
+      // Clear the flag after the animation completes (1.2s) so it doesn't replay.
+      const t = setTimeout(() => setNewEntryId(null), 1200);
+      prevTopIdRef.current = topId;
+      return () => clearTimeout(t);
+    }
+    if (topId) prevTopIdRef.current = topId;
+  }, [entries]);
+
   return (
     <section
       aria-label="Recent activity feed"
@@ -198,8 +216,17 @@ export function ActivityFeedWidget() {
               // green dot on the avatar to signal real-time freshness.
               const entryAgeMs = Date.now() - new Date(entry.timestamp).getTime();
               const isLive = idx === 0 && entryAgeMs < 60_000;
+              const isNew = entry.id === newEntryId;
               return (
-                <li key={entry.id} className={cn(isLive && "bg-success/[0.03]")}>
+                <li
+                  key={entry.id}
+                  className={cn(
+                    isLive && "bg-success/[0.03]",
+                    // New-entry animation: slide-in from left + brief green flash.
+                    // The animation runs once (1.2s) then the flag clears.
+                    isNew && "rd-activity-enter",
+                  )}
+                >
                   <button
                     type="button"
                     onClick={() => setActiveModule(entry.source_module || "auditLog")}

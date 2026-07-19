@@ -66,9 +66,36 @@ async function postPoint(point: PendingPoint) {
     });
     const payload = (await response.json().catch(() => ({}))) as {
         point?: StaffLocationPing;
+        // The demo-mode fallback returns { point: null, ignored: true } when
+        // Supabase isn't configured. We must treat this as success so the
+        // client stops retrying — otherwise it polls forever and spams the
+        // server log with 403s on every geolocation update.
+        ignored?: boolean;
+        demo?: boolean;
         error?: string;
     };
-    if (!response.ok || !payload.point)
+    if (!response.ok) {
+        // 401/403 = auth failure (session expired or not yet logged in).
+        // Treat as terminal (not retryable) so we don't spam the server.
+        if (response.status === 401 || response.status === 403) {
+            throw new LocationPostError(payload.error || "Authentication required.", 422);
+        }
+        throw new LocationPostError(payload.error || "Location point was not accepted.", response.status);
+    }
+    // Demo-mode "ignored" response — accept as success, return a synthetic point.
+    if (payload.ignored) {
+        return {
+            id: `demo-${point.captured_at}`,
+            staff_id: "demo",
+            latitude: point.latitude,
+            longitude: point.longitude,
+            accuracy_m: point.accuracy_m ?? null,
+            captured_at: point.captured_at,
+            source: point.source,
+            created_at: new Date().toISOString(),
+        } as StaffLocationPing;
+    }
+    if (!payload.point)
         throw new LocationPostError(payload.error || "Location point was not accepted.", response.status);
     return payload.point;
 }
