@@ -149,18 +149,25 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
         </div>
       </div>
 
-      {/* Summary tiles */}
+      {/* Summary tiles — zero counts show "—" instead of "0" for clearer
+          visual distinction between "nothing here" and "has items". */}
       <div className="grid grid-cols-2 gap-px border-b border-border bg-border sm:grid-cols-5">
         {(Object.keys(kindConfig) as Array<ExceptionItem["kind"]>).map((kind) => {
           const cfg = kindConfig[kind];
           const count = counts[kind];
+          const isEmpty = count === 0;
           return (
-            <div key={kind} className={cn("flex flex-col gap-1 px-3 py-2.5 bg-card", count > 0 && cfg.bg)}>
+            <div key={kind} className={cn("flex flex-col gap-1 px-3 py-2.5 bg-card transition-colors", !isEmpty && cfg.bg)}>
               <div className="flex items-center gap-1.5">
-                <span className={cn("flex h-5 w-5 items-center justify-center rounded", cfg.color)}>{cfg.icon}</span>
+                <span className={cn("flex h-5 w-5 items-center justify-center rounded", !isEmpty ? cfg.color : "text-muted-foreground/40")}>{cfg.icon}</span>
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{cfg.label}</span>
               </div>
-              <span className={cn("rd-tabular text-lg font-bold leading-none", count > 0 ? cfg.color : "text-muted-foreground/50")}>{count}</span>
+              <span
+                className={cn("rd-tabular text-lg font-bold leading-none", isEmpty ? "text-muted-foreground/40" : cfg.color)}
+                title={isEmpty ? `No ${cfg.label.toLowerCase()} items` : `${count} ${cfg.label.toLowerCase()} item${count === 1 ? "" : "s"}`}
+              >
+                {isEmpty ? "—" : count}
+              </span>
             </div>
           );
         })}

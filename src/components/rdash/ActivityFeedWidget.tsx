@@ -230,12 +230,14 @@ export function ActivityFeedWidget() {
                   <button
                     type="button"
                     onClick={() => setActiveModule(entry.source_module || "auditLog")}
-                    className="group flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors hover:bg-muted/40"
+                    className="group flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 sm:gap-2.5 sm:py-2.5"
                     title={entry.reason || entry.action}
                   >
-                    {/* Actor avatar with optional live indicator */}
+                    {/* Actor avatar with optional live indicator.
+                        Larger on mobile (h-9 w-9) for better tap targets +
+                        visual weight; compact (h-7 w-7) on sm+. */}
                     <span className="relative shrink-0">
-                      <span className={cn("flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-bold shadow-sm ring-1 ring-background", avatarColor(entry.actor))}>
+                      <span className={cn("flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold shadow-sm ring-1 ring-background sm:h-7 sm:w-7 sm:text-[10px]", avatarColor(entry.actor))}>
                         {initials(entry.actor)}
                       </span>
                       {isLive ? (
@@ -245,17 +247,17 @@ export function ActivityFeedWidget() {
                         </span>
                       ) : null}
                     </span>
-                    {/* Kind icon */}
-                    <span className={cn("mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md shadow-sm", cfg.bg)}>
+                    {/* Kind icon — slightly larger on mobile for visibility */}
+                    <span className={cn("mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm sm:mt-0.5 sm:h-5 sm:w-5", cfg.bg)}>
                       <Icon className={cn("h-3 w-3", cfg.tone)} />
                     </span>
-                    {/* Content */}
+                    {/* Content — slightly larger text on mobile for readability */}
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs leading-snug">
+                      <p className="truncate text-sm leading-snug sm:text-xs">
                         <span className="font-semibold text-foreground">{entry.actor}</span>{" "}
                         <span className="text-muted-foreground">{entry.action.toLowerCase()}</span>
                       </p>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <div className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground sm:mt-0.5 sm:text-[10px]">
                         <span className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-medium text-foreground/70">
                           {entityLabel}
                         </span>
@@ -268,7 +270,7 @@ export function ActivityFeedWidget() {
                         ) : null}
                       </div>
                     </div>
-                    <ArrowRight className="mt-1 h-3 w-3 shrink-0 text-muted-foreground/30 transition-all group-hover:translate-x-0.5 group-hover:text-muted-foreground/60" />
+                    <ArrowRight className="mt-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/30 transition-all group-hover:translate-x-0.5 group-hover:text-muted-foreground/60 sm:mt-1 sm:h-3 sm:w-3" />
                   </button>
                 </li>
               );

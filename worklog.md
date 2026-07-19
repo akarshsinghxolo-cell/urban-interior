@@ -3528,3 +3528,64 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The signin trust footer text is still tiny on mobile (Task 13 rec #3) — could be hidden on very small screens or enlarged.
 4. VLM suggested empty states for zero values (e.g., "RENEGOTIATION: 0" → grayed "—") in the Exceptions & Decisions tabs — a small polish opportunity.
 5. The health-badge popover could show a mini revenue sparkline (Task 11 rec #5) in the footer alongside the cash position for a richer at-a-glance summary.
+
+---
+Task ID: 15
+Agent: orchestrator (cron-triggered webDevReview — ActivityFeed mobile spacing + empty states + copy summary)
+Task: Recurring webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read worklog (3,530 lines, through Task ID 14). Project stable: 52 modules, integrity 100/100, tooltips + mobile horizontal-scroll + freshness indicator done. Task 14's unresolved recs: (1) signin changelog from file, (2) ActivityFeedWidget cramped on mobile, (3) signin trust footer, (4) empty states for zero values, (5) mini sparkline in popover.
+- Verified dev server: ALIVE (PID 19223). .env intact. Health checks 200.
+- QA via agent-browser (desktop 1440×900): login works, Task 14 features intact (greeting, synced indicator, health widget, activity feed 6 items). Command palette works. Sales Pipeline, Customer Desk, Data Integrity — all render with zero errors. Lint clean.
+- VLM analysis (glm-4.6v): "Top 3 improvements: (1) visual hierarchy on KPI tiles, (2) Quick Actions dropdown, (3) status badges on Exceptions + empty states for zero values." Aligned with Task 14 recs #2, #4.
+
+WORK FOCUS (addresses Task 14 recs #2, #4 + a new high-value feature):
+1. STYLING: ActivityFeedWidget mobile spacing pass (Task 14 rec #2 — flagged 3 rounds as "cramped on mobile"). Increased avatar size (h-7 w-7 → h-9 w-9 on mobile, keeping h-7 on sm+), button padding (py-2.5 → py-3 on mobile), gap (gap-2.5 → gap-3 on mobile), kind icon (h-5 w-5 → h-6 w-6 on mobile), text sizes (text-xs → text-sm on mobile for the action line, text-[10px] → text-[11px] for metadata), arrow icon (h-3 → h-3.5 on mobile). Verified: avatar now 36px (was 28px), button height 68px (was ~52px), padding 12px (was 10px) — much more comfortable on mobile. Desktop unchanged (sm: classes preserve the compact layout).
+2. NEW FEATURE + STYLING: Empty states for zero-count tabs in ExceptionDashboard (Task 14 rec #4, VLM point #3). Zero-count tabs now show "—" (em-dash) instead of "0", with a muted gray color (text-muted-foreground/40) and a tooltip "No {label} items". Non-zero counts keep their color-coded styling. Verified: counts show ["1", "—", "1", "2", "—"] — zero tabs clearly distinguished.
+3. NEW FEATURE: "Copy summary" button in the health badge popover. Copies a formatted text summary of the workspace health (badge, integrity score, attention breakdown, integrity issues/records/references, cash/monthRevenue/overdue invoices) to the clipboard. Useful for support, debugging, or reporting. Added ClipboardCopy icon + toast feedback ("Health summary copied" on success, "Copy failed" on failure — graceful handling for non-secure contexts where navigator.clipboard is unavailable). Verified: button present in popover footer ("Updated just now Copy Refresh"), click triggers the copy handler.
+
+Implementation details:
+- `src/components/rdash/ActivityFeedWidget.tsx` (modified, ~15 lines changed): list item button `gap-2.5 px-4 py-2.5` → `gap-3 px-4 py-3 sm:gap-2.5 sm:py-2.5`. Avatar `h-7 w-7 text-[10px]` → `h-9 w-9 text-xs sm:h-7 sm:w-7 sm:text-[10px]`. Kind icon `mt-0.5 h-5 w-5` → `mt-1 h-6 w-6 sm:mt-0.5 sm:h-5 sm:w-5`. Action text `text-xs` → `text-sm sm:text-xs`. Metadata `mt-0.5 text-[10px]` → `mt-1 text-[11px] sm:mt-0.5 sm:text-[10px]`. Arrow `mt-1 h-3 w-3` → `mt-1.5 h-3.5 w-3.5 sm:mt-1 sm:h-3 sm:w-3`.
+- `src/components/rdash/ExceptionDashboard.tsx` (modified, ~10 lines changed): summary tiles — added `isEmpty = count === 0` check. When empty: icon uses `text-muted-foreground/40`, number shows "—" with `text-muted-foreground/40` + tooltip "No {label} items". When non-empty: keeps the color-coded styling (cfg.color + cfg.bg). Added `transition-colors` to the tile div.
+- `src/components/rdash/WorkspacePulseStrip.tsx` (modified, ~35 lines added): imported ClipboardCopy + toast. Added `totalReferences` to health state interface + setHealth call. Added a "Copy" button next to the Refresh button in the popover footer — onClick builds a formatted text summary (7 lines: title, timestamp, badge+integrity, attention breakdown, integrity issues/records/references, cash/monthRevenue/overdue) and calls `navigator.clipboard.writeText(text)` with success/error toasts. Added `import { toast } from "sonner"`.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- ActivityFeedWidget mobile: avatar 36px (was 28px), button height 68px (was ~52px), padding 12px (was 10px) — more comfortable on mobile. Desktop unchanged (sm: classes preserve compact layout). ✅
+- ExceptionDashboard empty states: counts show ["1", "—", "1", "2", "—"] — zero-count tabs show "—" with muted color + tooltip. ✅
+- Copy summary button: present in popover footer ("Updated just now Copy Refresh"). Click triggers copy handler — shows "Copy failed" toast in agent-browser (expected: clipboard API requires secure context; graceful failure handling works). In a real HTTPS browser, it would show "Health summary copied". ✅
+- Regression: Customer Desk, Data Integrity — all render with zero errors on desktop.
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — activity feed mobile-comfortable + empty states + copy summary
+
+## What was done this round
+1. **STYLING**: ActivityFeedWidget mobile spacing pass (Task 14 rec #2). Larger avatars (36px), more padding (12px), larger text (text-sm), larger kind icons (h-6) on mobile — desktop unchanged. Fixes the "cramped on mobile" issue flagged 3 rounds in a row.
+2. **NEW FEATURE + STYLING**: Empty states for zero-count ExceptionDashboard tabs (Task 14 rec #4). Zero tabs show "—" instead of "0" with muted color + tooltip.
+3. **NEW FEATURE**: "Copy summary" button in the health badge popover. Copies a formatted text summary of workspace health to clipboard. Graceful failure handling for non-secure contexts. Useful for support/debugging/reporting.
+
+## Files modified
+- `src/components/rdash/ActivityFeedWidget.tsx` — mobile-responsive sizing (avatars, padding, gap, text, icons)
+- `src/components/rdash/ExceptionDashboard.tsx` — empty-state "—" for zero-count tabs + tooltips
+- `src/components/rdash/WorkspacePulseStrip.tsx` — ClipboardCopy import + toast import + totalReferences state + Copy button + copy handler
+
+## Verification
+- Lint: clean
+- ActivityFeedWidget mobile: avatar 36px, button 68px, padding 12px ✅
+- ExceptionDashboard: zero tabs show "—" ✅
+- Copy button: present + functional (graceful failure in non-secure context) ✅
+- Regression: Customer Desk, Data Integrity — all pass
+- Zero errors throughout
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM) — restarted with the daemon pattern.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. The signin changelog panel is still hardcoded (recurred through Task 14) — could be driven by a CHANGELOG.md file. Now 15+ task entries; a real changelog would be more maintainable.
+2. The signin trust footer text is still tiny on mobile (Task 13 rec #3, Task 14 rec #3) — could be hidden on very small screens or enlarged.
+3. The health-badge popover could show a mini revenue sparkline (Task 11 rec #5, Task 14 rec #5) in the footer alongside the cash position for a richer at-a-glance summary.
+4. VLM suggested a "Quick Actions" dropdown replacing the text "QUICK ADD" button in the greeting strip — would make the quick-add more discoverable.
+5. VLM suggested status badges on the Exceptions & Decisions list rows (red/yellow/green for urgency) — a small polish opportunity.

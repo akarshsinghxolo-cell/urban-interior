@@ -1,12 +1,13 @@
 "use client";
 import * as React from "react";
-import { Activity, ArrowUpRight, CalendarClock, FileText, PhoneCall, PlusCircle, RefreshCw, ShieldCheck, Sparkles, TrendingUp, Users, Wrench, Zap } from "lucide-react";
+import { Activity, ArrowUpRight, CalendarClock, ClipboardCopy, FileText, PhoneCall, PlusCircle, RefreshCw, ShieldCheck, Sparkles, TrendingUp, Users, Wrench, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate } from "@/lib/rdash/date";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "sonner";
 
 /** Compact "Xs/m/h ago" for the health-popover last-updated timestamp. */
 function timeAgoShort(ms: number): string {
@@ -186,6 +187,7 @@ export function WorkspacePulseStrip() {
     overdueInvoiceValue: number;
     monthRevenue: number;
     totalRecords: number;
+    totalReferences: number;
   } | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
   const [lastFetchedAt, setLastFetchedAt] = React.useState<number | null>(null);
@@ -212,6 +214,7 @@ export function WorkspacePulseStrip() {
         overdueInvoiceValue: data.finance?.overdueInvoiceValue ?? 0,
         monthRevenue: data.finance?.monthRevenue ?? 0,
         totalRecords: data.integrity?.totalRecords ?? 0,
+        totalReferences: data.integrity?.totalReferences ?? 0,
       });
       setLastFetchedAt(Date.now());
     } catch {
@@ -341,21 +344,50 @@ export function WorkspacePulseStrip() {
                         <ArrowUpRight className="h-2.5 w-2.5" />
                       </button>
                     </div>
-                    {/* Footer: last-updated timestamp + manual refresh button */}
+                    {/* Footer: last-updated timestamp + refresh + copy-summary buttons */}
                     <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
                       <span className="text-[9px] text-muted-foreground">
                         {lastFetchedAt ? `Updated ${timeAgoShort(lastFetchedAt)}` : "Loading…"}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => fetchHealth(true)}
-                        disabled={refreshing}
-                        className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-                        title="Refresh health summary"
-                      >
-                        <RefreshCw className={cn("h-2.5 w-2.5", refreshing && "animate-spin")} />
-                        {refreshing ? "Refreshing" : "Refresh"}
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {/* Copy summary — copies a formatted text summary of the
+                            workspace health to the clipboard. Useful for
+                            support, debugging, or reporting. */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const lines = [
+                              `Urban Castle — Workspace Health Summary`,
+                              `Generated: ${new Date().toLocaleString("en-IN")}`,
+                              ``,
+                              `Badge: ${health.badge} | Integrity: ${health.integrityScore}/100`,
+                              `Attention: ${health.attentionCount} (approvals ${health.pendingApprovals}, overdue ${health.overdueTasks}, blocked ${health.unresolvedBlocked}, risks ${health.openRisks})`,
+                              `Integrity issues: ${health.integrityIssues} | Records: ${health.totalRecords.toLocaleString("en-IN")} | References: ${health.totalReferences?.toLocaleString("en-IN") ?? "n/a"}`,
+                              `Cash: ${formatINRShort(health.cashPosition)} | Month revenue: ${formatINRShort(health.monthRevenue)} | Overdue invoices: ${formatINRShort(health.overdueInvoiceValue)}`,
+                            ];
+                            const text = lines.join("\n");
+                            navigator.clipboard?.writeText(text).then(
+                              () => toast.success("Health summary copied", { description: "Workspace metrics copied to clipboard", duration: 3000 }),
+                              () => toast.error("Copy failed", { description: "Clipboard access denied", duration: 3000 }),
+                            );
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title="Copy health summary to clipboard"
+                        >
+                          <ClipboardCopy className="h-2.5 w-2.5" />
+                          Copy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => fetchHealth(true)}
+                          disabled={refreshing}
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                          title="Refresh health summary"
+                        >
+                          <RefreshCw className={cn("h-2.5 w-2.5", refreshing && "animate-spin")} />
+                          {refreshing ? "Refreshing" : "Refresh"}
+                        </button>
+                      </div>
                     </div>
                   </PopoverContent>
                 </Popover>
