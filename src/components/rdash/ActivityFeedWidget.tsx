@@ -49,17 +49,26 @@ interface AuditEntry {
   reason?: string;
 }
 
-const KIND_CONFIG: Record<string, { icon: LucideIcon; tone: string; bg: string }> = {
-  create: { icon: PlusCircle, tone: "text-success", bg: "bg-success/10" },
-  update: { icon: Activity, tone: "text-primary", bg: "bg-primary/10" },
-  approve: { icon: CheckCircle2, tone: "text-success", bg: "bg-success/10" },
-  send: { icon: FileText, tone: "text-primary", bg: "bg-primary/10" },
-  receive: { icon: TrendingUp, tone: "text-success", bg: "bg-success/10" },
-  comment: { icon: MessageSquare, tone: "text-muted-foreground", bg: "bg-muted" },
-  decision: { icon: ShieldAlert, tone: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-  alert: { icon: ShieldAlert, tone: "text-destructive", bg: "bg-destructive/10" },
-  system: { icon: Activity, tone: "text-muted-foreground", bg: "bg-muted" },
-  delete: { icon: Trash2, tone: "text-destructive", bg: "bg-destructive/10" },
+const KIND_CONFIG: Record<string, { icon: LucideIcon; tone: string; bg: string; urgency: "high" | "medium" | "low" }> = {
+  // urgency: "high" (red dot — alert/delete), "medium" (amber — decision),
+  // "low" (no dot — routine create/update/approve/etc.). Lets users triage
+  // the feed at a glance without reading every row.
+  create: { icon: PlusCircle, tone: "text-success", bg: "bg-success/10", urgency: "low" as const },
+  update: { icon: Activity, tone: "text-primary", bg: "bg-primary/10", urgency: "low" as const },
+  approve: { icon: CheckCircle2, tone: "text-success", bg: "bg-success/10", urgency: "low" as const },
+  send: { icon: FileText, tone: "text-primary", bg: "bg-primary/10", urgency: "low" as const },
+  receive: { icon: TrendingUp, tone: "text-success", bg: "bg-success/10", urgency: "low" as const },
+  comment: { icon: MessageSquare, tone: "text-muted-foreground", bg: "bg-muted", urgency: "low" as const },
+  decision: { icon: ShieldAlert, tone: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10", urgency: "medium" as const },
+  alert: { icon: ShieldAlert, tone: "text-destructive", bg: "bg-destructive/10", urgency: "high" as const },
+  system: { icon: Activity, tone: "text-muted-foreground", bg: "bg-muted", urgency: "low" as const },
+  delete: { icon: Trash2, tone: "text-destructive", bg: "bg-destructive/10", urgency: "high" as const },
+};
+
+const URGENCY_DOT: Record<"high" | "medium" | "low", string> = {
+  high: "bg-destructive",
+  medium: "bg-amber-500",
+  low: "",
 };
 
 // Deterministic avatar color from a name string (stable across renders).
@@ -247,9 +256,19 @@ export function ActivityFeedWidget() {
                         </span>
                       ) : null}
                     </span>
-                    {/* Kind icon — slightly larger on mobile for visibility */}
-                    <span className={cn("mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md shadow-sm sm:mt-0.5 sm:h-5 sm:w-5", cfg.bg)}>
-                      <Icon className={cn("h-3 w-3", cfg.tone)} />
+                    {/* Kind icon — slightly larger on mobile for visibility.
+                        Urgency dot overlay: red (high), amber (medium), none (low). */}
+                    <span className="relative mt-1 shrink-0 sm:mt-0.5">
+                      <span className={cn("flex h-6 w-6 items-center justify-center rounded-md shadow-sm sm:h-5 sm:w-5", cfg.bg)}>
+                        <Icon className={cn("h-3 w-3", cfg.tone)} />
+                      </span>
+                      {cfg.urgency !== "low" ? (
+                        <span
+                          className={cn("absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-1 ring-card", URGENCY_DOT[cfg.urgency])}
+                          title={cfg.urgency === "high" ? "High urgency" : "Needs decision"}
+                          aria-label={cfg.urgency === "high" ? "High urgency" : "Needs decision"}
+                        />
+                      ) : null}
                     </span>
                     {/* Content — slightly larger text on mobile for readability */}
                     <div className="min-w-0 flex-1">

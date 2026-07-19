@@ -123,6 +123,18 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
     overdue: { icon: <AlertTriangle className="h-3.5 w-3.5" />, color: "text-destructive", bg: "bg-destructive/10", border: "border-destructive/20", label: "Overdue" },
   };
 
+  // "Next Step" action labels — tells the user the immediate action needed for
+  // each exception kind, so they can triage without reading the full description.
+  // Color-coded: green = approve/confirm, blue = review, amber = follow up,
+  // red = resolve urgently.
+  const nextStepConfig: Record<ExceptionItem["kind"], { label: string; className: string }> = {
+    direct_award: { label: "Review", className: "bg-primary/10 text-primary ring-1 ring-primary/20" },
+    renegotiation: { label: "Follow up", className: "bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400" },
+    variation: { label: "Approve", className: "bg-success/10 text-success ring-1 ring-success/20" },
+    decision: { label: "Decide", className: "bg-primary/10 text-primary ring-1 ring-primary/20" },
+    overdue: { label: "Resolve", className: "bg-destructive/10 text-destructive ring-1 ring-destructive/20" },
+  };
+
   return (
     <section aria-label="Exception dashboard" className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
       {/* Header */}
@@ -201,6 +213,16 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
                     <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", cfg.bg, cfg.color)}>
                       {cfg.label}
                     </span>
+                    {/* "Next Step" action tag — color-coded so users know the
+                        immediate action needed without reading the full row. */}
+                    {(() => {
+                      const ns = nextStepConfig[item.kind];
+                      return ns ? (
+                        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", ns.className)}>
+                          {ns.label}
+                        </span>
+                      ) : null;
+                    })()}
                     <p className="truncate text-xs font-semibold text-foreground">{item.title}</p>
                   </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">

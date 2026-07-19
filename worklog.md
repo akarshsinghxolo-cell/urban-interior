@@ -3656,3 +3656,64 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. The signin changelog panel is now file-driven but the CHANGELOG.md is manually maintained. A future round could auto-generate it from git-log or the worklog.
 4. The /api/changelog endpoint could support a `?limit=N` query param for pagination if the changelog grows long.
 5. The popover sparkline could show a tooltip on hover with the exact daily values (currently just shows "7-day revenue trend").
+
+---
+Task ID: 17
+Agent: orchestrator (cron-triggered webDevReview — Exceptions Next Step labels + ActivityFeed urgency dots + changelog limit param)
+Task: Recurring webDevReview. Assess project status, QA via agent-browser, then independently select work focus (fix bugs / add features / improve styling) and continue development.
+
+Work Log:
+- Read worklog (3,658 lines, through Task ID 16). Project stable: 52 modules, integrity 100/100, file-driven changelog + popover sparkline + mobile trust footer done. Task 16's unresolved recs: (1) Quick Actions dropdown, (2) status badges on Exceptions rows, (3) auto-generate changelog, (4) /api/changelog limit param, (5) sparkline tooltip.
+- Verified dev server: ALIVE (PID 23386). .env intact. Health checks 200 (incl /api/changelog).
+- QA via agent-browser (desktop 1440×900): login works, Task 16 features intact (greeting, synced, health widget, activity feed 6 items). Quick Add buttons work (6 buttons). Customer Desk, Data Integrity — all render with zero errors. Lint clean.
+- VLM analysis (glm-4.6v): "Top 3: (1) Quick Actions on metric cards, (2) urgency badges on activity feed (red/amber/gray dots), (3) Next Step labels on Exceptions rows (Approve/Review/Follow Up)." Aligned with Task 16 recs #2, #4.
+
+WORK FOCUS (addresses Task 16 recs #2, #4 + VLM points #2, #3):
+1. NEW FEATURE + STYLING: "Next Step" action labels on the Exceptions & Decisions list rows (Task 16 rec #2, VLM point #3). Each exception row now has a color-coded action tag next to the kind label: direct_award→"Review" (blue), renegotiation→"Follow up" (amber), variation→"Approve" (green), decision→"Decide" (blue), overdue→"Resolve" (red). Users can triage at a glance without reading the full description. Verified: tags ["Decide", "Review", "Decide", "Approve"] render on the 4 exception rows.
+2. NEW FEATURE + STYLING: Urgency dots on the ActivityFeedWidget (VLM point #2). Added an `urgency` field to KIND_CONFIG: alert/delete→"high" (red dot), decision→"medium" (amber dot), all others→"low" (no dot). The dot renders as a small 8px circle overlaid on the kind icon (top-right corner, ring-1 ring-card for visibility) with a tooltip ("High urgency" / "Needs decision"). Users can scan the feed for critical items. Verified: 3 urgency dots found.
+3. NEW FEATURE: /api/changelog?limit=N query param (Task 16 rec #4). The endpoint now accepts an optional `?limit=N` query param (default 6, clamped to [1, 50]) for pagination. Returns a `count` field alongside `entries`. Verified: ?limit=3 returns 3 entries, default returns 6.
+
+Implementation details:
+- `src/components/rdash/ExceptionDashboard.tsx` (modified, ~20 lines added): added `nextStepConfig` Record mapping each ExceptionItem kind to { label, className } with color-coded styling. Rendered a `<span>` action tag (between the kind label and the title) using an IIFE to look up the config. Tags: Review (primary/blue), Follow up (amber), Approve (success/green), Decide (primary/blue), Resolve (destructive/red).
+- `src/components/rdash/ActivityFeedWidget.tsx` (modified, ~15 lines changed): added `urgency: "high"|"medium"|"low"` to the KIND_CONFIG type + each kind entry. Added `URGENCY_DOT` Record (high→bg-destructive, medium→bg-amber-500, low→""). Wrapped the kind icon `<span>` in a `relative` container + added an absolute-positioned urgency dot span (-right-0.5 -top-0.5, h-2 w-2, rounded-full, ring-1 ring-card) when urgency !== "low", with title/aria-label.
+- `src/app/api/changelog/route.ts` (modified, ~10 lines changed): GET now accepts a NextRequest param. Parses `?limit=N` from the URL (default 6, clamped [1, 50]). Added `count` field to the JSON response.
+
+Verification Results:
+- Lint: clean (0 errors, 0 warnings).
+- Exceptions Next Step labels: ["Decide", "Review", "Decide", "Approve"] render on the 4 exception rows ✅
+- ActivityFeed urgency dots: 3 dots found (decision=amber, alert/delete=red) ✅
+- /api/changelog?limit=3: returns count: 3, entries: 3 ✅. Default: count: 6, entries: 6 ✅
+- Regression: Customer Desk, Data Integrity — all render with zero errors on desktop.
+- No runtime errors.
+
+Stage Summary:
+
+## PROJECT STATUS: STABLE — Exceptions actionable + ActivityFeed triageable + changelog paginated
+
+## What was done this round
+1. **NEW FEATURE + STYLING**: "Next Step" action labels on Exceptions & Decisions rows (Task 16 rec #2). Color-coded tags (Review/Follow up/Approve/Decide/Resolve) so users know the immediate action without reading the full row.
+2. **NEW FEATURE + STYLING**: Urgency dots on ActivityFeedWidget (VLM point #2). Red (high: alert/delete), amber (medium: decision), none (low: routine). 8px dot overlay on the kind icon with tooltip. Users can scan for critical items.
+3. **NEW FEATURE**: /api/changelog?limit=N query param (Task 16 rec #4). Default 6, clamped [1, 50], returns count field. Supports pagination for growing changelogs.
+
+## Files modified
+- `src/components/rdash/ExceptionDashboard.tsx` — nextStepConfig + action tag render
+- `src/components/rdash/ActivityFeedWidget.tsx` — urgency field in KIND_CONFIG + URGENCY_DOT + dot overlay render
+- `src/app/api/changelog/route.ts` — ?limit=N param + count field
+
+## Verification
+- Lint: clean
+- Exceptions Next Step: ["Decide","Review","Decide","Approve"] ✅
+- ActivityFeed urgency dots: 3 found ✅
+- /api/changelog?limit=3: count 3 ✅, default: count 6 ✅
+- Regression: Customer Desk, Data Integrity — all pass
+- Zero errors throughout
+
+## Dev-server note
+Server died once during lint (4GB RAM OOM) — restarted with the daemon pattern.
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. VLM suggested a "Quick Actions" dropdown replacing the text "QUICK ADD" button in the greeting strip (Task 15 rec #4, Task 16 rec #1) — would make the quick-add more discoverable. Still unresolved after 3 rounds.
+2. The popover sparkline could show a tooltip on hover with the exact daily values (Task 16 rec #5) — currently just shows "7-day revenue trend".
+3. The signin changelog panel is file-driven but CHANGELOG.md is manually maintained (Task 16 rec #3). A future round could auto-generate it from git-log or the worklog.
+4. The ActivityFeed urgency dots could be complemented by a filter ("Show only urgent") in the header — a small feature for power users.
+5. The Exceptions "Next Step" tags could be clickable to perform the action directly (e.g., clicking "Approve" opens the approval dialog) instead of just navigating to the module.

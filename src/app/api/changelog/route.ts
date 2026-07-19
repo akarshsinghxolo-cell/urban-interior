@@ -71,13 +71,22 @@ function parseChangelog(markdown: string): ChangelogEntry[] {
   return entries;
 }
 
-export async function GET() {
+export async function GET(request: import("next/server").NextRequest) {
   try {
+    // Support ?limit=N query param for pagination. Default 6, max 50 (to
+    // prevent over-fetching if the changelog grows long). Clamped to [1, 50].
+    const url = new URL(request.url);
+    const limitParam = url.searchParams.get("limit");
+    let limit = 6;
+    if (limitParam) {
+      const parsed = parseInt(limitParam, 10);
+      if (!Number.isNaN(parsed)) limit = Math.max(1, Math.min(50, parsed));
+    }
     const filePath = path.join(process.cwd(), "CHANGELOG.md");
     const markdown = await fs.readFile(filePath, "utf-8");
-    const entries = parseChangelog(markdown).slice(0, 6);
+    const entries = parseChangelog(markdown).slice(0, limit);
     return NextResponse.json(
-      { status: "ok", entries },
+      { status: "ok", entries, count: entries.length },
       { headers: { "Cache-Control": "public, max-age=300" } },
     );
   } catch (error) {
