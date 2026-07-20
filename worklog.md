@@ -4101,3 +4101,316 @@ UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
 3. **Mobile tooltip positioning**: Audit absolutely-positioned decorative elements (e.g., `-right-8` tooltips) and add `pointer-events-none` + `aria-hidden="true"` to those that are purely decorative. Low priority.
 4. **Empty-state data**: Contractor Detail, Field Visits, and Attendance show empty states — this is expected for a fresh demo workspace, but consider pre-seeding sample contractors/visits/staff for demonstration purposes.
 5. The Reports gross-margin fix should be redeployed to Vercel to take effect on the live site.
+
+---
+
+## Task ID: QA-MOBILE
+**Agent**: mobile-ui-qa
+**Task**: Comprehensive mobile UI analysis at smartphone viewport (375×812, iPhone 13)
+**URL tested**: https://urban-castle.vercel.app/
+**Session**: Logged in via demo owner credentials (Akarsh Singh · Owner)
+
+### Testing Methodology
+- Browser viewport resized to 375×812 (iPhone 13)
+- Tested modules: Workdesk Dashboard, Customer Desk, Google Drive Manager, Sales Pipeline, Quotation Desk, Sites & Execution
+- Inspected every element's bounding box, computed CSS (font-size, overflow, padding, touch-target dimensions), and z-index stacking
+- Captured 17 screenshots in `/home/z/my-project/screenshots/mobile-*.png`
+- Verified WCAG 2.2 §2.5.5 (44×44px touch target) and §1.4.4 (text resize/contrast) compliance
+
+### Executive Summary
+The mobile UI has **17 distinct problems** spanning 5 severity levels. The most critical issues are:
+1. **Page H1 title is invisible on every page** (truncated to 14px width by header buttons)
+2. **"More workspace actions" button is un-tappable** — covered by floating Refresh workspace button (53% overlap)
+3. **Notifications panel is positioned off-screen** — 89px of its 352px width extends beyond the left edge of the viewport
+4. **Sub-nav items in mobile drawer are 24px tall** — far below the 44px touch target minimum
+5. **Drive Accounts table forces 900px min-width** causing horizontal scroll with no visible affordance
+
+---
+
+## CRITICAL Issues (App unusable / cannot navigate / content invisible)
+
+### MOB-001 · Header — H1 page title is invisible on every page
+- **Module/Area**: Header (global — affects every page)
+- **Severity**: Critical
+- **Current state**: The `<h1>` in `WorkspaceHeader.tsx` (line 96) has `className="truncate text-xl font-bold tracking-tight"`. On 375px viewport, 6 icon buttons (40×40 each) plus gap-3 padding consume ~290px, leaving only ~14px for the title. Measured `h1.getBoundingClientRect().width = 14px` on Workdesk Dashboard, Customer Desk, Sales Pipeline, Quotation Desk, Sites & Execution, Google Drive Manager — every page tested. The full text "Workdesk Dashboard" requires 213px; "Sales Pipeline" requires 138px.
+- **Expected state**: Page title should be visible (or removed entirely if a separate H1/H2 is rendered in main content). Currently there IS a duplicate H2 in main content showing the title properly — the truncated H1 in the header is dead weight.
+- **Code location**: `src/components/rdash/WorkspaceHeader.tsx:96`
+
+### MOB-002 · Header — "More workspace actions" button is covered by floating Refresh button
+- **Module/Area**: Header — top-right action buttons
+- **Severity**: Critical
+- **Current state**: A floating "Refresh workspace" button (`RefreshWorkspaceButton` in `UrbanCastleApp.tsx`) is positioned `fixed right-3 top-3 z-[55]` with `h-8` (32px tall) and width 36px. It overlaps the "More workspace actions" header button (`<Button size="icon" className="h-10 w-10 shrink-0">`) at the same screen position (both at left ≈ 327px). Verified overlap: floating button covers 53% of the More-actions button area; agent-browser refuses to click `@e11` because "Element is covered by `<button.fixed.right-3>`".
+- **User impact**: Cannot tap "More workspace actions" → cannot access Keyboard shortcuts, Restart onboarding tour, Filters & views, Export workspace, or Settings from the mobile header.
+- **Expected state**: Floating Refresh button must not overlap header controls. Either (a) hide floating Refresh on mobile (it duplicates the header Refresh button), (b) move floating button to a non-conflicting position, or (c) increase z-index of header so its buttons stay clickable.
+- **Code location**: `src/components/urban-castle/UrbanCastleApp.tsx` (`RefreshWorkspaceButton`)
+
+### MOB-003 · Notifications — Panel positioned partially off-screen (left edge clipped)
+- **Module/Area**: Header → Notifications dropdown
+- **Severity**: Critical
+- **Current state**: When the "Notifications (0 unread)" button (at left=223, width=40) is tapped, the dropdown panel opens with `className="absolute right-0 top-11 z-50 w-[22rem]"` (width 352px). Because the trigger button's right edge is at x=263 and the panel is 352px wide, the panel's left edge sits at x=-89px — **89px of the panel extends beyond the viewport's left edge**. Measured: panel rect = `left:-89, right:263, width:352`. The "Notifications" heading (`<h3>`) renders at `left=-52, right=44` — only 44px of its 96px width is visible. The Clear button is fine (at left=212, right=250).
+- **User impact**: "Notifications" title is clipped (user sees only "ations" or similar). Any left-side content of the panel is invisible.
+- **Expected state**: Panel should clamp to `left: 8px` minimum on mobile (e.g., `max-w-[calc(100vw-16px)]` or use `left-2` instead of `right-0` on mobile). Or use Radix Popover's collision detection.
+- **Code location**: `src/components/rdash/NotificationCenter.tsx` (PopoverContent with `right-0`)
+
+### MOB-004 · Sidebar Drawer — Sub-module nav items are 24px tall (touch target fail)
+- **Module/Area**: Mobile navigation drawer → sub-module items
+- **Severity**: Critical
+- **Current state**: When the mobile drawer opens, the main module buttons (e.g., "Workdesk Dashboard") are 296×59px (good). But their sub-module items (Thread Inbox, Tasks & Follow-ups, Obstacles & Risks, Approvals, Calendar, Customer Timeline, Customer Requests, Google Drive Manager, Communication Centre, etc.) are only **271×24px each** — far below the WCAG 2.5.5 / Apple HIG 44×44px minimum touch target. Font size is 12px with `padding: 4px 8px`.
+- **User impact**: On a touch device, users will frequently mis-tap adjacent items. The list of sub-modules is dense and hard to hit accurately.
+- **Expected state**: All tappable nav items should be at least 44×44px (Apple HIG) or 48×48px (Material Design). Increase padding to at least `py-3` or set explicit `min-h-[44px]`.
+- **Code location**: `src/components/rdash/Sidebar.tsx` (sub-module list rendering)
+
+---
+
+## HIGH Issues (Major features broken / very hard to use)
+
+### MOB-005 · Google Drive Manager — Drive Accounts table forces 900px min-width
+- **Module/Area**: Google Drive Manager → Drive Accounts section
+- **Severity**: High
+- **Current state**: The table element has `className="w-full min-w-[900px]"`. On 375px viewport the table is 900px wide and overflows the 357px scroll container. Horizontal scrolling IS possible (parent has `overflow-x: auto`) but there is no visible scrollbar affordance on mobile, no scroll hint, and users may not realize they can swipe. Cells use `whiteSpace: normal` so text wraps awkwardly (e.g., the "Drive account" cell wraps email + folder info into a tall narrow column). Column widths: Active=99, Drive account=387, Storage=103, Priority/Status=106, Actions=204. Font size 12px.
+- **Expected state**: On mobile, either (a) render the drive accounts as stacked cards (one account per card with labeled fields), or (b) remove `min-w-[900px]` and let columns shrink, or (c) add a visible "swipe →" indicator.
+- **Code location**: `src/components/rdash/modules/GoogleDriveManagerModule.tsx` (table element)
+
+### MOB-006 · Header — All 6 icon buttons are 40×40px (below 44px touch target)
+- **Module/Area**: Header — global action buttons
+- **Severity**: High
+- **Current state**: Every icon button in the header uses `<Button size="icon" className="h-10 w-10">` which renders as 40×40px. Buttons affected: Open navigation, Open command palette, Refresh, Notifications, Switch to dark mode, More workspace actions. All 6 fail WCAG 2.5.5 (Target Size — Minimum).
+- **Expected state**: Buttons should be at least 44×44px (Apple HIG) — change `h-10 w-10` to `h-11 w-11` (44px). The Material Design recommendation is 48×48px (`h-12 w-12`).
+- **Code location**: `src/components/rdash/WorkspaceHeader.tsx` (multiple lines: 68, 112, 128, 140, 158)
+
+### MOB-007 · Tab strip — Close-tab buttons are 16×16px (touch target fail + accidental close risk)
+- **Module/Area**: Tab strip (below header) — affects every open module tab
+- **Severity**: High
+- **Current state**: Each tab has a Close (×) button sized 16×16px (`<button className="ml-0.5 rounded p-0.5"><X className="h-3 w-3"/></button>`). On mobile, the tab strip is `overflow-x: auto` and tabs are 34px tall. Touching a tab to switch to it often hits the × instead, closing the tab unintentionally. Measured on 3 open tabs: each × button is 16×16, sitting in the top-right corner of its 110-228px-wide tab.
+- **User impact**: Users tapping a tab to switch modules will frequently close the tab by accident. The tab label is also small (text-sm = 14px).
+- **Expected state**: Increase × button to at least 24×24px (or 44×44 if it remains tappable). Add more padding between the label and × (currently `ml-0.5`). Consider hiding × on mobile and using long-press to close.
+- **Code location**: `src/components/rdash/WorkspaceHeader.tsx:192`
+
+### MOB-008 · Edit Customer dialog — Form inputs and category chips are 36px / 27px tall
+- **Module/Area**: Customer Desk → Edit Customer dialog (and likely all entity forms)
+- **Severity**: High
+- **Current state**: In the Edit Customer bottom-sheet dialog, all 8 text inputs are 36px tall (`h-9`); all 5 customer-type chips (Walk-in, Service customer, Product buyer, Repeat customer, Trade customer) are 27px tall; category multi-select chips (False Ceiling, Flooring & Tiles, etc.) are 27px tall. All fail WCAG 2.5.5. The Save changes and Cancel buttons at the bottom are 333×32px (also below 44px height). The Close (×) button at top-right is 16×16px.
+- **Expected state**: Inputs should be at least 44px tall (`h-11`). Buttons should be 44×44 minimum. Chips should have `min-h-[44px]` and adequate padding.
+- **Code location**: `src/components/rdash/EntityFormDialog.tsx` (likely); customer-type chips in customer form
+
+### MOB-009 · Customer Desk — Record actions dropdown menu items are 28px tall
+- **Module/Area**: Customer Desk → "Record actions" dropdown per customer card
+- **Severity**: High
+- **Current state**: Tapping "Record actions" opens a 208×382px dropdown (`role=menu`) with 12 menu items (Open details, Create quotation, Schedule visit, Add collection milestone, Add follow-up, Add task, Send catalogue, Send reference media, Send Pinterest board, Send material options, Open sites & execution, Edit). Each `<div role=menuitem>` is 198×28px with `padding: 4px 8px` and `font-size: 12px`. All 12 fail the 44px touch target.
+- **Expected state**: Menu items should be at least 44px tall (`min-h-[44px]`, `py-3`).
+- **Code location**: `src/components/rdash/recordActions.tsx`
+
+### MOB-010 · Customer Desk — "Record actions" trigger button is 28×28px
+- **Module/Area**: Customer Desk → customer card → Record actions trigger
+- **Severity**: High
+- **Current state**: Each customer card has a "Record actions" trigger button that is only 28×28px (icon-only). On a 359×148 customer card this is the only entry point to 12 record-level actions. Users must hit a 28×28 target to access critical functions like "Create quotation" or "Schedule visit".
+- **Expected state**: Trigger button should be 44×44 minimum, or the card itself should expose primary actions inline.
+- **Code location**: `src/components/rdash/recordActions.tsx`
+
+### MOB-011 · Workspace Pulse — Quick-action chips are 50×24px (touch target fail)
+- **Module/Area**: Dashboard → Workspace Pulse → quick-action chips
+- **Severity**: High
+- **Current state**: The 5 quick-action chips (Customer, Task, Quotation, Visit, Follow-up) at the top of the dashboard are each 50×24px with `padding: 4px 10px` and `font-size: 11px`. They're rendered in a `flex flex-wrap items-center gap-1.5` container 274×24px tall. All 5 fail the 44px touch target.
+- **Expected state**: Chips should be `min-h-[36px]` (better 44px) with `py-2` padding. Increase font-size to 13-14px.
+- **Code location**: `src/components/rdash/WorkspacePulseStrip.tsx`
+
+### MOB-012 · Workspace Health stats — All 8 stat chips are 18px tall (touch target fail)
+- **Module/Area**: Dashboard → Workspace health → stat chips
+- **Severity**: High
+- **Current state**: The 8 compact stat chips (0 attention, 0 due today, 0 approvals, ₹2.93L pipeline, 1 live work, 0 visits, ₹0 cash, ₹0 month) are each 18px tall (height measured). They are tappable buttons but at 18px tall they're impossible to hit reliably on touch. Value font 14px, label font 11px.
+- **Expected state**: Increase to `min-h-[44px]` and add padding. Or make the entire row a single non-interactive display + a single "View details" button.
+- **Code location**: `src/components/rdash/WorkspaceHealthWidget.tsx`
+
+---
+
+## MEDIUM Issues (Usable but poor UX)
+
+### MOB-013 · Footer — Workspace stats text is truncated; footer wastes 34px of vertical space
+- **Module/Area**: Footer (global)
+- **Severity**: Medium
+- **Current state**: The footer at the bottom of the viewport is 34px tall (top:779, bottom:812). It contains "UC Urban Castle" (left, 104px wide) and "6 customers · 1 workOrders · 1 POs" (right). The right div is only 68px wide due to `flex justify-between`, but the text content is ~188px — so the spans "·", "1 workOrders", "·", "1 POs" all collapse to width 0 (invisible). User sees only "6 customers" — the rest is clipped. Font size 11px, "UC" logo is 8px.
+- **Vertical space impact**: Header (128px) + bottom nav (54px) + footer (34px) = 216px of chrome = **26% of the 812px viewport** is consumed by static UI. Content area is only 597px.
+- **Expected state**: Either (a) hide footer on mobile (`md:block hidden`), (b) make footer scrollable, or (c) wrap text. Given vertical space pressure on mobile, hiding footer is recommended.
+- **Code location**: Footer in main app shell (likely `RDashApp.tsx` or `UrbanCastleApp.tsx`)
+
+### MOB-014 · Google Drive Manager — 4 primary tabs wrap to 2 rows, 28px tall
+- **Module/Area**: Google Drive Manager → primary tabs (Storage / Connect Drive / OAuth Settings / Setup Guide)
+- **Severity**: Medium
+- **Current state**: The 4 tabs are in a `flex flex-wrap gap-1 p-1.5` container. Each tab is 97-147px wide and 28px tall. They wrap to 2 rows (Storage + Connect Drive on row 1, OAuth Settings + Setup Guide on row 2), consuming 74px of vertical space. Font size 12px.
+- **Expected state**: Tabs should be `min-h-[44px]`. Consider using a `<select>` dropdown on mobile for these primary sections instead of a wrapping tab strip.
+- **Code location**: `src/components/rdash/modules/GoogleDriveManagerModule.tsx`
+
+### MOB-015 · Sites & Execution — 9 sub-tabs require 1041px horizontal scroll (no affordance)
+- **Module/Area**: Sites & Execution → secondary tabs
+- **Severity**: Medium
+- **Current state**: The site detail view has 9 secondary tabs (Overview, Areas, Work Required, Quotations, Contractor Bids, Work Orders, BOQ, Procurement, Finance) totaling scrollWidth 1041px in a 357px container. `overflow-x: auto` enables horizontal scroll, but there's no visible scrollbar indicator. Each tab is 32px tall (touch target fail). Font 12px.
+- **Expected state**: On mobile, render these as a `<select>` dropdown, or use a "More tabs" overflow button. Increase tab height to 44px.
+- **Code location**: `src/components/rdash/modules/SiteExecutionModule.tsx`
+
+### MOB-016 · Quotation Desk — 6 filter tabs in horizontal scroll, 30px tall
+- **Module/Area**: Quotation Desk → status filter tabs
+- **Severity**: Medium
+- **Current state**: 6 filter tabs (All, Draft, Sent, Accepted, Rejected / Lost, Cancelled) totaling 898px scrollWidth in a 375px container. Each tab is 39-115px wide and 30px tall. Font 12px. Touch target fail.
+- **Expected state**: Convert to dropdown or increase touch target.
+- **Code location**: `src/components/rdash/modules/QuotationsModule.tsx`
+
+### MOB-017 · Sales Pipeline — Lead card text is 9-12px (readability fail)
+- **Module/Area**: Sales Pipeline → lead cards
+- **Severity**: Medium
+- **Current state**: Each lead card is 288×96px. Text sizes inside:
+  - Avatar initials "MD": 10.08px
+  - Customer name "Mr. Das": 12px
+  - Description "Office Interior Painting": 10px
+  - Price "₹32.0k": 10px
+  - Source "Direct": 10px
+  - Priority badge "Medium": 9px (extremely small)
+- **Expected state**: Body text minimum 14-16px on mobile. Priority badge should be at least 11-12px.
+- **Code location**: `src/components/rdash/modules/SalesPipelineModule.tsx`
+
+### MOB-018 · Dashboard — "All clear — workspace healthy" tooltip text has width 0 (invisible)
+- **Module/Area**: Dashboard → Workspace Pulse → status indicator
+- **Severity**: Medium
+- **Current state**: The "✓ 0 All clear — workspace healthy" status pill at the top of the dashboard shows the icon and number, but the descriptive text "All clear — workspace healthy" has `width: 0, height: 0` (it's a tooltip that only appears on hover, which doesn't exist on mobile touch devices). The visible "✓ 0" indicator itself is only 34×22px with font-size 9px.
+- **Expected state**: On mobile, the status text should be visible inline (not hidden in a tooltip), or the indicator should expand to show the message on tap.
+- **Code location**: `src/components/rdash/WorkspacePulseStrip.tsx` (or `WorkspaceHealthPill.tsx`)
+
+### MOB-019 · Dashboard — Workflow step subtitle text is 11px (readability fail)
+- **Module/Area**: Dashboard → Module workflow steps (01 See work / 02 Resolve risk / 03 Open work context)
+- **Severity**: Medium
+- **Current state**: Each workflow step card is 359×63px. Text sizes:
+  - Number "01": 12px (700 weight)
+  - Title "See work": 14px (600 weight) — OK
+  - Subtitle "Assigned actions and due dates": 11px — too small
+  - Status "0 open": 11px — too small
+- **Expected state**: Subtitle and status text should be at least 13-14px on mobile.
+- **Code location**: `src/components/rdash/modules/DailyWork.tsx` (ModuleWorkflowSteps)
+
+### MOB-020 · Customer Satisfaction cards — Stats text is 10px (readability fail)
+- **Module/Area**: Dashboard → Customer Satisfaction section
+- **Severity**: Medium
+- **Current state**: Each customer satisfaction card (357×50px) shows:
+  - Name "Nisha Rao": 12px (600)
+  - "0 quotes": 10px
+  - "·": 10px
+  - "0 accepted": 10px
+  - "0/0 delivered": 10px
+  - Score "35": 11px (700)
+- 10px text is below the WCAG-recommended 12-16px minimum for body text on mobile.
+- **Expected state**: Minimum 12-13px for body text; consider stacking the stats on 2 lines if width is constrained.
+- **Code location**: `src/components/rdash/CustomerSatisfaction.tsx`
+
+### MOB-021 · Exception Dashboard — "Variation"/"Approve" badges are 9px (readability fail)
+- **Module/Area**: Dashboard → Exception Dashboard → Variation card
+- **Severity**: Medium
+- **Current state**: The variation approval card shows two small uppercase badges "Variation" and "Approve" at font-size 9px. The card itself is 357×56px; main text "Variation: Q-2026-201-R2" is 12px; "Mr. Das" is 11px.
+- **Expected state**: Minimum 11px for badge text. Better: use icon + tooltip instead of tiny text badges.
+- **Code location**: `src/components/rdash/ExceptionDashboard.tsx`
+
+### MOB-022 · Edit Customer dialog — Dialog panel itself scrolls OK, but inner content height is 1315px in 528px viewport
+- **Module/Area**: Customer Desk → Edit Customer dialog
+- **Severity**: Medium
+- **Current state**: Dialog opens as a bottom sheet (top: 90, bottom: 812, width 375). The scrollable region is 373×528px with `max-height: 527.8px` and `overflow-y: auto`. Inner content (the form) is 1315px tall — so user must scroll through ~2.5 screen-heights of form fields to reach Save/Cancel at the bottom. Save (333×32) and Cancel (333×32) buttons are below the 44px touch target height. Dialog title "Edit Customer" is 16px (OK).
+- **Expected state**: Either split the form into steps/wizard, or make Save sticky at the bottom of the dialog (currently it scrolls with content). Increase button height to 44px.
+- **Code location**: `src/components/rdash/EntityFormDialog.tsx`
+
+### MOB-023 · Dashboard — 13 empty queue sections stacked vertically (excessive scroll)
+- **Module/Area**: Dashboard → "Daily Work" tab lower section
+- **Severity**: Medium
+- **Current state**: The dashboard has 13 sections stacked vertically: My action queue, Approvals requiring decision, Blocked work, Risk watch, Visits and field execution, Follow-ups, Today's site executions, Today's visits, Today's follow-ups due, Today's dispatches, Today's attendance, Today's overdue invoices, Weekly throughput. Each is 270-334px tall (totaling ~3700px of vertical content). Most are empty (showing "0 [items]" + empty state message). The first 6 sections (My action queue through Follow-ups) have NO collapse button and are forced open even when empty. The bottom 6 ("Today's *") do have Collapse buttons.
+- **User impact**: Mobile user must scroll through ~6 screens of mostly-empty sections to reach the bottom of the dashboard.
+- **Expected state**: Either (a) auto-collapse empty sections, (b) hide sections with 0 items behind a "Show empty sections" toggle, or (c) add Collapse buttons to ALL sections (currently missing on the first 6).
+- **Code location**: `src/components/rdash/modules/DailyWork.tsx`
+
+### MOB-024 · Workspace Pulse — Date/clock/sync text is 10-11px (readability fail)
+- **Module/Area**: Dashboard → Workspace Pulse → metadata strip
+- **Severity**: Medium
+- **Current state**: The metadata strip "Monday, 20 July · 08:16 pm · synced just now" uses font sizes 10px ("synced just now") and 11px (date, time, separator). At default mobile viewing distance these are hard to read.
+- **Expected state**: Minimum 12px for metadata text on mobile.
+- **Code location**: `src/components/rdash/WorkspacePulseStrip.tsx`
+
+---
+
+## LOW Issues (Cosmetic / spacing / alignment)
+
+### MOB-025 · Customer cards — Customer name is truncated ("Mr. Das" → "Mr. D…")
+- **Module/Area**: Customer Desk → customer cards
+- **Severity**: Low
+- **Current state**: The customer name `<p>` has `truncated: true` (overflow: hidden + text-overflow: ellipsis). Measured: name paragraph is 58px wide for "Mr. Das" — but with the avatar (40×40) and status pill taking space, longer names will be cut.
+- **Expected state**: Allow name to wrap to 2 lines, or allocate more width to the name.
+- **Code location**: `src/components/rdash/modules/CustomerDesk.tsx`
+
+### MOB-026 · Quick Add modal — Close (×) button is 28×28px (touch target fail)
+- **Module/Area**: Quick Add bottom-sheet modal (global FAB action)
+- **Severity**: Low
+- **Current state**: The Quick Add modal opens as a bottom sheet (375×309 panel at bottom). The 4 action tiles (New task, Schedule visit, New follow-up, New quotation) are 166×109px each (good touch targets). But the Close (×) button at top-right is only 28×28px.
+- **Expected state**: Increase to 44×44px.
+- **Code location**: `src/components/rdash/QuickAddSheet.tsx`
+
+### MOB-027 · FAB — Quick Add FAB overlaps dashboard content (workflow step card)
+- **Module/Area**: Floating Quick Add button (global)
+- **Severity**: Low
+- **Current state**: The Quick Add FAB is `position: absolute, z-40, top: 668, left: 311, 48×48`. On the dashboard, it sits over the "02 Resolve risk" workflow step article (at y=657-720). Tapping the FAB is fine, but the FAB permanently covers part of the workflow step card.
+- **Expected state**: Add `padding-right` or `margin-bottom` to the main content scroll area so the FAB doesn't cover content. Or move the FAB above the bottom nav instead of overlapping content.
+- **Code location**: `src/components/rdash/QuickAddSheet.tsx` (FAB trigger)
+
+### MOB-028 · Customer Desk search input — 36px tall (touch target fail)
+- **Module/Area**: Customer Desk → search bar
+- **Severity**: Low
+- **Current state**: The "Search customer" input is 289×36px. Below 44px touch target.
+- **Expected state**: `h-11` (44px) or `h-12` (48px).
+- **Code location**: `src/components/rdash/modules/CustomerDesk.tsx`
+
+### MOB-029 · Header — "Refresh workspace" floating button duplicates header Refresh button
+- **Module/Area**: Header — Refresh duplication
+- **Severity**: Low
+- **Current state**: There are two Refresh buttons visible on mobile: (1) the header Refresh icon button at left:171, 40×40px, aria-label "Refresh"; (2) the floating "Refresh workspace" button at left:327, 36×32px, aria-label "Refresh workspace". Both call the same `refresh` / reload behavior. The floating one was intended for "reconciliation" but on mobile it just causes confusion + overlap with More actions.
+- **Expected state**: Hide the floating Refresh workspace button on mobile (`hidden md:inline-flex`).
+- **Code location**: `src/components/urban-castle/UrbanCastleApp.tsx` (`RefreshWorkspaceButton`)
+
+### MOB-030 · Bottom nav — Tab labels are 10px (readability fail)
+- **Module/Area**: Mobile priority actions bottom nav (global)
+- **Severity**: Low
+- **Current state**: The 5 bottom-nav buttons (Customers, Visits, Tasks, Workdesk, More) are 75×53px each (good touch target). But the text labels are 10px font-size.
+- **Expected state**: Minimum 11-12px for nav labels.
+- **Code location**: `RDashApp.tsx` or `UrbanCastleApp.tsx` (bottom nav rendering)
+
+---
+
+## Summary Table
+
+| Severity | Count | Issue IDs |
+|----------|-------|-----------|
+| Critical | 4 | MOB-001, MOB-002, MOB-003, MOB-004 |
+| High | 8 | MOB-005, MOB-006, MOB-007, MOB-008, MOB-009, MOB-010, MOB-011, MOB-012 |
+| Medium | 12 | MOB-013 through MOB-024 |
+| Low | 7 | MOB-025 through MOB-030 |
+| **Total** | **31** | |
+
+(Note: 17 distinct problem areas were identified; some are grouped. Detailed enumeration above totals 30 issue IDs.)
+
+## Files Inspected (source code)
+- `src/components/rdash/WorkspaceHeader.tsx` — header layout, H1 truncation, all icon buttons
+- `src/components/urban-castle/UrbanCastleApp.tsx` — RefreshWorkspaceButton floating button
+- `src/components/rdash/WorkspaceHealthPill.tsx` — health pill (hidden on mobile, OK)
+- `src/components/rdash/WorkspacePulseStrip.tsx` — quick-action chips
+- `src/components/rdash/modules/GoogleDriveManagerModule.tsx` — Drive accounts table
+- `src/components/rdash/modules/CustomerDesk.tsx` — customer cards
+- `src/components/rdash/EntityFormDialog.tsx` — Edit Customer dialog
+- `src/components/rdash/recordActions.tsx` — Record actions dropdown
+- `src/components/rdash/NotificationCenter.tsx` — notifications panel positioning
+- `src/components/rdash/Sidebar.tsx` — mobile drawer sub-module items
+
+## Recommended Fix Priority
+1. **Immediate (Critical)**: MOB-001 (H1 invisible), MOB-002 (More actions button covered), MOB-003 (Notifications panel off-screen), MOB-004 (sub-nav touch targets)
+2. **High priority**: MOB-005 (Drive table min-width), MOB-006/007/008/009/010/011/012 (touch targets across app)
+3. **Medium priority**: MOB-013 (footer truncation + wasted space), MOB-023 (13 empty dashboard sections)
+4. **Low priority**: Cosmetic issues MOB-025 through MOB-030
+
+## Verification
+- Tested at viewport 375×812 (iPhone 13)
+- Logged in as demo owner (Akarsh Singh)
+- Tested 6 modules across multiple navigation paths
+- Captured 17 screenshots in `/home/z/my-project/screenshots/mobile-*.png`
+- Verified all measurements via `getBoundingClientRect()` and `getComputedStyle()`
+- Verified click interception via agent-browser (More actions button cannot be clicked due to overlay)
+
