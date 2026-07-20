@@ -1,4 +1,4 @@
-export type ModuleRenderer = "daily-work" | "workdesk-dashboard" | "customer-desk" | "customer-extras" | "site-execution" | "tasks" | "quotations" | "boq" | "procurement" | "grn" | "inventory" | "dispatch" | "workOrder-pnl" | "vendor-bills" | "contractor-payments" | "contractor-detail" | "finance-overview" | "payment-recovery" | "reports-v2" | "calendar" | "site-measurement" | "approval-policies" | "control-brain" | "audit-log" | "data-import" | "data-export" | "rate-finder" | "gps-tracking" | "visit-proofs" | "field-mode" | "communication-centre" | "quotation-config" | "staff-board" | "attendance-payroll" | "gst-returns" | "masters" | "masters-v2" | "sales-ops" | "sales-pipeline" | "commissions" | "threads" | "obstacle-threads" | "approvals-v2" | "site-visits" | "media-library" | "auth-users" | "system" | "drawings" | "execution-logs" | "site-profitability" | "staff-salary" | "vendor-performance" | "contractor-performance" | "wo-timeline" | "unified-thread-inbox" | "integrity";
+export type ModuleRenderer = "daily-work" | "customer-desk" | "customer-extras" | "site-execution" | "tasks" | "quotations" | "boq" | "procurement" | "grn" | "inventory" | "dispatch" | "workOrder-pnl" | "vendor-bills" | "contractor-payments" | "contractor-detail" | "finance-overview" | "payment-recovery" | "reports-v2" | "calendar" | "site-measurement" | "approval-policies" | "control-brain" | "audit-log" | "data-import" | "data-export" | "rate-finder" | "gps-tracking" | "visit-proofs" | "field-mode" | "communication-centre" | "quotation-config" | "staff-board" | "attendance-payroll" | "gst-returns" | "masters" | "masters-v2" | "sales-ops" | "sales-pipeline" | "commissions" | "threads" | "obstacle-threads" | "approvals-v2" | "site-visits" | "media-library" | "auth-users" | "system" | "drawings" | "execution-logs" | "site-profitability" | "staff-salary" | "vendor-performance" | "contractor-performance" | "wo-timeline" | "unified-thread-inbox" | "integrity";
 export type DataSource = "tasks" | "followups" | "visits" | "quotations" | "payments" | "invoices" | "workOrders" | "customers" | "approvals" | "risks" | "blocked" | "vendors" | "contractors" | "staff" | "master-units" | "master-categories" | "master-subcategories" | "master-articles" | "boqs" | "purchaseOrders" | "grns" | "inventory" | "dispatches" | "vendorBills" | "commissions" | "drawings" | "executionLogs" | "threads" | "attendance" | "sites" | "none";
 export interface FilterPreset {
     id: string;
@@ -51,10 +51,9 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 label: "Workdesk Dashboard",
                 description: "Cross-site action queue, approvals, follow-ups and operational health",
                 icon: "🗂️",
-                renderer: "workdesk-dashboard",
+                renderer: "daily-work",
                 activePredicate: (db) => db.tasks.some((t) => t.status === "todo" || t.status === "in_progress" || t.status === "review") || db.actions.some((a) => a.status === "pending") || db.blocked.some((b) => !b.resolved) || db.visits.some((v) => v.status === "scheduled" || v.status === "en_route") || db.followups.some((f) => f.status === "pending" || f.status === "missed"),
                 submodules: [
-                    { id: "today", label: "Daily Work", renderer: "daily-work", dataSource: "tasks" },
                     { id: "unifiedThreadInbox", label: "Thread Inbox", renderer: "unified-thread-inbox", dataSource: "threads", hint: "Unified feed of every conversation across all entities" },
                     { id: "tasks", label: "Tasks & Follow-ups", renderer: "tasks", dataSource: "tasks" },
                     { id: "blockedRisks", label: "Obstacles & Risks", renderer: "obstacle-threads", dataSource: "blocked", filter: { view: "combined" } },
@@ -335,14 +334,14 @@ function buildModuleRouteRegistry(): ReadonlyMap<string, ModuleRoute> {
             }
         }
     }
-    if (!routes.has("today")) {
-        throw new Error("The module route registry must include the Daily Work fallback route.");
+    if (!routes.has("workdesk")) {
+        throw new Error("The module route registry must include the Workdesk Dashboard fallback route.");
     }
     return routes;
 }
 export const MODULE_ROUTE_REGISTRY = buildModuleRouteRegistry();
 export const REGISTERED_MODULE_IDS = new Set<string>(MODULE_ROUTE_REGISTRY.keys());
-export const DEFAULT_MODULE_ID = "today";
+export const DEFAULT_MODULE_ID = "workdesk";
 export function findModule(id: string): ModuleDef | undefined {
     return ALL_MODULES.find((module) => module.id === id);
 }

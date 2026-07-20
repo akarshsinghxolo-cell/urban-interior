@@ -592,15 +592,15 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
     const uiSlice = createUISlice(ctx);
     const state: RDashState = {
         db: loadStoredWorkspaceDatabase() || attachCustomerLabels(prepareWorkspaceDatabase(buildSeedDatabase())),
-        activeModuleId: "today",
+        activeModuleId: "workdesk",
         moduleHistory: [
-            { id: "nav-today", moduleId: "today", label: "Today", icon: "🗂️" },
+            { id: "nav-today", moduleId: "workdesk", label: "Today", icon: "🗂️" },
         ],
         moduleHistoryIndex: 0,
         moduleSearch: "",
         workspaceSearch: "",
         tabs: [
-            { id: "tab-today", moduleId: "today", label: "🗂️ Today", icon: "🗂️" },
+            { id: "tab-today", moduleId: "workdesk", label: "🗂️ Today", icon: "🗂️" },
         ],
         activeTabId: "tab-today",
         selectedCustomerId: "cust-das",

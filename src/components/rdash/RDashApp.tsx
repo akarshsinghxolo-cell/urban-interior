@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 const DailyWork = React.lazy(() => import("./modules/DailyWork").then((module) => ({ default: module.DailyWork })));
-const WorkdeskDashboard = React.lazy(() => import("./WorkdeskDashboard").then((module) => ({ default: module.WorkdeskDashboard })));
 const CustomerDesk = React.lazy(() => import("./modules/CustomerDesk").then((module) => ({ default: module.CustomerDesk })));
 const SiteExecutionModule = React.lazy(() => import("./modules/SiteExecutionModule").then((module) => ({ default: module.SiteExecutionModule })));
 const DrawingsModule = React.lazy(() => import("./modules/DrawingsExecutionModules").then((module) => ({ default: module.DrawingsModule })));
@@ -87,8 +86,6 @@ function ModuleRouter() {
     const activeModuleId = useRDashStore((s) => s.activeModuleId);
     const route = resolveRenderer(activeModuleId);
     switch (route.renderer) {
-        case "workdesk-dashboard":
-            return <WorkdeskDashboard />;
         case "daily-work":
             return <DailyWork />;
         case "customer-desk":
@@ -320,7 +317,7 @@ export function RDashApp() {
                 // attention, prioritized: integrity < 100 → overdue invoices →
                 // negative cash → general attention (blocked/risks/approvals).
                 // The action label reflects the target so users know where they'll land.
-                let targetModule = "today";
+                let targetModule = "workdesk";
                 let actionLabel = "Open Daily Work";
                 if (summary.integrity?.healthScore != null && summary.integrity.healthScore < 100) {
                     targetModule = "integrity";
@@ -384,7 +381,7 @@ export function RDashApp() {
     React.useEffect(() => {
         const G_MODULE_MAP: Record<string, string> = {
             i: "unifiedThreadInbox",
-            d: "today",
+            d: "workdesk",
             c: "customerTimeline",
             s: "salesPipeline",
             f: "siteMeasurement",

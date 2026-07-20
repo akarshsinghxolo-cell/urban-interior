@@ -138,7 +138,7 @@ export function WorkspaceHealthPill() {
                 </p>
               </div>
             </div>
-            <button type="button" onClick={() => jumpTo({ id: "today", label: "🗂️ Today", icon: "🗂️" })} className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10">
+            <button type="button" onClick={() => jumpTo({ id: "workdesk", label: "🗂️ Workdesk", icon: "🗂️" })} className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-[11px] font-medium text-primary hover:bg-primary/10">
               Open
               <ChevronRight className="h-3 w-3"/>
             </button>

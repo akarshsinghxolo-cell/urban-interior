@@ -281,14 +281,14 @@ export function createUISlice(ctx: StoreContext): UIActions {
             if (s.activeTabId === id) {
                 const next = tabs[Math.min(idx, tabs.length - 1)] || tabs[0];
                 activeTabId = next?.id ?? null;
-                activeModuleId = next?.moduleId ?? "today";
+                activeModuleId = next?.moduleId ?? "workdesk";
             }
             return { tabs, activeTabId, activeModuleId };
         }),
         setActiveTab: (id) => {
             const state = get();
             const tab = state.tabs.find((entry: any) => entry.id === id);
-            const moduleId = canonicalModuleId(tab?.moduleId || "today");
+            const moduleId = canonicalModuleId(tab?.moduleId || "workdesk");
             const fallbackTab = state.tabs.find((entry: any) => entry.moduleId === moduleId);
             commitState({
                 activeTabId: fallbackTab?.id || state.activeTabId,

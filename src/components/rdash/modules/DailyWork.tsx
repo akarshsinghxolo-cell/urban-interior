@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, } from "lucide-react";
+import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Clock, Package, ArrowRight, RefreshCw, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
 import { addDays } from "@/lib/rdash/store/helpers";
@@ -20,6 +20,10 @@ import { RecentActivityTimeline } from "../RecentActivityTimeline";
 import { TeamPerformance } from "../TeamPerformance";
 import { CustomerSatisfaction } from "../CustomerSatisfaction";
 import { MaterialPriceTracker } from "../MaterialPriceTracker";
+// Imported from WorkdeskDashboard (before deletion) — unique widgets not previously in DailyWork
+import { FinancialPositionCard } from "../FinancialPositionCard";
+import { TodaysScheduleCard } from "../TodaysScheduleCard";
+import { MetricCard, WorkflowStepRich } from "../primitives";
 
 function EmptyCta({ label, onClick }: { label: string; onClick: () => void }) {
     return (<button type="button" onClick={onClick} className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
@@ -606,13 +610,67 @@ export function DailyWork() {
         return days;
     }, [db.tasks, db.visits, db.followups]);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
+    const role = useRDashStore((s) => s.authUser?.role || "Unauthenticated");
+
+    // ── Operational KPIs (imported from WorkdeskDashboard) ──
+    // Reuses openTasks/approvals/blocked/risks/visits already computed above.
+    const attentionCount = approvals.length + blocked.length + risks.length;
+
+    const roleSubtitle = role === "Owner"
+        ? `Role-based command center · ${db.customers.length} customers · ${db.workOrders.length} live work orders`
+        : role === "Operations Manager"
+            ? `Operations view · ${db.workOrders.length} live work orders · ${visits.length} field visits`
+            : role === "Field Staff"
+                ? `Field view · ${visits.length} visits · ${openTasks.length} assigned actions`
+                : role === "Procurement Staff"
+                    ? `Shop view · ${db.inventory.length} stock items · ${openTasks.length} actions`
+                    : role === "Finance"
+                        ? `Finance view · ${db.payments.length} payments · ${approvals.length} approvals`
+                        : `Role-based command center · ${db.customers.length} customers · ${db.workOrders.length} live work orders`;
+
     return (<div className="flex flex-col gap-6">
       <WorkspacePulseStrip />
+
+      {/* Role header + Refresh (imported from WorkdeskDashboard) */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold tracking-tight">Daily Work</h2>
+          <p className="text-xs text-muted-foreground">{roleSubtitle}</p>
+        </div>
+        <button type="button" onClick={() => toast.success("Workspace refreshed")} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
+          <RefreshCw className="h-3.5 w-3.5"/>
+          Refresh
+        </button>
+      </div>
+
+      {/* Workflow steps (imported from WorkdeskDashboard) */}
+      <section aria-label="Module workflow steps" className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <WorkflowStepRich index="01" title="See work" description="Assigned actions and due dates" meta={`${openTasks.length} open`} state="active"/>
+        <WorkflowStepRich index="02" title="Resolve risk" description="Blocker, risk, approval or collection" meta={`${attentionCount} attention`} state={attentionCount > 0 ? "pending" : "done"}/>
+        <WorkflowStepRich index="03" title="Open work context" description="Go to the exact scope without re-searching" meta="context retained" state="default"/>
+      </section>
+
+      {/* Operational KPI grid (imported from WorkdeskDashboard) — 7 deep-link cards */}
+      <section aria-label="Workspace KPIs" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
+        <MetricCard label="Active WOs" value={db.workOrders.filter((w) => w.status === "in_progress" || w.status === "scheduled").length} hint="In progress + scheduled" tone="primary" icon={<Briefcase className="h-4 w-4"/>} onClick={() => setActiveModule("siteExecution")}/>
+        <MetricCard label="Pending approvals" value={approvals.length} hint="PO + payment + variation" tone="success" icon={<CheckCircle2 className="h-4 w-4"/>} onClick={() => setActiveModule("approvals")}/>
+        <MetricCard label="Overdue invoices" value={formatINRShort(db.invoices.filter((i) => i.status === "overdue" || (i.status === "issued" && i.due_date && isDateOnlyOverdue(i.due_date))).reduce((s, i) => s + i.amount, 0))} hint="Total value" tone="destructive" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("payments")}/>
+        <MetricCard label="Today's visits" value={db.visits.filter((v) => v.scheduled_at?.slice(0, 10) === indiaDate()).length} hint="Scheduled today" tone="primary" icon={<MapPin className="h-4 w-4"/>} onClick={() => setActiveModule("fieldOperations")}/>
+        <MetricCard label="Follow-ups due" value={db.followups.filter((f) => f.due_date === indiaDate() && (f.status === "pending" || f.status === "scheduled")).length} hint="Due today" tone="warning" icon={<PhoneCall className="h-4 w-4"/>} onClick={() => setActiveModule("tasks")}/>
+        <MetricCard label="Low-stock items" value={db.inventory.filter((i) => typeof i.min_qty === "number" && i.quantity <= (i.min_qty || 0)).length} hint="At/below min" tone="destructive" icon={<Package className="h-4 w-4"/>} onClick={() => setActiveModule("inventory")}/>
+        <MetricCard label="Pending vendor bills" value={db.vendorBills.filter((b) => b.status === "pending" || b.status === "approved").length} hint="Awaiting payment" tone="warning" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("vendorBills")}/>
+      </section>
+
       <WorkspaceHealthWidget />
       <ExceptionDashboard onNavigateAudit={() => setActiveModule("auditLog")} />
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <DailyKpiBanner />
         <ActivityFeedWidget />
+      </div>
+      {/* Financial position + Today's schedule (imported from WorkdeskDashboard) */}
+      <div className="grid gap-3 lg:grid-cols-2">
+        <FinancialPositionCard />
+        <TodaysScheduleCard />
       </div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
         <TeamPerformance />
