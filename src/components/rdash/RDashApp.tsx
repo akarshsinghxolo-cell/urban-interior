@@ -65,6 +65,7 @@ const ScrollToTop = React.lazy(() => import("./ScrollToTop").then((module) => ({
 const WorkCategoryMasterModule = React.lazy(() => import("./modules/WorkCategoryMasterModule").then((module) => ({ default: module.WorkCategoryMasterModule })));
 const VendorPriceMasterModule = React.lazy(() => import("./modules/VendorPriceMasterModule").then((module) => ({ default: module.VendorPriceMasterModule })));
 const MediaLibraryModule = React.lazy(() => import("./modules/MediaLibraryModule").then((module) => ({ default: module.MediaLibraryModule })));
+const GoogleDriveManagerModule = React.lazy(() => import("./modules/GoogleDriveManagerModule").then((module) => ({ default: module.GoogleDriveManagerModule })));
 const UserApprovalsModule = React.lazy(() => import("./modules/UserApprovalsModule").then((module) => ({ default: module.UserApprovalsModule })));
 const SalesPipelineModule = React.lazy(() => import("./modules/SalesPipelineModule").then((module) => ({ default: module.SalesPipelineModule })));
 const CommissionsModule = React.lazy(() => import("./modules/CommissionsModule").then((module) => ({ default: module.CommissionsModule })));
@@ -192,6 +193,8 @@ function ModuleRouter() {
             return <SiteVisitsModule />;
         case "media-library":
             return <MediaLibraryModule initialView={route.filter?.view}/>;
+        case "drive-manager":
+            return <GoogleDriveManagerModule />;
         case "auth-users":
             return <UserApprovalsModule />;
         case "integrity":
