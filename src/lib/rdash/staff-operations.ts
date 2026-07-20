@@ -455,7 +455,7 @@ export function createSeedAttendanceRecords(staff: Staff[]): AttendanceRecord[] 
       staff_name: member.name,
       date: today,
       attendance_mode: "office",
-      check_in: absent ? undefined : `${today}T0${9 + Math.min(index, 1)}:${index === 2 ? "55" : "28"}:00.000+05:30`,
+      check_in: absent ? undefined : `${today}T${String(9 + Math.min(index, 1)).padStart(2, "0")}:${index === 2 ? "55" : "28"}:00.000+05:30`,
       check_out: absent || half ? undefined : `${today}T18:05:00.000+05:30`,
       check_in_latitude: 26.7398,
       check_in_longitude: 83.3712,
