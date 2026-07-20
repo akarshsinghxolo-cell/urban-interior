@@ -71,15 +71,15 @@ export async function uploadManagedFile(input: ManagedUploadInput): Promise<Mana
     };
     let payload: any = {};
     let response: Response | undefined;
-    for (let attempt = 0; attempt < 10; attempt += 1) {
+    for (let attempt = 0; attempt < 30; attempt += 1) {
         response = await fetch("/api/google-drive/upload", { method: "POST", body: makeForm() });
         payload = await response.json().catch(() => ({}));
         if (response.ok && payload?.id && payload?.webViewLink && payload?.storageAccountId && payload?.storageFolderInstance)
             return payload as ManagedDriveUpload;
-        const waitingForServerCommit = response.status === 422 && /not found|does not resolve|saved entity|does not exist/i.test(String(payload?.error || ""));
-        if (!waitingForServerCommit || attempt === 9)
+        const waitingForServerCommit = response.status === 422 && /not found|does not resolve|saved entity|does not exist|saved.*before uploading|entity is required/i.test(String(payload?.error || ""));
+        if (!waitingForServerCommit || attempt === 29)
             break;
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        await new Promise((resolve) => setTimeout(resolve, 500));
     }
     throw new Error(payload?.error || "Google Drive upload failed.");
 }

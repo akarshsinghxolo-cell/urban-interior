@@ -534,9 +534,10 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 }
             }
             catch (error) {
-                setSaving(false);
                 toast.error(error instanceof Error ? error.message : "Customer could not be saved.");
-                return;
+            }
+            finally {
+                setSaving(false);
             }
         }
         else if (type === "vendor") {

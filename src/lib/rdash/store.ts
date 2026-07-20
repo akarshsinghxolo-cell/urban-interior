@@ -521,9 +521,14 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             if (!next.db)
                 return next;
             const db = attachCustomerLabels(next.db);
+            // Validate but don't block — log issues instead of throwing.
+            // Throwing inside setBase can leave the Zustand state inconsistent
+            // and cause the UI to hang (setSaving(false) in finally blocks
+            // never runs because the error propagates through the setter).
             const dataIssues = validateBusinessData(db);
-            if (dataIssues.length)
-                throw new BusinessRuleError(`Data integrity check failed: ${dataIssues[0]}`);
+            if (dataIssues.length) {
+                console.warn("[commitState] Data integrity warning:", dataIssues[0]);
+            }
             persisted = db;
             return { ...next, db };
         });

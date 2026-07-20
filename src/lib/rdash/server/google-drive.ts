@@ -1,6 +1,6 @@
 import type { RDashDatabase, FileAttachmentEntityType, FileAssetKind, FileAttachmentRole, StorageAccount, StorageFolderTemplate, } from "../types";
 import { resolveEntityContext } from "../entity-context";
-import { inferStoragePurpose, logicalStoragePath, templateForPurpose } from "../storage";
+import { inferStoragePurpose, logicalStoragePath, templateForPurpose, defaultStorageFolderTemplates } from "../storage";
 import { accessTokenForDriveConnection } from "./drive-connections";
 import type { AuthenticatedUser } from "./auth";
 export type ManagedUploadRequest = {
@@ -212,7 +212,11 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
     if (!access.account.root_folder_id)
         throw new Error(`Google Drive account “${access.account.label}” has no Urban Castle root folder. Reconnect it before uploading.`);
     const purpose = inferStoragePurpose(entityType, kind, role);
-    const template = templateForPurpose(db.master, purpose);
+    // Fall back to default templates if the workspace has none configured
+    const masterWithTemplates = (db.master.storageFolderTemplates && db.master.storageFolderTemplates.length > 0)
+        ? db.master
+        : { ...db.master, storageFolderTemplates: defaultStorageFolderTemplates() };
+    const template = templateForPurpose(masterWithTemplates, purpose);
     if (!template)
         throw new Error(`No active logical folder template exists for ${purpose.replaceAll("_", " ")}.`);
     const path = logicalStoragePath(db, entityType, entityId, template);

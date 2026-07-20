@@ -5,6 +5,7 @@ import { commitAuthorizedPostgresOperations, type CommitResult } from "@/lib/rda
 import type { WorkspaceOperation } from "@/lib/rdash/workspace-operations";
 
 export const runtime = "nodejs";
+export const maxDuration = 60; // Allow up to 60s for workspace commits (Supabase REST can be slow)
 
 function payload(workspace: CommitResult | Awaited<ReturnType<typeof getWorkspace>>) {
   const p: Record<string, unknown> = { revision: workspace.revision, data: workspace.data };
