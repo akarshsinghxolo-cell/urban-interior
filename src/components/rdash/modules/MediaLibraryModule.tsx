@@ -38,7 +38,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 
-type View = "drive" | "catalogues" | "pinterest" | "reference" | "operations";
+type View = "catalogues" | "pinterest" | "reference" | "operations";
 type SimpleOption = { id: string; name: string };
 type AccessPolicy = "internal" | "customer" | "vendor" | "contractor";
 
@@ -115,6 +115,7 @@ export function MediaLibraryModule({ initialView = "catalogues" }: { initialView
   const db = useRDashStore((state) => state.db);
   const mutateMaster = useRDashStore((state) => state.mutateMaster);
   const openDetail = useRDashStore((state) => state.openDetail);
+  const setActiveModule = useRDashStore((state) => state.setActiveModule);
   const currentRole = useRDashStore((state) => state.authUser?.role || "Owner");
   const master = db.master;
   const accounts = master.storageAccounts || [];
@@ -128,7 +129,7 @@ export function MediaLibraryModule({ initialView = "catalogues" }: { initialView
   const [view, setView] = React.useState<View>((initialView as View) || "catalogues");
 
   React.useEffect(() => {
-    if (["drive", "catalogues", "pinterest", "reference", "operations"].includes(initialView)) setView(initialView as View);
+    if (["catalogues", "pinterest", "reference", "operations"].includes(initialView)) setView(initialView as View);
   }, [initialView]);
 
   const activeFiles = fileAssets.filter((file) => file.status === "active");
@@ -149,7 +150,7 @@ export function MediaLibraryModule({ initialView = "catalogues" }: { initialView
       </header>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Metric label="Drive files" value={activeFiles.length} icon={<UploadCloud className="h-4 w-4" />} onClick={() => setView("drive")} active={view === "drive"} />
+        <Metric label="Drive files" value={activeFiles.length} icon={<UploadCloud className="h-4 w-4" />} onClick={() => setActiveModule("driveManager")} />
         <Metric label="Catalogues" value={catalogues.filter((item) => item.status === "active").length} icon={<BookOpen className="h-4 w-4" />} onClick={() => setView("catalogues")} active={view === "catalogues"} />
         <Metric label="Shared assignments" value={sharedLinkCount} icon={<Link2 className="h-4 w-4" />} onClick={() => setView("catalogues")} />
         <Metric label="Pinterest boards" value={pinterestBoards.filter((item) => item.status === "active").length} icon={<Pin className="h-4 w-4" />} onClick={() => setView("pinterest")} active={view === "pinterest"} />
@@ -158,7 +159,6 @@ export function MediaLibraryModule({ initialView = "catalogues" }: { initialView
 
       <nav className="flex flex-wrap gap-1 rounded-[var(--panel-radius)] border border-border bg-card p-1.5 shadow-card" aria-label="Drive media library views">
         {([
-          ["drive", "Drive storage", FolderCog],
           ["catalogues", "Catalogue links", BookOpen],
           ["pinterest", "Pinterest boards", Pin],
           ["reference", "Reference media", ImageIcon],
@@ -170,7 +170,6 @@ export function MediaLibraryModule({ initialView = "catalogues" }: { initialView
         ))}
       </nav>
 
-      {view === "drive" && <DriveStorageView db={db} accounts={accounts} templates={templates} instances={folderInstances} files={fileAssets} currentRole={currentRole} onMutate={mutateMaster} onOpenFile={(fileId) => openDetail("media" as any, fileId)} />}
       {view === "catalogues" && <CatalogueLinksView catalogues={catalogues} links={catalogueLinks} files={fileAssets} articles={master.articles} vendors={master.vendors} onMutate={mutateMaster} onOpenFile={(fileId) => openDetail("media" as any, fileId)} />}
       {view === "pinterest" && <PinterestBoardsView boards={pinterestBoards} articles={master.articles} categories={master.workCategories} subcategories={master.workSubcategories} onMutate={mutateMaster} />}
       {view === "reference" && <ReferenceMediaView media={referenceMedia} files={fileAssets} articles={master.articles} categories={master.workCategories} subcategories={master.workSubcategories} onMutate={mutateMaster} onOpenFile={(fileId) => openDetail("media" as any, fileId)} />}
@@ -185,299 +184,6 @@ function Metric({ label, value, icon, onClick, active }: { label: string; value:
       <div className="flex items-center justify-between text-primary"><span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</span>{icon}</div>
       <p className="mt-2 text-xl font-bold">{value}</p>
     </button>
-  );
-}
-
-function DriveStorageView({ db, accounts, templates, instances, files, currentRole, onMutate, onOpenFile }: {
-  db: any;
-  accounts: StorageAccount[];
-  templates: StorageFolderTemplate[];
-  instances: StorageFolderInstance[];
-  files: FileAsset[];
-  currentRole: string;
-  onMutate: (updater: (master: any) => any) => void;
-  onOpenFile: (fileId: string) => void;
-}) {
-  const [accountLabel, setAccountLabel] = React.useState("");
-  const [working, setWorking] = React.useState(false);
-  const [accessPolicy, setAccessPolicy] = React.useState<AccessPolicy>("internal");
-  const [file, setFile] = React.useState({ accountId: accounts[0]?.id || "", name: "", kind: "document", url: "", googleFileId: "", tags: "" });
-  const writeDestination = selectWriteStorageAccount({ storageAccounts: accounts });
-  const activeFiles = files.filter((item) => item.status === "active");
-  const lastUploaded = [...activeFiles].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
-  const accountForFile = accounts.find((item) => item.id === file.accountId);
-  const filesByAccount = new Map(accounts.map((account) => [account.id, activeFiles.filter((entry) => entry.storage_account_id === account.id)]));
-  const folderById = new Map(instances.map((instance) => [instance.id, instance]));
-  const templateById = new Map(templates.map((template) => [template.id, template]));
-  const threshold = writeDestination?.switch_threshold_percent || accounts[0]?.switch_threshold_percent || 85;
-  const rootFolderName = writeDestination?.root_folder_name || accounts[0]?.root_folder_name || "UrbanInteriorOS Media";
-
-  const updateAccount = (accountId: string, patch: Partial<StorageAccount>) => onMutate((master) => ({
-    ...master,
-    storageAccounts: (master.storageAccounts || []).map((item: StorageAccount) => item.id === accountId ? { ...item, ...patch, updated_at: now() } : item),
-  }));
-
-  const updateThresholdForAll = (value: number) => onMutate((master) => ({
-    ...master,
-    storageAccounts: (master.storageAccounts || []).map((item: StorageAccount) => ({ ...item, switch_threshold_percent: value, updated_at: now() })),
-  }));
-
-  const connectConnection = async (label: string, connectionId?: string) => {
-    const cleaned = label.trim();
-    if (!cleaned) return toast.error("Enter a clear name for this Google Drive account");
-    // Check if Google Drive OAuth is configured before redirecting
-    try {
-      const cfgResp = await fetch("/api/google-drive/oauth/config", { cache: "no-store" });
-      const cfg = await cfgResp.json().catch(() => ({})) as { configured?: boolean; redirectUri?: string };
-      if (!cfg.configured) {
-        toast.error("Google Drive OAuth not configured. Redirecting to settings…", { duration: 4000 });
-        const settingsParams = new URLSearchParams({ label: cleaned, returnTo: "/" });
-        setTimeout(() => window.location.assign(`/google-drive-settings?${settingsParams.toString()}`), 1200);
-        return;
-      }
-      toast.info("Opening Google permission screen…", { duration: 3000 });
-    } catch {
-      // If config check fails, proceed anyway (the connect endpoint will handle the error)
-    }
-    const params = new URLSearchParams({ label: cleaned, returnTo: "/" });
-    if (connectionId) params.set("connectionId", connectionId);
-    window.location.assign(`/api/drive/connect?${params.toString()}`);
-  };
-
-  const addNextDriveSlot = () => connectConnection(accountLabel || `Urban Drive ${accounts.length + 1}`);
-
-  const refreshAccount = async (accountId: string) => {
-    setWorking(true);
-    try {
-      const response = await fetch("/api/google-drive/refresh-account", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId }) });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Could not refresh Google Drive quota.");
-      toast.success("Google Drive quota refreshed");
-      window.location.reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not refresh Google Drive quota.");
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const runTestUpload = async () => {
-    if (!writeDestination) return toast.error("No active Drive is available for a test upload");
-    setWorking(true);
-    try {
-      const response = await fetch("/api/google-drive/test-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: writeDestination.id, accessPolicy }) });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || "Test upload failed");
-      toast.success(`Test file uploaded to ${writeDestination.label}`);
-      window.setTimeout(() => window.location.reload(), 650);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Test upload failed");
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  const activateAccount = (accountId: string) => {
-    const ordered = [accountId, ...accounts.filter((item) => item.id !== accountId).sort((a, b) => a.priority_order - b.priority_order).map((item) => item.id)];
-    onMutate((master) => ({
-      ...master,
-      storageAccounts: (master.storageAccounts || []).map((item: StorageAccount) => ({
-        ...item,
-        priority_order: ordered.indexOf(item.id) + 1,
-        status: item.id === accountId ? "connected" : item.status,
-        write_enabled: item.id === accountId ? true : item.write_enabled,
-        updated_at: now(),
-      })),
-    }));
-    toast.success("New uploads will prefer this Drive when it is under threshold");
-  };
-
-  const createFile = (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!file.accountId || !file.name.trim() || !isHttpUrl(file.url)) return toast.error("Choose the original connected Drive account and enter a valid file link");
-    const timestamp = now();
-    const row: FileAsset = {
-      id: makeId("drivefile"),
-      storage_account_id: file.accountId,
-      google_file_id: file.googleFileId.trim() || undefined,
-      file_name: file.name.trim(),
-      kind: file.kind as FileAsset["kind"],
-      web_view_link: file.url.trim(),
-      storage_provider: "google_drive",
-      storage_mode: "external_reference",
-      sync_status: "uploaded",
-      tags: file.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-      status: "active",
-      created_at: timestamp,
-      updated_at: timestamp,
-    };
-    onMutate((master) => ({ ...master, fileAssets: [...(master.fileAssets || []), row] }));
-    setFile((current) => ({ ...current, name: "", kind: "document", url: "", googleFileId: "", tags: "" }));
-    toast.success("Existing Drive file registered without moving or copying it");
-  };
-
-  const archiveFile = (fileId: string) => onMutate((master) => ({
-    ...master,
-    fileAssets: (master.fileAssets || []).map((item: FileAsset) => item.id === fileId ? { ...item, status: "archived", updated_at: now() } : item),
-  }));
-
-  return (
-    <div className="grid gap-4">
-      <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-2 text-sm font-bold"><Settings2 className="h-4 w-4 text-primary" /> Google Drive Media Storage Manager</h3>
-            <p className="mt-1 max-w-4xl text-xs text-muted-foreground">Use one Drive for everything. When it reaches the threshold, future uploads switch to the next configured Drive. Old catalogue, proof, GRN, invoice, quotation, and vendor document links remain saved and usable.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={runTestUpload} disabled={working || !writeDestination}><UploadCloud className="mr-1 h-3.5 w-3.5" />Upload Test File</Button>
-            <span className={working ? "rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground" : "rounded-md bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground"}>{working ? "Working..." : "Ready"}</span>
-          </div>
-        </div>
-        <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/5 to-transparent px-3 py-2.5">
-          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><HardDrive className="h-3.5 w-3.5"/></span>
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-foreground">Local storage fallback is active</p>
-            <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">When no Google Drive is connected (or an upload fails), files are saved to the server&apos;s local <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">download/uploads/</code> directory and served via <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">/api/local-file/&lt;id&gt;</code>. Connect a Drive above to enable cloud uploads.</p>
-          </div>
-          <span className="ml-auto shrink-0 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">{activeFiles.filter((f) => f.storage_provider === "local").length} local file{activeFiles.filter((f) => f.storage_provider === "local").length === 1 ? "" : "s"}</span>
-        </div>
-        <div className="mt-4 grid gap-2 md:grid-cols-5">
-          <Field label="Default Drive Root Folder"><Input value={rootFolderName} readOnly /></Field>
-          <Field label="Auto-switch Threshold"><NativeSelect value={String(threshold)} onChange={(event) => updateThresholdForAll(Number(event.target.value))}>{[75, 80, 85, 90, 95].map((item) => <option key={item} value={item}>{item}% - {item <= 85 ? "safer" : "higher risk"}</option>)}</NativeSelect></Field>
-          <Field label="File Access"><NativeSelect value={accessPolicy} onChange={(event) => setAccessPolicy(event.target.value as AccessPolicy)}><option value="internal">Private - Google account only</option><option value="customer">Customer-shareable</option><option value="vendor">Vendor restricted</option><option value="contractor">Contractor restricted</option></NativeSelect></Field>
-          <Field label="Current Role"><Input value={currentRole} readOnly /></Field>
-          <Field label="Active Upload Drive"><Input value={writeDestination?.label || "No eligible Drive"} readOnly /></Field>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => toast.success("Drive settings saved in workspace data")}>Save Settings</Button>
-          <Button type="button" size="sm" variant="outline" onClick={addNextDriveSlot}><Plus className="mr-1 h-3.5 w-3.5" />Add Next Drive Slot</Button>
-          <Button type="button" size="sm" variant="outline" disabled={!writeDestination || working} onClick={() => writeDestination && refreshAccount(writeDestination.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Check Active Quota / Auto-switch</Button>
-          <Button type="button" size="sm" variant="ghost" disabled={!lastUploaded?.web_view_link} onClick={() => lastUploaded?.web_view_link && window.open(lastUploaded.web_view_link, "_blank", "noopener,noreferrer")}>Open last uploaded file</Button>
-        </div>
-        <div className="mt-3 rounded-lg border border-border bg-muted/20 p-3 text-xs">
-          <p className="font-semibold">Status:</p>
-          <p className="mt-1 text-muted-foreground">{writeDestination ? `${writeDestination.label} receives new uploads. ${accounts.filter((account) => account.status === "connected").length} Drive account${accounts.filter((account) => account.status === "connected").length === 1 ? "" : "s"} remain connected for old files.` : "No active Drive is under the configured threshold."}</p>
-          {accounts.some((account) => accountIsAtSwitchThreshold(account)) ? <p className="mt-1 text-warning">Auto-selected next Drive because at least one Drive is at or above threshold.</p> : null}
-        </div>
-      </section>
-
-      <section className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-        <div className="border-b border-border px-4 py-3">
-          <h3 className="text-sm font-bold">Drive Accounts</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Only the active Drive receives new uploads. Reorder by priority; pause or disable a Drive without breaking old links.</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-left text-xs">
-            <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3">Drive account</th>
-                <th className="px-4 py-3">Storage</th>
-                <th className="px-4 py-3">Priority / status</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {accounts.map((account) => {
-                const isDestination = writeDestination?.id === account.id;
-                const ownFiles = filesByAccount.get(account.id) || [];
-                return (
-                  <tr key={account.id} className={isDestination ? "bg-primary/[0.035]" : undefined}>
-                    <td className="px-4 py-4 align-top">{isDestination ? <StatusPill account={account} writeDestination={writeDestination} /> : <Button type="button" size="sm" variant="outline" className="h-8 px-3 text-[11px]" onClick={() => activateAccount(account.id)}>Use</Button>}</td>
-                    <td className="px-4 py-4 align-top">
-                      <div className="flex gap-2">
-                        <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span>
-                        <div className="min-w-0">
-                          <p className="font-bold">{account.label}</p>
-                          <p className="truncate text-[11px] text-muted-foreground">{account.email || "Google account identity pending"} · Folder: {account.root_folder_name || "Urban Castle"}</p>
-                          <p className="truncate text-[10px] text-muted-foreground">ID: {account.id}</p>
-                          <p className="mt-1 text-[10px] text-muted-foreground">{ownFiles.length} active file{ownFiles.length === 1 ? "" : "s"} linked here</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="w-[240px] px-4 py-4 align-top"><Capacity account={account} /></td>
-                    <td className="w-[260px] px-4 py-4 align-top">
-                      <div className="grid gap-2">
-                        <Input type="number" min={1} className="h-9" value={account.priority_order} onChange={(event) => updateAccount(account.id, { priority_order: Math.max(1, Number(event.target.value) || 1) })} />
-                        <NativeSelect value={account.status} onChange={(event) => updateAccount(account.id, { status: event.target.value as StorageAccount["status"], write_enabled: event.target.value === "connected" })}>
-                          <option value="connected">Connected</option>
-                          <option value="paused">Standby</option>
-                          <option value="reconnect_required">Reconnect required</option>
-                          <option value="disabled">Disabled</option>
-                        </NativeSelect>
-                        <StatusPill account={account} writeDestination={writeDestination} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 align-top">
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="button" size="sm" variant="outline" disabled={working} onClick={() => account.oauth_connection_id ? refreshAccount(account.id) : connectConnection(account.label, account.oauth_connection_id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Connect / Refresh</Button>
-                        <Button type="button" size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>
-                        <ExternalLinkButton href={account.web_view_link}>Open folder</ExternalLinkButton>
-                      </div>
-                      <p className="mt-2 max-w-xs text-[10px] text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!accounts.length ? <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-muted-foreground">Connect the first Google Drive account to begin secured file storage.</td></tr> : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid gap-4">
-          <section className="rounded-[var(--panel-radius)] border border-primary/25 bg-primary/[0.035] p-4 shadow-card">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold">Unified multi-Drive storage pool</h3>
-                <p className="mt-1 max-w-3xl text-xs text-muted-foreground">All Google Drives stay connected. Urban Castle only changes the destination for a future upload after a Drive crosses its write threshold. A file keeps its original account and folder forever, so an old vendor catalogue remains available in customer, quotation, article, job, PO, GRN, and finance context.</p>
-              </div>
-              <div className="rounded-md border border-primary/20 bg-card px-3 py-2 text-right"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">New-upload destination</p><p className="mt-0.5 text-sm font-bold">{writeDestination?.label || "No eligible Drive"}</p></div>
-            </div>
-          </section>
-
-          <section className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><h3 className="text-sm font-bold">Logical folder templates</h3><p className="text-[11px] text-muted-foreground">Purpose folders are business templates, not fixed Drive assignments. The same template can exist physically in every connected Drive.</p></div><span className="text-xs text-muted-foreground">{templates.length} templates</span></div>
-            <div className="divide-y divide-border">{templates.filter((template) => template.status === "active").map((template) => <div key={template.id} className="grid grid-cols-[180px_minmax(0,1fr)_90px] gap-3 px-4 py-2.5 text-xs"><span className="font-semibold">{template.label}</span><span className="truncate text-muted-foreground">{template.path_template}</span><span className="text-right text-muted-foreground">{instances.filter((instance) => instance.template_id === template.id && instance.status === "active").length} Drive copies</span></div>)}</div>
-          </section>
-
-          <section className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><h3 className="text-sm font-bold">Physical folders created by Urban Castle</h3><p className="text-[11px] text-muted-foreground">Each row is the actual folder used inside one Drive account for a logical business path.</p></div><span className="text-xs text-muted-foreground">{instances.length} folders</span></div>
-            <div className="divide-y divide-border">{instances.length ? instances.filter((instance) => instance.status === "active").map((instance) => <div key={instance.id} className="flex items-center justify-between gap-3 px-4 py-2.5"><div className="min-w-0"><p className="truncate text-xs font-medium">{instance.folder_path}</p><p className="text-[10px] text-muted-foreground">{accounts.find((account) => account.id === instance.storage_account_id)?.label || "Original Drive unavailable"} · {templateById.get(instance.template_id)?.label || "Unclassified template"}</p></div><ExternalLinkButton href={instance.web_view_link}>Open folder</ExternalLinkButton></div>) : <p className="p-5 text-center text-xs text-muted-foreground">Folders are created automatically only when the first matching file is uploaded.</p>}</div>
-          </section>
-
-          <section className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-            <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><h3 className="text-sm font-bold">Unified file library</h3><p className="text-[11px] text-muted-foreground">Business links point to the exact original file; no catalogue, proof, bill, or invoice is copied when it is reused elsewhere.</p></div><span className="text-xs text-muted-foreground">{activeFiles.length} active</span></div>
-            <div className="divide-y divide-border">{activeFiles.map((item) => { const folder = item.storage_folder_instance_id ? folderById.get(item.storage_folder_instance_id) : undefined; const parent = accounts.find((account) => account.id === item.storage_account_id); const links = (db.entityFileAttachments || []).filter((link: any) => link.file_asset_id === item.id); return <div key={item.id} className="flex items-start gap-3 px-4 py-3"><FilePreview file={{ fileName: item.file_name, mimeType: item.mime_type, googleFileId: item.storage_mode === "managed" ? item.google_file_id : undefined, url: item.web_view_link, thumbnailUrl: item.thumbnail_url }} compact controls={false} className="mt-0.5 w-20 shrink-0" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{item.file_name}</p><p className="truncate text-[10px] text-muted-foreground">{item.kind.replaceAll("_", " ")} · {parent?.label || "External Drive file"}{folder ? ` · ${folder.folder_path}` : ""}</p><div className="mt-1 flex flex-wrap items-center gap-2"><ExternalLinkButton href={item.web_view_link}>Open original file</ExternalLinkButton><button type="button" onClick={() => onOpenFile(item.id)} className="rounded border border-border px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10">Context</button><span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">{links.length} business link{links.length === 1 ? "" : "s"}</span><span className={item.storage_mode === "managed" ? "rounded-full bg-success/10 px-1.5 py-0.5 text-[9px] font-semibold text-success" : "rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground"}>{item.storage_mode === "managed" ? "Managed upload" : "Existing Drive file"}</span></div></div><Button size="icon" variant="ghost" aria-label={`Archive ${item.file_name}`} onClick={() => archiveFile(item.id)}><Archive className="h-4 w-4 text-muted-foreground" /></Button></div>; })}</div>
-          </section>
-        </div>
-
-        <aside className="grid content-start gap-4">
-          <FormCard title="Connect Google Drive" icon={<Plus className="h-3.5 w-3.5" />}>
-            <form onSubmit={(event) => { event.preventDefault(); addNextDriveSlot(); }} className="grid gap-2">
-              <p className="text-[10px] text-muted-foreground">Connect every Google account through OAuth. Tokens stay encrypted on the server and are never stored in workspace data.</p>
-              <Field label="Drive label"><Input value={accountLabel} onChange={(event) => setAccountLabel(event.target.value)} placeholder="Urban Drive 2" /></Field>
-              <Button size="sm" type="submit"><Plus className="mr-1 h-3.5 w-3.5" />Connect with Google</Button>
-            </form>
-          </FormCard>
-          <FormCard title="Register existing Drive file" icon={<UploadCloud className="h-3.5 w-3.5" />}>
-            <form onSubmit={createFile} className="grid gap-2">
-              <p className="text-[10px] text-muted-foreground">Use this only for a file already inside a connected Drive. It registers the original file without copying or moving it.</p>
-              <Field label="Original Drive account"><NativeSelect value={file.accountId} onChange={(event) => setFile({ ...file, accountId: event.target.value })}><option value="">Select connected account</option>{accounts.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</NativeSelect></Field>
-              <Field label="File name"><Input value={file.name} onChange={(event) => setFile({ ...file, name: event.target.value })} placeholder="Supplier catalogue.pdf" /></Field>
-              <Field label="Kind"><NativeSelect value={file.kind} onChange={(event) => setFile({ ...file, kind: event.target.value })}>{["document", "media", "catalogue", "drawing", "site_proof", "other"].map((item) => <option key={item} value={item}>{item.replaceAll("_", " ")}</option>)}</NativeSelect></Field>
-              <Field label="Google Drive share link"><Input required value={file.url} onChange={(event) => setFile({ ...file, url: event.target.value })} placeholder="https://drive.google.com/..." /></Field>
-              <Field label="Google file ID (optional)"><Input value={file.googleFileId} onChange={(event) => setFile({ ...file, googleFileId: event.target.value })} /></Field>
-              <Field label="Tags"><Input value={file.tags} onChange={(event) => setFile({ ...file, tags: event.target.value })} placeholder="catalogue, zebra blind" /></Field>
-              <p className="rounded-md border border-primary/20 bg-primary/[0.04] p-2 text-[10px] text-muted-foreground">After registering, open the Vendor, Article, Customer Request, Quotation, Job, PO, GRN, Invoice, or Contractor record and create business links in <b>Files & references</b>. The file remains in {accountForFile?.label || "its original Drive"}.</p>
-              <Button size="sm" type="submit"><UploadCloud className="mr-1 h-3.5 w-3.5" />Register original file</Button>
-            </form>
-          </FormCard>
-        </aside>
-      </div>
-    </div>
   );
 }
 
