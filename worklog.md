@@ -3946,3 +3946,158 @@ Files modified:
 
 Stage Summary:
 - The user info box is removed. An edit pencil appears next to the name. Clicking it opens an inline input. Saving calls the /api/auth/profile endpoint which re-signs the JWT with the new name. The change persists across page reloads (until logout). The super-owner name is hardcoded in source but is now overridable per-session via the profile API.
+
+---
+Task ID: QA-1
+Agent: general-purpose (deep QA analysis of live app)
+Task: Comprehensive QA analysis of Urban Castle app deployed at https://urban-castle.vercel.app/ — login flow + every sidebar module + responsive + footer + console errors.
+
+Work Log:
+- Read worklog.md (through Task ID 21) for project context.
+- Used agent-browser to open https://urban-castle.vercel.app/, installed error capture hooks (window.__errors + unhandledrejection listener), then signed out and back in via "Use demo owner credentials" → "Sign in" to verify the explicit demo-login flow (login confirmed: header shows "Akarsh Singh · Owner", page renders Workdesk Dashboard).
+- Tested every sidebar module group + all submodules. For each: clicked sidebar entry, waited 5-8s, ran JS check (`document.querySelector('main')`, h1/h2, card count, errText scan for "Application error"/"Something went wrong"/"Unhandled Runtime Error", and `window.__errors` count).
+- Tested interactive elements: dark-mode toggle (works), command palette (opens with placeholder "Search modules, customers, or workOrders..."), Sites & Execution BOQ tab (renders "Execution BOQ | 1 | WO-2026-301 · 4 article lines · ₹16.6k | APPROVED"), mobile hamburger menu (opens `fixed inset-0 z-50 lg:hidden` drawer).
+- Tested responsive design: set viewport to 375×812, verified no page-level horizontal scroll (`document.documentElement.scrollWidth === 375`), sidebar hidden via `display:none`, "Open navigation" button visible (40px wide), drawer opens correctly. Tested Customer Desk, Sales Pipeline, Reports on mobile — all render without errors and no horizontal overflow.
+- Verified footer: `<footer role=contentinfo>` shows "UC | Urban Castle | 6 customers · 1 workOrders · 1 POs", positioned at bottom (`footerBottom: 800 == docHeight: 800`, `isAtBottom: true`).
+
+QA TEST RESULTS:
+
+| Module | Status | Notes |
+|---|---|---|
+| Login flow ("Use demo owner credentials" → "Sign in") | ✅ PASS | Logs in as Akarsh Singh · Owner, redirects to Workdesk Dashboard |
+| Workdesk Dashboard | ✅ PASS | 26 H3 widgets render (Daily Work, Exceptions & Decisions, Financial Position, Cash Flow Forecast, etc.), 93 buttons, 0 errors |
+| Workdesk › Thread Inbox | ✅ PASS | h2 "Thread Inbox" + count 12 |
+| Workdesk › Tasks & Follow-ups | ✅ PASS | h2 "Tasks & Follow-ups" |
+| Workdesk › Obstacles & Risks | ✅ PASS | h2 "Obstacle Threads" |
+| Workdesk › Approvals | ✅ PASS | h2 "Approvals" |
+| Workdesk › Calendar | ✅ PASS | h2 "Calendar" |
+| Customer Desk | ✅ PASS | 6 customers visible (Mr. Das, Aarav Mehta, Nisha Rao, gfgf, ghghh, QA Final Test) with status, contact, sites |
+| Customer Desk › Customer Timeline | ✅ PASS | h2 "Mr. Das" |
+| Customer Desk › Customer Requests | ✅ PASS | h2 "Requests" |
+| Sales Pipeline | ✅ PASS | Kanban with 10 columns (NEW, QUALIFIED, VISIT PLANNED, MEASURED, QUOTING, QUOTE SENT, NEGOTIATION, ACCEPTED, ON HOLD, LOST), 7 leads, pipeline ₹6.64L |
+| Sites & Execution | ✅ PASS | 6 customer sites; Das Residence selected with Areas 3 / Work Required 3 / Quotes 3 / Bidding 1 / Work Orders 1; tabs (Overview, Areas, Work Required, Quotations, Contractor Bids, Work Orders, BOQ, Procurement, Finance) all functional |
+| Quotation Desk | ✅ PASS | 5 quotations (Q-2026-201/202/203/204 + R2 variation), pipeline ₹3.76L, filter tabs (All/Draft/Sent/Accepted/Rejected/Cancelled) |
+| Quotation Desk › Terms & Settings | ✅ PASS | h2 "Commercial Terms" |
+| Field Visits (Site Visits) | ✅ PASS | Empty state "No site visits yet" — valid |
+| Field Visits › Measurements | ✅ PASS | h2 "Site Measurement" |
+| Field Visits › Visit Proofs | ✅ PASS | h2 "Visit Proofs Gallery" |
+| Field Visits › Field Mode | ✅ PASS | h2 "Field Mode" (mobile-first view with check-in) |
+| Field Visits › GPS Tracking | ✅ PASS | h2 "GPS Tracking" |
+| Procurement & Inventory | ✅ PASS | 1 PO (PO-2026-601 · Build Mart · ₹19.8k · PARTIAL), 1 RFQ (RFQ-2026-501 · 2/2 bids · lowest ₹16.6k), 6-step chain (BOQ→PO Raise→Approve→Send→Delivery→GRN) |
+| Procurement › Goods Received Note | ✅ PASS | h2 "Delivery / GRN" |
+| Procurement › Inventory | ✅ PASS | h2 "Inventory / Stock" |
+| Procurement › Stock Issue / Dispatch | ✅ PASS | h2 "Site Dispatch" |
+| Procurement › Vendor Performance | ✅ PASS | h2 "Vendor Performance" — Build Mart leaderboard |
+| Finance | ✅ PASS | Customer/Vendor/Contractor payables, site financial position for 6 sites |
+| Finance › Customer Collections | ✅ PASS | h2 "Payment Recovery" |
+| Finance › Customer Invoices | ✅ PASS | h2 "Invoices" |
+| Finance › Vendor Bills & Payments | ✅ PASS | h2 "Vendor Bills / Payables" |
+| Finance › Contractor Bills & Payments | ✅ PASS | h2 "Contractor Bills & Payments" |
+| Finance › Site Profitability | ✅ PASS | h2 "Site Profitability" |
+| Finance › Work Order P&L | ✅ PASS | h2 "WorkOrder P&L" |
+| Finance › Commissions | ✅ PASS | h2 "Commission Ledger" |
+| Finance › GST Returns | ✅ PASS | h2 "GST Returns" (Output Tax ₹57.4k, Net GST Payable ₹57.4k, GSTR-1 Entries 5) |
+| Media & Communication (Drive, Catalogues & Reference Media) | ✅ PASS | Tabs: Drive files, Catalogues, Shared assignments, Pinterest boards, Operational links |
+| Media › Google Drive Manager | ✅ PASS | "OAuth Configured", "Connect Drive", "Storage Manager", "Local storage fallback is active" |
+| Media › Communication Centre | ✅ PASS | h2 "Communication Centre" (WhatsApp, Pinterest, catalogues) |
+| Contractor Detail | ✅ PASS | h2 "Contractor Management" (empty state — 0 contractors) |
+| Contractor Detail › Contractors | ✅ PASS | h2 "Contractors" with Rates tab |
+| Contractor Detail › Contractor Performance | ✅ PASS | h2 "Contractor Performance" — leaderboard ranked by total award value |
+| HR & Staff (Assignee Board) | ✅ PASS | h2 "Assignee Board" |
+| HR & Staff › Staff Board | ✅ PASS | h2 "Assignee Board" |
+| HR & Staff › Attendance & Payroll Rules | ✅ PASS | h2 "Attendance & Payroll" — empty state "No staff set up yet" |
+| HR & Staff › Staff Salary | ✅ PASS | h2 "Staff Salary" — staff member + month selectors |
+| HR & Staff › Late-Coming Policy | ❌ MISSING | Not present in sidebar OR codebase (grep `lateComing|late-coming|lateCome` returns 0 hits in src/) |
+| HR & Staff › Advances & Loans | ❌ MISSING | Not present in sidebar OR codebase (grep `advancesLoans|advanceLoan|staffAdvance` returns 0 hits in src/) |
+| Master Setup (Work & Rate Master) | ✅ PASS | 13 categories / 69 submodules / 323 scoped materials; integrity: Clean |
+| Master Setup › Article Library | ✅ PASS | 252 unique material identities |
+| Master Setup › Vendor Price Matrix | ✅ PASS | h2 "Vendor Price Matrix" |
+| Master Setup › Rate Finder | ✅ PASS | h2 "Rate Finder" |
+| Master Setup › Vendors | ✅ PASS | h2 "Vendors" |
+| Reports | ⚠️ ISSUE | Renders but **Gross margin shows "2803700%"** — divide-by-zero bug. Revenue ₹0 + Cost ₹0 + WorkOrder Value ₹28.0k → formula `totalMargin / (totalCost || 1)` produces 28037/1×100 = 2,803,700%. **FIXED** in ReportsModule.tsx line 517. |
+| Reports › Sales Report | ✅ PASS | h2 "Sales Report" — 6-month revenue trend, top customers |
+| Reports › Collections | ✅ PASS | h2 "Collection Report" |
+| Reports › Site P&L Report | ✅ PASS | h2 "WorkOrder P&L Report" |
+| Reports › Vendor Exposure | ✅ PASS | h2 "Vendor Exposure Report" |
+| Reports › Tax / GST | ✅ PASS | h2 "Tax / GST Report" |
+| Reports › Staff Productivity | ✅ PASS | h2 "Staff Productivity Report" |
+| Reports › Quotation Conversion | ✅ PASS | h2 "Quotation Conversion Report" |
+| Reports › Lead Source | ✅ PASS | h2 "Lead Source Report" |
+| Reports › Receivables Aging | ✅ PASS | h2 "Aging Report" |
+| Reports › Visit Compliance | ✅ PASS | h2 "Visit Compliance Report" |
+| Reports › Task Throughput | ✅ PASS | h2 "Task Throughput Report" |
+| System Settings | ✅ PASS | Appearance (Dark mode toggle), Active Role (Akarsh Singh · Owner), Data Management (Import/Export/Audit log/Reset workspace) |
+| System Settings › User Approvals | ✅ PASS | h2 "User Approvals" |
+| System Settings › Control Brain | ✅ PASS | h2 "Control Brain / Workflows" |
+| System Settings › Approval Policies | ✅ PASS | h2 "Approval Policies" |
+| System Settings › Audit Log | ✅ PASS | h2 "Audit Log" |
+| System Settings › Data Import | ✅ PASS | h2 "Data Import" |
+| System Settings › Data Export | ✅ PASS | h2 "Data Export" |
+| System Settings › Data Integrity | ✅ PASS | h2 "Data Integrity" |
+| Responsive @ 375px (mobile) | ✅ PASS | Sidebar `display:none`, "Open navigation" hamburger (40px) opens `fixed inset-0 z-50 lg:hidden` drawer. No page-level horizontal scroll. Tested Customer Desk, Sales Pipeline, Reports — all render cleanly. |
+| Footer placement | ✅ PASS | `<footer role=contentinfo>` at bottom: footerBottom(800) == docHeight(800) == viewportHeight(800), isAtBottom=true, visible=true. Content: "UC | Urban Castle | 6 customers · 1 workOrders · 1 POs" |
+| Console errors | ✅ PASS | Zero errors captured throughout entire session (`window.__errors` length = 0 after every module test) |
+| Dark mode toggle | ✅ PASS | Click → `<html class="dark">`, click again → back to light |
+| Command palette | ✅ PASS | Opens with input placeholder "Search modules, customers, or workOrders..." |
+
+ISSUES FOUND:
+
+1. ⚠️ **Reports module — Gross margin formula bug (FIXED)**
+   - Symptom: Reports page shows "Gross margin 2803700%" with Revenue ₹0 / Cost ₹0 / WorkOrder value ₹28.0k.
+   - Root cause: `src/components/rdash/modules/ReportsModule.tsx` line 517 used `totalMargin / (totalCost || 1) * 100`. When totalCost = 0, the `|| 1` fallback divides by 1, producing absurd values. Also, this formula computed markup (% of cost), not margin (% of revenue).
+   - Fix: Changed formula to use `totalRevenue` (or `totalJobValue` as fallback) as denominator — the conventional margin % formula. Returns 0% when there's no revenue and no contract value.
+   - Lint: clean (0 errors, 0 warnings).
+   - File modified: `src/components/rdash/modules/ReportsModule.tsx` (line 517, +4 lines replacing 1 line, with explanatory comment).
+
+2. ❌ **HR & Staff — missing "Late-Coming Policy" submodule**
+   - The QA task spec lists "Late-Coming Policy" as an expected HR & Staff submodule.
+   - The actual HR & Staff module has only 3 submodules: Staff Board, Attendance & Payroll Rules, Staff Salary.
+   - Grep across `src/` for `lateComing | late-coming | lateCome` returns 0 hits — the feature is entirely absent from the codebase.
+   - Either: (a) it was never implemented, OR (b) it was meant to be a section inside Attendance & Payroll Rules but was removed/simplified.
+   - Recommendation: Either implement Late-Coming Policy as a new submodule, OR confirm with product owner that this feature is intentionally out-of-scope and update the QA spec accordingly.
+
+3. ❌ **HR & Staff — missing "Advances & Loans" submodule**
+   - Same situation as Late-Coming Policy. Grep for `advancesLoans | advanceLoan | staffAdvance` returns 0 hits.
+   - Recommendation: Implement Advances & Loans (staff salary advances, EMI deductions, loan tracking) OR mark as out-of-scope.
+
+4. ⚠️ **Minor: Thread Inbox heading shows "Thread Inbox12"**
+   - The count "12" is concatenated into the h2 text instead of being in a separate badge element. Cosmetic — does not affect functionality.
+   - Location: Workdesk Dashboard › Thread Inbox submodule.
+
+5. ⚠️ **Minor: Mobile tooltips extend beyond viewport (375px)**
+   - Some absolutely-positioned tooltip spans (`-right-8` class) extend to right=398 (23px beyond viewport).
+   - They have `pointer-events-none`, so they don't affect layout or cause horizontal scroll.
+   - The chip strip ("₹2.93L pipeline", "1 live work", "0 visits", "₹0 cash", "₹0 month") extends to right=966 inside an `overflow-x-auto` container — this is the intended horizontal scroll pattern, not a layout break.
+   - Recommendation: Add `pointer-events-none` + `aria-hidden` to off-screen decorative elements OR constrain their position. Low priority.
+
+## PROJECT STATUS: STABLE — All 13 module groups + 47 submodules render correctly. 1 formula bug fixed. 2 missing HR submodules flagged for product clarification.
+
+## What was done this round
+1. Verified login flow via "Use demo owner credentials" → "Sign in" (session = Akarsh Singh · Owner).
+2. Tested all 13 sidebar module groups + every submodule (~47 submodules total). Every page renders, no "Application error", no console errors, no unhandled promise rejections.
+3. Verified mobile responsive design at 375×812 (sidebar collapses, hamburger menu opens drawer, no horizontal page-level scroll).
+4. Verified footer is anchored at page bottom.
+5. Verified interactive elements: dark-mode toggle, command palette, sidebar module expansion, tab navigation (Sites & Execution BOQ tab tested).
+6. **FIXED**: Reports module gross margin formula bug (was showing 2,803,700%; now computes conventional margin% using revenue or workOrder value as denominator).
+7. **FLAGGED**: HR & Staff module is missing "Late-Coming Policy" and "Advances & Loans" submodules — these features don't exist anywhere in the codebase. Product owner should clarify if they were intentionally descoped.
+
+## Files modified
+- `src/components/rdash/modules/ReportsModule.tsx` — line 517: replaced single-line `marginPct` formula (which divided by totalCost with `|| 1` fallback, producing absurd values when cost = 0) with a 4-line block that uses `totalRevenue` (or `totalJobValue` as fallback when no receipts yet) as the denominator and returns 0 when both are 0. Added explanatory comment. Lint clean.
+
+## Verification
+- Lint: clean (0 errors, 0 warnings on ReportsModule.tsx).
+- All 13 module groups render ✅
+- All ~47 submodules render ✅
+- Mobile (375px): no horizontal overflow ✅
+- Footer at bottom ✅
+- Zero console errors throughout ✅
+- Dark mode toggle works ✅
+- Command palette opens ✅
+- Reports gross margin: will now show ~100% instead of 2,803,700% (after next deploy)
+
+UNRESOLVED / NEXT-PHASE RECOMMENDATIONS:
+1. **Late-Coming Policy + Advances & Loans**: Clarify with product owner whether these HR features were intentionally descoped or are planned for future implementation. If planned, create new submodule entries in `src/lib/rdash/modules.ts` under `hrStaff` and add the corresponding renderers.
+2. **Thread Inbox count badge**: Refactor the h2 to use a separate `<Badge>` element instead of concatenating the count into the heading text (cosmetic).
+3. **Mobile tooltip positioning**: Audit absolutely-positioned decorative elements (e.g., `-right-8` tooltips) and add `pointer-events-none` + `aria-hidden="true"` to those that are purely decorative. Low priority.
+4. **Empty-state data**: Contractor Detail, Field Visits, and Attendance show empty states — this is expected for a fresh demo workspace, but consider pre-seeding sample contractors/visits/staff for demonstration purposes.
+5. The Reports gross-margin fix should be redeployed to Vercel to take effect on the live site.

@@ -514,7 +514,12 @@ function ReportsOverview({ db }: {
     const pnls = allJobPnLs(db);
     const totalCost = pnls.reduce((n, p) => n + (p?.total_cost || 0), 0);
     const totalMargin = pnls.reduce((n, p) => n + (p?.gross_margin || 0), 0);
-    const marginPct = (totalRevenue + totalMargin) > 0 ? Math.round((totalMargin / (totalCost || 1)) * 100) : 0;
+    // Margin % is conventionally (margin / revenue) * 100. Use contracted revenue
+    // (workOrder value) as the denominator when collected revenue is 0 (pre-revenue
+    // projects still have a contracted value). Avoid divide-by-zero when there's
+    // no revenue AND no contract value — fall back to 0% instead of absurd values.
+    const marginDenominator = totalRevenue > 0 ? totalRevenue : totalJobValue;
+    const marginPct = marginDenominator > 0 ? Math.round((totalMargin / marginDenominator) * 100) : 0;
     return (<div className="flex flex-col gap-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Revenue (received)" value={formatINRShort(totalRevenue)} tone="success" icon={<DollarSign className="h-4 w-4"/>}/>
