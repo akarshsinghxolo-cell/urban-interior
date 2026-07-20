@@ -18,7 +18,6 @@ import { toast } from "sonner";
 type OAuthConfig = {
   clientId: string;
   hasClientSecret: boolean;
-  hasCredentialsKey: boolean;
   configured: boolean;
   redirectUri: string;
   updatedAt: string | null;
@@ -42,9 +41,7 @@ export function GoogleDriveManagerModule() {
   // OAuth form
   const [clientId, setClientId] = React.useState("");
   const [clientSecret, setClientSecret] = React.useState("");
-  const [credentialsKey, setCredentialsKey] = React.useState("");
   const [showSecret, setShowSecret] = React.useState(false);
-  const [showCredsKey, setShowCredsKey] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   // Connect form
@@ -161,11 +158,10 @@ export function GoogleDriveManagerModule() {
     try {
       const body: Record<string, string> = { clientId: clientId.trim() };
       if (clientSecret.trim()) body.clientSecret = clientSecret.trim();
-      if (credentialsKey.trim()) body.credentialsKey = credentialsKey.trim();
       const r = await fetch("/api/google-drive/oauth/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const p = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(p.error || "Could not save OAuth config.");
-      setConfig(p); setClientSecret(""); setCredentialsKey("");
+      setConfig(p); setClientSecret("");
       toast.success("Google Drive OAuth credentials saved to database.");
       if (connectAfter) { toast.info("Opening Google permission screen…"); setTimeout(() => connectConnection(driveLabel || `Urban Drive ${accounts.length + 1}`), 1000); }
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed."); }
@@ -190,7 +186,7 @@ export function GoogleDriveManagerModule() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Cloud className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-bold tracking-tight">Google Drive Manager</h2>
-            <p className="text-xs text-muted-foreground">Connect Google Drive via OAuth. Tokens are encrypted and stored in the database — drives stay connected across sessions.</p>
+            <p className="text-xs text-muted-foreground">Connect Google Drive via OAuth. Tokens are stored in the database — drives stay connected across sessions.</p>
           </div>
         </div>
         {config?.configured ? (
@@ -346,7 +342,7 @@ export function GoogleDriveManagerModule() {
           ) : (
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
               <h3 className="mb-3 text-sm font-bold">Connect a new Google Drive account</h3>
-              <p className="mb-4 text-xs text-muted-foreground">Enter a label for this Drive account (e.g. "Main Drive", "Backup Drive"). You'll be redirected to Google's permission screen. After you approve, the refresh token will be encrypted and stored in the database — the Drive stays connected until you disconnect it.</p>
+              <p className="mb-4 text-xs text-muted-foreground">Enter a label for this Drive account (e.g. "Main Drive", "Backup Drive"). You'll be redirected to Google's permission screen. After you approve, the refresh token is stored in the database — the Drive stays connected until you disconnect it.</p>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="grid w-full max-w-sm gap-1.5"><Label className="text-xs font-medium">Drive label</Label><Input value={driveLabel} onChange={(e) => setDriveLabel(e.target.value)} placeholder={`Urban Drive ${accounts.length + 1}`} className="h-9" /></div>
                 <Button onClick={() => connectConnection(driveLabel || `Urban Drive ${accounts.length + 1}`)} disabled={!isOwner}><Plus className="mr-1.5 h-3.5 w-3.5" /> Connect Google Drive</Button>
@@ -358,9 +354,9 @@ export function GoogleDriveManagerModule() {
           <div className="rounded-xl border border-border bg-muted/20 p-4">
             <h3 className="mb-2 text-sm font-bold">How Google Drive connection works</h3>
             <ol className="space-y-2 text-xs text-muted-foreground">
-              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">1</span><span>Owner saves Google OAuth Client ID + Client Secret in the <b>OAuth Settings</b> tab (stored encrypted in Supabase).</span></li>
+              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">1</span><span>Owner saves Google OAuth Client ID + Client Secret in the <b>OAuth Settings</b> tab (stored in Supabase).</span></li>
               <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">2</span><span>Owner clicks "Connect Google Drive" → redirected to Google's consent screen.</span></li>
-              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">3</span><span>Google returns a <b>refresh token</b> → encrypted with AES-256-GCM → stored in Supabase <code className="rounded bg-muted px-1">GenericRecord</code> table.</span></li>
+              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">3</span><span>Google returns a <b>refresh token</b> → stored in Supabase <code className="rounded bg-muted px-1">GenericRecord</code> table.</span></li>
               <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">4</span><span>A <code className="rounded bg-muted px-1">StorageAccount</code> is created in the workspace → Drive stays connected across all sessions and server restarts.</span></li>
               <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">5</span><span>The app uses the refresh token to get fresh access tokens (1-hour validity) on demand — no repeated logins needed.</span></li>
             </ol>
@@ -387,7 +383,6 @@ export function GoogleDriveManagerModule() {
                 <div className="space-y-4">
                   <div className="grid gap-1.5"><Label className="text-xs font-medium">Client ID</Label><Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="123456789-abcdef.apps.googleusercontent.com" className="h-9 font-mono text-xs" /></div>
                   <div className="grid gap-1.5"><Label className="text-xs font-medium">Client Secret {config?.hasClientSecret && <span className="text-success">(configured)</span>}</Label><div className="relative"><Input type={showSecret ? "text" : "password"} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={config?.hasClientSecret ? "•••••••• (enter new to replace)" : "GOCSPX-xxxxxxxxxxxxxxxx"} className="h-9 pr-10 font-mono text-xs" /><button type="button" onClick={() => setShowSecret(!showSecret)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
-                  <div className="grid gap-1.5"><Label className="text-xs font-medium">Encryption Key {config?.hasCredentialsKey && <span className="text-success">(configured)</span>}</Label><div className="relative"><Input type={showCredsKey ? "text" : "password"} value={credentialsKey} onChange={(e) => setCredentialsKey(e.target.value)} placeholder={config?.hasCredentialsKey ? "•••••• (enter new to rotate)" : "32+ character random string (auto-generated if blank)"} className="h-9 pr-10 font-mono text-xs" /><button type="button" onClick={() => setShowCredsKey(!showCredsKey)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showCredsKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div><p className="text-[10px] text-muted-foreground">Used to encrypt Drive refresh tokens (AES-256-GCM). Leave blank to auto-generate or keep existing.</p></div>
                   <div className="flex flex-wrap gap-2"><Button onClick={() => saveConfig(false)} disabled={saving}><Save className="mr-1.5 h-3.5 w-3.5" /> {saving ? "Saving..." : "Save Credentials"}</Button><Button variant="outline" onClick={() => saveConfig(true)} disabled={saving}><ArrowRight className="mr-1.5 h-3.5 w-3.5" /> Save & Connect Drive</Button></div>
                 </div>
               </div>
@@ -406,8 +401,8 @@ export function GoogleDriveManagerModule() {
               { t: "Enable Google Drive API", d: "In the Cloud Console → APIs & Services → Library → search 'Google Drive API' → click Enable." },
               { t: "Configure OAuth Consent Screen", d: "Go to APIs & Services → OAuth consent screen. User type: External. Fill in app name, support email. Add scope: https://www.googleapis.com/auth/drive. Add your email as a Test User." },
               { t: "Create OAuth 2.0 Client ID", d: "Go to APIs & Services → Credentials → Create Credentials → OAuth client ID. Application type: Web application. Add the Redirect URI from the OAuth Settings tab. Copy the Client ID and Client Secret." },
-              { t: "Save credentials in Urban Castle", d: "Go to the OAuth Settings tab → paste Client ID + Client Secret → click Save Credentials. These are stored encrypted in Supabase." },
-              { t: "Connect your Google Drive", d: "Go to the Connect Drive tab → enter a label → click Connect Google Drive. You'll be redirected to Google → approve → the refresh token is encrypted and stored in the database. The Drive stays connected permanently until you disconnect it." },
+              { t: "Save credentials in Urban Castle", d: "Go to the OAuth Settings tab → paste Client ID + Client Secret → click Save Credentials. These are stored in Supabase." },
+              { t: "Connect your Google Drive", d: "Go to the Connect Drive tab → enter a label → click Connect Google Drive. You'll be redirected to Google → approve → the refresh token is stored in the database. The Drive stays connected permanently until you disconnect it." },
             ].map((step, i) => (
               <div key={i} className="flex gap-4">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{i + 1}</div>
@@ -415,7 +410,6 @@ export function GoogleDriveManagerModule() {
               </div>
             ))}
           </div>
-          <div className="mt-5 rounded-lg border border-success/30 bg-success/[0.06] p-3"><div className="flex items-start gap-2"><Lock className="mt-0.5 h-4 w-4 shrink-0 text-success" /><div><p className="text-xs font-bold text-success">Security: How tokens are stored</p><p className="mt-1 text-[11px] text-muted-foreground">Google Drive refresh tokens are encrypted with <b>AES-256-GCM</b> using the Encryption Key, then stored in the Supabase <code className="rounded bg-muted px-1">GenericRecord</code> table as ciphertext. The browser never sees the refresh token. Access tokens (1-hour validity) are generated on-demand server-side. Even if the database is compromised, the tokens cannot be decrypted without the Encryption Key.</p></div></div></div>
         </div>
       )}
     </div>

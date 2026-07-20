@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { AuthenticatedUser } from "./auth";
 import { getSupabaseAdminClient } from "../../supabase/server";
 
@@ -38,16 +38,9 @@ type Vault = {
   pending: PendingConnect[];
 };
 
-type CipherPayload = {
-  iv: string;
-  tag: string;
-  ciphertext: string;
-};
-
 type GoogleDriveOAuthSettings = {
   clientId: string;
   clientSecret: string;
-  credentialsKey: string;
   updatedAt?: string;
   updatedBy?: string;
 };
@@ -101,49 +94,25 @@ export async function readGoogleDriveOAuthConfig(origin?: string) {
   const saved = await storedSettings();
   const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || saved.clientId || "";
   const hasClientSecret = Boolean(process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || saved.clientSecret);
-  const hasCredentialsKey = Boolean(process.env.RDASH_DRIVE_CREDENTIALS_KEY || saved.credentialsKey);
   return {
     clientId,
     hasClientSecret,
-    hasCredentialsKey,
     configured: Boolean(clientId && hasClientSecret),
     redirectUri: origin ? `${origin}/api/google-drive/oauth/callback` : "/api/google-drive/oauth/callback",
     updatedAt: saved.updatedAt || null,
   };
 }
 
-export async function saveGoogleDriveOAuthConfig(user: AuthenticatedUser, input: { clientId?: string; clientSecret?: string; credentialsKey?: string }) {
+export async function saveGoogleDriveOAuthConfig(user: AuthenticatedUser, input: { clientId?: string; clientSecret?: string }) {
   if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner can configure Google Drive OAuth.");
   const existing = await storedSettings();
   const clientId = String(input.clientId || existing.clientId || process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || "").trim();
   const clientSecret = String(input.clientSecret || existing.clientSecret || process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || "").trim();
-  const credentialsKey = String(input.credentialsKey || existing.credentialsKey || process.env.RDASH_DRIVE_CREDENTIALS_KEY || randomBytes(48).toString("base64url")).trim();
   if (!clientId) throw new Error("Google OAuth Client ID is required.");
   if (!clientSecret) throw new Error("Google OAuth Client Secret is required.");
-  if (credentialsKey.length < 32) throw new Error("Drive credentials key must contain at least 32 characters.");
-  const settings = { clientId, clientSecret, credentialsKey, updatedAt: new Date().toISOString(), updatedBy: user.userId };
+  const settings = { clientId, clientSecret, updatedAt: new Date().toISOString(), updatedBy: user.userId };
   await saveSettings(settings);
   return readGoogleDriveOAuthConfig();
-}
-
-async function credentialsKeySource() {
-  const envKey = process.env.RDASH_DRIVE_CREDENTIALS_KEY;
-  if (envKey && envKey.length >= 32) return envKey;
-  const saved = await storedSettings();
-  if (saved.credentialsKey && saved.credentialsKey.length >= 32) return saved.credentialsKey;
-  const generated = randomBytes(48).toString("base64url");
-  await saveSettings({
-    clientId: String(saved.clientId || process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || ""),
-    clientSecret: String(saved.clientSecret || process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || ""),
-    credentialsKey: generated,
-    updatedAt: new Date().toISOString(),
-    updatedBy: "system",
-  });
-  return generated;
-}
-
-async function encryptionKey() {
-  return createHash("sha256").update(await credentialsKeySource()).digest();
 }
 
 async function config() {
@@ -151,39 +120,26 @@ async function config() {
   const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || saved.clientId;
   const clientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || saved.clientSecret;
   if (!clientId || !clientSecret) {
-    throw new Error("Google Drive OAuth is not configured. Open /google-drive-settings as Owner and save the OAuth Client ID and Client Secret.");
+    throw new Error("Google Drive OAuth is not configured. Open Google Drive Manager → OAuth Settings and save the Client ID and Client Secret.");
   }
   return { clientId, clientSecret };
 }
 
-async function encrypt(vault: Vault): Promise<CipherPayload> {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", await encryptionKey(), iv);
-  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(vault), "utf8"), cipher.final()]);
-  return { iv: iv.toString("base64url"), tag: cipher.getAuthTag().toString("base64url"), ciphertext: ciphertext.toString("base64url") };
-}
-
-async function decrypt(payload: CipherPayload): Promise<Vault> {
-  const decipher = createDecipheriv("aes-256-gcm", await encryptionKey(), Buffer.from(payload.iv, "base64url"));
-  decipher.setAuthTag(Buffer.from(payload.tag, "base64url"));
-  const text = Buffer.concat([decipher.update(Buffer.from(payload.ciphertext, "base64url")), decipher.final()]).toString("utf8");
-  const value = JSON.parse(text) as Vault;
-  if (value.version !== 1 || !Array.isArray(value.connections) || !Array.isArray(value.pending)) throw new Error("Invalid Drive connection vault.");
-  return value;
-}
-
+// ── Vault: plaintext JSON (no encryption) ──
 async function readVault(): Promise<Vault> {
   const row = await readRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID);
   if (!row?.dataJson) return emptyVault();
   try {
-    return await decrypt(JSON.parse(row.dataJson) as CipherPayload);
+    const value = JSON.parse(row.dataJson) as Vault;
+    if (value.version !== 1 || !Array.isArray(value.connections) || !Array.isArray(value.pending)) return emptyVault();
+    return value;
   } catch {
     return emptyVault();
   }
 }
 
 async function writeVault(vault: Vault) {
-  await writeRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID, await encrypt(vault));
+  await writeRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID, vault);
 }
 
 async function google(url: string, accessToken: string, init?: RequestInit) {
