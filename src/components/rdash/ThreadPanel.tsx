@@ -25,6 +25,7 @@ export function ThreadView({ threadId }: {
     const addReply = useRDashStore((s) => s.addThreadReply);
     const currentUser = useRDashStore((s) => s.currentUser);
     const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
+    const addServerFileAsset = useRDashStore((s) => s.addServerFileAsset);
     const [reply, setReply] = React.useState("");
     const [replyParentId, setReplyParentId] = React.useState<string | undefined>();
     const [uploadingProof, setUploadingProof] = React.useState(false);
@@ -110,7 +111,15 @@ export function ThreadView({ threadId }: {
                 const dataUrl = file.type.startsWith("image/") ? await compressImage(file) : await readFileAsDataUrl(file);
                 const role = file.type.startsWith("video/") ? "video" as const : file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "document" as const : "proof" as const;
                 const uploaded = await uploadCapturedMediaToGoogleDrive({ dataUrl, fileName: file.name, entityType, entityId: thread.record_id, kind: "site_proof", role, caption: "Thread attachment" });
-                const attachmentId = createFileAssetAndAttach({ google_file_id: uploaded.id, file_name: uploaded.name, web_view_link: uploaded.webViewLink, mime_type: uploaded.mimeType, file_size_bytes: uploaded.size, kind: "site_proof", storage_account_id: uploaded.storageAccountId, storage_folder_instance: uploaded.storageFolderInstance, storage_provider: uploaded.storageAccountId === "local" ? "local" : "google_drive", storage_mode: "managed", sync_status: "uploaded", thumbnail_url: uploaded.thumbnailLink }, { entity_type: entityType, entity_id: thread.record_id, role, visibility: "internal", customer_shareable: false, caption: "Thread attachment", created_by: user.name });
+                // Use addServerFileAsset (no server save — server already has them from upload route)
+                let attachmentId: string;
+                if (uploaded.fileAsset && uploaded.attachment) {
+                    addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
+                    attachmentId = uploaded.attachment.id;
+                } else {
+                    // Fallback: create client-side (for backward compat with local uploads)
+                    attachmentId = createFileAssetAndAttach({ google_file_id: uploaded.id, file_name: uploaded.name, web_view_link: uploaded.webViewLink, mime_type: uploaded.mimeType, file_size_bytes: uploaded.size, kind: "site_proof", storage_account_id: uploaded.storageAccountId, storage_folder_instance: uploaded.storageFolderInstance, storage_provider: uploaded.storageAccountId === "local" ? "local" : "google_drive", storage_mode: "managed", sync_status: "uploaded", thumbnail_url: uploaded.thumbnailLink }, { entity_type: entityType, entity_id: thread.record_id, role, visibility: "internal", customer_shareable: false, caption: "Thread attachment", created_by: user.name });
+                }
                 addReply(thread.id, {
                     author: user.name,
                     role: user.role,

@@ -63,9 +63,25 @@ function resolveAttachmentEntityLabel(db: RDashDatabase, type: EntityFileAttachm
 }
 
 export function createFilesSlice(ctx: StoreContext): FilesState {
-    const { commitState, get } = ctx;
+    const { commitState, get, setBase } = ctx;
 
     return {
+        // Adds a FileAsset + Attachment that were already saved by the server
+        // (e.g., after a Google Drive upload). Updates local state WITHOUT
+        // triggering queueSecureWorkspaceSave, since the server already has them.
+        addServerFileAsset: (fileAsset: FileAsset, attachment: EntityFileAttachment) => {
+            setBase((state: any) => ({
+                ...state,
+                db: {
+                    ...state.db,
+                    master: {
+                        ...state.db.master,
+                        fileAssets: [...(state.db.master.fileAssets || []), fileAsset],
+                    },
+                    entityFileAttachments: [...(state.db.entityFileAttachments || []), attachment],
+                },
+            }));
+        },
         createFileAssetAndAttach: (file: FileAssetCreateInput, link: Partial<EntityFileAttachment> & {
             entity_type: EntityFileAttachment["entity_type"]; entity_id: string;
         }) => {

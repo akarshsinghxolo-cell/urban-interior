@@ -105,6 +105,8 @@ export async function POST(request: NextRequest) {
       throw saveError;
     }
 
+    // Return the upload result + the FileAsset + Attachment so the client
+    // can add them to its local store WITHOUT triggering another server save.
     return NextResponse.json({
       id: uploaded.id, name: uploaded.name, mimeType: uploaded.mimeType, size: uploaded.size,
       webViewLink: uploaded.webViewLink, thumbnailLink: uploaded.thumbnailLink,
@@ -112,6 +114,9 @@ export async function POST(request: NextRequest) {
       workOrderId: uploaded.workOrderId, storageAccountId: uploaded.storageAccountId,
       storageFolderTemplateId: uploaded.storageFolderTemplateId,
       storageFolderInstance: uploaded.storageFolderInstance,
+      // Include the saved FileAsset + Attachment so the client can show them immediately
+      fileAsset: asset,
+      attachment: newAttachment,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message.replace(/^FORBIDDEN:/, "") : "Google Drive upload failed.";

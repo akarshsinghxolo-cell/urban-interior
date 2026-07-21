@@ -51,6 +51,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     const updateContractor = useRDashStore((s) => s.updateContractor);
     const updateSite = useRDashStore((s) => s.updateSite);
     const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
+    const addServerFileAsset = useRDashStore((s) => s.addServerFileAsset);
     const isEditMode = !!editId;
     const [saving, setSaving] = React.useState(false);
     // UPLOAD-030: Upload progress state
@@ -463,6 +464,11 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             customerShareable: input.customerShareable || false,
             onProgress: input.onProgress,
         });
+        // Add the FileAsset + Attachment to local state so the file is VISIBLE in the app immediately.
+        // Uses addServerFileAsset (no server save — server already has them from the upload route).
+        if (uploaded.fileAsset && uploaded.attachment) {
+            addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
+        }
         return uploaded.id;
     };
     const handleSave = async () => {

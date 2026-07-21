@@ -34,6 +34,10 @@ export type ManagedDriveUpload = {
         folder_path: string;
         web_view_link?: string;
     };
+    // The server also returns the saved FileAsset + EntityFileAttachment
+    // so the client can add them to local state without a server round-trip.
+    fileAsset?: any;
+    attachment?: any;
 };
 export const MANAGED_FILE_ACCEPT = "image/*,video/*,application/pdf,.pdf";
 export async function readFileAsDataUrl(file: File | Blob): Promise<string> {

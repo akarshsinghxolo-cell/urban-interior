@@ -548,6 +548,8 @@ export interface FilesState {
   createFileAssetAndAttach: (file: FileAssetCreateInput, link: Partial<EntityFileAttachment> & {
     entity_type: EntityFileAttachment["entity_type"]; entity_id: string;
   }) => string;
+  /** Adds a FileAsset + Attachment to local state WITHOUT server save (server already has them). */
+  addServerFileAsset: (fileAsset: FileAsset, attachment: EntityFileAttachment) => void;
   attachFileAsset: (link: Partial<EntityFileAttachment> & {
     file_asset_id: string; entity_type: EntityFileAttachment["entity_type"]; entity_id: string;
   }) => string;
