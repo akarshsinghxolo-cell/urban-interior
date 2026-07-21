@@ -574,6 +574,12 @@ function ExecutionLogDialog({ onClose, onSave }: {
                 if (/^https:\/\/drive\.google\.com\//.test(photo.url))
                     return photo;
                 const uploaded = await uploadManagedFile({ dataUrl: photo.url, fileName: photo.file_name, entityType: "workOrder", entityId: workOrderId, kind: "media", role: "photo", caption: "Daily execution progress photo", visibility: "internal" });
+                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
+                // shows in app preview and survives page reloads. Without this,
+                // the file exists in Drive but is untracked — preview returns 403.
+                if (uploaded.fileAsset && uploaded.attachment) {
+                    useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
+                }
                 return { ...photo, file_name: uploaded.name, url: uploaded.webViewLink, file_asset_id: uploaded.id };
             }));
             await onSave({

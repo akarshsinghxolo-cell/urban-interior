@@ -278,6 +278,12 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 if (/^https:\/\/drive\.google\.com\//.test(proof.url))
                     return proof;
                 const uploaded = await uploadManagedFile({ dataUrl: proof.url, fileName: proof.file_name, entityType: "purchase_order", entityId: selectedPO.id, kind: "site_proof", role: "delivery", caption, visibility: "internal" });
+                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
+                // shows in app preview and survives page reloads. Without this,
+                // the file exists in Drive but is untracked — preview returns 403.
+                if (uploaded.fileAsset && uploaded.attachment) {
+                    useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
+                }
                 return { ...proof, file_name: uploaded.name, url: uploaded.webViewLink, file_asset_id: uploaded.id };
             };
             const uploadedReceiving = await Promise.all(receivingProofs.map((proof) => uploadProof(proof, "GRN receiving proof")));

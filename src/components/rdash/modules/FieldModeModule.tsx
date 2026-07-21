@@ -212,6 +212,11 @@ export function FieldModeModule() {
                     role: photo.mimeType.startsWith("video/") ? "video" : photo.mimeType === "application/pdf" ? "document" : "proof",
                     caption: `Field visit ${photo.mimeType.startsWith("video/") ? "video" : photo.mimeType === "application/pdf" ? "document" : "photo"}`,
                 });
+                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
+                // shows in app preview and survives page reloads.
+                if (result.fileAsset && result.attachment) {
+                    useRDashStore.getState().addServerFileAsset(result.fileAsset, result.attachment);
+                }
                 return {
                     type: photo.mimeType.startsWith("video/") ? "site_video" : photo.mimeType === "application/pdf" ? "site_document" : "site_photo",
                     file_name: result.name,
