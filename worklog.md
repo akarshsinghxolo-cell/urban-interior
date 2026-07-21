@@ -6363,3 +6363,47 @@ Stage Summary:
 - Fix 2 (stale refs): 68 workSubcategories cleared of 287 stale work_required_article_ids. Done on live DB.
 - Fix 3 (duplicate folders): 4 duplicate Drive folders consolidated (files moved, empties trashed, DB records deleted). Done on live DB + Drive.
 - The FIX-DUP-001 code fix (persisted cache + mutex + throw-on-failure) already prevents NEW duplicates. This cleanup handles the historical duplicates that were already there.
+
+---
+Task ID: FIX-ANALYSIS-002
+Agent: main (Z.ai Code)
+Task: Fix remaining HIGH-severity findings from ANALYSIS-001 deep data-model analysis.
+
+Work Log:
+
+FIX #7 — Remove dead FK rule: entityFileAttachments.customer_id (HIGH):
+- File: src/lib/rdash/integrity/fk-registry.ts line 314 (original)
+- Problem: The FK rule declared `entityFileAttachments.customer_id → customers` but the EntityFileAttachment TypeScript interface has NO customer_id field (it uses polymorphic entity_type + entity_id). The rule never fired — dead code.
+- Fix: Removed the dead rule. Added a comment explaining why (customer linkage is resolved at runtime via resolveEntityContext). Kept the entityReferenceAssignments.customer_id rule (that type DOES have customer_id).
+
+FIX #8 — Add polymorphic-entity cascade sweep (HIGH):
+- File: src/lib/rdash/integrity/cascade.ts (new code block before row removal)
+- Problem: When a customer/site/workOrder is deleted, entityFileAttachments and entityReferenceAssignments that reference it via (entity_type, entity_id) were NOT cleaned up. The FK registry marks polymorphic rules as "ignore" (line 137: `if (rule.onDelete === "ignore") continue`), so the cascade walker skipped them entirely. Orphaned file attachments blocked subsequent workspace commits.
+- Fix: Added a POLYMORPHIC_ENTITY_COLLECTIONS sweep that runs after all typed FK rules are processed. It scans entityFileAttachments and entityReferenceAssignments for rows where entity_id === deleted_id AND entity_type === deleted_collection, then cascade-deletes the matching attachments (which in turn cascades to the file asset via the typed file_asset_id FK).
+
+FIX #9 — Add typed customer_id/site_id/work_order_id to StorageFolderInstance (HIGH):
+- Files: src/lib/rdash/types.ts (interface), src/lib/rdash/server/google-drive.ts (resolveStorageFolder)
+- Problem: StorageFolderInstance had no typed customer_id/site_id — finding a customer's folders required brittle string-matching on folder_path (e.g., "Customers/{name}/...").
+- Fix: Added optional customer_id?, site_id?, work_order_id? fields to the StorageFolderInstance interface. Updated resolveStorageFolder to call resolveEntityContext() and extract the typed IDs. All 3 return paths (persisted cache hit, mutex-shared resolution, fresh resolution) now populate the typed fields. Context resolution is wrapped in try/catch (best-effort — non-blocking if the entity isn't fully linked yet).
+
+FIX #6 — Make orphan-tolerant entities throw instead of silent fallback (HIGH):
+- File: src/lib/rdash/entity-context.ts
+- Problem: 3 code paths silently fell back to a system context when an entity had no customer/site/workOrder link:
+  1. drawing: returned { ownerKind: "system", driveBucket: "Drawings" } when no site_id or work_order_id
+  2. resolveCandidates: returned systemContext("general", "general") when no candidate had a customerId (affected task, followup, visit, blocked)
+- Fix: Both paths now throw a clear error: "Drawing X has no linked Site or Work Order. Link it to a parent entity before uploading files." / "entity has no linked Customer, Site, Work Order, or other parent." This surfaces missing business context instead of masking it.
+
+Verification:
+- bun run lint: no new errors in changed files (fk-registry.ts, cascade.ts, entity-context.ts, google-drive.ts, types.ts).
+- Dev server: clean compile, GET / → 200, no errors in log.
+- Committed: 65d13c7. Pushed to GitHub.
+- Vercel deployment dpl_FSTTuSpZULwnMmjkBCxtoXKLKxQh → READY (60s).
+- Live at https://urban-castle.vercel.app. Health check: GET / → 307 (redirect to /signin).
+
+Stage Summary:
+- 4 of 4 HIGH-severity findings fixed.
+- Files changed: src/lib/rdash/integrity/fk-registry.ts, src/lib/rdash/integrity/cascade.ts, src/lib/rdash/types.ts, src/lib/rdash/server/google-drive.ts, src/lib/rdash/entity-context.ts (5 files, 98 insertions, 12 deletions).
+- Remaining findings not fixed (by design):
+  * #4 (live DB nearly empty) — usage, not a bug
+  * #5 (zero DB-level FKs) — architectural; adding Postgres FKs would break the workspace-load pattern
+  * #10 (no customer-billable path for HR entities) — requires a product decision about whether staff time should be job-costed
