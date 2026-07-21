@@ -135,6 +135,8 @@ async function readVault(): Promise<Vault> {
   try {
     const value = JSON.parse(row.dataJson) as Vault;
     if (value.version !== 1 || !Array.isArray(value.connections) || !Array.isArray(value.pending)) return emptyVault();
+    // UPLOAD-023: Garbage-collect expired pending OAuth state on read
+    value.pending = value.pending.filter((p) => p.expiresAt > Date.now());
     return value;
   } catch {
     return emptyVault();
@@ -156,16 +158,25 @@ async function google(url: string, accessToken: string, init?: RequestInit) {
   return fetch(url, { ...init, headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers || {}) }, cache: "no-store" });
 }
 
-async function refreshToken(refreshToken: string) {
+async function refreshToken(refreshTokenValue: string) {
   const { clientId, clientSecret } = await config();
   const response = await fetch(OAUTH_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshTokenValue, grant_type: "refresh_token" }),
     cache: "no-store",
   });
-  const payload = await response.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error_description?: string };
-  if (!response.ok || !payload.access_token) throw new Error(payload.error_description || "Google Drive authorization needs reconnecting.");
+  const payload = await response.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+  if (!response.ok || !payload.access_token) {
+    // UPLOAD-021: Distinguish revoked tokens from transient failures
+    const errorCode = payload.error || "";
+    if (errorCode === "invalid_grant" || errorCode === "invalid_client") {
+      const err = new Error("Google Drive authorization has been revoked. Reconnect this Drive account.");
+      err.name = "RefreshTokenRevokedError";
+      throw err;
+    }
+    throw new Error(payload.error_description || "Google Drive authorization needs reconnecting.");
+  }
   return payload.access_token;
 }
 
@@ -278,7 +289,16 @@ export async function accessTokenForDriveConnection(connectionId: string) {
   const vault = await readVault();
   const connection = vault.connections.find((item) => item.id === connectionId);
   if (!connection) throw new Error("This Google Drive account is not connected on the server. Reconnect it before using its files.");
-  return getCachedAccessToken(connectionId, connection.refreshToken);
+  try {
+    return await getCachedAccessToken(connectionId, connection.refreshToken);
+  } catch (error) {
+    // UPLOAD-021: If refresh token is revoked, mark the account for reconnection
+    if (error instanceof Error && error.name === "RefreshTokenRevokedError") {
+      invalidateTokenCache(connectionId);
+      throw error; // Propagate so the caller can mark the storage account
+    }
+    throw error;
+  }
 }
 
 export async function refreshDriveConnection(connectionId: string) {

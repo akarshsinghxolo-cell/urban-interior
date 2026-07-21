@@ -53,6 +53,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
     const isEditMode = !!editId;
     const [saving, setSaving] = React.useState(false);
+    // UPLOAD-030: Upload progress state
+    const [uploadProgress, setUploadProgress] = React.useState<{ current: number; total: number; label: string } | null>(null);
     const [name, setName] = React.useState("");
     const [phone, setPhone] = React.useState("");
     const [whatsapp, setWhatsapp] = React.useState("");
@@ -440,6 +442,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     const updateCapability = (subId: string, patch: Partial<typeof conCapabilities[number]>) => {
         setConCapabilities((arr) => arr.map((c) => c.subcategory_id === subId ? { ...c, ...patch } : c));
     };
+    // UPLOAD-029: Pass through visibility and customerShareable flags
+    // UPLOAD-030: Support progress callback for upload progress display
     const uploadAndAttach = async (input: {
         dataUrl: string;
         fileName: string;
@@ -448,13 +452,17 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         kind: "media" | "site_proof";
         role: "photo" | "proof" | "video" | "document";
         caption: string;
+        visibility?: "internal" | "customer" | "vendor" | "contractor";
+        customerShareable?: boolean;
+        onProgress?: (pct: number) => void;
     }) => {
-        // UPLOAD-006: Server route already saves FileAsset + EntityFileAttachment.
-        // We just upload and return a synthetic attachment ID for the site's
-        // photo_attachment_ids array. The server handles persistence.
-        const uploaded = await uploadManagedFile({ dataUrl: input.dataUrl, fileName: input.fileName, entityType: input.entityType, entityId: input.entityId, kind: input.kind, role: input.role, caption: input.caption, visibility: "internal" });
-        // Return the Google file ID as the attachment reference
-        // (the server already created the EntityFileAttachment)
+        const uploaded = await uploadManagedFile({
+            dataUrl: input.dataUrl, fileName: input.fileName, entityType: input.entityType, entityId: input.entityId,
+            kind: input.kind, role: input.role, caption: input.caption,
+            visibility: input.visibility || "internal",
+            customerShareable: input.customerShareable || false,
+            onProgress: input.onProgress,
+        });
         return uploaded.id;
     };
     const handleSave = async () => {
@@ -530,11 +538,30 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         source_partner_name: referralName,
                     } : undefined);
                     if (result.siteId && firstSitePhotos.length) {
-                        const results = await Promise.allSettled(firstSitePhotos.map((photo) => uploadAndAttach({ dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!, kind: "media", role: "photo", caption: "Site photo" })));
+                        // UPLOAD-028: Use allSettled so partial failures don't discard successful uploads
+                        // UPLOAD-030: Show upload progress
+                        setUploadProgress({ current: 0, total: firstSitePhotos.length, label: "Uploading photos…" });
+                        let completed = 0;
+                        const results = await Promise.allSettled(firstSitePhotos.map(async (photo) => {
+                            const id = await uploadAndAttach({
+                                dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!,
+                                kind: "media", role: "photo", caption: "Site photo",
+                                onProgress: (pct) => {
+                                    setUploadProgress({ current: completed + pct / 100, total: firstSitePhotos.length, label: `Uploading photo ${completed + 1} of ${firstSitePhotos.length}…` });
+                                },
+                            });
+                            completed++;
+                            setUploadProgress({ current: completed, total: firstSitePhotos.length, label: `Uploaded ${completed} of ${firstSitePhotos.length} photos` });
+                            return id;
+                        }));
                         const photoAttachmentIds = results.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled").map((r) => r.value);
-                        const failed = results.filter((r) => r.status === "rejected").length;
-                        if (failed > 0) toast.warning(`${failed} photo(s) failed to upload. ${photoAttachmentIds.length} succeeded.`);
+                        const failedPhotos = results.filter((r) => r.status === "rejected");
+                        if (failedPhotos.length > 0) {
+                            // UPLOAD-028: Keep failed photo data URLs for retry
+                            toast.warning(`${failedPhotos.length} photo(s) failed to upload. ${photoAttachmentIds.length} succeeded. You can retry from the site detail panel.`);
+                        }
                         if (photoAttachmentIds.length > 0) updateSite(result.siteId, { photo_attachment_ids: photoAttachmentIds });
+                        setUploadProgress(null);
                     }
                     toast.success(addFirstSite ? `Customer "${name.trim()}" and first Site created` : `Customer "${name.trim()}" created`);
                     onSaved?.(result.customerId);
@@ -936,7 +963,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" className="min-h-[40px]" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
           <Button size="sm" className="min-h-[40px]" onClick={handleSave} disabled={!name.trim() || saving}>
-            {saving ? "Uploading to Google Drive…" : isEditMode ? <><Pencil className="mr-1 h-3.5 w-3.5"/> Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5"/> Create {type}</>}
+            {saving ? (uploadProgress ? uploadProgress.label : "Saving…") : isEditMode ? <><Pencil className="mr-1 h-3.5 w-3.5"/> Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5"/> Create {type}</>}
           </Button>
         </DialogFooter>
       </DialogContent>

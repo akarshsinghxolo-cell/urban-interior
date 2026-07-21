@@ -64,10 +64,10 @@ export function accountUsagePercent(account: StorageAccount) {
     const used = Number(account.quota_used_bytes || 0);
     return limit > 0 ? Math.max(0, Math.round((used / limit) * 10000) / 100) : 0;
 }
+// UPLOAD-025: Default Drive limit when quota_limit_bytes is unknown (consumer accounts = 15 GB)
+const DEFAULT_DRIVE_LIMIT_BYTES = 15 * 1024 * 1024 * 1024;
 export function accountIsAtSwitchThreshold(account: StorageAccount, additionalBytes = 0) {
-    const limit = Number(account.quota_limit_bytes || 0);
-    if (limit <= 0)
-        return false;
+    const limit = Number(account.quota_limit_bytes || 0) || DEFAULT_DRIVE_LIMIT_BYTES;
     const threshold = Math.max(1, Math.min(100, Number(account.switch_threshold_percent || 85))) / 100;
     return Number(account.quota_used_bytes || 0) + additionalBytes >= limit * threshold;
 }
@@ -77,9 +77,16 @@ export function selectWriteStorageAccount(master: Pick<Master, "storageAccounts"
         .sort((a, b) => a.priority_order - b.priority_order || a.label.localeCompare(b.label))
         .find((account) => !accountIsAtSwitchThreshold(account, additionalBytes));
 }
+// UPLOAD-026: Log warning when falling back to general template
 export function templateForPurpose(master: Pick<Master, "storageFolderTemplates">, purpose: StorageFolderPurpose) {
-    return (master.storageFolderTemplates || []).find((template) => template.status === "active" && template.purpose === purpose)
-        || (master.storageFolderTemplates || []).find((template) => template.purpose === "general");
+    const exact = (master.storageFolderTemplates || []).find((template) => template.status === "active" && template.purpose === purpose);
+    if (exact) return exact;
+    const general = (master.storageFolderTemplates || []).find((template) => template.purpose === "general");
+    if (general) {
+        console.warn(`[storage] No active template for purpose "${purpose}" — falling back to general. Files will be stored in the General folder.`);
+        return general;
+    }
+    return undefined;
 }
 export function inferStoragePurpose(entityType: FileAttachmentEntityType, kind?: FileAssetKind, role?: FileAttachmentRole): StorageFolderPurpose {
     if (kind === "catalogue" || role === "catalogue")
@@ -133,19 +140,14 @@ export function logicalStoragePath(db: RDashDatabase, entityType: FileAttachment
     const grn = recordName(db.grns, context.grnId, "Unassigned GRN");
     const vendor = recordName(db.master.vendors, context.vendorId, "Unassigned vendor");
     const contractor = recordName(db.master.contractors, context.contractorId, "Unassigned contractor");
-    return template.path_template
-        .replaceAll("{customer}", customer)
-        .replaceAll("{site}", site)
-        .replaceAll("{job}", job)
-        .replaceAll("{quotation}", quotation)
-        .replaceAll("{purchase_order}", purchaseOrder)
-        .replaceAll("{grn}", grn)
-        .replaceAll("{vendor}", vendor)
-        .replaceAll("{contractor}", contractor)
-        .replaceAll("{category}", "Unclassified")
-        .replaceAll("{subcategory}", "General")
-        .replaceAll("{article}", "General")
-        .replaceAll("{entity}", segment(entityType, "General"));
+// UPLOAD-027: Single-pass regex substitution to prevent name collisions
+// (e.g., customer name containing "{site}" would be corrupted by sequential replaceAll)
+    const substitutions: Record<string, string> = {
+        customer, site, job, quotation, purchase_order: purchaseOrder, grn, vendor, contractor,
+        category: "Unclassified", subcategory: "General", article: "General",
+        entity: segment(entityType, "General"),
+    };
+    return template.path_template.replace(/\{(customer|site|job|quotation|purchase_order|grn|vendor|contractor|category|subcategory|article|entity)\}/g, (match, key) => substitutions[key] ?? match);
 }
 export function storageFileLinksFor(db: RDashDatabase, fileId: string) {
     return (db.entityFileAttachments || []).filter((link) => link.file_asset_id === fileId);

@@ -61,10 +61,29 @@ function escapeDriveQuery(value: string) { return value.replace(/'/g, "\\'"); }
 function rowById<T extends {
     id: string;
 }>(rows: T[], id: string) { return rows.find((row) => row.id === id); }
+// UPLOAD-017: Server-side MIME type validation
+const UPLOADABLE_MIME_PREFIXES = ["image/", "video/", "audio/"];
+const UPLOADABLE_MIME_EXACT = new Set([
+    "application/pdf",
+    "application/msword", "application/vnd.ms-excel", "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain", "text/csv",
+    "application/zip", "application/x-rar-compressed", "application/x-7z-compressed",
+]);
+const UPLOADABLE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg", ".mp4", ".mov", ".avi", ".mkv", ".webm", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".zip", ".rar", ".7z"]);
+function isUploadableFile(mime: string, fileName: string): boolean {
+    if (mime && (UPLOADABLE_MIME_PREFIXES.some((p) => mime.startsWith(p)) || UPLOADABLE_MIME_EXACT.has(mime))) return true;
+    const ext = fileName.toLowerCase().match(/\.[^.]+$/)?.[0] || "";
+    return UPLOADABLE_EXTENSIONS.has(ext);
+}
+
 export function assertUploadRequest(input: {
     entityType?: string;
     entityId?: string;
     fileName?: string;
+    fileMime?: string;
 }) {
     if (!input.entityType || !allowedEntityTypes.has(input.entityType as FileAttachmentEntityType))
         throw new Error("A valid attachment entity type is required.");
@@ -72,6 +91,12 @@ export function assertUploadRequest(input: {
         throw new Error("A saved entity is required before uploading a file.");
     if (!value(input.fileName))
         throw new Error("A file name is required.");
+    // UPLOAD-017: Validate MIME type / extension server-side
+    if (input.fileMime || input.fileName) {
+        if (!isUploadableFile(input.fileMime || "", input.fileName || "")) {
+            throw new Error(`File type "${input.fileMime || input.fileName}" is not allowed. Upload images, videos, PDFs, or documents.`);
+        }
+    }
 }
 export function managedFileByGoogleId(db: RDashDatabase, fileId: string) {
     return (db.master.fileAssets || []).find((item) => item.google_file_id === fileId && item.storage_provider === "google_drive" && item.storage_mode === "managed" && item.sync_status === "uploaded");
@@ -447,7 +472,7 @@ export async function deleteManagedFile(accessToken: string, fileId: string): Pr
     return deleteDriveFile(accessToken, fileId);
 }
 export async function uploadManagedFileAsset(user: AuthenticatedUser, db: RDashDatabase, input: ManagedUploadRequest): Promise<ManagedGoogleFileAsset> {
-    assertUploadRequest({ entityType: input.entityType, entityId: input.entityId, fileName: input.fileName });
+    assertUploadRequest({ entityType: input.entityType, entityId: input.entityId, fileName: input.fileName, fileMime: input.file?.type });
     canUpload(user, db, input.entityType, input.entityId, input.role);
     if (!input.file || !input.file.size)
         throw new Error("The selected file is empty.");
