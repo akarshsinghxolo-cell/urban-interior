@@ -114,7 +114,7 @@ function RefreshWorkspaceButton() {
       aria-label="Refresh workspace"
       title="Run attendance, follow-up, visit and recurring-task reconciliation"
       onClick={onClick}
-      className="fixed right-3 top-3 z-[55] inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 text-[11px] font-semibold text-muted-foreground shadow-soft backdrop-blur-sm transition-all hover:bg-card hover:text-foreground hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+      className="fixed right-3 top-3 z-[55] hidden h-8 items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 text-[11px] font-semibold text-muted-foreground shadow-soft backdrop-blur-sm transition-all hover:bg-card hover:text-foreground hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:inline-flex"
     >
       <RefreshCw className={`h-3.5 w-3.5 ${running ? "animate-spin" : ""}`} />
       <span className="hidden sm:inline">Refresh</span>

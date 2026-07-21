@@ -38,7 +38,7 @@ function ModuleItem({ module }: {
             setExpanded(true);
     }, [moduleSearch, active, hasActiveSubmodule]);
     return (<div className="flex flex-col">
-      <button type="button" onClick={() => setActiveModule(module.id)} className={cn("group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-all duration-150", active
+      <button type="button" onClick={() => setActiveModule(module.id)} className={cn("group relative flex min-h-[44px] items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-all duration-150", active
             ? "bg-primary text-primary-foreground shadow-sm before:absolute before:inset-y-1 before:left-0 before:w-[3px] before:rounded-l-full before:bg-primary-foreground before:content-[''] before:shadow-[0_0_8px_rgba(var(--primary-rgb,10_37_92),0.4)]"
             : "hover:bg-accent hover:text-accent-foreground hover:translate-x-0.5")}>
         <span className="text-base leading-none" aria-hidden="true">{module.icon}</span>
@@ -57,7 +57,7 @@ function ModuleItem({ module }: {
       {expanded && submodules.length > 0 && (<div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
           {submodules.map((sm) => {
                 const subActive = activeModuleId === sm.id;
-                return (<button key={sm.id} type="button" onClick={() => setActiveModule(sm.id)} className={cn("rd-nav-active rounded-md px-2 py-1 text-left text-xs transition-all", subActive
+                return (<button key={sm.id} type="button" onClick={() => setActiveModule(sm.id)} className={cn("rd-nav-active min-h-[40px] rounded-md px-2 py-2 text-left text-xs transition-all", subActive
                         ? "bg-accent font-semibold text-accent-foreground"
                         : "text-muted-foreground hover:bg-accent/60 hover:text-foreground hover:translate-x-0.5")}>
                 <span className="truncate">{sm.label}</span>

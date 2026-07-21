@@ -65,7 +65,7 @@ export function WorkspaceHeader() {
     return (<header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-border bg-background/85 backdrop-blur-md">
       <CreateMenu showTrigger={false} enableHotkeys={false}/>
       <div className="flex items-center gap-3 px-[var(--page-pad)] py-2.5">
-        <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
+        <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
           <Menu className="h-5 w-5"/>
         </Button>
 
@@ -75,8 +75,9 @@ export function WorkspaceHeader() {
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(1)} disabled={moduleHistoryIndex >= moduleHistoryLength - 1} aria-label="Go forward (Right Arrow)" title="Forward (Right Arrow)"><ChevronRight className="h-4 w-4"/></Button>
           </div>
           <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
-            <button type="button" onClick={() => setActiveModule("today")} className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent hover:text-foreground">
+          {/* MOB-001 fix: hide breadcrumb row on mobile to give H1 more space */}
+          <div className="hidden items-center gap-1 text-[11px] text-muted-foreground sm:flex">
+            <button type="button" onClick={() => setActiveModule("workdesk")} className="inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-accent hover:text-foreground">
               <Home className="h-3 w-3"/>
             </button>
             {crumb.moduleLabel && crumb.subLabel && (<>
@@ -92,10 +93,12 @@ export function WorkspaceHeader() {
               </>) : null}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xl leading-none">{r.icon}</span>
-            <h1 className="truncate text-xl font-bold tracking-tight">{r.label}</h1>
+            <span className="text-lg leading-none sm:text-xl">{r.icon}</span>
+            {/* MOB-001 fix: smaller text on mobile, allow truncation but give it priority space */}
+            <h1 className="min-w-0 truncate text-base font-bold tracking-tight sm:text-xl">{r.label}</h1>
           </div>
-          {r.description && (<p className="truncate text-xs text-muted-foreground">{r.description}</p>)}
+          {/* MOB-001 fix: hide description on mobile */}
+          {r.description && (<p className="hidden truncate text-xs text-muted-foreground sm:block">{r.description}</p>)}
           </div>
         </div>
         <div className="hidden items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs lg:flex">
@@ -109,7 +112,7 @@ export function WorkspaceHeader() {
         <WorkspaceHealthPill />
 
         <EnhancedSearch />
-        <Button variant="outline" size="icon" className="h-10 w-10 shrink-0 md:hidden" onClick={() => setCommandPaletteOpen(true)} aria-label="Open command palette" title="Command palette (Cmd+K)">
+        <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 md:hidden" onClick={() => setCommandPaletteOpen(true)} aria-label="Open command palette" title="Command palette (Cmd+K)">
           <Command className="h-4 w-4"/>
         </Button>
 
@@ -125,7 +128,7 @@ export function WorkspaceHeader() {
         <Button
           variant="outline"
           size="icon"
-          className="relative hidden h-10 w-10 shrink-0 md:inline-flex"
+          className="relative hidden h-11 w-11 shrink-0 md:inline-flex"
           onClick={() => {
             const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true });
             window.dispatchEvent(e);
@@ -137,7 +140,7 @@ export function WorkspaceHeader() {
           <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[8px] font-bold text-primary-foreground">?</span>
         </Button>
 
-        <Button variant="outline" size="icon" className="h-10 w-10 shrink-0" onClick={refresh} aria-label="Refresh">
+        <Button variant="outline" size="icon" className="h-11 w-11 shrink-0" onClick={refresh} aria-label="Refresh">
           <RefreshCw className="h-4 w-4"/>
         </Button>
 
@@ -155,7 +158,7 @@ export function WorkspaceHeader() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="h-10 w-10 shrink-0" aria-label="More workspace actions">
+            <Button variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="More workspace actions">
               <MoreHorizontal className="h-4 w-4"/>
             </Button>
           </DropdownMenuTrigger>
