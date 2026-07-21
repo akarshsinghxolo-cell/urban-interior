@@ -6514,3 +6514,32 @@ Stage Summary:
   3. FIX-E2E-001: awaitServerSync before uploads (commit completes before uploads start)
   4. FIX-E2E-002: lightweight folder UPSERT + sequential uploads (eliminates 409 conflict + cross-instance duplicate race)
 - Result: 5/5 photos uploaded, 1/1 folder tree, 0 errors.
+
+---
+Task ID: FIX-E2E-003
+Agent: main (Z.ai Code)
+Task: Fix "uploaded files not showing in app preview" — files vanished on reload and preview route returned 403/422.
+
+Work Log:
+- Root cause: addServerFileAsset (src/lib/rdash/store/slices/files.ts:72) used setBase (raw state mutation) instead of commitState. The comment said "server already has them" — but after FIX-E2E-002, the upload route no longer calls saveWorkspace (it only UPSERTs the storageFolderInstance). The FileAsset and EntityFileAttachment were returned to the client for it to commit, but the client never committed them.
+- Consequence 1: Files appeared in the UI immediately (local state) but vanished on page reload (never persisted to server).
+- Consequence 2: The /api/google-drive/preview and /api/google-drive/thumbnail proxy routes call getWorkspace() to check permissions via canReadManagedFileAsset, which searches the server-side master.fileAssets. Since the FileAsset was never committed, the preview route returned 403/422 for every uploaded file.
+- Fix: Changed addServerFileAsset to use commitState instead of setBase. This triggers queueSecureWorkspaceSave, persisting the FileAsset + Attachment to the server. The preview/thumbnail routes can now find the asset and serve the file.
+
+Verification (on live production after deploy):
+- Created "Preview Verify Customer" with 2 photos.
+- Both uploads → 200 ✅
+- Both commits → 200 ✅ (one for customer creation, one for file assets)
+- DB check: img1.jpg FileAsset persisted with google_file_id ✅
+- DB check: EntityFileAttachment linked to site-mruzcsh8ugvw ✅
+- Preview route test: GET /api/google-drive/preview?fileId=15nQaQVu... → 200, content-type: image/jpeg, 15839 bytes ✅
+- Page reload test: workspace now has 19 fileAssets (was 18 before) ✅, 19 attachments (was 18) ✅, site attachment survived reload ✅
+
+Stage Summary:
+- FIX COMPLETE: Uploaded files now persist server-side and show in app preview.
+- The complete fix chain for the "drive folder not working" complaint:
+  1. FIX-DRIVE-001: XHR → fetch (server receives all FormData fields)
+  2. FIX-DUP-001: persisted cache + mutex + throw-on-failure (prevents duplicate folders)
+  3. FIX-E2E-001: awaitServerSync before uploads (commit completes before uploads start)
+  4. FIX-E2E-002: lightweight folder UPSERT + sequential uploads (eliminates 409 + cross-instance race)
+  5. FIX-E2E-003: addServerFileAsset uses commitState (files persist + preview works)
