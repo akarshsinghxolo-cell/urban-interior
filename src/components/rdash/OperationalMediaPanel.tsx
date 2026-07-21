@@ -294,7 +294,16 @@ export function OperationalMediaPanel({ entityType, entityId, title = "Files & r
         event.preventDefault();
         if (!fileDraft.name.trim() || !/^https?:\/\//.test(fileDraft.url.trim()))
             return toast.error("Enter file name and a valid link");
-        createFileAssetAndAttach({ file_name: fileDraft.name.trim(), web_view_link: fileDraft.url.trim(), kind: fileDraft.role === "catalogue" ? "catalogue" : fileDraft.role === "drawing" ? "drawing" : fileDraft.role === "photo" || fileDraft.role === "video" ? "media" : fileDraft.role === "proof" ? "site_proof" : "document", tags: fileDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean) }, { entity_type: entityType, entity_id: entityId, role: fileDraft.role, visibility: fileDraft.visibility as any, customer_shareable: fileDraft.customerShareable });
+        // Operational files must be Google Drive links (enforced by createFileAssetAndAttach).
+        // Validate client-side so we can show a friendly toast instead of an unhandled throw.
+        if (!/^https:\/\/drive\.google\.com\//.test(fileDraft.url.trim()))
+            return toast.error("Only Google Drive links are supported. Paste a https://drive.google.com/... URL.");
+        try {
+            createFileAssetAndAttach({ file_name: fileDraft.name.trim(), web_view_link: fileDraft.url.trim(), kind: fileDraft.role === "catalogue" ? "catalogue" : fileDraft.role === "drawing" ? "drawing" : fileDraft.role === "photo" || fileDraft.role === "video" ? "media" : fileDraft.role === "proof" ? "site_proof" : "document", tags: fileDraft.tags.split(",").map((tag) => tag.trim()).filter(Boolean) }, { entity_type: entityType, entity_id: entityId, role: fileDraft.role, visibility: fileDraft.visibility as any, customer_shareable: fileDraft.customerShareable });
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Could not register the Drive file.";
+            return toast.error(msg);
+        }
         setFileDraft({ name: "", url: "", role: "document", visibility: "internal", customerShareable: false, tags: "" });
         setShowNewDrive(false);
         toast.success("Drive file registered once and linked to this record");
