@@ -582,6 +582,9 @@ export interface BlockedItem {
     linked_work_order_id?: ID;
     linked_po_id?: ID;
     linked_grn_id?: ID;
+    // FIX-ANALYSIS-003 E.4.10: Quotation link so a quotation can be marked
+    // as "blocked" pending customer decision.
+    linked_quotation_id?: ID;
     thread_id?: ID;
     resolved?: boolean;
     created_at: string;
@@ -937,6 +940,9 @@ export interface VariationRequest {
     customer_id: ID;
     site_id: ID;
     execution_log_id?: ID;
+    // FIX-ANALYSIS-003 E.4.11: BOQ item links so a variation can be
+    // automatically applied to specific BOQ lines.
+    affected_boq_item_ids?: ID[];
     title: string;
     description: string;
     requested_amount: number;
@@ -1186,6 +1192,10 @@ export interface AttendanceRecord {
     date: string;
     attendance_mode: AttendanceMode;
     visit_id?: ID;
+    // FIX-ANALYSIS-003 E.4.2: Work Order link for job-costing labour-hours.
+    // Previously attendance could only reach a work order via visit.work_order_id,
+    // which missed staff who did execution-log work without a visit.
+    work_order_id?: ID;
     check_in?: string;
     check_out?: string;
     check_in_latitude?: number;
@@ -1296,6 +1306,9 @@ export interface SalaryAdjustment {
     reason: string;
     status: "draft" | "approved" | "rejected";
     approved_by_staff_id?: ID;
+    // FIX-ANALYSIS-003 E.4.4: Work Order link for job-specific bonuses/deductions
+    // (e.g., "completion bonus for finishing WO-123 ahead of schedule").
+    work_order_id?: ID;
 }
 export interface StaffDocument {
     id: ID;
@@ -1342,6 +1355,11 @@ export interface RecurringTaskDefinition {
     last_run?: string;
     runs_count: number;
     enabled: boolean;
+    // FIX-ANALYSIS-003 E.4.6: Business context links so generated tasks inherit
+    // customer/site/workOrder context instead of being orphaned.
+    customer_id?: ID;
+    site_id?: ID;
+    work_order_id?: ID;
     created_at: string;
     updated_at: string;
 }
@@ -1375,6 +1393,11 @@ export interface AuditLogEntry {
     thread_id?: ID;
     source_module?: string;
     reason?: string;
+    // FIX-ANALYSIS-003 E.4.7: Denormalized customer_id for efficient querying.
+    // Previously finding all audit events for a customer required a full table
+    // scan with polymorphic resolution per row. Populated at log time by
+    // resolveCustomerIdFromLinks.
+    customer_id?: ID;
     before?: unknown;
     after?: unknown;
     changes?: Array<{ id?: ID; field_path?: string; field?: string; before?: unknown; after?: unknown }>;
@@ -1723,6 +1746,12 @@ export interface FileAsset {
     sync_status: FileAssetSyncStatus;
     tags?: string[];
     status: "active" | "archived";
+    // FIX-ANALYSIS-003 E.4.9: Typed customer/site links for file lookup.
+    // Previously finding all files for a customer required walking
+    // entityFileAttachments (which only includes attached files) or
+    // string-matching folder_path. These typed fields enable direct queries.
+    customer_id?: ID;
+    site_id?: ID;
     created_at: string;
     updated_at: string;
 }

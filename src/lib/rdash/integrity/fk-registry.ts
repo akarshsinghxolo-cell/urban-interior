@@ -376,6 +376,84 @@ const masterFks: ForeignKeyRule[] = [
 //   master.storageFolderTemplates
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────
+// FIX-ANALYSIS-003: Previously-unenforced relationship fields.
+// ANALYSIS-001 Section E.2 found ~30 declared relationship fields in
+// types.ts that were persisted but never enforced by any runtime
+// validation. These are now declared here so the integrity checker,
+// cascade-delete planner, and repair engine can enforce them.
+// ─────────────────────────────────────────────────────────────────────────
+const unenforcedFks: ForeignKeyRule[] = [
+    // Visit — recovery followup, report task, thread message links
+    { collection: "visits", field: "recovery_followup_id", targetCollection: "followups", onDelete: "nullify", nullable: true, label: "Visit → Recovery Follow-up" },
+    { collection: "visits", field: "report_task_id", targetCollection: "tasks", onDelete: "nullify", nullable: true, label: "Visit → Report Task" },
+    { collection: "visits", field: "checkout_thread_message_id", targetCollection: "threadMessages", onDelete: "nullify", nullable: true, label: "Visit → Checkout Thread Message" },
+    { collection: "visits", field: "report_thread_message_id", targetCollection: "threadMessages", onDelete: "nullify", nullable: true, label: "Visit → Report Thread Message" },
+    // Task — blocked item link
+    { collection: "tasks", field: "blocked_item_id", targetCollection: "blocked", onDelete: "nullify", nullable: true, label: "Task → Blocked Item" },
+    // Followup — next followup chain
+    { collection: "followups", field: "next_followup_id", targetCollection: "followups", onDelete: "nullify", nullable: true, label: "Follow-up → Next Follow-up" },
+    // Payment — milestone term link
+    { collection: "payments", field: "milestone_term_id", targetCollection: "paymentTermTemplates", onDelete: "nullify", nullable: true, label: "Payment → Milestone Term" },
+    // WorkOrder — replacement / abandoned contractor
+    { collection: "workOrders", field: "replacement_for_work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Work Order → Replacement For" },
+    { collection: "workOrders", field: "abandoned_contractor_id", targetCollection: "master.contractors", onDelete: "nullify", nullable: true, label: "Work Order → Abandoned Contractor" },
+    // Drawing — parent drawing + derived BOQ items
+    { collection: "drawings", field: "parent_drawing_id", targetCollection: "drawings", onDelete: "nullify", nullable: true, label: "Drawing → Parent Drawing" },
+    { collection: "drawings", field: "derived_boq_item_ids", targetCollection: "boqs", onDelete: "nullify", nullable: true, isArray: true, label: "Drawing → Derived BOQ Items" },
+    // GRN — obstacle + bill links
+    { collection: "grns", field: "obstacle_id", targetCollection: "blocked", onDelete: "nullify", nullable: true, label: "GRN → Obstacle" },
+    { collection: "grns", field: "bill_id", targetCollection: "vendorBills", onDelete: "nullify", nullable: true, label: "GRN → Vendor Bill" },
+    // VendorBill — three-way match obstacle
+    { collection: "vendorBills", field: "three_way_match.obstacle_id", targetCollection: "blocked", onDelete: "nullify", nullable: true, label: "Vendor Bill → 3WM Obstacle" },
+    // VariationRequest — execution log link
+    { collection: "variationRequests", field: "execution_log_id", targetCollection: "executionLogs", onDelete: "nullify", nullable: true, label: "Variation → Execution Log" },
+    // WorkOrderCostLine — polymorphic source (ignored, like other polymorphic fields)
+    { collection: "workOrderCostLines", field: "source_id", targetCollection: "polymorphic", onDelete: "ignore", nullable: true, label: "Cost Line → Source (polymorphic)", note: "Parent depends on source_kind (po|grn|dispatch|contractor_payment|manual|bill|settlement|variation)." },
+    // ThreadMessage — parent message + related thread/audit
+    { collection: "threadMessages", field: "parent_message_id", targetCollection: "threadMessages", onDelete: "nullify", nullable: true, label: "Thread Message → Parent Message" },
+    { collection: "threadMessages", field: "related_thread_id", targetCollection: "threads", onDelete: "nullify", nullable: true, label: "Thread Message → Related Thread" },
+    { collection: "threadMessages", field: "related_audit_id", targetCollection: "auditLog", onDelete: "nullify", nullable: true, label: "Thread Message → Related Audit" },
+    // ThreadMessageAttachment — file attachment link
+    { collection: "threadMessageAttachments", field: "entity_file_attachment_id", targetCollection: "entityFileAttachments", onDelete: "nullify", nullable: true, label: "Thread Message Attachment → File Attachment" },
+    // CommSend — attachment IDs (polymorphic, ignored)
+    { collection: "commSends", field: "attachment_ids", targetCollection: "polymorphic", onDelete: "ignore", nullable: true, isArray: true, label: "Communication → Attachments (polymorphic)", note: "Each ID references an entityFileAttachments row." },
+    // Customer / Site — source partner
+    { collection: "customers", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "nullify", nullable: true, label: "Customer → Source Partner" },
+    { collection: "sites", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "nullify", nullable: true, label: "Site → Source Partner" },
+    // Quotation — parent / superseded chain
+    { collection: "quotations", field: "parent_quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Quotation → Parent Quotation" },
+    { collection: "quotations", field: "superseded_by_quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Quotation → Superseded By" },
+    // AcceptedScope — contractor bid
+    { collection: "acceptedScopes", field: "contractor_bid_id", targetCollection: "contractorBids", onDelete: "nullify", nullable: true, label: "Accepted Scope → Contractor Bid" },
+    // ContractorSettlement — replacement work order
+    { collection: "contractorSettlements", field: "replacement_work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Settlement → Replacement Work Order" },
+    // LeaveRequest — approved by staff
+    { collection: "leaveRequests", field: "approved_by_staff_id", targetCollection: "master.staff", onDelete: "nullify", nullable: true, label: "Leave Request → Approved By Staff" },
+    // FIX-ANALYSIS-003 Group B: New cross-module connection fields (E.4)
+    // E.4.2: Staff Attendance → Work Order (job-costing)
+    { collection: "attendance", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Attendance → Work Order" },
+    // E.4.4: SalaryAdjustment → Work Order (job-specific bonuses)
+    { collection: "salaryAdjustments", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Salary Adjustment → Work Order" },
+    // E.4.6: RecurringTaskDefinition → Customer/Site/WorkOrder
+    { collection: "recurringTasks", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "Recurring Task → Customer" },
+    { collection: "recurringTasks", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Recurring Task → Site" },
+    { collection: "recurringTasks", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Recurring Task → Work Order" },
+    // E.4.10: Blocked → Quotation (mark quotation as blocked)
+    { collection: "blocked", field: "linked_quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Obstacle → Quotation" },
+    // E.4.11: VariationRequest → BOQ items
+    { collection: "variationRequests", field: "affected_boq_item_ids", targetCollection: "boqs", onDelete: "nullify", nullable: true, isArray: true, label: "Variation → Affected BOQ Items" },
+    // E.4.7: AuditLog → Customer (denormalized for efficient querying)
+    { collection: "auditLog", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "Audit Log → Customer" },
+    // E.4.9: FileAsset → Customer/Site (typed links for file lookup)
+    { collection: "master.fileAssets", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "File Asset → Customer" },
+    { collection: "master.fileAssets", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "File Asset → Site" },
+    // E.4.8: StorageFolderInstance → Customer/Site (already added to type in FIX-ANALYSIS-002)
+    { collection: "master.storageFolderInstances", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "Storage Folder → Customer" },
+    { collection: "master.storageFolderInstances", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Storage Folder → Site" },
+    { collection: "master.storageFolderInstances", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Storage Folder → Work Order" },
+];
+
 /**
  * The complete registry of every foreign-key relationship in the workspace
  * data model. This is the single source of truth for the integrity checker,
@@ -399,6 +477,7 @@ export const FOREIGN_KEYS: ForeignKeyRule[] = [
     ...recurringFks,
     ...fileAttachmentFks,
     ...masterFks,
+    ...unenforcedFks,
 ];
 
 /** Return every FK rule whose child collection is `collection`. */

@@ -651,6 +651,92 @@ export function validateBusinessData(db: RDashDatabase) {
             }
         });
     }));
+    // FIX-ANALYSIS-003 Group C: Add validation for entities that previously had
+    // NO standalone validation in validateBusinessData. These 9 entity types
+    // were persisted without any integrity checks — now they validate that
+    // their referenced parent entities exist and that customer_id consistency
+    // holds where applicable. Defensive (|| []) guards ensure these don't
+    // crash when a collection is absent from the workspace payload.
+    (db.vendorPayments || []).forEach((payment) => capture(`Vendor Payment ${payment.id}`, () => {
+        const bill = db.vendorBills.find((row) => row.id === payment.vendor_bill_id);
+        if (!bill) fail("Vendor Payment", "Vendor Bill not found.");
+        else if (bill.vendor_id !== payment.vendor_id)
+            fail("Vendor Payment", "Vendor does not match the bill.");
+    }));
+    (db.contractorPayments || []).forEach((payment) => capture(`Contractor Payment ${payment.id}`, () => {
+        const bill = db.contractorBills.find((row) => row.id === payment.contractor_bill_id);
+        if (!bill) fail("Contractor Payment", "Contractor Bill not found.");
+        else {
+            if (bill.contractor_id !== payment.contractor_id)
+                fail("Contractor Payment", "Contractor does not match the bill.");
+            if (bill.work_order_id !== payment.work_order_id)
+                fail("Contractor Payment", "Work Order does not match the bill.");
+        }
+    }));
+    (db.contractorBids || []).forEach((bid) => capture(`Contractor Bid ${bid.id}`, () => {
+        if (bid.work_order_id) {
+            const wo = db.workOrders.find((row) => row.id === bid.work_order_id);
+            if (!wo) fail("Contractor Bid", "Work Order not found.");
+        }
+        if (bid.accepted_scope_id) {
+            const scope = db.acceptedScopes.find((row) => row.id === bid.accepted_scope_id);
+            if (!scope) fail("Contractor Bid", "Accepted Scope not found.");
+        }
+    }));
+    (db.commissions || []).forEach((commission) => capture(`Commission ${commission.id}`, () => {
+        if (commission.work_order_id) {
+            const wo = db.workOrders.find((row) => row.id === commission.work_order_id);
+            if (!wo) fail("Commission", "Work Order not found.");
+            else if (commission.customer_id && wo.customer_id !== commission.customer_id)
+                fail("Commission", "Customer does not match the Work Order.");
+        }
+    }));
+    (db.variationRequests || []).forEach((variation) => capture(`Variation ${variation.id}`, () => {
+        const wo = db.workOrders.find((row) => row.id === variation.work_order_id);
+        if (!wo) fail("Variation", "Work Order not found.");
+        else {
+            if (wo.customer_id !== variation.customer_id)
+                fail("Variation", "Customer does not match the Work Order.");
+            if (variation.site_id && wo.site_id !== variation.site_id)
+                fail("Variation", "Site does not match the Work Order.");
+        }
+    }));
+    (db.executionLogs || []).forEach((log) => capture(`Execution Log ${log.id}`, () => {
+        const wo = db.workOrders.find((row) => row.id === log.work_order_id);
+        if (!wo) fail("Execution Log", "Work Order not found.");
+        if (log.filed_by_staff_id) {
+            const staff = db.master.staff.find((row) => row.id === log.filed_by_staff_id);
+            if (!staff) fail("Execution Log", "Filed-by Staff not found.");
+        }
+    }));
+    (db.attendance || []).forEach((record) => capture(`Attendance ${record.id}`, () => {
+        const staff = db.master.staff.find((row) => row.id === record.staff_id);
+        if (!staff) fail("Attendance", "Staff not found.");
+        if (record.visit_id) {
+            const visit = db.visits.find((row) => row.id === record.visit_id);
+            if (!visit) fail("Attendance", "Visit not found.");
+        }
+        if (record.work_order_id) {
+            const wo = db.workOrders.find((row) => row.id === record.work_order_id);
+            if (!wo) fail("Attendance", "Work Order not found.");
+        }
+    }));
+    (db.salaryAdjustments || []).forEach((adj) => capture(`Salary Adjustment ${adj.id}`, () => {
+        const staff = db.master.staff.find((row) => row.id === adj.staff_id);
+        if (!staff) fail("Salary Adjustment", "Staff not found.");
+        if (adj.work_order_id) {
+            const wo = db.workOrders.find((row) => row.id === adj.work_order_id);
+            if (!wo) fail("Salary Adjustment", "Work Order not found.");
+        }
+    }));
+    (db.leaveRequests || []).forEach((leave) => capture(`Leave Request ${leave.id}`, () => {
+        const staff = db.master.staff.find((row) => row.id === leave.staff_id);
+        if (!staff) fail("Leave Request", "Staff not found.");
+        if (leave.approved_by_staff_id) {
+            const approver = db.master.staff.find((row) => row.id === leave.approved_by_staff_id);
+            if (!approver) fail("Leave Request", "Approver Staff not found.");
+        }
+    }));
     return failures;
 }
 export function replaceAreaId(ids: ID[] | undefined, fromAreaId: ID, toAreaId: ID) {
