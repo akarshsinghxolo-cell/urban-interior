@@ -526,8 +526,11 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         source_partner_name: referralName,
                     } : undefined);
                     if (result.siteId && firstSitePhotos.length) {
-                        const photoAttachmentIds = await Promise.all(firstSitePhotos.map((photo) => uploadAndAttach({ dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!, kind: "media", role: "photo", caption: "Site photo" })));
-                        updateSite(result.siteId, { photo_attachment_ids: photoAttachmentIds });
+                        const results = await Promise.allSettled(firstSitePhotos.map((photo) => uploadAndAttach({ dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!, kind: "media", role: "photo", caption: "Site photo" })));
+                        const photoAttachmentIds = results.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled").map((r) => r.value);
+                        const failed = results.filter((r) => r.status === "rejected").length;
+                        if (failed > 0) toast.warning(`${failed} photo(s) failed to upload. ${photoAttachmentIds.length} succeeded.`);
+                        if (photoAttachmentIds.length > 0) updateSite(result.siteId, { photo_attachment_ids: photoAttachmentIds });
                     }
                     toast.success(addFirstSite ? `Customer "${name.trim()}" and first Site created` : `Customer "${name.trim()}" created`);
                     onSaved?.(result.customerId);

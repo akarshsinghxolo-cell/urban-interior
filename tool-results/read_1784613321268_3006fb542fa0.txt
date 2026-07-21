@@ -1,0 +1,938 @@
+     1→"use client";
+     2→import * as React from "react";
+     3→import { cn } from "@/lib/utils";
+     4→import { FilePreview } from "./FilePreview";
+     5→import { attachedPreview } from "@/lib/rdash/file-attachments";
+     6→import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
+     7→import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
+     8→import { useRDashStore } from "@/lib/rdash/store";
+     9→import type { CustomerSegment } from "@/lib/rdash/types";
+    10→import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
+    11→import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
+    12→import { compressImage } from "@/lib/rdash/image-compress";
+    13→import { asManagedFileAsset, looksLikeEmbeddedBinary, MANAGED_FILE_ACCEPT, readFileAsDataUrl, uploadManagedFile } from "@/lib/rdash/file-assets";
+    14→import { Button } from "@/components/ui/button";
+    15→import { Input } from "@/components/ui/input";
+    16→import { Textarea } from "@/components/ui/textarea";
+    17→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+    18→import { toast } from "sonner";
+    19→import { MapPin, Camera, X, Plus, Search, Navigation, Image as ImageIcon, Wrench, Pencil, } from "lucide-react";
+    20→export type EntityType = "customer" | "vendor" | "contractor";
+    21→type PendingMediaFile = {
+    22→    url: string;
+    23→    file_name: string;
+    24→    mime_type: string;
+    25→};
+    26→type ExistingMediaFile = {
+    27→    attachment_id: string;
+    28→};
+    29→type MediaFieldValue = string | PendingMediaFile | ExistingMediaFile;
+    30→const isPendingMediaFile = (value: MediaFieldValue): value is PendingMediaFile => typeof value === "object" && "url" in value;
+    31→const isExistingMediaFile = (value: MediaFieldValue): value is ExistingMediaFile => typeof value === "object" && "attachment_id" in value;
+    32→const mediaPreview = (value: MediaFieldValue, db: Parameters<typeof attachedPreview>[0]) => {
+    33→    if (isExistingMediaFile(value))
+    34→        return attachedPreview(db, value.attachment_id);
+    35→    return typeof value === "string" ? (value ? { fileName: "Attached file", url: value } : undefined) : { fileName: value.file_name, mimeType: value.mime_type, url: value.url };
+    36→};
+    37→interface EntityFormDialogProps {
+    38→    type: EntityType;
+    39→    open: boolean;
+    40→    onClose: () => void;
+    41→    onSaved?: (id: string) => void;
+    42→    editId?: string;
+    43→}
+    44→export function EntityFormDialog({ type, open, onClose, onSaved, editId }: EntityFormDialogProps) {
+    45→    const db = useRDashStore((s) => s.db);
+    46→    const createCustomerWithFirstSite = useRDashStore((s) => s.createCustomerWithFirstSite);
+    47→    const addVendor = useRDashStore((s) => s.addVendor);
+    48→    const addContractor = useRDashStore((s) => s.addContractor);
+    49→    const updateCustomer = useRDashStore((s) => s.updateCustomer);
+    50→    const updateVendor = useRDashStore((s) => s.updateVendor);
+    51→    const updateContractor = useRDashStore((s) => s.updateContractor);
+    52→    const updateSite = useRDashStore((s) => s.updateSite);
+    53→    const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
+    54→    const isEditMode = !!editId;
+    55→    const [saving, setSaving] = React.useState(false);
+    56→    const [name, setName] = React.useState("");
+    57→    const [phone, setPhone] = React.useState("");
+    58→    const [whatsapp, setWhatsapp] = React.useState("");
+    59→    const [alternatePhone, setAlternatePhone] = React.useState("");
+    60→    const [email, setEmail] = React.useState("");
+    61→    const [customerStatus, setCustomerStatus] = React.useState<"active" | "inactive" | "blocked">("active");
+    62→    const [customerNotes, setCustomerNotes] = React.useState("");
+    63→    const [customerInterestCategories, setCustomerInterestCategories] = React.useState<string[]>([]);
+    64→    const [addFirstSite, setAddFirstSite] = React.useState(true);
+    65→    const [firstSiteName, setFirstSiteName] = React.useState("");
+    66→    const [firstSiteNameError, setFirstSiteNameError] = React.useState<string | null>(null);
+    67→    const firstSiteNameRef = React.useRef<HTMLInputElement>(null);
+    68→    const [firstSiteBuildingName, setFirstSiteBuildingName] = React.useState("");
+    69→    const [firstSiteType, setFirstSiteType] = React.useState<"apartment" | "office" | "villa" | "shop" | "showroom" | "other">("apartment");
+    70→    const [firstSiteAddress, setFirstSiteAddress] = React.useState("");
+    71→    const [firstSiteCity, setFirstSiteCity] = React.useState("");
+    72→    const [firstSiteLocality, setFirstSiteLocality] = React.useState("");
+    73→    const [firstSiteLat, setFirstSiteLat] = React.useState<number | undefined>();
+    74→    const [firstSiteLng, setFirstSiteLng] = React.useState<number | undefined>();
+    75→    const [firstSiteMapUrl, setFirstSiteMapUrl] = React.useState("");
+    76→    const [firstSiteNotes, setFirstSiteNotes] = React.useState("");
+    77→    const [firstSiteGpsLoading, setFirstSiteGpsLoading] = React.useState(false);
+    78→    const [firstSiteCoordinateInput, setFirstSiteCoordinateInput] = React.useState("");
+    79→    const [address, setAddress] = React.useState("");
+    80→    const [city, setCity] = React.useState("");
+    81→    const [locality, setLocality] = React.useState("");
+    82→    const [lat, setLat] = React.useState<number | undefined>();
+    83→    const [lng, setLng] = React.useState<number | undefined>();
+    84→    const [gpsLoading, setGpsLoading] = React.useState(false);
+    85→    const [coordinateInput, setCoordinateInput] = React.useState("");
+    86→    const [referralQuery, setReferralQuery] = React.useState("");
+    87→    const [referralSelected, setReferralSelected] = React.useState<{
+    88→        id?: string;
+    89→        name: string;
+    90→    } | null>(null);
+    91→    const [showReferralDropdown, setShowReferralDropdown] = React.useState(false);
+    92→    const [firstSitePhotos, setFirstSitePhotos] = React.useState<Array<{
+    93→        id: string;
+    94→        file_name: string;
+    95→        mime_type?: string;
+    96→        url: string;
+    97→        caption?: string;
+    98→    }>>([]);
+    99→    const [customerInterestSubcategories, setCustomerInterestSubcategories] = React.useState<string[]>([]);
+   100→    const [customerSegments, setCustomerSegments] = React.useState<CustomerSegment[]>(["service_customer"]);
+   101→    const [businessCardPhoto, setBusinessCardPhoto] = React.useState<MediaFieldValue>("");
+   102→    const [shopPhoto, setShopPhoto] = React.useState<MediaFieldValue>("");
+   103→    const [vendorReliability, setVendorReliability] = React.useState<"good" | "very_good" | "average" | "bad">("average");
+   104→    const [vendorDelivery, setVendorDelivery] = React.useState<"good" | "very_good" | "average" | "bad">("average");
+   105→    const [vendorReturnPolicy, setVendorReturnPolicy] = React.useState<"available" | "not_available">("available");
+   106→    const [vendorNotes, setVendorNotes] = React.useState("");
+   107→    const [contractorPhoto, setContractorPhoto] = React.useState<MediaFieldValue>("");
+   108→    const [contractorCardPhoto, setContractorCardPhoto] = React.useState<MediaFieldValue>("");
+   109→    const [conReliability, setConReliability] = React.useState<"good" | "average" | "poor">("average");
+   110→    const [conPoliteness, setConPoliteness] = React.useState<"very" | "moderate" | "less">("moderate");
+   111→    const [conWorkerCount, setConWorkerCount] = React.useState<"1-3" | "4-8" | "9-15" | "16-40">("1-3");
+   112→    const [conDeadline, setConDeadline] = React.useState<"strict" | "usual" | "lazy" | "very_lazy">("usual");
+   113→    const [conCapabilities, setConCapabilities] = React.useState<Array<{
+   114→        subcategory_id: string;
+   115→        subcategory_name?: string;
+   116→        labour_rate?: string;
+   117→        with_material_rate?: string;
+   118→        article_ids?: string[];
+   119→    }>>([]);
+   120→    const [vendorWorkSubcats, setVendorWorkSubcats] = React.useState<string[]>([]);
+   121→    const [vendorArticleIds, setVendorArticleIds] = React.useState<string[]>([]);
+   122→    React.useEffect(() => {
+   123→        if (!open)
+   124→            return;
+   125→        if (editId) {
+   126→            if (type === "customer") {
+   127→                const customer = db.customers.find((customer) => customer.id === editId);
+   128→                if (customer) {
+   129→                    setName(customer.name || "");
+   130→                    setPhone(customer.phone || "");
+   131→                    setWhatsapp(customer.whatsapp || customer.phone || "");
+   132→                    setAlternatePhone(customer.alternate_phone || "");
+   133→                    setEmail(customer.email || "");
+   134→                    setCustomerStatus(customer.status || "active");
+   135→                    setCustomerNotes(customer.notes || "");
+   136→                    setCustomerInterestCategories(customer.interest_category_ids || []);
+   137→                    setCustomerInterestSubcategories(customer.interest_work_subcategory_ids || []);
+   138→                    setCustomerSegments(customer.customer_segments.length ? customer.customer_segments : ["service_customer"]);
+   139→                    setReferralQuery(customer.source_partner_name || "");
+   140→                    setReferralSelected(customer.source_partner_id ? { id: customer.source_partner_id, name: customer.source_partner_name || "" } : null);
+   141→                    return;
+   142→                }
+   143→            }
+   144→            if (type === "vendor") {
+   145→                const v = db.master.vendors.find((x) => x.id === editId);
+   146→                if (v) {
+   147→                    setName(v.name || "");
+   148→                    setPhone(v.phone || "");
+   149→                    setCity(v.city || "");
+   150→                    setLocality(v.locality || "");
+   151→                    setAddress(v.address || "");
+   152→                    setLat(v.latitude);
+   153→                    setLng(v.longitude);
+   154→                    setCoordinateInput(formatCoordinatePair(v));
+   155→                    setBusinessCardPhoto(v.business_card_attachment_id ? { attachment_id: v.business_card_attachment_id } : "");
+   156→                    setShopPhoto(v.shop_attachment_id ? { attachment_id: v.shop_attachment_id } : "");
+   157→                    setVendorReliability(v.reliability_rating || "average");
+   158→                    setVendorDelivery(v.delivery_time_rating || "average");
+   159→                    setVendorReturnPolicy(v.return_policy || "available");
+   160→                    setVendorNotes(v.notes || "");
+   161→                    setReferralQuery(v.source_partner_name || "");
+   162→                    setReferralSelected(v.source_partner_id ? { id: v.source_partner_id, name: v.source_partner_name || "" } : null);
+   163→                    return;
+   164→                }
+   165→            }
+   166→            else if (type === "contractor") {
+   167→                const c = db.master.contractors.find((x) => x.id === editId);
+   168→                if (c) {
+   169→                    setName(c.name || "");
+   170→                    setPhone(c.phone || "");
+   171→                    setCity(c.city || "");
+   172→                    setLocality(c.locality || "");
+   173→                    setAddress(c.address || "");
+   174→                    setLat(c.latitude);
+   175→                    setLng(c.longitude);
+   176→                    setCoordinateInput(formatCoordinatePair(c));
+   177→                    setContractorPhoto(c.photo_attachment_id ? { attachment_id: c.photo_attachment_id } : "");
+   178→                    setContractorCardPhoto(c.business_card_attachment_id ? { attachment_id: c.business_card_attachment_id } : "");
+   179→                    setConReliability(c.reliability_rating || "average");
+   180→                    setConPoliteness(c.politeness_rating || "moderate");
+   181→                    setConWorkerCount(c.worker_count_range || "1-3");
+   182→                    setConDeadline(c.deadline_commitment || "usual");
+   183→                    setConCapabilities((c.work_capabilities || []).map((wc) => ({
+   184→                        subcategory_id: wc.subcategory_id,
+   185→                        subcategory_name: wc.subcategory_name,
+   186→                        labour_rate: wc.labour_rate ? String(wc.labour_rate) : "",
+   187→                        with_material_rate: wc.with_material_rate ? String(wc.with_material_rate) : "",
+   188→                    })));
+   189→                    setReferralQuery(c.source_partner_name || "");
+   190→                    setReferralSelected(c.source_partner_id ? { id: c.source_partner_id, name: c.source_partner_name || "" } : null);
+   191→                    return;
+   192→                }
+   193→            }
+   194→        }
+   195→        setName("");
+   196→        setPhone("");
+   197→        setWhatsapp("");
+   198→        setAlternatePhone("");
+   199→        setEmail("");
+   200→        setCustomerStatus("active");
+   201→        setCustomerNotes("");
+   202→        setCustomerInterestCategories([]);
+   203→        setCustomerInterestSubcategories([]);
+   204→        setCustomerSegments(["service_customer"]);
+   205→        setAddFirstSite(true);
+   206→        setFirstSiteName("");
+   207→        setFirstSiteBuildingName("");
+   208→        setFirstSiteType("apartment");
+   209→        setFirstSiteAddress("");
+   210→        setFirstSiteCity("");
+   211→        setFirstSiteLocality("");
+   212→        setFirstSiteLat(undefined);
+   213→        setFirstSiteLng(undefined);
+   214→        setFirstSiteCoordinateInput("");
+   215→        setFirstSiteMapUrl("");
+   216→        setFirstSiteNotes("");
+   217→        setFirstSiteGpsLoading(false);
+   218→        setFirstSitePhotos([]);
+   219→        setAddress("");
+   220→        setCity("");
+   221→        setLocality("");
+   222→        setLat(undefined);
+   223→        setLng(undefined);
+   224→        setCoordinateInput("");
+   225→        setReferralQuery("");
+   226→        setReferralSelected(null);
+   227→        setShowReferralDropdown(false);
+   228→        setBusinessCardPhoto("");
+   229→        setShopPhoto("");
+   230→        setVendorReliability("average");
+   231→        setVendorDelivery("average");
+   232→        setVendorReturnPolicy("available");
+   233→        setVendorNotes("");
+   234→        setVendorWorkSubcats([]);
+   235→        setVendorArticleIds([]);
+   236→        setContractorPhoto("");
+   237→        setContractorCardPhoto("");
+   238→        setConReliability("average");
+   239→        setConPoliteness("moderate");
+   240→        setConWorkerCount("1-3");
+   241→        setConDeadline("usual");
+   242→        setConCapabilities([]);
+   243→    }, [open, type, editId, db.customers, db.master.vendors, db.master.contractors]);
+   244→    const referralOptions = React.useMemo(() => {
+   245→        if (!referralQuery.trim())
+   246→            return [];
+   247→        const q = referralQuery.toLowerCase();
+   248→        const results: Array<{
+   249→            id?: string;
+   250→            name: string;
+   251→            type: string;
+   252→        }> = [];
+   253→        db.customers.forEach((p) => { if (p.name.toLowerCase().includes(q))
+   254→            results.push({ id: p.id, name: p.name, type: "Customer" }); });
+   255→        db.master.vendors.forEach((v) => { if (v.name.toLowerCase().includes(q))
+   256→            results.push({ id: v.id, name: v.name, type: "Vendor" }); });
+   257→        db.master.contractors.forEach((c) => { if (c.name.toLowerCase().includes(q))
+   258→            results.push({ id: c.id, name: c.name, type: "Contractor" }); });
+   259→        db.master.sourcePartners.forEach((s) => { if (s.name.toLowerCase().includes(q))
+   260→            results.push({ id: s.id, name: s.name, type: s.type || "Partner" }); });
+   261→        return results.slice(0, 10);
+   262→    }, [referralQuery, db]);
+   263→    const updateCoordinateInput = (value: string) => {
+   264→        setCoordinateInput(value);
+   265→        if (!value.trim()) {
+   266→            setLat(undefined);
+   267→            setLng(undefined);
+   268→            return;
+   269→        }
+   270→        const parsed = parseCoordinatePair(value);
+   271→        if (parsed) {
+   272→            setLat(parsed.latitude);
+   273→            setLng(parsed.longitude);
+   274→            setCoordinateInput(formatCoordinatePair(parsed));
+   275→        }
+   276→    };
+   277→    const toggleCustomerSegment = (segment: CustomerSegment) => {
+   278→        setCustomerSegments((current) => {
+   279→            const next = current.includes(segment)
+   280→                ? current.filter((value) => value !== segment)
+   281→                : [...current, segment];
+   282→            return next.length > 0 ? next : ["service_customer"];
+   283→        });
+   284→    };
+   285→    const handleCaptureGps = () => {
+   286→        if (!navigator.geolocation) {
+   287→            toast.error("GPS not available on this device. Enter coordinates manually or paste a Google Maps link.");
+   288→            return;
+   289→        }
+   290→        setGpsLoading(true);
+   291→        navigator.geolocation.getCurrentPosition((pos) => {
+   292→            setLat(pos.coords.latitude);
+   293→            setLng(pos.coords.longitude);
+   294→            setCoordinateInput(formatCoordinatePair({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }));
+   295→            setGpsLoading(false);
+   296→            toast.success(`GPS captured: ${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`);
+   297→            reverseGeocodeWithNominatim(pos.coords.latitude, pos.coords.longitude)
+   298→                .then((data) => {
+   299→                if (data?.display_name) {
+   300→                    setAddress(data.display_name);
+   301→                    if (data?.address?.city)
+   302→                        setCity(data.address.city);
+   303→                    else if (data?.address?.town)
+   304→                        setCity(data.address.town);
+   305→                    else if (data?.address?.village)
+   306→                        setCity(data.address.village);
+   307→                    if (data?.address?.suburb || data?.address?.neighbourhood)
+   308→                        setLocality(data.address.suburb || data.address.neighbourhood);
+   309→                    toast.success("Address auto-filled from GPS");
+   310→                }
+   311→            })
+   312→                .catch(() => { });
+   313→        }, (err) => {
+   314→            setGpsLoading(false);
+   315→            const hints = err.code === err.PERMISSION_DENIED
+   316→                ? "GPS permission was denied. Enter coordinates manually (e.g. 26.739800, 83.371200) or paste a Google Maps link."
+   317→                : err.code === err.POSITION_UNAVAILABLE
+   318→                    ? "GPS position unavailable. Enter coordinates manually or paste a Google Maps link."
+   319→                    : err.code === err.TIMEOUT
+   320→                        ? "GPS timed out. Enter coordinates manually or paste a Google Maps link."
+   321→                        : `GPS error: ${err.message}`;
+   322→            toast.error(hints);
+   323→        }, { enableHighAccuracy: true, timeout: 10000 });
+   324→    };
+   325→    const updateFirstSiteCoordinateInput = (value: string) => {
+   326→        setFirstSiteCoordinateInput(value);
+   327→        if (!value.trim()) {
+   328→            setFirstSiteLat(undefined);
+   329→            setFirstSiteLng(undefined);
+   330→            return;
+   331→        }
+   332→        const parsed = parseCoordinatePair(value);
+   333→        if (parsed) {
+   334→            setFirstSiteLat(parsed.latitude);
+   335→            setFirstSiteLng(parsed.longitude);
+   336→            setFirstSiteCoordinateInput(formatCoordinatePair(parsed));
+   337→            setFirstSiteMapUrl(`https://www.google.com/maps?q=${parsed.latitude},${parsed.longitude}`);
+   338→        }
+   339→    };
+   340→    const handleCaptureFirstSiteGps = () => {
+   341→        if (!navigator.geolocation) {
+   342→            toast.error("GPS not available on this device. Enter coordinates manually or paste a Google Maps link.");
+   343→            return;
+   344→        }
+   345→        setFirstSiteGpsLoading(true);
+   346→        navigator.geolocation.getCurrentPosition((pos) => {
+   347→            const latitude = pos.coords.latitude;
+   348→            const longitude = pos.coords.longitude;
+   349→            setFirstSiteLat(latitude);
+   350→            setFirstSiteLng(longitude);
+   351→            setFirstSiteCoordinateInput(formatCoordinatePair({ latitude, longitude }));
+   352→            setFirstSiteMapUrl(`https://www.google.com/maps?q=${latitude},${longitude}`);
+   353→            setFirstSiteGpsLoading(false);
+   354→            toast.success(`Site GPS captured: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+   355→            reverseGeocodeWithNominatim(latitude, longitude)
+   356→                .then((data) => {
+   357→                if (!data?.display_name)
+   358→                    return;
+   359→                setFirstSiteAddress(data.display_name);
+   360→                if (data?.address?.city)
+   361→                    setFirstSiteCity(data.address.city);
+   362→                else if (data?.address?.town)
+   363→                    setFirstSiteCity(data.address.town);
+   364→                else if (data?.address?.village)
+   365→                    setFirstSiteCity(data.address.village);
+   366→                if (data?.address?.suburb || data?.address?.neighbourhood)
+   367→                    setFirstSiteLocality(data.address.suburb || data.address.neighbourhood);
+   368→            })
+   369→                .catch(() => undefined);
+   370→        }, (err) => {
+   371→            setFirstSiteGpsLoading(false);
+   372→            const hints = err.code === err.PERMISSION_DENIED
+   373→                ? "GPS permission was denied. Enter coordinates manually (e.g. 26.739800, 83.371200) or paste a Google Maps link."
+   374→                : err.code === err.POSITION_UNAVAILABLE
+   375→                    ? "GPS position unavailable. Enter coordinates manually or paste a Google Maps link."
+   376→                    : err.code === err.TIMEOUT
+   377→                        ? "GPS timed out. Enter coordinates manually or paste a Google Maps link."
+   378→                        : `GPS error: ${err.message}`;
+   379→            toast.error(hints);
+   380→        }, { enableHighAccuracy: true, timeout: 10000 });
+   381→    };
+   382→    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, cb: (value: MediaFieldValue) => void) => {
+   383→        const f = e.target.files?.[0];
+   384→        if (!f)
+   385→            return;
+   386→        try {
+   387→            const url = f.type.startsWith("image/") ? await compressImage(f) : await readFileAsDataUrl(f);
+   388→            cb({ url, file_name: f.name, mime_type: f.type || "application/octet-stream" });
+   389→            e.currentTarget.value = "";
+   390→        }
+   391→        catch {
+   392→            toast.error("Failed to prepare the selected file");
+   393→        }
+   394→    };
+   395→    const handleFirstSitePhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   396→        const files = Array.from(e.target.files || []);
+   397→        for (const f of files) {
+   398→            try {
+   399→                const url = f.type.startsWith("image/") ? await compressImage(f) : await readFileAsDataUrl(f);
+   400→                setFirstSitePhotos((arr) => [...arr, { id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, file_name: f.name, mime_type: f.type || "application/octet-stream", url }]);
+   401→            }
+   402→            catch {
+   403→                toast.error(`Could not prepare ${f.name}`);
+   404→            }
+   405→        }
+   406→        e.currentTarget.value = "";
+   407→    };
+   408→    const customerIdentityMatches = React.useMemo(() => type === "customer"
+   409→        ? findCustomerIdentityMatches(db.customers, {
+   410→            phone,
+   411→            whatsapp: whatsapp || phone,
+   412→            alternate_phone: alternatePhone,
+   413→            email,
+   414→        }, { excludeCustomerId: editId })
+   415→        : [], [alternatePhone, db.customers, editId, email, phone, type, whatsapp]);
+   416→    const allSubcategories = db.master.workSubcategories;
+   417→    const allCategories = db.master.workCategories;
+   418→    const allArticles = db.master.articles;
+   419→    const subcategoryArticleMap = db.master.subcategoryArticleMap;
+   420→    const toggleCustomerInterestSubcategory = (id: string) => {
+   421→        setCustomerInterestSubcategories((arr) => arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
+   422→    };
+   423→    const toggleCustomerInterestCategory = (id: string) => {
+   424→        setCustomerInterestCategories((arr) => arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
+   425→    };
+   426→    const toggleVendorArticle = (articleId: string) => {
+   427→        setVendorArticleIds((arr) => arr.includes(articleId) ? arr.filter((x) => x !== articleId) : [...arr, articleId]);
+   428→    };
+   429→    const toggleContractorCapability = (subId: string) => {
+   430→        const sub = allSubcategories.find((s) => s.id === subId);
+   431→        if (!sub)
+   432→            return;
+   433→        setConCapabilities((arr) => {
+   434→            if (arr.some((c) => c.subcategory_id === subId)) {
+   435→                return arr.filter((c) => c.subcategory_id !== subId);
+   436→            }
+   437→            return [...arr, { subcategory_id: subId, subcategory_name: sub.name, labour_rate: "", with_material_rate: "" }];
+   438→        });
+   439→    };
+   440→    const updateCapability = (subId: string, patch: Partial<typeof conCapabilities[number]>) => {
+   441→        setConCapabilities((arr) => arr.map((c) => c.subcategory_id === subId ? { ...c, ...patch } : c));
+   442→    };
+   443→    const uploadAndAttach = async (input: {
+   444→        dataUrl: string;
+   445→        fileName: string;
+   446→        entityType: "site" | "vendor" | "contractor";
+   447→        entityId: string;
+   448→        kind: "media" | "site_proof";
+   449→        role: "photo" | "proof" | "video" | "document";
+   450→        caption: string;
+   451→    }) => {
+   452→        const uploaded = await uploadManagedFile({ dataUrl: input.dataUrl, fileName: input.fileName, entityType: input.entityType, entityId: input.entityId, kind: input.kind, role: input.role, caption: input.caption, visibility: "internal" });
+   453→        const attachmentId = createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind: input.kind }), { entity_type: input.entityType, entity_id: input.entityId, role: input.role, caption: input.caption, visibility: "internal", customer_shareable: false });
+   454→        return attachmentId;
+   455→    };
+   456→    const handleSave = async () => {
+   457→        if (saving)
+   458→            return;
+   459→        if (!name.trim()) {
+   460→            toast.error("Name is required");
+   461→            return;
+   462→        }
+   463→        if (type !== "customer") {
+   464→            const coordinateError = coordinateInputError(coordinateInput);
+   465→            if (coordinateError) {
+   466→                toast.error(coordinateError);
+   467→                return;
+   468→            }
+   469→        }
+   470→        const referralName = referralSelected?.name || referralQuery.trim() || undefined;
+   471→        const referralId = referralSelected?.id;
+   472→        if (type === "customer") {
+   473→            const customerPayload = {
+   474→                name: name.trim(),
+   475→                phone: phone.trim(),
+   476→                whatsapp: whatsapp.trim() || phone.trim(),
+   477→                alternate_phone: alternatePhone.trim() || undefined,
+   478→                email: email.trim() || undefined,
+   479→                status: customerStatus,
+   480→                customer_segments: customerSegments,
+   481→                interest_category_ids: customerInterestCategories,
+   482→                interest_work_subcategory_ids: customerInterestSubcategories,
+   483→                source_partner_id: referralId,
+   484→                source_partner_name: referralName,
+   485→                notes: customerNotes.trim() || undefined,
+   486→            };
+   487→            if (customerIdentityMatches.length > 0) {
+   488→                toast.error(`Existing customer found: ${customerIdentityMatches.map((match) => match.customer.name).join(", ")}. Open that customer and add a Site instead.`);
+   489→                return;
+   490→            }
+   491→            try {
+   492→                if (isEditMode && editId) {
+   493→                    updateCustomer(editId, customerPayload);
+   494→                    toast.success(`Customer "${name.trim()}" updated`);
+   495→                    onSaved?.(editId);
+   496→                }
+   497→                else {
+   498→                    if (addFirstSite && !firstSiteName.trim()) {
+   499→                        setFirstSiteNameError("Enter a First Site name (or switch off ‘Add First Site’ for a product-only customer).");
+   500→                        setTimeout(() => firstSiteNameRef.current?.focus(), 0);
+   501→                        toast.error("Enter a First Site name or switch off Add First Site for a product-only customer");
+   502→                        return;
+   503→                    }
+   504→                    if (addFirstSite) {
+   505→                        const coordinateError = coordinateInputError(firstSiteCoordinateInput);
+   506→                        if (coordinateError) {
+   507→                            toast.error(coordinateError);
+   508→                            return;
+   509→                        }
+   510→                    }
+   511→                    setSaving(true);
+   512→                    const result = createCustomerWithFirstSite(customerPayload, addFirstSite ? {
+   513→                        name: firstSiteName.trim(),
+   514→                        building_name: firstSiteBuildingName.trim() || undefined,
+   515→                        site_type: firstSiteType,
+   516→                        stage: "enquiry",
+   517→                        address: firstSiteAddress.trim() || undefined,
+   518→                        city: firstSiteCity.trim() || undefined,
+   519→                        locality: firstSiteLocality.trim() || undefined,
+   520→                        latitude: firstSiteLat,
+   521→                        longitude: firstSiteLng,
+   522→                        map_url: firstSiteMapUrl.trim() || undefined,
+   523→                        notes: firstSiteNotes.trim() || undefined,
+   524→                        photo_attachment_ids: [],
+   525→                        source_partner_id: referralId,
+   526→                        source_partner_name: referralName,
+   527→                    } : undefined);
+   528→                    if (result.siteId && firstSitePhotos.length) {
+   529→                        const photoAttachmentIds = await Promise.all(firstSitePhotos.map((photo) => uploadAndAttach({ dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!, kind: "media", role: "photo", caption: "Site photo" })));
+   530→                        updateSite(result.siteId, { photo_attachment_ids: photoAttachmentIds });
+   531→                    }
+   532→                    toast.success(addFirstSite ? `Customer "${name.trim()}" and first Site created` : `Customer "${name.trim()}" created`);
+   533→                    onSaved?.(result.customerId);
+   534→                }
+   535→            }
+   536→            catch (error) {
+   537→                toast.error(error instanceof Error ? error.message : "Customer could not be saved.");
+   538→            }
+   539→            finally {
+   540→                setSaving(false);
+   541→            }
+   542→        }
+   543→        else if (type === "vendor") {
+   544→            try {
+   545→                const articleNames = vendorArticleIds.map((aid) => allArticles.find((a) => a.id === aid)?.name).filter(Boolean);
+   546→                const combinedNotes = [vendorNotes.trim(), articleNames.length > 0 ? `Supplies articles: ${articleNames.join(", ")}` : ""].filter(Boolean).join("\n");
+   547→                const payload = {
+   548→                    name: name.trim(),
+   549→                    phone: phone.trim(),
+   550→                    city: city.trim(),
+   551→                    locality: locality.trim() || undefined,
+   552→                    address: address.trim() || undefined,
+   553→                    latitude: lat,
+   554→                    longitude: lng,
+   555→                    business_card_attachment_id: isExistingMediaFile(businessCardPhoto) ? businessCardPhoto.attachment_id : undefined,
+   556→                    shop_attachment_id: isExistingMediaFile(shopPhoto) ? shopPhoto.attachment_id : undefined,
+   557→                    reliability_rating: vendorReliability,
+   558→                    delivery_time_rating: vendorDelivery,
+   559→                    return_policy: vendorReturnPolicy,
+   560→                    notes: combinedNotes || undefined,
+   561→                    source_partner_id: referralId,
+   562→                    source_partner_name: referralName,
+   563→                };
+   564→                setSaving(true);
+   565→                const id = isEditMode && editId ? editId : addVendor(payload);
+   566→                if (isEditMode && editId)
+   567→                    updateVendor(id, payload);
+   568→                const patches: Record<string, string> = {};
+   569→                if (isPendingMediaFile(businessCardPhoto))
+   570→                    patches.business_card_attachment_id = await uploadAndAttach({ dataUrl: businessCardPhoto.url, fileName: businessCardPhoto.file_name, entityType: "vendor", entityId: id, kind: "media", role: businessCardPhoto.mime_type.startsWith("video/") ? "video" : businessCardPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Vendor business card" });
+   571→                if (isPendingMediaFile(shopPhoto))
+   572→                    patches.shop_attachment_id = await uploadAndAttach({ dataUrl: shopPhoto.url, fileName: shopPhoto.file_name, entityType: "vendor", entityId: id, kind: "media", role: shopPhoto.mime_type.startsWith("video/") ? "video" : shopPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Vendor shop file" });
+   573→                if (Object.keys(patches).length)
+   574→                    updateVendor(id, patches);
+   575→                toast.success(`Vendor "${name.trim()}" ${isEditMode ? "updated" : "created"}`);
+   576→                onSaved?.(id);
+   577→            }
+   578→            catch (error) {
+   579→                toast.error(error instanceof Error ? error.message : "Vendor could not be saved.");
+   580→                return;
+   581→            }
+   582→            finally {
+   583→                setSaving(false);
+   584→            }
+   585→        }
+   586→        else if (type === "contractor") {
+   587→            try {
+   588→                const payload = {
+   589→                    name: name.trim(),
+   590→                    phone: phone.trim(),
+   591→                    city: city.trim(),
+   592→                    locality: locality.trim() || undefined,
+   593→                    address: address.trim() || undefined,
+   594→                    latitude: lat,
+   595→                    longitude: lng,
+   596→                    photo_attachment_id: isExistingMediaFile(contractorPhoto) ? contractorPhoto.attachment_id : undefined,
+   597→                    business_card_attachment_id: isExistingMediaFile(contractorCardPhoto) ? contractorCardPhoto.attachment_id : undefined,
+   598→                    reliability_rating: conReliability,
+   599→                    politeness_rating: conPoliteness,
+   600→                    worker_count_range: conWorkerCount,
+   601→                    deadline_commitment: conDeadline,
+   602→                    source_partner_id: referralId,
+   603→                    source_partner_name: referralName,
+   604→                    work_capabilities: conCapabilities.map((c) => ({
+   605→                        subcategory_id: c.subcategory_id,
+   606→                        subcategory_name: c.subcategory_name,
+   607→                        labour_rate: c.labour_rate ? parseFloat(c.labour_rate) : undefined,
+   608→                        with_material_rate: c.with_material_rate ? parseFloat(c.with_material_rate) : undefined,
+   609→                    })),
+   610→                };
+   611→                setSaving(true);
+   612→                const id = isEditMode && editId ? editId : addContractor(payload);
+   613→                if (isEditMode && editId)
+   614→                    updateContractor(id, payload);
+   615→                const patches: Record<string, string> = {};
+   616→                if (isPendingMediaFile(contractorPhoto))
+   617→                    patches.photo_attachment_id = await uploadAndAttach({ dataUrl: contractorPhoto.url, fileName: contractorPhoto.file_name, entityType: "contractor", entityId: id, kind: "media", role: contractorPhoto.mime_type.startsWith("video/") ? "video" : contractorPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Contractor photo file" });
+   618→                if (isPendingMediaFile(contractorCardPhoto))
+   619→                    patches.business_card_attachment_id = await uploadAndAttach({ dataUrl: contractorCardPhoto.url, fileName: contractorCardPhoto.file_name, entityType: "contractor", entityId: id, kind: "media", role: contractorCardPhoto.mime_type.startsWith("video/") ? "video" : contractorCardPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Contractor business card" });
+   620→                if (Object.keys(patches).length)
+   621→                    updateContractor(id, patches);
+   622→                toast.success(`Contractor "${name.trim()}" ${isEditMode ? "updated" : "created"}`);
+   623→                onSaved?.(id);
+   624→            }
+   625→            catch (error) {
+   626→                toast.error(error instanceof Error ? error.message : "Contractor could not be saved.");
+   627→                return;
+   628→            }
+   629→            finally {
+   630→                setSaving(false);
+   631→            }
+   632→        }
+   633→        onClose();
+   634→    };
+   635→    const titleLabel = isEditMode
+   636→        ? (type === "customer" ? "Edit Customer" : type === "vendor" ? "Edit Vendor" : "Edit Contractor")
+   637→        : (type === "customer" ? "Add New Customer" : type === "vendor" ? "Add New Vendor" : "Add New Contractor");
+   638→    const nameLabel = type === "customer" ? "Customer name" : "Firm / Enterprise name";
+   639→    return (<Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+   640→      <DialogContent className="max-h-[92vh] max-w-2xl gap-0 p-0">
+   641→        <DialogHeader className="border-b border-border px-5 py-3">
+   642→          <DialogTitle className="flex items-center gap-2 text-base">
+   643→            {isEditMode ? <Pencil className="h-4 w-4 text-primary"/> : <Plus className="h-4 w-4 text-primary"/>} {titleLabel}
+   644→          </DialogTitle>
+   645→          <DialogDescription className="text-xs">
+   646→            {type === "customer" ? (isEditMode ? "Update customer contact, account status and broad work interests. Site details are managed per property." : "Create the customer and optionally capture the first Site in the same flow.") : (isEditMode ? "Update the fields below. Changes are saved to the record." : "Fill in the details below. GPS and photos can be captured directly.")}
+   647→          </DialogDescription>
+   648→        </DialogHeader>
+   649→
+   650→        <div className="max-h-[65vh] overflow-y-auto px-5 py-4 rd-scroll">
+   651→          <div className="grid gap-3">
+   652→            <div>
+   653→              <label className="text-[10px] font-semibold uppercase text-muted-foreground">{nameLabel}</label>
+   654→              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "customer" ? "e.g. Mr. Das" : "e.g. Sharma Interiors"} className="h-11 text-sm" autoFocus/>
+   655→            </div>
+   656→            <div>
+   657→              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contact number</label>
+   658→              <Input value={phone} onChange={(e) => setPhone(sanitizeIndianMobile(e.target.value))} placeholder="9876543210" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/>
+   659→              {phone && phone.length > 0 && phone.length !== 10 && <p className="mt-0.5 text-[10px] text-warning">Enter 10 digits ({phone.length}/10)</p>}
+   660→              {phone && phone.length === 10 && !/^[6-9]/.test(phone) && <p className="mt-0.5 text-[10px] text-destructive">Must start with 6, 7, 8, or 9</p>}
+   661→            </div>
+   662→            {type !== "customer" && <div className="rounded-lg border border-border bg-muted/20 p-3">
+   663→              <div className="mb-2 flex items-center justify-between">
+   664→                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Location & Address</label>
+   665→                <Button size="sm" variant="outline" className="h-9 text-xs" onClick={handleCaptureGps} disabled={gpsLoading}>
+   666→                  <Navigation className={cn("mr-1 h-3.5 w-3.5", gpsLoading && "animate-spin")}/> {gpsLoading ? "Capturing…" : "Capture GPS"}
+   667→                </Button>
+   668→              </div>
+   669→              <Input value={coordinateInput} onChange={(e) => updateCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-11 text-sm"/>
+   670→              {coordinateInputError(coordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(coordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}
+   671→              <div className="grid gap-2">
+   672→                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (auto-filled from GPS or type manually)" className="h-11 text-sm"/>
+   673→                <div className="grid grid-cols-2 gap-2">
+   674→                  <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="h-11 text-sm"/>
+   675→                  <Input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/>
+   676→                </div>
+   677→              </div>
+   678→            </div>}
+   679→            <div className="relative">
+   680→              <label className="text-[10px] font-semibold uppercase text-muted-foreground">{type === "customer" ? "Recommended by" : "Referred by"}</label>
+   681→              <div className="relative">
+   682→                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
+   683→                <Input value={referralQuery} onChange={(e) => { setReferralQuery(e.target.value); setShowReferralDropdown(true); setReferralSelected(null); }} onFocus={() => setShowReferralDropdown(true)} placeholder="Type name to search existing records, or enter new referrer" className="h-11 pl-8 text-sm"/>
+   684→              </div>
+   685→              {showReferralDropdown && referralOptions.length > 0 && (<div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-card shadow-popover rd-scroll">
+   686→                  {referralOptions.map((opt) => (<button key={opt.id || opt.name} type="button" onClick={() => { setReferralSelected({ id: opt.id, name: opt.name }); setReferralQuery(opt.name); setShowReferralDropdown(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-accent/40">
+   687→                      <span className="font-medium">{opt.name}</span>
+   688→                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{opt.type}</span>
+   689→                    </button>))}
+   690→                </div>)}
+   691→              {referralSelected && (<p className="mt-1 text-[10px] text-success">✓ Linked to existing record: {referralSelected.name}</p>)}
+   692→              {!referralSelected && referralQuery.trim() && (<p className="mt-1 text-[10px] text-muted-foreground">Will save as new referrer: "{referralQuery.trim()}"</p>)}
+   693→            </div>
+   694→            {type === "customer" && (<>
+   695→                <div className="grid gap-2 sm:grid-cols-3">
+   696→                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">WhatsApp number</label><Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Defaults to contact number" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/></div>
+   697→                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Alternate number</label><Input value={alternatePhone} onChange={(e) => setAlternatePhone(e.target.value)} placeholder="Optional" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/></div>
+   698→                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Email</label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" className="h-11 text-sm"/></div>
+   699→                </div>
+   700→                {customerIdentityMatches.length > 0 && (<div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
+   701→                    <div className="flex items-start justify-between gap-3">
+   702→                      <div><p className="font-semibold">Existing customer contact found</p><p className="mt-0.5">{customerIdentityMatches.map((match) => `${match.customer.name} · ${match.fields.join(", ")}`).join("; ")}</p></div>
+   703→                      <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => { const match = customerIdentityMatches[0]; if (match) {
+   704→                onSaved?.(match.customer.id);
+   705→                onClose();
+   706→            } }}>Open existing</Button>
+   707→                    </div>
+   708→                  </div>)}
+   709→                <div className="grid gap-2 sm:grid-cols-[180px_1fr]">
+   710→                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Account condition</label><select value={customerStatus} onChange={(e) => setCustomerStatus(e.target.value as typeof customerStatus)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option></select></div>
+   711→                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Customer notes</label><Input value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder="Preferences, communication notes or customer-level instructions" className="h-11 text-sm"/></div>
+   712→                </div>
+   713→                <div className="rounded-lg border border-border bg-muted/20 p-3">
+   714→                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer roles</p>
+   715→                  <p className="mt-0.5 text-[11px] text-muted-foreground">Select every relationship this customer has with the business.</p>
+   716→                  <div className="mt-2 flex flex-wrap gap-1.5">
+   717→                    {([
+   718→                ["walk_in", "Walk-in"],
+   719→                ["service_customer", "Service customer"],
+   720→                ["product_buyer", "Product buyer"],
+   721→                ["repeat_customer", "Repeat customer"],
+   722→                ["trade_customer", "Trade customer"],
+   723→            ] as Array<[
+   724→                CustomerSegment,
+   725→                string
+   726→            ]>).map(([segment, label]) => (<button key={segment} type="button" onClick={() => toggleCustomerSegment(segment)} className={cn("min-h-[36px] rounded-md border px-2.5 py-1.5 text-[11px] transition-colors", customerSegments.includes(segment) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>
+   727→                        {label}
+   728→                      </button>))}
+   729→                  </div>
+   730→                </div>
+   731→                <div className="rounded-lg border border-border bg-muted/20 p-3">
+   732→                  <div className="mb-1.5"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Work categories interested in</label><p className="mt-0.5 text-[11px] text-muted-foreground">Broad customer interest only. It does not create final work. Final Work Required is created under Site → Area.</p></div>
+   733→                  <div className="flex flex-wrap gap-1.5">
+   734→                    {allCategories.map((cat) => <button key={cat.id} type="button" onClick={() => toggleCustomerInterestCategory(cat.id)} className={cn("rounded-md border px-2 py-1 text-[11px] font-medium transition-colors", customerInterestCategories.includes(cat.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>{cat.name}</button>)}
+   735→                  </div>
+   736→                  <div className="mt-2 flex flex-wrap gap-1.5">
+   737→                    {allCategories.filter((cat) => customerInterestCategories.includes(cat.id)).map((cat) => {
+   738→                const subs = allSubcategories.filter((sub) => sub.category_id === cat.id);
+   739→                return <details key={cat.id} className="rounded-md border border-border bg-background"><summary className="cursor-pointer px-2.5 py-1 text-xs font-medium hover:bg-accent/40">Specific {cat.name} work</summary><div className="flex flex-wrap gap-1 p-2">{subs.map((sub) => <button key={sub.id} type="button" onClick={() => toggleCustomerInterestSubcategory(sub.id)} className={cn("rounded-md border px-2 py-0.5 text-[10px] transition-colors", customerInterestSubcategories.includes(sub.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>{sub.name}</button>)}</div></details>;
+   740→            })}
+   741→                  </div>
+   742→                  {(customerInterestCategories.length > 0 || customerInterestSubcategories.length > 0) && <p className="mt-2 text-[10px] text-success">{customerInterestCategories.length} category interest(s) and {customerInterestSubcategories.length} specific work preference(s) selected</p>}
+   743→                </div>
+   744→                {!isEditMode ? (<div className="rounded-lg border border-primary/25 bg-primary/[0.035] p-3">
+   745→                    <label className="flex cursor-pointer items-start gap-2"><input type="checkbox" checked={addFirstSite} onChange={(e) => setAddFirstSite(e.target.checked)} className="mt-0.5"/><span><span className="text-sm font-semibold">Add First Site now</span><span className="mt-0.5 block text-[11px] text-muted-foreground">For service work, capture the property/site here. Address, GPS, building, property type and photos belong to the Site—not the Customer.</span></span></label>
+   746→                    {addFirstSite && <div className="mt-3 space-y-3 border-t border-primary/15 pt-3">
+   747→                      <div className="grid gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site name *</label><Input ref={firstSiteNameRef} aria-invalid={firstSiteNameError ? true : undefined} value={firstSiteName} onChange={(e) => { setFirstSiteName(e.target.value); if (firstSiteNameError) setFirstSiteNameError(null); }} placeholder="Das Residence — 3BHK Apartment" className="h-11 text-sm"/>{firstSiteNameError && <p className="mt-1 text-[11px] font-medium text-destructive">{firstSiteNameError}</p>}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Property type</label><select value={firstSiteType} onChange={(e) => setFirstSiteType(e.target.value as typeof firstSiteType)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="apartment">Apartment</option><option value="office">Office</option><option value="villa">Villa</option><option value="shop">Shop</option><option value="showroom">Showroom</option><option value="other">Other</option></select></div></div>
+   748→                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Building / project name</label><Input value={firstSiteBuildingName} onChange={(e) => setFirstSiteBuildingName(e.target.value)} placeholder="Legio Apartment, Tower B / project name" className="h-11 text-sm"/></div>
+   749→                      <div className="rounded-md border border-border bg-card p-2.5"><div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">Site location</span><Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={handleCaptureFirstSiteGps} disabled={firstSiteGpsLoading}><Navigation className={cn("mr-1 h-3.5 w-3.5", firstSiteGpsLoading && "animate-spin")}/>{firstSiteGpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><Input value={firstSiteCoordinateInput} onChange={(e) => updateFirstSiteCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-11 text-sm"/>{coordinateInputError(firstSiteCoordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(firstSiteCoordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}<div className="grid gap-2"><Input value={firstSiteAddress} onChange={(e) => setFirstSiteAddress(e.target.value)} placeholder="Full Site address" className="h-11 text-sm"/><div className="grid grid-cols-2 gap-2"><Input value={firstSiteLocality} onChange={(e) => setFirstSiteLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/><Input value={firstSiteCity} onChange={(e) => setFirstSiteCity(e.target.value)} placeholder="City" className="h-11 text-sm"/></div><Input value={firstSiteMapUrl} onChange={(e) => setFirstSiteMapUrl(e.target.value)} placeholder="Google Maps link (optional)" className="h-11 text-sm"/></div></div>
+   750→                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label><Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={handleFirstSitePhotos} className="h-11 text-sm"/>{firstSitePhotos.length > 0 && <div className="mt-2 grid grid-cols-4 gap-2">{firstSitePhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => setFirstSitePhotos((items) => items.filter((item) => item.id !== photo.id))} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}</div>}</div>
+   751→                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site notes</label><Textarea value={firstSiteNotes} onChange={(e) => setFirstSiteNotes(e.target.value)} placeholder="Landmark, access conditions, site contact or property notes" rows={2} className="text-sm"/></div>
+   752→                    </div>}
+   753→                  </div>) : <p className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">Customer edit changes contact, account and broad interests only. Edit address, GPS, property type and photos from Context → Sites → Edit Site.</p>}
+   754→              </>)}
+   755→            {type === "vendor" && (<>
+   756→                <div className="grid grid-cols-2 gap-3">
+   757→                  <div>
+   758→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Business card photo</label>
+   759→                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setBusinessCardPhoto)} className="h-11 text-sm"/>
+   760→                    {businessCardPhoto && (<div className="mt-1 relative">
+   761→                        
+   762→                        <FilePreview file={mediaPreview(businessCardPhoto, db)!} compact controls/>
+   763→                        <button type="button" onClick={() => setBusinessCardPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+   764→                      </div>)}
+   765→                  </div>
+   766→                  <div>
+   767→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Shop photo</label>
+   768→                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setShopPhoto)} className="h-11 text-sm"/>
+   769→                    {shopPhoto && (<div className="mt-1 relative">
+   770→                        
+   771→                        <FilePreview file={mediaPreview(shopPhoto, db)!} compact controls/>
+   772→                        <button type="button" onClick={() => setShopPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+   773→                      </div>)}
+   774→                  </div>
+   775→                </div>
+   776→
+   777→                <div className="grid grid-cols-3 gap-2">
+   778→                  <div>
+   779→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Reliability</label>
+   780→                    <select value={vendorReliability} onChange={(e) => setVendorReliability(e.target.value as typeof vendorReliability)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   781→                      <option value="very_good">Very Good</option>
+   782→                      <option value="good">Good</option>
+   783→                      <option value="average">Average</option>
+   784→                      <option value="bad">Bad</option>
+   785→                    </select>
+   786→                  </div>
+   787→                  <div>
+   788→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Delivery time</label>
+   789→                    <select value={vendorDelivery} onChange={(e) => setVendorDelivery(e.target.value as typeof vendorDelivery)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   790→                      <option value="very_good">Very Good</option>
+   791→                      <option value="good">Good</option>
+   792→                      <option value="average">Average</option>
+   793→                      <option value="bad">Bad</option>
+   794→                    </select>
+   795→                  </div>
+   796→                  <div>
+   797→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Return / replacement</label>
+   798→                    <select value={vendorReturnPolicy} onChange={(e) => setVendorReturnPolicy(e.target.value as typeof vendorReturnPolicy)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   799→                      <option value="available">Available</option>
+   800→                      <option value="not_available">Not Available</option>
+   801→                    </select>
+   802→                  </div>
+   803→                </div>
+   804→
+   805→                <div>
+   806→                  <label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label>
+   807→                  <Textarea value={vendorNotes} onChange={(e) => setVendorNotes(e.target.value)} placeholder="Custom description, payment terms, special conditions…" rows={2} className="text-sm"/>
+   808→                </div>
+   809→                <div>
+   810→                  <label className="text-[10px] font-semibold uppercase text-muted-foreground">Articles supplied (from article library, by work category)</label>
+   811→                  <div className="mt-1 flex flex-wrap gap-1.5">
+   812→                    {allCategories.map((cat) => {
+   813→                const subs = allSubcategories.filter((s) => s.category_id === cat.id);
+   814→                return (<details key={cat.id} className="rounded-md border border-border">
+   815→                          <summary className="cursor-pointer px-2.5 py-1 text-xs font-medium hover:bg-accent/40">{cat.name}</summary>
+   816→                          <div className="flex flex-col gap-1 p-2">
+   817→                            {subs.map((sub) => {
+   818→                        const scopedArticles = subcategoryArticleMap.filter((m) => m.work_required_id === sub.id);
+   819→                        const articlesForSub = scopedArticles.map((m) => allArticles.find((a) => a.id === m.article_id)).filter(Boolean);
+   820→                        if (articlesForSub.length === 0)
+   821→                            return null;
+   822→                        return (<div key={sub.id} className="mb-1">
+   823→                                  <p className="text-[10px] font-semibold text-muted-foreground">{sub.name}</p>
+   824→                                  <div className="flex flex-wrap gap-1">
+   825→                                    {articlesForSub.map((art) => (<button key={art!.id} type="button" onClick={() => toggleVendorArticle(art!.id)} className={cn("rounded-md border px-1.5 py-0.5 text-[10px] transition-colors", vendorArticleIds.includes(art!.id)
+   826→                                    ? "border-primary bg-primary text-primary-foreground"
+   827→                                    : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>
+   828→                                        {art!.name}
+   829→                                      </button>))}
+   830→                                  </div>
+   831→                                </div>);
+   832→                    })}
+   833→                          </div>
+   834→                        </details>);
+   835→            })}
+   836→                  </div>
+   837→                  {vendorArticleIds.length > 0 && (<p className="mt-1 text-[10px] text-success">{vendorArticleIds.length} article(s) selected</p>)}
+   838→                </div>
+   839→              </>)}
+   840→            {type === "contractor" && (<>
+   841→                <div className="grid grid-cols-2 gap-3">
+   842→                  <div>
+   843→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contractor photo</label>
+   844→                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorPhoto)} className="h-11 text-sm"/>
+   845→                    {contractorPhoto && (<div className="mt-1 relative">
+   846→                        
+   847→                        <FilePreview file={mediaPreview(contractorPhoto, db)!} compact controls/>
+   848→                        <button type="button" onClick={() => setContractorPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+   849→                      </div>)}
+   850→                  </div>
+   851→                  <div>
+   852→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Business card photo</label>
+   853→                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorCardPhoto)} className="h-11 text-sm"/>
+   854→                    {contractorCardPhoto && (<div className="mt-1 relative">
+   855→                        
+   856→                        <FilePreview file={mediaPreview(contractorCardPhoto, db)!} compact controls/>
+   857→                        <button type="button" onClick={() => setContractorCardPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+   858→                      </div>)}
+   859→                  </div>
+   860→                </div>
+   861→
+   862→                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+   863→                  <div>
+   864→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Reliability</label>
+   865→                    <select value={conReliability} onChange={(e) => setConReliability(e.target.value as typeof conReliability)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   866→                      <option value="good">Good</option>
+   867→                      <option value="average">Average</option>
+   868→                      <option value="poor">Poor</option>
+   869→                    </select>
+   870→                  </div>
+   871→                  <div>
+   872→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Politeness</label>
+   873→                    <select value={conPoliteness} onChange={(e) => setConPoliteness(e.target.value as typeof conPoliteness)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   874→                      <option value="very">Very</option>
+   875→                      <option value="moderate">Moderate</option>
+   876→                      <option value="less">Less</option>
+   877→                    </select>
+   878→                  </div>
+   879→                  <div>
+   880→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Workers</label>
+   881→                    <select value={conWorkerCount} onChange={(e) => setConWorkerCount(e.target.value as typeof conWorkerCount)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   882→                      <option value="1-3">1–3</option>
+   883→                      <option value="4-8">4–8</option>
+   884→                      <option value="9-15">9–15</option>
+   885→                      <option value="16-40">16–40</option>
+   886→                    </select>
+   887→                  </div>
+   888→                  <div>
+   889→                    <label className="text-[10px] font-semibold uppercase text-muted-foreground">Deadline</label>
+   890→                    <select value={conDeadline} onChange={(e) => setConDeadline(e.target.value as typeof conDeadline)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+   891→                      <option value="strict">Strict</option>
+   892→                      <option value="usual">Usual</option>
+   893→                      <option value="lazy">Lazy</option>
+   894→                      <option value="very_lazy">Very Lazy</option>
+   895→                    </select>
+   896→                  </div>
+   897→                </div>
+   898→                <div>
+   899→                  <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work capabilities (select subcategories + enter rates)</label>
+   900→                  <div className="mt-1 flex flex-wrap gap-1.5">
+   901→                    {allCategories.map((cat) => {
+   902→                const subs = allSubcategories.filter((s) => s.category_id === cat.id);
+   903→                return (<details key={cat.id} className="rounded-md border border-border">
+   904→                          <summary className="cursor-pointer px-2.5 py-1 text-xs font-medium hover:bg-accent/40">{cat.name} ({subs.length})</summary>
+   905→                          <div className="flex flex-wrap gap-1 p-2">
+   906→                            {subs.map((sub) => (<button key={sub.id} type="button" onClick={() => toggleContractorCapability(sub.id)} className={cn("rounded-md border px-2 py-0.5 text-[10px] transition-colors", conCapabilities.some((c) => c.subcategory_id === sub.id)
+   907→                            ? "border-primary bg-primary text-primary-foreground"
+   908→                            : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>
+   909→                                {sub.name}
+   910→                              </button>))}
+   911→                          </div>
+   912→                        </details>);
+   913→            })}
+   914→                  </div>
+   915→                  {conCapabilities.length > 0 && (<div className="mt-2 space-y-1">
+   916→                      <p className="text-[10px] font-semibold text-muted-foreground">Selected capabilities — enter rates:</p>
+   917→                      {conCapabilities.map((cap) => (<div key={cap.subcategory_id} className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+   918→                          <span className="flex-1 truncate text-xs font-medium">{cap.subcategory_name}</span>
+   919→                          <Input type="number" value={cap.labour_rate || ""} onChange={(e) => updateCapability(cap.subcategory_id, { labour_rate: e.target.value })} placeholder="Labour ₹" className="h-7 w-24 text-xs"/>
+   920→                          <Input type="number" value={cap.with_material_rate || ""} onChange={(e) => updateCapability(cap.subcategory_id, { with_material_rate: e.target.value })} placeholder="With material ₹" className="h-7 w-28 text-xs"/>
+   921→                          <button type="button" onClick={() => toggleContractorCapability(cap.subcategory_id)} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5"/></button>
+   922→                        </div>))}
+   923→                    </div>)}
+   924→                </div>
+   925→              </>)}
+   926→          </div>
+   927→        </div>
+   928→
+   929→        <DialogFooter className="border-t border-border px-5 py-3">
+   930→          <Button variant="outline" size="sm" className="min-h-[40px]" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
+   931→          <Button size="sm" className="min-h-[40px]" onClick={handleSave} disabled={!name.trim() || saving}>
+   932→            {saving ? "Uploading to Google Drive…" : isEditMode ? <><Pencil className="mr-1 h-3.5 w-3.5"/> Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5"/> Create {type}</>}
+   933→          </Button>
+   934→        </DialogFooter>
+   935→      </DialogContent>
+   936→    </Dialog>);
+   937→}
+   938→

@@ -1,0 +1,580 @@
+     1→"use client";
+     2→import * as React from "react";
+     3→import { cn } from "@/lib/utils";
+     4→import { useRDashStore } from "@/lib/rdash/store";
+     5→import type { Thread, ThreadMessage, ThreadMessageAttachment, FileAsset, RDashDatabase } from "@/lib/rdash/types";
+     6→import { Avatar } from "./primitives";
+     7→import { formatINR, relativeDay, formatDate, titleCase } from "@/lib/rdash/format";
+     8→import { toast } from "sonner";
+     9→import { X, Send, Paperclip, MessageSquare, CheckCircle2, AlertCircle, Info, FileText, Link2, AtSign, FileVideo, Search, Clock, ArrowUpRight, MessagesSquare } from "lucide-react";
+    10→import { Button } from "@/components/ui/button";
+    11→import { Textarea } from "@/components/ui/textarea";
+    12→import { Input } from "@/components/ui/input";
+    13→import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+    14→import { Checkbox } from "@/components/ui/checkbox";
+    15→import { MANAGED_FILE_ACCEPT, readFileAsDataUrl } from "@/lib/rdash/file-assets";
+    16→import { FilePreview, fileKind, managedPreviewUrl, managedOpenUrl } from "./FilePreview";
+    17→import type { FilePreviewSource } from "./FilePreview";
+    18→import { attachedPreview, attachedFileById, assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
+    19→import { renderMentions, MENTION_ENTITY_TYPES, buildMentionableEntities, filterMentionableEntities, type MentionableEntity } from "@/lib/rdash/mentions";
+    20→export function ThreadView({ threadId }: {
+    21→    threadId: string;
+    22→}) {
+    23→    const thread = useRDashStore((s) => s.db.threads.find((t) => t.id === threadId));
+    24→    const db = useRDashStore((s) => s.db);
+    25→    const addReply = useRDashStore((s) => s.addThreadReply);
+    26→    const currentUser = useRDashStore((s) => s.currentUser);
+    27→    const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
+    28→    const [reply, setReply] = React.useState("");
+    29→    const [replyParentId, setReplyParentId] = React.useState<string | undefined>();
+    30→    const [uploadingProof, setUploadingProof] = React.useState(false);
+    31→    const [pickedAttachmentIds, setPickedAttachmentIds] = React.useState<string[]>([]);
+    32→    const [search, setSearch] = React.useState("");
+    33→    const [filter, setFilter] = React.useState<"all" | "comment" | "decision" | "system" | "alert">("all");
+    34→    // Mention autocomplete state.
+    35→    const [mentionOpen, setMentionOpen] = React.useState(false);
+    36→    const [mentionQuery, setMentionQuery] = React.useState("");
+    37→    const [mentionIndex, setMentionIndex] = React.useState(0);
+    38→    const mentionAnchorRef = React.useRef<number>(-1);
+    39→    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+    40→    const fileInputRef = React.useRef<HTMLInputElement>(null);
+    41→    const mentionListRef = React.useRef<HTMLDivElement>(null);
+    42→    // Build the mentionable entity list from the workspace db (React Compiler memoizes).
+    43→    const mentionable = buildMentionableEntities(db);
+    44→    // Scroll the active mention item into view when navigating with arrow keys.
+    45→    // (Placed before the early return so hooks rules are satisfied.)
+    46→    React.useEffect(() => {
+    47→        if (!mentionOpen || !mentionListRef.current) return;
+    48→        const active = mentionListRef.current.querySelector("[data-mention-active=\"true\"]") as HTMLElement | null;
+    49→        if (active) active.scrollIntoView({ block: "nearest" });
+    50→    }, [mentionOpen, mentionIndex]);
+    51→    if (!thread) {
+    52→        return (<div className="flex flex-col items-center justify-center gap-3 py-16 text-center text-muted-foreground">
+    53→        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/60"><MessageSquare className="h-7 w-7"/></div>
+    54→        <div>
+    55→          <p className="text-sm font-medium text-foreground">No thread yet</p>
+    56→          <p className="mt-0.5 text-[11px]">A conversation thread appears here once the first event is logged.</p>
+    57→        </div>
+    58→      </div>);
+    59→    }
+    60→    const user = currentUser();
+    61→    const entityType = threadEntityType(thread.kind);
+    62→    const existingFiles = entityFiles(db, entityType, thread.record_id);
+    63→    const onSend = () => {
+    64→        if (!reply.trim() && !pickedAttachmentIds.length)
+    65→            return;
+    66→        const attachments: ThreadMessageAttachment[] = pickedAttachmentIds
+    67→            .map((aid): ThreadMessageAttachment | null => {
+    68→            const attached = attachedFileById(db, aid);
+    69→            if (!attached)
+    70→                return null;
+    71→            const preview = assetPreview(attached.asset);
+    72→            const fk = fileKind(preview);
+    73→            const kind: ThreadMessageAttachment["kind"] = fk === "document" ? "file" : fk;
+    74→            return {
+    75→                id: `tma-${attached.attachment.id}`,
+    76→                file_asset_id: attached.asset.id,
+    77→                entity_file_attachment_id: attached.attachment.id,
+    78→                name: attached.asset.file_name,
+    79→                kind,
+    80→                mime: attached.asset.mime_type,
+    81→                size: attached.asset.file_size_bytes,
+    82→                thumbnail_url: attached.asset.thumbnail_url,
+    83→                preview_url: attached.asset.web_view_link,
+    84→                caption: attached.attachment.caption,
+    85→            };
+    86→        })
+    87→            .filter((x): x is ThreadMessageAttachment => x !== null);
+    88→        addReply(thread.id, {
+    89→            author: user.name,
+    90→            role: user.role,
+    91→            body: reply.trim() || (attachments.length ? `Shared ${attachments.length} file${attachments.length === 1 ? "" : "s"}` : ""),
+    92→            kind: "comment",
+    93→            parent_message_id: replyParentId,
+    94→            attachments: attachments.length ? attachments : undefined,
+    95→        });
+    96→        setReply("");
+    97→        setReplyParentId(undefined);
+    98→        setPickedAttachmentIds([]);
+    99→        toast.success("Reply posted");
+   100→    };
+   101→    const attachProof = async (event: React.ChangeEvent<HTMLInputElement>) => {
+   102→        const files = Array.from(event.target.files || []);
+   103→        if (!files.length)
+   104→            return;
+   105→        setUploadingProof(true);
+   106→        try {
+   107→            const { compressImage } = await import("@/lib/rdash/image-compress");
+   108→            const { uploadCapturedMediaToGoogleDrive } = await import("@/lib/rdash/google-drive-upload");
+   109→            for (const file of files) {
+   110→                const dataUrl = file.type.startsWith("image/") ? await compressImage(file) : await readFileAsDataUrl(file);
+   111→                const role = file.type.startsWith("video/") ? "video" as const : file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "document" as const : "proof" as const;
+   112→                const uploaded = await uploadCapturedMediaToGoogleDrive({ dataUrl, fileName: file.name, entityType, entityId: thread.record_id, kind: "site_proof", role, caption: "Thread attachment" });
+   113→                const attachmentId = createFileAssetAndAttach({ google_file_id: uploaded.id, file_name: uploaded.name, web_view_link: uploaded.webViewLink, mime_type: uploaded.mimeType, file_size_bytes: uploaded.size, kind: "site_proof", storage_account_id: uploaded.storageAccountId, storage_folder_instance: uploaded.storageFolderInstance, storage_provider: uploaded.storageAccountId === "local" ? "local" : "google_drive", storage_mode: "managed", sync_status: "uploaded", thumbnail_url: uploaded.thumbnailLink }, { entity_type: entityType, entity_id: thread.record_id, role, visibility: "internal", customer_shareable: false, caption: "Thread attachment", created_by: user.name });
+   114→                addReply(thread.id, {
+   115→                    author: user.name,
+   116→                    role: user.role,
+   117→                    body: `Attachment: ${uploaded.name}`,
+   118→                    kind: "proof",
+   119→                    proof_attachment_id: attachmentId,
+   120→                    parent_message_id: replyParentId,
+   121→                });
+   122→            }
+   123→            setReplyParentId(undefined);
+   124→            toast.success(`${files.length} file${files.length === 1 ? "" : "s"} uploaded to Google Drive and attached`);
+   125→        }
+   126→        catch (error) {
+   127→            toast.error(error instanceof Error ? error.message : "Attachment upload failed");
+   128→        }
+   129→        finally {
+   130→            setUploadingProof(false);
+   131→            event.target.value = "";
+   132→        }
+   133→    };
+   134→    const togglePicked = (id: string) => {
+   135→        setPickedAttachmentIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+   136→    };
+   137→    // --- Mention autocomplete helpers ---
+   138→    const mentionResults = mentionOpen ? filterMentionableEntities(mentionable, mentionQuery, 8) : [];
+   139→    const safeMentionIndex = mentionResults.length ? Math.min(mentionIndex, mentionResults.length - 1) : 0;
+   140→    const insertMention = (entity: MentionableEntity) => {
+   141→        const ta = textareaRef.current;
+   142→        if (!ta) return;
+   143→        const anchor = mentionAnchorRef.current;
+   144→        if (anchor < 0) return;
+   145→        const cursor = ta.selectionStart;
+   146→        const insertion = `@[${entity.label}](${entity.entity_type}:${entity.entity_id}) `;
+   147→        const next = reply.slice(0, anchor) + insertion + reply.slice(cursor);
+   148→        setReply(next);
+   149→        setMentionOpen(false);
+   150→        setMentionQuery("");
+   151→        setMentionIndex(0);
+   152→        mentionAnchorRef.current = -1;
+   153→        // Restore focus + cursor after the inserted mention.
+   154→        requestAnimationFrame(() => {
+   155→            if (ta) {
+   156→                const pos = anchor + insertion.length;
+   157→                ta.focus();
+   158→                ta.setSelectionRange(pos, pos);
+   159→            }
+   160→        });
+   161→    };
+   162→    const onReplyChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+   163→        const val = e.target.value;
+   164→        setReply(val);
+   165→        // Detect @[ trigger at cursor position.
+   166→        const cursor = e.target.selectionStart;
+   167→        const trigger = detectMentionTrigger(val, cursor);
+   168→        if (trigger) {
+   169→            mentionAnchorRef.current = trigger.anchor;
+   170→            setMentionQuery(trigger.query);
+   171→            setMentionIndex(0);
+   172→            if (!mentionOpen) setMentionOpen(true);
+   173→        }
+   174→        else if (mentionOpen) {
+   175→            setMentionOpen(false);
+   176→            setMentionQuery("");
+   177→            mentionAnchorRef.current = -1;
+   178→        }
+   179→    };
+   180→    const onReplyKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   181→        // Mention autocomplete keyboard nav takes priority when open.
+   182→        if (mentionOpen && mentionResults.length) {
+   183→            if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex((i) => (i + 1) % mentionResults.length); return; }
+   184→            if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex((i) => (i - 1 + mentionResults.length) % mentionResults.length); return; }
+   185→            if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(mentionResults[safeMentionIndex]); return; }
+   186→            if (e.key === "Escape") { e.preventDefault(); setMentionOpen(false); mentionAnchorRef.current = -1; return; }
+   187→        }
+   188→        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+   189→            e.preventDefault();
+   190→            onSend();
+   191→        }
+   192→    };
+   193→    // Filtered message list for the thread header count + tree rendering.
+   194→    const filteredMessages = filterThreadMessages(thread.messages, search, filter);
+   195→    const systemCount = thread.messages.filter((m) => m.kind === "system").length;
+   196→    const commentCount = thread.messages.filter((m) => m.kind === "comment" || m.kind === "proof").length;
+   197→    const decisionCount = thread.messages.filter((m) => m.kind === "decision").length;
+   198→    const alertCount = thread.messages.filter((m) => m.kind === "alert").length;
+   199→    const filterTabs: Array<{ id: typeof filter; label: string; count: number }> = [
+   200→        { id: "all", label: "All", count: thread.messages.length },
+   201→        { id: "comment", label: "Chat", count: commentCount },
+   202→        { id: "system", label: "System", count: systemCount },
+   203→        { id: "decision", label: "Decisions", count: decisionCount },
+   204→        { id: "alert", label: "Mentions", count: alertCount },
+   205→    ];
+   206→    return (<div className="flex h-full flex-col">
+   207→      {/* Thread header: title + message count + search + filter pills */}
+   208→      <div className="shrink-0 border-b border-border bg-card/50 px-4 pb-2.5 pt-3">
+   209→        <div className="flex items-center justify-between gap-2">
+   210→          <div className="flex min-w-0 items-center gap-2">
+   211→            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><MessagesSquare className="h-4 w-4"/></span>
+   212→            <div className="min-w-0">
+   213→              <p className="truncate text-xs font-semibold text-foreground">{thread.title}</p>
+   214→              <p className="flex items-center gap-1 text-[10px] text-muted-foreground"><span className="inline-flex items-center gap-0.5"><span className="h-1.5 w-1.5 rounded-full bg-success"/></span>{thread.messages.length} message{thread.messages.length !== 1 ? "s" : ""} · {thread.participants.length} participant{thread.participants.length !== 1 ? "s" : ""}</p>
+   215→            </div>
+   216→          </div>
+   217→          <div className="relative w-32 shrink-0 sm:w-44">
+   218→            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"/>
+   219→            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="h-8 rounded-lg bg-muted/40 pl-7 pr-2 text-xs"/>
+   220→          </div>
+   221→        </div>
+   222→        <div className="mt-2 flex flex-wrap items-center gap-1">
+   223→          {filterTabs.map((tab) => (
+   224→            <button key={tab.id} type="button" onClick={() => setFilter(tab.id)} className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors", filter === tab.id ? "bg-primary text-primary-foreground" : "bg-muted/60 text-muted-foreground hover:bg-muted")}>
+   225→              {tab.label}<span className={cn("rounded-full px-1 text-[10px]", filter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
+   226→            </button>
+   227→          ))}
+   228→        </div>
+   229→      </div>
+   230→      {/* Messages */}
+   231→      <div className="flex-1 space-y-2.5 overflow-y-auto px-4 py-4 rd-scroll">
+   232→        {filteredMessages.length === 0 ? (<div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
+   233→          <Search className="h-6 w-6 opacity-50"/>
+   234→          <p className="text-xs">{search ? `No messages match "${search}"` : "No messages in this filter"}</p>
+   235→        </div>) : (<ThreadTree messages={filteredMessages} onReply={(messageId) => setReplyParentId(messageId)}/>)}
+   236→      </div>
+   237→      {/* Composer */}
+   238→      <div className="relative border-t border-border bg-muted/20 p-3">
+   239→        {/* Mention autocomplete popover */}
+   240→        {mentionOpen && mentionResults.length > 0 && (<div className="absolute bottom-full left-3 right-3 z-30 mb-1 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+   241→          <div className="border-b border-border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Mention {mentionResults.length > 1 ? `(${mentionResults.length})` : ""}</div>
+   242→          <div ref={mentionListRef} className="max-h-56 overflow-y-auto rd-scroll">
+   243→            {mentionResults.map((entity, i) => (
+   244→              <button key={`${entity.entity_type}-${entity.entity_id}`} type="button" data-mention-active={i === safeMentionIndex || undefined} onMouseEnter={() => setMentionIndex(i)} onClick={() => insertMention(entity)} className={cn("flex w-full items-center gap-2 border-b border-border/60 px-3 py-1.5 text-left text-xs last:border-0", i === safeMentionIndex ? "bg-primary/10" : "hover:bg-accent/40")}>
+   245→                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold uppercase text-primary">{entity.entity_type.slice(0, 2)}</span>
+   246→                <div className="min-w-0 flex-1">
+   247→                  <p className="truncate font-medium text-foreground">{entity.label}</p>
+   248→                  {entity.sublabel && <p className="truncate text-[10px] text-muted-foreground">{entity.sublabel}</p>}
+   249→                </div>
+   250→                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{entity.group}</span>
+   251→              </button>
+   252→            ))}
+   253→          </div>
+   254→          <div className="border-t border-border bg-muted/30 px-3 py-1 text-[10px] text-muted-foreground"><kbd className="rounded bg-background px-1">↑↓</kbd> navigate · <kbd className="rounded bg-background px-1">↵</kbd> select · <kbd className="rounded bg-background px-1">Esc</kbd> close</div>
+   255→        </div>)}
+   256→        {mentionOpen && mentionResults.length === 0 && (<div className="absolute bottom-full left-3 right-3 z-30 mb-1 rounded-xl border border-border bg-popover px-3 py-2 text-[11px] text-muted-foreground shadow-lg">No entities match "{mentionQuery}"</div>)}
+   257→        {replyParentId && <div className="mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/[0.04] px-2 py-1 text-[11px] text-primary"><span>Replying to a specific message</span><button type="button" className="underline" onClick={() => setReplyParentId(undefined)}>Clear</button></div>}
+   258→        {pickedAttachmentIds.length > 0 && (<div className="mb-2 flex flex-wrap gap-1.5">
+   259→            {pickedAttachmentIds.map((aid) => {
+   260→                const attached = attachedFileById(db, aid);
+   261→                if (!attached)
+   262→                    return null;
+   263→                return (<span key={aid} className="inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+   264→                  <FileText className="h-3 w-3"/>
+   265→                  <span className="max-w-[12rem] truncate">{attached.asset.file_name}</span>
+   266→                  <button type="button" onClick={() => togglePicked(aid)} className="ml-0.5 rounded-full hover:bg-primary/20" aria-label="Remove attachment"><X className="h-3 w-3"/></button>
+   267→                </span>);
+   268→            })}
+   269→          </div>)}
+   270→        <div className="flex items-end gap-2">
+   271→          <div className="relative flex-1">
+   272→            <Textarea ref={textareaRef} value={reply} onChange={onReplyChange} placeholder={replyParentId ? "Reply to this message…" : "Write a reply…  Use @[ to mention"} className="min-h-[48px] resize-none rounded-xl bg-card text-sm shadow-sm" rows={2} onKeyDown={onReplyKeyDown}/>
+   273→          </div>
+   274→          <div className="flex flex-col gap-1">
+   275→            <input ref={fileInputRef} type="file" accept={MANAGED_FILE_ACCEPT} multiple className="hidden" onChange={attachProof}/>
+   276→            <Button type="button" size="icon" variant="outline" className="h-9 w-9 rounded-lg" onClick={() => fileInputRef.current?.click()} disabled={uploadingProof} title="Attach Google Drive proof">
+   277→              <Paperclip className="h-4 w-4"/>
+   278→            </Button>
+   279→            <Popover>
+   280→              <PopoverTrigger asChild>
+   281→                <Button type="button" size="icon" variant="outline" className="h-9 w-9 rounded-lg" title="Attach existing file from this record" disabled={!existingFiles.length}>
+   282→                  <Link2 className="h-4 w-4"/>
+   283→                </Button>
+   284→              </PopoverTrigger>
+   285→              <PopoverContent className="w-80 p-0" align="end">
+   286→                <div className="border-b border-border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+   287→                  Attach existing files · {existingFiles.length}
+   288→                </div>
+   289→                <div className="max-h-72 overflow-y-auto rd-scroll">
+   290→                  {existingFiles.length === 0 ? (<div className="px-3 py-6 text-center text-[11px] text-muted-foreground">No files are attached to this record yet.</div>) : (existingFiles.map((item) => {
+   291→                    const id = item.attachment.id;
+   292→                    const checked = pickedAttachmentIds.includes(id);
+   293→                    return (<label key={id} htmlFor={`pick-${id}`} className={cn("flex cursor-pointer items-start gap-2 border-b border-border px-3 py-2 text-xs last:border-0 hover:bg-accent/40", checked && "bg-primary/[0.06]")}>
+   294→                        <Checkbox id={`pick-${id}`} checked={checked} onCheckedChange={() => togglePicked(id)} className="mt-0.5"/>
+   295→                        <div className="min-w-0 flex-1">
+   296→                          <p className="truncate font-medium text-foreground">{item.asset.file_name}</p>
+   297→                          <p className="text-[10px] text-muted-foreground">{titleCase(String(item.attachment.role))} · {titleCase(item.attachment.visibility)}{item.asset.mime_type ? ` · ${item.asset.mime_type}` : ""}</p>
+   298→                        </div>
+   299→                      </label>);
+   300→                }))}
+   301→                </div>
+   302→              </PopoverContent>
+   303→            </Popover>
+   304→            <Button type="button" size="icon" className="h-9 w-9 rounded-lg" onClick={onSend} disabled={!reply.trim() && !pickedAttachmentIds.length} title="Send reply (Ctrl+Enter)"><Send className="h-4 w-4"/></Button>
+   305→          </div>
+   306→        </div>
+   307→        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
+   308→          <span className="inline-flex items-center gap-1"><AtSign className="h-3 w-3 text-primary/70"/>Type <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">@[</code> to mention — creates backlinks across threads</span>
+   309→          <span className="inline-flex items-center gap-1"><Paperclip className="h-3 w-3"/>Images/PDFs/videos upload to Google Drive</span>
+   310→        </p>
+   311→      </div>
+   312→    </div>);
+   313→}
+   314→
+   315→/**
+   316→ * Detect whether the cursor is inside an active @[mention trigger.
+   317→ * Returns the anchor (index of `@`) and the query text after `[` if active,
+   318→ * or null if the cursor is not inside a mention trigger.
+   319→ */
+   320→function detectMentionTrigger(text: string, cursor: number): { anchor: number; query: string } | null {
+   321→    if (cursor < 2) return null;
+   322→    // Walk backwards from the cursor looking for `@[`.
+   323→    let i = cursor - 1;
+   324→    while (i >= 1) {
+   325→        const ch = text[i];
+   326→        if (ch === "\n") return null; // crossed a line — not a mention
+   327→        if (ch === "]" ) return null; // mention already closed
+   328→        if (ch === "[" && text[i - 1] === "@") {
+   329→            const query = text.slice(i + 1, cursor);
+   330→            if (query.includes(")") ) return null;
+   331→            return { anchor: i - 1, query };
+   332→        }
+   333→        i--;
+   334→    }
+   335→    return null;
+   336→}
+   337→
+   338→/** Filter thread messages by search text + kind filter. Preserves nesting
+   339→ *  (a parent is kept if it matches OR any of its descendants match). */
+   340→function filterThreadMessages(messages: ThreadMessage[], search: string, filter: "all" | "comment" | "decision" | "system" | "alert"): ThreadMessage[] {
+   341→    const q = search.trim().toLowerCase();
+   342→    const kindMatch = (m: ThreadMessage): boolean => {
+   343→        if (filter === "all") return true;
+   344→        if (filter === "comment") return m.kind === "comment" || m.kind === "proof";
+   345→        return m.kind === filter;
+   346→    };
+   347→    const textMatch = (m: ThreadMessage): boolean => {
+   348→        if (!q) return true;
+   349→        return (m.body || "").toLowerCase().includes(q) || (m.author_name || "").toLowerCase().includes(q);
+   350→    };
+   351→    // Build child→parent index so we can keep ancestors of matching descendants.
+   352→    const byParent = new Map<string | undefined, ThreadMessage[]>();
+   353→    messages.forEach((m) => {
+   354→        const key = m.parent_message_id;
+   355→        byParent.set(key, [...(byParent.get(key) || []), m]);
+   356→    });
+   357→    const keep = new Set<string>();
+   358→    const walk = (m: ThreadMessage): boolean => {
+   359→        const selfMatch = kindMatch(m) && textMatch(m);
+   360→        const children = byParent.get(m.id) || [];
+   361→        const childMatch = children.some(walk);
+   362→        if (selfMatch || childMatch) keep.add(m.id);
+   363→        return selfMatch || childMatch;
+   364→    };
+   365→    const roots = byParent.get(undefined) || [];
+   366→    roots.forEach(walk);
+   367→    return messages.filter((m) => keep.has(m.id));
+   368→}
+   369→function threadEntityType(kind: Thread["kind"]): import("@/lib/rdash/types").FileAttachmentEntityType {
+   370→    const map: Partial<Record<Thread["kind"], import("@/lib/rdash/types").FileAttachmentEntityType>> = {
+   371→        quotation: "quotation", workOrder: "workOrder", task: "task", followup: "followup", visit: "visit", payment: "payment", invoice: "invoice", vendor_bill: "vendor_bill", inventory: "inventory", po: "purchase_order", grn: "grn", dispatch: "dispatch", blocked: "blocked", commission: "commission", site: "site", drawing: "drawing", execution_log: "execution_log",
+   372→    };
+   373→    return map[kind] || "general";
+   374→}
+   375→function ThreadTree({ messages, onReply }: {
+   376→    messages: ThreadMessage[];
+   377→    onReply: (messageId: string) => void;
+   378→}) {
+   379→    const byParent = React.useMemo(() => {
+   380→        const map = new Map<string | undefined, ThreadMessage[]>();
+   381→        messages.forEach((message) => {
+   382→            const key = message.parent_message_id;
+   383→            map.set(key, [...(map.get(key) || []), message]);
+   384→        });
+   385→        return map;
+   386→    }, [messages]);
+   387→    const render = (message: ThreadMessage, depth = 0): React.ReactNode => (<div key={message.id} className={depth ? "ml-4 border-l border-primary/20 pl-3" : ""}>
+   388→      <MessageBubble m={message} nested={depth > 0} onReply={() => onReply(message.id)}/>
+   389→      <div className="mt-2 space-y-2">{(byParent.get(message.id) || []).map((child) => render(child, depth + 1))}</div>
+   390→    </div>);
+   391→    const roots = byParent.get(undefined) || [];
+   392→    return <>{roots.map((message) => render(message))}</>;
+   393→}
+   394→/** Resolve a ThreadMessageAttachment to a FilePreviewSource using the db. */
+   395→function attachmentToPreviewSource(db: RDashDatabase, att: ThreadMessageAttachment): FilePreviewSource | null {
+   396→    if (att.entity_file_attachment_id) {
+   397→        const attached = attachedFileById(db, att.entity_file_attachment_id);
+   398→        if (attached)
+   399→            return assetPreview(attached.asset);
+   400→    }
+   401→    if (att.file_asset_id) {
+   402→        const asset = db.master.fileAssets.find((a: FileAsset) => a.id === att.file_asset_id);
+   403→        if (asset)
+   404→            return assetPreview(asset);
+   405→    }
+   406→    if (att.thumbnail_url || att.preview_url) {
+   407→        return {
+   408→            fileName: att.name,
+   409→            mimeType: att.mime,
+   410→            url: att.preview_url,
+   411→            thumbnailUrl: att.thumbnail_url,
+   412→        };
+   413→    }
+   414→    return null;
+   415→}
+   416→/** Render a message's body with @mentions as styled, clickable pills. */
+   417→function MentionBody({ body }: { body: string }) {
+   418→    const openDetail = useRDashStore((s) => s.openDetail);
+   419→    const segments = React.useMemo(() => renderMentions(body), [body]);
+   420→    return (<p className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">
+   421→      {segments.map((seg, i) => seg.type === "text" ? (<span key={i}>{seg.text}</span>) : (<button key={i} type="button" onClick={() => {
+   422→        const et = seg.mention.entity_type;
+   423→        // Only navigate for known panel kinds (avoids TypeScript complaints
+   424→        // and runtime errors for arbitrary entity_types the user may type).
+   425→        if (et in MENTION_ENTITY_TYPES) {
+   426→            openDetail(et as any, seg.mention.entity_id);
+   427→        }
+   428→        else {
+   429→            console.log("[mention] unhandled entity_type", seg.mention);
+   430→        }
+   431→    }} className="mx-0.5 inline-flex items-center rounded bg-primary/10 px-1 py-0.5 text-[12px] font-medium text-primary align-baseline hover:bg-primary/20 hover:underline" title={`Open ${seg.mention.entity_type} ${seg.mention.entity_id}`}>
+   432→          <AtSign className="mr-0.5 h-3 w-3"/>{seg.mention.label}
+   433→        </button>))}
+   434→    </p>);
+   435→}
+   436→/** Render a message's general attachments (images, PDFs, videos, files). */
+   437→function MessageAttachments({ attachments }: { attachments: ThreadMessageAttachment[] }) {
+   438→    const db = useRDashStore((s) => s.db);
+   439→    return (<div className="mt-2 flex flex-wrap gap-2">
+   440→      {attachments.map((att) => {
+   441→        const preview = attachmentToPreviewSource(db, att);
+   442→        if (!preview) {
+   443→            return (<span key={att.id} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground">
+   444→            <FileText className="h-3.5 w-3.5"/>{att.name}
+   445→          </span>);
+   446→        }
+   447→        if (att.kind === "video") {
+   448→            const src = managedPreviewUrl(preview);
+   449→            return (<div key={att.id} className="w-full max-w-sm overflow-hidden rounded-md border border-border bg-black">
+   450→            {src ? (<video src={src} controls preload="metadata" className="max-h-60 w-full"/>) : (<div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground"><FileVideo className="h-4 w-4"/>Video preview unavailable</div>)}
+   451→            <div className="truncate bg-muted/30 px-2 py-1 text-[10px] text-muted-foreground">{att.name}</div>
+   452→          </div>);
+   453→        }
+   454→        if (att.kind === "image" || att.kind === "pdf") {
+   455→            return (<FilePreview key={att.id} file={preview} compact controls className="max-w-[10rem]"/>);
+   456→        }
+   457→        // Generic file chip
+   458→        const openUrl = managedOpenUrl(preview);
+   459→        return (<a key={att.id} href={openUrl || "#"} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] text-foreground hover:bg-accent/40" title={att.name}>
+   460→          <FileText className="h-3.5 w-3.5 text-primary"/>
+   461→          <span className="max-w-[14rem] truncate">{att.name}</span>
+   462→        </a>);
+   463→    })}
+   464→    </div>);
+   465→}
+   466→function MessageBubble({ m, nested = false, onReply }: {
+   467→    m: ThreadMessage;
+   468→    nested?: boolean;
+   469→    onReply: () => void;
+   470→}) {
+   471→    const db = useRDashStore((state) => state.db);
+   472→    const proof = attachedPreview(db, m.proof_attachment_id);
+   473→    const isSystem = m.kind === "system";
+   474→    const isAlert = m.kind === "alert";
+   475→    const isDecision = m.kind === "decision";
+   476→    const isProof = m.kind === "proof";
+   477→    const absTime = formatDate(m.created_at);
+   478→    // System + alert messages render as a centered timeline pill — no avatar.
+   479→    // Alerts (mention backlinks) get a primary accent; system events get muted.
+   480→    if (isSystem || isAlert)
+   481→        return (<div className="flex items-center justify-center py-0.5">
+   482→        <span title={absTime} className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium", isAlert ? "border-primary/20 bg-primary/[0.07] text-primary" : "border-border bg-muted/50 text-muted-foreground")}>
+   483→          {isAlert ? <ArrowUpRight className="h-3 w-3"/> : <Info className="h-3 w-3"/>}{m.body}<span className="text-[10px] opacity-60">· {relativeDay(m.created_at)}</span>
+   484→        </span>
+   485→      </div>);
+   486→    // Comment / decision / proof messages render as a full bubble with avatar.
+   487→    return (<div className={cn("group flex gap-2.5 rounded-xl p-1.5 transition-colors hover:bg-muted/30", nested && "ml-4 border-l-2 border-primary/15 pl-3 hover:bg-primary/[0.03]", isDecision && "border border-success/20 bg-success/[0.04]", isProof && "border border-primary/15 bg-primary/[0.02]")}>
+   488→      <Avatar name={m.author_name} size={30}/>
+   489→      <div className="min-w-0 flex-1">
+   490→        <div className="flex items-center gap-1.5">
+   491→          <span className="text-xs font-semibold text-foreground">{m.author_name}</span>
+   492→          {m.author_role && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{m.author_role}</span>}
+   493→          {isDecision && <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success"><CheckCircle2 className="h-3 w-3"/>Decision</span>}
+   494→          {isProof && <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"><Paperclip className="h-3 w-3"/>Proof</span>}
+   495→          <span title={absTime} className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/80"><Clock className="h-2.5 w-2.5 opacity-60"/>{relativeDay(m.created_at)}</span>
+   496→        </div>
+   497→        <MentionBody body={m.body}/>
+   498→        {m.attachments && m.attachments.length > 0 && <MessageAttachments attachments={m.attachments}/>}
+   499→        {proof && <FilePreview file={proof} compact controls className="mt-1.5 max-w-xs"/>}
+   500→        <button type="button" onClick={onReply} className="mt-1 text-[10px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 hover:underline">Reply</button>
+   501→      </div>
+   502→    </div>);
+   503→}
+   504→export function Field({ label, value, mono }: {
+   505→    label: string;
+   506→    value?: React.ReactNode;
+   507→    mono?: boolean;
+   508→}) {
+   509→    return (<div className="flex flex-col gap-0.5">
+   510→      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   511→        {label}
+   512→      </span>
+   513→      <span className={cn("text-sm text-foreground", mono && "font-mono")}>
+   514→        {value || <span className="text-muted-foreground">—</span>}
+   515→      </span>
+   516→    </div>);
+   517→}
+   518→export function StatusPill({ label, tone = "default" }: {
+   519→    label: string;
+   520→    tone?: "default" | "success" | "warning" | "destructive" | "primary";
+   521→}) {
+   522→    const cls = {
+   523→        default: "bg-muted text-muted-foreground border-border",
+   524→        success: "bg-success/15 text-success border-success/25",
+   525→        warning: "bg-warning/15 text-warning border-warning/25",
+   526→        destructive: "bg-destructive/15 text-destructive border-destructive/25",
+   527→        primary: "bg-primary/10 text-primary border-primary/25",
+   528→    }[tone];
+   529→    return (<span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold", cls)}>
+   530→      {label}
+   531→    </span>);
+   532→}
+   533→export function LineItemTable({ items, highlightSource, }: {
+   534→    items: import("@/lib/rdash/types").LineItem[];
+   535→    highlightSource?: string;
+   536→}) {
+   537→    if (!items.length) {
+   538→        return (<div className="rounded-lg border border-dashed border-border bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
+   539→        No line items.
+   540→      </div>);
+   541→    }
+   542→    const total = items.reduce((n, i) => n + i.amount, 0);
+   543→    return (<div className="overflow-hidden rounded-lg border border-border">
+   544→      <div className="grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+   545→        <span>Item</span>
+   546→        <span className="text-right">Qty</span>
+   547→        <span className="text-right">Rate</span>
+   548→        <span className="text-right">Amount</span>
+   549→        <span className="text-center">Trace</span>
+   550→      </div>
+   551→      {items.map((it) => (<div key={it.id} className={cn("grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 border-b border-border px-3 py-2 text-xs last:border-0", highlightSource && it.source_item_id === highlightSource && "bg-accent/40", it.held && "bg-warning/[0.06]")}>
+   552→          <div className="min-w-0">
+   553→            <p className={cn("truncate font-medium text-foreground", it.held && "line-through text-muted-foreground")}>
+   554→              {it.title}
+   555→              {it.held && <span className="ml-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold text-warning">HELD</span>}
+   556→            </p>
+   557→            {it.unit_name && <p className="text-[10px] text-muted-foreground">{it.unit_name}</p>}
+   558→            {(it.site_name || it.area_name) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
+   559→                {it.site_name && <span className="rounded bg-primary/10 px-1 py-0.5 text-primary">{it.site_name}</span>}
+   560→                {it.area_name && <span className="rounded bg-muted px-1 py-0.5 text-muted-foreground">{it.area_name}</span>}
+   561→                {it.drawing_no && <span className="rounded bg-success/10 px-1 py-0.5 text-success">📐 {it.drawing_no}</span>}
+   562→              </p>)}
+   563→          </div>
+   564→          <span className="text-right font-mono">{it.quantity}</span>
+   565→          <span className="text-right font-mono text-muted-foreground">{formatINR(it.rate)}</span>
+   566→          <span className="text-right font-mono font-semibold">{formatINR(it.amount)}</span>
+   567→          <span className="text-center text-[10px] text-muted-foreground">
+   568→            {it.source_kind ? titleCase(it.source_kind) : "—"}
+   569→          </span>
+   570→        </div>))}
+   571→      <div className="grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 bg-muted/30 px-3 py-2 text-xs font-bold">
+   572→        <span>Total</span>
+   573→        <span />
+   574→        <span />
+   575→        <span className="text-right font-mono">{formatINR(total)}</span>
+   576→        <span />
+   577→      </div>
+   578→    </div>);
+   579→}
+   580→

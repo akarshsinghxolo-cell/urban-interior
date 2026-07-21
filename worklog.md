@@ -4414,3 +4414,509 @@ The mobile UI has **17 distinct problems** spanning 5 severity levels. The most 
 - Verified all measurements via `getBoundingClientRect()` and `getComputedStyle()`
 - Verified click interception via agent-browser (More actions button cannot be clicked due to overlay)
 
+
+---
+Task ID: ANALYSIS-UPLOAD
+Agent: general-purpose (analysis-only)
+Task: Analyze the Google Drive file upload system end-to-end across client + server + storage layers. Identify bugs, race conditions, missing validation, retry gaps, quota drift, and security issues. No code changes — report only.
+
+Work Log:
+- Read worklog.md project context (construction/contracting workspace; in-memory seed fallback; Zustand slices; super-owner login akarshsingh4@gmail.com).
+- Read all target files end-to-end:
+  - `src/lib/rdash/file-assets.ts` (104 lines) — client upload orchestrator.
+  - `src/lib/rdash/server/google-drive.ts` (334 lines) — server-side upload to Drive.
+  - `src/lib/rdash/server/drive-connections.ts` (262 lines) — OAuth + token refresh + vault.
+  - `src/lib/rdash/storage.ts` (153 lines) — folder templates, account selection, path resolution.
+  - `src/components/rdash/EntityFormDialog.tsx` (937 lines) — `uploadAndAttach` helper for customer/vendor/contractor/site photos.
+  - `src/components/rdash/ThreadPanel.tsx` (580 lines) — thread attachment uploads.
+  - `src/components/rdash/OperationalMediaPanel.tsx` (388 lines) — operational file links (no actual upload).
+  - `src/app/api/google-drive/test-upload/route.ts` (143 lines) — diagnostic upload route.
+- Discovered via filesystem listing (`find src/app/api/google-drive -type d`) that there is NO `/api/google-drive/upload/route.ts` file. Confirmed via `rg` that `uploadManagedFileAsset` (the server-side function in `google-drive.ts`) is referenced from exactly ONE file — itself — meaning it is dead code with no caller.
+- Cross-referenced all client upload call-sites: `EntityFormDialog`, `SiteFormDialog`, `ThreadPanel`, `OperationalMediaPanel`, `FieldModeModule`, `DrawingsExecutionModules`, `GRNModule`, `CommunicationCentreModule`, `SiteMeasurementModule`, `DataImportModule`. All funnel through `uploadManagedFile()` → `POST /api/google-drive/upload` (which 404s).
+- Read `src/lib/rdash/store/slices/files.ts` (315 lines) for `createFileAssetAndAttach`/`attachFileAsset` local store behavior.
+- Read `src/lib/rdash/image-compress.ts` for client-side compression behavior.
+- Read `src/lib/rdash/types.ts` for `FileAsset`, `EntityFileAttachment`, `StorageAccount` shape.
+- Read remaining Google Drive API routes: `connect/route.ts`, `oauth/callback/route.ts`, `oauth/config/route.ts`, `refresh-account/route.ts`, `thumbnail/route.ts`, `preview/route.ts`.
+
+Stage Summary:
+
+## Top-Level Finding (BLOCKER)
+
+**The Google Drive upload pipeline is completely non-functional in the current codebase.** Every client call to `uploadManagedFile()` POSTs to `/api/google-drive/upload`, but **no such Next.js API route exists** (verified via `find` and `rg`). The request returns a 404, the retry loop in `file-assets.ts` only retries on HTTP 422 with an entity-not-found regex (so 404 short-circuits to "throw new Error(payload?.error || 'Google Drive upload failed.')"), and the upload fails.
+
+The server-side function `uploadManagedFileAsset()` in `src/lib/rdash/server/google-drive.ts` is fully implemented but is **never invoked by any route handler** — it is dead code. The only working server-side upload route is `/api/google-drive/test-upload`, which uploads a hardcoded text file for the Drive Manager diagnostic button and bypasses `uploadManagedFileAsset()` entirely (it inlines its own multipart upload).
+
+This means: file uploads triggered from EntityFormDialog (customer/vendor/contractor/site photos), SiteFormDialog (site photos), ThreadPanel (chat attachments), FieldModeModule (visit reports), DrawingsExecutionModules (drawings), GRNModule (GRN proofs), CommunicationCentreModule (customer comms), SiteMeasurementModule (measurement proofs), and DataImportModule (CSV source) **all fail today**.
+
+A working `/api/google-drive/upload/route.ts` must be created. The intended contract (per `uploadManagedFile` client) is:
+- Accept multipart/form-data: `file` (Blob), `fileName`, `entityType`, `entityId`, optional `kind`, `role`, `caption`, `visibility`, `customerShareable`.
+- Validate session (requireSession), call `uploadManagedFileAsset(user, db, input)`.
+- Persist the resulting `FileAsset` + `EntityFileAttachment` to the workspace (currently the client does this locally via `createFileAssetAndAttach` — see UPLOAD-014 for the duplication concern).
+- Return JSON shaped like `ManagedDriveUpload` (`id, name, mimeType, size, webViewLink, thumbnailLink?, folderId?, customerId?, siteId?, workOrderId?, storageAccountId, storageFolderTemplateId, storageFolderInstance`).
+- On entity-not-found: return HTTP 422 with an error message matching `/not found|does not resolve|saved entity|does not exist|saved.*before uploading|entity is required/i` so the client's retry loop works.
+
+---
+
+## Per-File Findings
+
+### A. Client-side upload function — `src/lib/rdash/file-assets.ts`
+
+### UPLOAD-001 · Upload API route does not exist (BLOCKER)
+- **File + line**: `src/lib/rdash/file-assets.ts:75` (calls `POST /api/google-drive/upload`); missing file: `src/app/api/google-drive/upload/route.ts`.
+- **Severity**: Critical
+- **Current behavior**: `uploadManagedFile()` POSTs to a non-existent route. Returns 404. Retry loop's `waitingForServerCommit` check matches only HTTP 422, so the loop breaks immediately and throws "Google Drive upload failed." (the payload from a 404 HTML response has no `.error`).
+- **Expected behavior**: A Next.js route handler at `src/app/api/google-drive/upload/route.ts` should accept the multipart FormData, validate the session, call `uploadManagedFileAsset()`, persist the resulting file asset + attachment, and return the `ManagedDriveUpload` JSON shape. All 10+ client upload sites depend on this.
+- **Suggested fix**: Create `src/app/api/google-drive/upload/route.ts` that wires `requireSession` → `getWorkspace` → `uploadManagedFileAsset(user, db, input)` → `saveWorkspace` (to persist the new FileAsset + EntityFileAttachment + updated storage account quota). Mirror the pattern in `test-upload/route.ts`.
+
+### UPLOAD-002 · Retry loop only handles one error class — no retry on 408/429/5xx/network errors
+- **File + line**: `src/lib/rdash/file-assets.ts:74-83`
+- **Severity**: High
+- **Current behavior**: Loop runs up to 30 attempts × 500ms delay (≈15s ceiling). It only retries when `response.status === 422` AND the error message matches a specific regex of "entity not saved yet" messages. On network failure (`fetch` rejects), the loop never catches it — the rejection propagates immediately. On 5xx, 429 (Drive rate limit), 408 (timeout), or partial-upload errors, the loop breaks on attempt 0 and throws.
+- **Expected behavior**: Network errors, 408, 429 (with Retry-After), and 5xx should be retried with exponential backoff. The 422 entity-not-found retry is a separate, narrower concern and should stay.
+- **Suggested fix**: Wrap `fetch` in try/catch; on `TypeError` (network failure) or status ∈ {408, 429, 500, 502, 503, 504}, sleep with exp backoff (500ms × 2^n, capped at 4s) and continue. Reserve the existing 422-entity-not-found branch as-is. Add a per-request `AbortController` with a 60s timeout.
+
+### UPLOAD-003 · No client-side file size validation
+- **File + line**: `src/lib/rdash/file-assets.ts:51-54` (`uploadManagedFile`)
+- **Severity**: High
+- **Current behavior**: The function accepts any `File | Blob` regardless of size. The server checks `GOOGLE_DRIVE_MAX_UPLOAD_BYTES` (default 100 MB) inside `uploadManagedFileAsset` (`google-drive.ts:306-308`). For a 99 MB file the client will spend minutes uploading (over a 404 endpoint today, but even with the route fixed, the user gets no early feedback).
+- **Expected behavior**: Client should refuse to upload files exceeding the server limit before any network call. The constant should be exposed (e.g., via `/api/google-drive/config` or a hardcoded client constant matching the server default).
+- **Suggested fix**: Add `const MAX_CLIENT_BYTES = 100 * 1024 * 1024;` and throw early if `file.size > MAX_CLIENT_BYTES` with a clear toast. Optionally expose the server's `GOOGLE_DRIVE_MAX_UPLOAD_BYTES` via the existing `oauth/config` route.
+
+### UPLOAD-004 · No client-side MIME / extension validation beyond the file picker hint
+- **File + line**: `src/lib/rdash/file-assets.ts:36` (`MANAGED_FILE_ACCEPT = "image/*,video/*,application/pdf,.pdf"`) and `uploadManagedFile` body.
+- **Severity**: Medium
+- **Current behavior**: `MANAGED_FILE_ACCEPT` is only an `<input accept=...>` hint. A user can drag-drop or programmatically select any file (executable, .zip, .js). The server `assertUploadRequest` (`google-drive.ts:64-75`) only validates `entityType`, `entityId`, `fileName` — never the MIME type. The file is uploaded to Google Drive as-is.
+- **Expected behavior**: Both client and server should validate the MIME type against an allowlist. At minimum: `image/*`, `video/*`, `application/pdf`, `text/csv` (for DataImportModule). Reject everything else with a clear message.
+- **Suggested fix**: Add `validateUploadableFile(file)` shared helper. Call it in `uploadManagedFile` and again in the (to-be-created) server route.
+
+### UPLOAD-005 · `dataUrlToBlob` round-trip wastes memory for large files
+- **File + line**: `src/lib/rdash/file-assets.ts:45-50` (`dataUrlToBlob`) and `:52` (`uploadManagedFile` entry).
+- **Severity**: Medium
+- **Current behavior**: Many call sites (EntityFormDialog, SiteFormDialog, ThreadPanel, GRNModule, SiteMeasurementModule, FieldModeModule) start with a `File`, call `compressImage(file)` or `readFileAsDataUrl(file)` to get a data URL string, then pass `dataUrl` into `uploadManagedFile`, which calls `dataUrlToBlob(dataUrl)` → `fetch(dataUrl).then(r => r.blob())`. This means the file is held in memory as: (1) the original File, (2) the base64 data URL string (≈1.37× the file size), (3) the decoded Blob. For a 50 MB image, that's ≈190 MB in memory per upload.
+- **Expected behavior**: When the caller already has a `File`, pass it directly: `uploadManagedFile({ file, fileName, ... })`. Only accept `dataUrl` for genuine base64 sources (canvas.toDataURL output, paste events).
+- **Suggested fix**: Audit call sites — most can pass the original `File` object. `compressImage` should return a `Blob` (via `canvas.toBlob`) rather than a data URL.
+
+### UPLOAD-006 · No upload progress indicator (XHR would be required)
+- **File + line**: `src/lib/rdash/file-assets.ts:75` (uses `fetch`); UI consumers like `EntityFormDialog.tsx:511` (`setSaving(true)`) and `ThreadPanel.tsx:105` (`setUploadingProof(true)`).
+- **Severity**: Medium
+- **Current behavior**: `fetch()` does not support upload progress events. The UI shows a binary "saving/uploading" state with no percentage. For multi-photo uploads (e.g. `Promise.all(firstSitePhotos.map(...))` in EntityFormDialog.tsx:529) the user has no idea whether 1 of 5 or 5 of 5 are done.
+- **Expected behavior**: For files >1 MB, show a progress bar with percentage and number of files completed (e.g., "Uploading 2/5…").
+- **Suggested fix**: Switch `uploadManagedFile` to `XMLHttpRequest` (supports `upload.progress` event) or use the Fetch API's streaming body where supported. Expose a callback `onProgress?: (loaded, total) => void` in `ManagedUploadInput`.
+
+### UPLOAD-007 · `Promise.all` semantics cause all-or-nothing failures for batch uploads
+- **File + line**: `EntityFormDialog.tsx:529` (firstSitePhotos), `SiteFormDialog.tsx:248` (pendingPhotos), `DrawingsExecutionModules.tsx` batch revisions, `CommunicationCentreModule.tsx:192` (files.map), `GRNModule.tsx:283` (receivingProofs).
+- **Severity**: High
+- **Current behavior**: Each batch upload uses `Promise.all(photos.map(uploadAndAttach))`. If photo 3 of 5 fails, `Promise.all` rejects immediately, photos 4-5 results are lost (their in-flight requests may still complete on the server, but the resolved values are discarded). The catch block shows a generic error and the customer/site record is left in a partial state.
+- **Expected behavior**: Use `Promise.allSettled` and report partial success. Photos that succeeded should be saved; photos that failed should be retried or surfaced to the user.
+- **Suggested fix**: Replace `Promise.all` with `Promise.allSettled`, partition into fulfilled/rejected, save fulfilled ones, show toast "3 of 5 uploaded; 2 failed: …".
+
+### UPLOAD-008 · Response validation is shallow — accepts any object with the right keys
+- **File + line**: `src/lib/rdash/file-assets.ts:77`
+- **Severity**: Low
+- **Current behavior**: Success check is `response.ok && payload?.id && payload?.webViewLink && payload?.storageAccountId && payload?.storageFolderInstance`. No type/shape validation on `storageFolderInstance` (could be `{}`) or on `size` (could be `NaN`).
+- **Expected behavior**: Validate `storageFolderInstance.id`, `storageFolderInstance.storage_account_id`, and that `size` is a finite number.
+- **Suggested fix**: Add a `isManagedDriveUpload(payload): payload is ManagedDriveUpload` type guard and use it.
+
+---
+
+### B. Server-side Google Drive upload logic — `src/lib/rdash/server/google-drive.ts`
+
+### UPLOAD-009 · No server-side retry on Google Drive API failures
+- **File + line**: `src/lib/rdash/server/google-drive.ts:148-150` (`driveRequest`), `:246-260` (`uploadMultipart`), `:261-281` (`uploadResumable`).
+- **Severity**: High
+- **Current behavior**: `driveRequest` is a thin fetch wrapper with no retry. If Google Drive returns a transient 500/503 or a network blip occurs, the upload throws and the client gets the error (the client's own retry loop only handles 422 entity-not-found). For resumable uploads, a single PUT failure means restarting from byte 0.
+- **Expected behavior**: Wrap Drive API calls with retry-on-5xx/429/ENETUNREACH with exponential backoff. Resumable session URLs are valid for 1 week — partial uploads can be probed with a `PUT` of `Content-Range: bytes */<total>` to resume from the last acknowledged byte.
+- **Suggested fix**: Add a `withDriveRetry(fn)` wrapper. For `uploadResumable`, after a PUT failure, send a probe `PUT` with empty body and `Content-Range: bytes */<size>` to get the resume offset from the 308 response, then continue from there.
+
+### UPLOAD-010 · `uploadResumable` is not actually resumable — sends entire blob in one PUT
+- **File + line**: `src/lib/rdash/server/google-drive.ts:261-281`
+- **Severity**: High
+- **Current behavior**: The "resumable" path (used for files ≥5 MB) starts a resumable session and then `fetch(location, { method: "PUT", body: file })` — sending the whole Blob in one request. If the connection drops at 90%, the entire Blob must be re-sent. No chunking, no resume-offset probe.
+- **Expected behavior**: Chunked upload (e.g., 8 MB chunks) with per-chunk `Content-Range` headers; on failure, probe the resume offset and continue from there.
+- **Suggested fix**: Implement chunked resumable upload. Google's docs specify the protocol: `PUT` each chunk with `Content-Range: bytes <start>-<end>/<total>`. On 5xx, probe with `PUT` + `Content-Range: bytes */<total>` to receive the resume offset in the 308 response.
+
+### UPLOAD-011 · `findOrCreateFolder` race condition — concurrent uploads create duplicate folders
+- **File + line**: `src/lib/rdash/server/google-drive.ts:187-209`
+- **Severity**: High
+- **Current behavior**: The function (1) lists folders matching `'<parentId>' in parents and name = '<name>'`, (2) if none, POSTs to create. Google Drive permits duplicate folder names. Two concurrent uploads for the same customer/site will both pass step 1 with empty results, then both POST a new folder — leaving two folders with the same name. Files get scattered across them.
+- **Expected behavior**: Either (a) cache resolved folder IDs in the workspace's `storageFolderInstances` array (already a typed field — `Master.storageFolderInstances: StorageFolderInstance[]`) and consult it before hitting Drive, or (b) tolerate duplicates on read (sort by `createdTime` and pick the oldest), or (c) use a Drive-side idempotency strategy.
+- **Suggested fix**: Persist the resolved folder instance (`storage-folder-${account.id}-${folderId}`) into `db.master.storageFolderInstances` after creation. Before each upload, check the cache first; only hit Drive if missing. The cache key is `(account.id, template.id, path)`. This also eliminates redundant Drive list calls (see UPLOAD-013).
+
+### UPLOAD-012 · `selectLiveWriteAccount` does not update workspace quota after upload
+- **File + line**: `src/lib/rdash/server/google-drive.ts:167-186` (`selectLiveWriteAccount`), `:301-333` (`uploadManagedFileAsset`).
+- **Severity**: High
+- **Current behavior**: `selectLiveWriteAccount` queries Drive's `/about` endpoint for the live quota, picks an account under its `switch_threshold_percent`, and returns it. After `uploadManagedFileAsset` returns the uploaded asset, **the caller never updates `db.master.storageAccounts[].quota_used_bytes`**. The next call to `selectLiveWriteAccount` queries Drive again (1 extra API call) — but the cached value in the workspace stays stale forever. Only `test-upload/route.ts:129-133` updates `quota_used_bytes` after upload.
+- **Expected behavior**: After a successful upload, increment `selectedAccount.quota_used_bytes` by `file.size` and persist to the workspace. This makes `selectWriteStorageAccount` (the cached/optimistic version in `storage.ts`) work correctly without always hitting Drive.
+- **Suggested fix**: In the (to-be-created) upload route handler, after `uploadManagedFileAsset` succeeds, do `current.data.master.storageAccounts = accounts.map(a => a.id === result.storageAccountId ? { ...a, quota_used_bytes: Number(a.quota_used_bytes||0) + result.size, updated_at: now } : a)` and `saveWorkspace`.
+
+### UPLOAD-013 · Folder hierarchy re-resolved on every upload — no in-workspace caching
+- **File + line**: `src/lib/rdash/server/google-drive.ts:210-245` (`resolveStorageFolder`), `:225-229` (loop over path parts calling `findOrCreateFolder`).
+- **Severity**: Medium
+- **Current behavior**: Every upload walks the entire folder path (e.g., `Customers/Mr. Das/Sites/Das Residence/Site Proof`) by calling `findOrCreateFolder` for each segment — that's N+1 Drive list API calls per upload. There's a `storageFolderInstances` array in the workspace schema specifically designed to cache these, but `resolveStorageFolder` only builds the instance in-memory and returns it to the client; it never queries or updates the persisted cache.
+- **Expected behavior**: First check `db.master.storageFolderInstances` for an entry matching `(account.id, template.id, path)` (or even sub-paths). Only walk the missing tail of the path. Persist newly-created instances.
+- **Suggested fix**: Add a `cachedFolder(db, accountId, templateId, path)` lookup. Walk only the uncached suffix. After upload, the route handler saves any newly created instances.
+
+### UPLOAD-014 · `uploadManagedFileAsset` does not persist FileAsset/attachment to the workspace
+- **File + line**: `src/lib/rdash/server/google-drive.ts:301-333`
+- **Severity**: High
+- **Current behavior**: The function returns a `ManagedGoogleFileAsset` descriptor (id, webViewLink, storageAccountId, storageFolderInstance, …) but never writes a `FileAsset` or `EntityFileAttachment` row to `db.master.fileAssets` / `db.entityFileAttachments`. The persistence is left to the client via `createFileAssetAndAttach(asManagedFileAsset(uploaded, ...), {...})` — a Zustand store action that lives only in the browser and is committed to the server via the generic workspace commit REST endpoint. This means: (a) the server has no authoritative record of which Drive files it owns, (b) the file is uploaded and made public BEFORE the workspace record is created — if the client crashes between upload and store-commit, the Drive file is orphaned, (c) two clients uploading simultaneously could create duplicate `FileAsset` rows (the dedup in `files.ts:81-86` only catches same-session duplicates).
+- **Expected behavior**: The server should atomically (1) upload to Drive, (2) write the FileAsset + EntityFileAttachment to the workspace, (3) update the storage account quota, in a single `saveWorkspace` transaction. The client should not be the system of record.
+- **Suggested fix**: Move the `createFileAssetAndAttach` logic server-side. The upload route returns the final `FileAsset` (with the attachment id) so the client just merges the workspace snapshot.
+
+### UPLOAD-015 · `makeFilePublic` failures are silently swallowed
+- **File + line**: `src/lib/rdash/server/google-drive.ts:283-300`
+- **Severity**: Medium
+- **Current behavior**: After upload, `makeFilePublic` POSTs a `{"role":"reader","type":"anyone"}` permission. The whole call is wrapped in `try/catch {}` — failures are silently ignored. The returned `webViewLink` is the standard Drive share URL. If permissions failed, anyone opening that URL (including customers who receive the link via CommunicationCentreModule which sets `customerShareable: true`) sees a "Request access" screen instead of the file. The preview proxy (`/api/google-drive/preview`) still works because it uses the OAuth token, but the shareable link is broken.
+- **Expected behavior**: Surface the failure to the caller so it can be retried or logged. Optionally fall back to recording `sync_status: "uploaded_private"` on the asset so the UI can warn "this file is not yet shareable; retry making it public."
+- **Suggested fix**: Return `{ ok: boolean, error?: string }` from `makeFilePublic`. If it fails, log to audit log and either retry once or set `sync_status: "uploaded_private"`. The audit log entry should reference the file ID so an admin can re-run a "make public" job.
+
+### UPLOAD-016 · File name passed to Drive is not sanitized
+- **File + line**: `src/lib/rdash/server/google-drive.ts:246-260` (`uploadMultipart` uses `fileName` as-is in `metadata.name`), `:261-281` (same for `uploadResumable`).
+- **Severity**: Low
+- **Current behavior**: The client passes `input.fileName` (from `File.name` or hardcoded strings). The server forwards it to Drive's metadata JSON. `safeSegment` is used for folder segments but never for file names. A file named `Q"2026".pdf` will produce valid JSON (Drive escapes it), but the resulting Drive file name retains the quotes — could break later URL-based lookups (`googleFileIdFromUrl`).
+- **Expected behavior**: Apply light sanitization to file names (preserve extension, strip control chars).
+- **Suggested fix**: Reuse `safeSegment` logic for the base name; preserve the original extension.
+
+### UPLOAD-017 · `assertUploadRequest` does not validate MIME type or file extension
+- **File + line**: `src/lib/rdash/server/google-drive.ts:64-75`
+- **Severity**: Medium
+- **Current behavior**: Only validates `entityType`, `entityId`, `fileName`. The file's MIME type and extension are not checked. A malicious user could upload `.exe` or `.html` files (which Drive will store and serve — an HTML file made public could host phishing content under the trusted `drive.google.com` domain).
+- **Expected behavior**: Validate `file.type` against an allowlist matching `MANAGED_FILE_ACCEPT`.
+- **Suggested fix**: Add `assertUploadableMimeType(mime: string, name: string)` and call it from `uploadManagedFileAsset` after the size check.
+
+### UPLOAD-018 · `canUpload` returns `undefined` instead of `true` for allowed cases
+- **File + line**: `src/lib/rdash/server/google-drive.ts:117-147`
+- **Severity**: Low
+- **Current behavior**: The function returns `undefined` (not `true`) for allowed cases and throws for disallowed cases. The return value is discarded (the only check is whether it throws). Works, but reads confusingly — the function name implies a boolean return.
+- **Expected behavior**: Either rename to `assertCanUpload` (matches `assertUploadRequest` pattern) or return `boolean`.
+- **Suggested fix**: Rename to `assertCanUpload` for clarity.
+
+---
+
+### C. Drive connections / token refresh — `src/lib/rdash/server/drive-connections.ts`
+
+### UPLOAD-019 · Refresh tokens stored in plaintext in Supabase `GenericRecord`
+- **File + line**: `src/lib/rdash/server/drive-connections.ts:128` (comment: "Vault: plaintext JSON (no encryption)"), `:141-143` (`writeVault`).
+- **Severity**: Critical (Security)
+- **Current behavior**: The vault is a JSON blob `{ version: 1, connections: [{ id, refreshToken, email, rootFolderId, ... }], pending: [...] }` stored as plaintext in the `GenericRecord` table (`collection = "system.googleDriveVault"`). A read access to the Supabase DB exposes refresh tokens for every connected Drive account — tokens that grant full `drive` scope access until revoked.
+- **Expected behavior**: Refresh tokens (and ideally the whole vault) should be encrypted at rest with a key stored outside the DB (e.g., KMS, env var, or Supabase Vault). The `dataJson` column should contain ciphertext.
+- **Suggested fix**: Use AES-256-GCM with a key from `process.env.DRIVE_VAULT_KEY`. Encrypt on `writeVault`, decrypt on `readVault`. Add a `key_version` field for future key rotation.
+
+### UPLOAD-020 · Access tokens are not cached — every upload triggers a refresh-token exchange
+- **File + line**: `src/lib/rdash/server/drive-connections.ts:242-247` (`accessTokenForDriveConnection`)
+- **Severity**: High
+- **Current behavior**: Every call to `accessTokenForDriveConnection` calls `refreshToken(connection.refreshToken)` which POSTs to Google's token endpoint. Google access tokens are valid for 1 hour. For a user uploading 10 photos in a row, that's 10 redundant token-refresh round-trips (≈2-3 seconds of latency per upload).
+- **Expected behavior**: Cache access tokens in memory (or in the vault) with their expiry. Reuse until 5 minutes before expiry.
+- **Suggested fix**: Add an in-memory `Map<connectionId, { token, expiresAt }>` in this module. On `accessTokenForDriveConnection`, return the cached token if `Date.now() < expiresAt - 5*60*1000`. Otherwise refresh and cache. Optionally persist to vault for cross-process sharing.
+
+### UPLOAD-021 · `refreshToken` does not distinguish "revoked refresh token" from transient failures
+- **File + line**: `src/lib/rdash/server/drive-connections.ts:149-160`
+- **Severity**: Medium
+- **Current behavior**: On any non-OK response or missing `access_token`, throws a generic Error with `payload.error_description || "Google Drive authorization needs reconnecting."`. The caller (e.g., `accessTokenForDriveConnection`) propagates the same error up. The user sees "Google Drive authorization needs reconnecting" even if the cause was a transient network blip. Conversely, if the refresh token was actually revoked (Google returns `invalid_grant`), the same generic error appears — the storage account is left in `status: "connected"` even though it's actually dead.
+- **Expected behavior**: Distinguish error classes: (a) network error → retryable, (b) `invalid_grant` / `invalid_client` → mark the storage account `status: "reconnect_required"` and surface a clear "Reconnect this Drive" action, (c) `invalid_request` → bug, log full payload.
+- **Suggested fix**: Parse `payload.error` (not just `error_description`). On `invalid_grant`, throw a typed `RefreshTokenRevokedError` that the caller catches to mark the account `reconnect_required` in the workspace.
+
+### UPLOAD-022 · Vault read/write is not atomic — concurrent refreshes can clobber each other
+- **File + line**: `src/lib/rdash/server/drive-connections.ts:129-143` (`readVault`/`writeVault`), `:242-261` (`accessTokenForDriveConnection`/`refreshDriveConnection`).
+- **Severity**: Medium
+- **Current behavior**: `readVault` reads the JSON, `writeVault` upserts the entire JSON. If two requests refresh a token simultaneously (e.g., two parallel uploads to different accounts), both read the same vault, both update their respective connection, both write back — the second write overwrites the first, losing the first's `quotaUsedBytes` update. Supabase's `upsert` doesn't do field-level merge.
+- **Expected behavior**: Either (a) use Postgres row-level locking (e.g., `SELECT ... FOR UPDATE`), (b) move per-connection state to separate rows keyed by connection ID, or (c) accept eventual consistency and don't store mutable state in the vault.
+- **Suggested fix**: Split the vault into per-connection rows (`collection = "system.googleDriveConnection", id = connection.id`). Then concurrent updates to different connections don't interfere.
+
+### UPLOAD-023 · Pending OAuth state is not garbage-collected if the user abandons the flow
+- **File + line**: `src/lib/rdash/server/drive-connections.ts:187-189`
+- **Severity**: Low
+- **Current behavior**: `beginGoogleDriveConnect` filters out expired pending entries (`expiresAt > Date.now()`) before pushing the new one — so on each new connect attempt, expired ones are pruned. But if no new connect is attempted, expired entries linger in the vault indefinitely.
+- **Expected behavior**: A periodic cleanup, or filter on read as well as write.
+- **Suggested fix**: Also prune in `readVault` (defensive): `vault.pending = vault.pending.filter(p => p.expiresAt > Date.now())` before returning.
+
+---
+
+### D. Storage helpers — `src/lib/rdash/storage.ts`
+
+### UPLOAD-024 · `selectWriteStorageAccount` uses cached quota — stale after uploads
+- **File + line**: `src/lib/rdash/storage.ts:74-79`
+- **Severity**: Medium
+- **Current behavior**: Reads `account.quota_used_bytes` from the workspace snapshot (the in-memory Zustand state). Since uploads don't update this field (see UPLOAD-012), the function keeps selecting the same account even after it has crossed its threshold in reality. The function is only called from `test-upload/route.ts:50` and (indirectly, via `selectLiveWriteAccount` in `google-drive.ts`) — but `selectLiveWriteAccount` re-queries Drive every time, bypassing this staleness.
+- **Expected behavior**: Either always query Drive (slow) or maintain accurate cached quota (preferred — see UPLOAD-012 fix).
+- **Suggested fix**: Once UPLOAD-012 is fixed (server updates quota after upload), this function works correctly. Optionally add a periodic background refresh that calls `/api/google-drive/refresh-account` for every account.
+
+### UPLOAD-025 · `accountIsAtSwitchThreshold` returns false when `quota_limit_bytes` is unknown
+- **File + line**: `src/lib/rdash/storage.ts:67-73`
+- **Severity**: Low
+- **Current behavior**: If `account.quota_limit_bytes` is `0` or missing (e.g., account connected but quota refresh failed), the function returns `false` — meaning the account is considered eligible for writes regardless of usage. For Google Drive consumer accounts (15 GB limit), this is unlikely, but for Workspace accounts with no published limit, it could lead to over-selection.
+- **Expected behavior**: When the limit is unknown, fall back to a conservative default (e.g., 15 GB consumer cap) or refuse to select the account.
+- **Suggested fix**: Add `const DEFAULT_DRIVE_LIMIT = 15 * 1024**3;` and use it when `limit <= 0`.
+
+### UPLOAD-026 · `templateForPurpose` falls back to "general" silently — files end up in wrong folder
+- **File + line**: `src/lib/rdash/storage.ts:80-83`
+- **Severity**: Low
+- **Current behavior**: If no template matches the resolved `purpose`, the function silently returns the `general` template. The path becomes `General/{entity}`. The user is not warned that, e.g., a "vendor_bill" upload went to the General folder because no `vendor_bill` template was active.
+- **Expected behavior**: Either log the fallback or surface a warning so admins know to enable the right template.
+- **Suggested fix**: Audit-log the fallback.
+
+### UPLOAD-027 · `logicalStoragePath` uses `replaceAll` with raw entity names — name collisions possible
+- **File + line**: `src/lib/rdash/storage.ts:136-148`
+- **Severity**: Low
+- **Current behavior**: `template.path_template.replaceAll("{customer}", customer)` is applied sequentially. If a customer name contains the literal substring `{site}` (e.g., customer name "Test {site}"), the subsequent `.replaceAll("{site}", site)` will replace that substring with the site name, corrupting the customer portion of the path.
+- **Expected behavior**: Parse the template once into a list of literal/placeholder tokens and substitute in a single pass.
+- **Suggested fix**: Use a single regex `/\{(customer|site|job|...)\}/g` with a replacer function.
+
+---
+
+### E. Entity form dialog — `src/components/rdash/EntityFormDialog.tsx`
+
+### UPLOAD-028 · `uploadAndAttach` does not rollback on partial failure
+- **File + line**: `src/components/rdash/EntityFormDialog.tsx:443-455` (helper), `:529` (firstSitePhotos), `:569-572` (vendor photos), `:616-619` (contractor photos).
+- **Severity**: High
+- **Current behavior**: In the customer branch, `createCustomerWithFirstSite` is called first (line 512) and persists to the local store. Then `Promise.all(firstSitePhotos.map(uploadAndAttach))` runs. If the upload fails (e.g., route missing per UPLOAD-001), the catch block shows a toast but **the customer/site records have already been created and saved** — the user sees an error and the customer appears in the list without photos. The user has no way to retry the upload without re-opening the dialog and re-selecting photos.
+- **Expected behavior**: Either (a) defer the customer creation until uploads succeed (transactional), or (b) keep the pending photos on the customer record so the user can retry from the customer detail panel.
+- **Suggested fix**: Persist the failed photo data URLs on the customer record (or in a separate "pending uploads" queue) and surface a "retry upload" action.
+
+### UPLOAD-029 · `uploadAndAttach` calls `createFileAssetAndAttach` after upload, but visibility is hardcoded to "internal"
+- **File + line**: `src/components/rdash/EntityFormDialog.tsx:452-453`
+- **Severity**: Low
+- **Current behavior**: The `uploadManagedFile` call passes `visibility: "internal"` and the `createFileAssetAndAttach` call also passes `visibility: "internal"`, `customer_shareable: false` — even for vendor/contractor photos. The `input.visibility` and `input.customerShareable` from the function signature are ignored (the signature doesn't even accept them).
+- **Expected behavior**: Pass through the visibility/shareability flags (defaulting to internal/false but allowing override).
+- **Suggested fix**: Extend `uploadAndAttach`'s signature to accept `visibility?` and `customerShareable?`, defaulting to `"internal"`/`false`.
+
+### UPLOAD-030 · `setSaving(true)` runs after `createCustomerWithFirstSite` but before photo uploads
+- **File + line**: `src/components/rdash/EntityFormDialog.tsx:511` (`setSaving(true)`), `:512` (`createCustomerWithFirstSite`), `:529` (Promise.all photo uploads).
+- **Severity**: Low
+- **Current behavior**: The "saving" state is set just before customer creation, but the uploads (which are the slow part — many seconds per photo) happen inside that state. The Save button is correctly disabled, but there's no progress feedback (see UPLOAD-006). For 5 photos at 3s each, the user waits 15s with only "Saving…" as feedback.
+- **Expected behavior**: Show "Uploading photo 1 of 5…" progress.
+- **Suggested fix**: Combine with UPLOAD-006 fix.
+
+---
+
+### F. ThreadPanel — `src/components/rdash/ThreadPanel.tsx`
+
+### UPLOAD-031 · Sequential per-file upload — no parallelism, slow for multi-file attachments
+- **File + line**: `src/components/rdash/ThreadPanel.tsx:101-133` (`attachProof`)
+- **Severity**: Medium
+- **Current behavior**: `for (const file of files) { ... uploadCapturedMediaToGoogleDrive(...) ... addReply(...) }` processes files one at a time. For 5 files at 3s each, total = 15s.
+- **Expected behavior**: Upload in parallel (with a concurrency cap of, say, 3) and create thread messages as each completes.
+- **Suggested fix**: Use a small concurrency-limited `Promise.all`-style helper (e.g., `p-limit`). Update the UI as each completes.
+
+### UPLOAD-032 · Hardcoded `kind: "site_proof"` for thread attachments
+- **File + line**: `src/components/rdash/ThreadPanel.tsx:112`
+- **Severity**: Low
+- **Current behavior**: All thread attachments are uploaded as `kind: "site_proof"` regardless of MIME type. `inferStoragePurpose` then routes them to the "Site Proof" folder template (`Customers/{customer}/Sites/{site}/Site Proof`). A PDF contract shared in a thread ends up in the Site Proof folder.
+- **Expected behavior**: Infer `kind` from MIME type (image/video → "media", pdf → "document", etc.).
+- **Suggested fix**: Mirror the logic from `EntityFormDialog.tsx:570` (which infers role from MIME type) and add a parallel `kind` inference.
+
+### UPLOAD-033 · After upload, `createFileAssetAndAttach` is called with full inline object — diverges from `asManagedFileAsset` helper
+- **File + line**: `src/components/rdash/ThreadPanel.tsx:113`
+- **Severity**: Low
+- **Current behavior**: ThreadPanel builds the `FileAssetCreateInput` inline (not via `asManagedFileAsset`): `{ google_file_id, file_name, web_view_link, mime_type, file_size_bytes, kind, storage_account_id, storage_folder_instance, storage_provider, storage_mode, sync_status, thumbnail_url }`. Other call sites use the helper. Drift risk: if a field is added to `ManagedDriveUpload`, ThreadPanel won't pick it up.
+- **Expected behavior**: Use `asManagedFileAsset(uploaded, { kind })` for consistency.
+- **Suggested fix**: Replace inline object with `asManagedFileAsset(uploaded, { kind: "site_proof" })` (or the inferred kind).
+
+---
+
+### G. OperationalMediaPanel — `src/components/rdash/OperationalMediaPanel.tsx`
+
+### UPLOAD-034 · Does not actually upload — registers external Drive URLs without validation
+- **File + line**: `src/components/rdash/OperationalMediaPanel.tsx:293-301` (`addNewDrive`)
+- **Severity**: Medium
+- **Current behavior**: `addNewDrive` accepts any `http(s)://` URL, calls `createFileAssetAndAttach` with `{ file_name, web_view_link: url, kind, tags }` — no `storage_account_id`, no `storage_folder_instance`, no `google_file_id`. The `files.ts:110` logic then sets `storage_mode = "external_reference"` (because `knownAccount` is undefined). The file becomes an external reference with no Drive account binding. The URL is not validated as a Drive URL — users can paste Dropbox, OneDrive, or random URLs and they get stored as "Drive files".
+- **Expected behavior**: Either (a) restrict to `https://drive.google.com/...` URLs and extract `google_file_id` via `googleFileIdFromUrl`, or (b) clearly label the panel as "External file link" (not "Drive file") and store with `storage_provider: "external"`.
+- **Suggested fix**: Validate URL is a Drive URL. If not, show "Only Google Drive URLs are supported" or store with a distinct `storage_provider: "external"` type.
+
+### UPLOAD-035 · `createFileAssetAndAttach` does not extract `google_file_id` from URL for external references
+- **File + line**: `src/lib/rdash/store/slices/files.ts:115` (uses `googleFileIdFromUrl(file.web_view_link)`)
+- **Severity**: Low
+- **Current behavior**: The store action does call `googleFileIdFromUrl(file.web_view_link)` to extract the ID — so for valid Drive URLs, `google_file_id` is set. But OperationalMediaPanel bypasses this by not providing `google_file_id`, and the URL validation in `addNewDrive` is `/^https?:\/\//`. For non-Drive URLs, `googleFileIdFromUrl` returns undefined — `google_file_id` ends up undefined, which is correct but the asset is still labeled `storage_provider: "google_drive"` (per files.ts:122 — `isLocalAccount ? "local" : "google_drive"`).
+- **Expected behavior**: For non-Drive URLs, `storage_provider` should be `"external"` (a new enum value) so previews can fall back to a redirect rather than the Drive proxy.
+- **Suggested fix**: Extend `storage_provider` enum to include `"external"`. In `files.ts`, set `storage_provider: "external"` when `google_file_id` is undefined and URL is not a Drive URL.
+
+---
+
+### H. test-upload route — `src/app/api/google-drive/test-upload/route.ts`
+
+### UPLOAD-036 · Test-upload bypasses `uploadManagedFileAsset` — duplicates multipart logic
+- **File + line**: `src/app/api/google-drive/test-upload/route.ts:75-103`
+- **Severity**: Low (maintenance)
+- **Current behavior**: The route inlines its own `multipartBody` helper and Drive upload call, ignoring `uploadManagedFileAsset`. This means fixes to the main upload path (retry, sanitization, permission setting) don't apply to test uploads. Test uploads also don't call `makeFilePublic`, so the uploaded test file is private.
+- **Expected behavior**: Test-upload should reuse `uploadManagedFileAsset` (with a synthetic Blob and a special entity like `{ entityType: "general", entityId: "drive-test" }`).
+- **Suggested fix**: Replace inline logic with `uploadManagedFileAsset(user, db, { file: new Blob([content], { type: "text/plain" }), fileName, entityType: "general", entityId: "drive-test", kind: "document" })`.
+
+### UPLOAD-037 · Test-upload does not create an `EntityFileAttachment` — orphan FileAsset
+- **File + line**: `src/app/api/google-drive/test-upload/route.ts:105-135`
+- **Severity**: Low
+- **Current behavior**: Creates a `FileAsset` with `tags: ["drive-test", accessPolicy]` but no `EntityFileAttachment`. The asset is visible in the Drive Manager file list but not linked to any entity. `canReadManagedFileAsset` for non-Owner roles returns false (no attachments to check), so the file is effectively Owner-only.
+- **Expected behavior**: Either create an attachment to a synthetic "Drive test" entity, or filter test assets out of normal file lists.
+- **Suggested fix**: Add `db.entityFileAttachments` entry with `entity_type: "general", entity_id: "drive-test"`.
+
+---
+
+## Cross-Cutting Concerns
+
+### UPLOAD-038 · Race condition: concurrent `createFileAssetAndAttach` calls can create duplicate FileAssets
+- **File + line**: `src/lib/rdash/store/slices/files.ts:81-86` (existence check), `:90-157` (commit)
+- **Severity**: Medium
+- **Current behavior**: The dedup check `get().db.master.fileAssets.find(...)` runs OUTSIDE `commitState`. Two concurrent `Promise.all` uploads (e.g., EntityFormDialog uploading 5 site photos in parallel — `EntityFormDialog.tsx:529`) both pass the dedup check (file not yet in store), then both call `commitState` which appends to `fileAssets`. Result: two FileAsset rows for the same `google_file_id`. The second `attachFileAsset` call (triggered by the dedup short-circuit at line 85) wouldn't apply because the first hasn't committed yet.
+- **Expected behavior**: The dedup check should be inside `commitState` (atomic) or use a Map keyed by `google_file_id`.
+- **Suggested fix**: Move the dedup check inside `commitState`. If `existingFile` is found inside the commit, only create the attachment, not the asset.
+
+### UPLOAD-039 · No client timeout / AbortController on the upload fetch
+- **File + line**: `src/lib/rdash/file-assets.ts:75`
+- **Severity**: Medium
+- **Current behavior**: `fetch("/api/google-drive/upload", { method: "POST", body: makeForm() })` — no `signal`, no timeout. If the server hangs (e.g., Drive API timeout propagates), the fetch hangs indefinitely. The retry loop never gets a chance to retry.
+- **Expected behavior**: Per-request timeout (e.g., 60s for files <5 MB, 5 min for larger).
+- **Suggested fix**: Add `const controller = new AbortController(); setTimeout(() => controller.abort(), 60000);` and pass `signal: controller.signal` to `fetch`.
+
+### UPLOAD-040 · No cleanup on upload failure — Drive files orphaned
+- **File + line**: `src/lib/rdash/server/google-drive.ts:301-333` (`uploadManagedFileAsset`), callers in `EntityFormDialog.tsx`, `SiteFormDialog.tsx`, etc.
+- **Severity**: High
+- **Current behavior**: If `uploadManagedFileAsset` succeeds at the Drive upload step but then the client crashes (or the route handler errors after the Drive call), the Drive file is orphaned — it exists in Drive, is made public, but no `FileAsset` records it. There is no compensating "delete from Drive on rollback" logic. Over time, orphaned files accumulate in the user's Drive quota.
+- **Expected behavior**: Either (a) wrap the Drive upload + workspace persist in a server-side transaction that deletes the Drive file on persist failure, or (b) maintain a `pending_uploads` table that a background job reconciles.
+- **Suggested fix**: In the upload route, `try { uploadManagedFileAsset(...) } catch { /* if asset was created, delete via Drive API */ }`. Or simpler: persist the FileAsset immediately after the Drive upload returns, before `makeFilePublic`, so even if permission setting fails the asset is recorded.
+
+### UPLOAD-041 · Token expiry during long upload — no mid-upload refresh
+- **File + line**: `src/lib/rdash/server/google-drive.ts:301-333`, `src/lib/rdash/server/drive-connections.ts:242-247`
+- **Severity**: Medium
+- **Current behavior**: `uploadManagedFileAsset` calls `accessTokenForDriveConnection` once at the start (via `selectLiveWriteAccount` → `accountQuota` → `getGoogleDriveAccessToken`). For a large resumable upload that takes >1 hour (the access token TTL), the token expires mid-upload and subsequent Drive API calls return 401. The `uploadResumable` PUT will fail with 401, the error is thrown, the upload fails. There is no re-authentication mid-upload.
+- **Expected behavior**: For long uploads, either (a) pre-refresh the token if it's about to expire, or (b) catch 401 mid-upload, refresh, and retry.
+- **Suggested fix**: Track token expiry alongside the token (see UPLOAD-020). Before each chunk in `uploadResumable`, check expiry and refresh if needed.
+
+### UPLOAD-042 · Duplicate upload prevention missing — double-click on Save triggers two uploads
+- **File + line**: `src/components/rdash/EntityFormDialog.tsx:456-458` (`if (saving) return;`)
+- **Severity**: Low
+- **Current behavior**: The `if (saving) return;` guard prevents re-entry, but only after `setSaving(true)` runs (line 511). Between the click event and React re-rendering with `saving=true`, a fast double-click can pass the guard twice. The `Promise.all` then runs twice, creating two sets of Drive files.
+- **Expected behavior**: Use a ref-based guard (`const savingRef = useRef(false); if (savingRef.current) return; savingRef.current = true;`) for synchronous re-entry protection.
+- **Suggested fix**: Replace `if (saving) return;` with a `useRef` guard that flips synchronously.
+
+### UPLOAD-043 · `EntityFormDialog.uploadAndAttach` ignores the `caption` from the caller for `customerShareable`
+- **File + line**: `src/components/rdash/EntityFormDialog.tsx:452-453`
+- **Severity**: Low
+- **Current behavior**: The function signature accepts `caption: string` but always passes `customerShareable: false`. For customer-facing communications (e.g., a quotation PDF the customer should be able to view), this hardcoding is wrong. (Note: CommunicationCentreModule uses `uploadManagedFile` directly, bypassing `uploadAndAttach`, so it's mostly site/vendor/contractor photos affected — but the function signature suggests it should be flexible.)
+- **Expected behavior**: Accept `customerShareable?` and `visibility?` parameters.
+- **Suggested fix**: Extend the signature.
+
+### UPLOAD-044 · SiteFormDialog: same set of issues as EntityFormDialog (batch Promise.all, no progress, no rollback)
+- **File + line**: `src/components/rdash/SiteFormDialog.tsx:248-256`
+- **Severity**: High (duplicate of UPLOAD-007/028/030 for the Site flow)
+- **Current behavior**: `Promise.all(pendingPhotos.map(async (photo) => { ... uploadManagedFile(...) ... createFileAssetAndAttach(...) }))`. Same all-or-nothing failure mode, no progress, no rollback. The site record is created (line 245 `addSite(payload)`) before uploads, so on failure the site exists without photos.
+- **Expected behavior**: Same as UPLOAD-007/028/030.
+- **Suggested fix**: Apply the same fixes.
+
+### UPLOAD-045 · GRNModule: sequential per-file upload in `Promise.all` — same as ThreadPanel
+- **File + line**: `src/components/rdash/modules/GRNModule.tsx:283-284`
+- **Severity**: Medium
+- **Current behavior**: `Promise.all(receivingProofs.map((proof) => uploadProof(proof, ...)))`. Uses `Promise.all` (parallel) which is better than ThreadPanel's sequential, but still has the all-or-nothing failure mode (UPLOAD-007).
+- **Expected behavior**: Use `Promise.allSettled`.
+- **Suggested fix**: Same as UPLOAD-007.
+
+### UPLOAD-046 · CommunicationCentreModule: uploads customer-facing files with `visibility: "customer"` but `makeFilePublic` failures are silent (UPLOAD-015)
+- **File + line**: `src/components/rdash/modules/CommunicationCentreModule.tsx:194-195`
+- **Severity**: Medium (compounds with UPLOAD-015)
+- **Current behavior**: Sets `visibility: "customer"`, `customerShareable: true`. The `webViewLink` returned is then sent to the customer via the communication channel. If `makeFilePublic` silently failed (UPLOAD-015), the customer receives a "Request access" link instead of the file. The sender has no indication.
+- **Expected behavior**: Before sending the customer-facing link, verify the file is publicly accessible (or use the preview proxy URL which uses the OAuth token).
+- **Suggested fix**: Combine with UPLOAD-015 fix — if `makeFilePublic` fails, mark the asset and either retry or use the proxy URL in the customer message.
+
+### UPLOAD-047 · FieldModeModule: `fileReport` action expects proof objects but doesn't validate that uploads succeeded
+- **File + line**: `src/components/rdash/modules/FieldModeModule.tsx:205-223` (Promise.all uploads), `:223` (`fileReport(reportingVisit, reportNotes.trim(), uploaded)`)
+- **Severity**: Medium
+- **Current behavior**: `Promise.all(photos.map(async (photo, index) => { const result = await uploadCapturedMediaToGoogleDrive(...); return { type, file_name, mime_type, url: result.webViewLink, file_asset_id: result.id }; }))`. If any upload fails, `Promise.all` rejects, `fileReport` is never called, and the visit report is not filed. The visit stays in `report_pending` status, but the field staff's captured photos are lost (they were compressed in-memory only).
+- **Expected behavior**: Use `Promise.allSettled`. File the report with successful proofs; record failed ones for retry.
+- **Suggested fix**: Same as UPLOAD-007.
+
+### UPLOAD-048 · DataImportModule: uploads CSV but doesn't validate that the upload succeeded before parsing
+- **File + line**: `src/components/rdash/modules/DataImportModule.tsx:212-216`
+- **Severity**: Low
+- **Current behavior**: `await uploadManagedFile(...)` → `createFileAssetAndAttach(...)` → `await file.text()` → `setCsvText(text)`. The CSV text is parsed from the local File (line 214 `await file.text()`), not from the uploaded Drive copy. If the upload fails, the user sees an error but `setCsvText` was never called (because the catch block runs first). However, if the upload succeeds but `createFileAssetAndAttach` throws (e.g., workspace quota issue), the Drive file is orphaned.
+- **Expected behavior**: Decouple "parse CSV locally" from "upload to Drive". The parse can happen even if upload fails.
+- **Suggested fix**: Move `await file.text()` before the upload; don't block parsing on upload success.
+
+### UPLOAD-049 · SiteMeasurementModule: skips upload if URL is already a Drive URL — silent assumption
+- **File + line**: `src/components/rdash/modules/SiteMeasurementModule.tsx:129-132`
+- **Severity**: Low
+- **Current behavior**: `const isDriveUrl = /^https:\/\/drive\.google\.com\//.test(item.url); const uploaded = isDriveUrl ? { id: undefined, name: item.file_name, webViewLink: item.url, mimeType: ... } : await uploadCapturedMediaToGoogleDrive(...)`. If the item URL is already a Drive URL, the upload is skipped and `id` is `undefined`. The downstream `createFileAssetAndAttach` (in `fileReport` → `proofs.map`) receives `{ file_name, web_view_link, ... }` without `google_file_id` — `googleFileIdFromUrl` will extract it from the URL, so it works, but `storage_account_id` and `storage_folder_instance` are undefined, making the asset an `external_reference` even though it's the user's own Drive file.
+- **Expected behavior**: For Drive URLs the user pastes, still attempt to bind them to a managed storage account (look up which connected account owns the file via Drive API, or just mark as external).
+- **Suggested fix**: At minimum, document the behavior. Ideally, query Drive for the file's owners and match to a connected account.
+
+### UPLOAD-050 · DrawingsExecutionModules: `handleRetroUpload` and similar don't validate drawing entity exists before upload
+- **File + line**: `src/components/rdash/modules/DrawingsExecutionModules.tsx:52-64` (`handleRetroUpload`), `:155-157`, `:170-173`, `:575-578`
+- **Severity**: Low
+- **Current behavior**: `handleRetroUpload(drawingId, file)` looks up the drawing locally (`drawings.find((d) => d.id === drawingId)`). If found, uploads. But the lookup is from the local Zustand state — if the drawing was just created and not yet persisted server-side, the server-side `resolveUploadScope` will throw "saved entity is required". The client retry loop catches this (422 + regex), but only for 15 seconds.
+- **Expected behavior**: Either ensure the drawing is persisted before allowing file upload, or extend the retry window.
+- **Suggested fix**: Disable the upload button until the drawing is persisted (e.g., add a `persisted: boolean` flag on the drawing record).
+
+---
+
+## Summary Table
+
+| Severity | Count | Issue IDs |
+|----------|-------|-----------|
+| Critical | 3 | UPLOAD-001 (route missing — BLOCKER), UPLOAD-019 (plaintext refresh tokens), UPLOAD-007 (Promise.all all-or-nothing — affects 6 call sites) |
+| High | 13 | UPLOAD-002, 003, 009, 010, 011, 012, 014, 020, 028, 040, 044, 046, 047 |
+| Medium | 17 | UPLOAD-004, 005, 006, 013, 015, 017, 021, 022, 024, 031, 034, 038, 039, 041, 045, 048, 049 |
+| Low | 17 | UPLOAD-008, 016, 018, 023, 025, 026, 027, 029, 030, 032, 033, 035, 036, 037, 042, 043, 050 |
+| **Total** | **50** | |
+
+## Files Inspected (source code)
+- `src/lib/rdash/file-assets.ts` (104 lines) — client upload orchestrator + types
+- `src/lib/rdash/server/google-drive.ts` (334 lines) — server-side Drive upload logic
+- `src/lib/rdash/server/drive-connections.ts` (262 lines) — OAuth + token refresh + vault
+- `src/lib/rdash/storage.ts` (153 lines) — folder templates + account selection
+- `src/lib/rdash/store/slices/files.ts` (315 lines) — `createFileAssetAndAttach`/`attachFileAsset` Zustand actions
+- `src/lib/rdash/google-drive-upload.ts` (17 lines) — thin wrapper around `uploadManagedFile`
+- `src/lib/rdash/image-compress.ts` (35 lines) — client-side image compression
+- `src/lib/rdash/file-attachments.ts` (59 lines) — attachment lookup helpers
+- `src/lib/rdash/types.ts` (1995 lines) — `FileAsset`, `EntityFileAttachment`, `StorageAccount` types
+- `src/lib/rdash/entity-context.ts` — `resolveEntityContext` (referenced)
+- `src/components/rdash/EntityFormDialog.tsx` (937 lines) — customer/vendor/contractor form
+- `src/components/rdash/SiteFormDialog.tsx` (328 lines) — site form
+- `src/components/rdash/ThreadPanel.tsx` (580 lines) — thread attachments
+- `src/components/rdash/OperationalMediaPanel.tsx` (388 lines) — operational file links
+- `src/components/rdash/modules/FieldModeModule.tsx` (526 lines) — visit report uploads
+- `src/components/rdash/modules/DrawingsExecutionModules.tsx` (682 lines) — drawing uploads
+- `src/components/rdash/modules/GRNModule.tsx` (435 lines) — GRN proof uploads
+- `src/components/rdash/modules/CommunicationCentreModule.tsx` (304 lines) — customer comms
+- `src/components/rdash/modules/SiteMeasurementModule.tsx` (396 lines) — measurement proofs
+- `src/components/rdash/modules/DataImportModule.tsx` (370 lines) — CSV source upload
+- `src/components/rdash/modules/GoogleDriveManagerModule.tsx` — diagnostic test-upload caller
+- `src/app/api/google-drive/test-upload/route.ts` (143 lines) — diagnostic route (the only working upload route)
+- `src/app/api/google-drive/preview/route.ts` (37 lines) — preview proxy
+- `src/app/api/google-drive/thumbnail/route.ts` (64 lines) — thumbnail proxy
+- `src/app/api/google-drive/refresh-account/route.ts` (47 lines) — manual quota refresh
+- `src/app/api/google-drive/oauth/callback/route.ts` (58 lines) — OAuth callback
+- `src/app/api/google-drive/connect/route.ts` (12 lines) — redirect to `/api/drive/connect`
+- `src/app/api/drive/connect/route.ts` (38 lines) — actual OAuth start
+- Filesystem listing of `src/app/api/google-drive/` — **confirmed no `upload/route.ts` exists**
+
+## Recommended Fix Priority
+
+### Phase 1 — Make uploads work at all (Critical)
+1. **UPLOAD-001**: Create `src/app/api/google-drive/upload/route.ts` wiring `requireSession` → `getWorkspace` → `uploadManagedFileAsset` → `saveWorkspace` (with the FileAsset + EntityFileAttachment + storage quota update persisted server-side). Without this, no upload in the entire app works.
+2. **UPLOAD-019**: Encrypt the Drive vault (refresh tokens) at rest. Security blocker for production.
+3. **UPLOAD-007 / 044 / 045 / 047**: Replace `Promise.all` with `Promise.allSettled` in the 6 batch-upload call sites to prevent all-or-nothing failures.
+
+### Phase 2 — Reliability (High)
+4. **UPLOAD-009 / 010**: Add server-side retry on Drive API failures; implement true chunked resumable uploads.
+5. **UPLOAD-011 / 013**: Cache resolved folder instances in `db.master.storageFolderInstances`; eliminate folder-creation race condition.
+6. **UPLOAD-012 / 024**: Update `storage_account.quota_used_bytes` after each successful upload (server-side).
+7. **UPLOAD-014**: Move `FileAsset`/`EntityFileAttachment` persistence server-side; the client should not be the system of record.
+8. **UPLOAD-020**: Cache access tokens with expiry; avoid re-refreshing on every upload.
+9. **UPLOAD-028 / 040**: Add rollback / orphan-cleanup on upload failure (delete Drive file if workspace persist fails).
+10. **UPLOAD-039 / 041**: Add client `AbortController` timeout; handle token expiry mid-upload.
+
+### Phase 3 — UX & Validation (Medium)
+11. **UPLOAD-003 / 004 / 017**: Client + server file size and MIME type validation.
+12. **UPLOAD-006 / 030**: Upload progress indicator (XHR or streaming fetch).
+13. **UPLOAD-015 / 046**: Surface `makeFilePublic` failures; don't send broken links to customers.
+14. **UPLOAD-031 / 032**: ThreadPanel parallel uploads + correct `kind` inference.
+15. **UPLOAD-034 / 035**: OperationalMediaPanel: validate Drive URLs, support `storage_provider: "external"`.
+
+### Phase 4 — Hardening & Cleanup (Low)
+16. **UPLOAD-002**: Expand retry loop to cover network/5xx/429 errors with backoff.
+17. **UPLOAD-016 / 018 / 027 / 033 / 036 / 037 / 042 / 043 / 050**: Code quality, sanitization, dedup, ref-guards.
+
+## Verification
+- Confirmed no `/api/google-drive/upload/route.ts` exists via `find /home/z/my-project/src/app/api/google-drive -type d` and `rg "google-drive/upload"` (only match is the client call site).
+- Confirmed `uploadManagedFileAsset` (server function) is referenced from exactly 1 file (itself) via `rg "uploadManagedFileAsset"` — dead code.
+- Confirmed 10+ client call sites all funnel through `uploadManagedFile()` / `uploadCapturedMediaToGoogleDrive()` → `POST /api/google-drive/upload`.
+- Cross-checked storage account quota update path: only `test-upload/route.ts:129-133` and `refresh-account/route.ts:32-33` and `oauth/callback/route.ts:33-34` ever write `quota_used_bytes`. The main upload path (when fixed) must add this.
+- Cross-checked `Master.storageFolderInstances` schema (types.ts:1854) — the cache field exists but is never populated by `resolveStorageFolder`.
+

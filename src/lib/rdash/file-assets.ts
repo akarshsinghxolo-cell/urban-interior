@@ -48,10 +48,28 @@ export async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
         throw new Error("Could not read the selected file.");
     return response.blob();
 }
+export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
+export const ALLOWED_MIME_TYPES = [
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
+    "video/mp4", "video/avi", "video/quicktime", "video/x-matroska",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword", "application/vnd.ms-excel",
+    "text/plain", "text/csv",
+    "application/zip", "application/x-rar-compressed",
+];
+
 export async function uploadManagedFile(input: ManagedUploadInput): Promise<ManagedDriveUpload> {
     const file = input.file || (input.dataUrl ? await dataUrlToBlob(input.dataUrl) : undefined);
     if (!file)
         throw new Error("Select a file before uploading.");
+    // Client-side file size validation
+    if (file.size > MAX_UPLOAD_BYTES)
+        throw new Error(`File is ${Math.round(file.size / 1024 / 1024)} MB. Maximum upload size is ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.`);
+    // Client-side MIME type validation (only if type is known)
+    if (file.type && !ALLOWED_MIME_TYPES.includes(file.type) && !file.type.startsWith("image/") && !file.type.startsWith("video/"))
+        throw new Error(`File type "${file.type}" is not allowed. Upload images, videos, PDFs, or documents.`);
     const makeForm = () => {
         const form = new FormData();
         form.append("file", file, input.fileName);
