@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { getWorkspace, saveWorkspace } from "@/lib/rdash/server/workspace";
-import { uploadManagedFileAsset, deleteManagedFile } from "@/lib/rdash/server/google-drive";
-import { accessTokenForDriveConnection } from "@/lib/rdash/server/drive-connections";
-import type { FileAsset, FileAttachmentEntityType, FileAttachmentRole, FileAssetKind, EntityFileAttachment, RDashDatabase } from "@/lib/rdash/types";
+import { getWorkspace } from "@/lib/rdash/server/workspace";
+import { uploadManagedFileAsset } from "@/lib/rdash/server/google-drive";
+import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import type { FileAsset, FileAttachmentEntityType, FileAttachmentRole, FileAssetKind, EntityFileAttachment } from "@/lib/rdash/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -88,35 +88,30 @@ export async function POST(request: NextRequest) {
       created_at: timestamp, updated_at: timestamp,
     };
 
-    const next: RDashDatabase = {
-      ...current.data,
-      master: {
-        ...current.data.master,
-        fileAssets: [...(current.data.master.fileAssets || []), asset],
-        storageFolderInstances: updatedInstances,
-        storageAccounts: updatedAccounts,
-      },
-      entityFileAttachments: [...(current.data.entityFileAttachments || []), newAttachment],
-    };
-
-    // UPLOAD-009: Rollback on failure — if saveWorkspace fails, delete the
-    // orphaned file from Google Drive to prevent untracked files.
+    // FIX-E2E-002: Replace full saveWorkspace with a lightweight direct UPSERT
+    // of just the storageFolderInstance row. The previous saveWorkspace call
+    // caused a 409 Conflict when the client also committed (both incremented
+    // the workspace revision simultaneously). Now the upload route only
+    // persists the folder instance (so future uploads find the cached folder)
+    // and returns the FileAsset + Attachment for the client to commit.
     try {
-      await saveWorkspace(current.revision, next);
-    } catch (saveError) {
-      // Workspace save failed — delete the uploaded file from Drive
-      console.error("[google-drive/upload] saveWorkspace failed, rolling back Drive upload:", saveError);
-      try {
-        const token = await accessTokenForDriveConnection(uploaded.storageAccountId);
-        await deleteManagedFile(token, uploaded.id);
-      } catch (cleanupError) {
-        console.error("[google-drive/upload] Failed to delete orphaned file:", cleanupError);
-      }
-      throw saveError;
+      const admin = getSupabaseAdminClient();
+      await admin.from("entity_master_storageFolderInstances").upsert({
+        id: enrichedFolderInstance.id,
+        workspace_id: "default",
+        revision: 0,
+        updated_at: timestamp,
+        updated_by: user.name,
+        data: enrichedFolderInstance,
+      }, { onConflict: "id" });
+    } catch (folderSaveError) {
+      // Non-fatal — the folder exists in Drive; the client will still receive
+      // the folder instance and can persist it in its own commit.
+      console.error("[google-drive/upload] Failed to persist folder instance:", folderSaveError);
     }
 
     // Return the upload result + the FileAsset + Attachment so the client
-    // can add them to its local store WITHOUT triggering another server save.
+    // can add them to its local store and commit in one operation.
     return NextResponse.json({
       id: uploaded.id, name: uploaded.name, mimeType: uploaded.mimeType, size: uploaded.size,
       webViewLink: uploaded.webViewLink, thumbnailLink: uploaded.thumbnailLink,

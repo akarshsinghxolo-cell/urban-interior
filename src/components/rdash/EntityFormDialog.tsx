@@ -554,23 +554,32 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         // UPLOAD-030: Show upload progress
                         setUploadProgress({ current: 0, total: firstSitePhotos.length, label: "Uploading photos…" });
                         let completed = 0;
-                        const results = await Promise.allSettled(firstSitePhotos.map(async (photo) => {
-                            const id = await uploadAndAttach({
-                                dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!,
-                                kind: "media", role: "photo", caption: "Site photo",
-                                onProgress: (pct) => {
-                                    setUploadProgress({ current: completed + pct / 100, total: firstSitePhotos.length, label: `Uploading photo ${completed + 1} of ${firstSitePhotos.length}…` });
-                                },
-                            });
+                        const photoAttachmentIds: string[] = [];
+                        let failedCount = 0;
+                        // FIX-E2E-002: Sequential uploads (not parallel) to prevent
+                        // duplicate Drive folders. Parallel uploads hit different
+                        // serverless instances, each creating its own folder because
+                        // the in-memory mutex and persisted cache don't propagate
+                        // across instances. Sequential uploads ensure each one finds
+                        // the folder created by the previous one.
+                        for (const photo of firstSitePhotos) {
+                            try {
+                                const id = await uploadAndAttach({
+                                    dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!,
+                                    kind: "media", role: "photo", caption: "Site photo",
+                                    onProgress: (pct) => {
+                                        setUploadProgress({ current: completed + pct / 100, total: firstSitePhotos.length, label: `Uploading photo ${completed + 1} of ${firstSitePhotos.length}…` });
+                                    },
+                                });
+                                photoAttachmentIds.push(id);
+                            } catch {
+                                failedCount++;
+                            }
                             completed++;
                             setUploadProgress({ current: completed, total: firstSitePhotos.length, label: `Uploaded ${completed} of ${firstSitePhotos.length} photos` });
-                            return id;
-                        }));
-                        const photoAttachmentIds = results.filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled").map((r) => r.value);
-                        const failedPhotos = results.filter((r) => r.status === "rejected");
-                        if (failedPhotos.length > 0) {
-                            // UPLOAD-028: Keep failed photo data URLs for retry
-                            toast.warning(`${failedPhotos.length} photo(s) failed to upload. ${photoAttachmentIds.length} succeeded. You can retry from the site detail panel.`);
+                        }
+                        if (failedCount > 0) {
+                            toast.warning(`${failedCount} photo(s) failed to upload. ${photoAttachmentIds.length} succeeded. You can retry from the site detail panel.`);
                         }
                         if (photoAttachmentIds.length > 0) updateSite(result.siteId, { photo_attachment_ids: photoAttachmentIds });
                         setUploadProgress(null);
