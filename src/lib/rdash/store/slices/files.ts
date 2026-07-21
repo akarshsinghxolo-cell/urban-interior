@@ -66,12 +66,14 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
     const { commitState, get, setBase } = ctx;
 
     return {
-        // Adds a FileAsset + Attachment that were already saved by the server
-        // (e.g., after a Google Drive upload). Updates local state WITHOUT
-        // triggering queueSecureWorkspaceSave, since the server already has them.
+        // Adds a FileAsset + Attachment that were uploaded to Google Drive.
+        // FIX-E2E-003: The upload route no longer calls saveWorkspace (it only
+        // UPSERTs the storageFolderInstance). The FileAsset and Attachment must
+        // be committed by the client via commitState so they persist server-side
+        // and survive page reloads. Previously used setBase (no server commit),
+        // which meant files appeared in the UI immediately but vanished on reload.
         addServerFileAsset: (fileAsset: FileAsset, attachment: EntityFileAttachment) => {
-            setBase((state: any) => ({
-                ...state,
+            commitState((state: any) => ({
                 db: {
                     ...state.db,
                     master: {
