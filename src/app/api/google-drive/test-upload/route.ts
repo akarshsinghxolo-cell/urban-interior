@@ -113,7 +113,14 @@ export async function POST(request: NextRequest) {
       thumbnail_url: payload.thumbnailLink,
       file_size_bytes: Number(payload.size || Buffer.byteLength(content)),
       storage_provider: "google_drive",
-      storage_mode: "managed",
+      // FIX: Test uploads go to the Drive ROOT folder (not a managed subfolder),
+      // so they cannot have a storage_folder_instance_id. Marking them as
+      // "external_reference" (instead of "managed") bypasses the business-rule
+      // validation that requires managed files to have a folder instance.
+      // Without this fix, every test upload creates an orphan FileAsset that
+      // blocks ALL future workspace commits with the error:
+      //   "managed uploads require their original physical folder"
+      storage_mode: "external_reference",
       sync_status: "uploaded",
       tags: ["drive-test", input.accessPolicy || "internal"],
       status: "active",

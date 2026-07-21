@@ -5055,3 +5055,33 @@ Stage Summary:
     * src/components/rdash/OperationalMediaPanel.tsx (addNewDrive hardened, ~10 lines added)
 - Next: commit, push to main → Vercel auto-deploys → verify on https://urban-castle.vercel.app/
 
+
+---
+Task ID: FIX-ORPHAN-FILEBLOCK-001
+Agent: main (Z.ai Code)
+Task: Test the app end-to-end in browser. Found customer creation silently failing with 422 on /api/operations/commit. Diagnose and fix.
+
+Work Log:
+- Used agent-browser to sign in at https://urban-castle.vercel.app/signin as the owner.
+- Opened Add New Customer dialog, filled name + phone + site name + address + city + photo (test-site-photo.jpg generated via PIL).
+- Clicked Create customer. Inspected network: POST /api/operations/commit returned 422 with "Drive file drive-test-mrurkkiq-847cd685ed: managed uploads require their original physical folder". The 3 follow-up POST /api/google-drive/upload also failed 422 because the site entity never persisted.
+- Inspected workspace via /api/workspace — found the orphan FileAsset `drive-test-mrurkkiq-847cd685ed` (name "Urban Castle Drive Test 2026-07-21T14-43-46-760Z.txt") with storage_mode='managed' but storage_folder_instance_id=null.
+- Root cause traced to src/app/api/google-drive/test-upload/route.ts: it created a FileAsset with storage_mode='managed' but the file goes to the Drive ROOT folder (parents=[selected.root_folder_id]) — not a managed subfolder. So no folder instance ID was ever recorded. The business-rules validator (src/lib/rdash/business-rules.ts:613-619) then rejects EVERY subsequent workspace commit because managed files MUST have a folder instance.
+- This means: every test-upload diagnostic created a permanent landmine that blocked ALL future creates/updates/deletes in the entire app. The previous QA-DRIVE-001 agent's "/test-upload returns 200" was actually masking the production freeze it caused.
+
+Fixes applied:
+1. Patched src/app/api/google-drive/test-upload/route.ts: changed storage_mode from "managed" to "external_reference". The external_reference mode does NOT require a folder instance, which is correct for test uploads that go to the Drive root. Type FileAssetStorageMode already allows "external_reference".
+2. Wrote /home/z/my-project/scripts/cleanup-orphan-drive-test-file.py — a one-off Supabase REST cleanup that:
+    a. SELECTs all rows from entity_master_fileAssets for the default workspace
+    b. Filters for orphans (storage_mode='managed' AND storage_folder_instance_id IS NULL AND storage_provider != 'local')
+    c. DELETEs each orphan row
+    d. Verifies 0 orphans remain
+- Ran the cleanup: 1 orphan found and deleted ("drive-test-mrurkkiq-847cd685ed"). Remaining fileAssets: 7, orphans: 0.
+- Verified via Supabase REST that the workspace now has 7 clean managed FileAssets, all with proper folder_instance_id.
+
+Stage Summary:
+- ROOT CAUSE of "customer creation silently fails": orphan FileAsset with storage_mode='managed' but no folder instance, left behind by the /test-upload diagnostic route, blocked all workspace commits via business-rules validation.
+- FIX 1 (code): test-upload route now uses storage_mode='external_reference' for its root-folder files. Future test uploads will not corrupt the workspace.
+- FIX 2 (data): deleted the existing orphan row directly from Supabase entity_master_fileAssets table.
+- NEXT: re-test customer creation in browser to confirm the full flow works (commit succeeds → upload succeeds → file appears in app).
+
