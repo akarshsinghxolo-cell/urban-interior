@@ -10,6 +10,7 @@ export type ManagedUploadInput = {
     caption?: string;
     visibility?: EntityFileAttachment["visibility"];
     customerShareable?: boolean;
+    onProgress?: (pct: number) => void;
 };
 export type ManagedDriveUpload = {
     id: string;
@@ -87,11 +88,43 @@ export async function uploadManagedFile(input: ManagedUploadInput): Promise<Mana
         form.append("customerShareable", String(Boolean(input.customerShareable)));
         return form;
     };
+    // UPLOAD-014: Use XMLHttpRequest for upload progress reporting
+    const uploadWithProgress = (form: FormData, onProgress?: (pct: number) => void): Promise<{ response: Response; payload: any }> => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", "/api/google-drive/upload");
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable && onProgress) {
+                    onProgress(Math.round((e.loaded / e.total) * 100));
+                }
+            };
+            xhr.onload = async () => {
+                const response = new Response(xhr.response, { status: xhr.status, statusText: xhr.statusText, headers: xhr.getAllResponseHeaders() });
+                const payload = await response.json().catch(() => ({}));
+                resolve({ response, payload });
+            };
+            xhr.onerror = () => reject(new Error("Network error during upload."));
+            xhr.ontimeout = () => reject(new Error("Upload timed out."));
+            xhr.timeout = 120000; // 2 minute timeout
+            xhr.send(form);
+        });
+    };
+
     let payload: any = {};
     let response: Response | undefined;
     for (let attempt = 0; attempt < 30; attempt += 1) {
-        response = await fetch("/api/google-drive/upload", { method: "POST", body: makeForm() });
-        payload = await response.json().catch(() => ({}));
+        try {
+            const result = await uploadWithProgress(makeForm(), input.onProgress);
+            response = result.response;
+            payload = result.payload;
+        } catch (uploadError) {
+            // Network error — retry if we haven't exhausted attempts
+            if (attempt < 29) {
+                await new Promise((resolve) => setTimeout(resolve, 500));
+                continue;
+            }
+            throw uploadError;
+        }
         if (response.ok && payload?.id && payload?.webViewLink && payload?.storageAccountId && payload?.storageFolderInstance)
             return payload as ManagedDriveUpload;
         const waitingForServerCommit = response.status === 422 && /not found|does not resolve|saved entity|does not exist|saved.*before uploading|entity is required/i.test(String(payload?.error || ""));

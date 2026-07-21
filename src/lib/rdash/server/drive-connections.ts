@@ -154,9 +154,34 @@ async function refreshToken(refreshToken: string) {
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
     cache: "no-store",
   });
-  const payload = await response.json().catch(() => ({})) as { access_token?: string; error_description?: string };
+  const payload = await response.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error_description?: string };
   if (!response.ok || !payload.access_token) throw new Error(payload.error_description || "Google Drive authorization needs reconnecting.");
   return payload.access_token;
+}
+
+// ── UPLOAD-008: Access token cache with 50-minute TTL ──
+// Google access tokens are valid for 1 hour. We cache them for 50 minutes
+// to avoid calling the token endpoint on every upload (saves 1-2s per upload).
+const tokenCache = new Map<string, { token: string; expiresAt: number }>();
+const TOKEN_CACHE_TTL_MS = 50 * 60 * 1000; // 50 minutes
+
+async function getCachedAccessToken(connectionId: string, refreshTokenValue: string): Promise<string> {
+  const cached = tokenCache.get(connectionId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.token;
+  }
+  // Refresh and cache
+  const token = await refreshToken(refreshTokenValue);
+  tokenCache.set(connectionId, { token, expiresAt: Date.now() + TOKEN_CACHE_TTL_MS });
+  return token;
+}
+
+export function invalidateTokenCache(connectionId?: string) {
+  if (connectionId) {
+    tokenCache.delete(connectionId);
+  } else {
+    tokenCache.clear();
+  }
 }
 
 async function findOrCreateRoot(accessToken: string) {
@@ -243,10 +268,11 @@ export async function accessTokenForDriveConnection(connectionId: string) {
   const vault = await readVault();
   const connection = vault.connections.find((item) => item.id === connectionId);
   if (!connection) throw new Error("This Google Drive account is not connected on the server. Reconnect it before using its files.");
-  return refreshToken(connection.refreshToken);
+  return getCachedAccessToken(connectionId, connection.refreshToken);
 }
 
 export async function refreshDriveConnection(connectionId: string) {
+  invalidateTokenCache(connectionId);
   const vault = await readVault();
   const connection = vault.connections.find((item) => item.id === connectionId);
   if (!connection) throw new Error("This Google Drive account is not connected on the server.");

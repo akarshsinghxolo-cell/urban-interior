@@ -148,6 +148,33 @@ function canUpload(user: AuthenticatedUser, db: RDashDatabase, entityType: FileA
 async function driveRequest(accessToken: string, url: string, init?: RequestInit) {
     return fetch(url, { ...init, headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers || {}) }, cache: "no-store" });
 }
+
+// ── UPLOAD-002: Retry with exponential backoff for Drive API calls ──
+async function driveRequestWithRetry(accessToken: string, url: string, init?: RequestInit, maxRetries = 3): Promise<Response> {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await driveRequest(accessToken, url, init);
+            // Retry on 429 (rate limit) or 5xx (server error)
+            if (response.status === 429 || response.status >= 500) {
+                if (attempt < maxRetries) {
+                    const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000); // 1s, 2s, 4s, 8s max
+                    await new Promise((resolve) => setTimeout(resolve, delayMs));
+                    continue;
+                }
+            }
+            return response;
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            if (attempt < maxRetries) {
+                const delayMs = Math.min(1000 * Math.pow(2, attempt), 8000);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+                continue;
+            }
+        }
+    }
+    throw lastError || new Error("Google Drive API request failed after retries.");
+}
 async function accountQuota(account: StorageAccount): Promise<AccountAccess> {
     const accessToken = await getGoogleDriveAccessToken(account);
     const response = await driveRequest(accessToken, `${DRIVE_API}/about?fields=storageQuota(limit,usage)`);
@@ -184,28 +211,33 @@ async function selectLiveWriteAccount(db: RDashDatabase, incomingBytes: number):
     }
     throw new Error(`No connected Google Drive account is below its configured write threshold. ${failures[0] || "Connect another Drive or increase capacity."}`);
 }
-async function findOrCreateFolder(accessToken: string, parentId: string, name: string) {
+// ── UPLOAD-004: In-memory folder cache to avoid race conditions ──
+// Key: `${accountId}:${folderPath}`, Value: folder ID + URL
+const folderCache = new Map<string, { id: string; webViewLink?: string }>();
+
+async function findOrCreateFolder(accessToken: string, parentId: string, name: string, cacheKey?: string) {
+    // Check cache first
+    if (cacheKey && folderCache.has(cacheKey)) {
+        const cached = folderCache.get(cacheKey)!;
+        return cached;
+    }
     const query = `'${escapeDriveQuery(parentId)}' in parents and name = '${escapeDriveQuery(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    const found = await driveRequest(accessToken, `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1`);
+    const found = await driveRequestWithRetry(accessToken, `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1`);
     const foundPayload = await found.json().catch(() => ({})) as {
-        files?: Array<{
-            id?: string;
-            webViewLink?: string;
-        }>;
+        files?: Array<{ id?: string; webViewLink?: string }>;
     };
-    if (found.ok && foundPayload.files?.[0]?.id)
-        return { id: foundPayload.files[0].id, webViewLink: foundPayload.files[0].webViewLink };
-    const created = await driveRequest(accessToken, `${DRIVE_API}/files?fields=id,name,webViewLink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }) });
-    const payload = await created.json().catch(() => ({})) as {
-        id?: string;
-        webViewLink?: string;
-        error?: {
-            message?: string;
-        };
-    };
+    if (found.ok && foundPayload.files?.[0]?.id) {
+        const result = { id: foundPayload.files[0].id, webViewLink: foundPayload.files[0].webViewLink };
+        if (cacheKey) folderCache.set(cacheKey, result);
+        return result;
+    }
+    const created = await driveRequestWithRetry(accessToken, `${DRIVE_API}/files?fields=id,name,webViewLink`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }) });
+    const payload = await created.json().catch(() => ({})) as { id?: string; webViewLink?: string; error?: { message?: string } };
     if (!created.ok || !payload.id)
         throw new Error(payload.error?.message || `Could not create Google Drive folder ${name}.`);
-    return { id: payload.id, webViewLink: payload.webViewLink };
+    const result = { id: payload.id, webViewLink: payload.webViewLink };
+    if (cacheKey) folderCache.set(cacheKey, result);
+    return result;
 }
 async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: string, kind: FileAssetKind | undefined, role: FileAttachmentRole | undefined, fileSize: number) {
     const access = await selectLiveWriteAccount(db, fileSize);
@@ -222,8 +254,11 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
     const path = logicalStoragePath(db, entityType, entityId, template);
     let folderId = access.account.root_folder_id;
     let folderUrl = access.account.web_view_link;
+    let currentPath = "";
     for (const part of path.split("/").map((value) => safeSegment(value, "General")).filter(Boolean)) {
-        const folder = await findOrCreateFolder(access.accessToken, folderId, part);
+        currentPath += "/" + part;
+        const cacheKey = `${access.account.id}:${currentPath}`;
+        const folder = await findOrCreateFolder(access.accessToken, folderId, part, cacheKey);
         folderId = folder.id!;
         folderUrl = folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`;
     }
@@ -248,36 +283,47 @@ async function uploadMultipart(accessToken: string, folderId: string, file: Blob
     const form = new FormData();
     form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
     form.append("file", file, fileName);
-    const response = await driveRequest(accessToken, `${UPLOAD_API}?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", body: form });
-    const payload = await response.json().catch(() => ({})) as Record<string, unknown> & {
-        error?: {
-            message?: string;
-        };
-    };
+    const response = await driveRequestWithRetry(accessToken, `${UPLOAD_API}?uploadType=multipart&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", body: form });
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown> & { error?: { message?: string } };
     if (!response.ok || typeof payload.id !== "string")
         throw new Error(payload.error?.message || "Google Drive rejected the file upload.");
     return payload;
 }
 async function uploadResumable(accessToken: string, folderId: string, file: Blob, fileName: string) {
-    const start = await driveRequest(accessToken, `${UPLOAD_API}?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", headers: { "Content-Type": "application/json", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": String(file.size) }, body: JSON.stringify({ name: fileName, parents: [folderId] }) });
+    const start = await driveRequestWithRetry(accessToken, `${UPLOAD_API}?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", headers: { "Content-Type": "application/json", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": String(file.size) }, body: JSON.stringify({ name: fileName, parents: [folderId] }) });
     const location = start.headers.get("location");
     if (!start.ok || !location) {
-        const payload = await start.json().catch(() => ({})) as {
-            error?: {
-                message?: string;
-            };
-        };
+        const payload = await start.json().catch(() => ({})) as { error?: { message?: string } };
         throw new Error(payload.error?.message || "Google Drive resumable upload could not start.");
     }
-    const finished = await fetch(location, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": file.type || "application/octet-stream", "Content-Length": String(file.size) }, body: file, cache: "no-store" });
-    const payload = await finished.json().catch(() => ({})) as Record<string, unknown> & {
-        error?: {
-            message?: string;
-        };
-    };
-    if (!finished.ok || typeof payload.id !== "string")
-        throw new Error(payload.error?.message || "Google Drive resumable upload failed.");
-    return payload;
+    // Retry the PUT with the resumable location
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= 3; attempt++) {
+        try {
+            const finished = await fetch(location, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": file.type || "application/octet-stream", "Content-Length": String(file.size) }, body: file, cache: "no-store" });
+            const payload = await finished.json().catch(() => ({})) as Record<string, unknown> & { error?: { message?: string } };
+            if (finished.ok && typeof payload.id === "string") return payload;
+            if (finished.status === 429 || finished.status >= 500) {
+                lastError = new Error(payload.error?.message || "Google Drive resumable upload failed (retryable).");
+                if (attempt < 3) { await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 8000))); continue; }
+            }
+            throw new Error(payload.error?.message || "Google Drive resumable upload failed.");
+        } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            if (attempt < 3) { await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 8000))); continue; }
+        }
+    }
+    throw lastError || new Error("Google Drive resumable upload failed after retries.");
+}
+
+// ── UPLOAD-009: Delete file from Google Drive (for rollback on failure) ──
+async function deleteDriveFile(accessToken: string, fileId: string): Promise<void> {
+    try {
+        await driveRequestWithRetry(accessToken, `${DRIVE_API}/${fileId}`, { method: "DELETE" });
+    } catch {
+        // Non-fatal: we tried to clean up but couldn't. Log for manual cleanup.
+        console.warn(`[google-drive] Failed to delete orphaned file ${fileId} from Google Drive.`);
+    }
 }
 
 /**
@@ -287,16 +333,26 @@ async function uploadResumable(accessToken: string, folderId: string, file: Blob
  * Failures are non-fatal (the file is still uploaded; it just won't be public).
  */
 async function makeFilePublic(accessToken: string, fileId: string): Promise<void> {
-    try {
-        await driveRequest(accessToken, `${DRIVE_API}/${fileId}/permissions`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ role: "reader", type: "anyone" }),
-        });
+    // Retry making the file public (important for thumbnails/previews to work)
+    for (let attempt = 0; attempt <= 2; attempt++) {
+        try {
+            const response = await driveRequestWithRetry(accessToken, `${DRIVE_API}/${fileId}/permissions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ role: "reader", type: "anyone" }),
+            });
+            if (response.ok) return;
+            if (response.status < 500 && response.status !== 429) return; // Non-retryable
+        } catch {
+            // Continue to retry
+        }
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt)));
     }
-    catch {
-        // Non-fatal: file uploaded successfully but couldn't be made public.
-    }
+    // Non-fatal: file uploaded but couldn't be made public
+    console.warn(`[google-drive] Failed to make file ${fileId} public after retries.`);
+}
+export async function deleteManagedFile(accessToken: string, fileId: string): Promise<void> {
+    return deleteDriveFile(accessToken, fileId);
 }
 export async function uploadManagedFileAsset(user: AuthenticatedUser, db: RDashDatabase, input: ManagedUploadRequest): Promise<ManagedGoogleFileAsset> {
     assertUploadRequest({ entityType: input.entityType, entityId: input.entityId, fileName: input.fileName });

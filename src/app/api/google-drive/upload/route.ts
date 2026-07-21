@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { getWorkspace, saveWorkspace } from "@/lib/rdash/server/workspace";
-import { uploadManagedFileAsset } from "@/lib/rdash/server/google-drive";
+import { uploadManagedFileAsset, deleteManagedFile } from "@/lib/rdash/server/google-drive";
+import { accessTokenForDriveConnection } from "@/lib/rdash/server/drive-connections";
 import type { FileAsset, FileAttachmentEntityType, FileAttachmentRole, FileAssetKind } from "@/lib/rdash/types";
 
 export const runtime = "nodejs";
@@ -88,7 +89,21 @@ export async function POST(request: NextRequest) {
       entityFileAttachments: [...(current.data.entityFileAttachments || []), newAttachment],
     };
 
-    await saveWorkspace(current.revision, next);
+    // UPLOAD-009: Rollback on failure — if saveWorkspace fails, delete the
+    // orphaned file from Google Drive to prevent untracked files.
+    try {
+      await saveWorkspace(current.revision, next);
+    } catch (saveError) {
+      // Workspace save failed — delete the uploaded file from Drive
+      console.error("[google-drive/upload] saveWorkspace failed, rolling back Drive upload:", saveError);
+      try {
+        const token = await accessTokenForDriveConnection(uploaded.storageAccountId);
+        await deleteManagedFile(token, uploaded.id);
+      } catch (cleanupError) {
+        console.error("[google-drive/upload] Failed to delete orphaned file:", cleanupError);
+      }
+      throw saveError;
+    }
 
     return NextResponse.json({
       id: uploaded.id, name: uploaded.name, mimeType: uploaded.mimeType, size: uploaded.size,
