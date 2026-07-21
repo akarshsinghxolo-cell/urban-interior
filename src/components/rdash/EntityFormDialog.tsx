@@ -544,6 +544,12 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         source_partner_name: referralName,
                     } : undefined);
                     if (result.siteId && firstSitePhotos.length) {
+                        // FIX-E2E-001: Await the server commit before starting
+                        // uploads. Without this, the upload route reads the
+                        // workspace from Supabase before the newly-created site
+                        // has been persisted, and returns 422 "Site does not exist".
+                        setUploadProgress({ current: 0, total: firstSitePhotos.length, label: "Saving customer…" });
+                        await useRDashStore.getState().awaitServerSync();
                         // UPLOAD-028: Use allSettled so partial failures don't discard successful uploads
                         // UPLOAD-030: Show upload progress
                         setUploadProgress({ current: 0, total: firstSitePhotos.length, label: "Uploading photos…" });

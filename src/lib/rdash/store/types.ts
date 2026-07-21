@@ -23,6 +23,10 @@ export interface CoreState {
   serverRevision: number;
   workspaceSyncStatus: WorkspaceSyncStatus;
   workspaceSyncError: string | null;
+  // FIX-E2E-001: Await the server commit queue. Call this before starting
+  // operations that depend on entities being persisted server-side (e.g.
+  // file uploads after createCustomerWithFirstSite).
+  awaitServerSync: () => Promise<void>;
   staffLocationPings: StaffLocationPing[];
   replaceStaffLocationPings: (points: StaffLocationPing[]) => void;
   upsertStaffLocationPing: (point: StaffLocationPing) => void;

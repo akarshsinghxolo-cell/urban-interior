@@ -619,6 +619,12 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         serverRevision: 0,
         workspaceSyncStatus: "idle",
         workspaceSyncError: null,
+        // FIX-E2E-001: Expose the server sync queue so callers can await the
+        // commit before starting dependent operations (e.g. file uploads that
+        // require the entity to exist server-side). Without this, uploads
+        // started immediately after createCustomerWithFirstSite race the
+        // server commit and fail with "Site does not exist" (422).
+        awaitServerSync: () => serverSyncQueue,
         staffLocationPings: [],
         // ── Integrity layer (Phase 4): initial state. The first
         //     runIntegrityCheck() call (or hydration) populates this. ──

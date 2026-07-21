@@ -245,6 +245,10 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
             const id = siteId || addSite(payload);
             if (siteId)
                 updateSite(siteId, payload);
+            // FIX-E2E-001: Await the server commit before starting uploads.
+            if (pendingPhotos.length) {
+                await useRDashStore.getState().awaitServerSync();
+            }
             const uploadedAttachmentIds = await Promise.all(pendingPhotos.map(async (photo) => {
                 const role = photo.mime_type?.startsWith("video/") ? "video" as const : photo.mime_type === "application/pdf" ? "document" as const : "photo" as const;
                 const file = await uploadManagedFile({ dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: id, kind: "media", role, caption: photo.caption || "Site file", visibility: "internal" });
