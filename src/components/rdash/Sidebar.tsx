@@ -37,42 +37,12 @@ function ModuleItem({ module, collapsed }: { module: ModuleDef; collapsed?: bool
     // Collapsed mode: icon-only button with hover tooltip
     if (collapsed) {
         return (
-            <div className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
-                <button
-                    type="button"
-                    onClick={() => setActiveModule(module.id)}
-                    className={cn("flex h-10 w-10 items-center justify-center rounded-lg text-lg transition-all", active
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "hover:bg-accent hover:text-accent-foreground")}
-                    title={module.label}
-                    aria-label={module.label}
-                >
-                    <span aria-hidden="true">{module.icon}</span>
-                </button>
-                {/* Hover tooltip with label + submodules */}
-                {hovered && (
-                    <div className="fixed left-[52px] z-50 min-w-[200px] rounded-lg border border-border bg-card p-2 shadow-popover">
-                        <p className="px-2 py-1 text-sm font-bold">{module.label}</p>
-                        {module.submodules.length > 0 && (
-                            <div className="mt-1 flex flex-col gap-0.5">
-                                {module.submodules.map((sm) => (
-                                    <button
-                                        key={sm.id}
-                                        type="button"
-                                        onClick={() => { setActiveModule(sm.id); setHovered(false); }}
-                                        className={cn("min-h-[36px] rounded-md px-2 py-1.5 text-left text-xs transition-colors", activeModuleId === sm.id
-                                            ? "bg-accent font-semibold text-accent-foreground"
-                                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground")}
-                                    >
-                                        {sm.label}
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                )}
-                {active && <span className="absolute -left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />}
-            </div>
+            <CollapsedModuleItem
+                module={module}
+                active={active}
+                activeModuleId={activeModuleId}
+                setActiveModule={setActiveModule}
+            />
         );
     }
 
@@ -105,6 +75,88 @@ function ModuleItem({ module, collapsed }: { module: ModuleDef; collapsed?: bool
             })}
         </div>)}
     </div>);
+}
+
+/**
+ * Collapsed sidebar module item — icon-only button with hover tooltip.
+ * Uses a delayed-close pattern so the mouse can travel the gap between
+ * the icon button and the floating tooltip without the tooltip disappearing.
+ */
+function CollapsedModuleItem({ module, active, activeModuleId, setActiveModule }: {
+    module: ModuleDef;
+    active: boolean;
+    activeModuleId: string;
+    setActiveModule: (id: string) => void;
+}) {
+    const [hovered, setHovered] = React.useState(false);
+    const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const cancelClose = React.useCallback(() => {
+        if (closeTimer.current) {
+            clearTimeout(closeTimer.current);
+            closeTimer.current = null;
+        }
+    }, []);
+
+    const handleEnter = React.useCallback(() => {
+        cancelClose();
+        setHovered(true);
+    }, [cancelClose]);
+
+    const handleLeave = React.useCallback(() => {
+        cancelClose();
+        // Delay closing by 200ms so the mouse can cross the gap
+        // between the icon and the floating tooltip panel.
+        closeTimer.current = setTimeout(() => setHovered(false), 200);
+    }, [cancelClose]);
+
+    React.useEffect(() => () => cancelClose(), [cancelClose]);
+
+    return (
+        <div className="relative">
+            <button
+                type="button"
+                onClick={() => setActiveModule(module.id)}
+                onMouseEnter={handleEnter}
+                onMouseLeave={handleLeave}
+                className={cn("flex h-10 w-10 items-center justify-center rounded-lg text-lg transition-all", active
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "hover:bg-accent hover:text-accent-foreground")}
+                title={module.label}
+                aria-label={module.label}
+            >
+                <span aria-hidden="true">{module.icon}</span>
+            </button>
+            {active && <span className="absolute -left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />}
+            {/* Hover tooltip — separate onMouseEnter/Leave so it stays open
+                when the mouse moves from the icon to the tooltip */}
+            {hovered && (
+                <div
+                    className="fixed left-[52px] z-50 min-w-[200px] rounded-lg border border-border bg-card p-2 shadow-popover"
+                    onMouseEnter={handleEnter}
+                    onMouseLeave={handleLeave}
+                >
+                    <p className="px-2 py-1 text-sm font-bold">{module.label}</p>
+                    {module.submodules.length > 0 && (
+                        <div className="mt-1 flex flex-col gap-0.5">
+                            {module.submodules.map((sm) => (
+                                <button
+                                    key={sm.id}
+                                    type="button"
+                                    onClick={() => { setActiveModule(sm.id); setHovered(false); }}
+                                    className={cn("min-h-[36px] rounded-md px-2 py-1.5 text-left text-xs transition-colors", activeModuleId === sm.id
+                                        ? "bg-accent font-semibold text-accent-foreground"
+                                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground")}
+                                >
+                                    {sm.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
 }
 
 function SidebarContent({ collapsed }: { collapsed?: boolean }) {
