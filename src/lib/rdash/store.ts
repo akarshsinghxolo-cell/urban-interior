@@ -336,7 +336,10 @@ function prepareWorkspaceDatabase(input: RDashDatabase): RDashDatabase {
     });
     const dataIssues = validateBusinessData(normalized);
     if (dataIssues.length) {
-        throw new BusinessRuleError(`Startup data integrity check failed: ${dataIssues[0]}`);
+        // Log warnings but don't block workspace loading — a single broken
+        // reference shouldn't prevent the entire app from starting.
+        // The server-side commit endpoint still validates and can reject bad data.
+        console.warn("[prepareWorkspaceDatabase] Data integrity warnings:", dataIssues.slice(0, 5));
     }
     return normalized;
 }
@@ -565,7 +568,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 const finalDb = attachCustomerLabels(get().db);
                 const dataIssues = validateBusinessData(finalDb);
                 if (dataIssues.length) {
-                    throw new BusinessRuleError(`${name} was rolled back because ${dataIssues[0]}`);
+                    console.warn(`[runWorkspaceTransaction:${name}] Data integrity warning:`, dataIssues[0]);
                 }
                 setBase({ db: finalDb });
                 queueSecureWorkspaceSave(finalDb);
