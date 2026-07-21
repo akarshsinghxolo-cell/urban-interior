@@ -449,9 +449,13 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         role: "photo" | "proof" | "video" | "document";
         caption: string;
     }) => {
+        // UPLOAD-006: Server route already saves FileAsset + EntityFileAttachment.
+        // We just upload and return a synthetic attachment ID for the site's
+        // photo_attachment_ids array. The server handles persistence.
         const uploaded = await uploadManagedFile({ dataUrl: input.dataUrl, fileName: input.fileName, entityType: input.entityType, entityId: input.entityId, kind: input.kind, role: input.role, caption: input.caption, visibility: "internal" });
-        const attachmentId = createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind: input.kind }), { entity_type: input.entityType, entity_id: input.entityId, role: input.role, caption: input.caption, visibility: "internal", customer_shareable: false });
-        return attachmentId;
+        // Return the Google file ID as the attachment reference
+        // (the server already created the EntityFileAttachment)
+        return uploaded.id;
     };
     const handleSave = async () => {
         if (saving)

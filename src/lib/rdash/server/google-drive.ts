@@ -114,35 +114,36 @@ export function resolveUploadScope(db: RDashDatabase, entityType: FileAttachment
     }
     return { customerId: context.customerId, siteId: context.siteId, workOrderId: context.workOrderId, ownerKind: context.ownerKind, ownerId: context.ownerId, bucket: context.driveBucket };
 }
-function canUpload(user: AuthenticatedUser, db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: string, role?: FileAttachmentRole) {
+// UPLOAD-021: canUpload returns boolean (true = allowed, throws if not)
+function canUpload(user: AuthenticatedUser, db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: string, role?: FileAttachmentRole): boolean {
     if (user.role === "Owner" || user.role === "Operations Manager")
-        return;
+        return true;
     if (user.role === "Field Staff") {
         if (entityType === "visit") {
             const visit = rowById(db.visits, entityId);
             if (visit?.staff_id === user.staffId)
-                return;
+                return true;
         }
         if (entityType === "execution_log") {
             const log = rowById(db.executionLogs, entityId);
             if (log?.filed_by_staff_id === user.staffId)
-                return;
+                return true;
         }
         if (entityType === "grn") {
             const grn = rowById(db.grns, entityId);
             if (grn && grn.received_by_staff_id === user.staffId && grn.status === "pending_receipt_verification")
-                return;
+                return true;
         }
         if (entityType === "purchase_order" && role === "delivery") {
             const po = rowById(db.purchaseOrders, entityId);
             if (po && (po.status === "sent" || po.status === "partially_received"))
-                return;
+                return true;
         }
     }
     if (user.role === "Finance" && ["payment", "invoice", "vendor_bill"].includes(entityType))
-        return;
+        return true;
     if (user.role === "Procurement Staff" && ["vendor", "purchase_order", "grn", "dispatch"].includes(entityType))
-        return;
+        return true;
     throw new Error("You are not allowed to upload a file to this record.");
 }
 async function driveRequest(accessToken: string, url: string, init?: RequestInit) {
@@ -278,8 +279,18 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
         },
     };
 }
+// UPLOAD-020: Sanitize file names for Google Drive API (remove special chars)
+function sanitizeFileName(name: string): string {
+    return name
+        .replace(/[/\\:*?"<>|]/g, "_")  // Replace Drive-invalid chars
+        .replace(/\s+/g, " ")            // Normalize whitespace
+        .trim()
+        .slice(0, 200);                  // Drive limit is ~100 chars, be safe
+}
+
 async function uploadMultipart(accessToken: string, folderId: string, file: Blob, fileName: string) {
-    const metadata = { name: fileName, parents: [folderId] };
+    const safeName = sanitizeFileName(fileName);
+    const metadata = { name: safeName, parents: [folderId] };
     const form = new FormData();
     form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
     form.append("file", file, fileName);
@@ -289,28 +300,109 @@ async function uploadMultipart(accessToken: string, folderId: string, file: Blob
         throw new Error(payload.error?.message || "Google Drive rejected the file upload.");
     return payload;
 }
-async function uploadResumable(accessToken: string, folderId: string, file: Blob, fileName: string) {
-    const start = await driveRequestWithRetry(accessToken, `${UPLOAD_API}?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", headers: { "Content-Type": "application/json", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": String(file.size) }, body: JSON.stringify({ name: fileName, parents: [folderId] }) });
-    const location = start.headers.get("location");
+async function uploadResumable(accessToken: string, folderId: string, file: Blob, fileName: string, connectionId?: string) {
+    const safeName = sanitizeFileName(fileName);
+    const start = await driveRequestWithRetry(accessToken, `${UPLOAD_API}?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", headers: { "Content-Type": "application/json", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": String(file.size) }, body: JSON.stringify({ name: safeName, parents: [folderId] }) });
+    let location = start.headers.get("location");
     if (!start.ok || !location) {
         const payload = await start.json().catch(() => ({})) as { error?: { message?: string } };
         throw new Error(payload.error?.message || "Google Drive resumable upload could not start.");
     }
-    // Retry the PUT with the resumable location
+    // UPLOAD-003: True resumable upload — query byte offset and resume from where it left off
+    // UPLOAD-011: If we get a 401 mid-upload, refresh the token and retry
+    const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB chunks for resumable
     let lastError: Error | null = null;
-    for (let attempt = 0; attempt <= 3; attempt++) {
+    let currentToken = accessToken;
+
+    for (let attempt = 0; attempt <= 4; attempt++) {
         try {
-            const finished = await fetch(location, { method: "PUT", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": file.type || "application/octet-stream", "Content-Length": String(file.size) }, body: file, cache: "no-store" });
-            const payload = await finished.json().catch(() => ({})) as Record<string, unknown> & { error?: { message?: string } };
-            if (finished.ok && typeof payload.id === "string") return payload;
-            if (finished.status === 429 || finished.status >= 500) {
-                lastError = new Error(payload.error?.message || "Google Drive resumable upload failed (retryable).");
-                if (attempt < 3) { await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 8000))); continue; }
+            // Step 1: Query how many bytes Google already has (resume support)
+            const statusResp = await fetch(location, {
+                method: "PUT",
+                headers: { "Content-Range": `bytes */${file.size}` },
+                cache: "no-store",
+            });
+
+            // 308 = Resume Incomplete (Google has partial data), 200/201 = Complete
+            if (statusResp.status === 200 || statusResp.status === 201) {
+                const payload = await statusResp.json().catch(() => ({})) as Record<string, unknown> & { error?: { message?: string } };
+                if (typeof payload.id === "string") return payload;
             }
-            throw new Error(payload.error?.message || "Google Drive resumable upload failed.");
+
+            // Parse the Range header to find how many bytes are already uploaded
+            let uploadedBytes = 0;
+            const rangeHeader = statusResp.headers.get("range");
+            if (rangeHeader) {
+                const match = rangeHeader.match(/bytes=0-(\d+)/);
+                if (match) uploadedBytes = parseInt(match[1], 10) + 1;
+            }
+
+            // Step 2: Upload the remaining bytes in chunks
+            while (uploadedBytes < file.size) {
+                const end = Math.min(uploadedBytes + CHUNK_SIZE - 1, file.size - 1);
+                const chunk = file.slice(uploadedBytes, end + 1);
+                const chunkResp = await fetch(location, {
+                    method: "PUT",
+                    headers: {
+                        "Content-Length": String(chunk.size),
+                        "Content-Range": `bytes ${uploadedBytes}-${end}/${file.size}`,
+                    },
+                    body: chunk,
+                    cache: "no-store",
+                });
+
+                if (chunkResp.status === 200 || chunkResp.status === 201) {
+                    const payload = await chunkResp.json().catch(() => ({})) as Record<string, unknown> & { error?: { message?: string } };
+                    if (typeof payload.id === "string") return payload;
+                    throw new Error(payload.error?.message || "Google Drive upload completed but returned no file ID.");
+                }
+
+                if (chunkResp.status === 308) {
+                    // Resume Incomplete — more bytes to upload
+                    const range = chunkResp.headers.get("range");
+                    if (range) {
+                        const match = range.match(/bytes=0-(\d+)/);
+                        if (match) uploadedBytes = parseInt(match[1], 10) + 1;
+                    } else {
+                        uploadedBytes = end + 1;
+                    }
+                    continue;
+                }
+
+                if (chunkResp.status === 429 || chunkResp.status >= 500) {
+                    throw new Error(`Google Drive returned ${chunkResp.status} during chunk upload (retryable).`);
+                }
+
+                // Non-retryable error
+                const payload = await chunkResp.json().catch(() => ({})) as { error?: { message?: string } };
+                throw new Error(payload.error?.message || `Google Drive upload failed with status ${chunkResp.status}.`);
+            }
+
+            // If we get here, all chunks were uploaded but we didn't get a 200/201
+            throw new Error("Google Drive upload completed but no confirmation received.");
         } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
-            if (attempt < 3) { await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 8000))); continue; }
+
+            // UPLOAD-011: If 401 (token expired), refresh the token
+            if (lastError.message.includes("401") || lastError.message.includes("Unauthorized")) {
+                if (connectionId) {
+                    try {
+                        const { invalidateTokenCache } = await import("./drive-connections");
+                        invalidateTokenCache(connectionId);
+                        const { accessTokenForDriveConnection } = await import("./drive-connections");
+                        currentToken = await accessTokenForDriveConnection(connectionId);
+                        // Re-initiate the resumable session with the new token
+                        const restart = await driveRequestWithRetry(currentToken, `${UPLOAD_API}?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink`, { method: "POST", headers: { "Content-Type": "application/json", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": String(file.size) }, body: JSON.stringify({ name: safeName, parents: [folderId] }) });
+                        const newLocation = restart.headers.get("location");
+                        if (newLocation) location = newLocation;
+                    } catch { /* fall through to retry */ }
+                }
+            }
+
+            if (attempt < 4) {
+                await new Promise((r) => setTimeout(r, Math.min(1000 * Math.pow(2, attempt), 8000)));
+                continue;
+            }
         }
     }
     throw lastError || new Error("Google Drive resumable upload failed after retries.");
@@ -365,7 +457,7 @@ export async function uploadManagedFileAsset(user: AuthenticatedUser, db: RDashD
     const scope = resolveUploadScope(db, input.entityType, input.entityId);
     const location = await resolveStorageFolder(db, input.entityType, input.entityId, input.kind, input.role, input.file.size);
     const payload = input.file.size >= 5 * 1024 * 1024
-        ? await uploadResumable(location.access.accessToken, location.folderId, input.file, input.fileName)
+        ? await uploadResumable(location.access.accessToken, location.folderId, input.file, input.fileName, location.access.account.oauth_connection_id)
         : await uploadMultipart(location.access.accessToken, location.folderId, input.file, input.fileName);
     const id = String(payload.id);
     // Make the uploaded file public (anyone with link can view) so thumbnails,

@@ -126,6 +126,9 @@ async function config() {
 }
 
 // ── Vault: plaintext JSON (no encryption) ──
+// UPLOAD-016: Simple write lock to prevent concurrent vault writes
+let vaultWritePromise: Promise<void> | null = null;
+
 async function readVault(): Promise<Vault> {
   const row = await readRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID);
   if (!row?.dataJson) return emptyVault();
@@ -138,8 +141,15 @@ async function readVault(): Promise<Vault> {
   }
 }
 
+// UPLOAD-016: Atomic vault write — serialize concurrent writes to prevent corruption
 async function writeVault(vault: Vault) {
-  await writeRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID, vault);
+  // Wait for any pending write to complete
+  while (vaultWritePromise) {
+    await vaultWritePromise;
+  }
+  vaultWritePromise = writeRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID, vault)
+    .finally(() => { vaultWritePromise = null; });
+  await vaultWritePromise;
 }
 
 async function google(url: string, accessToken: string, init?: RequestInit) {

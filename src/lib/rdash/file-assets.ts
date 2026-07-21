@@ -11,6 +11,7 @@ export type ManagedUploadInput = {
     visibility?: EntityFileAttachment["visibility"];
     customerShareable?: boolean;
     onProgress?: (pct: number) => void;
+    signal?: AbortSignal;
 };
 export type ManagedDriveUpload = {
     id: string;
@@ -89,7 +90,8 @@ export async function uploadManagedFile(input: ManagedUploadInput): Promise<Mana
         return form;
     };
     // UPLOAD-014: Use XMLHttpRequest for upload progress reporting
-    const uploadWithProgress = (form: FormData, onProgress?: (pct: number) => void): Promise<{ response: Response; payload: any }> => {
+    // UPLOAD-010: Support AbortSignal for cancellation
+    const uploadWithProgress = (form: FormData, onProgress?: (pct: number) => void, signal?: AbortSignal): Promise<{ response: Response; payload: any }> => {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
             xhr.open("POST", "/api/google-drive/upload");
@@ -106,6 +108,18 @@ export async function uploadManagedFile(input: ManagedUploadInput): Promise<Mana
             xhr.onerror = () => reject(new Error("Network error during upload."));
             xhr.ontimeout = () => reject(new Error("Upload timed out."));
             xhr.timeout = 120000; // 2 minute timeout
+            // UPLOAD-010: AbortController support
+            if (signal) {
+                if (signal.aborted) {
+                    xhr.abort();
+                    reject(new DOMException("Upload was cancelled.", "AbortError"));
+                    return;
+                }
+                signal.addEventListener("abort", () => {
+                    xhr.abort();
+                    reject(new DOMException("Upload was cancelled.", "AbortError"));
+                });
+            }
             xhr.send(form);
         });
     };
@@ -114,10 +128,14 @@ export async function uploadManagedFile(input: ManagedUploadInput): Promise<Mana
     let response: Response | undefined;
     for (let attempt = 0; attempt < 30; attempt += 1) {
         try {
-            const result = await uploadWithProgress(makeForm(), input.onProgress);
+            const result = await uploadWithProgress(makeForm(), input.onProgress, input.signal);
             response = result.response;
             payload = result.payload;
         } catch (uploadError) {
+            // Don't retry on AbortError (user cancelled)
+            if (uploadError instanceof DOMException && uploadError.name === "AbortError") {
+                throw uploadError;
+            }
             // Network error — retry if we haven't exhausted attempts
             if (attempt < 29) {
                 await new Promise((resolve) => setTimeout(resolve, 500));
