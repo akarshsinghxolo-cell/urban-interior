@@ -104,8 +104,15 @@ function resolveCandidates(source: string, candidates: Array<{
         throw new Error(`${source}: customer relationships conflict (${detail}).`);
     }
     const primary = available.find((item) => item.context.customerId) || available[0];
-    if (!primary)
-        return systemContext("general", "general");
+    if (!primary) {
+        // FIX-ANALYSIS-001 #6: Previously silently fell back to a system
+        // context when no candidate resolved to a customer. This affected
+        // task, followup, visit, and blocked entities — files uploaded to
+        // an unlinked entity landed in a generic "General" bucket with no
+        // customer association, making them unfindable later. Now we throw
+        // so the caller knows the entity must be linked before uploading.
+        throw new Error(`${source}: entity has no linked Customer, Site, Work Order, or other parent. Link it to a parent entity before uploading files.`);
+    }
     return primary.context;
 }
 function maybeContext(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: ID | undefined, source: string) {
@@ -204,14 +211,13 @@ export function resolveEntityContext(db: RDashDatabase, entityType: FileAttachme
             }
             if (drawing.site_id)
                 return siteContext(db, entityType, entityId, drawing.site_id, "Drawings", { areaId: drawing.area_id }, source);
-            // Flexibility fallback: allow drawings without a site/work order to use a general system context
-            // so uploads work even before the drawing is linked to a specific site.
-            return {
-                entityType: "drawing",
-                entityId,
-                ownerKind: "system",
-                driveBucket: "Drawings",
-            };
+            // FIX-ANALYSIS-001 #6: Previously silently fell back to a system
+            // context when a drawing had no site_id or work_order_id. This
+            // masked missing business context — files uploaded to an unlinked
+            // drawing landed in a generic "Drawings" bucket with no customer
+            // association, making them unfindable later. Now we throw so the
+            // caller knows the drawing must be linked before uploading.
+            throw new Error(`${source}: Drawing "${entityId}" has no linked Site or Work Order. Link it to a Site or Work Order before uploading files.`);
         }
         case "execution_log": {
             const log = requireRow(db.executionLogs, entityId, "Execution Log", source);

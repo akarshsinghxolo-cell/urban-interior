@@ -190,6 +190,47 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
         }
     }
 
+    // ── FIX-ANALYSIS-001 #8: Polymorphic-entity sweep ──────────────────────
+    // entityFileAttachments and entityReferenceAssignments reference their
+    // parent via (entity_type, entity_id) — a polymorphic link that the FK
+    // registry marks as "ignore" because the parent collection varies.
+    // Without this sweep, deleting a customer/site/workOrder leaves orphaned
+    // file attachments that reference a non-existent entity_id. These orphans
+    // block subsequent workspace commits (validateBusinessData rejects them).
+    //
+    // Solution: after processing all typed FK rules, scan these two
+    // polymorphic collections for rows where entity_id === id AND entity_type
+    // matches the collection being deleted. Cascade-delete the matching file
+    // attachments (which in turn cascades to the file asset via the typed
+    // file_asset_id FK).
+    const POLYMORPHIC_ENTITY_COLLECTIONS: Array<{
+        collection: string;
+        entityField: string;
+        typeField: string;
+    }> = [
+        { collection: "entityFileAttachments", entityField: "entity_id", typeField: "entity_type" },
+        { collection: "entityReferenceAssignments", entityField: "entity_id", typeField: "entity_type" },
+    ];
+    for (const poly of POLYMORPHIC_ENTITY_COLLECTIONS) {
+        const polyRows = resolveCollection(ctx.db, poly.collection);
+        const matching = polyRows.filter((row) => {
+            const entityId = row[poly.entityField];
+            const entityType = row[poly.typeField];
+            return typeof entityId === "string" && entityId === id
+                && typeof entityType === "string" && entityType === collection;
+        });
+        for (const child of matching) {
+            const childLabel = labelForRow(child);
+            ctx.depth += 1;
+            try {
+                deleteRecursive(ctx, poly.collection, String(child.id), childLabel);
+            } finally {
+                ctx.depth -= 1;
+            }
+            if (!ctx.result.success) return;
+        }
+    }
+
     // All children handled — now remove the row itself (or soft-delete).
     if (ctx.softDelete) {
         const softDeleted = applySoftDelete({ id } as GenericRow, collection);

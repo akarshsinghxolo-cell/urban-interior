@@ -1696,6 +1696,13 @@ export interface StorageFolderInstance {
     google_folder_id?: string;
     folder_path: string;
     web_view_link?: string;
+    // FIX-ANALYSIS-001 #9: Typed customer/site links — previously finding a
+    // customer's folders required brittle string-matching on folder_path.
+    // These optional fields are populated by resolveStorageFolder so folder
+    // lookups can use a typed index instead of path parsing.
+    customer_id?: ID;
+    site_id?: ID;
+    work_order_id?: ID;
     status: "active" | "archived";
     created_at: string;
     updated_at: string;

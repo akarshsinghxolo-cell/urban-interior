@@ -297,6 +297,25 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
         throw new Error(`No active logical folder template exists for ${purpose.replaceAll("_", " ")}.`);
     const path = logicalStoragePath(db, entityType, entityId, template);
 
+    // FIX-ANALYSIS-001 #9: Resolve the entity context to extract typed
+    // customer_id / site_id / work_order_id for the folder instance. This
+    // replaces the previous approach where finding a customer's folders
+    // required brittle string-matching on folder_path.
+    let typedCustomerId: string | undefined;
+    let typedSiteId: string | undefined;
+    let typedWorkOrderId: string | undefined;
+    try {
+        const ctx = resolveEntityContext(db, entityType, entityId, "Storage folder resolution");
+        typedCustomerId = ctx.customerId;
+        typedSiteId = ctx.siteId;
+        typedWorkOrderId = ctx.workOrderId;
+    } catch {
+        // Context resolution can throw if the entity doesn't exist yet (e.g.,
+        // a freshly-created entity whose commit hasn't propagated). The folder
+        // path is still valid — we just can't populate the typed links. This
+        // is a best-effort optimization, not a blocking error.
+    }
+
     // ── FIX-DUP-001: Read the persisted storageFolderInstances cache FIRST ──
     // The upload route persists every resolved folder instance to
     // db.master.storageFolderInstances (with google_folder_id + folder_path).
@@ -321,6 +340,9 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
                 google_folder_id: persistedInstance.google_folder_id!,
                 folder_path: path,
                 web_view_link: persistedInstance.web_view_link,
+                customer_id: typedCustomerId,
+                site_id: typedSiteId,
+                work_order_id: typedWorkOrderId,
             },
         };
     }
@@ -346,6 +368,9 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
                 google_folder_id: resolved.id,
                 folder_path: path,
                 web_view_link: resolved.webViewLink,
+                customer_id: typedCustomerId,
+                site_id: typedSiteId,
+                work_order_id: typedWorkOrderId,
             },
         };
     }
@@ -386,6 +411,9 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
             google_folder_id: resolution.id,
             folder_path: path,
             web_view_link: resolution.webViewLink,
+            customer_id: typedCustomerId,
+            site_id: typedSiteId,
+            work_order_id: typedWorkOrderId,
         },
     };
 }

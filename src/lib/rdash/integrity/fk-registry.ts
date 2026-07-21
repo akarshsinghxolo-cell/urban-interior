@@ -310,8 +310,12 @@ const recurringFks: ForeignKeyRule[] = [
 // ─────────────────────────────────────────────────────────────────────────
 const fileAttachmentFks: ForeignKeyRule[] = [
     { collection: "entityFileAttachments", field: "file_asset_id", targetCollection: "master.fileAssets", onDelete: "cascade", nullable: false, label: "File Attachment → File Asset" },
-    { collection: "entityFileAttachments", field: "entity_id", targetCollection: "polymorphic", onDelete: "ignore", nullable: false, label: "File Attachment → Entity (polymorphic)", note: "Parent collection depends on entity_type." },
-    { collection: "entityFileAttachments", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "File Attachment → Customer" },
+    { collection: "entityFileAttachments", field: "entity_id", targetCollection: "polymorphic", onDelete: "ignore", nullable: false, label: "File Attachment → Entity (polymorphic)", note: "Parent collection depends on entity_type. Parent deletion cleanup is handled by the cascade walker's polymorphic-entity sweep." },
+    // FIX-ANALYSIS-001 #7: Removed dead FK rule — entityFileAttachments.customer_id
+    // The EntityFileAttachment TypeScript interface has NO customer_id field
+    // (only entity_type + entity_id, which are polymorphic). This rule never
+    // fired and was dead code. Customer linkage is resolved at runtime via
+    // resolveEntityContext(entity_type, entity_id) → customerId.
     { collection: "entityReferenceAssignments", field: "resource_id", targetCollection: "polymorphic", onDelete: "ignore", nullable: false, label: "Reference Assignment → Resource (polymorphic)", note: "Parent collection depends on resource_type (catalogue|pinterest_board|reference_media)." },
     { collection: "entityReferenceAssignments", field: "entity_id", targetCollection: "polymorphic", onDelete: "ignore", nullable: false, label: "Reference Assignment → Entity (polymorphic)", note: "Parent collection depends on entity_type." },
     { collection: "entityReferenceAssignments", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "Reference Assignment → Customer" },
