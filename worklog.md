@@ -4993,3 +4993,36 @@ Stage Summary:
 - Retry behavior improved: TimeoutError now fails immediately instead of retrying 30× (previous behavior could block for up to 60 minutes on a hung upload).
 - DEPLOYMENT NOTE: This fix is in the local codebase. The live deployment at urban-castle.vercel.app will need a redeploy (git push → Vercel auto-deploy) for the fix to take effect there.
 - Files changed: src/lib/rdash/file-assets.ts (uploadWithProgress function rewritten, catch block updated — ~100 lines changed, interface unchanged).
+
+---
+Task ID: FIX-DUP-001
+Agent: main (Z.ai Code)
+Task: Fix the Google Drive duplicate-folder noise — the app creates multiple duplicate customer/site folders instead of reusing existing ones.
+
+Work Log:
+- Inspected the Drive folder (https://drive.google.com/drive/folders/14XWwfQ56g8yCbAizh64O7fhB2gYR5yZo) during QA-DRIVE-001 and found:
+    "ghgh" → 4 duplicate folders
+    "Jsjjrjrn" → 5 duplicate folders
+    "QA Drive Upload Test" → 4 duplicate folders (from a single create-customer with 5 photos)
+- Read src/lib/rdash/server/google-drive.ts resolveStorageFolder() (line 268) and findOrCreateFolder() (line 244).
+- Root cause identified — three compounding bugs:
+  1. PERSISTED CACHE NEVER READ: The workspace-level db.master.storageFolderInstances cache (which persists folder IDs across serverless cold starts) is WRITTEN by the upload route after each successful upload, but NEVER READ by resolveStorageFolder. Every cold-start invocation starts with an empty in-memory folderCache Map and re-resolves the entire folder path from scratch.
+  2. SILENT FALLTHROUGH ON QUERY FAILURE: In findOrCreateFolder, if the Drive folder-lookup query returned a non-OK status (401/403/429/500), the code checked found.ok only inside the success branch — any API error was swallowed and the code fell through to creating a new folder. This is the #1 cause of duplicates: any transient Drive API error during lookup = one new duplicate folder.
+  3. PARALLEL-UPLOAD RACE: When EntityFormDialog uploads N photos via Promise.allSettled, each upload independently calls resolveStorageFolder → findOrCreateFolder for the same folder path. All N queries fire concurrently, all find no existing folder (because none has been created yet), and all N create duplicate folder trees. The in-memory cache is populated only AFTER findOrCreateFolder completes — too late for the concurrent callers.
+
+- Implemented three-part fix in src/lib/rdash/server/google-drive.ts:
+  FIX 1 — Read persisted cache first: resolveStorageFolder now checks db.master.storageFolderInstances for an instance with matching (storage_account_id, folder_path) BEFORE querying Drive or creating anything. If found, returns the cached google_folder_id directly — zero Drive API calls, zero duplicate risk. This is the highest-impact fix: after the first successful upload to a customer/site, all subsequent uploads (including parallel ones) hit the persisted cache.
+  FIX 2 — Throw on query failure: findOrCreateFolder now checks found.ok BEFORE checking the response body. If the Drive query failed (HTTP non-200), it throws "Google Drive folder lookup failed (HTTP {status}). Refusing to create a duplicate folder." instead of silently falling through to create. This prevents transient API errors from generating duplicates.
+  FIX 3 — Per-path mutex: Added folderResolutionInFlight Map<string, Promise>. When multiple concurrent uploads request the same folder path, the first caller does the resolution work and stores its in-flight promise; subsequent callers await the same promise instead of independently querying Drive. Eliminates the parallel-upload race condition.
+
+- Verified: bun run lint — no new errors in google-drive.ts. Dev server (next dev -p 3000) compiled the file without errors (GET / → 200).
+
+Stage Summary:
+- FIX COMPLETE: src/lib/rdash/server/google-drive.ts — resolveStorageFolder + findOrCreateFolder rewritten (~150 lines changed).
+- Three layers of protection against duplicate folders:
+  1. Persisted cache hit (zero Drive API calls) — handles cross-session duplicates
+  2. Per-path mutex — handles within-request parallel-upload duplicates
+  3. Throw-on-query-failure — handles transient-API-error duplicates
+- The persisted cache (db.master.storageFolderInstances) was already being written by the upload route; this fix makes it actually be READ, which is the single highest-impact change.
+- EXISTING DUPLICATES: This fix prevents NEW duplicates from being created. The 4-5 duplicate folders already in Drive for "ghgh", "Jsjjrjrn", and "QA Drive Upload Test" will need manual cleanup (or a future dedup script that moves files into the canonical folder and trashes the rest).
+- DEPLOYMENT: Same as FIX-DRIVE-001 — requires a Vercel redeploy (git push → auto-deploy) to take effect on urban-castle.vercel.app.

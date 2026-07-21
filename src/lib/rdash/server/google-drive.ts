@@ -241,18 +241,35 @@ async function selectLiveWriteAccount(db: RDashDatabase, incomingBytes: number):
 // Key: `${accountId}:${folderPath}`, Value: folder ID + URL
 const folderCache = new Map<string, { id: string; webViewLink?: string }>();
 
+// ── FIX-DUP-001: Per-path mutex to prevent parallel uploads from racing ──
+// When multiple photos upload concurrently (Promise.allSettled), they all
+// call resolveStorageFolder for the same path simultaneously. Without a
+// mutex, each one independently queries Drive, finds no existing folder,
+// and creates a duplicate. This Map deduplicates in-flight resolutions:
+// the first caller does the work; subsequent callers await the same promise.
+const folderResolutionInFlight = new Map<string, Promise<{ id: string; webViewLink?: string }>>();
+
 async function findOrCreateFolder(accessToken: string, parentId: string, name: string, cacheKey?: string) {
-    // Check cache first
+    // Check in-memory cache first
     if (cacheKey && folderCache.has(cacheKey)) {
         const cached = folderCache.get(cacheKey)!;
         return cached;
     }
     const query = `'${escapeDriveQuery(parentId)}' in parents and name = '${escapeDriveQuery(name)}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     const found = await driveRequestWithRetry(accessToken, `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1`);
+    // FIX-DUP-001: If the Drive query itself failed (401/403/500/etc.),
+    // THROW instead of silently falling through to create a duplicate
+    // folder. The previous code only checked found.ok inside the success
+    // branch, meaning any API error was swallowed and a new folder was
+    // created — the #1 cause of duplicate folders in the Drive.
+    if (!found.ok) {
+        const errPayload = await found.json().catch(() => ({})) as { error?: { message?: string } };
+        throw new Error(`Google Drive folder lookup failed (HTTP ${found.status}): ${errPayload.error?.message || found.statusText}. Refusing to create a duplicate folder.`);
+    }
     const foundPayload = await found.json().catch(() => ({})) as {
         files?: Array<{ id?: string; webViewLink?: string }>;
     };
-    if (found.ok && foundPayload.files?.[0]?.id) {
+    if (foundPayload.files?.[0]?.id) {
         const result = { id: foundPayload.files[0].id, webViewLink: foundPayload.files[0].webViewLink };
         if (cacheKey) folderCache.set(cacheKey, result);
         return result;
@@ -265,6 +282,7 @@ async function findOrCreateFolder(accessToken: string, parentId: string, name: s
     if (cacheKey) folderCache.set(cacheKey, result);
     return result;
 }
+
 async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: string, kind: FileAssetKind | undefined, role: FileAttachmentRole | undefined, fileSize: number) {
     const access = await selectLiveWriteAccount(db, fileSize);
     if (!access.account.root_folder_id)
@@ -278,29 +296,96 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
     if (!template)
         throw new Error(`No active logical folder template exists for ${purpose.replaceAll("_", " ")}.`);
     const path = logicalStoragePath(db, entityType, entityId, template);
-    let folderId = access.account.root_folder_id;
-    let folderUrl = access.account.web_view_link;
-    let currentPath = "";
-    for (const part of path.split("/").map((value) => safeSegment(value, "General")).filter(Boolean)) {
-        currentPath += "/" + part;
-        const cacheKey = `${access.account.id}:${currentPath}`;
-        const folder = await findOrCreateFolder(access.accessToken, folderId, part, cacheKey);
-        folderId = folder.id!;
-        folderUrl = folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`;
+
+    // ── FIX-DUP-001: Read the persisted storageFolderInstances cache FIRST ──
+    // The upload route persists every resolved folder instance to
+    // db.master.storageFolderInstances (with google_folder_id + folder_path).
+    // Before querying Drive or creating anything, check if we already have a
+    // cached instance for this exact (storage_account_id, folder_path) pair.
+    // This eliminates duplicate folder creation across serverless cold starts
+    // — the #1 cause of the "multiple duplicate folders" Drive noise.
+    const persistedInstance = (db.master.storageFolderInstances || []).find(
+        (inst) => inst.storage_account_id === access.account.id && inst.folder_path === path && inst.google_folder_id,
+    );
+    if (persistedInstance) {
+        return {
+            access,
+            template,
+            folderId: persistedInstance.google_folder_id!,
+            folderUrl: persistedInstance.web_view_link || `https://drive.google.com/drive/folders/${persistedInstance.google_folder_id}`,
+            path,
+            instance: {
+                id: persistedInstance.id,
+                storage_account_id: access.account.id,
+                template_id: template.id,
+                google_folder_id: persistedInstance.google_folder_id!,
+                folder_path: path,
+                web_view_link: persistedInstance.web_view_link,
+            },
+        };
     }
+
+    // ── FIX-DUP-001: Per-path mutex ──
+    // Deduplicate concurrent resolutions for the same path so that parallel
+    // uploads (Promise.allSettled of N photos) share a single folder-creation
+    // pass instead of each creating its own duplicate folder tree.
+    const mutexKey = `${access.account.id}:${path}`;
+    const resolutionPromise = folderResolutionInFlight.get(mutexKey);
+    if (resolutionPromise) {
+        const resolved = await resolutionPromise;
+        return {
+            access,
+            template,
+            folderId: resolved.id,
+            folderUrl: resolved.webViewLink || `https://drive.google.com/drive/folders/${resolved.id}`,
+            path,
+            instance: {
+                id: `storage-folder-${access.account.id}-${resolved.id}`,
+                storage_account_id: access.account.id,
+                template_id: template.id,
+                google_folder_id: resolved.id,
+                folder_path: path,
+                web_view_link: resolved.webViewLink,
+            },
+        };
+    }
+
+    const doResolve = async (): Promise<{ id: string; webViewLink?: string }> => {
+        let folderId = access.account.root_folder_id;
+        let folderUrl = access.account.web_view_link;
+        let currentPath = "";
+        for (const part of path.split("/").map((value) => safeSegment(value, "General")).filter(Boolean)) {
+            currentPath += "/" + part;
+            const cacheKey = `${access.account.id}:${currentPath}`;
+            const folder = await findOrCreateFolder(access.accessToken, folderId, part, cacheKey);
+            folderId = folder.id!;
+            folderUrl = folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`;
+        }
+        return { id: folderId, webViewLink: folderUrl };
+    };
+
+    let resolution: { id: string; webViewLink?: string };
+    try {
+        const promise = doResolve();
+        folderResolutionInFlight.set(mutexKey, promise);
+        resolution = await promise;
+    } finally {
+        folderResolutionInFlight.delete(mutexKey);
+    }
+
     return {
         access,
         template,
-        folderId,
-        folderUrl,
+        folderId: resolution.id,
+        folderUrl: resolution.webViewLink || `https://drive.google.com/drive/folders/${resolution.id}`,
         path,
         instance: {
-            id: `storage-folder-${access.account.id}-${folderId}`,
+            id: `storage-folder-${access.account.id}-${resolution.id}`,
             storage_account_id: access.account.id,
             template_id: template.id,
-            google_folder_id: folderId,
+            google_folder_id: resolution.id,
             folder_path: path,
-            web_view_link: folderUrl,
+            web_view_link: resolution.webViewLink,
         },
     };
 }
