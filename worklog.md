@@ -6472,3 +6472,45 @@ Stage Summary:
 - FK registry now enforces 40+ additional relationship fields (was ~178 rules, now ~218).
 - 7 entity interfaces gained new cross-module connection fields.
 - 9 entity types gained standalone validation in validateBusinessData (was 0).
+
+---
+Task ID: FIX-E2E-001 + FIX-E2E-002
+Agent: main (Z.ai Code)
+Task: End-to-end verification of all Drive upload fixes on the live production site.
+
+Work Log:
+- Ran full E2E test on https://urban-castle.vercel.app: create customer with 5 photos, verify Drive.
+
+FIRST TEST (after FIX-E2E-001 awaitServerSync):
+- Commit → 200 ✅ (awaitServerSync worked — commit completed before uploads)
+- 4 of 5 uploads → 200, 1 → 422 (still a race)
+- BUT: 4 duplicate "Site Proof" folders created (parallel uploads on different serverless instances)
+- AND: 409 Conflict on final commit (upload route's saveWorkspace conflicted with client's commit)
+- Root cause: upload route called saveWorkspace() (full workspace commit) which raced with the client's commit. The 409 prevented storageFolderInstance from being persisted, so parallel uploads couldn't find the cached folder.
+
+FIX-E2E-002:
+1. Replaced saveWorkspace() in upload route with lightweight Supabase UPSERT of just the storageFolderInstance row (no workspace revision bump, no 409 conflict).
+2. Changed EntityFormDialog uploads from Promise.allSettled (parallel) to for...of (sequential) so each upload finds the folder created by the previous one.
+
+SECOND TEST (after FIX-E2E-002):
+- Commit → 200 ✅
+- All 5 uploads → 200 ✅ (sequential, zero failures)
+- Final commit → 200 ✅ (no 409 conflict)
+- NO 422 errors ✅
+- NO 409 conflicts ✅
+
+DRIVE VERIFICATION:
+- Customer folders named "E2E Clean Test": 1 ✅ (was 4+ before)
+- Site folders named "E2E Clean Residence": 1 ✅
+- Site Proof folders: 1 ✅
+- Files in Site Proof: 5 (img1.jpg through img5.jpg) ✅
+- Zero duplicate folders ✅
+
+Stage Summary:
+- ALL FIXES VERIFIED END-TO-END ON PRODUCTION.
+- The complete fix chain that made uploads work:
+  1. FIX-DRIVE-001: XHR → fetch (server now receives all FormData fields)
+  2. FIX-DUP-001: persisted cache + mutex + throw-on-failure (prevents duplicates within a single instance)
+  3. FIX-E2E-001: awaitServerSync before uploads (commit completes before uploads start)
+  4. FIX-E2E-002: lightweight folder UPSERT + sequential uploads (eliminates 409 conflict + cross-instance duplicate race)
+- Result: 5/5 photos uploaded, 1/1 folder tree, 0 errors.
