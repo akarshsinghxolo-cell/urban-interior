@@ -441,7 +441,7 @@ export function RDashApp() {
         <Sidebar />
         <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkspaceHeader />
-          <main className="rd-scroll min-h-0 flex-1 overflow-y-auto">
+          <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-32 lg:pb-0">
             <section aria-label="Active workspace" className="rd-module-enter mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] py-[var(--page-pad)]" key={activeModuleId}>
               <React.Suspense fallback={<ModuleLoadingFallback />}>
                 <ModuleRouter />
@@ -487,7 +487,7 @@ export function RDashApp() {
         ] as const).map((item) => {
             const Icon = item.icon;
             const active = activeModuleId === item.target.id;
-            return (<button key={item.label} type="button" aria-label={item.label} aria-current={active ? "page" : undefined} onClick={() => setActiveModule(item.target.id)} className={cn("relative flex flex-1 flex-col items-center gap-0.5 px-2 py-2 text-[10px] font-bold transition-colors", active
+            return (<button key={item.label} type="button" aria-label={item.label} aria-current={active ? "page" : undefined} onClick={() => setActiveModule(item.target.id)} className={cn("relative flex flex-1 flex-col items-center gap-0.5 px-2 py-2.5 text-[11px] font-bold transition-colors", active
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground")}>
                   {active && (<span className="absolute top-0 h-0.5 w-8 rounded-full bg-primary" aria-hidden/>)}
@@ -495,12 +495,12 @@ export function RDashApp() {
                   <span>{item.label}</span>
                 </button>);
         })}
-            <button type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)} className="flex flex-1 flex-col items-center gap-0.5 px-2 py-2 text-[10px] font-bold text-muted-foreground hover:text-foreground">
+            <button type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)} className="flex flex-1 flex-col items-center gap-0.5 px-2 py-2.5 text-[11px] font-bold text-muted-foreground hover:text-foreground">
               <Menu className="h-5 w-5" aria-hidden/>
               <span>More</span>
             </button>
           </nav>
-          <footer className="rd-sidebar-header mt-auto flex shrink-0 items-center justify-between gap-2 border-t border-border px-[var(--page-pad)] py-2 text-[11px] text-muted-foreground">
+          <footer className="rd-sidebar-header mt-auto hidden shrink-0 items-center justify-between gap-2 border-t border-border px-[var(--page-pad)] py-2 text-[11px] text-muted-foreground md:flex">
             <div className="flex items-center gap-2">
               <span className="flex h-4 w-4 items-center justify-center rounded bg-primary/10 text-[8px] font-black text-primary">
                 UC

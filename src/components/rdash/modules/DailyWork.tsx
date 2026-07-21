@@ -644,7 +644,7 @@ export function DailyWork() {
       </div>
 
       {/* Workflow steps (imported from WorkdeskDashboard) */}
-      <section aria-label="Module workflow steps" className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <section aria-label="Module workflow steps" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <WorkflowStepRich index="01" title="See work" description="Assigned actions and due dates" meta={`${openTasks.length} open`} state="active"/>
         <WorkflowStepRich index="02" title="Resolve risk" description="Blocker, risk, approval or collection" meta={`${attentionCount} attention`} state={attentionCount > 0 ? "pending" : "done"}/>
         <WorkflowStepRich index="03" title="Open work context" description="Go to the exact scope without re-searching" meta="context retained" state="default"/>

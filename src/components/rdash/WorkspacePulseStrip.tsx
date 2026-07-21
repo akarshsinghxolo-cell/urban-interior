@@ -471,7 +471,7 @@ export function WorkspacePulseStrip() {
                 if ("kind" in qa) openCreateDialog?.({ kind: qa.kind });
                 else if ("navigate" in qa) setActiveModule(qa.navigate);
               }}
-              className="group inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground/80 transition-all duration-150 hover:bg-primary/5 hover:text-primary hover:border-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="group inline-flex min-h-[36px] items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1.5 text-[11px] font-medium text-foreground/80 transition-all duration-150 hover:bg-primary/5 hover:text-primary hover:border-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               {qa.icon}
               <span className="hidden sm:inline">{qa.label}</span>

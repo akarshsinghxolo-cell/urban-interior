@@ -195,7 +195,7 @@ export function WorkspaceHeader() {
                 {tabs.length > 1 && (<button type="button" aria-label="Close tab" onClick={(e) => {
                             e.stopPropagation();
                             closeTab(t.id);
-                        }} className="ml-0.5 rounded p-0.5 text-muted-foreground/70 opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100">
+                        }} className="ml-0.5 flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100">
                     <X className="h-3 w-3"/>
                   </button>)}
               </div>);

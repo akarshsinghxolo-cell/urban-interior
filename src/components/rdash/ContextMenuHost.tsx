@@ -56,7 +56,7 @@ export function ContextRow({ children, actions, className, onSelect, onOpenConte
           <div className="absolute right-1.5 top-1.5 z-10 opacity-100 transition-opacity">
             <DropdownMenu open={open} onOpenChange={handleOpenChange}>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full border border-border/70 bg-card text-muted-foreground shadow-sm hover:bg-background hover:text-foreground" aria-label="Record actions" onClick={(e) => e.stopPropagation()}>
+                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full border border-border/70 bg-card text-muted-foreground shadow-sm hover:bg-background hover:text-foreground" aria-label="Record actions" onClick={(e) => e.stopPropagation()}>
                   <MoreHorizontal className="h-4 w-4"/>
                 </Button>
               </DropdownMenuTrigger>

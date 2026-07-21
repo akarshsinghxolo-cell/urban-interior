@@ -651,28 +651,28 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
           <div className="grid gap-3">
             <div>
               <label className="text-[10px] font-semibold uppercase text-muted-foreground">{nameLabel}</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "customer" ? "e.g. Mr. Das" : "e.g. Sharma Interiors"} className="h-9 text-sm" autoFocus/>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "customer" ? "e.g. Mr. Das" : "e.g. Sharma Interiors"} className="h-11 text-sm" autoFocus/>
             </div>
             <div>
               <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contact number</label>
-              <Input value={phone} onChange={(e) => setPhone(sanitizeIndianMobile(e.target.value))} placeholder="9876543210" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-9 text-sm"/>
+              <Input value={phone} onChange={(e) => setPhone(sanitizeIndianMobile(e.target.value))} placeholder="9876543210" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/>
               {phone && phone.length > 0 && phone.length !== 10 && <p className="mt-0.5 text-[10px] text-warning">Enter 10 digits ({phone.length}/10)</p>}
               {phone && phone.length === 10 && !/^[6-9]/.test(phone) && <p className="mt-0.5 text-[10px] text-destructive">Must start with 6, 7, 8, or 9</p>}
             </div>
             {type !== "customer" && <div className="rounded-lg border border-border bg-muted/20 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <label className="text-[10px] font-semibold uppercase text-muted-foreground">Location & Address</label>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={handleCaptureGps} disabled={gpsLoading}>
+                <Button size="sm" variant="outline" className="h-9 text-xs" onClick={handleCaptureGps} disabled={gpsLoading}>
                   <Navigation className={cn("mr-1 h-3.5 w-3.5", gpsLoading && "animate-spin")}/> {gpsLoading ? "Capturing…" : "Capture GPS"}
                 </Button>
               </div>
-              <Input value={coordinateInput} onChange={(e) => updateCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-9 text-sm"/>
+              <Input value={coordinateInput} onChange={(e) => updateCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-11 text-sm"/>
               {coordinateInputError(coordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(coordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}
               <div className="grid gap-2">
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (auto-filled from GPS or type manually)" className="h-9 text-sm"/>
+                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Address (auto-filled from GPS or type manually)" className="h-11 text-sm"/>
                 <div className="grid grid-cols-2 gap-2">
-                  <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="h-9 text-sm"/>
-                  <Input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Locality / Area" className="h-9 text-sm"/>
+                  <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" className="h-11 text-sm"/>
+                  <Input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/>
                 </div>
               </div>
             </div>}
@@ -680,7 +680,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
               <label className="text-[10px] font-semibold uppercase text-muted-foreground">{type === "customer" ? "Recommended by" : "Referred by"}</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
-                <Input value={referralQuery} onChange={(e) => { setReferralQuery(e.target.value); setShowReferralDropdown(true); setReferralSelected(null); }} onFocus={() => setShowReferralDropdown(true)} placeholder="Type name to search existing records, or enter new referrer" className="h-9 pl-8 text-sm"/>
+                <Input value={referralQuery} onChange={(e) => { setReferralQuery(e.target.value); setShowReferralDropdown(true); setReferralSelected(null); }} onFocus={() => setShowReferralDropdown(true)} placeholder="Type name to search existing records, or enter new referrer" className="h-11 pl-8 text-sm"/>
               </div>
               {showReferralDropdown && referralOptions.length > 0 && (<div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-card shadow-popover rd-scroll">
                   {referralOptions.map((opt) => (<button key={opt.id || opt.name} type="button" onClick={() => { setReferralSelected({ id: opt.id, name: opt.name }); setReferralQuery(opt.name); setShowReferralDropdown(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-accent/40">
@@ -693,9 +693,9 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             </div>
             {type === "customer" && (<>
                 <div className="grid gap-2 sm:grid-cols-3">
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">WhatsApp number</label><Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Defaults to contact number" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-9 text-sm"/></div>
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Alternate number</label><Input value={alternatePhone} onChange={(e) => setAlternatePhone(e.target.value)} placeholder="Optional" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-9 text-sm"/></div>
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Email</label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" className="h-9 text-sm"/></div>
+                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">WhatsApp number</label><Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Defaults to contact number" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/></div>
+                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Alternate number</label><Input value={alternatePhone} onChange={(e) => setAlternatePhone(e.target.value)} placeholder="Optional" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/></div>
+                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Email</label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" className="h-11 text-sm"/></div>
                 </div>
                 {customerIdentityMatches.length > 0 && (<div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
                     <div className="flex items-start justify-between gap-3">
@@ -708,7 +708,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                   </div>)}
                 <div className="grid gap-2 sm:grid-cols-[180px_1fr]">
                   <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Account condition</label><select value={customerStatus} onChange={(e) => setCustomerStatus(e.target.value as typeof customerStatus)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option></select></div>
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Customer notes</label><Input value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder="Preferences, communication notes or customer-level instructions" className="h-9 text-sm"/></div>
+                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Customer notes</label><Input value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder="Preferences, communication notes or customer-level instructions" className="h-11 text-sm"/></div>
                 </div>
                 <div className="rounded-lg border border-border bg-muted/20 p-3">
                   <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer roles</p>
@@ -744,10 +744,10 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 {!isEditMode ? (<div className="rounded-lg border border-primary/25 bg-primary/[0.035] p-3">
                     <label className="flex cursor-pointer items-start gap-2"><input type="checkbox" checked={addFirstSite} onChange={(e) => setAddFirstSite(e.target.checked)} className="mt-0.5"/><span><span className="text-sm font-semibold">Add First Site now</span><span className="mt-0.5 block text-[11px] text-muted-foreground">For service work, capture the property/site here. Address, GPS, building, property type and photos belong to the Site—not the Customer.</span></span></label>
                     {addFirstSite && <div className="mt-3 space-y-3 border-t border-primary/15 pt-3">
-                      <div className="grid gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site name *</label><Input ref={firstSiteNameRef} aria-invalid={firstSiteNameError ? true : undefined} value={firstSiteName} onChange={(e) => { setFirstSiteName(e.target.value); if (firstSiteNameError) setFirstSiteNameError(null); }} placeholder="Das Residence — 3BHK Apartment" className="h-9 text-sm"/>{firstSiteNameError && <p className="mt-1 text-[11px] font-medium text-destructive">{firstSiteNameError}</p>}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Property type</label><select value={firstSiteType} onChange={(e) => setFirstSiteType(e.target.value as typeof firstSiteType)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="apartment">Apartment</option><option value="office">Office</option><option value="villa">Villa</option><option value="shop">Shop</option><option value="showroom">Showroom</option><option value="other">Other</option></select></div></div>
-                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Building / project name</label><Input value={firstSiteBuildingName} onChange={(e) => setFirstSiteBuildingName(e.target.value)} placeholder="Legio Apartment, Tower B / project name" className="h-9 text-sm"/></div>
-                      <div className="rounded-md border border-border bg-card p-2.5"><div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">Site location</span><Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={handleCaptureFirstSiteGps} disabled={firstSiteGpsLoading}><Navigation className={cn("mr-1 h-3.5 w-3.5", firstSiteGpsLoading && "animate-spin")}/>{firstSiteGpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><Input value={firstSiteCoordinateInput} onChange={(e) => updateFirstSiteCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-9 text-sm"/>{coordinateInputError(firstSiteCoordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(firstSiteCoordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}<div className="grid gap-2"><Input value={firstSiteAddress} onChange={(e) => setFirstSiteAddress(e.target.value)} placeholder="Full Site address" className="h-9 text-sm"/><div className="grid grid-cols-2 gap-2"><Input value={firstSiteLocality} onChange={(e) => setFirstSiteLocality(e.target.value)} placeholder="Locality / Area" className="h-9 text-sm"/><Input value={firstSiteCity} onChange={(e) => setFirstSiteCity(e.target.value)} placeholder="City" className="h-9 text-sm"/></div><Input value={firstSiteMapUrl} onChange={(e) => setFirstSiteMapUrl(e.target.value)} placeholder="Google Maps link (optional)" className="h-9 text-sm"/></div></div>
-                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label><Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={handleFirstSitePhotos} className="h-9 text-sm"/>{firstSitePhotos.length > 0 && <div className="mt-2 grid grid-cols-4 gap-2">{firstSitePhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => setFirstSitePhotos((items) => items.filter((item) => item.id !== photo.id))} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}</div>}</div>
+                      <div className="grid gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site name *</label><Input ref={firstSiteNameRef} aria-invalid={firstSiteNameError ? true : undefined} value={firstSiteName} onChange={(e) => { setFirstSiteName(e.target.value); if (firstSiteNameError) setFirstSiteNameError(null); }} placeholder="Das Residence — 3BHK Apartment" className="h-11 text-sm"/>{firstSiteNameError && <p className="mt-1 text-[11px] font-medium text-destructive">{firstSiteNameError}</p>}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Property type</label><select value={firstSiteType} onChange={(e) => setFirstSiteType(e.target.value as typeof firstSiteType)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="apartment">Apartment</option><option value="office">Office</option><option value="villa">Villa</option><option value="shop">Shop</option><option value="showroom">Showroom</option><option value="other">Other</option></select></div></div>
+                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Building / project name</label><Input value={firstSiteBuildingName} onChange={(e) => setFirstSiteBuildingName(e.target.value)} placeholder="Legio Apartment, Tower B / project name" className="h-11 text-sm"/></div>
+                      <div className="rounded-md border border-border bg-card p-2.5"><div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">Site location</span><Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={handleCaptureFirstSiteGps} disabled={firstSiteGpsLoading}><Navigation className={cn("mr-1 h-3.5 w-3.5", firstSiteGpsLoading && "animate-spin")}/>{firstSiteGpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><Input value={firstSiteCoordinateInput} onChange={(e) => updateFirstSiteCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-11 text-sm"/>{coordinateInputError(firstSiteCoordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(firstSiteCoordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}<div className="grid gap-2"><Input value={firstSiteAddress} onChange={(e) => setFirstSiteAddress(e.target.value)} placeholder="Full Site address" className="h-11 text-sm"/><div className="grid grid-cols-2 gap-2"><Input value={firstSiteLocality} onChange={(e) => setFirstSiteLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/><Input value={firstSiteCity} onChange={(e) => setFirstSiteCity(e.target.value)} placeholder="City" className="h-11 text-sm"/></div><Input value={firstSiteMapUrl} onChange={(e) => setFirstSiteMapUrl(e.target.value)} placeholder="Google Maps link (optional)" className="h-11 text-sm"/></div></div>
+                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label><Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={handleFirstSitePhotos} className="h-11 text-sm"/>{firstSitePhotos.length > 0 && <div className="mt-2 grid grid-cols-4 gap-2">{firstSitePhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => setFirstSitePhotos((items) => items.filter((item) => item.id !== photo.id))} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}</div>}</div>
                       <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site notes</label><Textarea value={firstSiteNotes} onChange={(e) => setFirstSiteNotes(e.target.value)} placeholder="Landmark, access conditions, site contact or property notes" rows={2} className="text-sm"/></div>
                     </div>}
                   </div>) : <p className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">Customer edit changes contact, account and broad interests only. Edit address, GPS, property type and photos from Context → Sites → Edit Site.</p>}
@@ -756,7 +756,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Business card photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setBusinessCardPhoto)} className="h-9 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setBusinessCardPhoto)} className="h-11 text-sm"/>
                     {businessCardPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(businessCardPhoto, db)!} compact controls/>
@@ -765,7 +765,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Shop photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setShopPhoto)} className="h-9 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setShopPhoto)} className="h-11 text-sm"/>
                     {shopPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(shopPhoto, db)!} compact controls/>
@@ -841,7 +841,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contractor photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorPhoto)} className="h-9 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorPhoto)} className="h-11 text-sm"/>
                     {contractorPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(contractorPhoto, db)!} compact controls/>
@@ -850,7 +850,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Business card photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorCardPhoto)} className="h-9 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorCardPhoto)} className="h-11 text-sm"/>
                     {contractorCardPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(contractorCardPhoto, db)!} compact controls/>

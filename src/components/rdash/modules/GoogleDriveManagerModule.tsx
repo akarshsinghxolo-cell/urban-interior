@@ -254,7 +254,7 @@ export function GoogleDriveManagerModule() {
           <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
             <div className="border-b border-border px-4 py-3"><h3 className="text-sm font-bold">Drive Accounts</h3><p className="mt-0.5 text-xs text-muted-foreground">Only the active Drive receives new uploads. Reorder by priority; pause or disable a Drive without breaking old links.</p></div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-xs">
+              <table className="w-full text-left text-xs md:min-w-[900px]">
                 <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3">Active</th><th className="px-4 py-3">Drive account</th><th className="px-4 py-3">Storage</th><th className="px-4 py-3">Priority / status</th><th className="px-4 py-3">Actions</th></tr></thead>
                 <tbody className="divide-y divide-border">
                   {accounts.map((account) => {

@@ -41,7 +41,9 @@ export function QueueSection({ title, icon, records, columns = 3, emptyTitle = "
         3: "sm:grid-cols-2 xl:grid-cols-3",
         4: "sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4",
     }[columns];
-    return (<section className="flex flex-col gap-3">
+    // MOB-014: Auto-collapse empty sections on mobile to reduce scroll fatigue
+    const isEmpty = records.length === 0;
+    return (<section className={cn("flex flex-col gap-3", isEmpty && "hidden md:flex")}>
       <SectionHeader title={title} count={records.length} icon={icon} action={collapsible ? (<button type="button" onClick={() => setOpen((v) => !v)} className="text-xs font-medium text-muted-foreground hover:text-foreground">
               {open ? "Collapse" : "Expand"}
             </button>) : null}/>
