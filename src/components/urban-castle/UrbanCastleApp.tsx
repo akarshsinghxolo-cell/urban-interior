@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { RDashApp } from "../rdash/RDashApp";
 import { useRDashStore } from "@/lib/rdash/store";
+import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 
 /**
  * Urban Castle application shell.
@@ -37,6 +38,11 @@ export function UrbanCastleApp() {
   React.useEffect(() => {
     document.title = "Urban Castle";
   }, []);
+
+  // Mirror in-app navigation onto the browser history so the mobile back
+  // gesture (iOS edge-swipe / Android back) walks back through the app
+  // instead of exiting on the first swipe. See use-browser-history-sync.ts.
+  useBrowserHistorySync();
 
   // Track whether reconciliation has already been run for the current
   // session so we don't fire it on every authUser re-render.
