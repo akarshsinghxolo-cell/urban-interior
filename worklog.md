@@ -5064,3 +5064,1251 @@ Stage Summary:
   * Clean lockfile with zero prisma references
 - NO BEHAVIORAL CHANGE: The app's data layer (Supabase REST) is untouched. All workspace reads/writes, auth, file uploads, and Drive integration work identically.
 - Files changed: src/lib/db.ts (deleted), package.json (deps + scripts removed), .env (DATABASE_URL removed), bun.lock (auto-updated).
+
+---
+Task ID: ANALYSIS-001
+Agent: general-purpose (deep data-model relationship analysis)
+Task: RESEARCH-ONLY deep data-model relationship analysis — "what is connected to what, and what SHOULD be connected to what" in the Urban Castle data model. Produce a definitive report. No code changes.
+
+Work Log:
+- Read worklog.md (5,066 lines) for prior context. Key antecedent tasks reviewed:
+  * Task ID 4/5 — built the integrity layer (fk-registry.ts: 178 FK rules; checker.ts; cascade.ts; repair.ts). Health score verified at 100/100 against in-memory seed (2,535 records, 6,085 references).
+  * Task ID FIX-PRISMA-001 — Prisma fully removed; data layer is now Supabase REST via commit-rest.ts. Each collection maps to a uniform `entity_*` table {id, workspace_id, revision, data jsonb}. ZERO Prisma, ZERO SQL FKs between entity_* tables.
+  * Task ID QA-DRIVE-001 / FIX-DRIVE-001 / FIX-DUP-001 — Drive upload + duplicate-folder fixes (relevant because folder instance linkage is part of the data model).
+- Sources analysed end-to-end:
+  * `src/lib/rdash/types.ts` (1,994 lines) — every interface, every ID-reference field extracted.
+  * `src/lib/rdash/entity-context.ts` (330 lines) — `resolveEntityContext` switch covering 27 entity types.
+  * `src/lib/rdash/server/commit-rest.ts` (376 lines) — `COLLECTION_TO_TABLE` mapping (82 entries).
+  * `src/lib/rdash/integrity/fk-registry.ts` (430 lines) — 178 declarative FK rules.
+  * `src/lib/rdash/business-rules.ts` (662 lines) — `validateBusinessData` runtime invariants.
+  * `src/lib/rdash/customer-relations.ts` (121 lines) — `resolveCustomerIdFromLinks` polymorphic resolver.
+  * `src/lib/rdash/entity-thread-map.ts` (108 lines) — entity_type → ThreadKind canonical map.
+  * `supabase/schema-entity-tables.sql` (1,243 lines) — DDL for 81 entity_* tables.
+- Queried live Supabase at `https://smfqwexofoqqrrhbzwmx.supabase.co` via REST for row counts on every collection and sampled 6 populated tables.
+- Diffed `COLLECTION_TO_TABLE` (82 entries) vs `schema-entity-tables.sql` (81 entity_* tables) — `entity_auditLog` is in code but missing from SQL.
+
+Stage Summary:
+
+# ANALYSIS-001 — Deep Data-Model Relationship Report
+
+## Executive Summary
+
+The Urban Castle data model is a **single-workspace, JSON-blob-per-row, zero-foreign-key store** layered on top of Supabase. There are **82 collections** mapped in code (57 top-level + 25 master), persisted to **81 physical `entity_*` tables** (the audit-log table is missing from the SQL DDL). All cross-collection relationships are stored as **string ID fields inside a `jsonb` `data` column** — Postgres enforces nothing between entity tables.
+
+Referential integrity is enforced entirely in application code via three layered mechanisms:
+1. **`validateBusinessData` (business-rules.ts)** — runs synchronously on every commit; throws `BusinessRuleError` if any customer/site/work-required/work-order/quotation/visit/line-item relationship is inconsistent (customer mismatch, missing parent, archived parent, etc.).
+2. **`resolveEntityContext` (entity-context.ts)** — used at file-upload time to chain any entity back to its owning customer (for Drive bucket routing); throws if the chain is broken or the customer changes mid-chain.
+3. **The Integrity Layer (fk-registry.ts + checker.ts + cascade.ts + repair.ts)** — declarative 178-rule registry consumed by the on-demand integrity dashboard, cascade-delete planner, and auto-repair.
+
+The live Supabase DB at `smfqwexofoqqrrhbzwmx.supabase.co` is **nearly empty**: 5 customers, 5 sites, 1 area, 1 workRequired, 1 measurementRevision, 13 threads, 6 fileAttachments, 6 fileAssets, 6 storageFolderInstances (5 of which are leftover duplicates from the FIX-DUP-001 fix), 1 vendor, 1 storageAccount, plus master articles/variants/units/categories/subcategories. **ZERO operational records exist in production** (no quotations, work orders, POs, GRNs, bills, payments, visits, tasks, followups, drawings, executionLogs, attendance, commSends, etc.). The in-memory seed has 2,535 records / 6,085 references at integrity 100/100, but **the live Supabase DB has not been seeded** with operational data and has accumulated only test/QA artefacts.
+
+The biggest structural gaps are:
+- **Polymorphic links everywhere without typed back-references** (threads, attachments, audit log, blocked items, tasks, followups, approvals, recurringTasks all use `record_id+record_type` / `entity_id+entity_type` / `linked_record_id+linked_record_type` patterns). The integrity checker cannot validate these — they're marked `onDelete: "ignore"` in fk-registry and "covered by validateBusinessData" — but the actual `validateBusinessData` only validates a *subset* (tasks/followups/actions/blocked/commSends/risks via `assertCustomerRelation`, which delegates to `resolveCustomerIdFromLinks` and does walk the polymorphic chain; threads via `assertThreadParentExists`).
+- **Orphan-tolerant uploads** — `drawing`, `task`, `followup` silently fall back to a system-level "General" / "Tasks" / "Follow-ups" Drive bucket when they have no customer link. This is by design ("flexibility") but masks missing links.
+- **`entity_auditLog` table missing from SQL** — every audit log insert silently fails in production (`commit-rest.ts:282-286` only catches 23505 unique-constraint errors, swallowing all other PostgREST errors).
+- **5 orphan/duplicate `storageFolderInstance` rows** in live DB, all pointing at `Customers/ghgh/Sites/ghjkl/Site Proof` — leftovers that FIX-DUP-001 prevents going forward but does not retroactively clean.
+- **`entity_master_subcategoryArticleMap` is empty in live DB** while `workSubcategory.work_required_article_ids` arrays reference IDs like `wia_fc_gyp_1` — these references are dangling in production (in-memory seed generates them via `ensureVendorRateCoverage`, but the live DB was never back-filled).
+- **No customer_id on many entities that participate in the business flow** — attendance, staffLocationPings, staffDocuments, payrollLines, salaryAdjustments, leaveRequests, recurringTasks, auditLog. They resolve to a staff member only; the staff member is workspace-level, not customer-owned. Whether this is correct depends on whether staff time should be billable to a customer/job — currently it isn't linkable.
+
+---
+
+## A. ENTITY INVENTORY
+
+### A.1 Top-level collections (57)
+
+| # | Collection | Supabase table | Owner kind | Live rows | Notes |
+|---|------------|----------------|------------|-----------|-------|
+| 1 | customers | entity_customers | customer | 5 | All QA test customers ("QA Test Customer", "ghgh", "Jsjjrjrn", "QA Drive Upload Test", "QA Capture Test") |
+| 2 | sites | entity_sites | customer (via customer_id) | 5 | 1 per customer |
+| 3 | areas | entity_areas | customer (via site→customer) | 1 | Only "Living Room" on QA Test Residence |
+| 4 | workRequired | entity_workRequired | customer | 1 | "Living room false ceiling" |
+| 5 | measurementRevisions | entity_measurementRevisions | customer (via site) | 1 | revision 1 of the Living Room |
+| 6 | quotations | entity_quotations | customer | 0 | — |
+| 7 | acceptedScopes | entity_acceptedScopes | customer | 0 | — |
+| 8 | workOrders | entity_workOrders | customer | 0 | — |
+| 9 | boqs | entity_boqs | customer (via workOrder) | 0 | — |
+| 10 | vendorRfqs | entity_vendorRfqs | customer (via workOrder) | 0 | — |
+| 11 | vendorBids | entity_vendorBids | vendor + customer | 0 | — |
+| 12 | purchaseOrders | entity_purchaseOrders | customer + vendor | 0 | — |
+| 13 | grns | entity_grns | customer + vendor | 0 | — |
+| 14 | inventory | entity_inventory | customer (via workOrder) | 0 | — |
+| 15 | stockMovements | entity_stockMovements | customer (via inventory/wo) | 0 | — |
+| 16 | dispatches | entity_dispatches | customer (via workOrder) | 0 | — |
+| 17 | vendorBills | entity_vendorBills | customer + vendor | 0 | — |
+| 18 | vendorPayments | entity_vendorPayments | customer + vendor | 0 | — |
+| 19 | contractorBills | entity_contractorBills | customer + contractor | 0 | — |
+| 20 | contractorPayments | entity_contractorPayments | customer + contractor | 0 | — |
+| 21 | commissions | entity_commissions | customer + sourcePartner | 0 | — |
+| 22 | workOrderCostLines | entity_workOrderCostLines | customer (via workOrder) | 0 | — |
+| 23 | contractorBids | entity_contractorBids | customer + contractor | 0 | — |
+| 24 | contractorSettlements | entity_contractorSettlements | customer + contractor | 0 | — |
+| 25 | drawings | entity_drawings | customer (optional) | 0 | Has "system" fallback if no site/wo |
+| 26 | executionLogs | entity_executionLogs | customer (via workOrder) | 0 | — |
+| 27 | variationRequests | entity_variationRequests | customer | 0 | — |
+| 28 | visits | entity_visits | customer + staff (+ contractor/vendor) | 0 | — |
+| 29 | tasks | entity_tasks | customer (optional, polymorphic) | 0 | Orphan-tolerant → system fallback |
+| 30 | followups | entity_followups | customer (optional, polymorphic) | 0 | Orphan-tolerant → system fallback |
+| 31 | actions | entity_actions | customer (optional, polymorphic) | 0 | ApprovalAction; linked_record_id+type |
+| 32 | payments | entity_payments | customer | 0 | — |
+| 33 | invoices | entity_invoices | customer | 0 | — |
+| 34 | customerReceipts | entity_customerReceipts | customer | 0 | — |
+| 35 | blocked | entity_blocked | customer (optional, polymorphic) | 0 | Throws if no customer resolvable |
+| 36 | risks | entity_risks | customer (optional) | 0 | — |
+| 37 | threads | entity_threads | polymorphic (record_id+record_type) | 13 | All QA-test customer/site/area/workRequired threads |
+| 38 | attendance | entity_attendance | staff (+ optional visit) | 0 | NO customer link |
+| 39 | staffLocationPings | entity_staffLocationPings | staff | 0 | NO customer link |
+| 40 | staffRolePermissions | entity_staffRolePermissions | system (role_key+module_key) | 0 | Config — no FKs |
+| 41 | staffAuthUsers | entity_staffAuthUsers | staff | 0 | — |
+| 42 | leaveRequests | entity_leaveRequests | staff | 0 | NO customer link |
+| 43 | payrollPeriods | entity_payrollPeriods | system | 0 | Config — no FKs |
+| 44 | payrollLines | entity_payrollLines | staff + period | 0 | NO customer link |
+| 45 | salaryAdjustments | entity_salaryAdjustments | staff | 0 | NO customer link |
+| 46 | staffDocuments | entity_staffDocuments | staff | 0 | NO customer link |
+| 47 | approvalPolicies | entity_approvalPolicies | system | 0 | Config — no FKs |
+| 48 | automationRules | entity_automationRules | system | 0 | Config — no FKs |
+| 49 | recurringTasks | entity_recurringTasks | staff assignee only | 0 | NO customer link, polymorphic scope |
+| 50 | commSends | entity_commSends | customer (required) | 0 | — |
+| 51 | entityFileAttachments | entity_entityFileAttachments | polymorphic (entity_id+entity_type) | 6 | All 6 attach to `site-mrued0y4ocze` |
+| 52 | entityReferenceAssignments | entity_entityReferenceAssignments | polymorphic + optional customer_id | 0 | Catalogue/pinterest/reference_media assignments |
+| 53 | commercialTerms | entity_commercialTerms | system | 0 | Config — no FKs |
+| 54 | paymentTermTemplates | entity_paymentTermTemplates | system | 0 | Config — no FKs |
+| 55 | taxConfigs | entity_taxConfigs | system | 0 | Config — no FKs |
+| 56 | validityConfigs | entity_validityConfigs | system | 0 | Config — no FKs |
+| 57 | auditLog | entity_auditLog | polymorphic (entity_type+entity_id) | **N/A — table missing** | Collection in code but **table absent from schema-entity-tables.sql** |
+
+### A.2 Master collections (25)
+
+| # | Collection | Supabase table | Live rows | Notes |
+|---|------------|----------------|-----------|-------|
+| 1 | master.units | entity_master_units | 17 | Measurement units (sqft, rft, etc.) |
+| 2 | master.workCategories | entity_master_workCategories | 13 | Top-level work taxonomy |
+| 3 | master.workSubcategories | entity_master_workSubcategories | 68 | Includes `work_required_article_ids[]` (dangling in live DB) |
+| 4 | master.articles | entity_master_articles | 252 | Materials catalogue |
+| 5 | master.articleVariants | entity_master_articleVariants | 302 | Brand/grade/finish variants |
+| 6 | master.subcategoryArticleMap | entity_master_subcategoryArticleMap | **0** | WorkRequiredArticle rows — **EMPTY**, but referenced by workSubcategory.work_required_article_ids |
+| 7 | master.workOptionGroups | entity_master_workOptionGroups | 0 | Unknown schema (typed `unknown[]`) |
+| 8 | master.workOptionValues | entity_master_workOptionValues | 0 | Unknown schema (typed `unknown[]`) |
+| 9 | master.vendors | entity_master_vendors | 1 | "Build Mart" (Bengaluru) |
+| 10 | master.contractors | entity_master_contractors | 0 | — |
+| 11 | master.staff | entity_master_staff | 0 | — |
+| 12 | master.sourcePartners | entity_master_sourcePartners | 0 | Referenced by Customer.source_partner_id, Commission.source_partner_id |
+| 13 | master.commissionRules | entity_master_commissionRules | 0 | — |
+| 14 | master.vendorRates | entity_master_vendorRates | 0 | — |
+| 15 | master.contractorRates | entity_master_contractorRates | 0 | — |
+| 16 | master.customerRateSuggestions | entity_master_customerRateSuggestions | 0 | Typed `unknown[]` |
+| 17 | master.vendorRateHistories | entity_master_vendorRateHistories | 0 | Was the source of the seed-data integrity bug fixed in Task ID 5 |
+| 18 | master.storageAccounts | entity_master_storageAccounts | 1 | "Urban Drive 1" (the production Google Drive account) |
+| 19 | master.storageFolderTemplates | entity_master_storageFolderTemplates | 0 | Path templates per purpose |
+| 20 | master.storageFolderInstances | entity_master_storageFolderInstances | 6 | **5 of 6 are duplicate folders** for `Customers/ghgh/Sites/ghjkl/Site Proof` |
+| 21 | master.fileAssets | entity_master_fileAssets | 6 | All Google Drive files |
+| 22 | master.catalogues | entity_master_catalogues | 0 | — |
+| 23 | master.catalogueArticleVendorLinks | entity_master_catalogueArticleVendorLinks | 0 | Ternary join table |
+| 24 | master.pinterestBoards | entity_master_pinterestBoards | 0 | — |
+| 25 | master.referenceMedia | entity_master_referenceMedia | 0 | — |
+
+**Live grand total**: ~660 rows across all 82 collections (mostly master articles/variants). The `entity_workspace_revision` row shows revision 23 (only 23 commits have ever landed in production).
+
+---
+
+## B. DECLARED RELATIONSHIP GRAPH (from types.ts)
+
+This is the complete edge list — every ID-reference field declared in `src/lib/rdash/types.ts`. Required (`ID`) vs optional (`ID?`) noted. Array fields marked `[arr]`.
+
+### B.1 Customer-domain (types.ts:35-145)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| Customer | source_partner_id | SourcePartner | optional | 46 |
+| Customer | interest_category_ids[] | WorkCategory | optional array | 44 |
+| Customer | interest_work_subcategory_ids[] | WorkSubcategory | optional array | 45 |
+| Site | customer_id | Customer | **required** | 61 |
+| Site | photo_attachment_ids[] | EntityFileAttachment | optional array | 73 |
+| Site | source_partner_id | SourcePartner | optional | 74 |
+| Area | site_id | Site | **required** | 88 |
+| Area | replaced_by_area_id | Area | optional | 103 |
+| WorkRequired | customer_id | Customer | **required** | 110 |
+| WorkRequired | site_id | Site | **required** | 111 |
+| WorkRequired | work_category_id | WorkCategory | optional | 113 |
+| WorkRequired | work_subcategory_id | WorkSubcategory | optional | 114 |
+| WorkRequired | area_ids[] | Area | **required array** | 117 |
+| MeasurementRevision | site_id | Site | **required** | 129 |
+| MeasurementRevision | area_id | Area | **required** | 130 |
+| MeasurementRevision | work_required_id | WorkRequired | optional | 131 |
+| MeasurementRevision | drawing_id | Drawing | optional | 143 |
+
+### B.2 Quotation & Work-Order domain (types.ts:147-316)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| Quotation | customer_id | Customer | **required** | 198 |
+| Quotation | site_id | Site | **required** | 200 |
+| Quotation | parent_quotation_id | Quotation | optional | 204 |
+| Quotation | superseded_by_quotation_id | Quotation | optional | 210 |
+| Quotation | thread_id | Thread | optional | 224 |
+| Quotation | work_order_ids[] | WorkOrder | array (can be empty) | 226 |
+| Quotation.coverage | work_required_id | WorkRequired | **required** | 189 |
+| Quotation.coverage | area_ids[] | Area | array | 190 |
+| Quotation.coverage | measurement_revision_ids[] | MeasurementRevision | array | 191 |
+| LineItem (scope_lines/items) | article_id | Article | optional | 157 |
+| LineItem | category_id | WorkCategory | optional | 158 |
+| LineItem | work_required_id | WorkRequired | optional | 159 |
+| LineItem | work_required_article_id | WorkRequiredArticle (subcategoryArticleMap) | optional | 160 |
+| LineItem | variant_id | ArticleVariant | optional | 161 |
+| LineItem | site_id | Site | optional | 162 |
+| LineItem | area_id | Area | optional | 163 |
+| LineItem | drawing_id | Drawing | optional | 166 |
+| LineItem | source_item_id | (polymorphic — depends on source_kind) | optional | 178 |
+| AcceptedScope | quotation_id | Quotation | **required** | 257 |
+| AcceptedScope | customer_id | Customer | **required** | 258 |
+| AcceptedScope | site_id | Site | **required** | 259 |
+| AcceptedScope | work_required_id | WorkRequired | **required** | 260 |
+| AcceptedScope | area_ids[] | Area | array | 261 |
+| AcceptedScope | measurement_revision_ids[] | MeasurementRevision | array | 262 |
+| AcceptedScope | contractor_bid_id | ContractorBid | optional | 266 |
+| AcceptedScope | work_order_id | WorkOrder | optional | 267 |
+| WorkOrder | customer_id | Customer | **required** | 281 |
+| WorkOrder | site_id | Site | **required** | 286 |
+| WorkOrder | accepted_scope_ids[] | AcceptedScope | array | 283 |
+| WorkOrder | work_required_ids[] | WorkRequired | array | 284 |
+| WorkOrder | quotation_ids[] | Quotation | array | 285 |
+| WorkOrder | area_ids[] | Area | array | 287 |
+| WorkOrder | contractor_id | Contractor | optional | 290 |
+| WorkOrder | thread_id | Thread | optional | 313 |
+| WorkOrder | replacement_for_work_order_id | WorkOrder | optional | 312 |
+| WorkOrder | abandoned_contractor_id | Contractor | optional | 310 |
+
+### B.3 Visit / Task / Followup domain (types.ts:317-466)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| Visit | customer_id | Customer | **required** | 335 |
+| Visit | work_required_id | WorkRequired | optional | 336 |
+| Visit | work_order_id | WorkOrder | optional | 337 |
+| Visit | site_id | Site | optional | 338 |
+| Visit | vendor_id | Vendor | optional | 340 |
+| Visit | staff_id | Staff | **required** | 343 |
+| Visit | contractor_id | Contractor | optional | 345 |
+| Visit | recovery_followup_id | Followup | optional | 356 |
+| Visit | thread_id | Thread | optional | 386 |
+| Visit | report_task_id | Task | optional | 388 |
+| Visit | checkout_thread_message_id | ThreadMessage | optional | 389 |
+| Visit | report_thread_message_id | ThreadMessage | optional | 390 |
+| Visit | proof_attachment_ids[] | FileAttachmentReference | array | 385 |
+| Task | customer_id | Customer | optional | 400 |
+| Task | work_required_id | WorkRequired | optional | 401 |
+| Task | work_order_id | WorkOrder | optional | 402 |
+| Task | quotation_id | Quotation | optional | 403 |
+| Task | po_id | PurchaseOrder | optional | 404 |
+| Task | visit_id | Visit | optional | 405 |
+| Task | site_id | Site | optional | 406 |
+| Task | thread_id | Thread | optional | 421 |
+| Task | blocked_item_id | BlockedItem | optional | 431 |
+| Followup | customer_id | Customer | optional | 440 |
+| Followup | work_required_id | WorkRequired | optional | 441 |
+| Followup | quotation_id | Quotation | optional | 442 |
+| Followup | payment_id | Payment | optional | 443 |
+| Followup | visit_id | Visit | optional | 444 |
+| Followup | thread_id | Thread | optional | 463 |
+| Followup | next_followup_id | Followup | optional | 461 |
+
+### B.4 Finance domain (types.ts:467-588)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| FinanceContextLink (mixed-in) | site_id, area_ids[], work_required_id, quotation_id, work_order_id | various | all optional | 471-475 |
+| Payment | customer_id | Customer | **required** | 482 |
+| Payment | milestone_term_id | PaymentTerm | optional | 489 |
+| Payment | invoice_id | CustomerInvoice | optional | 496 |
+| Payment | thread_id | Thread | optional | 505 |
+| CustomerReceipt | customer_id | Customer | **required** | 513 |
+| CustomerReceipt | invoice_id | CustomerInvoice | **required** | 514 |
+| CustomerReceipt | payment_id | Payment | optional | 515 |
+| CustomerReceipt | thread_id | Thread | optional | 521 |
+| CustomerInvoice | customer_id | Customer | **required** | 528 |
+| CustomerInvoice | payment_id | Payment | optional | 530 |
+| CustomerInvoice | thread_id | Thread | optional | 546 |
+| ApprovalAction | customer_id | Customer | optional | 555 |
+| ApprovalAction | linked_record_id | (polymorphic via linked_record_type) | optional | 560 |
+| RiskItem | customer_id | Customer | optional | 569 |
+| BlockedItem | customer_id | Customer | optional | 579 |
+| BlockedItem | linked_task_id | Task | optional | 581 |
+| BlockedItem | linked_work_order_id | WorkOrder | optional | 582 |
+| BlockedItem | linked_po_id | PurchaseOrder | optional | 583 |
+| BlockedItem | linked_grn_id | GRN | optional | 584 |
+| BlockedItem | thread_id | Thread | optional | 585 |
+
+### B.5 Procurement & Inventory domain (types.ts:589-731)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| WorkOrderBOQ | work_order_id | WorkOrder | **required** | 591 |
+| WorkOrderBOQ | accepted_scope_ids[] | AcceptedScope | array | 592 |
+| WorkOrderBOQ | site_id | Site | optional | 595 |
+| WorkOrderBOQ | thread_id | Thread | optional | 602 |
+| WorkOrderBOQ.items | (LineItem — see B.2) | | | 598 |
+| PurchaseOrder | rfq_id | VendorRFQ | optional | 611 |
+| PurchaseOrder | work_order_id | WorkOrder | optional | 612 |
+| PurchaseOrder | site_id | Site | optional | 615 |
+| PurchaseOrder | vendor_id | Vendor | **required** | 616 |
+| PurchaseOrder | thread_id | Thread | optional | 627 |
+| PurchaseOrder | grn_ids[] | GRN | array | 628 |
+| PurchaseOrder | bill_ids[] | VendorBill | array | 629 |
+| GRN | po_id | PurchaseOrder | **required** | 646 |
+| GRN | vendor_id | Vendor | **required** | 648 |
+| GRN | site_id | Site | optional | 650 |
+| GRN | work_order_id | WorkOrder | optional | 651 |
+| GRN | received_by_staff_id | Staff | optional | 657 |
+| GRN | obstacle_id | BlockedItem | optional | 668 |
+| GRN | bill_id | VendorBill | optional | 669 |
+| GRN | thread_id | Thread | optional | 670 |
+| InventoryItem | article_id | Article | optional | 676 |
+| InventoryItem | work_required_article_id | WorkRequiredArticle | optional | 677 |
+| InventoryItem | work_order_id | WorkOrder | optional | 686 |
+| InventoryItem | grn_id | GRN | optional | 688 |
+| InventoryItem | thread_id | Thread | optional | 691 |
+| StockMovement | inventory_id | InventoryItem | **required** | 698 |
+| StockMovement | article_id, work_required_article_id | Article / WorkRequiredArticle | optional | 699-700 |
+| StockMovement | work_order_id, po_id, grn_id, dispatch_id | various | optional | 707-711 |
+| SiteDispatch | work_order_id | WorkOrder | **required** | 719 |
+| SiteDispatch | site_id | Site | optional | 722 |
+| SiteDispatch | thread_id | Thread | optional | 729 |
+
+### B.6 Vendor / Contractor / Commission domain (types.ts:733-1025)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| VendorRFQ | site_id | Site | **required** | 762 |
+| VendorRFQ | work_order_id | WorkOrder | **required** | 763 |
+| VendorRFQ | boq_id | BOQ | **required** | 764 |
+| VendorRFQ | item_ids[] | LineItem (BOQ item) | array | 765 |
+| VendorRFQ | vendor_ids[] | Vendor | array | 766 |
+| VendorBid | rfq_id | VendorRFQ | **required** | 784 |
+| VendorBid | vendor_id | Vendor | **required** | 785 |
+| VendorBidLine | boq_item_id | LineItem | **required** | 772 |
+| VendorBill | vendor_id | Vendor | **required** | 810 |
+| VendorBill | site_id | Site | optional | 812 |
+| VendorBill | work_order_id | WorkOrder | optional | 813 |
+| VendorBill | po_id | PurchaseOrder | **required** | 814 |
+| VendorBill | grn_id | GRN | **required** | 816 |
+| VendorBill | thread_id | Thread | optional | 841 |
+| VendorBill.three_way_match.obstacle_id | BlockedItem | optional | 755 |
+| VendorPayment | vendor_bill_id | VendorBill | **required** | 849 |
+| VendorPayment | vendor_id | Vendor | **required** | 850 |
+| VendorPayment | site_id | Site | **required** | 852 |
+| VendorPayment | work_order_id | WorkOrder | **required** | 853 |
+| VendorPayment | thread_id | Thread | optional | 861 |
+| ContractorBill | customer_id | Customer | **required** | 870 |
+| ContractorBill | site_id | Site | **required** | 871 |
+| ContractorBill | work_order_id | WorkOrder | **required** | 872 |
+| ContractorBill | work_required_id | WorkRequired | optional | 873 |
+| ContractorBill | area_ids[] | Area | array | 874 |
+| ContractorBill | contractor_id | Contractor | **required** | 875 |
+| ContractorBill | thread_id | Thread | optional | 885 |
+| ContractorPayment | contractor_bill_id | ContractorBill | **required** | 892 |
+| ContractorPayment | work_order_id | WorkOrder | **required** | 893 |
+| ContractorPayment | site_id | Site | **required** | 894 |
+| ContractorPayment | contractor_id | Contractor | **required** | 895 |
+| ContractorPayment | thread_id | Thread | optional | 904 |
+| Commission | source_partner_id | SourcePartner | **required** | 912 |
+| Commission | customer_id | Customer | optional | 914 |
+| Commission | site_id | Site | optional | 916 |
+| Commission | work_order_id | WorkOrder | optional | 917 |
+| Commission | quotation_id | Quotation | optional | 919 |
+| Commission | thread_id | Thread | optional | 927 |
+| WorkOrderCostLine | work_order_id | WorkOrder | **required** | 955 |
+| WorkOrderCostLine | source_id | (polymorphic via source_kind) | optional | 961 |
+| WorkOrderCostLine | vendor_id, contractor_id | Vendor / Contractor | optional | 962-964 |
+| VariationRequest | work_order_id | WorkOrder | **required** | 935 |
+| VariationRequest | customer_id | Customer | **required** | 937 |
+| VariationRequest | site_id | Site | **required** | 938 |
+| VariationRequest | execution_log_id | DailyExecutionLog | optional | 939 |
+| VariationRequest | thread_id | Thread | optional | 949 |
+| ContractorBid | accepted_scope_id | AcceptedScope | optional | 972 |
+| ContractorBid | work_order_id | WorkOrder | optional | 973 |
+| ContractorBid | site_id | Site | optional | 976 |
+| ContractorBid | contractor_id | Contractor | **required** | 977 |
+| ContractorBid | thread_id | Thread | optional | 997 |
+| ContractorSettlement | work_order_id | WorkOrder | **required** | 1006 |
+| ContractorSettlement | site_id | Site | optional | 1009 |
+| ContractorSettlement | contractor_id | Contractor | **required** | 1010 |
+| ContractorSettlement | replacement_work_order_id | WorkOrder | optional | 1021 |
+| ContractorSettlement | thread_id | Thread | optional | 1022 |
+
+### B.7 Execution domain (types.ts:1026-1105)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| Drawing | site_id | Site | optional | 1033 |
+| Drawing | area_id | Area | optional | 1035 |
+| Drawing | work_order_id | WorkOrder | optional | 1037 |
+| Drawing | primary_file_attachment_id | EntityFileAttachment | optional | 1039 |
+| Drawing | parent_drawing_id | Drawing | optional | 1041 |
+| Drawing | derived_boq_item_ids[] | LineItem (BOQ item) | array | 1048 |
+| Drawing | thread_id | Thread | optional | 1049 |
+| DailyExecutionLog | work_order_id | WorkOrder | **required** | 1056 |
+| DailyExecutionLog | site_id | Site | optional | 1058 |
+| DailyExecutionLog | extra_work_variation_id | VariationRequest | optional | 1072 |
+| DailyExecutionLog | filed_by_staff_id | Staff | optional | 1082 |
+| DailyExecutionLog | contractor_confirmation_attachment_id | EntityFileAttachment | optional | 1084 |
+| DailyExecutionLog | thread_id | Thread | optional | 1085 |
+| DailyExecutionLog.materials_used[].article_id | Article | optional | 1065 |
+| DailyExecutionLog.photo_attachment_ids[] | FileAttachmentReference | array | 1080 |
+
+### B.8 Thread domain (types.ts:1106-1156)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| Thread | record_id | (polymorphic via record_type/kind) | **required** | 1149 |
+| ThreadMessage | thread_id | Thread | **required** | 1128 |
+| ThreadMessage | parent_message_id | ThreadMessage | optional | 1129 |
+| ThreadMessage | related_thread_id | Thread | optional | 1130 |
+| ThreadMessage | author_id | Staff / AuthUser | optional | 1131 |
+| ThreadMessage | proof_attachment_id | FileAttachmentReference | optional | 1136 |
+| ThreadMessage | related_audit_id | AuditLogEntry | optional | 1138 |
+| ThreadMessageAttachment | file_asset_id | FileAsset | optional | 1109 |
+| ThreadMessageAttachment | entity_file_attachment_id | EntityFileAttachment | optional | 1110 |
+| ThreadMessageMention | entity_id | (polymorphic via entity_type) | **required** | 1121 |
+
+### B.9 HR / Attendance domain (types.ts:1157-1308)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| AttendanceRecord | staff_id | Staff | **required** | 1184 |
+| AttendanceRecord | visit_id | Visit | optional | 1188 |
+| StaffLocationPingRecord | staff_id | Staff | **required** | 1217 |
+| StaffRolePermission | role_key + module_key | (system config — no FK) | **required** | 1228-1229 |
+| StaffAuthUser | staff_id | Staff | **required** | 1240 |
+| LeaveRequest | staff_id | Staff | **required** | 1251 |
+| LeaveRequest | approved_by_staff_id | Staff | optional | 1257 |
+| PayrollPeriod | (no FKs) | — | — | 1259-1271 |
+| PayrollLine | payroll_period_id | PayrollPeriod | **required** | 1274 |
+| PayrollLine | staff_id | Staff | **required** | 1275 |
+| SalaryAdjustment | staff_id | Staff | **required** | 1291 |
+| SalaryAdjustment | payroll_period_id | PayrollPeriod | optional | 1292 |
+| SalaryAdjustment | approved_by_staff_id | Staff | optional | 1298 |
+| StaffDocument | staff_id | Staff | **required** | 1302 |
+| StaffDocument | file_asset_id | FileAsset | optional | 1305 |
+
+### B.10 Approval / Automation / Audit / Comms (types.ts:1309-1407)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| ApprovalPolicy | approver_id | Staff | optional | 1317 |
+| ApprovalPolicy | escalate_to | (role string — no FK) | optional | 1320 |
+| AutomationRule | (no FKs — trigger+actions are self-contained) | — | — | 1348-1364 |
+| RecurringTaskDefinition | assignee_id | Staff | optional | 1337 |
+| AuditLogEntry | entity_id | (polymorphic via entity_type) | optional | 1372 |
+| AuditLogEntry | thread_id | Thread | optional | 1375 |
+| CommSend | customer_id | Customer | **required** | 1386 |
+| CommSend | followup_id | Followup | optional | 1397 |
+| CommSend | task_id | Task | optional | 1399 |
+| CommSend | work_order_id | WorkOrder | optional | 1401 |
+| CommSend | quotation_id | Quotation | optional | 1403 |
+| CommSend | thread_id | Thread | optional | 1394 |
+| CommSend | attachment_ids[] | FileAsset | array | 1391 |
+
+### B.11 File / Media / Reference domain (types.ts:1660-1832)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| FileAsset | storage_account_id | StorageAccount | optional | 1705 |
+| FileAsset | storage_folder_instance_id | StorageFolderInstance | optional | 1706 |
+| StorageFolderInstance | storage_account_id | StorageAccount | **required** | 1694 |
+| StorageFolderInstance | template_id | StorageFolderTemplate | **required** | 1695 |
+| EntityFileAttachment | file_asset_id | FileAsset | **required** | 1797 |
+| EntityFileAttachment | entity_id | (polymorphic via entity_type) | **required** | 1799 |
+| EntityReferenceAssignment | resource_id | (polymorphic via resource_type: catalogue/pinterest_board/reference_media) | **required** | 1813 |
+| EntityReferenceAssignment | entity_id | (polymorphic via entity_type) | **required** | 1815 |
+| EntityReferenceAssignment | customer_id, work_required_id, quotation_id, work_order_id, site_id, area_id, article_id, variant_id, vendor_id | various | all optional | 1817-1825 |
+| CatalogueArticleVendorLink | catalogue_id | Catalogue | **required** | 1751 |
+| CatalogueArticleVendorLink | article_id | Article | **required** | 1752 |
+| CatalogueArticleVendorLink | vendor_id | Vendor | optional | 1753 |
+| CatalogueArticleVendorLink | variant_id | ArticleVariant | optional | 1754 |
+| PinterestBoard | category_id, subcategory_id, article_id, variant_id | various | all optional | 1765-1768 |
+| ReferenceMediaAsset | category_id, subcategory_id, article_id, variant_id | various | all optional | 1782-1785 |
+| CatalogueAsset | drive_asset_id | FileAsset | optional | 1739 |
+
+### B.12 Master-article / vendor-rate / contractor-rate domain (types.ts:1440-1659)
+
+| Child entity | Field | → Parent entity | Req? | Line |
+|---|---|---|---|---|
+| WorkSubcategory | category_id | WorkCategory | **required** | 1456 |
+| WorkSubcategory | unit_id | MasterUnit | optional | 1458 |
+| WorkSubcategory | work_required_article_ids[] | WorkRequiredArticle (subcategoryArticleMap) | array | 1462 |
+| Article | category_id | WorkCategory | optional | 1470 |
+| Article | unit_id, default_unit_id | MasterUnit | optional | 1471-1472 |
+| Article | variant_ids[] | ArticleVariant | array | 1474 |
+| WorkRequiredArticle (subcategoryArticleMap) | work_required_id | WorkSubcategory | **required** | 1480 |
+| WorkRequiredArticle | article_id | Article | **required** | 1481 |
+| WorkRequiredArticle | unit_id | MasterUnit | **required** | 1482 |
+| ArticleVariant | article_id | Article | **required** | 1491 |
+| ArticleVariant | work_required_article_id | WorkRequiredArticle | optional | 1492 |
+| ArticleVariant | unit_id | MasterUnit | optional | 1495 |
+| Vendor | business_card_attachment_id, shop_attachment_id | EntityFileAttachment | optional | 1521-1522 |
+| Vendor | source_partner_id | SourcePartner | optional | 1527 |
+| Contractor | photo_attachment_id, business_card_attachment_id | EntityFileAttachment | optional | 1547-1548 |
+| Contractor | source_partner_id | SourcePartner | optional | 1553 |
+| Contractor.work_capabilities[].subcategory_id | WorkSubcategory | **required** | 1556 |
+| Staff | reporting_manager_id | Staff | optional | 1574 |
+| Staff | document_ids[] | StaffDocument | array | 1590 |
+| Staff | attendance_policy | (embedded AttendancePolicy object — not a FK) | **required** | 1591 |
+| CommissionRule | source_partner_id | SourcePartner | **required** | 1602 |
+| CommissionRule | category_id | WorkCategory | optional | 1606 |
+| VendorRate | vendor_id | Vendor | **required** | 1612 |
+| VendorRate | article_id | Article | **required** | 1613 |
+| VendorRate | work_required_article_id | WorkRequiredArticle | optional | 1615 |
+| VendorRate | variant_id | ArticleVariant | optional | 1616 |
+| VendorRate | unit_id | MasterUnit | optional | 1618 |
+| VendorRate | current_source_id | (polymorphic via current_source_type) | optional | 1629 |
+| VendorRateHistory | vendor_rate_id | VendorRate | optional | 1634 |
+| VendorRateHistory | vendor_id, article_id, work_required_article_id, variant_id, unit_id | various | mixed | 1635-1640 |
+| VendorRateHistory | source_id | (polymorphic via source_type) | optional | 1644 |
+| ContractorRate | contractor_id | Contractor | **required** | 1655 |
+| ContractorRate | unit_id | MasterUnit | optional | 1658 |
+
+---
+
+## C. RUNTIME RESOLUTION CHAIN (from entity-context.ts)
+
+`resolveEntityContext(db, entityType, entityId, source)` is invoked at file-upload time (and via `resolveCustomerIdFromLinks` for customer-relation validation). It returns an `EntityContext` with `customerId`, `siteId`, `workRequiredId`, `quotationId`, `workOrderId`, `purchaseOrderId`, `grnId`, `vendorId`, `contractorId`, `ownerKind`, `ownerId`, `driveBucket`.
+
+The function handles 27 of the 30 declared `FileAttachmentEntityType` values. The 3 NOT handled: `"thread_message"`, `"communication"`, `"general"` falls through to `systemContext`.
+
+### C.1 Per-entity resolution chains
+
+| Entity type | Resolution chain | `ensureSameCustomer` check? | Throws if orphan? | Drive bucket |
+|---|---|---|---|---|
+| `general` | (system) | n/a | No | "General" |
+| `customer` | direct: customerId = entityId | n/a | No (throws if customer row missing) | "Documents" |
+| `site` | site → site.customer_id | n/a | No | "Documents" |
+| `room` (area) | area → area.site_id → site.customer_id | n/a | No | "Measurements" |
+| `workRequired` | work → work.site_id → site.customer_id; **also** ensures work.customer_id === site.customer_id | **YES** (line 131) | No | "Documents" |
+| `quotation` | quotation → quotation.site_id → site.customer_id; ensures quotation.customer_id === site.customer_id | **YES** (line 137) | No | "Quotations" |
+| `quotation_item` | searches quotations for matching item id → quotation.site_id → site.customer_id | **YES** (line 145) | No | "Quotations" |
+| `workOrder` | workOrder → workOrder.site_id → site.customer_id; ensures workOrder.customer_id === site.customer_id | **YES** (line 90 via workOrderContext) | No | "Work Orders" |
+| `boq` | boq → boq.work_order_id → workOrder chain | (inherited) | No | "BOQ" |
+| `boq_item` | searches boqs for matching item id → boq.work_order_id → workOrder chain | (inherited) | No | "BOQ" |
+| `purchase_order` | po → po.work_order_id → workOrder chain; **also** checks po.site_id === workOrder.site_id; sets vendorId from po.vendor_id | (inherited) | **YES — throws if no work_order_id** (line 162) | "Procurement" |
+| `grn` | grn → grn.work_order_id → workOrder chain; checks grn.site_id === workOrder.site_id | (inherited) | **YES — throws if no work_order_id** (line 170) | "Delivery" |
+| `vendor_bill` | bill → bill.work_order_id → workOrder chain; checks bill.site_id === workOrder.site_id | (inherited) | **YES — throws if no work_order_id** (line 178) | "Finance" |
+| `dispatch` | dispatch → dispatch.work_order_id → workOrder chain; checks dispatch.site_id === workOrder.site_id | (inherited) | No (would inherit throw via workOrderContext if work_order_id missing — but workOrderContext calls requireRow, which throws) | "Dispatch" |
+| `inventory` | inv → inv.work_order_id → workOrder chain | (inherited) | **YES — throws if no work_order_id** (line 193-194) | "Inventory" |
+| `drawing` | drawing.work_order_id → workOrder chain (preferred); else drawing.site_id → site chain; **else system fallback** | checks drawing.site_id === workOrder.site_id when both present | **NO — falls back to `ownerKind:"system", driveBucket:"Drawings"`** (lines 207-214) | "Drawings" |
+| `execution_log` | log → log.work_order_id → workOrder chain; checks log.site_id === workOrder.site_id | (inherited) | No (workOrderContext throws if missing) | "Execution" |
+| `visit` | multi-candidate: visit.site_id, visit.work_order_id, visit.work_required_id → resolveCandidates; ensures visit.customer_id === resolved | **YES** (line 231) | **YES — throws if no candidate resolves to a customer** (line 229-230) | "Visits" |
+| `task` | multi-candidate: task.customer_id, task.site_id, task.work_required_id, task.quotation_id, task.work_order_id, task.po_id, task.visit_id → resolveCandidates | (implicit via resolveCandidates — throws if customerIds conflict) | **NO — silently falls back to systemContext("general","general") if no candidate** | "Tasks" |
+| `followup` | multi-candidate: followup.customer_id, work_required_id, quotation_id, payment_id, visit_id → resolveCandidates | (implicit) | **NO — silently falls back to systemContext** | "Follow-ups" |
+| `payment` | payment.site_id → site chain (preferred); else payment.customer_id direct; ensures payment.customer_id === site.customer_id | **YES** (line 262) | No (customer_id required by type) | "Finance" |
+| `invoice` | invoice.site_id → site chain (preferred); else invoice.customer_id direct; ensures invoice.customer_id === site.customer_id | **YES** (line 272) | No | "Finance" |
+| `vendor` | direct: vendorId = entityId (no customer chain) | n/a | No | "Documents" |
+| `vendor_rate` | rate → rate.vendor_id → vendorContext | n/a | No | "Rates" |
+| `contractor` | direct: contractorId = entityId (no customer chain) | n/a | No | "Documents" |
+| `contractor_bid` | bid.work_order_id → workOrder chain (preferred); else bid.site_id → site chain; else contractorContext | n/a | No | "Contractor Bids" |
+| `contractor_settlement` | settlement → settlement.work_order_id → workOrder chain | n/a | No | "Settlements" |
+| `commission` | commission.work_order_id → workOrder chain (preferred); else commission.site_id → site chain; else commission.customer_id direct | n/a | **YES — throws if no customer/site/workOrder** (line 312) | "Commissions" |
+| `blocked` | multi-candidate: blocked.customer_id, linked_task_id, linked_work_order_id, linked_po_id, linked_grn_id → resolveCandidates | n/a | **YES — throws if no candidate resolves** (line 323-324) | "Obstacles" |
+
+### C.2 Consistency checks (`ensureSameCustomer`)
+
+The function `ensureSameCustomer(source, expected, actual, label)` (entity-context.ts:41-45) throws if `expected !== actual`. It is invoked for entities that store BOTH their own `customer_id` AND a parent link that has its own customer_id — to catch the case where a record was created with mismatched IDs (e.g. Visit assigned to customer A but its work_order_id points to a WorkOrder belonging to customer B).
+
+Invoked at:
+- `workOrderContext` (line 90) — WorkOrder.customer_id must match WorkOrder.site_id → Site.customer_id
+- `workRequired` (line 131)
+- `quotation` (line 137)
+- `quotation_item` (line 145)
+- `payment` (line 262)
+- `invoice` (line 272)
+- `visit` (line 231)
+
+NOT invoked for: `purchase_order`, `grn`, `vendor_bill`, `dispatch`, `inventory`, `drawing`, `execution_log`, `contractor_bill`, `commission`, `blocked`, `task`, `followup`. These check `site_id` consistency (if both workOrder.site_id and child.site_id are present, they must match) but DO NOT cross-check the customer_id field — because none of these entities stores its own customer_id; the customer is derived transitively.
+
+### C.3 Site mismatch checks (entity-context.ts)
+
+Lines 164-165 (PO), 172-173 (GRN), 180-181 (VendorBill), 187-188 (Dispatch), 201-202 (Drawing), 219-220 (ExecutionLog): if `child.site_id` is set and it doesn't match the resolved workOrder's site_id, throws "X Site does not match its Work Order."
+
+This is the **only** runtime check that prevents a PO/GRN/bill/dispatch/drawing/log from being attached to one work order while pointing its site_id at a different site. The customer-level consistency is enforced only via the Site → Customer chain (a Site belongs to exactly one Customer).
+
+### C.4 The `resolveCandidates` fallback (entity-context.ts:93-110)
+
+Used by `visit`, `task`, `followup`, `blocked`. Collects all candidate contexts (e.g. from site_id, work_order_id, work_required_id, customer_id), filters to ones that resolved successfully, then:
+1. If multiple distinct customerIds resolved → **throws** "customer relationships conflict"
+2. Else uses the first candidate with a customerId, OR the first candidate overall
+3. If NO candidates resolved → returns `systemContext("general", "general")`
+
+For `visit` and `blocked`, after `resolveCandidates` returns, an additional check throws if `!context.customerId`. For `task` and `followup`, there is **no such guard** — they accept the systemContext fallback.
+
+---
+
+## D. ACTUAL vs DECLARED — live DB verification
+
+### D.1 Headline comparison
+
+| Claim | Source | Reality (live DB) |
+|---|---|---|
+| "81 collections" | worklog Task ID 5 | **82** entries in `COLLECTION_TO_TABLE`; **81** `entity_*` tables in `schema-entity-tables.sql` (auditLog missing); **80** non-auditLog tables all exist in live DB |
+| "56 top-level + 25 master" | worklog Task ID 5 | **57** top-level + **25** master = 82 in code (worklog undercounted by 1) |
+| "2,535 records, 6,085 references, 178 FK rules" | worklog Task ID 5 (in-memory seed) | Live Supabase has **~660 rows total**; FK registry still has 178 rules |
+| "100/100 integrity" | worklog Task ID 5 | True ONLY for in-memory seed — the live DB has not been integrity-checked (no /api/integrity call against the production workspace has been recorded in the worklog) |
+| "VendorBill has vendor_id, po_id, grn_id, work_order_id, site_id" | types.ts:807-844 | **Cannot verify** — 0 vendorBills in live DB |
+| "PO has vendor_id, work_order_id, site_id" | types.ts:608-640 | **Cannot verify** — 0 purchaseOrders in live DB |
+| "Site has customer_id" | types.ts:61 | **VERIFIED** — all 5 live sites have customer_id populated (1:1 with customers) |
+| "WorkRequired has customer_id AND site_id" | types.ts:110-111 | **VERIFIED** — the 1 live row has both: `customer_id="cust-mruc897s3nko"`, `site_id="site-mruc897s4t16"` (consistent) |
+| "MeasurementRevision has site_id, area_id, work_required_id?, drawing_id?" | types.ts:129-143 | **VERIFIED** — the 1 live row has all 3 first fields set: `site_id="site-mruc897s4t16"`, `area_id="area-mruccuv70oxj"`, `work_required_id="workRequired-mrucecexqohc"` |
+| "Thread has record_id + record_type (polymorphic)" | types.ts:1149-1150 | **VERIFIED** — all 13 live threads have `record_id`+`record_type`+`kind`. Breakdown: 8 `generic` (5 customer-threads, 1 area-thread, 1 vendor-thread, 1 customer-thread); 4 `site`; 1 `workRequired`. **Zero** operational threads (no quotation/workOrder/po/grn/etc.) |
+| "EntityFileAttachment has file_asset_id, entity_id, entity_type" | types.ts:1797-1799 | **VERIFIED** — all 6 live attachments have all 3 fields. All 6 attach to `site-mrued0y4ocze` (the "ghgh" customer's "ghjkl" site) |
+| "FileAsset has storage_account_id, storage_folder_instance_id, google_file_id" | types.ts:1705-1707 | **VERIFIED** — all 6 live fileAssets have all 3 set. All 6 reference `storage-drive-connection-tctWdmt-zGBnRfJl` |
+| "StorageFolderInstance has storage_account_id, template_id, google_folder_id, folder_path" | types.ts:1694-1697 | **VERIFIED** — all 6 have all 4. **BUT** 5 of the 6 have identical `folder_path="Customers/ghgh/Sites/ghjkl/Site Proof"` (the duplicate-folder leftovers from FIX-DUP-001) |
+| `entity_auditLog` table exists | COLLECTION_TO_TABLE line 79 | **MISSING** — `schema-entity-tables.sql` does NOT create `entity_auditLog`. Live DB returns HTTP 404 / `PGRST205` for any audit-log query. Audit log inserts in `commitRestOperations` silently fail (the error is not 23505 so it's swallowed at line 282-286) |
+
+### D.2 Sample row — entity_customers (full JSON)
+
+```json
+{
+  "id": "cust-mruc897s3nko",
+  "data": {
+    "id": "cust-mruc897s3nko",
+    "name": "QA Test Customer",
+    "email": "qa.test.customer@example.com",
+    "phone": "9876543210",
+    "status": "active",
+    "whatsapp": "9876543210",
+    "created_at": "2026-07-21T07:34:19.048Z",
+    "updated_at": "2026-07-21T07:34:19.048Z",
+    "customer_segments": ["service_customer"],
+    "interest_category_ids": [],
+    "interest_work_subcategory_ids": []
+  }
+}
+```
+
+**Reference fields highlighted**: `interest_category_ids: []` (empty — would point to WorkCategory), `interest_work_subcategory_ids: []` (empty — would point to WorkSubcategory). **No `source_partner_id`** (declared optional in types.ts:46). Customer is a parent row — it has no inbound reference fields on itself.
+
+### D.3 Sample row — entity_sites (full JSON)
+
+```json
+{
+  "id": "site-mruc897s4t16",
+  "data": {
+    "id": "site-mruc897s4t16",
+    "city": "Bengaluru",
+    "name": "QA Test Residence",
+    "stage": "planning",
+    "address": "123 QA Test Street",
+    "site_type": "apartment",
+    "created_at": "2026-07-21T07:34:19.048Z",
+    "updated_at": "2026-07-21T07:40:05.361Z",
+    "customer_id": "cust-mruc897s3nko",        ← parent reference (required, populated)
+    "photo_attachment_ids": []                  ← array reference (empty)
+  }
+}
+```
+
+### D.4 Sample row — entity_workRequired (full JSON)
+
+```json
+{
+  "id": "workRequired-mrucecexqohc",
+  "data": {
+    "id": "workRequired-mrucecexqohc",
+    "title": "Living room false ceiling",
+    "status": "measurement_done",
+    "site_id": "site-mruc897s4t16",                ← parent reference (required, populated)
+    "area_ids": ["area-mruccuv70oxj"],             ← array reference (required, populated)
+    "priority": "medium",
+    "created_at": "2026-07-21T07:39:03.129Z",
+    "updated_at": "2026-07-21T07:40:05.361Z",
+    "customer_id": "cust-mruc897s3nko",            ← parent reference (required, populated, MATCHES site's customer)
+    "system_name": "12.5mm gypsum board with GI framework",
+    "specification": "Customer prefers recessed lighting cutouts",
+    "structured_items": [],
+    "work_category_id": "fc",                      ← master reference (optional, populated)
+    "work_subcategory_id": "fc_gyp"                ← master reference (optional, populated)
+  }
+}
+```
+
+### D.5 Sample row — entity_threads (showing polymorphic linkage)
+
+All 13 live threads summarised:
+
+| Thread ID | kind | record_type | record_id | title | msgs |
+|---|---|---|---|---|---|
+| thr-mruc897uch1k | generic | generic | cust-mruc897s3nko | QA Test Customer | 5 |
+| thr-mruc897uc3x1 | site | site | site-mruc897s4t16 | QA Test Residence | 6 |
+| thr-mruccuv9lqqg | generic | generic | area-mruccuv70oxj | Living Room | 3 |
+| thr-mrucecezt1z7 | workRequired | workRequired | workRequired-mrucecexqohc | Living room false ceiling | 3 |
+| thr-mruch8a62h84 | generic | generic | ven-mruch8a4hwhf | ven-mruch8a4hwhf | 2 |
+| thr-mrued0y6nkn1 | generic | generic | cust-mrued0y478iq | ghgh | 3 |
+| thr-mrued0y6q255 | site | site | site-mrued0y4ocze | ghjkl | 3 |
+| thr-mruerymysbu2 | generic | generic | cust-mruerymsl6fl | Jsjjrjrn | 3 |
+| thr-mruerymy2hom | site | site | site-mrueryms2vzh | Hdhdh | 3 |
+| thr-mruf9mim2naq | generic | generic | cust-mruf9mikyqbo | QA Drive Upload Test | 3 |
+| thr-mruf9mim7imy | site | site | site-mruf9miktd7t | QA Drive Test Residence | 3 |
+| thr-mrufyiavms3a | generic | generic | cust-mrufyiatf5ue | QA Capture Test | 3 |
+| thr-mrufyiaw0lwv | site | site | site-mrufyiatz24a | QA Capture Residence | 3 |
+
+**Observations**:
+- Every customer gets a `generic` thread (5 of them). Every site gets a `site` thread (5 of them). Every area/workRequired/vendor also gets a `generic`/`workRequired` thread (1 each). **NO operational entity has a thread** (because no operational entities exist).
+- `kind` and `record_type` are always equal (verified by `assertThreadParentExists` and `validateBusinessData` line 555).
+- The vendor thread `thr-mruch8a62h84` has `record_id="ven-mruch8a4hwhf"` and `title="ven-mruch8a4hwhf"` — the title was NOT human-set, it's the raw ID. This indicates the thread-creation code path for vendors doesn't set a friendly title.
+
+### D.6 Sample row — entity_entityFileAttachments (full JSON, first of 6)
+
+```json
+{
+  "id": "attach-mruedhs4-ag9iq",
+  "data": {
+    "id": "attach-mruedhs4-ag9iq",
+    "role": "photo",
+    "status": "active",
+    "caption": "Site photo",
+    "entity_id": "site-mrued0y4ocze",          ← polymorphic parent (required, populated)
+    "created_at": "2026-07-21T08:34:22.660Z",
+    "updated_at": "2026-07-21T08:34:22.660Z",
+    "visibility": "internal",
+    "entity_type": "site",                      ← polymorphic discriminator (required, populated)
+    "file_asset_id": "drivefile-mruedhs4-b40t4",← FileAsset FK (required, populated)
+    "customer_shareable": false
+  }
+}
+```
+
+**Important**: The `EntityFileAttachment` type (types.ts:1795-1808) does **NOT** declare a `customer_id` field. But `fk-registry.ts` line 285 declares:
+```ts
+{ collection: "entityFileAttachments", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "File Attachment → Customer" }
+```
+This is a **declared-but-not-typed** FK rule. The live data confirms no `customer_id` is stored on attachments — the customer is resolved at validation time via `resolveCustomerIdFromLinks` (customer-relations.ts:100-106), which uses `entity_type+entity_id` to resolve the customer through the polymorphic entity. The FK-registry rule is therefore aspirational/dead.
+
+### D.7 Sample row — entity_master_fileAssets (full JSON, first of 6)
+
+```json
+{
+  "id": "drivefile-mruedhvp-zarrl",
+  "data": {
+    "id": "drivefile-mruedhvp-zarrl",
+    "kind": "media",
+    "tags": [],
+    "status": "active",
+    "file_name": "Screenshot 2026-07-19 200726.png",
+    "mime_type": "image/jpeg",
+    "created_at": "2026-07-21T08:34:22.789Z",
+    "updated_at": "2026-07-21T08:34:22.789Z",
+    "sync_status": "uploaded",
+    "storage_mode": "managed",
+    "thumbnail_url": "https://lh3.googleusercontent.com/...",
+    "web_view_link": "https://drive.google.com/file/d/1a0RvcP1vz4dskakQX9akAC2W6p2lSD0k/view?usp=drivesdk",
+    "google_file_id": "1a0RvcP1vz4dskakQX9akAC2W6p2lSD0k",
+    "file_size_bytes": 58688,
+    "storage_provider": "google_drive",
+    "storage_account_id": "storage-drive-connection-tctWdmt-zGBnRfJl",         ← populated
+    "storage_folder_instance_id": "storage-folder-storage-drive-connection-tctWdmt-zGBnRfJl-1ZlVbjVxqq8AR5zjHJ2d31JMY35y495D2"  ← populated
+  }
+}
+```
+
+**Note**: There is NO `customer_id` or `site_id` on the FileAsset itself. The customer/site ownership is implicit through `storage_folder_instance_id → StorageFolderInstance.folder_path` (which encodes the path `Customers/{name}/Sites/{name}/Site Proof`). The StorageFolderInstance schema (types.ts:1692-1702) does not have customer_id/site_id fields — only `folder_path`. This means **to find all files for a customer, the app must either**:
+1. Walk entityFileAttachments → entity_id+entity_type → resolve customer, OR
+2. Parse the `folder_path` string of every storageFolderInstance.
+
+This is a structural gap (see Section E).
+
+### D.8 Sample row — entity_master_storageFolderInstances (all 6, folder_path summary)
+
+```
+5x  Customers/ghgh/Sites/ghjkl/Site Proof           ← DUPLICATES (FIX-DUP-001 leftovers)
+1x  Customers/QA Capture Test/Sites/QA Capture Residence/Site Proof  ← legitimate
+```
+
+The 5 duplicates all share `template_id="storage-template-site-proof"` and `storage_account_id="storage-drive-connection-tctWdmt-zGBnRfJl"`. The `folder_path` is the ONLY field that ties them to a customer/site, and it's a free-text string — not a typed reference.
+
+### D.9 Sample row — entity_master_workSubcategories (showing dangling references)
+
+```json
+{
+  "id": "fc_gyp",
+  "data": {
+    "id": "fc_gyp",
+    "name": "Gypsum False Ceiling",
+    "notes": "Smooth finish, premium residential",
+    "unit_id": "sqft",
+    "category_id": "fc",                                     ← populated
+    "labour_rate": 55,
+    "material_rate": 45,
+    "work_required_article_ids": [                           ← 10 dangling references!
+      "wia_fc_gyp_1", "wia_fc_gyp_2", "wia_fc_gyp_3", "wia_fc_gyp_4", "wia_fc_gyp_5",
+      "wia_fc_gyp_6", "wia_fc_gyp_7", "wia_fc_gyp_8", "wia_fc_gyp_9", "wia_fc_gyp_10"
+    ]
+  }
+}
+```
+
+**Critical**: The `entity_master_subcategoryArticleMap` table has **0 rows** in the live DB. So all 68 workSubcategories have `work_required_article_ids` arrays that point to nothing. The in-memory seed (`seed.ts`) calls `ensureVendorRateCoverage` which generates these rows on-the-fly — but the live Supabase DB was populated by `seedRestWorkspace` (commit-rest.ts:177-197) which diffs against `buildSeedDatabase()`. **`buildSeedDatabase` likely does not call `ensureVendorRateCoverage`** — that's a separate operational-repair.ts function that only runs on the in-memory path. This is the root cause of the dangling references.
+
+---
+
+## E. MISSING CONNECTIONS — what SHOULD be connected but ISN'T
+
+### E.1 Entities with NO customer_id and NO ownership chain (orphans by design)
+
+These entities participate in the business flow but have **no path back to a customer**:
+
+| Entity | Has staff_id? | Has customer_id? | Has work_order_id? | Path to customer? | Severity |
+|---|---|---|---|---|---|
+| AttendanceRecord | YES | NO | NO (only `visit_id?`) | Only via `visit_id` (if set) | **HIGH** — staff time cannot be allocated to jobs |
+| StaffLocationPingRecord | YES | NO | NO | None | Medium — pure ops telemetry |
+| LeaveRequest | YES | NO | NO | None | Low — HR admin |
+| PayrollLine | YES (via period) | NO | NO | None | **HIGH** — payroll cannot be job-costed |
+| SalaryAdjustment | YES | NO | NO | None | Medium |
+| StaffDocument | YES | NO | NO | None | Low |
+| StaffAuthUser | YES | NO | NO | None | Low (auth) |
+| StaffRolePermission | NO (role+module only) | NO | NO | None | Low (config) |
+| RecurringTaskDefinition | assignee_id? | NO | NO | None (scope is enum: general/site/client/office) | Medium |
+| AuditLogEntry | NO (actor string) | NO (entity_id is polymorphic) | NO | Only via `entity_id+entity_type` (if entity is customer-owned) | **CRITICAL** — audit log table missing from SQL anyway |
+
+**Implication**: There is no way to answer "how much staff time/leave/payroll cost did Customer X's jobs consume this month?" without manual inference. The schema treats staff as workspace-level resources, not customer-billable resources.
+
+### E.2 Entities where a relationship field exists in types but the context resolver doesn't use it
+
+| Entity | Field declared | Used by resolveEntityContext? | Used by fk-registry? | Used by validateBusinessData? |
+|---|---|---|---|---|
+| Visit | recovery_followup_id | NO | NO | NO |
+| Visit | report_task_id | NO | NO | NO |
+| Visit | checkout_thread_message_id, report_thread_message_id | NO | NO | NO (only thread_id is checked) |
+| Task | blocked_item_id | NO | NO | NO |
+| Followup | next_followup_id | NO | NO | NO |
+| Payment | milestone_term_id | NO | NO | NO |
+| Payment | invoice_id | NO (payment has its own customer_id; doesn't need to walk invoice) | YES (line 244) | YES (assertCustomerRelation walks it) |
+| CustomerInvoice | payment_id | NO | YES (line 250) | YES |
+| WorkOrder | replacement_for_work_order_id | NO | NO | NO |
+| WorkOrder | abandoned_contractor_id | NO | NO | NO |
+| Drawing | parent_drawing_id | NO | NO | NO |
+| Drawing | derived_boq_item_ids[] | NO | NO | NO |
+| GRN | obstacle_id | NO | NO | NO |
+| GRN | bill_id | NO | NO | NO |
+| VendorBill | three_way_match.obstacle_id | NO | NO | NO |
+| VariationRequest | execution_log_id | NO | NO | NO |
+| WorkOrderCostLine | source_id (polymorphic) | NO | NO | NO |
+| ThreadMessage | parent_message_id | NO (only validated within-thread for orphan replies) | NO | YES (line 568-571) |
+| ThreadMessage | related_thread_id | NO | NO | NO |
+| ThreadMessage | related_audit_id | NO | NO | NO |
+| ThreadMessageAttachment | entity_file_attachment_id | NO | NO | NO |
+| CommSend | attachment_ids[] | NO | NO | NO |
+| StockMovement | dispatch_id | NO | YES (line 130) | NO |
+| Customer | source_partner_id | NO | NO | NO |
+| Site | source_partner_id | NO | NO | NO |
+| ArticleVariant | work_required_article_id | NO | YES (line 308) | NO |
+| Quotation | parent_quotation_id, superseded_by_quotation_id | NO | NO | NO |
+| AcceptedScope | contractor_bid_id | NO | YES (line 162) | NO |
+| ContractorSettlement | replacement_work_order_id | NO | NO | NO |
+| PayrollLine | (none beyond staff_id + period_id) | n/a | n/a | n/a |
+| SalaryAdjustment | payroll_period_id | NO | YES (line 280) | NO |
+| StaffDocument | file_asset_id | NO | YES (line 285) | NO |
+| LeaveRequest | approved_by_staff_id | NO | NO | NO |
+
+**Summary**: ~30 declared relationship fields are **not used by any runtime validation or resolution path**. They are persisted but never enforced. This is a significant surface area for silent inconsistency.
+
+### E.3 Entities where the context resolver has a fallback that masks a missing link
+
+| Entity | Fallback behavior | What gets masked |
+|---|---|---|
+| `drawing` (entity-context.ts:207-214) | Falls back to `{ownerKind:"system", driveBucket:"Drawings"}` if no `work_order_id` AND no `site_id` | A drawing with no site or work-order link can still receive file uploads, silently landing in a "Drawings" bucket under system ownership. There's no audit-trail of WHICH customer/site the drawing is for. |
+| `task` (entity-context.ts:234-246) | Falls back to `systemContext("general","general")` if no candidate resolves | A task with no customer/site/workOrder/quotation/visit link can still receive file uploads, silently landing in a "Tasks" bucket under system ownership. The task itself is also orphaned from any business context. |
+| `followup` (entity-context.ts:247-257) | Falls back to `systemContext` if no candidate resolves | Same as task — orphan follow-ups can exist with no business context. |
+| `general` (entity-context.ts:116-117) | Always returns systemContext | By design — `general` is the polymorphic catch-all. But if a polymorphic entity_id is passed with entity_type="general", no validation of the entity_id happens at all. |
+
+**Implication**: Drawings, tasks, and follow-ups can become "system-owned orphans" — file uploads succeed but the files are not attributable to a customer. The Drive folder structure (`Customers/{name}/...`) cannot be constructed for these orphans, so they fall through to a generic bucket.
+
+### E.4 Cross-module connections that would be valuable but don't exist
+
+#### E.4.1 Vendor Bill → Commission impact (NO link)
+- **Current state**: A `VendorBill` has `work_order_id`, `po_id`, `grn_id`, `vendor_id`, `site_id`. A `Commission` has `work_order_id`, `site_id`, `customer_id`, `quotation_id`, `source_partner_id`. There is **no direct link** between a VendorBill and any Commission.
+- **Business question that can't be answered**: "Did this vendor bill erode the margin enough to reduce the source partner's commission?"
+- **Workaround**: Manually join via `work_order_id`. But if a work order has multiple vendor bills and multiple commissions, the apportionment is undefined.
+- **Recommendation**: Add `commission_ids[]` or `affected_commission_ids[]` to VendorBill, OR add `vendor_bill_ids[]` to Commission. Severity: **medium**.
+
+#### E.4.2 Staff Attendance → Work Order (NO direct link)
+- **Current state**: `AttendanceRecord` has `staff_id` and optional `visit_id`. The only path to a work order is `visit.work_order_id?`. If a staff member does execution-log work but no visit, attendance cannot be tied to the work order.
+- **Business question that can't be answered**: "How many labour-hours did Staff X log against Work Order Y this week?"
+- **Recommendation**: Add optional `work_order_id?` to AttendanceRecord (in addition to visit_id). Severity: **high** for job-costing.
+
+#### E.4.3 Payroll Line → Work Order / Customer (NO link)
+- **Current state**: `PayrollLine` has `payroll_period_id` and `staff_id` only. Salary cost cannot be allocated to customers/jobs.
+- **Business question that can't be answered**: "What was the total labour cost (salary component) for Customer X's jobs this month?"
+- **Recommendation**: Either (a) add a `PayrollAllocation` join table `{payroll_line_id, work_order_id, percentage}`, or (b) use `SalaryAdjustment` with an optional `work_order_id?` for job-specific bonuses/deductions. Severity: **high** for job P&L accuracy.
+
+#### E.4.4 SalaryAdjustment → Work Order (NO link)
+- **Current state**: `SalaryAdjustment` has `staff_id`, `payroll_period_id?`, no work_order_id.
+- **Recommendation**: Add optional `work_order_id?` to allow job-specific bonuses (e.g., "completion bonus for finishing WO-123 ahead of schedule"). Severity: **medium**.
+
+#### E.4.5 Thread → multiple entities (NO multi-entity thread)
+- **Current state**: A `Thread` has exactly one `record_id`+`record_type`. There is no way to have a single conversation that spans, say, a quotation AND the work order it became AND the invoices raised against it.
+- **Workaround today**: Each entity gets its own thread. Cross-entity context requires the user to switch threads. `ThreadMessage.related_thread_id` exists but is "soft" (no UI to follow the chain).
+- **Recommendation**: Either (a) introduce a `ThreadLink` join table `{thread_id, record_id, record_type, relationship}`, or (b) make `Thread.record_id` accept an array. Severity: **medium** — current design is workable but creates conversation silos.
+
+#### E.4.6 RecurringTaskDefinition → Customer/WorkOrder (NO link)
+- **Current state**: `RecurringTaskDefinition` has `assignee_id?`, `scope: TaskScope` (enum: general/site/client/office), but NO `customer_id` or `site_id` or `work_order_id`. When the recurring task fires, the generated `Task` will inherit only the assignee and scope — no business context.
+- **Recommendation**: Add optional `customer_id?`, `site_id?`, `work_order_id?` to RecurringTaskDefinition so generated tasks inherit business context. Severity: **medium**.
+
+#### E.4.7 AuditLog → Customer (NO direct customer_id)
+- **Current state**: `AuditLogEntry` has `entity_type+entity_id` (polymorphic), `thread_id?`, but no `customer_id`. To find all audit events for a customer, you must walk every audit entry's entity_id and resolve the customer polymorphically.
+- **Implication**: The audit log cannot be efficiently indexed by customer. Reporting queries ("show me everything that happened for Customer X") require a full table scan with polymorphic resolution per row.
+- **Recommendation**: Add denormalized `customer_id?` to AuditLogEntry, populated at log time by `resolveCustomerIdFromLinks`. Severity: **medium** (but **CRITICAL** operationally because the audit log table is missing from SQL anyway).
+
+#### E.4.8 StorageFolderInstance → Customer/Site (NO typed link)
+- **Current state**: `StorageFolderInstance` has `storage_account_id`, `template_id`, `google_folder_id`, `folder_path` (free-text), `web_view_link`. **No customer_id, no site_id**.
+- **Implication**: To find all Drive folders for a customer, you must substring-match `folder_path` against `Customers/{customerName}/`. This is brittle (customer name can change; rename cascades don't update folder_path strings; duplicate folders all match the same path).
+- **Live evidence**: The 5 duplicate folders for "ghgh/ghjkl" all share the same `folder_path` and cannot be distinguished by query.
+- **Recommendation**: Add `customer_id?` and `site_id?` to StorageFolderInstance. Severity: **high** — currently the only way to find a customer's folders is unreliable.
+
+#### E.4.9 FileAsset → Customer/Site (NO typed link)
+- **Current state**: `FileAsset` has `storage_account_id`, `storage_folder_instance_id`, `google_file_id`, `file_name`. No customer_id or site_id.
+- **Implication**: To find all files for a customer, you must either walk `entityFileAttachments` (which only includes files attached to entities — orphan files won't appear) OR walk `storage_folder_instance.folder_path` (string matching, unreliable).
+- **Recommendation**: Either (a) add `customer_id?` to FileAsset at upload time, or (b) ensure every FileAsset has at least one `entityFileAttachments` row (currently not enforced — `file_asset_id` is required on the attachment but the reverse is not). Severity: **medium**.
+
+#### E.4.10 Blocked → Quotation (NO link)
+- **Current state**: `BlockedItem` has `customer_id?`, `linked_task_id?`, `linked_work_order_id?`, `linked_po_id?`, `linked_grn_id?`. **No `linked_quotation_id?`**.
+- **Implication**: Cannot mark a quotation as "blocked" pending customer decision. The operations team must use a Task instead.
+- **Recommendation**: Add `linked_quotation_id?` and probably `linked_vendor_bill_id?` / `linked_invoice_id?` to BlockedItem for symmetry. Severity: **low-medium**.
+
+#### E.4.11 VariationRequest → BOQ (NO link)
+- **Current state**: `VariationRequest` has `work_order_id`, `customer_id`, `site_id`, `execution_log_id?`. **No `boq_id?` or `boq_item_ids[]`** to indicate which BOQ lines the variation affects.
+- **Implication**: Cannot automatically apply a variation to specific BOQ lines.
+- **Recommendation**: Add `affected_boq_item_ids[]`. Severity: **medium**.
+
+#### E.4.12 CustomerReceipt → WorkOrder (declared but inconsistent)
+- **Current state**: `CustomerReceipt extends FinanceContextLink` (types.ts:509-524), so it inherits `work_order_id?`, `site_id?`, `work_required_id?`, `quotation_id?`, `area_ids?`. The `fk-registry.ts:265` does declare `customerReceipts.work_order_id` (onDelete: nullify). BUT validateBusinessData (business-rules.ts:458) only runs `assertCustomerRelation(db, send, "Communication")` on commSends — `customerReceipts` is NOT in the validation list at all (only `db.commSends.forEach` is shown; receipts are skipped).
+- **Implication**: CustomerReceipts can be created with mismatched customer_id ↔ work_order_id.customer_id without throwing.
+- **Recommendation**: Add `customerReceipts.forEach((r) => capture(...assertCustomerRelation...))` to validateBusinessData. Severity: **medium**.
+
+### E.5 Polymorphic links that should be typed
+
+| Entity | Field | Polymorphic discriminator | Why typed would be better |
+|---|---|---|---|
+| Thread | record_id+record_type | ThreadKind (22 values) | Already constrained to ThreadKind enum — partial typing. Could be split into 22 typed join tables but that's overkill. Keep as-is. |
+| EntityFileAttachment | entity_id+entity_type | FileAttachmentEntityType (30 values) | Same — keep as-is. |
+| EntityReferenceAssignment | resource_id+resource_type | ReferenceResourceType (3 values: catalogue/pinterest_board/reference_media) | Same — keep as-is. |
+| AuditLogEntry | entity_id+entity_type | string (not constrained) | **Should be constrained to an enum**. Currently any string is accepted. |
+| ApprovalAction | linked_record_id+linked_record_type | "quotation"\|"po"\|"payment"\|"contractor_payment" (4 values) | Already constrained — fine. |
+| Task | linked_record_id+linked_record_type | string (not constrained) | **Should be constrained**. Currently the field doesn't even exist on the Task type — but the `resolveCustomerIdFromLinks` function accepts it (customer-relations.ts:18-19, 97-99). This is dead code OR a future field. |
+| WorkOrderCostLine | source_id+source_kind | "po"\|"grn"\|"dispatch"\|"contractor_payment"\|"manual"\|"bill"\|"settlement"\|"variation" (8 values) | Already constrained — fine. |
+| VendorRate | current_source_id+current_source_type | "PO"\|"VENDOR_BILL"\|"MANUAL"\|"SEED" | Already constrained — fine. |
+| VendorRateHistory | source_id+source_type | same as above | Fine. |
+| ThreadMessageMention | entity_id+entity_type | string (not constrained) | **Should be constrained**. |
+
+**Recommendation**: Constrain `AuditLogEntry.entity_type`, `ThreadMessageMention.entity_type`, and `Task.linked_record_type` (if it's ever added) to a shared `EntityType` enum. Severity: **low** (defensive).
+
+### E.6 Entities that participate in business flow but have no path back to a customer
+
+Already covered in E.1 — the most impactful are AttendanceRecord, PayrollLine, SalaryAdjustment, RecurringTaskDefinition, AuditLogEntry.
+
+### E.7 Declared FK rule for a field that doesn't exist on the type
+
+**Critical finding**: `fk-registry.ts:285` declares:
+```ts
+{ collection: "entityFileAttachments", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "File Attachment → Customer" }
+```
+But `EntityFileAttachment` (types.ts:1795-1808) does NOT declare a `customer_id` field. The integrity checker's `fksForCollection("entityFileAttachments")` will return this rule, and the checker will iterate `db.entityFileAttachments` looking for `row.customer_id` — finding `undefined` (since it's not in the type), which the checker likely treats as "not set" (no orphan issue). So the rule is a no-op for the actual data shape.
+
+**Either**:
+- (a) Add `customer_id?: ID` to `EntityFileAttachment` (and populate it at upload time using `resolveEntityContext(...).customerId`), OR
+- (b) Remove the FK rule (it's dead code).
+
+Severity: **medium** — currently the rule is dead but pretends to enforce something. Option (a) is preferable because it would let the integrity checker actually validate customer linkage for attachments without polymorphic resolution.
+
+### E.8 Other entity-shape inconsistencies
+
+- `EntityReferenceAssignment` (types.ts:1810-1832) HAS `customer_id?`, `work_required_id?`, etc. but `EntityFileAttachment` (types.ts:1795-1808) does NOT. They are sibling polymorphic-attachment entities — the inconsistency is awkward.
+- `Staff.attendance_policy` (types.ts:1591) is an **embedded** `AttendancePolicy` object (not a FK to a separate collection). This is the only place a non-trivial object is embedded rather than referenced. If two staff share the same policy, it's duplicated.
+- `ArticleVariant.work_required_article_id?` (types.ts:1492) is optional — but `WorkRequiredArticle.article_id` (types.ts:1481) is required. So a variant can exist without a scoped-material context, but a scoped material requires its canonical article. The asymmetry is fine but worth documenting.
+- `Master.workOptionGroups: unknown[]` and `Master.workOptionValues: unknown[]` (types.ts:1841-1842) — typed as `unknown[]`. No interface exists. Two tables are persisted but the types don't describe them.
+
+---
+
+## F. INTEGRITY RISKS
+
+The system has **ZERO database-level foreign keys** between entity_* tables. Every integrity guarantee is enforced in application code: `validateBusinessData` (runs on commit), `resolveEntityContext` (runs on upload), and the on-demand Integrity Layer. Below are the specific scenarios where data could become inconsistent despite these layers.
+
+### F.1 Customer deletion with dependents
+
+**Scenario**: A user clicks "delete customer" on a customer that has sites/quotations/work orders.
+
+**Behavior**:
+1. `cascadeDeleteRecord("customers", id)` (core.ts) calls `cascadeDelete(db, "customers", id, options)` from `integrity/cascade.ts`.
+2. The cascade walker queries `fksTargetingCollection("customers")` — which returns every FK rule where `targetCollection === "customers"`. From fk-registry.ts, these are:
+   - sites.customer_id (cascade)
+   - workRequired.customer_id (restrict)
+   - quotations.customer_id (restrict)
+   - acceptedScopes.customer_id (restrict)
+   - workOrders.customer_id (restrict)
+   - payments.customer_id (restrict)
+   - invoices.customer_id (restrict)
+   - customerReceipts.customer_id (restrict)
+   - variationRequests.customer_id (restrict)
+   - visits.customer_id (restrict)
+   - tasks.customer_id (restrict, nullable)
+   - followups.customer_id (restrict, nullable)
+   - actions.customer_id (restrict, nullable)
+   - blocked.customer_id (restrict, nullable)
+   - risks.customer_id (restrict, nullable)
+   - commSends.customer_id (restrict)
+   - commissions.customer_id (nullify)
+   - contractorBills.customer_id (restrict)
+   - entityFileAttachments.customer_id (nullify) — **but field doesn't exist on type!** (see E.7)
+   - entityReferenceAssignments.customer_id (nullify)
+3. **Sites cascade** (cascade rule). All sites for the customer are deleted.
+4. **Cascade chain continues**: deleting a site triggers `fksTargetingCollection("sites")` — which cascades to areas, restricts workRequired, nullifies PO/GRN/dispatch/drawing site_id, etc.
+5. **Most operational entities RESTRICT** — the cascade returns `success: false, blocked: [...]` if any restrict rule has children.
+6. The user sees the blocked list and must manually resolve dependencies before deletion succeeds.
+
+**Risk**: If the user disables the integrity layer (e.g., direct DB write via SQL editor, or a future code path bypasses `cascadeDeleteRecord`), nothing prevents orphaned sites/quotations/etc. The in-memory seed had 5 orphaned `vendorRateHistories` before Task ID 5 fixed them — proving the risk is real.
+
+**Mitigation**: The IntegrityModule UI surfaces restrict-blocked deletes clearly. The `validateBusinessData` commit-time gate catches new violations. But there is **no DB-level guard** — only the app enforces this.
+
+### F.2 Work Order customer_id doesn't match its Site's customer_id
+
+**Scenario**: A code bug or manual edit creates a WorkOrder with `customer_id="cust-A"` and `site_id="site-B"` where site-B belongs to cust-B.
+
+**Behavior**:
+1. **Commit-time**: `validateBusinessData` runs `assertWorkOrderRelations` (business-rules.ts:341) which calls `assertSiteBelongsToCustomer(db, workOrder.site_id, workOrder.customer_id, ...)`. This **throws `BusinessRuleError`** before the commit lands. The mutation is rejected.
+2. **Upload-time**: `resolveEntityContext(db, "workOrder", workOrderId, ...)` calls `workOrderContext` (entity-context.ts:87) which calls `siteContext` (line 89) then `ensureSameCustomer(source, workOrder.customer_id, context.customerId, "Work Order")` (line 90). **Throws** if mismatched.
+3. **Integrity-check time**: `fksForCollection("workOrders")` includes `customer_id → customers` (restrict) and `site_id → sites` (restrict) but does NOT cross-validate that the two reference the same customer. The checker only validates that each FK target exists.
+
+**Risk**: A direct DB write could create the inconsistency. The next commit would throw `validateBusinessData` errors. But until the next commit, reads would return the inconsistent data. The integrity checker would NOT flag it (it doesn't cross-validate).
+
+**Recommendation**: Add a semantic check to the integrity checker: `workOrders.customer_id must equal sites.customer_id for the workOrder's site_id`. Severity: **medium** — currently relies entirely on `validateBusinessData` which only runs on commit.
+
+### F.3 File attachments when their parent entity is deleted
+
+**Scenario**: A site is deleted (via cascade from customer deletion, or directly). The site had 6 entityFileAttachments.
+
+**Behavior**:
+1. The cascade walker looks at `fksTargetingCollection("sites")`. The rule for `entityFileAttachments.entity_id` is **`onDelete: "ignore"`** (fk-registry.ts:283) because entity_id is polymorphic. The cascade walker does NOT walk polymorphic rules.
+2. The 6 entityFileAttachments rows remain in the DB with `entity_id="site-XXX"` (deleted) and `entity_type="site"`.
+3. **Result**: Orphaned attachments. They still reference a `file_asset_id` (which still exists in master.fileAssets), but no parent site.
+4. The Integrity checker DOES flag this — `assertCustomerRelation(db, attachment, ...)` in `validateBusinessData` (business-rules.ts:622-628) calls `resolveCustomerIdFromLinks` which calls `resolveEntityContext` which calls `requireRow(db.sites, ...)` — **throws** "Site does not exist".
+5. **But**: `validateBusinessData` only runs on commit. Reads of the orphan attachment will return the data; only the next commit will fail.
+
+**Risk**: File attachments become orphaned silently on parent deletion. The Drive files themselves remain in Google Drive (orphaned there too — no cleanup). The next commit anywhere in the workspace will fail validation, blocking ALL writes until the orphans are repaired.
+
+**Mitigation**: The IntegrityModule's "Auto-repair" button would handle this — but the user has to manually click it. Severity: **high** — orphaned attachments block all workspace writes.
+
+**Recommendation**: Either (a) make `cascadeDelete` walk polymorphic attachments when the entity_type is known (requires extending the cascade function), or (b) when an entity is deleted, explicitly call a `deleteAttachmentsForEntity(entityType, entityId)` hook. Severity: **high**.
+
+### F.4 Quotation deleted but Work Order still references it
+
+**Scenario**: A quotation is deleted but its accepted scope / work order still has `quotation_ids: [quotation-XXX]`.
+
+**Behavior**:
+- `validateBusinessData` line 349: `if (!quotation || quotation.customer_id !== workOrder.customer_id || quotation.site_id !== workOrder.site_id) fail(...)`. The `!quotation` check throws "Quotation does not exist" — commit blocked.
+- BUT again, this only fires on next commit. Reads return the broken state.
+
+### F.5 Vendor deleted but has POs/GRNs/bills/rates
+
+**Scenario**: A vendor is deleted.
+
+**Behavior**:
+- `fksTargetingCollection("master.vendors")` returns:
+  - vendorBids.vendor_id (restrict)
+  - purchaseOrders.vendor_id (restrict)
+  - grns.vendor_id (restrict)
+  - vendorBills.vendor_id (restrict)
+  - vendorPayments.vendor_id (restrict)
+  - master.vendorRates.vendor_id (cascade)
+  - master.vendorRateHistories.vendor_id (cascade)
+  - master.catalogueArticleVendorLinks.vendor_id (cascade)
+- **Most operational entities RESTRICT** — vendor cannot be deleted while any PO/GRN/bill/payment exists.
+- **Vendor rates and rate histories CASCADE** — they are deleted with the vendor.
+- **Catalogue links CASCADE** — deleted.
+
+**Risk**: If a user deletes a vendor that has 100 vendor rates, all 100 rates vanish. The rate history (audit trail of price changes) is also lost. This may be undesirable — historical rates should probably be retained (status="archived") rather than deleted.
+
+**Recommendation**: Change `master.vendorRates.vendor_id` and `master.vendorRateHistories.vendor_id` from `cascade` to `restrict` (or `nullify` if the vendor_id is nullable, which it isn't). Severity: **medium** — currently destroys audit trail.
+
+### F.6 Storage account deleted but has folders/files
+
+**Scenario**: A storage account (Drive connection) is deleted.
+
+**Behavior**:
+- `fksTargetingCollection("master.storageAccounts")`:
+  - storageFolderInstances.storage_account_id (restrict)
+  - fileAssets.storage_account_id (nullify)
+- Storage folder instances RESTRICT deletion — must delete folders first.
+- File assets have their `storage_account_id` NULLIFIED — they become orphan files in the master.fileAssets table with no account link.
+
+**Risk**: After nullification, the file's `google_file_id` still points to a Drive file that may no longer be accessible (the OAuth connection was deleted). The file becomes a dead link.
+
+**Recommendation**: Before nullifying, mark the fileAsset's `sync_status = "failed"` and `status = "archived"`. Severity: **medium**.
+
+### F.7 Concurrent edits (CAS conflict)
+
+**Scenario**: Two users edit the same WorkOrder simultaneously. User A saves first (revision 5 → 6). User B saves with expected revision 5 — the CAS check in `commitRestOperations` (commit-rest.ts:255-258) detects the mismatch and returns a 409 conflict.
+
+**Behavior**: The second user's edit is rejected with a conflict. The UI is supposed to refresh and re-apply. This is well-handled.
+
+**Risk**: If the UI doesn't handle the 409 (silent failure), the user thinks their edit saved but it didn't.
+
+### F.8 Race condition: parallel uploads to the same new folder
+
+**Scenario**: User creates a customer with 5 photos. The 5 upload requests fire in parallel (Promise.allSettled). Each tries to resolve the same Drive folder path `Customers/X/Sites/Y/Site Proof`.
+
+**Behavior**: Per FIX-DUP-001, the resolveStorageFolder function now uses a per-path mutex (folderResolutionInFlight Map) AND checks the persisted cache (db.master.storageFolderInstances) first. So only one folder is created.
+
+**Live evidence**: 5 of the 6 storageFolderInstances in the live DB are still duplicates — these are the LEFTOVER duplicates from BEFORE the FIX-DUP-001 fix. The fix prevents new duplicates; it does not clean up old ones.
+
+**Risk**: Old duplicate folders remain. The 5 duplicates for "ghgh/ghjkl" all have unique `google_folder_id` but identical `folder_path`. New uploads will hit the persisted cache and use the first one found. Old Drive files in the other 4 folders are stranded.
+
+**Recommendation**: Write a one-time cleanup script that:
+1. For each unique `folder_path`, picks a canonical `storageFolderInstance` (the one with the most child fileAssets).
+2. Moves all fileAssets from non-canonical folders to the canonical one (via Drive API file move).
+3. Deletes the non-canonical storageFolderInstance rows.
+4. (Optional) trashes the empty duplicate Drive folders.
+Severity: **medium** — operational hygiene.
+
+### F.9 The `entity_auditLog` table is missing from SQL
+
+**Scenario**: Any code path that calls `logAudit(...)` → commits via `commitRestOperations`.
+
+**Behavior**:
+1. The audit entry is added to `db.auditLog` in memory.
+2. `diffWorkspaceOperations` detects the new audit entry and emits an `upsert` op for collection `"auditLog"`.
+3. `commitRestOperations` calls `admin.from("entity_auditLog").insert({...})`.
+4. Supabase returns an error (table doesn't exist) — error code is NOT 23505 (unique constraint).
+5. `commit-rest.ts:282-286` only catches 23505 errors. Other errors are **silently swallowed** (no logging, no throw).
+6. The audit entry is "saved" in memory but never persisted to Supabase.
+7. On next workspace load (`getRestWorkspace`), the audit log collection returns `[]` because the table read returns `error` → `return { collection, rows: [] }` (commit-rest.ts:140-142).
+
+**Result**: **All audit log entries are lost on workspace reload**. The in-memory audit log persists only for the current session. This is a **CRITICAL** integrity risk — the audit trail is the system of record for compliance.
+
+**Recommendation**: Add `entity_auditLog` table DDL to `schema-entity-tables.sql` and run it on the live Supabase. Severity: **CRITICAL**.
+
+### F.10 `validateBusinessData` coverage gaps
+
+`validateBusinessData` (business-rules.ts) explicitly validates:
+- customers (assertCustomerExists via customer_id checks on children)
+- sites (assertSiteBelongsToCustomer)
+- areas (assertAreaBelongsToSite)
+- workRequired (assertWorkRequiredMatchesContext)
+- measurementRevisions (assertMeasurementRevisionRelations)
+- quotations (assertQuotationRelations)
+- acceptedScopes (line 449)
+- workOrders (assertWorkOrderRelations)
+- visits (assertVisitRelations)
+- tasks, followups, actions, risks, blocked, commSends (all via assertCustomerRelation)
+- vendorBills (line 461-543 — PO/GRN/work-order consistency)
+- contractorBills (line 461-470 — work-order/site consistency)
+- drawings (line 545-553)
+- threads (line 554-572 — record_type matches kind, parent exists, message integrity)
+- storageAccounts, storageFolderInstances, fileAssets (lines 573-621)
+- entityFileAttachments (line 622-629 — assertCustomerRelation + file_asset exists)
+- entityReferenceAssignments (line 630-638)
+
+**NOT explicitly validated**:
+- `customerReceipts` — no `db.customerReceipts.forEach(...)` block. A receipt with mismatched `customer_id` and `invoice_id.customer_id` would not be caught.
+- `payments` and `invoices` — only validated indirectly through other entities' relation checks. No standalone `db.payments.forEach(p => assertCustomerRelation(db, p, "Payment"))`.
+- `purchaseOrders`, `grns`, `dispatches`, `inventory`, `stockMovements` — only validated indirectly (when something references them). No standalone checks.
+- `vendorRfqs`, `vendorBids` — no standalone checks.
+- `vendorPayments`, `contractorBids`, `contractorPayments`, `contractorSettlements`, `commissions`, `workOrderCostLines`, `variationRequests` — no standalone checks.
+- `executionLogs` — no standalone check.
+- All HR entities (attendance, leaveRequests, payrollPeriods, payrollLines, salaryAdjustments, staffDocuments, staffAuthUsers, staffRolePermissions, staffLocationPings) — no checks.
+- `recurringTasks`, `approvalPolicies`, `automationRules`, `commercialTerms`, `paymentTermTemplates`, `taxConfigs`, `validityConfigs` — no checks (mostly config, OK to skip).
+- `master.*` (vendors, contractors, staff, sourcePartners, commissionRules, vendorRates, vendorRateHistories, contractorRates, articles, articleVariants, subcategoryArticleMap, workCategories, workSubcategories, units) — no standalone checks.
+
+**Risk**: Direct DB writes (e.g., via Supabase SQL editor) can introduce inconsistencies that `validateBusinessData` would never catch on subsequent commits — because the validation only runs on the diff being committed, not on the entire workspace.
+
+**Mitigation**: The Integrity Layer's `checkWorkspaceIntegrity` does scan the entire workspace against the 178 FK rules — but it's on-demand, not on every commit. And it only checks referential integrity (does the parent exist?), not semantic consistency (does the customer match?).
+
+---
+
+## G. RECOMMENDATIONS (prioritized)
+
+### CRITICAL
+
+1. **G.1 — Create the missing `entity_auditLog` table.** Add DDL to `schema-entity-tables.sql` and run on live Supabase. Without this, every audit log entry is silently dropped on persistence. (See F.9.) **File**: `supabase/schema-entity-tables.sql` (add `create table if not exists public."entity_auditLog" (...)` block matching the uniform schema).
+
+2. **G.2 — Backfill `entity_master_subcategoryArticleMap` in the live DB.** The `work_required_article_ids` arrays on all 68 workSubcategories currently point to nothing. Either (a) run `ensureVendorRateCoverage` against the live DB (it currently only runs on the in-memory seed), or (b) write a one-time SQL migration that generates the missing WorkRequiredArticle rows from the workSubcategory definitions. (See D.9.) **Files**: `src/lib/rdash/operational-repair.ts` (extend to support live-DB mode), or new migration script.
+
+3. **G.3 — Clean up the 5 duplicate `storageFolderInstance` rows.** The live DB has 5 folders all pointing to `Customers/ghgh/Sites/ghjkl/Site Proof`. Pick a canonical one, move child fileAssets to it (via Drive API), delete the non-canonical rows. (See F.8.) **File**: new one-off cleanup script.
+
+### HIGH
+
+4. **G.4 — Add typed `customer_id` and `site_id` to `StorageFolderInstance`.** This eliminates the brittle `folder_path` string-matching for finding a customer's folders. (See E.4.8.) **Files**: `src/lib/rdash/types.ts` (extend StorageFolderInstance interface), `src/lib/rdash/server/google-drive.ts` (populate at folder-creation time), `src/lib/rdash/integrity/fk-registry.ts` (add 2 new FK rules).
+
+5. **G.5 — Walk polymorphic `entityFileAttachments` in `cascadeDelete`.** Currently, deleting a site leaves orphaned attachments (FK rule is "ignore"). Extend the cascade walker to handle polymorphic attachments when the entity_type is known. (See F.3.) **File**: `src/lib/rdash/integrity/cascade.ts`.
+
+6. **G.6 — Add `customer_id?` to `EntityFileAttachment` (or remove the dead FK rule).** The fk-registry declares a rule for a field that doesn't exist on the type. (See E.7.) **Files**: `src/lib/rdash/types.ts` (add field), `src/lib/rdash/store/slices/files.ts` (populate at creation time using `resolveEntityContext(...).customerId`), `src/lib/rdash/server/commit-rest.ts` (no change), `src/lib/rdash/integrity/fk-registry.ts` (rule already exists).
+
+7. **G.7 — Add `work_order_id?` to `AttendanceRecord`.** Staff time should be attributable to jobs. (See E.4.2.) **Files**: `src/lib/rdash/types.ts`, attendance store slice, attendance UI form.
+
+8. **G.8 — Add job-cost allocation for payroll.** Either a `PayrollAllocation` join table or `work_order_id?` on `SalaryAdjustment` for job-specific bonuses. (See E.4.3, E.4.4.) **Files**: `src/lib/rdash/types.ts`, payroll store slice, payroll UI.
+
+9. **G.9 — Add semantic consistency checks to the Integrity Layer.** Currently the checker only validates referential integrity (does the parent exist?). Add cross-field semantic rules:
+   - `workOrders.customer_id === sites.customer_id for workOrders.site_id`
+   - `visits.customer_id === sites.customer_id for visits.site_id`
+   - `vendorBills.work_order_id === purchaseOrders.work_order_id for vendorBills.po_id`
+   - `payments.customer_id === invoices.customer_id for payments.invoice_id`
+   - (See F.2, F.10.) **File**: `src/lib/rdash/integrity/checker.ts`.
+
+10. **G.10 — Change `master.vendorRates.vendor_id` and `master.vendorRateHistories.vendor_id` from `cascade` to `restrict`.** Deleting a vendor should not silently destroy rate history. (See F.5.) **File**: `src/lib/rdash/integrity/fk-registry.ts`.
+
+### MEDIUM
+
+11. **G.11 — Add `customer_id?` to `FileAsset`.** Currently finding all files for a customer requires walking polymorphic attachments. (See E.4.9.) **Files**: `src/lib/rdash/types.ts`, file-assets store slice.
+
+12. **G.12 — Add `customer_id?` to `AuditLogEntry` (denormalized).** Pre-resolve at log time so audit-by-customer queries don't require polymorphic resolution per row. (See E.4.7.) **Files**: `src/lib/rdash/types.ts`, audit store slice.
+
+13. **G.13 — Constrain `AuditLogEntry.entity_type` and `ThreadMessageMention.entity_type` to a shared enum.** Currently accepts any string. (See E.5.) **Files**: `src/lib/rdash/types.ts`.
+
+14. **G.14 — Add `commission_ids[]` (or `affected_commission_ids[]`) to `VendorBill`.** Enables "did this bill erode margin enough to reduce commission?" queries. (See E.4.1.) **Files**: `src/lib/rdash/types.ts`, vendor-bills store slice.
+
+15. **G.15 — Add `affected_boq_item_ids[]` to `VariationRequest`.** Enables automatic BOQ-line variation application. (See E.4.11.) **Files**: `src/lib/rdash/types.ts`, variations store slice.
+
+16. **G.16 — Add optional `customer_id?`, `site_id?`, `work_order_id?` to `RecurringTaskDefinition`.** Generated tasks inherit business context. (See E.4.6.) **Files**: `src/lib/rdash/types.ts`, recurring-tasks store slice.
+
+17. **G.17 — Add `linked_quotation_id?` to `BlockedItem`.** Symmetry with linked_task/work_order/po/grn. (See E.4.10.) **Files**: `src/lib/rdash/types.ts`, blocked store slice.
+
+18. **G.18 — Validate `customerReceipts` in `validateBusinessData`.** Add `db.customerReceipts.forEach((r) => capture("Customer Receipt "+r.id, () => assertCustomerRelation(db, r, "Customer Receipt")))`. (See E.4.12.) **File**: `src/lib/rdash/business-rules.ts`.
+
+19. **G.19 — Mark fileAssets as `sync_status="failed"` when their storage account is deleted.** Currently the `storage_account_id` is nullified but the file remains "uploaded" status. (See F.6.) **File**: `src/lib/rdash/integrity/cascade.ts` (or a custom hook in the storage-accounts store slice).
+
+20. **G.20 — Type `Master.workOptionGroups` and `Master.workOptionValues`.** Currently `unknown[]`. Either add proper interfaces or remove the collections. (See E.8.) **File**: `src/lib/rdash/types.ts`.
+
+### LOW
+
+21. **G.21 — Use the ~30 declared-but-unused relationship fields or remove them.** (See E.2.) Either wire them into validation/resolution or remove from types to reduce confusion. **File**: `src/lib/rdash/types.ts`.
+
+22. **G.22 — Set a friendly `title` for vendor/contractor threads.** Currently `thr-mruch8a62h84` has `title="ven-mruch8a4hwhf"` (raw ID). (See D.5.) **File**: thread-creation code in store slice (likely `src/lib/rdash/store/slices/threads.ts`).
+
+23. **G.23 — Add a `ThreadLink` join table for multi-entity threads.** (See E.4.5.) **Files**: `src/lib/rdash/types.ts`, threads store slice.
+
+24. **G.24 — Embed vs reference: refactor `Staff.attendance_policy` to a FK.** (See E.8.) Currently the policy is duplicated on every staff member. **Files**: `src/lib/rdash/types.ts`, attendance-policy store slice.
+
+25. **G.25 — Add soft-delete (`is_archived`/`deleted_at`) to all collections.** Currently only `sites` and `areas` support soft-delete. The cascade function supports it but most types don't have the field. (Worklog Task ID 5 recommendation #5.) **File**: `src/lib/rdash/types.ts`.
+
+---
+
+## H. Files inspected (line counts)
+
+- `src/lib/rdash/types.ts` — 1,994 lines (every interface, every ID field)
+- `src/lib/rdash/entity-context.ts` — 330 lines (resolveEntityContext, 27 entity types)
+- `src/lib/rdash/server/commit-rest.ts` — 376 lines (COLLECTION_TO_TABLE: 82 entries; commitRestOperations; getRestWorkspace)
+- `src/lib/rdash/integrity/fk-registry.ts` — 430 lines (178 FK rules across 17 domain groups)
+- `src/lib/rdash/business-rules.ts` — 662 lines (validateBusinessData, assertCustomerRelation, assertSiteBelongsToCustomer, assertWorkRequiredMatchesContext, assertQuotationRelations, assertWorkOrderRelations, assertVisitRelations, assertThreadParentExists)
+- `src/lib/rdash/customer-relations.ts` — 121 lines (resolveCustomerIdFromLinks, CustomerLinkInput)
+- `src/lib/rdash/entity-thread-map.ts` — 108 lines (entity_type → ThreadKind canonical map)
+- `supabase/schema-entity-tables.sql` — 1,243 lines (DDL for 81 entity_* tables — auditLog MISSING)
+- `supabase/schema.sql` — 178 lines (legacy 5-table schema, mostly superseded)
+- `worklog.md` — 5,066 lines (reviewed Tasks 0, 1-A/B/C/D/E, 2-A/B/C, 3, 5, 6, QA-1, QA-MOBILE, ANALYSIS-UPLOAD, QA-DRIVE-001, FIX-DRIVE-001, FIX-DUP-001, FIX-PRISMA-001)
+
+## I. Live Supabase queries performed
+
+- Row counts via `HEAD` + `Prefer: count=exact` + `Range: 0-0` for all 82 collections + entity_workspace_revision.
+- Full `GET` samples for: entity_customers, entity_sites, entity_areas, entity_workRequired, entity_measurementRevisions, entity_threads (all 13), entity_entityFileAttachments (all 6), entity_master_fileAssets (all 6), entity_master_storageFolderInstances (all 6, confirmed 5 duplicates), entity_master_storageAccounts (1), entity_master_vendors (1), entity_master_articles (sample 2), entity_master_workSubcategories (sample 1), entity_workspace_revision.
+- HTTP existence probe for `entity_auditLog` → **404 / PGRST205** (table missing).
+
+## J. Verification
+
+- No code was written or modified. Pure read-only analysis.
+- All claims about live DB state were verified via direct REST queries against `https://smfqwexofoqqrrhbzwmx.supabase.co`.
+- All claims about types/entity-context/fk-registry were verified by reading the source files end-to-end and citing line numbers.
+- All claims about prior work were verified by grepping worklog.md.
