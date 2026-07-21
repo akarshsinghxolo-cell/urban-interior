@@ -1,42 +1,82 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, History, X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { ALL_MODULES, type ModuleDef, type Submodule } from "@/lib/rdash/modules";
 import { canRole, permissionModuleForRoute, type StaffPermissionRecord } from "@/lib/rdash/staff-operations";
+
 function moduleMatches(module: ModuleDef, query: string) {
-    if (!query)
-        return true;
+    if (!query) return true;
     const q = query.toLowerCase();
     return (module.label.toLowerCase().includes(q) ||
         module.description.toLowerCase().includes(q) ||
         module.submodules.some((sm) => sm.label.toLowerCase().includes(q)));
 }
 function visibleSubmodules(module: ModuleDef, query: string) {
-    if (!query)
-        return module.submodules;
+    if (!query) return module.submodules;
     const q = query.toLowerCase();
     const moduleHit = module.label.toLowerCase().includes(q) ||
         module.description.toLowerCase().includes(q);
-    return moduleHit
-        ? module.submodules
-        : module.submodules.filter((sm) => sm.label.toLowerCase().includes(q));
+    return moduleHit ? module.submodules : module.submodules.filter((sm) => sm.label.toLowerCase().includes(q));
 }
-function ModuleItem({ module }: {
-    module: ModuleDef;
-}) {
+
+function ModuleItem({ module, collapsed }: { module: ModuleDef; collapsed?: boolean }) {
     const activeModuleId = useRDashStore((s) => s.activeModuleId);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const moduleSearch = useRDashStore((s) => s.moduleSearch);
     const hasActiveSubmodule = module.submodules.some((sm) => sm.id === activeModuleId);
     const active = activeModuleId === module.id;
     const [expanded, setExpanded] = React.useState(() => active || hasActiveSubmodule || module.id === "workdesk");
+    const [hovered, setHovered] = React.useState(false);
     const submodules = visibleSubmodules(module, moduleSearch.trim());
     React.useEffect(() => {
-        if (moduleSearch.trim() || active || hasActiveSubmodule)
-            setExpanded(true);
+        if (moduleSearch.trim() || active || hasActiveSubmodule) setExpanded(true);
     }, [moduleSearch, active, hasActiveSubmodule]);
+
+    // Collapsed mode: icon-only button with hover tooltip
+    if (collapsed) {
+        return (
+            <div className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+                <button
+                    type="button"
+                    onClick={() => setActiveModule(module.id)}
+                    className={cn("flex h-10 w-10 items-center justify-center rounded-lg text-lg transition-all", active
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "hover:bg-accent hover:text-accent-foreground")}
+                    title={module.label}
+                    aria-label={module.label}
+                >
+                    <span aria-hidden="true">{module.icon}</span>
+                </button>
+                {/* Hover tooltip with label + submodules */}
+                {hovered && (
+                    <div className="fixed left-[52px] z-50 min-w-[200px] rounded-lg border border-border bg-card p-2 shadow-popover">
+                        <p className="px-2 py-1 text-sm font-bold">{module.label}</p>
+                        {module.submodules.length > 0 && (
+                            <div className="mt-1 flex flex-col gap-0.5">
+                                {module.submodules.map((sm) => (
+                                    <button
+                                        key={sm.id}
+                                        type="button"
+                                        onClick={() => { setActiveModule(sm.id); setHovered(false); }}
+                                        className={cn("min-h-[36px] rounded-md px-2 py-1.5 text-left text-xs transition-colors", activeModuleId === sm.id
+                                            ? "bg-accent font-semibold text-accent-foreground"
+                                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground")}
+                                    >
+                                        {sm.label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+                {active && <span className="absolute -left-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-primary" />}
+            </div>
+        );
+    }
+
+    // Expanded mode: full sidebar with labels
     return (<div className="flex flex-col">
       <button type="button" onClick={() => setActiveModule(module.id)} className={cn("group relative flex min-h-[44px] items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-all duration-150", active
             ? "bg-primary text-primary-foreground shadow-sm before:absolute before:inset-y-1 before:left-0 before:w-[3px] before:rounded-l-full before:bg-primary-foreground before:content-[''] before:shadow-[0_0_8px_rgba(var(--primary-rgb,10_37_92),0.4)]"
@@ -66,39 +106,8 @@ function ModuleItem({ module }: {
         </div>)}
     </div>);
 }
-function RecentModules() {
-    const moduleHistory = useRDashStore((s) => s.moduleHistory);
-    const moduleHistoryIndex = useRDashStore((s) => s.moduleHistoryIndex);
-    const activeModuleId = useRDashStore((s) => s.activeModuleId);
-    const setActiveModule = useRDashStore((s) => s.setActiveModule);
-    // Dedupe by moduleId, keep most-recent-first, exclude the currently active module, limit to 5.
-    const recent = React.useMemo(() => {
-        const seen = new Set<string>();
-        const out: Array<{ moduleId: string; label: string; icon: string }> = [];
-        for (let i = moduleHistoryIndex; i >= 0 && out.length < 6; i--) {
-            const entry = moduleHistory[i];
-            if (!entry || seen.has(entry.moduleId) || entry.moduleId === activeModuleId) continue;
-            seen.add(entry.moduleId);
-            out.push({ moduleId: entry.moduleId, label: entry.label, icon: entry.icon });
-        }
-        return out.slice(0, 5);
-    }, [moduleHistory, moduleHistoryIndex, activeModuleId]);
-    if (recent.length < 2) return null;
-    return (<div className="border-b border-sidebar-border px-3 py-2">
-        <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
-            <History className="h-3 w-3"/> Recently visited
-        </p>
-        <div className="flex flex-wrap gap-1">
-            {recent.map((entry) => (
-                <button key={entry.moduleId} type="button" onClick={() => setActiveModule(entry.moduleId)} title={entry.label} className="group inline-flex max-w-[110px] items-center gap-1 rounded-full border border-border bg-card px-2 py-1 text-[10px] font-medium text-foreground/80 transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary">
-                    <span className="shrink-0 text-xs leading-none" aria-hidden>{entry.icon}</span>
-                    <span className="truncate">{entry.label}</span>
-                </button>
-            ))}
-        </div>
-    </div>);
-}
-function SidebarContent() {
+
+function SidebarContent({ collapsed }: { collapsed?: boolean }) {
     const moduleSearch = useRDashStore((s) => s.moduleSearch);
     const authUser = useRDashStore((s) => s.authUser);
     const db = useRDashStore((s) => s.db);
@@ -109,7 +118,6 @@ function SidebarContent() {
         .map((module) => ({ ...module, submodules: module.submodules.filter((submodule) => canSeeRoute(submodule)) }))
         .filter((module) => canSeeRoute(module) || module.submodules.length > 0)
         .filter((module) => moduleMatches(module, moduleSearch.trim())), [canSeeRoute, moduleSearch]);
-    // Exception count for the sidebar badge — shows total audited exceptions.
     const exceptionCount = React.useMemo(() => {
         const directPOs = (db.purchaseOrders || []).filter((po: any) => po.direct_award || po.award_basis === "direct").length;
         const directContractors = (db.workOrders || []).filter((wo: any) => wo.contractor_selection_method === "direct_award").length;
@@ -117,6 +125,24 @@ function SidebarContent() {
         const regularized = (db.attendance || []).filter((a: any) => a.auto_generated && a.attendance_mode === "manual_adjustment").length;
         return directPOs + directContractors + renegotiations + regularized;
     }, [db]);
+
+    if (collapsed) {
+        return (
+            <div className="flex h-full w-[52px] flex-col bg-sidebar text-sidebar-foreground">
+                <div className="flex h-[72px] items-center justify-center border-b border-sidebar-border">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20">
+                        <span className="text-sm font-black">UC</span>
+                    </div>
+                </div>
+                <div className="rd-scroll flex-1 overflow-y-auto p-2">
+                    <div className="flex flex-col items-center gap-1">
+                        {modules.map((module) => <ModuleItem key={module.id} module={module} collapsed />)}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (<div className="flex h-full w-[320px] flex-col bg-sidebar text-sidebar-foreground">
       <div className="rd-sidebar-header relative flex h-[72px] items-center gap-2 overflow-hidden border-b border-sidebar-border px-3">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-primary/10 via-transparent to-transparent"/>
@@ -130,7 +156,6 @@ function SidebarContent() {
         {exceptionCount > 0 && <span title={`${exceptionCount} audited exceptions — direct awards, renegotiations, regularized attendance`} className="relative inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[10px] font-bold text-warning-foreground animate-pulse">{exceptionCount}</span>}
       </div>
 
-      <RecentModules />
       <div className="rd-scroll flex-1 overflow-y-auto p-3">
         <div className="flex flex-col gap-1">
           {modules.map((module) => (<ModuleItem key={module.id} module={module}/>))}
@@ -141,9 +166,11 @@ function SidebarContent() {
       </div>
     </div>);
 }
+
 export function Sidebar() {
     const mobileNavOpen = useRDashStore((s) => s.mobileNavOpen);
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
+    const sidebarCollapsed = useRDashStore((s) => s.sidebarCollapsed);
     const touchStartX = React.useRef<number | null>(null);
     const touchCurrentX = React.useRef<number | null>(null);
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -163,8 +190,8 @@ export function Sidebar() {
         touchCurrentX.current = null;
     };
     return (<>
-      <aside className="hidden w-[320px] shrink-0 border-r border-sidebar-border lg:block">
-        <SidebarContent />
+      <aside className={cn("hidden shrink-0 border-r border-sidebar-border transition-all duration-200 lg:block", sidebarCollapsed ? "w-[52px]" : "w-[320px]")}>
+        <SidebarContent collapsed={sidebarCollapsed} />
       </aside>
 
       {mobileNavOpen && (<div className="fixed inset-0 z-50 lg:hidden">

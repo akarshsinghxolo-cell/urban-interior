@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Home, CalendarDays, Command, UserCircle2, Sparkles, Keyboard, } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Home, CalendarDays, Command, UserCircle2, Sparkles, Keyboard, PanelLeft, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer, MODULE_GROUPS } from "@/lib/rdash/modules";
 import { clearSessionToken } from "@/lib/rdash/client-auth";
@@ -46,6 +46,8 @@ export function WorkspaceHeader() {
     const setActiveTab = useRDashStore((s) => s.setActiveTab);
     const closeTab = useRDashStore((s) => s.closeTab);
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
+    const toggleSidebar = useRDashStore((s) => s.toggleSidebar);
+    const sidebarCollapsed = useRDashStore((s) => s.sidebarCollapsed);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const navigateModuleHistory = useRDashStore((s) => s.navigateModuleHistory);
     const moduleHistoryIndex = useRDashStore((s) => s.moduleHistoryIndex);
@@ -67,6 +69,10 @@ export function WorkspaceHeader() {
       <div className="flex items-center gap-3 px-[var(--page-pad)] py-2.5">
         <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
           <Menu className="h-5 w-5"/>
+        </Button>
+        {/* Desktop sidebar collapse/expand toggle */}
+        <Button variant="ghost" size="icon" className="hidden h-11 w-11 shrink-0 lg:inline-flex" onClick={() => toggleSidebar()} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
+          <PanelLeft className={cn("h-5 w-5 transition-transform", sidebarCollapsed && "rotate-180")} />
         </Button>
 
         <div className="flex min-w-0 flex-1 items-start gap-1.5">

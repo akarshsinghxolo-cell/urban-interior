@@ -41,7 +41,7 @@ import { quotationAcceptanceWarnings as computeQuotationAcceptanceWarnings } fro
 type UIActions = Omit<UIState,
     | "activeModuleId" | "moduleHistory" | "moduleHistoryIndex"
     | "moduleSearch" | "workspaceSearch" | "tabs" | "activeTabId"
-    | "selectedCustomerId" | "mobileNavOpen" | "moreMenuOpen"
+    | "selectedCustomerId" | "mobileNavOpen" | "sidebarCollapsed" | "moreMenuOpen"
     | "taskPriorityOrder" | "recentCreated" | "createDialog"
     | "detailPanel" | "contextHistory" | "contextHistoryIndex"
     | "actionDialog" | "commandPaletteOpen" | "savedViews"
@@ -297,6 +297,8 @@ export function createUISlice(ctx: StoreContext): UIActions {
         },
         selectCustomer: (id) => commitState({ selectedCustomerId: id }),
         setMobileNavOpen: (v) => commitState({ mobileNavOpen: v }),
+        setSidebarCollapsed: (v) => commitState({ sidebarCollapsed: v }),
+        toggleSidebar: () => commitState((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
         setMoreMenuOpen: (v) => commitState({ moreMenuOpen: v }),
         setTaskPriorityOrder: (ids) => commitState({ taskPriorityOrder: ids }),
         addRecentCreated: (entry) => commitState((s: any) => ({

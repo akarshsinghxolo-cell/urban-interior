@@ -610,6 +610,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         activeTabId: "tab-today",
         selectedCustomerId: "cust-das",
         mobileNavOpen: false,
+        sidebarCollapsed: false,
         moreMenuOpen: false,
         authUser: null,
         serverRevision: 0,

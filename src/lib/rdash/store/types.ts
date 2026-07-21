@@ -113,6 +113,7 @@ export interface UIState {
   activeTabId: string | null;
   selectedCustomerId: string | null;
   mobileNavOpen: boolean;
+  sidebarCollapsed: boolean;
   moreMenuOpen: boolean;
   taskPriorityOrder: string[];
   recentCreated: { id: string; kind: string; label: string; ts: number }[];
@@ -156,6 +157,8 @@ export interface UIState {
   setActiveTab: (id: string) => void;
   selectCustomer: (id: string | null) => void;
   setMobileNavOpen: (v: boolean) => void;
+  setSidebarCollapsed: (v: boolean) => void;
+  toggleSidebar: () => void;
   setMoreMenuOpen: (v: boolean) => void;
   setTaskPriorityOrder: (ids: string[]) => void;
   addRecentCreated: (entry: { id: string; kind: string; label: string }) => void;
