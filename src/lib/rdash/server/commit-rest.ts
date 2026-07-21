@@ -167,7 +167,28 @@ export async function getRestWorkspace(): Promise<{
   data._workspace_mode = "rest";
   data._data_source = "supabase-rest";
 
-  return { revision: wsRevision, data: data as RDashDatabase, updatedAt, rowVersions };
+  // QA-INTEGRITY-001: Normalize the workspace before returning so missing
+  // master.storageFolderTemplates (and other auto-seedable master fields) are
+  // backfilled in-memory. Without this, every workspace load returns 0
+  // templates even though normalizeStorageMaster knows how to seed them —
+  // which trips the integrity checker (313 issues: 11 critical "template_id
+  // references missing template") and breaks downstream features that look
+  // up templates by purpose (storage path resolver, upload route, etc.).
+  // prepareWorkspaceData is idempotent: it only fills in missing fields,
+  // never overwrites real user data.
+  let normalizedData: RDashDatabase;
+  try {
+    const { prepareWorkspaceData } = await import("../work-category-master");
+    const { attachCustomerLabels } = await import("../customer");
+    normalizedData = attachCustomerLabels(prepareWorkspaceData(data as Partial<RDashDatabase>));
+  } catch (normalizeErr) {
+    // Normalization is best-effort — if it throws, return the raw data so the
+    // client can still operate. Log for debugging.
+    console.error("[getRestWorkspace] prepareWorkspaceData failed, returning raw data:", normalizeErr);
+    normalizedData = data as RDashDatabase;
+  }
+
+  return { revision: wsRevision, data: normalizedData, updatedAt, rowVersions };
 }
 
 /**

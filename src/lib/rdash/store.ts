@@ -810,8 +810,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         // ── createBlocked / createRisk moved to risks slice (Phase 3a) ──
         // ── Masters slice: approval policies + automation rules (Phase 3d, part 1) ──
         ...((() => {
-            const { addApprovalPolicy, updateApprovalPolicy, toggleApprovalPolicy, deleteApprovalPolicy, requiresApproval, toggleAutomationRule, updateAutomationRule, addAutomationRule } = createMastersSlice(ctx);
-            return { addApprovalPolicy, updateApprovalPolicy, toggleApprovalPolicy, deleteApprovalPolicy, requiresApproval, toggleAutomationRule, updateAutomationRule, addAutomationRule };
+            const { addApprovalPolicy, updateApprovalPolicy, toggleApprovalPolicy, deleteApprovalPolicy, requiresApproval, toggleAutomationRule, updateAutomationRule, addAutomationRule, fireAutomation } = createMastersSlice(ctx);
+            return { addApprovalPolicy, updateApprovalPolicy, toggleApprovalPolicy, deleteApprovalPolicy, requiresApproval, toggleAutomationRule, updateAutomationRule, addAutomationRule, fireAutomation };
         })()),
         // ── toggleRecurringTask, runRecurringTasks moved to tasks slice (Phase 3m) ──
         // ── automation rule actions moved to masters slice (Phase 3d) ──

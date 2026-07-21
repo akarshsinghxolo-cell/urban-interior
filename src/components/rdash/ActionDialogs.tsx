@@ -34,6 +34,15 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId, defaultIsA
     const [pickedCustomerId, setPickedCustomerId] = React.useState<string>("");
     const effectiveCustomerId = customerId || pickedCustomerId;
     const customer = useCustomer(effectiveCustomerId);
+    // QA-FINANCE-001: Service-finance validation requires a Site. Auto-pick the customer's
+    // first site (most customers in this domain have exactly one site per job), and surface
+    // a Site selector when the customer has more than one so the user can override.
+    const customerSites = React.useMemo(() => {
+        if (!effectiveCustomerId) return [];
+        return db.sites.filter((s: any) => s.customer_id === effectiveCustomerId && !s.is_archived);
+    }, [db.sites, effectiveCustomerId]);
+    const [pickedSiteId, setPickedSiteId] = React.useState<string>("");
+    const effectiveSiteId = pickedSiteId || (customerSites.length === 1 ? customerSites[0].id : "");
     const [amount, setAmount] = React.useState<string>("");
     const [mode, setMode] = React.useState<string>("upi");
     const [milestone, setMilestone] = React.useState<string>("");
@@ -46,17 +55,26 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId, defaultIsA
             setMilestone("");
             setDueDate(todayIsoDate());
             setPickedCustomerId("");
+            setPickedSiteId("");
             // B-5: Honor defaultIsAdvance so the "Add advance" button lands directly in advance mode.
             setIsAdvance(Boolean(defaultIsAdvance));
         }
     }, [open, defaultIsAdvance]);
+    // When the picked customer changes, reset the site picker (the new customer's sites differ).
+    React.useEffect(() => {
+        setPickedSiteId("");
+    }, [effectiveCustomerId]);
     const amountNum = parseFloat(amount);
-    const valid = !isNaN(amountNum) && amountNum > 0 && Boolean(effectiveCustomerId);
+    const valid = !isNaN(amountNum) && amountNum > 0 && Boolean(effectiveCustomerId) && Boolean(effectiveSiteId);
     function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!valid) {
             if (!effectiveCustomerId) {
                 toast.error("Select a customer before creating the milestone");
+                return;
+            }
+            if (!effectiveSiteId) {
+                toast.error("Select a site for this collection milestone. Service finance requires a Site — add a site to the customer first.");
                 return;
             }
             toast.error("Enter a valid amount greater than 0");
@@ -67,6 +85,7 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId, defaultIsA
         const advanceLabel = milestone.trim() || (isAdvance ? "Advance" : undefined);
         const paymentId = addPayment({
             customer_id: effectiveCustomerId,
+            site_id: effectiveSiteId,
             amount: amountNum,
             mode,
             milestone_label: advanceLabel,
@@ -107,6 +126,31 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId, defaultIsA
                 <SelectContent>
                   {db.customers.map((p) => (<SelectItem key={p.id} value={p.id}>
                       {p.name} · {p.phone || "—"}
+                    </SelectItem>))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* QA-FINANCE-001: Site selector. Service-finance validation requires a Site.
+              Auto-picks when the customer has exactly one site; shows a dropdown when
+              there are multiple; shows a warning when the customer has no sites yet. */}
+          <div className="grid gap-1.5">
+            <Label htmlFor="pay-site">Site <span className="text-destructive">*</span></Label>
+            {customerSites.length === 0 ? (
+              <p className="rounded-md border border-dashed border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                This customer has no sites yet. Add a site first — service finance requires a Site link.
+              </p>
+            ) : customerSites.length === 1 ? (
+              <Input id="pay-site" value={customerSites[0].name || customerSites[0].id} readOnly className="bg-muted/40"/>
+            ) : (
+              <Select value={effectiveSiteId} onValueChange={setPickedSiteId}>
+                <SelectTrigger id="pay-site" className="w-full">
+                  <SelectValue placeholder="— select a site —"/>
+                </SelectTrigger>
+                <SelectContent>
+                  {customerSites.map((s: any) => (<SelectItem key={s.id} value={s.id}>
+                      {s.name || s.id}{s.address ? ` · ${s.address.slice(0, 60)}` : ""}
                     </SelectItem>))}
                 </SelectContent>
               </Select>
