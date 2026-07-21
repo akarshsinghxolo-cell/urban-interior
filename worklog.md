@@ -4920,3 +4920,42 @@ A working `/api/google-drive/upload/route.ts` must be created. The intended cont
 - Cross-checked storage account quota update path: only `test-upload/route.ts:129-133` and `refresh-account/route.ts:32-33` and `oauth/callback/route.ts:33-34` ever write `quota_used_bytes`. The main upload path (when fixed) must add this.
 - Cross-checked `Master.storageFolderInstances` schema (types.ts:1854) — the cache field exists but is never populated by `resolveStorageFolder`.
 
+
+---
+Task ID: QA-DRIVE-001
+Agent: main (Z.ai Code)
+Task: Diagnose why Google Drive uploads fail when creating a customer with site photos on https://urban-castle.vercel.app/. Verify by actually inspecting the Drive folder.
+
+Work Log:
+- Opened the live Vercel deployment via agent-browser; signed in as Akarsh (Owner).
+- Created customer "QA Drive Upload Test" with 5 site photos (img1.jpg–img5.jpg, ~60KB each, generated via PIL).
+- Captured network traffic: POST /api/operations/commit → 200 (customer saved), but all 5 × POST /api/google-drive/upload → 422.
+- Captured the 422 response body via direct fetch probe: `{"error":"fileName, entityType, and entityId are required."}`
+- Monkey-patched XMLHttpRequest.send in the browser to intercept the real FormData the client sends.
+- Created a second customer "QA Capture Test" with 1 photo to trigger a fresh XHR; captured the FormData fields:
+    file={File name:img1.jpg size:18859 type:image/jpeg}
+    fileName="img1.jpg" (8 chars)
+    entityType="site" (4 chars)
+    entityId="site-mrufyiatz24a" (17 chars)
+    kind="media", role="photo", caption="Site photo", visibility="internal", customerShareable="false"
+  → ALL fields present and correctly populated. Client is NOT at fault.
+- Ran a control probe: built the EXACT same FormData (dataUrl→Blob→FormData→fetch) and sent via fetch instead of XHR.
+  → Server returned 200 OK with a full Drive upload result (file id, webViewLink, etc.).
+- Opened the shared Drive folder https://drive.google.com/drive/folders/14XWwfQ56g8yCbAizh64O7fhB2gYR5yZo in the browser and navigated the folder tree:
+    Urban Castle → Customers → QA Capture Test → Sites → QA Capture Residence → Site Proof
+  → Found exactly ONE file: img1.jpg (835 bytes), uploaded by the fetch probe.
+  → The 5 photos uploaded via the app's XHR path did NOT land in Drive (no files in any QA Drive Upload Test site folder).
+  → Confirmed the folder-template creation path works (Customers/[name]/Sites/[sitename]/Site Proof) — only the file upload fails.
+
+Stage Summary:
+- ROOT CAUSE CONFIRMED: The upload endpoint POST /api/google-drive/upload returns 422 "fileName, entityType, and entityId are required" when the request is sent via XMLHttpRequest, but returns 200 OK when the identical FormData is sent via fetch. The client (file-assets.ts uploadManagedFile) correctly populates all fields (verified by XHR interception). The bug is server-side: Next.js `request.formData()` on Vercel's Node.js runtime fails to parse multipart text fields when the body originates from XHR (likely a content-type / boundary parsing discrepancy between XHR's default Content-Type and the Web Streams Request.formData() implementation on Vercel).
+- IMPACT: Every photo upload in the entire app fails silently (the create-customer flow swallows the error via Promise.allSettled + toast.warning). Customers ARE created, Drive folders ARE created, but zero photos ever reach Drive. This affects: EntityFormDialog (customer/vendor/contractor site photos), SiteFormDialog, ThreadPanel, FieldModeModule, GRNModule, DrawingsExecutionModules, CommunicationCentreModule, SiteMeasurementModule, DataImportModule.
+- EVIDENCE:
+  * Network: 5× POST /api/google-drive/upload → 422 (XHR path, real app)
+  * Network: 1× POST /api/google-drive/upload → 200 (fetch path, manual probe, same fields)
+  * Drive: img1.jpg present in Site Proof folder (from the fetch probe only)
+  * Captured FormData shows all 9 fields present and non-empty
+- FIX RECOMMENDATION (priority order):
+  1. Swap XMLHttpRequest → fetch in src/lib/rdash/file-assets.ts uploadManagedFile(). Use fetch with a ReadableStream body + custom progress via TransformStream, OR accept losing upload progress (progress reporting is a nice-to-have; working uploads are mandatory).
+  2. If XHR must be kept: explicitly set the Content-Type header to include the multipart boundary (XHR normally sets this automatically, but on Vercel the server-side Request.formData() may need an explicit boundary). Investigate whether the XHR is sending `Content-Type: multipart/form-data` WITHOUT a boundary (which would cause the server parser to silently drop all text fields but still receive the file).
+  3. Server-side hardening: in src/app/api/google-drive/upload/route.ts, log the received field names + content-type when the 422 fires, so this regression is caught immediately.
