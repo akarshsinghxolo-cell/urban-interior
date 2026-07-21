@@ -1097,6 +1097,22 @@ create table if not exists public."entity_master_referenceMedia" (
 create index if not exists "entity_master_referenceMedia_workspace_idx" on public."entity_master_referenceMedia" (workspace_id);
 create index if not exists "entity_master_referenceMedia_revision_idx" on public."entity_master_referenceMedia" (revision);
 
+-- FIX-ANALYSIS-001: entity_auditLog — was missing from DDL, causing silent
+-- audit-log insert failures in production. Every commit-rest audit insert
+-- silently failed (commit-rest.ts:282-286 only catches 23505 duplicate-key
+-- errors, swallowing all others). Audit entries vanished on workspace reload.
+create table if not exists public."entity_auditLog" (
+  id text primary key,
+  workspace_id text not null default 'default',
+  revision int not null default 0,
+  updated_at timestamptz not null default now(),
+  updated_by text,
+  data jsonb not null
+);
+
+create index if not exists "entity_auditLog_workspace_idx" on public."entity_auditLog" (workspace_id);
+create index if not exists "entity_auditLog_revision_idx" on public."entity_auditLog" (revision);
+
 
 -- ============================================================================
 -- RLS policies — workspace-scoped access for authenticated users
@@ -1216,6 +1232,7 @@ declare
     'entity_master_catalogueArticleVendorLinks',
     'entity_master_pinterestBoards',
     'entity_master_referenceMedia',
+    'entity_auditLog',
     'entity_workspace_revision'
   ];
 begin
@@ -1238,6 +1255,6 @@ grant execute on all functions in schema public to service_role;
 grant execute on all functions in schema public to authenticated;
 
 -- ============================================================================
--- Done. 86 entity_* tables + entity_workspace_revision + StaffProfile +
--- StaffLocationPing + rdash_user_roles + RLS policies.
+-- Done. 87 entity_* tables (including entity_auditLog) + entity_workspace_revision
+-- + StaffProfile + StaffLocationPing + rdash_user_roles + RLS policies.
 -- ============================================================================
