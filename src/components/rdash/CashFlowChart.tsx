@@ -56,15 +56,15 @@ export function CashFlowChart() {
         <div className="flex items-center gap-3 text-xs">
           <div className="text-right">
             <p className="flex items-center gap-1 text-success"><TrendingUp className="h-3 w-3"/>{formatINRShort(totalInflow)}</p>
-            <p className="text-[9px] text-muted-foreground">inflow</p>
+            <p className="text-[10px] text-muted-foreground">inflow</p>
           </div>
           <div className="text-right">
             <p className="flex items-center gap-1 text-destructive"><TrendingDown className="h-3 w-3"/>{formatINRShort(totalOutflow)}</p>
-            <p className="text-[9px] text-muted-foreground">outflow</p>
+            <p className="text-[10px] text-muted-foreground">outflow</p>
           </div>
           <div className="text-right">
             <p className={cn("font-bold", netFlow >= 0 ? "text-success" : "text-destructive")}>{formatINRShort(netFlow)}</p>
-            <p className="text-[9px] text-muted-foreground">net</p>
+            <p className="text-[10px] text-muted-foreground">net</p>
           </div>
         </div>
       </div>

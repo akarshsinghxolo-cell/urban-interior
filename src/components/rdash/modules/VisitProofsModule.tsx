@@ -88,8 +88,8 @@ export function VisitProofsModule() {
           {filtered.map((p) => (<article key={p.id} className="group overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card transition-all hover:-translate-y-0.5 hover:shadow-soft">
               <div className="relative aspect-square w-full" style={p.url || p.driveFileId ? undefined : { background: gradientFor(p.fileName) }}>
                 {p.url || p.driveFileId ? (<FilePreview file={{ fileName: p.fileName, mimeType: p.mimeType, googleFileId: p.driveFileId, url: p.url }} className="absolute inset-0 h-full border-0 rounded-none" compact controls={false}/>) : (<div className="absolute inset-0 flex items-center justify-center text-white/90"><Camera className="h-8 w-8 opacity-80"/></div>)}
-                <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/40 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">{titleCase(p.visitType)}</div>
-                <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/40 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm">{relativeDay(p.capturedAt)}</div>
+                <div className="pointer-events-none absolute left-2 top-2 rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">{titleCase(p.visitType)}</div>
+                <div className="pointer-events-none absolute right-2 top-2 rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-medium text-white backdrop-blur-sm">{relativeDay(p.capturedAt)}</div>
               </div>
               <button type="button" onClick={() => openDetail("visit", p.visitId)} className="block w-full p-2.5 text-left hover:bg-accent/30">
                 <p className="truncate text-xs font-semibold">{p.customerName}</p>

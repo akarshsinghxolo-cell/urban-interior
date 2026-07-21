@@ -225,7 +225,7 @@ export function QuotationExtrasModule({ submodule }: {
                 <span className="font-mono text-sm font-bold">{formatINR(q.total_amount)}</span>
               </button>
               <div className="mt-2 overflow-hidden rounded-md border border-border">
-                <div className="grid grid-cols-[1.5fr_0.4fr_0.4fr_0.5fr] gap-1 border-b border-border bg-muted/40 px-2 py-1 text-[9px] font-bold uppercase text-muted-foreground"><span>Item</span><span className="text-right">Qty</span><span className="text-right">Rate</span><span className="text-right">Amount</span></div>
+                <div className="grid grid-cols-[1.5fr_0.4fr_0.4fr_0.5fr] gap-1 border-b border-border bg-muted/40 px-2 py-1 text-[10px] font-bold uppercase text-muted-foreground"><span>Item</span><span className="text-right">Qty</span><span className="text-right">Rate</span><span className="text-right">Amount</span></div>
                 {q.scope_lines.map((it) => (<div key={it.id} className="grid grid-cols-[1.5fr_0.4fr_0.4fr_0.5fr] gap-1 border-b border-border px-2 py-1 text-[10px] last:border-0"><span className="truncate">{it.title}</span><span className="text-right font-mono">{it.quantity}</span><span className="text-right font-mono text-muted-foreground">{formatINR(it.rate)}</span><span className="text-right font-mono font-semibold">{formatINR(it.amount)}</span></div>))}
               </div>
             </div>))}
@@ -283,7 +283,7 @@ export function MastersExtrasModule({ submodule }: {
           {referrals.map(({ workOrder, contractor, referralFee }) => (<div key={workOrder.id} className="flex items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
               <Avatar name={(workOrder.customer_name || "Customer")} size={32}/>
               <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{workOrder.work_order_no} · {(workOrder.customer_name || "Customer")}</p><p className="text-[10px] text-muted-foreground">Contractor: {contractor?.name} · WorkOrder value: {formatINR(workOrder.value)}</p></div>
-              <div className="text-right"><p className="font-mono text-sm font-bold text-success">{formatINR(referralFee)}</p><p className="text-[9px] text-muted-foreground">2% referral</p></div>
+              <div className="text-right"><p className="font-mono text-sm font-bold text-success">{formatINR(referralFee)}</p><p className="text-[10px] text-muted-foreground">2% referral</p></div>
             </div>))}
         </div>
       </div>);

@@ -222,7 +222,7 @@ export function ThreadView({ threadId }: {
         <div className="mt-2 flex flex-wrap items-center gap-1">
           {filterTabs.map((tab) => (
             <button key={tab.id} type="button" onClick={() => setFilter(tab.id)} className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-medium transition-colors", filter === tab.id ? "bg-primary text-primary-foreground" : "bg-muted/60 text-muted-foreground hover:bg-muted")}>
-              {tab.label}<span className={cn("rounded-full px-1 text-[9px]", filter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
+              {tab.label}<span className={cn("rounded-full px-1 text-[10px]", filter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
             </button>
           ))}
         </div>
@@ -242,16 +242,16 @@ export function ThreadView({ threadId }: {
           <div ref={mentionListRef} className="max-h-56 overflow-y-auto rd-scroll">
             {mentionResults.map((entity, i) => (
               <button key={`${entity.entity_type}-${entity.entity_id}`} type="button" data-mention-active={i === safeMentionIndex || undefined} onMouseEnter={() => setMentionIndex(i)} onClick={() => insertMention(entity)} className={cn("flex w-full items-center gap-2 border-b border-border/60 px-3 py-1.5 text-left text-xs last:border-0", i === safeMentionIndex ? "bg-primary/10" : "hover:bg-accent/40")}>
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[9px] font-bold uppercase text-primary">{entity.entity_type.slice(0, 2)}</span>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold uppercase text-primary">{entity.entity_type.slice(0, 2)}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-foreground">{entity.label}</p>
                   {entity.sublabel && <p className="truncate text-[10px] text-muted-foreground">{entity.sublabel}</p>}
                 </div>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{entity.group}</span>
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{entity.group}</span>
               </button>
             ))}
           </div>
-          <div className="border-t border-border bg-muted/30 px-3 py-1 text-[9px] text-muted-foreground"><kbd className="rounded bg-background px-1">↑↓</kbd> navigate · <kbd className="rounded bg-background px-1">↵</kbd> select · <kbd className="rounded bg-background px-1">Esc</kbd> close</div>
+          <div className="border-t border-border bg-muted/30 px-3 py-1 text-[10px] text-muted-foreground"><kbd className="rounded bg-background px-1">↑↓</kbd> navigate · <kbd className="rounded bg-background px-1">↵</kbd> select · <kbd className="rounded bg-background px-1">Esc</kbd> close</div>
         </div>)}
         {mentionOpen && mentionResults.length === 0 && (<div className="absolute bottom-full left-3 right-3 z-30 mb-1 rounded-xl border border-border bg-popover px-3 py-2 text-[11px] text-muted-foreground shadow-lg">No entities match "{mentionQuery}"</div>)}
         {replyParentId && <div className="mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/[0.04] px-2 py-1 text-[11px] text-primary"><span>Replying to a specific message</span><button type="button" className="underline" onClick={() => setReplyParentId(undefined)}>Clear</button></div>}
@@ -305,7 +305,7 @@ export function ThreadView({ threadId }: {
           </div>
         </div>
         <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
-          <span className="inline-flex items-center gap-1"><AtSign className="h-3 w-3 text-primary/70"/>Type <code className="rounded bg-muted px-1 py-0.5 font-mono text-[9px]">@[</code> to mention — creates backlinks across threads</span>
+          <span className="inline-flex items-center gap-1"><AtSign className="h-3 w-3 text-primary/70"/>Type <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">@[</code> to mention — creates backlinks across threads</span>
           <span className="inline-flex items-center gap-1"><Paperclip className="h-3 w-3"/>Images/PDFs/videos upload to Google Drive</span>
         </p>
       </div>
@@ -480,7 +480,7 @@ function MessageBubble({ m, nested = false, onReply }: {
     if (isSystem || isAlert)
         return (<div className="flex items-center justify-center py-0.5">
         <span title={absTime} className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium", isAlert ? "border-primary/20 bg-primary/[0.07] text-primary" : "border-border bg-muted/50 text-muted-foreground")}>
-          {isAlert ? <ArrowUpRight className="h-3 w-3"/> : <Info className="h-3 w-3"/>}{m.body}<span className="text-[9px] opacity-60">· {relativeDay(m.created_at)}</span>
+          {isAlert ? <ArrowUpRight className="h-3 w-3"/> : <Info className="h-3 w-3"/>}{m.body}<span className="text-[10px] opacity-60">· {relativeDay(m.created_at)}</span>
         </span>
       </div>);
     // Comment / decision / proof messages render as a full bubble with avatar.
@@ -552,10 +552,10 @@ export function LineItemTable({ items, highlightSource, }: {
           <div className="min-w-0">
             <p className={cn("truncate font-medium text-foreground", it.held && "line-through text-muted-foreground")}>
               {it.title}
-              {it.held && <span className="ml-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold text-warning">HELD</span>}
+              {it.held && <span className="ml-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold text-warning">HELD</span>}
             </p>
             {it.unit_name && <p className="text-[10px] text-muted-foreground">{it.unit_name}</p>}
-            {(it.site_name || it.area_name) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[9px]">
+            {(it.site_name || it.area_name) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
                 {it.site_name && <span className="rounded bg-primary/10 px-1 py-0.5 text-primary">{it.site_name}</span>}
                 {it.area_name && <span className="rounded bg-muted px-1 py-0.5 text-muted-foreground">{it.area_name}</span>}
                 {it.drawing_no && <span className="rounded bg-success/10 px-1 py-0.5 text-success">📐 {it.drawing_no}</span>}

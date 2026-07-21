@@ -588,7 +588,7 @@ function FollowupCommunicationsSection({ followupIds }: { followupIds: string[] 
                         <p className="truncate text-[11px] text-muted-foreground">{meta.label} · {c.staff_name} · {formatDateTime(c.sent_at)}</p>
                         {c.body && <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{c.body}</p>}
                       </div>
-                      <span className="shrink-0 rounded-full bg-card px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{c.status}</span>
+                      <span className="shrink-0 rounded-full bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{c.status}</span>
                     </button>);
                   })}
                   <button type="button" onClick={() => setActiveModule("communicationCentre")} className="flex w-full items-center justify-center gap-1.5 px-4 py-2 text-[11px] font-medium text-primary hover:bg-primary/5">

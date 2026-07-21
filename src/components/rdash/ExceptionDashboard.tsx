@@ -210,7 +210,7 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", cfg.bg, cfg.color)}>
+                    <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide", cfg.bg, cfg.color)}>
                       {cfg.label}
                     </span>
                     {/* "Next Step" action tag — color-coded so users know the
@@ -218,7 +218,7 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
                     {(() => {
                       const ns = nextStepConfig[item.kind];
                       return ns ? (
-                        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide", ns.className)}>
+                        <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide", ns.className)}>
                           {ns.label}
                         </span>
                       ) : null;

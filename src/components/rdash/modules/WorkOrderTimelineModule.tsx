@@ -323,7 +323,7 @@ export function WorkOrderTimelineModule() {
             const active = activeTypes.has(type);
             return (
               <button key={type} type="button" onClick={() => toggleType(type)} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors", active ? meta.tone : "border-border bg-card text-muted-foreground hover:bg-accent/50")}>
-                {meta.icon} {meta.label} <span className="rounded-full bg-background/70 px-1 text-[9px]">{count}</span>
+                {meta.icon} {meta.label} <span className="rounded-full bg-background/70 px-1 text-[10px]">{count}</span>
               </button>
             );
           })}
@@ -446,7 +446,7 @@ function ScheduleGantt() {
         <div className="p-4">
           <div className="relative mb-2 ml-48 h-5 border-b border-border">
             {axisLabels.map((axis, i) => (
-              <div key={i} className="absolute top-0 -translate-x-1/2 text-[9px] font-medium text-muted-foreground" style={{ left: `${axis.pct}%` }}>{axis.label}</div>
+              <div key={i} className="absolute top-0 -translate-x-1/2 text-[10px] font-medium text-muted-foreground" style={{ left: `${axis.pct}%` }}>{axis.label}</div>
             ))}
           </div>
           <div className="space-y-1.5">

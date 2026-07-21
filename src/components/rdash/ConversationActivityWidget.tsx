@@ -117,7 +117,7 @@ export function ConversationActivityWidget({ onOpenInbox }: { onOpenInbox?: () =
                                         title={`${day.count} messages on ${day.date}`}
                                     />
                                 </div>
-                                <span className={cn("text-[9px] font-medium", day.isToday ? "text-primary" : "text-muted-foreground")}>{day.label}</span>
+                                <span className={cn("text-[10px] font-medium", day.isToday ? "text-primary" : "text-muted-foreground")}>{day.label}</span>
                             </div>
                         ))}
                     </div>
@@ -135,7 +135,7 @@ export function ConversationActivityWidget({ onOpenInbox }: { onOpenInbox?: () =
                                 <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded bg-muted/60", k.tone)}>{k.icon}</span>
                                 <div className="min-w-0">
                                     <p className="text-sm font-bold leading-none text-foreground">{k.count}</p>
-                                    <p className="text-[9px] text-muted-foreground">{k.label}</p>
+                                    <p className="text-[10px] text-muted-foreground">{k.label}</p>
                                 </div>
                             </div>
                         ))}
@@ -152,7 +152,7 @@ export function ConversationActivityWidget({ onOpenInbox }: { onOpenInbox?: () =
                             <div key={t.id} className="flex items-center gap-2 text-[11px]">
                                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success"/>
                                 <span className="min-w-0 flex-1 truncate font-medium text-foreground">{t.title}</span>
-                                <span className="shrink-0 text-[9px] text-muted-foreground">{relativeDay(t.updated_at)}</span>
+                                <span className="shrink-0 text-[10px] text-muted-foreground">{relativeDay(t.updated_at)}</span>
                             </div>
                         ))}
                     </div>

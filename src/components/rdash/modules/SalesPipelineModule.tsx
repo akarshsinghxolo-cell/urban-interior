@@ -52,10 +52,10 @@ function DraggableCard({ req, customer, onOpen, }: {
           <span>{req.source || "—"}</span>
         </div>
         <div className="mt-1 flex items-center gap-1">
-          <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-semibold", req.priority === "urgent" ? "bg-destructive/10 text-destructive" : req.priority === "high" ? "bg-warning/10 text-warning" : "bg-muted text-muted-foreground")}>
+          <span className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold", req.priority === "urgent" ? "bg-destructive/10 text-destructive" : req.priority === "high" ? "bg-warning/10 text-warning" : "bg-muted text-muted-foreground")}>
             {titleCase(req.priority)}
           </span>
-          <span className="ml-auto text-[9px] text-muted-foreground">{relativeDay(req.created_at)}</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">{relativeDay(req.created_at)}</span>
         </div>
       </button>
     </div>);
@@ -176,7 +176,7 @@ export function SalesPipelineModule() {
                   {items.length === 0 && (<div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-6 text-center">
                     <Plus className="h-4 w-4 text-muted-foreground/50" />
                     <p className="text-[10px] font-medium text-muted-foreground/80">No items</p>
-                    <p className="text-[9px] text-muted-foreground/60">Drag a lead here</p>
+                    <p className="text-[10px] text-muted-foreground/60">Drag a lead here</p>
                   </div>)}
                 </DroppableColumn>
               </div>);

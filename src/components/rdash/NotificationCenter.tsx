@@ -181,7 +181,7 @@ export function NotificationCenter() {
     return (<div className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)} className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-all hover:bg-accent hover:text-foreground" aria-label={`Notifications (${unread.length} unread)`}>
         <Bell className="h-4 w-4"/>
-        {unread.length > 0 && (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[9px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
+        {unread.length > 0 && (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[10px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
             {unread.length > 9 ? "9+" : unread.length}
           </span>)}
       </button>
@@ -195,7 +195,7 @@ export function NotificationCenter() {
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-primary"/>
                   <h3 className="text-sm font-semibold">Notifications</h3>
-                  {unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[9px] font-bold text-primary">{unread.length} new</span>)}
+                  {unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{unread.length} new</span>)}
                 </div>
                 <div className="flex items-center gap-1">
                   {filter !== "all" && filtered.some((n) => !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
@@ -246,7 +246,7 @@ export function NotificationCenter() {
                         </div>
                         {n.body && <p className="mt-0.5 text-[11px] text-muted-foreground">{n.body}</p>}
                         <div className="mt-1 flex items-center gap-2">
-                          <span className="text-[9px] text-muted-foreground">{relativeDay(n.time)}</span>
+                          <span className="text-[10px] text-muted-foreground">{relativeDay(n.time)}</span>
                           <span className={cn("rounded px-1 py-0.5 text-[8px] font-bold uppercase", meta.color)}>{meta.label}</span>
                           {n.action && (<button type="button" onClick={() => { setReadItems((r) => new Set([...r, n.id])); n.action!(); }} className="text-[10px] font-semibold text-primary hover:underline">
                               {n.actionLabel || "Open"} →

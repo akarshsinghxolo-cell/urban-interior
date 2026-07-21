@@ -600,23 +600,23 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
                         <div className="rounded-md bg-muted/40 p-2">
-                          <p className="text-[9px] uppercase text-muted-foreground">Quoted</p>
+                          <p className="text-[10px] uppercase text-muted-foreground">Quoted</p>
                           <p className="font-mono text-xs font-semibold">{formatINRShort(fin.quoted)}</p>
                         </div>
                         <div className="rounded-md bg-muted/40 p-2">
-                          <p className="text-[9px] uppercase text-muted-foreground">Contracted</p>
+                          <p className="text-[10px] uppercase text-muted-foreground">Contracted</p>
                           <p className="font-mono text-xs font-semibold">{formatINRShort(fin.contracted)}</p>
                         </div>
                         <div className="rounded-md bg-success/10 p-2">
-                          <p className="text-[9px] uppercase text-success">Collected</p>
+                          <p className="text-[10px] uppercase text-success">Collected</p>
                           <p className="font-mono text-xs font-semibold text-success">{formatINRShort(fin.collected)}</p>
                         </div>
                         <div className="rounded-md bg-primary/10 p-2">
-                          <p className="text-[9px] uppercase text-primary">Invoiced</p>
+                          <p className="text-[10px] uppercase text-primary">Invoiced</p>
                           <p className="font-mono text-xs font-semibold text-primary">{formatINRShort(fin.invoiced)}</p>
                         </div>
                         <div className="rounded-md bg-warning/10 p-2">
-                          <p className="text-[9px] uppercase text-warning">Receivable</p>
+                          <p className="text-[10px] uppercase text-warning">Receivable</p>
                           <p className="font-mono text-xs font-semibold text-warning">{formatINRShort(fin.receivable)}</p>
                         </div>
                       </div>
@@ -878,7 +878,7 @@ function CustomerFileGallery({ title, empty, files }: {
 }) {
     return (<section className="rounded-lg border border-border bg-background p-3">
       <div className="mb-2 flex items-center justify-between gap-2"><p className="text-xs font-semibold">{title}</p><span className="text-[10px] text-muted-foreground">Click a thumbnail to fetch the file</span></div>
-      {files.length ? <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{files.map((file) => <div key={file.id} className="min-w-0"><FilePreview file={{ fileName: file.fileName, mimeType: file.mimeType, googleFileId: file.googleFileId, url: file.url, thumbnailUrl: file.thumbnailUrl }} compact controls/><p className="mt-1 truncate text-[9px] text-muted-foreground" title={file.label}>{file.label}</p></div>)}</div> : <p className="rounded-md border border-dashed border-border py-3 text-center text-xs text-muted-foreground">{empty}</p>}
+      {files.length ? <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{files.map((file) => <div key={file.id} className="min-w-0"><FilePreview file={{ fileName: file.fileName, mimeType: file.mimeType, googleFileId: file.googleFileId, url: file.url, thumbnailUrl: file.thumbnailUrl }} compact controls/><p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.label}>{file.label}</p></div>)}</div> : <p className="rounded-md border border-dashed border-border py-3 text-center text-xs text-muted-foreground">{empty}</p>}
     </section>);
 }
 function CustomerActivitySection({ title, empty, rows }: {
@@ -1202,7 +1202,7 @@ function CustomerTimelineView({ customerId, name, tasks, quotations, payments, v
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-0.5">
                           {entry.amount !== undefined && (<span className="font-mono text-[11px] font-bold text-foreground/80">{formatINR(entry.amount)}</span>)}
-                          {entry.status && (<span className="text-[9px] uppercase tracking-wider text-muted-foreground">{entry.status.replace(/_/g, " ")}</span>)}
+                          {entry.status && (<span className="text-[10px] uppercase tracking-wider text-muted-foreground">{entry.status.replace(/_/g, " ")}</span>)}
                         </div>
                       </button>
                     </li>);
@@ -1291,7 +1291,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-muted-foreground">Line {index + 1}</span>{lines.length > 1 && <button type="button" onClick={() => removeLine(index)} className="text-muted-foreground hover:text-destructive" aria-label={`Remove line ${index + 1}`}><Plus className="h-3.5 w-3.5 rotate-45"/></button>}</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Area *</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Area *</label>
             <select value={line.create_area ? "__new__" : line.area_id || ""} onChange={(event) => {
                 const value = event.target.value;
                 if (value === "__new__")
@@ -1304,17 +1304,17 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
               <option value="__new__">+ Create new area</option>
             </select>
           </div>
-          {line.create_area && <><div><label className="text-[9px] font-semibold uppercase text-muted-foreground">New area name *</label><Input value={line.area_name || ""} onChange={(event) => updateLine(index, { area_name: event.target.value })} placeholder="e.g. Living Room" className="h-8 text-xs"/></div><div><label className="text-[9px] font-semibold uppercase text-muted-foreground">Area type *</label><select value={line.area_type || "other"} onChange={(event) => updateLine(index, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">{areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}</select></div></>}
+          {line.create_area && <><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">New area name *</label><Input value={line.area_name || ""} onChange={(event) => updateLine(index, { area_name: event.target.value })} placeholder="e.g. Living Room" className="h-8 text-xs"/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Area type *</label><select value={line.area_type || "other"} onChange={(event) => updateLine(index, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">{areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}</select></div></>}
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Category *</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
             <select value={line.category_id || ""} onChange={(event) => updateLine(index, { category_id: event.target.value || undefined, subcategory_id: undefined, article_id: undefined, variant_id: undefined, unit_id: undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs"><option value="">— select category —</option>{db.master.workCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
           </div>
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
             <select value={line.subcategory_id || ""} disabled={!line.category_id} onChange={(event) => updateLine(index, { subcategory_id: event.target.value || undefined, article_id: undefined, variant_id: undefined, unit_id: undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— select subcategory —</option>{subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}</select>
           </div>
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Article *</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Article *</label>
             <select value={line.article_id || ""} disabled={!line.subcategory_id} onChange={(event) => {
                 const articleId = event.target.value || undefined;
                 const mapping = mappings.find((row) => row.article_id === articleId);
@@ -1324,18 +1324,18 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             }} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— select article —</option>{articles.map((article) => <option key={article.id} value={article.id}>{article.name}</option>)}</select>
           </div>
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Variant</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Variant</label>
             <select value={line.variant_id || ""} disabled={!line.article_id} onChange={(event) => updateLine(index, { variant_id: event.target.value || undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— optional —</option>{variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name}</option>)}</select>
           </div>
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Quantity *</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Quantity *</label>
             <Input type="number" min="0.01" step="any" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} className="h-8 text-xs"/>
           </div>
           <div>
-            <label className="text-[9px] font-semibold uppercase text-muted-foreground">Unit *</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Unit *</label>
             <select value={line.unit_id || ""} disabled={!line.article_id} onChange={(event) => updateLine(index, { unit_id: event.target.value || undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— select unit —</option>{db.master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</select>
           </div>
-          <div className="col-span-2 sm:col-span-3"><label className="text-[9px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(index, { notes: event.target.value })} placeholder="Customer preference, finish, dimensions or scope note" className="h-8 text-xs"/></div>
+          <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(index, { notes: event.target.value })} placeholder="Customer preference, finish, dimensions or scope note" className="h-8 text-xs"/></div>
         </div>
         {duplicate && <p className="mt-2 text-[11px] text-destructive">This line duplicates an already captured scope. Edit the earlier line instead.</p>}
       </div>);

@@ -165,7 +165,7 @@ export function WorkspaceHeader() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem onClick={() => { const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true }); window.dispatchEvent(e); }}>
               <Keyboard className="mr-2 h-4 w-4"/> Keyboard shortcuts
-              <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[9px] text-muted-foreground">?</kbd>
+              <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">?</kbd>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { window.dispatchEvent(new Event("rdash-restart-tour")); toast.success("Onboarding tour restarted"); }}>
               <Sparkles className="mr-2 h-4 w-4"/> Restart onboarding tour

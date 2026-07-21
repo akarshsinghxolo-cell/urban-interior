@@ -85,7 +85,7 @@ function RecentModules() {
     }, [moduleHistory, moduleHistoryIndex, activeModuleId]);
     if (recent.length < 2) return null;
     return (<div className="border-b border-sidebar-border px-3 py-2">
-        <p className="mb-1.5 flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/70">
+        <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">
             <History className="h-3 w-3"/> Recently visited
         </p>
         <div className="flex flex-wrap gap-1">

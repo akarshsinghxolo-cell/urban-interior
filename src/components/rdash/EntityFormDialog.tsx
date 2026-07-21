@@ -685,7 +685,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
               {showReferralDropdown && referralOptions.length > 0 && (<div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-card shadow-popover rd-scroll">
                   {referralOptions.map((opt) => (<button key={opt.id || opt.name} type="button" onClick={() => { setReferralSelected({ id: opt.id, name: opt.name }); setReferralQuery(opt.name); setShowReferralDropdown(false); }} className="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-accent/40">
                       <span className="font-medium">{opt.name}</span>
-                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] text-muted-foreground">{opt.type}</span>
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{opt.type}</span>
                     </button>))}
                 </div>)}
               {referralSelected && (<p className="mt-1 text-[10px] text-success">✓ Linked to existing record: {referralSelected.name}</p>)}
@@ -723,7 +723,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             ] as Array<[
                 CustomerSegment,
                 string
-            ]>).map(([segment, label]) => (<button key={segment} type="button" onClick={() => toggleCustomerSegment(segment)} className={cn("rounded-md border px-2 py-1 text-[11px] transition-colors", customerSegments.includes(segment) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>
+            ]>).map(([segment, label]) => (<button key={segment} type="button" onClick={() => toggleCustomerSegment(segment)} className={cn("min-h-[36px] rounded-md border px-2.5 py-1.5 text-[11px] transition-colors", customerSegments.includes(segment) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>
                         {label}
                       </button>))}
                   </div>
@@ -927,8 +927,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         </div>
 
         <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={!name.trim() || saving}>
+          <Button variant="outline" size="sm" className="min-h-[40px]" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
+          <Button size="sm" className="min-h-[40px]" onClick={handleSave} disabled={!name.trim() || saving}>
             {saving ? "Uploading to Google Drive…" : isEditMode ? <><Pencil className="mr-1 h-3.5 w-3.5"/> Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5"/> Create {type}</>}
           </Button>
         </DialogFooter>

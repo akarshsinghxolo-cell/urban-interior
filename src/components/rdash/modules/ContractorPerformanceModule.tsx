@@ -182,7 +182,7 @@ export function ContractorPerformanceModule() {
                         <div className="flex items-center gap-2">
                           <p className="truncate text-sm font-bold text-foreground">{c.contractor_name}</p>
                           {c.trade && <span className="hidden shrink-0 rounded-full bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground sm:inline">{c.trade}</span>}
-                          {c.direct_awards > 0 && <span title={`${c.direct_awards} direct-award(s) — no formal bid round`} className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[9px] font-semibold text-warning"><Wrench className="h-2 w-2"/>{c.direct_awards} DA</span>}
+                          {c.direct_awards > 0 && <span title={`${c.direct_awards} direct-award(s) — no formal bid round`} className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-semibold text-warning"><Wrench className="h-2 w-2"/>{c.direct_awards} DA</span>}
                         </div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-muted-foreground">
                           {c.city && <span>{c.city}</span>}
@@ -195,25 +195,25 @@ export function ContractorPerformanceModule() {
                       <div className="hidden shrink-0 items-center gap-4 sm:flex">
                         {/* Reliability */}
                         <div className="text-center">
-                          <p className="text-[9px] font-semibold uppercase text-muted-foreground">Reliability</p>
+                          <p className="text-[10px] font-semibold uppercase text-muted-foreground">Reliability</p>
                           <p className={cn("text-sm font-bold", relTone === "success" ? "text-success" : relTone === "warning" ? "text-warning" : relTone === "destructive" ? "text-destructive" : "text-muted-foreground")}>{c.reliability_score ?? "—"}</p>
                         </div>
                         {/* On-time */}
                         <div className="text-center">
-                          <p className="text-[9px] font-semibold uppercase text-muted-foreground">On-time</p>
+                          <p className="text-[10px] font-semibold uppercase text-muted-foreground">On-time</p>
                           <p className={cn("text-sm font-bold", onTimeTone === "success" ? "text-success" : onTimeTone === "warning" ? "text-warning" : onTimeTone === "destructive" ? "text-destructive" : "text-muted-foreground")}>{c.on_time_pct ? `${c.on_time_pct}%` : "—"}</p>
                         </div>
                         {/* Past jobs */}
                         {c.past_jobs_count !== undefined && (
                           <div className="text-center">
-                            <p className="text-[9px] font-semibold uppercase text-muted-foreground">Past Jobs</p>
+                            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Past Jobs</p>
                             <p className="text-sm font-bold text-foreground">{c.past_jobs_count}</p>
                           </div>
                         )}
                         {/* Rating */}
                         {c.rating !== undefined && (
                           <div className="text-center">
-                            <p className="text-[9px] font-semibold uppercase text-muted-foreground">Rating</p>
+                            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Rating</p>
                             <p className="flex items-center gap-0.5 text-sm font-bold text-warning"><Star className="h-3 w-3 fill-current"/>{c.rating}</p>
                           </div>
                         )}

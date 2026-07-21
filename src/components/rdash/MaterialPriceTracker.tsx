@@ -119,28 +119,28 @@ export function MaterialPriceTracker() {
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <TrendingUp className="h-3 w-3 text-destructive" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Up</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Up</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-destructive">{stats.up}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <TrendingDown className="h-3 w-3 text-success" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Down</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Down</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-success">{stats.down}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <Minus className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Stable</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stable</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-foreground">{stats.stable}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <DollarSign className={cn("h-3 w-3", stats.avgChange > 0 ? "text-destructive" : stats.avgChange < 0 ? "text-success" : "text-muted-foreground")} />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Avg</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Avg</span>
           </div>
           <p className={cn("rd-tabular mt-0.5 text-xs font-bold", stats.avgChange > 0 ? "text-destructive" : stats.avgChange < 0 ? "text-success" : "text-foreground")}>
             {stats.avgChange > 0 ? "+" : ""}{stats.avgChange.toFixed(1)}%
@@ -186,7 +186,7 @@ export function MaterialPriceTracker() {
                   <p className="rd-tabular text-xs font-bold text-foreground">{formatINR(t.currentRate)}</p>
                   {t.previousRate !== undefined && t.previousRate > 0 && (
                     <div className="flex items-center justify-end gap-0.5">
-                      <span className="text-[9px] text-muted-foreground line-through">{formatINR(t.previousRate)}</span>
+                      <span className="text-[10px] text-muted-foreground line-through">{formatINR(t.previousRate)}</span>
                       <span className={cn("rd-tabular text-[10px] font-bold", cfg.color)}>
                         {t.changePct > 0 ? "+" : ""}{t.changePct.toFixed(1)}%
                       </span>

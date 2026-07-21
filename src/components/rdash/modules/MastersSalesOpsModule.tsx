@@ -265,9 +265,9 @@ export function MastersModule({ submodule }: {
                   <span className="inline-flex items-center gap-0.5 text-sm font-bold"><Star className="h-3.5 w-3.5 fill-warning text-warning"/>{c.rating || "—"}</span>
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
-                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[9px] uppercase text-muted-foreground">Phone</p><p className="text-[10px] font-medium truncate">{c.phone || "—"}</p></div>
-                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[9px] uppercase text-muted-foreground">Work Orders</p><p className="text-sm font-bold">{c.active_jobs || 0}</p></div>
-                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[9px] uppercase text-muted-foreground">Due</p><p className={cn("font-mono font-bold text-xs", c.outstanding ? "text-destructive" : "text-success")}>{formatINRShort(c.outstanding || 0)}</p></div>
+                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[10px] uppercase text-muted-foreground">Phone</p><p className="text-[10px] font-medium truncate">{c.phone || "—"}</p></div>
+                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[10px] uppercase text-muted-foreground">Work Orders</p><p className="text-sm font-bold">{c.active_jobs || 0}</p></div>
+                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[10px] uppercase text-muted-foreground">Due</p><p className={cn("font-mono font-bold text-xs", c.outstanding ? "text-destructive" : "text-success")}>{formatINRShort(c.outstanding || 0)}</p></div>
                 </div>
               </div>);
             })}

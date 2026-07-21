@@ -179,7 +179,7 @@ function TodaysPrioritiesBanner({ items, onSnooze }: { items: PriorityItem[]; on
                 <p className="truncate text-sm font-semibold text-foreground">{item.title}</p>
                 <p className="truncate text-[11px] text-muted-foreground">{item.customerName ? item.customerName + " · " : ""}{item.subtitle || kindLabel[item.kind]}{item.assignee ? " · @" + item.assignee : ""}</p>
               </div>
-              {item.priority ? (<span className={"shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase " + priorityChipClass(item.priority)}>{item.priority}</span>) : null}
+              {item.priority ? (<span className={"shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase " + priorityChipClass(item.priority)}>{item.priority}</span>) : null}
               {item.due ? (<span className={"shrink-0 text-[10px] font-semibold " + (isDateOnlyOverdue(item.due) ? "text-destructive" : "text-muted-foreground")}>{isDateOnlyOverdue(item.due) ? "Overdue" : "Today"}</span>) : null}
             </button>
             {onSnooze ? (<button type="button" aria-label="Snooze" title="Snooze" onClick={(e) => { e.stopPropagation(); setSnoozeFor(snoozeFor === item.id ? null : item.id); }} className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">

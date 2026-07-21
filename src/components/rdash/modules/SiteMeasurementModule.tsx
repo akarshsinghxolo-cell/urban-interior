@@ -370,7 +370,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
                     <button type="button" onClick={() => setUploadedMedia((arr) => arr.filter((x) => x.id !== m.id))} className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100" aria-label="Remove">
                       <X className="h-3 w-3"/>
                     </button>
-                    <p className="truncate px-1 py-0.5 text-[9px] text-muted-foreground">{m.file_name}</p>
+                    <p className="truncate px-1 py-0.5 text-[10px] text-muted-foreground">{m.file_name}</p>
                   </div>))}
               </div>)}
             <p className="mt-1 text-[10px] text-muted-foreground">Images, videos, and PDFs are optional. Every selected file uploads to Google Drive before the measurement report is filed; there is no file-count limit.</p>

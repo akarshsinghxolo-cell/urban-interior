@@ -183,18 +183,18 @@ export function VendorPerformanceModule() {
                       <div className="hidden shrink-0 items-center gap-4 sm:flex">
                         {/* Reliability */}
                         <div className="text-center">
-                          <p className="text-[9px] font-semibold uppercase text-muted-foreground">Reliability</p>
+                          <p className="text-[10px] font-semibold uppercase text-muted-foreground">Reliability</p>
                           <p className={cn("text-sm font-bold", relTone === "success" ? "text-success" : relTone === "warning" ? "text-warning" : relTone === "destructive" ? "text-destructive" : "text-muted-foreground")}>{v.reliability_score ?? "—"}</p>
                         </div>
                         {/* On-time */}
                         <div className="text-center">
-                          <p className="text-[9px] font-semibold uppercase text-muted-foreground">On-time</p>
+                          <p className="text-[10px] font-semibold uppercase text-muted-foreground">On-time</p>
                           <p className={cn("text-sm font-bold", onTimeTone === "success" ? "text-success" : onTimeTone === "warning" ? "text-warning" : onTimeTone === "destructive" ? "text-destructive" : "text-muted-foreground")}>{v.on_time_delivery_pct}%</p>
                         </div>
                         {/* Rating */}
                         {v.rating !== undefined && (
                           <div className="text-center">
-                            <p className="text-[9px] font-semibold uppercase text-muted-foreground">Rating</p>
+                            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Rating</p>
                             <p className="flex items-center gap-0.5 text-sm font-bold text-warning"><Star className="h-3 w-3 fill-current"/>{v.rating}</p>
                           </div>
                         )}

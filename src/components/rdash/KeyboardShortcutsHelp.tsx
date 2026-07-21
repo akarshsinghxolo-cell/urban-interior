@@ -95,7 +95,7 @@ export function KeyboardShortcutsHelp() {
                         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><Keyboard className="h-5 w-5"/></span>
                         <div>
                             <h2 className="text-sm font-bold tracking-tight text-foreground">Keyboard Shortcuts</h2>
-                            <p className="text-[11px] text-muted-foreground">Press <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[9px]">?</kbd> anytime to toggle this help</p>
+                            <p className="text-[11px] text-muted-foreground">Press <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">?</kbd> anytime to toggle this help</p>
                         </div>
                     </div>
                     <button type="button" onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="Close">
@@ -118,7 +118,7 @@ export function KeyboardShortcutsHelp() {
                                             <span className="flex shrink-0 items-center gap-1">
                                                 {item.keys.map((key, j) => (
                                                     <React.Fragment key={j}>
-                                                        {j > 0 && <span className="text-[9px] text-muted-foreground">+</span>}
+                                                        {j > 0 && <span className="text-[10px] text-muted-foreground">+</span>}
                                                         <kbd className={cn("inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-md border border-border bg-muted/60 px-1.5 font-mono text-[10px] font-semibold text-foreground shadow-sm")}>
                                                             {key}
                                                         </kbd>
@@ -134,7 +134,7 @@ export function KeyboardShortcutsHelp() {
                 </div>
                 {/* Footer hint */}
                 <div className="border-t border-border bg-muted/30 px-5 py-2.5 text-center text-[10px] text-muted-foreground">
-                    Shortcuts work outside of text inputs. <kbd className="rounded bg-background px-1 py-0.5 font-mono text-[9px]">Esc</kbd> closes this overlay.
+                    Shortcuts work outside of text inputs. <kbd className="rounded bg-background px-1 py-0.5 font-mono text-[10px]">Esc</kbd> closes this overlay.
                 </div>
             </div>
         </div>

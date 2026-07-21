@@ -128,28 +128,28 @@ export function CashFlowForecast() {
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <ArrowDownCircle className="h-3 w-3 text-success" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">In</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">In</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-success">{formatINRShort(totals.inflow)}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <ArrowUpCircle className="h-3 w-3 text-destructive" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Out</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Out</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-destructive">{formatINRShort(totals.outflow)}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <Wallet className={cn("h-3 w-3", totals.net >= 0 ? "text-success" : "text-destructive")} />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Net</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Net</span>
           </div>
           <p className={cn("rd-tabular mt-0.5 text-xs font-bold", totals.net >= 0 ? "text-success" : "text-destructive")}>{formatINRShort(totals.net)}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <Calendar className="h-3 w-3 text-primary" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">End</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">End</span>
           </div>
           <p className={cn("rd-tabular mt-0.5 text-xs font-bold", totals.endingBalance >= 0 ? "text-primary" : "text-destructive")}>{formatINRShort(totals.endingBalance)}</p>
         </div>

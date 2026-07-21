@@ -89,7 +89,7 @@ export function CreateMenu({ showTrigger = true, enableHotkeys = showTrigger, }:
                   <p className="truncate text-xs font-semibold">{opt.label}</p>
                   <p className="truncate text-[10px] text-muted-foreground">{opt.desc}</p>
                 </div>
-                <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[9px] text-muted-foreground">{opt.shortcut}</kbd>
+                <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">{opt.shortcut}</kbd>
               </DropdownMenuItem>))}
           </DropdownMenuContent>
         </DropdownMenu>)}

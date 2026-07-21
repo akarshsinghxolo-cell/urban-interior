@@ -197,7 +197,7 @@ function HealthGauge({ score }: { score: number }) {
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                 <span className="rd-tabular text-2xl font-bold leading-none" style={{ color }}>{score}</span>
-                <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">Health</span>
+                <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Health</span>
             </div>
         </div>
     );
@@ -865,19 +865,19 @@ export function IntegrityModule() {
                                 )}
                                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                                     <div className="rounded bg-card p-1.5">
-                                        <p className="text-[9px] font-semibold uppercase text-muted-foreground">Delete</p>
+                                        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Delete</p>
                                         <p className="rd-tabular text-base font-bold text-destructive">{cascadePreview.deleted.length}</p>
                                     </div>
                                     <div className="rounded bg-card p-1.5">
-                                        <p className="text-[9px] font-semibold uppercase text-muted-foreground">Nullify</p>
+                                        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Nullify</p>
                                         <p className="rd-tabular text-base font-bold text-primary">{cascadePreview.nullified.length}</p>
                                     </div>
                                     <div className="rounded bg-card p-1.5">
-                                        <p className="text-[9px] font-semibold uppercase text-muted-foreground">Blocked</p>
+                                        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Blocked</p>
                                         <p className="rd-tabular text-base font-bold text-warning">{cascadePreview.blocked.length}</p>
                                     </div>
                                     <div className="rounded bg-card p-1.5">
-                                        <p className="text-[9px] font-semibold uppercase text-muted-foreground">Soft</p>
+                                        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Soft</p>
                                         <p className="rd-tabular text-base font-bold text-muted-foreground">{cascadePreview.softDeleted.length}</p>
                                     </div>
                                 </div>

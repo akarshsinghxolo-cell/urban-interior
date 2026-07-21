@@ -909,7 +909,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 }
             }} onFocus={() => setShowSuggest(true)} placeholder="Type to search articles…" autoFocus className="min-w-0 w-full rounded border border-border bg-card px-1.5 py-1 text-foreground outline-none focus:border-primary" role="combobox" aria-expanded={showSuggest && suggestions.length > 0} aria-controls="article-suggest-list" aria-activedescendant={suggestIdx >= 0 ? `article-suggest-${suggestIdx}` : undefined}/>
             {showSuggest && suggestions.length > 0 && (<div id="article-suggest-list" role="listbox" className="absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-border bg-card shadow-popover animate-scale-in">
-                <div className="border-b border-border bg-muted/30 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Articles</div>
+                <div className="border-b border-border bg-muted/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Articles</div>
                 {suggestions.map((s, i) => (<button key={s.article.id} id={`article-suggest-${i}`} role="option" aria-selected={i === suggestIdx} type="button" onMouseEnter={() => setSuggestIdx(i)} onMouseDown={(e) => { e.preventDefault(); applySuggestion(s); }} className={cn("flex w-full items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-left last:border-0 transition-colors", i === suggestIdx ? "bg-primary text-primary-foreground" : "hover:bg-accent")}>
                     <div className="min-w-0 flex-1">
                       <p className={cn("truncate text-xs font-medium", i === suggestIdx ? "text-primary-foreground" : "text-foreground")}>{s.article.name}</p>
@@ -1300,12 +1300,12 @@ function JobBiddingBody({ j }: {
                   </td>
                   <td className="px-2.5 py-2 text-right font-mono font-semibold">
                     {b.quote_amount ? formatINR(b.quote_amount) : "—"}
-                    {b === cheapest && <span className="ml-1 text-[9px] font-bold text-success">★ LOW</span>}
+                    {b === cheapest && <span className="ml-1 text-[10px] font-bold text-success">★ LOW</span>}
                   </td>
                   <td className="px-2.5 py-2 text-right">{b.estimated_days || "—"}</td>
                   <td className="px-2.5 py-2 text-right">
                     <span className={cn("font-mono font-semibold", b === mostReliable ? "text-success" : "")}>{b.reliability_score ?? "—"}</span>
-                    {b === mostReliable && <span className="ml-1 text-[9px] font-bold text-success">★ BEST</span>}
+                    {b === mostReliable && <span className="ml-1 text-[10px] font-bold text-success">★ BEST</span>}
                   </td>
                   <td className="px-2.5 py-2 text-right font-mono">{b.on_time_pct != null ? `${b.on_time_pct}%` : "—"}</td>
                   <td className="px-2.5 py-2 text-right font-mono">{b.past_jobs_count ?? "—"}</td>
@@ -1394,19 +1394,19 @@ function JobSettlementBody({ j }: {
               </div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <div className="rounded-md bg-muted/40 p-2">
-                  <p className="text-[9px] uppercase text-muted-foreground">Completed</p>
+                  <p className="text-[10px] uppercase text-muted-foreground">Completed</p>
                   <p className="font-mono font-semibold">{s.completed_pct}%</p>
                 </div>
                 <div className="rounded-md bg-muted/40 p-2">
-                  <p className="text-[9px] uppercase text-muted-foreground">Contract value</p>
+                  <p className="text-[10px] uppercase text-muted-foreground">Contract value</p>
                   <p className="font-mono font-semibold">{formatINRShort(s.contract_value)}</p>
                 </div>
                 <div className="rounded-md bg-muted/40 p-2">
-                  <p className="text-[9px] uppercase text-muted-foreground">Advances paid</p>
+                  <p className="text-[10px] uppercase text-muted-foreground">Advances paid</p>
                   <p className="font-mono font-semibold">{formatINRShort(s.advances_paid)}</p>
                 </div>
                 <div className="rounded-md bg-success/10 p-2">
-                  <p className="text-[9px] uppercase text-success">Payable</p>
+                  <p className="text-[10px] uppercase text-success">Payable</p>
                   <p className="font-mono font-bold text-success">{formatINR(s.payable_amount)}</p>
                 </div>
               </div>
@@ -1983,7 +1983,7 @@ function MetricMini({ label, value }: {
     label: string;
     value: React.ReactNode;
 }) {
-    return <div className="rounded-lg border border-border bg-muted/20 p-2 text-center"><p className="text-[9px] uppercase text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-bold">{value}</p></div>;
+    return <div className="rounded-lg border border-border bg-muted/20 p-2 text-center"><p className="text-[10px] uppercase text-muted-foreground">{label}</p><p className="mt-0.5 text-sm font-bold">{value}</p></div>;
 }
 function ContextSection({ title, children }: {
     title: string;

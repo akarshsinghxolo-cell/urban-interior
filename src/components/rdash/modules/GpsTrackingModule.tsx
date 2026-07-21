@@ -516,7 +516,7 @@ export function GpsTrackingModule({ viewFilter }: {
                     {c.visits.map((v) => {
                         const num = orderedVisitIndex.get(v.id) || 0;
                         return (<button key={v.id} type="button" onClick={() => openDetail("visit", v.id)} className="flex items-center gap-2 rounded px-1 py-0.5 text-left text-[11px] transition-colors hover:bg-accent/30">
-                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-bold text-muted-foreground">{num}</span>
+                          <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">{num}</span>
                           <span className="min-w-0 flex-1 truncate">
                             <span className="font-medium text-foreground">{titleCase(v.visit_type)}</span>
                             <span className="text-muted-foreground"> · {v.staff_name}</span>

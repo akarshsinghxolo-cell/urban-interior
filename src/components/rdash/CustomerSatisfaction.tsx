@@ -129,7 +129,7 @@ export function CustomerSatisfaction() {
         <div className={cn("flex flex-col items-center justify-center rounded-xl px-4 py-3 ring-1", levelConfig.bg, levelConfig.ring)}>
           <span className={cn("mb-0.5", levelConfig.color)}>{levelConfig.icon}</span>
           <span className={cn("rd-tabular text-2xl font-black leading-none", levelConfig.color)}>{overallScore}</span>
-          <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">/ 100</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">/ 100</span>
           <span className={cn("mt-0.5 text-[10px] font-bold", levelConfig.color)}>{levelConfig.label}</span>
         </div>
 

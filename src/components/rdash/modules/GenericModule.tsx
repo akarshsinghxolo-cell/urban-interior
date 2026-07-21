@@ -677,7 +677,7 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
               <h3 className="text-sm font-semibold">Appearance</h3>
             </div>
             <p className="mb-3 text-xs text-muted-foreground">Switch between light and dark themes.</p>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setTheme(isDark ? "light" : "dark")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setTheme(isDark ? "light" : "dark")}>
               {isDark ? <Sun className="h-3.5 w-3.5"/> : <Moon className="h-3.5 w-3.5"/>} {isDark ? "Light mode" : "Dark mode"}
             </Button>
           </div>
@@ -697,9 +697,9 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
             <h3 className="text-sm font-semibold">Data Management</h3>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("dataImport")}><Upload className="h-3.5 w-3.5"/> Import</Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("dataExport")}><Download className="h-3.5 w-3.5"/> Export</Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("auditLog")}><History className="h-3.5 w-3.5"/> Audit log</Button>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("dataImport")}><Upload className="h-3.5 w-3.5"/> Import</Button>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("dataExport")}><Download className="h-3.5 w-3.5"/> Export</Button>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("auditLog")}><History className="h-3.5 w-3.5"/> Audit log</Button>
             <ResetWorkspaceControl />
           </div>
         </div>
@@ -761,13 +761,13 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
           </div>
           <p className="text-xs text-muted-foreground">Secure server-backed workspace. Operational data is persisted only after authenticated server validation.</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("systemSettings")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("systemSettings")}>
               <SettingsIcon className="h-3.5 w-3.5"/> Settings
             </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("controlBrainWorkflows")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("controlBrainWorkflows")}>
               <Workflow className="h-3.5 w-3.5"/> Workflow builder
             </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("approvalPolicies")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("approvalPolicies")}>
               <ShieldCheck className="h-3.5 w-3.5"/> Approval policies
             </Button>
           </div>
@@ -781,13 +781,13 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
             {db.customers.length} customers · {db.quotations.length} quotations · {db.workOrders.length} workOrders · {db.tasks.length} tasks
           </p>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("dataImport")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("dataImport")}>
               <Upload className="h-3.5 w-3.5"/> Data import
             </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("dataExport")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("dataExport")}>
               <Download className="h-3.5 w-3.5"/> Data export
             </Button>
-            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setActiveModule("auditLog")}>
+            <Button size="sm" variant="outline" className="min-h-[40px] gap-1.5" onClick={() => setActiveModule("auditLog")}>
               <History className="h-3.5 w-3.5"/> Audit log
             </Button>
             <ResetWorkspaceControl />

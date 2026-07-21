@@ -417,31 +417,31 @@ export function ExecutionLogsModule() {
 
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
                   <div className="rounded-md bg-muted/40 p-2">
-                    <p className="text-[9px] uppercase text-muted-foreground">Verification</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Verification</p>
                     <p className={cn("text-xs font-semibold", log.progress_verification_status === "verified" ? "text-success" : log.progress_verification_status === "returned" ? "text-destructive" : log.progress_verification_status === "pending_review" ? "text-warning" : "text-muted-foreground")}>{log.progress_verification_status === "verified" ? "Verified" : log.progress_verification_status === "returned" ? "Returned" : log.progress_verification_status === "pending_review" ? "Pending" : "No change"}</p>
                   </div>
                   <div className="rounded-md bg-muted/40 p-2">
-                    <p className="text-[9px] uppercase text-muted-foreground">Materials</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Materials</p>
                     <p className="text-xs font-semibold">{log.materials_used.length} line(s)</p>
                   </div>
                   <div className="rounded-md bg-muted/40 p-2">
-                    <p className="text-[9px] uppercase text-muted-foreground">Photos</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Photos</p>
                     <p className="text-xs font-semibold">{photoFiles.length}</p>
                   </div>
                   <div className="rounded-md bg-muted/40 p-2">
-                    <p className="text-[9px] uppercase text-muted-foreground">Material conf.</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Material conf.</p>
                     <p className={cn("text-xs font-semibold", log.contractor_material_confirmed ? "text-success" : "text-warning")}>{log.contractor_material_confirmed ? "✓ Confirmed" : "Pending"}</p>
                   </div>
                   <div className="rounded-md bg-muted/40 p-2">
-                    <p className="text-[9px] uppercase text-muted-foreground">Extra work</p>
+                    <p className="text-[10px] uppercase text-muted-foreground">Extra work</p>
                     <p className={cn("text-xs font-semibold", log.extra_work_amount ? "text-warning" : "text-muted-foreground")}>{log.extra_work_amount ? formatINRShort(log.extra_work_amount) : "—"}</p>
-                    {variation && <p className={cn("mt-0.5 text-[9px]", variation.status === "approved" ? "text-success" : variation.status === "rejected" ? "text-destructive" : "text-warning")}>{variation.status === "approved" ? "Customer approved" : variation.status === "rejected" ? "Customer declined" : "Customer approval required"}</p>}
+                    {variation && <p className={cn("mt-0.5 text-[10px]", variation.status === "approved" ? "text-success" : variation.status === "rejected" ? "text-destructive" : "text-warning")}>{variation.status === "approved" ? "Customer approved" : variation.status === "rejected" ? "Customer declined" : "Customer approval required"}</p>}
                   </div>
                 </div>
                 {photoFiles.length > 0 && (<div className="mt-3 flex gap-2 overflow-x-auto rd-scroll">
                     {photoFiles.map(({ attachment, asset }) => (<div key={attachment.id} className="shrink-0">
                         <FilePreview file={assetPreview(asset)} compact controls className="w-28"/>
-                        <p className="mt-1 text-[9px] text-muted-foreground line-clamp-1">{attachment.caption || asset.file_name}</p>
+                        <p className="mt-1 text-[10px] text-muted-foreground line-clamp-1">{attachment.caption || asset.file_name}</p>
                       </div>))}
                   </div>)}
                 {log.materials_used.length > 0 && (<div className="mt-3">

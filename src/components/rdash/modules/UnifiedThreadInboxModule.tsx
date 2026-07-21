@@ -281,7 +281,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                         <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
                             Thread Inbox
                             {unreadThreadCount > 0 && (
-                                <span className="inline-flex items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground" title={`${unreadThreadCount} unread thread${unreadThreadCount !== 1 ? "s" : ""}`}>
+                                <span className="inline-flex items-center justify-center rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground" title={`${unreadThreadCount} unread thread${unreadThreadCount !== 1 ? "s" : ""}`}>
                                     {unreadThreadCount}
                                 </span>
                             )}
@@ -289,7 +289,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                         <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                             {db.threads.length} threads · {allFeed.length} messages
                             {recentMessageCount > 0 && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[9px] font-semibold text-success">
+                                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success"/>
                                     {recentMessageCount} new · {recentThreadCount} active
                                 </span>
@@ -314,7 +314,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
                 {filterTabs.map((tab) => (
                     <button key={tab.id} type="button" onClick={() => setFilter(tab.id)} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-medium transition-all", filter === tab.id ? "bg-primary text-primary-foreground shadow-sm" : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground")}>
-                        {tab.icon}{tab.label}<span className={cn("rounded-full px-1 text-[9px]", filter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
+                        {tab.icon}{tab.label}<span className={cn("rounded-full px-1 text-[10px]", filter === tab.id ? "bg-primary-foreground/20" : "bg-background/70")}>{tab.count}</span>
                     </button>
                 ))}
                 {/* F. Entity-type + status filters — consolidates the old ThreadsModule
@@ -365,8 +365,8 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                                     <button key={t.id} type="button" onClick={() => openThread(t)} className="group inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-[10px] font-medium shadow-sm transition-all hover:border-primary/30 hover:shadow-md" title={t.title}>
                                         <span className={cn("h-1.5 w-1.5 rounded-full", tone.includes("warning") ? "bg-warning" : tone.includes("success") ? "bg-success" : tone.includes("destructive") ? "bg-destructive" : "bg-primary")}/>
                                         <span className="max-w-[10rem] truncate text-foreground">{t.title}</span>
-                                        <span className="text-[9px] text-muted-foreground">{label}</span>
-                                        {lastMsg && <span className="text-[9px] text-muted-foreground/70">· {relativeDay(lastMsg.created_at)}</span>}
+                                        <span className="text-[10px] text-muted-foreground">{label}</span>
+                                        {lastMsg && <span className="text-[10px] text-muted-foreground/70">· {relativeDay(lastMsg.created_at)}</span>}
                                         <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); togglePin(t.id, t.title); }} className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-100" title="Unpin">
                                             <PinOff className="h-3 w-3 text-muted-foreground hover:text-destructive"/>
                                         </span>
@@ -387,7 +387,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                                     <button key={t.id} type="button" onClick={() => openThread(t)} className={cn("group inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium transition-all hover:shadow-md", unread ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10" : "border-border bg-card text-foreground hover:border-primary/20")} title={t.title}>
                                         {unread && <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"/>}
                                         <span className="max-w-[10rem] truncate">{t.title}</span>
-                                        <span className="text-[9px] text-muted-foreground">{label}</span>
+                                        <span className="text-[10px] text-muted-foreground">{label}</span>
                                     </button>
                                 );
                             })}
@@ -494,14 +494,14 @@ function InboxMessageCard({ message: m, thread, onOpen, isPinned, onTogglePin, i
                     <Avatar name={m.author_name} size={24}/>
                 )}
                 <span className="text-xs font-semibold text-foreground">{m.author_name || "System"}</span>
-                {m.author_role && <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">{m.author_role}</span>}
+                {m.author_role && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{m.author_role}</span>}
                 {/* Kind badge */}
                 {kindBadgeLabel && (
                     <span className={cn("rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider", kindTone)}>{kindBadgeLabel}</span>
                 )}
                 <span title={formatDate(m.created_at)} className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/70"><Clock className="h-2.5 w-2.5 opacity-50"/>{relativeDay(m.created_at)}</span>
                 {/* Entity context badge — colored by entity type */}
-                <button type="button" onClick={onOpen} className={cn("ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold transition-colors", entityTone)} title={`Open ${entityLabel}: ${thread.title}`}>
+                <button type="button" onClick={onOpen} className={cn("ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors", entityTone)} title={`Open ${entityLabel}: ${thread.title}`}>
                     <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60"/>
                     {entityLabel}
                     <ArrowUpRight className="h-2.5 w-2.5"/>

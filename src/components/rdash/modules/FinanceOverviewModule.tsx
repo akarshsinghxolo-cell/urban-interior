@@ -24,7 +24,7 @@ export function FinanceOverviewModule() {
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><WalletCards className="h-5 w-5"/></span>
         <div><h2 className="text-lg font-bold tracking-tight">Finance Control</h2><p className="text-xs text-muted-foreground">Customer collections, vendor and contractor payables, and Site / Work Order profitability stay separate but reconcile through the same Site context.</p></div>
       </div>
-      <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setActiveModule("payments")}>Customer collections</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("vendorBills")}>Vendor payables</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("contractorPayments")}>Contractor payables</Button></div>
+      <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setActiveModule("payments")}>Customer collections</Button><Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setActiveModule("vendorBills")}>Vendor payables</Button><Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setActiveModule("contractorPayments")}>Contractor payables</Button></div>
     </div>
 
     <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
@@ -36,7 +36,7 @@ export function FinanceOverviewModule() {
     </div>
 
     <section className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-sm font-bold">Site financial position</p><p className="text-xs text-muted-foreground">Customer billing and collections are distinct from vendor and contractor liabilities.</p></div><Button size="sm" variant="outline" onClick={() => setActiveModule("workOrderPnl")}>Open P&L</Button></div>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-sm font-bold">Site financial position</p><p className="text-xs text-muted-foreground">Customer billing and collections are distinct from vendor and contractor liabilities.</p></div><Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setActiveModule("workOrderPnl")}>Open P&L</Button></div>
       <div className="divide-y divide-border">
         {siteRows.length === 0 ? <div className="px-4 py-8 text-sm text-muted-foreground">Create a Site before creating service-work finance records.</div> : siteRows.map(({ site, financials }) => <div key={site.id} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(180px,1.4fr)_repeat(5,minmax(90px,1fr))] md:items-center">
           <div><p className="text-sm font-semibold">{site.name}</p><p className="text-[11px] text-muted-foreground">{db.customers.find((customer) => customer.id === site.customer_id)?.name || "Customer"} · {site.site_type}</p></div>

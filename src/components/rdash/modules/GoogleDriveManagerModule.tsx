@@ -300,8 +300,8 @@ export function GoogleDriveManagerModule() {
                         <div className="mt-1 flex flex-wrap items-center gap-2">
                           {item.web_view_link ? <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => window.open(item.web_view_link, "_blank", "noopener,noreferrer")}>Open original</Button> : null}
                           <button onClick={() => openDetail("media" as any, item.id)} className="rounded border border-border px-2 py-0.5 text-[10px] font-semibold text-primary hover:bg-primary/10">Context</button>
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">{links.length} business link(s)</span>
-                          <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold", item.storage_mode === "managed" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{item.storage_mode === "managed" ? "Managed upload" : "Existing Drive file"}</span>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">{links.length} business link(s)</span>
+                          <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-semibold", item.storage_mode === "managed" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>{item.storage_mode === "managed" ? "Managed upload" : "Existing Drive file"}</span>
                         </div>
                       </div>
                       <Button size="icon" variant="ghost" aria-label={`Archive ${item.file_name}`} onClick={() => archiveFile(item.id)}><Archive className="h-4 w-4 text-muted-foreground" /></Button>

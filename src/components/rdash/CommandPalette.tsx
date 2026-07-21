@@ -236,7 +236,7 @@ export function CommandPalette() {
             setQ(e.target.value);
             setActiveIdx(0);
         }} onKeyDown={onInputKeyDown} placeholder="Search modules, customers, or workOrders..." className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"/>
-          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">ESC</kbd>
+          <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">ESC</kbd>
         </div>
         <div ref={listRef} className="max-h-[50vh] overflow-y-auto rd-scroll p-1.5">
           {filtered.length === 0 ? (<div className="flex flex-col items-center gap-2 py-10 text-center">
@@ -245,7 +245,7 @@ export function CommandPalette() {
               <p className="text-[10px] text-muted-foreground/70">Try searching for a module, customer name, or workOrder number</p>
             </div>) : (flatWithGroupHeaders.map((entry, i) => {
             if (entry.type === "header") {
-                return (<div key={`hdr-${entry.label}-${i}`} className="rd-module-enter sticky top-0 z-10 border-b border-border/50 bg-gradient-to-b from-card to-card/95 px-2.5 pb-1 pt-2 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/80 backdrop-blur-sm">
+                return (<div key={`hdr-${entry.label}-${i}`} className="rd-module-enter sticky top-0 z-10 border-b border-border/50 bg-gradient-to-b from-card to-card/95 px-2.5 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80 backdrop-blur-sm">
                     {entry.label}
                   </div>);
             }
@@ -257,8 +257,8 @@ export function CommandPalette() {
                   <div className="min-w-0 flex-1">
                     <p className={cn("truncate text-xs font-medium", active ? "text-primary-foreground" : "text-foreground")}>{c.label}</p>
                   </div>
-                  {c.hint && (<kbd className={cn("rounded border px-1 py-0.5 font-mono text-[9px] font-semibold", active ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground/80" : "border-border bg-muted text-muted-foreground")}>{c.hint}</kbd>)}
-                  {c.meta && !c.hint && (<span className={cn("shrink-0 text-[9px] font-medium", active ? "text-primary-foreground/60" : "text-muted-foreground/70")}>{c.meta}</span>)}
+                  {c.hint && (<kbd className={cn("rounded border px-1 py-0.5 font-mono text-[10px] font-semibold", active ? "border-primary-foreground/30 bg-primary-foreground/10 text-primary-foreground/80" : "border-border bg-muted text-muted-foreground")}>{c.hint}</kbd>)}
+                  {c.meta && !c.hint && (<span className={cn("shrink-0 text-[10px] font-medium", active ? "text-primary-foreground/60" : "text-muted-foreground/70")}>{c.meta}</span>)}
                   {active && !c.hint && !c.meta && <CornerDownLeft className="h-3 w-3 shrink-0 text-primary-foreground/70"/>}
                 </button>);
         }))}

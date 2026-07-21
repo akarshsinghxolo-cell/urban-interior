@@ -186,7 +186,7 @@ export function ActivityFeedWidget() {
           <div>
             <h3 className="flex items-center gap-1.5 text-sm font-bold leading-tight">
               Recent Activity
-              <span className="rd-tabular rounded-full bg-muted/70 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+              <span className="rd-tabular rounded-full bg-muted/70 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
                 {entries.length}
               </span>
             </h3>

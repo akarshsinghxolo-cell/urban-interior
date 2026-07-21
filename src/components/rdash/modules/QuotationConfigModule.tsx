@@ -314,7 +314,7 @@ function PaymentTemplatesView({ templates, onSetDefault }: {
                   <div className="flex flex-1 flex-col items-center gap-0.5 rounded-md border border-border bg-muted/30 px-2 py-1.5">
                     <span className="text-[10px] text-muted-foreground">{term.label}</span>
                     <span className="text-sm font-bold text-primary">{term.percentage}%</span>
-                    <span className="text-[9px] text-muted-foreground">{term.due_event.replace(/_/g, " ")}</span>
+                    <span className="text-[10px] text-muted-foreground">{term.due_event.replace(/_/g, " ")}</span>
                   </div>
                   {i < t.terms.length - 1 && <span className="text-xs text-muted-foreground">→</span>}
                 </React.Fragment>))}

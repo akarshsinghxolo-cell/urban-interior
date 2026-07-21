@@ -128,7 +128,7 @@ export function ProfitabilitySnapshot() {
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <p className="truncate text-xs font-semibold text-foreground">{site.title}</p>
-                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase text-muted-foreground">{site.workOrderNo}</span>
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{site.workOrderNo}</span>
               </div>
               <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{site.customerName} · {site.progress}% complete</p>
               {/* Progress bar */}

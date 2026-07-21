@@ -321,7 +321,7 @@ export function WorkspacePulseStrip() {
                     <button
                       type="button"
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        "inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ring-1 transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         health.badge === "healthy"
                           ? "bg-success/10 text-success ring-success/20"
                           : health.badge === "watch"
@@ -374,7 +374,7 @@ export function WorkspacePulseStrip() {
                           Shows the revenue direction at a glance alongside cash. */}
                       {health.revenueSeries && health.revenueSeries.length >= 2 ? (
                         <div className="flex items-center gap-1.5" title="7-day revenue trend">
-                          <span className="text-[9px] text-muted-foreground">7d</span>
+                          <span className="text-[10px] text-muted-foreground">7d</span>
                           <MiniSparkline values={health.revenueSeries.map((p) => p.value)} />
                         </div>
                       ) : null}
@@ -389,7 +389,7 @@ export function WorkspacePulseStrip() {
                     </div>
                     {/* Footer: last-updated timestamp + refresh + copy-summary buttons */}
                     <div className="flex items-center justify-between gap-2 border-t border-border px-3 py-1.5">
-                      <span className="text-[9px] text-muted-foreground">
+                      <span className="text-[10px] text-muted-foreground">
                         {lastFetchedAt ? `Updated ${timeAgoShort(lastFetchedAt)}` : "Loading…"}
                       </span>
                       <div className="flex items-center gap-1">
@@ -414,7 +414,7 @@ export function WorkspacePulseStrip() {
                               () => toast.error("Copy failed", { description: "Clipboard access denied", duration: 3000 }),
                             );
                           }}
-                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                           title="Copy health summary to clipboard"
                         >
                           <ClipboardCopy className="h-2.5 w-2.5" />
@@ -424,7 +424,7 @@ export function WorkspacePulseStrip() {
                           type="button"
                           onClick={() => fetchHealth(true)}
                           disabled={refreshing}
-                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+                          className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
                           title="Refresh health summary"
                         >
                           <RefreshCw className={cn("h-2.5 w-2.5", refreshing && "animate-spin")} />
@@ -435,7 +435,7 @@ export function WorkspacePulseStrip() {
                   </PopoverContent>
                 </Popover>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20">
+                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-success ring-1 ring-success/20">
                   <Activity className="h-2.5 w-2.5" /> Live
                 </span>
               )}

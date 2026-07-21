@@ -221,7 +221,7 @@ export function WorkflowChip({ index, label, state = "default", }: {
         pending: "bg-warning text-warning-foreground",
     }[state];
     return (<span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors", chipCls)}>
-      <span className={cn("grid h-4 w-4 place-items-center rounded-full text-[9px] font-bold", idxCls)} aria-hidden>
+      <span className={cn("grid h-4 w-4 place-items-center rounded-full text-[10px] font-bold", idxCls)} aria-hidden>
         {index}
       </span>
       <span className="truncate">{label}</span>

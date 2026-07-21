@@ -112,7 +112,7 @@ export function TeamPerformance() {
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <UserCircle2 className="h-3 w-3 text-primary" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Present</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Present</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-foreground">
             {totals.present}<span className="text-muted-foreground">/{totals.total}</span>
@@ -121,21 +121,21 @@ export function TeamPerformance() {
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <CheckCircle2 className="h-3 w-3 text-success" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Done</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Done</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-success">{totals.totalTasksCompleted}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <Clock className="h-3 w-3 text-warning" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Active</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Active</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-warning">{totals.totalActive}</p>
         </div>
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <MapPin className="h-3 w-3 text-primary" />
-            <span className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Visits</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Visits</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-foreground">{totals.totalVisits}</p>
         </div>
@@ -165,7 +165,7 @@ export function TeamPerformance() {
               <div className="flex items-center gap-2">
                 <p className="truncate text-xs font-semibold text-foreground">{s.name}</p>
                 {s.checkInTime && (
-                  <span className="shrink-0 rounded bg-success/10 px-1 py-0.5 text-[9px] font-medium text-success">
+                  <span className="shrink-0 rounded bg-success/10 px-1 py-0.5 text-[10px] font-medium text-success">
                     {s.checkInTime.slice(11, 16)}
                   </span>
                 )}
