@@ -4,6 +4,7 @@ import { Users, CheckCircle2, Clock, MapPin, TrendingUp, ArrowRight, UserCircle2
 import { useRDashStore } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { indiaDate } from "@/lib/rdash/date";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from "recharts";
 
 interface StaffPerf {
   id: string;
@@ -138,6 +139,33 @@ export function TeamPerformance() {
             <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Visits</span>
           </div>
           <p className="rd-tabular mt-0.5 text-xs font-bold text-foreground">{totals.totalVisits}</p>
+        </div>
+      </div>
+
+      {/* CRON-7: Tasks completed bar chart */}
+      <div className="border-b border-border/60 px-4 py-3">
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Tasks Completed (today)</p>
+        <div className="h-24 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={staff.map((s) => ({ name: s.initials, completed: s.tasksCompleted, label: s.name }))} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+              <XAxis dataKey="name" tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: "var(--muted-foreground)" }} axisLine={false} tickLine={false} width={20} allowDecimals={false} />
+              <Tooltip
+                cursor={{ fill: "var(--muted)", fillOpacity: 0.3 }}
+                content={({ active, payload }: any) => active && payload?.length ? (
+                  <div className="rounded-lg border border-border bg-card p-2 shadow-lg">
+                    <p className="text-[10px] font-bold">{payload[0].payload.label}</p>
+                    <p className="text-[10px] text-muted-foreground">{payload[0].value} tasks completed</p>
+                  </div>
+                ) : null}
+              />
+              <Bar dataKey="completed" radius={[3, 3, 0, 0]} animationDuration={600}>
+                {staff.map((s, i) => (
+                  <Cell key={i} fill={s.tasksCompleted > 0 ? "var(--success, #22c55e)" : "var(--muted, #e5e7eb)"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 

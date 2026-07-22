@@ -11,6 +11,7 @@ import { WorkspaceHeader } from "./WorkspaceHeader";
 import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
 import { OnboardingWizard } from "./OnboardingWizard";
+import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
 const DailyWork = React.lazy(() => import("./modules/DailyWork").then((module) => ({ default: module.DailyWork })));
 const CustomerDesk = React.lazy(() => import("./modules/CustomerDesk").then((module) => ({ default: module.CustomerDesk })));
 const SiteExecutionModule = React.lazy(() => import("./modules/SiteExecutionModule").then((module) => ({ default: module.SiteExecutionModule })));
@@ -222,6 +223,18 @@ export function RDashApp() {
     const [secureWorkspaceReady, setSecureWorkspaceReady] = React.useState(false);
     const [quickAddOpen, setQuickAddOpen] = React.useState(false);
     const [secureWorkspaceError, setSecureWorkspaceError] = React.useState<string | null>(null);
+    // CRON-7: Request notification permission on mount + check pending approvals
+    React.useEffect(() => {
+        requestNotificationPermission();
+    }, []);
+    React.useEffect(() => {
+        if (!secureWorkspaceReady) return;
+        const pendingCount = db.actions?.filter((a: any) => a.status === "pending").length || 0;
+        if (pendingCount > 0) {
+            const id = setTimeout(() => notifyPendingApprovals(pendingCount), 3000);
+            return () => clearTimeout(id);
+        }
+    }, [secureWorkspaceReady, db.actions]);
     React.useEffect(() => {
         initAuthFetch();
         let active = true;
