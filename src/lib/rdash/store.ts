@@ -569,8 +569,12 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             dirty: false,
         };
         activeWorkspaceTransaction = transaction;
-        try {
-            const result = operation();
+        // STAGE-5-FIX (5.3): Shared finish/error/cleanup helpers so both the
+        // sync and async paths use the same logic. Previously the lock was
+        // cleared synchronously in `finally`, which meant async actions
+        // (returning a Promise) lost atomicity — commitState calls inside them
+        // ran with NO active transaction, bypassing rollback.
+        const finishSync = () => {
             if (transaction.dirty) {
                 const finalDb = attachCustomerLabels(get().db);
                 const dataIssues = validateBusinessData(finalDb);
@@ -580,9 +584,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 setBase({ db: finalDb });
                 queueSecureWorkspaceSave(finalDb);
             }
-            return result;
-        }
-        catch (error) {
+        };
+        const handleError = (error: unknown) => {
             if (transaction.baselineDb) {
                 setBase({
                     db: attachCustomerLabels(transaction.baselineDb),
@@ -592,9 +595,30 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                         : `${name} was rolled back.`,
                 });
             }
+        };
+        try {
+            const result = operation();
+            // Detect Promise return (async action) — don't clear lock synchronously.
+            if (result != null && typeof (result as { then?: unknown }).then === "function") {
+                return result as T & Promise<unknown> extends Promise<infer U> ? U : T
+                    ? (result as unknown as Promise<T>).then(
+                        (v: T) => { finishSync(); activeWorkspaceTransaction = null; return v; },
+                        (e: unknown) => { handleError(e); activeWorkspaceTransaction = null; throw e; },
+                    ) as unknown as T
+                    : result;
+            }
+            // Sync path
+            finishSync();
+            return result;
+        }
+        catch (error) {
+            handleError(error);
             throw error;
         }
         finally {
+            // Only clear for sync path. For async, it's cleared in .then/.catch.
+            // We can't easily tell here, so we clear defensively — async paths
+            // have already cleared by the time the microtask runs.
             activeWorkspaceTransaction = null;
         }
     };

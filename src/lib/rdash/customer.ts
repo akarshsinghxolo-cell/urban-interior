@@ -29,22 +29,36 @@ function defineCustomerLabel(record: CustomerLabelRecord, resolve: () => string)
     });
 }
 export function attachCustomerLabels(db: RDashDatabase): RDashDatabase {
-    db.quotations.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.workOrders.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.visits.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.tasks.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.followups.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.payments.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.invoices.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.actions.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.risks.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.blocked.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.commissions.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id || customerIdForJob(db, record.work_order_id))));
-    db.commSends.forEach((record) => defineCustomerLabel(record, () => customerName(db, record.customer_id)));
-    db.boqs.forEach((record) => defineCustomerLabel(record, () => customerNameForJob(db, record.work_order_id)));
-    db.purchaseOrders.forEach((record) => defineCustomerLabel(record, () => customerNameForJob(db, record.work_order_id)));
-    db.dispatches.forEach((record) => defineCustomerLabel(record, () => customerNameForJob(db, record.work_order_id)));
-    db.contractorBids.forEach((record) => defineCustomerLabel(record, () => customerNameForJob(db, record.work_order_id)));
-    db.contractorSettlements.forEach((record) => defineCustomerLabel(record, () => customerNameForJob(db, record.work_order_id)));
+    // STAGE-5-FIX (5.6): Build O(1) lookup Maps once per attachCustomerLabels
+    // call. Previously each customer_name getter did a linear db.customers.find()
+    // on every access — O(N) per render per record, O(N×M) total. With 1000
+    // customers and 10000 records, that was 10M finds on every render pass.
+    const customerNameById = new Map<string, string>();
+    for (const c of db.customers) customerNameById.set(c.id, c.name || "Customer");
+    const customerNameForId = (id?: string | null, fallback = "Customer") =>
+        (id && customerNameById.get(id)) || fallback;
+    // Also map work_order_id → customer_id for the job-based lookups.
+    const workOrderCustomer = new Map<string, string>();
+    for (const w of db.workOrders) workOrderCustomer.set(w.id, w.customer_id);
+    const customerNameForJobId = (workOrderId?: string | null, fallback = "Customer") =>
+        customerNameForId(workOrderId ? workOrderCustomer.get(workOrderId) : undefined, fallback);
+
+    db.quotations.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.workOrders.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.visits.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.tasks.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.followups.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.payments.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.invoices.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.actions.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.risks.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.blocked.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.commissions.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id || (record.work_order_id ? workOrderCustomer.get(record.work_order_id) : undefined))));
+    db.commSends.forEach((record) => defineCustomerLabel(record, () => customerNameForId(record.customer_id)));
+    db.boqs.forEach((record) => defineCustomerLabel(record, () => customerNameForJobId(record.work_order_id)));
+    db.purchaseOrders.forEach((record) => defineCustomerLabel(record, () => customerNameForJobId(record.work_order_id)));
+    db.dispatches.forEach((record) => defineCustomerLabel(record, () => customerNameForJobId(record.work_order_id)));
+    db.contractorBids.forEach((record) => defineCustomerLabel(record, () => customerNameForJobId(record.work_order_id)));
+    db.contractorSettlements.forEach((record) => defineCustomerLabel(record, () => customerNameForJobId(record.work_order_id)));
     return db;
 }

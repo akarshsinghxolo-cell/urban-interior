@@ -1045,7 +1045,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                         ? { ...workOrder, ...patch, updated_at: now }
                         : workOrder),
                     workRequired: nextWorkRequiredStatus && before
-                        ? s.db.workRequired.map((work: any) => before.work_required_ids.includes(work.id)
+                        ? s.db.workRequired.map((work: any) => ({ ...before, ...patch }).work_required_ids.includes(work.id)  // STAGE-5-FIX (5.12): use patched ids
                             ? {
                                 ...work,
                                 status: nextWorkRequiredStatus,

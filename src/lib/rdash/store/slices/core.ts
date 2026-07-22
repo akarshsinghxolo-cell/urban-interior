@@ -199,24 +199,25 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             if (role !== "Owner" && role !== "Operations Manager") {
                 return summary;
             }
+            // STAGE-5-FIX (5.9): Log errors instead of swallowing silently.
+            // Previously a broken reconciliation helper would fail forever
+            // with no signal — the summary reported 0 touched, masking the bug.
             try {
                 summary.attendance = get().runAttendanceReconciliation();
             }
-            catch {
-                // Best-effort: don't block other reconciliations on one failure.
-            }
+            catch (err) { console.warn("[reconcileWorkspace] attendance reconciliation failed:", err); }
             try {
                 summary.followups = get().runFollowupReconciliation();
             }
-            catch { }
+            catch (err) { console.warn("[reconcileWorkspace] followups reconciliation failed:", err); }
             try {
                 summary.visits = get().runVisitReconciliation();
             }
-            catch { }
+            catch (err) { console.warn("[reconcileWorkspace] visits reconciliation failed:", err); }
             try {
                 summary.recurringTasks = get().runRecurringTasks();
             }
-            catch { }
+            catch (err) { console.warn("[reconcileWorkspace] recurringTasks reconciliation failed:", err); }
             summary.total = summary.attendance + summary.followups +
                 summary.visits + summary.recurringTasks;
             return summary;

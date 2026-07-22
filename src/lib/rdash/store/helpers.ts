@@ -6,9 +6,17 @@ import type { RDashDatabase } from "../types";
 import type { CurrentUserContext, GuardResult } from "./ui-types";
 
 export function genId(prefix: string): string {
+    // STAGE-5-FIX (5.4): Use crypto.randomUUID when available (browsers +
+    // Node 19+) for collision-free IDs. Fall back to a longer random suffix
+    // (10 chars = 36^10 ≈ 3.6×10^15 combos) for older environments.
+    // The old 4-char suffix had a ~3% collision chance on 1000-record bulk
+    // inserts (birthday paradox).
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return `${prefix}-${crypto.randomUUID()}`;
+    }
     return `${prefix}-${Date.now().toString(36)}${Math.random()
         .toString(36)
-        .slice(2, 6)}`;
+        .slice(2, 12)}`;
 }
 
 export const nowIso = (): string => new Date().toISOString();

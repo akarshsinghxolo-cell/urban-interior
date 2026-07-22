@@ -23,6 +23,15 @@ export function compressImage(file: File, maxSize = 800, quality = 0.7): Promise
                 }
                 ctx.drawImage(img, 0, 0, width, height);
                 const dataUrl = canvas.toDataURL("image/jpeg", quality);
+                // STAGE-5-FIX (5.5): Release canvas bitmap memory + img
+                // reference. Without this, mobile browsers (especially iOS
+                // Safari) retain the canvas bitmap in memory, causing OOM
+                // crashes after 5-10 sequential photo uploads.
+                canvas.width = 0;
+                canvas.height = 0;
+                img.src = "";
+                img.onload = null;
+                img.onerror = null;
                 resolve(dataUrl);
             };
             img.onerror = () => reject(new Error("Failed to load image"));

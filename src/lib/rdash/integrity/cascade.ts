@@ -183,9 +183,9 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
                     if (!ctx.result.success) return; // abort on restrict below
                     break;
                 }
-                case "ignore":
-                    // Already filtered above.
-                    break;
+                // STAGE-5-FIX (5.8): "ignore" case removed — it's filtered at
+                // line 137 (if rule.onDelete === "ignore") and is not in the
+                // OnDeletePolicy union, causing TS2678. This dead case is gone.
             }
         }
     }
@@ -246,7 +246,26 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
                 return;
             }
         }
-        // Fall through to hard delete if soft-delete isn't supported.
+        // STAGE-5-FIX (5.2): Throw instead of silently falling through to
+        // hard delete. A caller requesting softDelete:true on a non-whitelisted
+        // collection should get an explicit error, not silent permanent deletion.
+        if (ctx.softDelete) {
+            ctx.result.success = false;
+            ctx.result.blocked.push({
+                collection,
+                id,
+                reason: `Soft-delete is not supported for collection "${collection}". Supported: ${[...SOFT_DELETE_COLLECTIONS].join(", ")}.`,
+                rule: {
+                    collection: "",
+                    field: "",
+                    targetCollection: collection,
+                    onDelete: "restrict",
+                    nullable: false,
+                    label: "(soft-delete not supported)",
+                },
+            });
+            return;
+        }
     }
     const pruned = removeRow(ctx.db, collection, id);
     if (pruned) {
@@ -314,7 +333,12 @@ export function cascadeDelete(
     };
 
     deleteRecursive(ctx, collection, id, labelForRow(target));
-    return { db: ctx.db, result };
+    // STAGE-5-FIX (5.1): If the operation was blocked by a restrict rule,
+    // return the ORIGINAL db (not the partially-mutated ctx.db). The
+    // docstring promises "db returned unchanged" on restrict-block, but
+    // nullify/cascade mutations that ran before the restrict was hit were
+    // already applied to ctx.db. Returning inputDb honors the contract.
+    return { db: result.success ? ctx.db : inputDb, result };
 }
 
 /**

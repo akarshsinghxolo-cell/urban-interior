@@ -163,18 +163,19 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             }
             if (patch.status && patch.status !== before.status) {
                 const transitions: Record<Task["status"], Task["status"][]> = {
-                    todo: ["in_progress", "blocked", "review", "cancelled"],
-                    in_progress: ["blocked", "review", "cancelled"],
+                    todo: ["in_progress", "review", "cancelled"],  // STAGE-5-FIX (5.11): removed "blocked" (immediately throws below)
+                    in_progress: ["review", "cancelled"],
                     blocked: ["todo", "in_progress", "cancelled"],
-                    review: ["in_progress", "blocked", "cancelled"],
+                    review: ["in_progress", "cancelled"],  // STAGE-5-FIX (5.11): removed "blocked" (use blockTask action)
                     completed: [],
                     cancelled: [],
                 };
                 if (!transitions[before.status].includes(patch.status)) {
                     throw new Error(`Task cannot move from ${before.status} to ${patch.status}.`);
                 }
-                if (patch.status === "blocked")
-                    throw new Error("Use Block Task and record the blocker reason and recovery owner.");
+                // STAGE-5-FIX (5.11): "blocked" is no longer in the transitions array,
+                // so the transition check above rejects it. The dedicated "Block Task"
+                // action should be used instead (it records a reason + recovery owner).
             }
             const threadId = before.thread_id ||
                 get().openThreadFor("task", id, before.title || patch.title || "Task", [
@@ -695,7 +696,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     get().addTask({ title: rule.title, task_scope: rule.scope, task_type: `recurring:${rule.id}`, assignee_id: rule.assignee_id, assignee_name: rule.assignee_name, assigned_to: rule.assignee_name, priority: rule.priority, due_date: runDate, auto_generated: true, description: `Created from ${rule.frequency} recurring schedule.` });
             });
             if (due.length)
-                commitState((s: any) => ({ db: { ...s.db, recurringTasks: s.db.recurringTasks.map((rule: any) => due.some((candidate: any) => candidate.id === rule.id) ? { ...rule, last_run: runDate, next_run: nextRecurringRun(rule.next_run, rule.frequency), runs_count: rule.runs_count + 1, updated_at: nowIso() } : rule) } }));
+                commitState((s: any) => ({ db: { ...s.db, recurringTasks: s.db.recurringTasks.map((rule: any) => due.some((candidate: any) => candidate.id === rule.id) ? { ...rule, last_run: runDate, next_run: nextRecurringRun(rule.next_run, rule.frequency), runs_count: (rule.runs_count || 0) + 1,  /* STAGE-5-FIX: guard NaN */ updated_at: nowIso() } : rule) } }));
             return due.length;
         },
     };
