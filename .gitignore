@@ -58,3 +58,21 @@ tool-results/
 *.pid
 *.log
 upload/
+
+# QA screenshots and downloaded images — never commit
+download/
+screenshots/
+*.png
+!public/logo.svg
+
+# Extracted upload artifacts
+upload/
+
+# Example/demo code
+examples/
+
+# Empty placeholder
+mini-services/
+
+# Uploaded zip
+public/UU.zip

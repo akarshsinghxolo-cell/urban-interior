@@ -1,3 +1,0 @@
-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
-
-this is Github token use it to connect to github
