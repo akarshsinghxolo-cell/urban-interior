@@ -246,20 +246,31 @@ export async function commitRestOperations(
   const bumpedRowVersions: Record<string, number> = {};
   const conflictRows: Array<{ collection: string; id: string }> = [];
 
-  for (const op of operations) {
+  // FIX-FK-001: When FK constraints are active, deletes must happen in
+  // REVERSE order (children first, parents last). The operations array is
+  // ordered parent-first (customers, sites, areas, ...), so we reverse it
+  // for deletes. Upserts stay in forward order (parents first).
+  const deleteOps = [...operations].reverse();
+  const upsertOps = operations;
+
+  // Phase 1: Deletes (children first, reversed)
+  for (const op of deleteOps) {
+    const table = tableFor(op.collection);
+    if (!table) continue;
+    if (op.deleteIds?.length) {
+      const { error } = await admin.from(table).delete().in("id", op.deleteIds);
+      if (!error) deleted += op.deleteIds.length;
+    }
+  }
+
+  // Phase 2: Upserts (parents first, forward order — same as before)
+  for (const op of upsertOps) {
     const table = tableFor(op.collection);
     if (!table) {
       console.warn(`[commit-rest] no table for collection: ${op.collection}`);
       continue;
     }
 
-    // Deletes
-    if (op.deleteIds?.length) {
-      const { error } = await admin.from(table).delete().in("id", op.deleteIds);
-      if (!error) deleted += op.deleteIds.length;
-    }
-
-    // Upserts (per-row with CAS)
     if (op.upsert?.length) {
       for (const row of op.upsert) {
         const id = String(row.id);
