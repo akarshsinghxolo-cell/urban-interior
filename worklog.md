@@ -7453,3 +7453,38 @@ Verification on live site:
   entity_master_staff with status=active (sync code worked, no manual backfill)
 - User Approvals: PENDING 0, ACTIVE 3, TOTAL 3
 - HR Staff Board: workspace API confirms 3 staff in master.staff
+
+---
+Task ID: FIX-MODULE-OWNERSHIP
+Agent: main (Z.ai Code)
+Task: Fix problems caused by module ownership changes made during ANALYSIS-001 (Task 19).
+
+Root cause: Task 19 moved Staff Board, Attendance & Payroll, and Staff Salary from
+System Settings to a new "HR & Staff" parent module (hrStaff). But the permission
+routing system (ROUTE_PERMISSION_BY_ID + renderer switch in permissionModuleForRoute)
+was NOT updated to include the new module IDs and renderer.
+
+Two problems found:
+1. hrStaff (parent module id) was missing from ROUTE_PERMISSION_BY_ID →
+   permissionModuleForRoute({ id: "hrStaff" }) fell through to "workspace" default
+   → wrong permission category (should be "staff")
+2. staffSalary submodule has renderer "staff-salary" which was missing from the
+   renderer→permission switch → fell through to "workspace" → Staff Salary was
+   visible to ALL roles regardless of payroll permission (security gap — salary
+   data should be payroll-restricted)
+
+Fix (src/lib/rdash/staff-operations.ts):
+- Added hrStaff → "staff" to ROUTE_PERMISSION_BY_ID
+- Added staffSalary → "payroll" to ROUTE_PERMISSION_BY_ID
+- Added "staff-salary" → "payroll" to the renderer switch
+
+Verification on live site:
+- HR & Staff parent module: visible and accessible ✅
+- Staff Board submodule: shows ASSIGNEES count ✅
+- Attendance & Payroll submodule: shows STAFF 3 ✅
+- Staff Salary submodule: shows staff dropdown with 3 staff ✅
+- All 3 submodules render correctly with data from the synced staff
+
+Note: The deep-links from other modules (setActiveModule("staff"), setActiveModule
+("attendancePayroll")) still work because the route IDs didn't change — only the
+parent module changed. canonicalModuleId() resolves them correctly.
