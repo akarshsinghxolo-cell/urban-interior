@@ -296,7 +296,7 @@ export interface ExecutionState {
   verifyExecutionProgress: (logId: string, decision: "verified" | "returned", note?: string) => void;
   createVariationRequest: (input: { work_order_id: string; execution_log_id?: string; title?: string; description: string; requested_amount: number }) => string;
   decideVariationRequest: (id: string, decision: "approved" | "rejected", note?: string) => void;
-  confirmMaterialReceipt: (logId: string, photoUrl?: string) => void;
+  confirmMaterialReceipt: (logId: string, photoUrl?: string, photoAttachmentId?: string) => void;
   addJobCostLine: (c: Partial<WorkOrderCostLine>) => void;
 }
 

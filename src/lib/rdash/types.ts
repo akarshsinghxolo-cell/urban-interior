@@ -965,9 +965,22 @@ export interface WorkOrderCostLine {
     date: string;
     source_kind?: "po" | "grn" | "dispatch" | "contractor_payment" | "manual" | "bill" | "settlement" | "variation";
     source_id?: ID;
+    // FIX-CONTRACTOR-BATCH1 / F.3: `vendor_id` / `vendor_name` is the
+    // canonical field for ANY counterparty on a cost line — vendor (material
+    // PO) OR contractor (RA bill / settlement / payment). Runtime code in
+    // contractors.ts (createContractorRABill line ~756, settleContractor
+    // line ~573) and the ContractorDetailModule filter
+    // (`cl.vendor_id === c.id`, line 70) both read vendor_id. The legacy
+    // `contractor_id` / `contractor_name` pair is kept as an optional alias
+    // for backward compatibility with old seed data and any external
+    // integration that still writes contractor_id — but new code MUST write
+    // vendor_id (and SHOULD also mirror to contractor_id when the
+    // counterparty is a contractor, for defense-in-depth).
     vendor_id?: ID;
     vendor_name?: string;
+    /** @deprecated Use `vendor_id` instead — kept for backward compatibility with old seed data. */
     contractor_id?: ID;
+    /** @deprecated Use `vendor_name` instead — kept for backward compatibility with old seed data. */
     contractor_name?: string;
     created_at: string;
 }

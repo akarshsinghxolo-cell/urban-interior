@@ -1,10 +1,10 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { useRDashStore, contractorBids, contractorSettlements } from "@/lib/rdash/store";
+import { useRDashStore, contractorBids, contractorSettlements, contractorOutstanding } from "@/lib/rdash/store";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
-import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, Gavel, HandCoins, } from "lucide-react";
+import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, Gavel, HandCoins, Pencil, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,11 +17,19 @@ export function ContractorDetailModule() {
     const createContractorRABill = useRDashStore((s) => s.createContractorRABill);
     const canReleaseContractorPayment = useRDashStore((s) => s.canReleaseContractorPayment);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
+    // FIX-CONTRACTOR-BATCH1 / F.5: Wire updateContractorBid (previously dead
+    // store action — implemented in contractors.ts:179 but never called from
+    // any UI). The new "Edit bid" / "Withdraw bid" dialog below lets the user
+    // revise quote_amount, estimated_days, with_material, evaluation_notes
+    // and withdraw a submitted bid (sets status="withdrawn", which was
+    // previously unreachable from the UI).
+    const updateContractorBid = useRDashStore((s) => s.updateContractorBid);
     const [selectedId, setSelectedId] = React.useState<string | null>(db.master.contractors[0]?.id || null);
     const [payDialog, setPayDialog] = React.useState<{
         workOrder: any;
     } | null>(null);
     const [categoryFilter, setCategoryFilter] = React.useState<string>("all");
+    const [editingBid, setEditingBid] = React.useState<any | null>(null);
 
     // Build a map of subcategory_id → category_id for resolving work_capabilities to categories
     const subToCategory = React.useMemo(() => {
@@ -69,7 +77,11 @@ export function ContractorDetailModule() {
                 const activeJobs = workOrders.filter((j) => j.status === "in_progress" || j.status === "scheduled");
                 const costLines = db.workOrderCostLines.filter((cl) => cl.vendor_id === c.id && cl.type === "contractor");
                 const totalEarned = costLines.reduce((n, cl) => n + cl.amount, 0);
-                const outstanding = c.outstanding || 0;
+                // FIX-CONTRACTOR-BATCH1 / F.4: use the unified contractorOutstanding
+                // selector instead of the dead `c.outstanding` master field (which
+                // was set to 0 at creation and never recomputed, so the module
+                // always showed ₹0 outstanding for every contractor).
+                const outstanding = contractorOutstanding(db, c.id);
                 const rates = db.master.contractorRates.filter((r) => r.contractor_id === c.id);
                 const bids = contractorBids(db, c.id);
                 const settlements = contractorSettlements(db, c.id);
@@ -203,16 +215,25 @@ export function ContractorDetailModule() {
                   <Gavel className="h-3 w-3"/> Bid history ({selected.bids.length}) · {selected.selectedBids} won
                 </p>
                 <div className="flex flex-col gap-1">
-                  {selected.bids.slice(0, 6).map((b) => (<button key={b.id} type="button" onClick={() => b.work_order_id && openDetail("workOrder", b.work_order_id)} className="flex items-center justify-between rounded-md border border-border bg-background px-2.5 py-1.5 text-left hover:bg-accent/20">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs font-semibold">{b.bid_no} · {b.work_order_no}</p>
-                        <p className="truncate text-[10px] text-muted-foreground">{(b.customer_name || "Customer")} · {b.scope.slice(0, 60)}{b.scope.length > 60 ? "…" : ""}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="font-mono text-xs font-semibold">{b.quote_amount ? formatINRShort(b.quote_amount) : "—"}</span>
-                        <StatusBadge label={b.status === "selected" ? "Won" : b.status === "rejected" ? "Lost" : b.status === "withdrawn" ? "Withdrawn" : "Pending"} className={b.status === "selected" ? "bg-success/10 text-success border-success/20" : b.status === "rejected" || b.status === "withdrawn" ? "bg-muted text-muted-foreground border-border" : "bg-warning/10 text-warning border-warning/20"}/>
-                      </div>
-                    </button>))}
+                  {selected.bids.slice(0, 6).map((b) => (<div key={b.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 hover:bg-accent/20">
+                      <button type="button" onClick={() => b.work_order_id && openDetail("workOrder", b.work_order_id)} className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold">{b.bid_no} · {b.work_order_no}</p>
+                          <p className="truncate text-[10px] text-muted-foreground">{(b.customer_name || "Customer")} · {b.scope.slice(0, 60)}{b.scope.length > 60 ? "…" : ""}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="font-mono text-xs font-semibold">{b.quote_amount ? formatINRShort(b.quote_amount) : "—"}</span>
+                          <StatusBadge label={b.status === "selected" ? "Won" : b.status === "rejected" ? "Lost" : b.status === "withdrawn" ? "Withdrawn" : "Pending"} className={b.status === "selected" ? "bg-success/10 text-success border-success/20" : b.status === "rejected" || b.status === "withdrawn" ? "bg-muted text-muted-foreground border-border" : "bg-warning/10 text-warning border-warning/20"}/>
+                        </div>
+                      </button>
+                      {/* FIX-CONTRACTOR-BATCH1 / F.5: surface updateContractorBid
+                          (previously dead store action). Only show for
+                          submitted/open bids — selected/rejected/withdrawn
+                          bids should not be editable post-decision. */}
+                      {b.status === "submitted" && (<Button size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-[11px]" onClick={() => setEditingBid(b)} title="Edit quote, days, notes — or withdraw this bid">
+                          <Pencil className="mr-1 h-3 w-3"/> Edit
+                        </Button>)}
+                    </div>))}
                 </div>
               </div>)}
             {selected.settlements.length > 0 && (<div className="mt-4">
@@ -286,7 +307,92 @@ export function ContractorDetailModule() {
                     toast.error(error instanceof Error ? error.message : "Contractor RA bill blocked");
                 }
             }}/>)}
+      {editingBid && (<EditContractorBidDialog bid={editingBid} onClose={() => setEditingBid(null)} onSave={(patch) => {
+                try {
+                    updateContractorBid(editingBid.id, patch);
+                    toast.success(`Bid ${editingBid.bid_no} updated`);
+                    setEditingBid(null);
+                }
+                catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Could not update bid");
+                }
+            }} onWithdraw={() => {
+                try {
+                    updateContractorBid(editingBid.id, { status: "withdrawn" });
+                    toast.success(`Bid ${editingBid.bid_no} withdrawn — the contractor is no longer competing for this scope.`);
+                    setEditingBid(null);
+                }
+                catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Could not withdraw bid");
+                }
+            }}/>)}
     </div>);
+}
+// FIX-CONTRACTOR-BATCH1 / F.5: Edit-bid dialog that drives the previously-dead
+// updateContractorBid store action. Lets the user revise quote_amount,
+// estimated_days, with_material, and evaluation_notes on a submitted bid, and
+// also provides a "Withdraw bid" action that sets status="withdrawn"
+// (previously unreachable from any UI — see analysis F.5 + F.9).
+function EditContractorBidDialog({ bid, onClose, onSave, onWithdraw }: {
+    bid: any;
+    onClose: () => void;
+    onSave: (patch: Partial<any>) => void;
+    onWithdraw: () => void;
+}) {
+    const [quoteAmount, setQuoteAmount] = React.useState<string>(bid.quote_amount != null ? String(bid.quote_amount) : "");
+    const [estimatedDays, setEstimatedDays] = React.useState<string>(bid.estimated_days != null ? String(bid.estimated_days) : "");
+    const [withMaterial, setWithMaterial] = React.useState<boolean>(Boolean(bid.with_material));
+    const [evaluationNotes, setEvaluationNotes] = React.useState<string>(bid.evaluation_notes || "");
+    const handleSave = () => {
+        const patch: Partial<any> = {};
+        const q = parseFloat(quoteAmount);
+        if (Number.isFinite(q) && q >= 0 && q !== bid.quote_amount) patch.quote_amount = q;
+        const d = parseInt(estimatedDays);
+        if (Number.isFinite(d) && d >= 0 && d !== bid.estimated_days) patch.estimated_days = d;
+        if (withMaterial !== Boolean(bid.with_material)) patch.with_material = withMaterial;
+        if (evaluationNotes.trim() !== (bid.evaluation_notes || "")) patch.evaluation_notes = evaluationNotes.trim();
+        if (Object.keys(patch).length === 0) {
+            toast.info("No changes to save.");
+            return;
+        }
+        onSave(patch);
+    };
+    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md gap-0 p-0">
+        <DialogHeader className="border-b border-border px-5 py-3">
+          <DialogTitle className="flex items-center gap-2 text-base"><Pencil className="h-4 w-4 text-primary"/> Edit bid · {bid.bid_no}</DialogTitle>
+          <DialogDescription className="text-xs">{bid.contractor_name} · {bid.work_order_no} · {bid.scope}</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 px-5 py-4">
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Quote amount (₹)</label>
+            <Input type="number" min="0" step="0.01" value={quoteAmount} onChange={(e) => setQuoteAmount(e.target.value)} placeholder="e.g. 58000" className="h-9 text-sm" autoFocus/>
+            <p className="mt-1 text-[10px] text-muted-foreground">Required to be greater than 0 before this bid can be awarded (CV-1 / CV-14 guard in selectContractorBid).</p>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Estimated days</label>
+            <Input type="number" min="0" step="1" value={estimatedDays} onChange={(e) => setEstimatedDays(e.target.value)} placeholder="e.g. 7" className="h-9 text-sm"/>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <input type="checkbox" checked={withMaterial} onChange={(e) => setWithMaterial(e.target.checked)} className="h-4 w-4 rounded border-border"/>
+            Contractor supplies material (with_material)
+          </label>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Evaluation notes</label>
+            <Textarea value={evaluationNotes} onChange={(e) => setEvaluationNotes(e.target.value)} placeholder="Internal notes about this bid — negotiation, references, concerns, etc." rows={3} className="text-sm"/>
+          </div>
+        </div>
+        <DialogFooter className="border-t border-border px-5 py-3">
+          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
+          <Button variant="ghost" size="sm" onClick={onWithdraw} className="text-destructive hover:bg-destructive/10" title="Mark this bid as withdrawn — the contractor is no longer competing for this scope.">
+            Withdraw bid
+          </Button>
+          <Button size="sm" onClick={handleSave}>
+            <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>);
 }
 function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUploadProof, onSubmit }: {
     contractor: any;

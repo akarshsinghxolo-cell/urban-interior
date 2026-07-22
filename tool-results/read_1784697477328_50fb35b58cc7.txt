@@ -1,0 +1,402 @@
+     1→  6680→- After deploy, signup worked (202 "Access request created"). Pending user appeared in User Approvals module.
+     2→  6681→- Tried approving the pending user. Captured error: PATCH /api/auth/users → 400 "Could not approve user: invalid input syntax for type uuid: \"super-owner\""
+     3→  6682→- Root cause #2: The approve/reject functions set approved_by to user.userId, but the super-owner's userId is the string "super-owner" (not a UUID). The uc_user_roles.approved_by column expects a UUID.
+     4→  6683→- Fix #2: Added UUID regex validation before setting approved_by. Real Supabase Auth users have UUID userIds; the super-owner gets null.
+     5→  6684→- After deploy, approval worked: PENDING 0, ACTIVE 1. User "testuser.qa@example.com" is now active with role FIELD_STAFF.
+     6→  6685→
+     7→  6686→Verification:
+     8→  6687→- Signup: POST /api/auth/signup → 202 "Access request created" ✅
+     9→  6688→- Pending user visible in User Approvals module ✅
+    10→  6689→- Approve: PATCH /api/auth/users → 200, user status → active ✅
+    11→  6690→- DB: uc_user_roles row has status=active, approved_at=2026-07-22T03:59:20 ✅
+    12→  6691→
+    13→  6692→Stage Summary:
+    14→  6693→- BOTH bugs fixed: table name mismatch + UUID validation.
+    15→  6694→- New users can now sign up via "Request access" on /signin.
+    16→  6695→- Owner can approve/reject pending users in the User Approvals module.
+    17→  6696→- Approved users can sign in with their Supabase Auth credentials.
+    18→  6697→
+    19→  6698→---
+    20→  6699→Task ID: ANALYSIS-CONTRACTOR-001
+    21→  6700→Agent: sub-agent (general-purpose / thorough contractor domain analysis)
+    22→  6701→Task: Definitive research-only analysis of the contractor-related domain in the Urban Castle app. Produce a comprehensive report covering entity inventory, lifecycle, data model, FK relationships, UI/UX, problems found, and prioritized recommendations. NO code changes.
+    23→  6702→
+    24→  6703→Work Log:
+    25→  6704→- Read /home/z/my-project/worklog.md last 200 lines (FIX-E2E-003/004, QA-BUSINESS-GAPS-001, QA-CRON-SETUP-001, FIX-USERS-001) for prior-work context.
+    26→  6705→- Grepped worklog for every prior "contractor" mention — found extensive prior notes from ANALYSIS-001 / CV-1..CV-14 fixes / Procurement-Inventory exploration, including:
+    27→  6706→  * selectContractorBid flow (contractors.ts:179-354) — creates WorkOrder + BOQ + payment milestones + accrues commission.
+    28→  6707→  * accrueCommission previously used `partner.commission_pct || 5`; since fixed to consult `findCommissionRule` (masters.ts:24) first.
+    29→  6708→  * Commission rules master data was previously dead; now consumed by accrueCommission.
+    30→  6709→  * ContractorPaymentsModule CV-6 (inline approve) + CV-7 (committed-but-not-disbursed subtraction) fixes documented.
+    31→  6710→  * CV-2 relaxed the contractor-confirmation proof gate on `createContractorRABill` but kept it on `requestContractorBillPayment` + `approveContractorPayment`.
+    32→  6711→- Read the full contractors slice: src/lib/rdash/store/slices/contractors.ts (1168 lines).
+    33→  6712→- Read all 3 contractor UI modules: ContractorDetailModule.tsx (357), ContractorPerformanceModule.tsx (238), ContractorPaymentsModule.tsx (169). Plus CommissionsModule.tsx (154), MastersSalesOpsModule.tsx contractor/rates/commission-rules tabs, DetailPanel.tsx ContractorEntityOverview + JobSettlementBody + JobBiddingBody, SiteExecutionModule.tsx bid/direct-award dialogs, EntityFormDialog.tsx contractor branch.
+    34→  6713→- Read types.ts for every contractor-related interface (Contractor 1553, ContractorRate 1676, ContractorBid 975, ContractorBill 868, ContractorPayment 892, ContractorSettlement 1009, Commission 912, CommissionRule 1623, SourcePartner 1616, ContractorSelectionMethod 277, ContractorBidStatus 974, SettlementType 1008).
+    35→  6714→- Read entity-context.ts (contractor / contractor_bid / contractor_settlement / commission resolved; contractorBill + contractorPayment NOT handled).
+    36→  6715→- Read fk-registry.ts contractorFks block (lines 147-172) + unenforcedFks block (lines 386-455).
+    37→  6716→- Read business-rules.ts contractor-bill / contractor-payment / contractor-bid / commission validators (lines 462-471, 666-693).
+    38→  6717→- Read helpers.ts contractorPaymentProofStatus (lines 128-140).
+    39→  6718→- Read execution.ts confirmMaterialReceipt + addExecutionLog (lines 233-298, 615-640).
+    40→  6719→- Read seed.ts contractor-related seed rows (lines 92, 101-103, 135, 149, 193, 205-207, 255).
+    41→  6720→- Queried live Supabase DB (https://smfqwexofoqqrrhbzwmx.supabase.co) via REST:
+    42→  6721→  * entity_master_contractors → 0 rows
+    43→  6722→  * entity_master_contractorRates → 0 rows
+    44→  6723→  * entity_contractorBids → 0 rows
+    45→  6724→  * entity_contractorBills → 0 rows
+    46→  6725→  * entity_contractorPayments → 0 rows
+    47→  6726→  * entity_contractorSettlements → 0 rows
+    48→  6727→  * entity_commissions → 0 rows
+    49→  6728→  * entity_master_commissionRules → 0 rows
+    50→  6729→  * entity_master_sourcePartners → 0 rows
+    51→  6730→  * (For contrast: entity_customers=1, entity_sites=1, entity_quotations=1, entity_master_vendors=1, entity_workOrders=0, entity_acceptedScopes=0, workspace revision=59.)
+    52→  6731→- Cross-checked store/types.ts ContractorsState interface (lines 371-404) to verify the action surface area.
+    53→  6732→
+    54→  6733→Sources of truth read (file:line cited inline throughout the report below).
+    55→  6734→
+    56→  6735→====================================================================
+    57→  6736→ANALYSIS-CONTRACTOR-001 — CONTRACTOR DOMAIN ANALYSIS REPORT
+    58→  6737→====================================================================
+    59→  6738→
+    60→  6739→Executive Summary
+    61→  6740→-----------------
+    62→  6741→The contractor domain is architecturally complete (master → bid → award → RA bill → payment → settlement → commission) but is **completely unused on production** (all 9 contractor-related Supabase tables have 0 rows). The single most damaging bug is a **structural proof-gate deadlock**: `contractorPaymentProofStatus` (helpers.ts:128-140) requires `executionLog.contractor_confirmation_attachment_id` to be truthy, but the only UI that could set it (`confirmMaterialReceipt` button at DrawingsExecutionModules.tsx:480) calls the store action with NO photo URL, so the attachment ID is never set. As a result, after CV-2 relaxed the gate on RA-bill creation, the downstream `requestContractorBillPayment` (contractors.ts:811-813) and `approveContractorPayment` (contractors.ts:962-964) still hard-throw on the unsatisfiable proof check — making the entire contractor payment chain unusable from the standard UI. Beyond that, the domain has ~20 additional issues spanning dead code, missing CRUD, seed/runtime data inconsistencies, dead status enum values, and missing FK rules. Detailed below.
+    63→  6742→
+    64→  6743→---
+    65→  6744→
+    66→  6745→A. CONTRACTOR ENTITY INVENTORY
+    67→  6746→-------------------------------
+    68→  6747→
+    69→  6748→| # | Entity type            | Collection (db.*)         | Supabase table                     | Live rows | Key relationship fields |
+    70→  6749→|---|------------------------|---------------------------|------------------------------------|-----------|-------------------------|
+    71→  6750→| 1 | Contractor (master)    | master.contractors        | entity_master_contractors          | 0         | source_partner_id; work_capabilities[].subcategory_id |
+    72→  6751→| 2 | ContractorRate (master)| master.contractorRates    | entity_master_contractorRates      | 0         | contractor_id → master.contractors; unit_id (untyped) |
+    73→  6752→| 3 | ContractorBid          | contractorBids            | entity_contractorBids              | 0         | accepted_scope_id; work_order_id; site_id; contractor_id |
+    74→  6753→| 4 | ContractorBill (RA)    | contractorBills           | entity_contractorBills             | 0         | work_order_id; contractor_id; customer_id; site_id; work_required_id; area_ids[] |
+    75→  6754→| 5 | ContractorPayment      | contractorPayments        | entity_contractorPayments          | 0         | contractor_bill_id; work_order_id; site_id; contractor_id |
+    76→  6755→| 6 | ContractorSettlement   | contractorSettlements     | entity_contractorSettlements       | 0         | work_order_id; contractor_id; replacement_work_order_id |
+    77→  6756→| 7 | Commission             | commissions               | entity_commissions                 | 0         | source_partner_id; work_order_id; customer_id; site_id; quotation_id |
+    78→  6757→| 8 | CommissionRule (master)| master.commissionRules    | entity_master_commissionRules      | 0         | source_partner_id; category_id; applies_to (all/category/workOrder) |
+    79→  6758→| 9 | SourcePartner (master) | master.sourcePartners     | entity_master_sourcePartners       | 0         | (standalone; referenced by Customer/Site.source_partner_id, Commission.source_partner_id) |
+    80→  6759→
+    81→  6760→Also related (not strictly contractor-only but tightly coupled):
+    82→  6761→- `workOrders` (contractor_id, contractor_name, contractor_award_amount, contractor_selection_method, contractor_award_reason, abandoned_contractor_id, abandoned_contractor_name) — 0 live rows
+    83→  6762→- `acceptedScopes` (contractor_bid_id, contractor_selection_method, status lifecycle contractor_bidding → in_work_order) — 0 live rows
+    84→  6763→- `workOrderCostLines` (type="contractor", source_kind="bill"|"settlement"|"contractor_payment", vendor_id holds contractor ID at runtime, contractor_id holds it in seed) — 0 live rows
+    85→  6764→- `executionLogs` (contractor_material_confirmed, contractor_confirmation_attachment_id — the proof-gate field) — 0 live rows
+    86→  6765→
+    87→  6766→**The production workspace has 1 customer, 1 site, 1 quotation (in draft), 1 vendor, 1 work category, 1 work subcategory — and ZERO contractor-domain data. The entire contractor chain is untested on production.**
+    88→  6767→
+    89→  6768→---
+    90→  6769→
+    91→  6770→B. CONTRACTOR LIFECYCLE — Business Flow
+    92→  6771→----------------------------------------
+    93→  6772→
+    94→  6773→```
+    95→  6774→            ┌──────────────────────────────────────────────────────────────────────────────┐
+    96→  6775→            │                       MASTERS                                                 │
+    97→  6776→            │  Source Partner (no CRUD UI) → CommissionRule (no CRUD UI)                    │
+    98→  6777→            │  Contractor (add/edit via EntityFormDialog; NO delete, NO status/hold)        │
+    99→  6778→            │  ContractorRate (read-only list; NO add/edit/delete UI)                       │
+   100→  6779→            └──────────────────────────────────────────────────────────────────────────────┘
+   101→  6780→                                         │
+   102→  6781→                                         ▼
+   103→  6782→┌───────────────────────────── ACCEPTED SCOPE (status="contractor_bidding") ─────────────────────────────┐
+   104→  6783→│                                                                                                          │
+   105→  6784→│  Option A — Formal Bid Round                   Option B — Direct Award (audited exception)              │
+   106→  6785→│  ─────────────────────────                     ──────────────────────────────────                       │
+   107→  6786→│  SiteExecutionModule "Invite bid"              SiteExecutionModule "Direct Award"                       │
+   108→  6787→│  → addContractorBid (contractors.ts:107)       → directAwardContractor (contractors.ts:363)             │
+   109→  6788→│  → ContractorBid(status="submitted")           → WorkOrder(contractor_selection_method="direct_award")  │
+   110→  6789→│  SiteExecutionModule "Award contractor"        → createBOQ + payment milestones                         │
+   111→  6790→│  → selectContractorBid (contractors.ts:186)    → ⚠ NO accrueCommission call (bug)                       │
+   112→  6791→│  → WorkOrder + BOQ + payment milestones        → acceptedScope.status="in_work_order"                   │
+   113→  6792→│  → accrueCommission (if customer has partner)  → workRequired.status="awarded"                          │
+   114→  6793→│  → acceptedScope.status="in_work_order"                                                                           │
+   115→  6794→│  → competing bids → status="rejected"                                                                             │
+   116→  6795→│                                                                                                          │
+   117→  6796→└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+   118→  6797→                                         │
+   119→  6798→                                         ▼
+   120→  6799→┌───────────────────────────── WORK ORDER (status="scheduled"|"in_progress") ────────────────────────────┐
+   121→  6800→│                                                                                                          │
+   122→  6801→│  ContractorDetailModule "Create RA bill" → CreateRABillDialog                                           │
+   123→  6802→│  → createContractorRABill (contractors.ts:679)                                                          │
+   124→  6803→│  → ContractorBill(status="verified") + WorkOrderCostLine(type="contractor", source_kind="bill")         │
+   125→  6804→│  → CV-2: proof gate is WARNED (thread reply) but NOT blocked                                            │
+   126→  6805→│  → recomputeContractorPerformance (best-effort)                                                         │
+   127→  6806→│                                                                                                          │
+   128→  6807→└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+   129→  6808→                                         │
+   130→  6809→                                         ▼
+   131→  6810→┌───────────────────────────── CONTRACTOR BILL (status="verified") ───────────────────────────────────────┐
+   132→  6811→│                                                                                                          │
+   133→  6812→│  ContractorPaymentsModule "Request partial payment" → dialog                                            │
+   134→  6813→│  → requestContractorBillPayment (contractors.ts:795)                                                    │
+   135→  6814→│  → ⛔ THROWS if contractorPaymentProofStatus(work_order_id).ok === false (line 811-813)                 │
+   136→  6815→│  → ContractorPayment(status="pending"|"approved" per policy) + approval Action + auto-Task              │
+   137→  6816→│                                                                                                          │
+   138→  6817→│  ContractorPaymentsModule inline "Approve" (Owner only, CV-6)                                           │
+   139→  6818→│  → approveContractorPayment (contractors.ts:951)                                                        │
+   140→  6819→│  → ⛔ THROWS if contractorPaymentProofStatus(work_order_id).ok === false (line 962-964)                 │
+   141→  6820→│  → ContractorPayment.status="approved"                                                                  │
+   142→  6821→│                                                                                                          │
+   143→  6822→│  ContractorPaymentsModule "Record payment" → dialog (mode + reference)                                  │
+   144→  6823→│  → recordContractorPayment (contractors.ts:883)                                                         │
+   145→  6824→│  → ContractorPayment.status="paid", bill.paid_amount += amount, bill.balance_amount -= amount           │
+   146→  6825→│  → bill.status → "partly_paid" | "paid"                                                                 │
+   147→  6826→│                                                                                                          │
+   148→  6827→└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+   149→  6828→                                         │
+   150→  6829→                                         ▼ (parallel/alternative path)
+   151→  6830→┌───────────────────────────── SETTLEMENT (abandonment) ──────────────────────────────────────────────────┐
+   152→  6831→│                                                                                                          │
+   153→  6832→│  DetailPanel WorkOrder "Settle & abandon" → JobSettlementBody dialog (Owner only via assertRole)        │
+   154→  6833→│  → settleContractor (contractors.ts:506)                                                                │
+   155→  6834→│  → ⛔ THROWS if contractorPaymentProofStatus(work_order_id).ok === false (line 517-518)                 │
+   156→  6835→│  → ContractorSettlement(type="abandonment") + WorkOrderCostLine(type="contractor", source_kind="settlement") │
+   157→  6836→│  → WorkOrder.status="abandoned", contractor_id cleared, abandoned_contractor_id set                    │
+   158→  6837→│  → Optional replacement WorkOrder created (status="scheduled", replacement_for_work_order_id set)      │
+   159→  6838→│                                                                                                          │
+   160→  6839→└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+   161→  6840→                                         │
+   162→  6841→                                         ▼ (only on formal-bid award path)
+   163→  6842→┌───────────────────────────── COMMISSION ────────────────────────────────────────────────────────────────┐
+   164→  6843→│                                                                                                          │
+   165→  6844→│  Auto-accrued inside selectContractorBid (contractors.ts:329-335)                                       │
+   166→  6845→│  → accrueCommission (contractors.ts:1001)                                                               │
+   167→  6846→│  → findCommissionRule(db, partnerId, workCategoryId) → partner.commission_pct → 5                       │
+   168→  6847→│  → Commission(status="accrued") + audit log                                                             │
+   169→  6848→│                                                                                                          │
+   170→  6849→│  CommissionsModule "Mark Paid"                                                                          │
+   171→  6850→│  → payCommission (contractors.ts:1072)                                                                  │
+   172→  6851→│  → Commission.status="paid", paid_date=today                                                            │
+   173→  6852→│                                                                                                          │
+   174→  6853→└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+   175→  6854→```
+   176→  6855→
+   177→  6856→**Key observations on the flow:**
+   178→  6857→1. **Bid creation** has two entry points: `SiteExecutionModule` (line 526 dialog) and `DetailPanel` (line 1200, inside the WorkOrder "Bidding" tab). Both call `addContractorBid`.
+   179→  6858→2. **Bid award** has two entry points: `SiteExecutionModule` "Award contractor" (line 484) and `DetailPanel` "Award" button (line 1321). Both call `selectContractorBid`.
+   180→  6859→3. **Direct award** has ONE entry point: `SiteExecutionModule` "Direct Award" dialog (line 529). No equivalent in DetailPanel.
+   181→  6860→4. **RA bill creation** has ONE entry point: `ContractorDetailModule` "Create RA bill" (line 252). No equivalent in ContractorPaymentsModule or DetailPanel — you can only create an RA bill from the contractor's assigned-work-orders list, NOT from the work order detail or the payments module.
+   182→  6861→5. **Settlement** has ONE entry point: `DetailPanel` WorkOrder "Settle & abandon" (line 1380). Not reachable from ContractorDetailModule or ContractorPaymentsModule.
+   183→  6862→6. **Commission accrual** is auto-triggered ONLY inside `selectContractorBid` (line 330). NOT inside `directAwardContractor`. No manual "accrue commission" button anywhere (prior analysis noted this).
+   184→  6863→7. **Commission payment** (mark paid) is the ONLY manual commission action, via `CommissionsModule`.
+   185→  6864→
+   186→  6865→---
+   187→  6866→
+   188→  6867→C. DATA MODEL ANALYSIS
+   189→  6868→----------------------
+   190→  6869→
+   191→  6870→### C.1 Contractor (types.ts:1553-1584)
+   192→  6871→- **Identity**: id, name, phone, city, locality, address, trade
+   193→  6872→- **Performance**: rating, reliability_score, on_time_pct, past_jobs_count (dead — never recomputed), active_jobs (dead — always 0, UI computes from workOrders), outstanding (dead — always 0, UI computes from bills/payments)
+   194→  6873→- **Capabilities**: specializations[], work_capabilities[{subcategory_id, subcategory_name, labour_rate, with_material_rate}]
+   195→  6874→- **Ratings**: reliability_rating (good|average|poor), politeness_rating (very|moderate|less), worker_count_range (1-3|4-8|9-15|16-40), deadline_commitment (strict|usual|lazy|very_lazy)
+   196→  6875→- **Location**: latitude, longitude
+   197→  6876→- **Files**: photo_attachment_id, business_card_attachment_id
+   198→  6877→- **Referral**: source_partner_id, source_partner_name
+   199→  6878→- **Missing**: NO status / archived / blacklisted field (cannot deactivate a contractor)
+   200→  6879→- **Undeclared but written**: `performance_recomputed_at` (written by recomputeContractorPerformance at contractors.ts:1149, NOT declared on the type — dead data write)
+   201→  6880→
+   202→  6881→### C.2 ContractorBid (types.ts:975-1007)
+   203→  6882→- **Identity**: id, bid_no (CB-2026-NNN, hardcoded year, length-based)
+   204→  6883→- **Links**: accepted_scope_id (required for creation), work_order_id (set on award), site_id, contractor_id, contractor_name
+   205→  6884→- **Scope**: scope (string), work_order_no (string)
+   206→  6885→- **Pricing**: quote_amount (number; CV-1/CV-14 coerced to 0 if NaN), rate_basis{rate, unit_id, estimated_qty}, estimated_days, with_material
+   207→  6886→- **Performance snapshot**: reliability_score, on_time_pct, past_jobs_count, rating (copied from contractor at bid creation; NOT updated if contractor's score changes later)
+   208→  6887→- **Evaluation**: evaluation_notes
+   209→  6888→- **Lifecycle**: status (open|submitted|selected|rejected|withdrawn), submitted_at, selected_at, rejected_at
+   210→  6889→- **Dead fields**: `readonly customer_name?` (declared but NEVER populated by addContractorBid — UI shows "Customer" fallback at ContractorDetailModule:209)
+   211→  6890→- **Dead enum values**: "open" (never set — bids are created as "submitted"), "withdrawn" (no UI to withdraw a bid; updateContractorBid exists but is never called from UI)
+   212→  6891→
+   213→  6892→### C.3 ContractorBill (types.ts:868-891) — the "RA bill"
+   214→  6893→- **Identity**: id, bill_no (CTB-2026-NNN), ra_no (RA-NN per work order), description
+   215→  6894→- **Links**: customer_id, site_id, work_order_id, work_required_id, area_ids[], contractor_id, contractor_name
+   216→  6895→- **Amounts**: amount, paid_amount, balance_amount
+   217→  6896→- **Lifecycle**: status (draft|submitted|verified|approved|partly_paid|paid|held), progress_pct, due_date, verified_at, verified_by
+   218→  6897→- **Threading**: thread_id
+   219→  6898→- **Dead enum values**: "draft" (never set — bills are created as "verified"), "submitted" (never set), "approved" (never set — no separate approval step for the bill itself; the bill goes straight from "verified" to "partly_paid"/"paid" via recordContractorPayment), "held" (never set — no hold/dispute action exists), "disputed" (referenced by recomputeContractorPerformance at contractors.ts:1126 but NOT even in the enum — TypeScript would catch this except the code uses `any` casts)
+   220→  6899→- **Note on RA vs progress claim**: the type supports both `bill_no` (CTB-2026-NNN, the commercial invoice number) and `ra_no` (RA-NN, the running-account bill number per work order). The UI in ContractorPaymentsModule (line 106, 155) prefers `ra_no` over `bill_no` for display. This is the only distinction — there is no separate "progress claim" entity; the ContractorBill IS the progress claim, and `ra_no` is its sequence number within the work order.
+   221→  6900→
+   222→  6901→### C.4 ContractorPayment (types.ts:892-910)
+   223→  6902→- **Identity**: id, payment_no (CP-2026-NNN)
+   224→  6903→- **Links**: contractor_bill_id, work_order_id, site_id, contractor_id, contractor_name
+   225→  6904→- **Amounts**: amount, mode (PaymentMode|string), reference (bank/UPI/cheque/cash voucher no.)
+   226→  6905→- **Lifecycle**: status (pending|approved|paid|held|cancelled), paid_at, approved_at, approved_by
+   227→  6906→- **Threading**: thread_id (inherits bill's thread)
+   228→  6907→- **Dead enum values**: "held" (never set), "cancelled" (never set — no cancel/void action exists)
+   229→  6908→
+   230→  6909→### C.5 ContractorSettlement (types.ts:1009-1031)
+   231→  6910→- **Identity**: id, settlement_no (SET-<base36 timestamp>)
+   232→  6911→- **Links**: work_order_id, work_order_no, site_id, contractor_id, contractor_name, replacement_work_order_id
+   233→  6912→- **Type**: type (abandonment|mutual_termination|partial_completion|final_close)
+   234→  6913→- **Financials**: completed_pct, contract_value, advances_paid, materials_issued_value, recoveries, payable_amount
+   235→  6914→- **Reason**: reason (string), settled_at
+   236→  6915→- **Dead enum values**: "mutual_termination", "partial_completion", "final_close" — NEVER produced. The UI (DetailPanel:1358) hardcodes `type: "abandonment"`. The store action (contractors.ts:546) defaults to "abandonment" if params.type is omitted.
+   237→  6916→- **Dead field**: `readonly customer_name?` (declared but NEVER populated)
+   238→  6917→- **Semantic bug**: settleContractor always marks WorkOrder.status="abandoned" (line 580) regardless of type. A "partial_completion" or "final_close" settlement would incorrectly mark the work order as abandoned.
+   239→  6918→
+   240→  6919→### C.6 Commission (types.ts:912-933)
+   241→  6920→- **Identity**: id, commission_no (COMM-<last 5 digits of timestamp>)
+   242→  6921→- **Links**: source_partner_id, source_partner_name, customer_id, site_id, work_order_id, work_order_no, quotation_id
+   243→  6922→- **Amounts**: base_amount, rate_pct, amount
+   244→  6923→- **Lifecycle**: status (accrued|payable|paid|cancelled), accrued_at, paid_date
+   245→  6924→- **Dead enum values**: "payable" (never set — commissions go straight from "accrued" to "paid"), "cancelled" (never set — no cancel/void action)
+   246→  6925→- **Dead field**: `readonly customer_name?` (declared but NEVER populated by accrueCommission)
+   247→  6926→- **Notes**: notes
+   248→  6927→
+   249→  6928→### C.7 CommissionRule (types.ts:1623-1630)
+   250→  6929→- **Identity**: id
+   251→  6930→- **Links**: source_partner_id (required), source_partner_name, category_id (optional)
+   252→  6931→- **Config**: rate_pct, applies_to (all|category|workOrder)
+   253→  6932→- **Note**: `applies_to="workOrder"` is declared but `findCommissionRule` (masters.ts:38) treats it as a partner-specific catch-all (matches ANY workOrder for that partner, ignoring category). The semantic of "workOrder-scoped rule" is not actually per-workOrder — it's "any workOrder for this partner". The naming is misleading.
+   254→  6933→
+   255→  6934→### C.8 SourcePartner (types.ts:1616-1622)
+   256→  6935→- Minimal: id, name, type, phone, commission_pct
+   257→  6936→- **No CRUD UI**: read-only list in MastersSalesOpsModule. No add/edit/delete actions exist in the store (verified: grep for addSourcePartner/updateSourcePartner/deleteSourcePartner returns 0 matches).
+   258→  6937→
+   259→  6938→---
+   260→  6939→
+   261→  6940→D. FK RELATIONSHIPS & INTEGRITY
+   262→  6941→-------------------------------
+   263→  6942→
+   264→  6943→### D.1 Declared FK rules (fk-registry.ts:147-172, 338, 356-357, 400, 428-430)
+   265→  6944→
+   266→  6945→| Collection              | Field                        | Target             | onDelete  | Nullable | Note |
+   267→  6946→|-------------------------|------------------------------|--------------------|-----------|----------|------|
+   268→  6947→| contractorBills         | work_order_id                | workOrders         | restrict  | false    | |
+   269→  6948→| contractorBills         | contractor_id                | master.contractors | restrict  | false    | |
+   270→  6949→| contractorBills         | customer_id                  | customers          | restrict  | false    | |
+   271→  6950→| contractorBills         | site_id                      | sites              | nullify   | true     | |
+   272→  6951→| contractorBills         | work_required_id             | workRequired       | nullify   | true     | |
+   273→  6952→| contractorPayments      | contractor_bill_id           | contractorBills    | cascade   | false    | |
+   274→  6953→| contractorPayments      | work_order_id                | workOrders         | restrict  | false    | |
+   275→  6954→| contractorPayments      | contractor_id                | master.contractors | restrict  | false    | |
+   276→  6955→| commissions             | work_order_id                | workOrders         | restrict  | true     | |
+   277→  6956→| commissions             | source_partner_id            | master.sourcePartners | restrict | false  | |
+   278→  6957→| commissions             | customer_id                  | customers          | nullify   | true     | |
+   279→  6958→| commissions             | quotation_id                 | quotations         | nullify   | true     | |
+   280→  6959→| contractorBids          | work_order_id                | workOrders         | cascade   | true     | |
+   281→  6960→| contractorBids          | contractor_id                | master.contractors | restrict  | false    | |
+   282→  6961→| contractorBids          | accepted_scope_id            | acceptedScopes     | nullify   | true     | |
+   283→  6962→| contractorSettlements   | work_order_id                | workOrders         | cascade   | false    | |
+   284→  6963→| contractorSettlements   | contractor_id                | master.contractors | restrict  | false    | |
+   285→  6964→| contractorSettlements   | replacement_work_order_id    | workOrders         | nullify   | true     | (unenforcedFks block) |
+   286→  6965→| master.contractorRates  | contractor_id                | master.contractors | cascade   | false    | |
+   287→  6966→| master.commissionRules  | source_partner_id            | master.sourcePartners | nullify | false   | (note: nullable=false but onDelete=nullify — contradictory) |
+   288→  6967→| master.commissionRules  | category_id                  | master.workCategories | nullify | true    | |
+   289→  6968→| acceptedScopes          | contractor_bid_id             | contractorBids     | nullify   | true     | (unenforcedFks block) |
+   290→  6969→| workOrders              | abandoned_contractor_id      | master.contractors | nullify   | true     | (unenforcedFks block) |
+   291→  6970→
+   292→  6971→### D.2 Missing FK rules (orphan risks)
+   293→  6972→
+   294→  6973→1. **`contractorBills.area_ids` → `areas`** — MISSING. The ContractorBill type has `area_ids?: ID[]` (types.ts:877). If an area is deleted (or archived with ID reuse), the bill's area_ids array can contain dangling references. Comparable rules exist for `workRequired.area_ids` (restrict) and `workOrders.area_ids` (nullify, isArray) but NOT for contractorBills.
+   295→  6974→
+   296→  6975→2. **`contractorPayments.site_id` → `sites`** — MISSING. ContractorPayment has `site_id: ID` (types.ts:897, non-optional). If a site is deleted, the payment's site_id becomes a dangling reference. Compare: `contractorBills.site_id → sites` IS declared (nullify). The payment equivalent is absent.
+   297→  6976→
+   298→  6977→3. **`master.contractorRates.unit_id` → `master.units`** — MISSING. ContractorRate.unit_id is `string?` (types.ts:1681). Consistent with the broader app-wide omission of unit_id FK rules (VendorRate.unit_id, etc. are also unenforced). Low priority but worth noting.
+   299→  6978→
+   300→  6979→4. **`contractorBills` / `contractorPayments` are NOT in `entity-context.ts`** — the entity-context resolver handles `contractor`, `contractor_bid`, `contractor_settlement`, `commission` (entity-context.ts:292-318) but has NO case for `contractorBill` or `contractorPayment`. The `FileAttachmentEntityType` union (types.ts:1829) also does not include `"contractorBill"` or `"contractorPayment"`. This means file attachments cannot be linked directly to a contractor bill or payment — they must be attached to the parent work order or contractor. This is a design limitation, not a bug, but it means the contractor bill's RA document (the actual PDF from the contractor) has no typed attachment slot.
+   301→  6980→
+   302→  6981→### D.3 Orphan risks from cascade rules
+   303→  6982→
+   304→  6983→- `contractorPayments.contractor_bill_id` is `cascade` — deleting a bill cascades to its payments. But there is NO delete-bill UI or store action, so this cascade is only theoretical (would fire if a bill were deleted via integrity repair).
+   305→  6984→- `contractorBids.work_order_id` is `cascade` nullable — deleting a work order cascades to its bids. But bids created during the "contractor_bidding" phase have `work_order_id=undefined` (the work order doesn't exist yet), so the cascade would only affect bids that were already awarded. After award, the bid is linked to the work order; deleting the work order would lose the bid history.
+   306→  6985→- `contractorSettlements.work_order_id` is `cascade` — deleting a work order cascades to its settlements. This means settlement history is lost if a work order is deleted. Probably acceptable (the work order no longer exists), but worth documenting.
+   307→  6986→
+   308→  6987→### D.4 Contradictory FK rule
+   309→  6988→
+   310→  6989→`master.commissionRules.source_partner_id → master.sourcePartners` is declared as `onDelete: "nullify"` but `nullable: false` (fk-registry.ts:356). This is contradictory — if the field is non-nullable, onDelete:nullify would leave a non-nullable field null, which the integrity checker would then flag. Should be either `onDelete: "restrict"` (keep nullable:false) or `nullable: true` (keep nullify).
+   311→  6990→
+   312→  6991→---
+   313→  6992→
+   314→  6993→E. UI/UX ANALYSIS
+   315→  6994→-----------------
+   316→  6995→
+   317→  6996→### E.1 ContractorDetailModule (src/components/rdash/modules/ContractorDetailModule.tsx)
+   318→  6997→
+   319→  6998→**What the user CAN do:**
+   320→  6999→- Browse all contractors in a left-side list, filtered by work category (trade or work_capability subcategory).
+   321→  7000→- Select a contractor to view: profile header, phone, active work orders count, outstanding (always ₹0 — dead field), total earned (runtime cost lines only — misses seed cost lines), reliability score, on-time %.
+   322→  7001→- View OperationalMediaPanel for contractor files (photos + business card).
+   323→  7002→- View bid history (top 6 bids; click → open work order detail).
+   324→  7003→- View settlement history (click → open work order detail).
+   325→  7004→- View trade rates (display-only chips).
+   326→  7005→- View assigned work orders (click → open work order detail).
+   327→  7006→- View recent payments (top 5 workOrderCostLines).
+   328→  7007→- Click "Create RA bill" on any assigned work order → opens CreateRABillDialog.
+   329→  7008→
+   330→  7009→**Dead / cosmetic features:**
+   331→  7010→- "Outstanding" metric (line 182) always shows ₹0 — reads `selected.outstanding` which is set to 0 at contractor creation and never recomputed. ContractorPerformanceModule computes outstanding differently (from bills/payments). Two modules, same label, different values.
+   332→  7011→- CreateRABillDialog "Request approval" vs "Post payment" button label (line 352) is purely cosmetic — both call the same `onSubmit` handler which calls `createContractorRABill`. The store action does NOT check the ₹25,000 threshold (the threshold only matters later in `requestContractorBillPayment`). The dialog's "⚠ Above ₹25,000 policy — owner approval required" / "✓ Below ₹25,000 threshold — auto-approved, cost posted immediately" message (line 323-325) is misleading — cost is ALWAYS posted immediately regardless of amount; approval only gates the payment release, not the bill creation.
+   333→  7012→- CreateRABillDialog "Upload contractor confirmation" button (line 334) navigates to the executionLogs module but does NOT actually upload anything. It just shows a toast telling the user to "Open the work order's Execution Logs and attach a contractor confirmation photo, then return here to file the RA bill." The executionLogs module has NO "attach contractor confirmation photo" UI — the only button there is "Confirm material receipt" which calls `confirmMaterialReceipt(log.id)` with NO photo (see Problem F.1).
+   334→  7013→
+   335→  7014→**Missing CRUD:**
+   336→  7015→- No "Edit contractor" button in this module (must go to Masters module).
+   337→  7016→- No "Delete contractor" / "Deactivate contractor" / "Blacklist contractor" anywhere.
+   338→  7017→- No "Add bid" from this module (must go to SiteExecutionModule).
+   339→  7018→- No "Create settlement" from this module (must go to WorkOrder detail).
+   340→  7019→- No "View all bills for this contractor" — only shows top 5 cost lines, not the bills themselves.
+   341→  7020→
+   342→  7021→### E.2 ContractorPerformanceModule (src/components/rdash/modules/ContractorPerformanceModule.tsx)
+   343→  7022→
+   344→  7023→**What the user CAN do:**
+   345→  7024→- View a leaderboard of all contractors ranked by total_award_value.
+   346→  7025→- View 4 summary cards: Total Awarded, Total Billed, Total Paid, Outstanding.
+   347→  7026→- Per-contractor row: rank badge, name, trade, city, work order count, award value, bids selected/submitted (selection rate), direct-award count (DA badge), reliability score, on-time %, past jobs count, rating.
+   348→  7027→- "Refresh all scores" button → calls `recomputeContractorPerformance` for every contractor.
+   349→  7028→- Per-contractor refresh button → calls `recomputeContractorPerformance` for one contractor.
+   350→  7029→- Click contractor → `openDetail("contractor", id)`.
+   351→  7030→
+   352→  7031→**Dead / cosmetic features:**
+   353→  7032→- "Past Jobs" metric (line 207-212) reads `c.past_jobs_count` from the contractor master. This field is set to 0 at creation (contractors.ts:50) and NEVER updated by `recomputeContractorPerformance` (which only updates reliability_score, on_time_pct, rating). So "Past Jobs" is always 0 unless manually edited via EntityFormDialog (which doesn't expose past_jobs_count as an input field anyway — so it's permanently 0).
+   354→  7033→- "Outstanding" metric (line 191) is computed as `totalBilled - totalPaid` (line 46). This is a DIFFERENT formula than ContractorDetailModule's `selected.outstanding` (always 0) and ContractorPaymentsModule's `billBalances - committedNotPaid`. Three modules, three different "outstanding" values for the same contractor.
+   355→  7034→- The "Refresh all scores" button calls `recomputeContractorPerformance` in a synchronous loop (line 95-99). Each call triggers a separate `commitState` (which triggers a workspace save). For N contractors, this is N commits + N saves — inefficient. Should batch into a single commit.
+   356→  7035→
+   357→  7036→**Missing:**
+   358→  7037→- No "drill into contractor's bills/payments" from the leaderboard.
+   359→  7038→- No date-range filter (e.g., "performance this quarter").
+   360→  7039→- No export.
+   361→  7040→
+   362→  7041→### E.3 ContractorPaymentsModule (src/components/rdash/modules/ContractorPaymentsModule.tsx)
+   363→  7042→
+   364→  7043→**What the user CAN do:**
+   365→  7044→- View 5 metrics: Awaiting approval, Ready to pay, Contractor payable (CV-7 adjusted), Committed (pending), Paid.
+   366→  7045→- Filter by: All, Pending approval, Verified RA bills, Ready to pay, Paid.
+   367→  7046→- View 4 queues: Verified RA bills (request payment release), Awaiting owner approval, Approved (record payment), Paid.
+   368→  7047→- Owner can inline-approve pending payments (CV-6) without navigating to UserApprovalsModule.
+   369→  7048→- "Request partial payment" on verified RA bills → opens dialog with amount input (default = requestable balance).
+   370→  7049→- "Record payment" on approved payments → opens dialog with mode (bank_transfer/UPI/cash/cheque) + reference input.
+   371→  7050→- "Open work order" action on every row.
+   372→  7051→
+   373→  7052→**Dead / cosmetic features:**
+   374→  7053→- Every row's `detailKind: "workOrder"` (line 89, 110) — clicking a row opens the work order, NOT the contractor bill or payment. There is no `detailKind: "contractorBill"` or `"contractorPayment"` because DetailPanel has no such cases. The user cannot view an individual bill's details (description, area_ids, progress_pct, verified_at, verified_by, due_date) or an individual payment's details (mode, reference, approved_at, approved_by) from this module.
+   375→  7054→
+   376→  7055→**Missing:**
+   377→  7056→- No "Create RA bill" from this module (must go to ContractorDetailModule).
+   378→  7057→- No "Open bill" action (only "Open work order").
+   379→  7058→- No "Open execution log proof" action (the executionLog that satisfies contractorPaymentProofStatus — but since the proof is never satisfiable, this is moot).
+   380→  7059→- No "Cancel payment" / "Hold payment" action (status "held" and "cancelled" are dead).
+   381→  7060→- No "Dispute bill" action (status "disputed" is not even in the enum).
+   382→  7061→- No contractor-bill proof-status badge (the prior analysis recommendation to "surface the contractor confirmation proof status as a badge on each verified bill row" was NOT implemented).
+   383→  7062→
+   384→  7063→### E.4 CommissionsModule (src/components/rdash/modules/CommissionsModule.tsx)
+   385→  7064→
+   386→  7065→**What the user CAN do:**
+   387→  7066→- View 4 metrics: Total commissions, Accrued, Paid, Outstanding.
+   388→  7067→- Filter by: All, Accrued, Paid.
+   389→  7068→- View 3 queues: Accrued/Payable, Paid, Referral Partners.
+   390→  7069→- "Mark Paid" action on accrued commissions → `payCommission`.
+   391→  7070→- "Open" action → `openDetail("commission", id)`.
+   392→  7071→
+   393→  7072→**Missing:**
+   394→  7073→- No "Accrue commission" button — the ONLY way to accrue is via the auto-trigger in `selectContractorBid`. If a partner is added to a customer AFTER the bid was awarded, no commission accrues retroactively. (Prior analysis noted this.)
+   395→  7074→- No "Cancel commission" action (status "cancelled" is dead).
+   396→  7075→- No "Edit commission" / "Adjust commission" action.
+   397→  7076→
+   398→  7077→### E.5 DetailPanel contractor views
+   399→  7078→
+   400→  7079→- **ContractorEntityOverview** (DetailPanel.tsx:500-517): Shows overview (work orders, bills, outstanding), work list, rates list, finance (bills + payments), and an actions tab with 3 buttons:
+   401→
+   402→[showing lines 6680-7079 of 7491; use offset=7080 with limit to continue reading]

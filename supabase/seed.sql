@@ -108,8 +108,12 @@ INSERT INTO entity_* (collection, id, data_json, revision) VALUES
 ON CONFLICT DO NOTHING;
 
 -- Work Order Cost Lines
+-- FIX-CONTRACTOR-BATCH1 / F.3: contractor cost lines now write vendor_id
+-- (the canonical runtime field, matching contractors.ts:756-757 + 573-574
+-- and the ContractorDetailModule filter `cl.vendor_id === c.id`). The
+-- legacy contractor_id is mirrored for backward compatibility.
 INSERT INTO entity_* (collection, id, data_json, revision) VALUES
-('workOrderCostLines', 'cost-das-contractor-accrual', '{"id":"cost-das-contractor-accrual","work_order_id":"wo-das-ceiling","type":"contractor","description":"Sharma Ceiling Works — verified RA bill (50% progress)","amount":14500,"date":"2026-07-16","source_kind":"bill","source_id":"cbill-das-ceiling","contractor_id":"con-gypsum","contractor_name":"Sharma Ceiling Works","created_at":"2026-07-16T00:00:00.000Z"}', 1),
+('workOrderCostLines', 'cost-das-contractor-accrual', '{"id":"cost-das-contractor-accrual","work_order_id":"wo-das-ceiling","type":"contractor","description":"Sharma Ceiling Works — verified RA bill (50% progress)","amount":14500,"date":"2026-07-16","source_kind":"bill","source_id":"cbill-das-ceiling","vendor_id":"con-gypsum","vendor_name":"Sharma Ceiling Works","contractor_id":"con-gypsum","contractor_name":"Sharma Ceiling Works","created_at":"2026-07-16T00:00:00.000Z"}', 1),
 ('workOrderCostLines', 'cost-das-material-po', '{"id":"cost-das-material-po","work_order_id":"wo-das-ceiling","type":"material","description":"Build Mart — Gypsum board + channels (PO-2026-601)","amount":19829,"date":"2026-07-12","source_kind":"po","source_id":"po-das-ceiling","vendor_id":"ven-build","vendor_name":"Build Mart","created_at":"2026-07-12T00:00:00.000Z"}', 1),
 ('workOrderCostLines', 'cost-das-material-direct', '{"id":"cost-das-material-direct","work_order_id":"wo-das-ceiling","type":"material","description":"Build Mart — Paint + primer (PO-2026-602 direct award)","amount":6230.4,"date":"2026-07-15","source_kind":"po","source_id":"po-das-paint-direct","vendor_id":"ven-build","vendor_name":"Build Mart","created_at":"2026-07-15T00:00:00.000Z"}', 1),
 ('workOrderCostLines', 'cost-das-labour-advance', '{"id":"cost-das-labour-advance","work_order_id":"wo-das-ceiling","type":"labour","description":"Labour advance — carpenter helper (3 days)","amount":2400,"date":"2026-07-14","source_kind":"manual","created_at":"2026-07-14T00:00:00.000Z"}', 1)

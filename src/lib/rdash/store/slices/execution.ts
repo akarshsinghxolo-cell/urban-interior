@@ -612,15 +612,36 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 ],
             });
         },
-        confirmMaterialReceipt: (logId, photoUrl) => {
+        confirmMaterialReceipt: (logId, photoUrl, photoAttachmentId) => {
             if (photoUrl && !isStoredMediaUrl(photoUrl))
                 throw new Error("Material confirmation proof must be uploaded to managed Google Drive before filing.");
             const log = get().db.executionLogs.find((row: any) => row.id === logId);
             if (!log)
                 throw new Error("Execution log not found.");
-            const confirmationAttachmentId = photoUrl
-                ? get().createFileAssetAndAttach({ file_name: `${log.log_no}-material-confirmation.jpg`, web_view_link: photoUrl, google_file_id: googleFileIdFromUrl(photoUrl), kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["execution", "material-confirmation"] }, { entity_type: "execution_log", entity_id: logId, role: "proof", caption: "Contractor material receipt confirmation", visibility: "internal", customer_shareable: false, created_by: "Contractor" })
-                : undefined;
+            // FIX-CONTRACTOR-BATCH1 / F.1: Accept an optional `photoAttachmentId`
+            // (a pre-uploaded EntityFileAttachment id) so the UI can pass an
+            // already-uploaded proof photo directly. When `photoUrl` is supplied
+            // we upload + attach it (legacy behaviour). When neither is supplied
+            // we log a warning (console + thread reply) so the user knows the
+            // payment proof gate will still require a photo — but we no longer
+            // silently leave `contractor_confirmation_attachment_id` unset when
+            // the caller has a pre-uploaded attachment id available.
+            let confirmationAttachmentId: string | undefined;
+            let proofSource: "uploaded_url" | "pre_uploaded_id" | "none" = "none";
+            if (photoAttachmentId) {
+                confirmationAttachmentId = photoAttachmentId;
+                proofSource = "pre_uploaded_id";
+            } else if (photoUrl) {
+                confirmationAttachmentId = get().createFileAssetAndAttach({ file_name: `${log.log_no}-material-confirmation.jpg`, web_view_link: photoUrl, google_file_id: googleFileIdFromUrl(photoUrl), kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["execution", "material-confirmation"] }, { entity_type: "execution_log", entity_id: logId, role: "proof", caption: "Contractor material receipt confirmation", visibility: "internal", customer_shareable: false, created_by: "Contractor" });
+                proofSource = "uploaded_url";
+            } else {
+                // FIX-CONTRACTOR-BATCH1 / F.1: Warn (don't throw) so the
+                // business can still mark material receipt confirmed. The
+                // downstream `contractorPaymentProofStatus` helper will keep
+                // blocking payment release until a photo is uploaded — but the
+                // user is no longer dead-locked with no path forward.
+                console.warn(`[confirmMaterialReceipt] No proof photo supplied for log ${log.log_no}. contractor_confirmation_attachment_id will not be set — payment release will remain blocked until a photo is uploaded.`);
+            }
             const now = nowIso();
             commitState((snapshot: any) => ({
                 db: {
@@ -634,7 +655,9 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 get().addThreadReply(log.thread_id, {
                     author: log.filed_by || "Contractor",
                     role: "Contractor",
-                    body: `Material receipt confirmed on ${log.date}${photoUrl ? " — proof photo attached" : ""}.`,
+                    body: proofSource === "none"
+                        ? `Material receipt confirmed on ${log.date} — WARNING: no proof photo attached. Payment release will remain blocked until a contractor confirmation photo is uploaded.`
+                        : `Material receipt confirmed on ${log.date} — proof photo attached.`,
                     kind: "comment",
                     proof_attachment_id: confirmationAttachmentId,
                 });

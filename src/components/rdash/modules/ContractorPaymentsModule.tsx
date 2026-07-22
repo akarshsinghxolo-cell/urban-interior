@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { CheckCircle2, Clock3, HandCoins, IndianRupee, ShieldCheck, Check } from "lucide-react";
-import { useRDashStore } from "@/lib/rdash/store";
+import { useRDashStore, contractorOutstandingTotal } from "@/lib/rdash/store";
 import { OperationsWorkspace, type FilterChip, type MetricSpec, type QueueSpec, type RecordRow } from "../OperationsWorkspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,19 +27,19 @@ export function ContractorPaymentsModule() {
     const pending = paymentRows.filter((payment) => payment.status === "pending");
     const approved = paymentRows.filter((payment) => payment.status === "approved");
     const paid = paymentRows.filter((payment) => payment.status === "paid");
-    // CV-7: Contractor payable metric must subtract committed-but-not-yet-disbursed payments.
-    // bill.balance_amount only decreases when recordContractorPayment is called (status="paid"), so
-    // summing bill balances alone overstates the true payable by the sum of pending+approved
-    // contractor payments. We compute: payable = Σ(bill.balance_amount for non-held bills)
-    //                                          − Σ(payment.amount for payments in pending/approved).
-    // This gives the actually-uncommitted payable the owner can still act on. A separate metric
-    // shows the committed (pending approval / approved) amount for transparency.
+    // FIX-CONTRACTOR-BATCH1 / F.4: previously this module used the CV-7 formula
+    // (Σ bill.balance_amount − Σ committed payments) which answered "what's
+    // still uncommitted?" — different from what the other 3 contractor modules
+    // showed. Now "Contractor payable" uses the unified contractorOutstandingTotal
+    // (total_billed − total_paid − total_settled) so all four modules agree.
+    // `committedNotPaid` is still surfaced as a separate "Committed (pending)"
+    // metric below for finance users who specifically need the uncommitted view.
     const payableBills = db.contractorBills.filter((bill) => bill.status !== "held");
-    const billBalances = payableBills.reduce((total, bill) => total + bill.balance_amount, 0);
+    void payableBills; // retained for any future per-bill drill-down
     const committedNotPaid = db.contractorPayments
         .filter((payment) => payment.status === "pending" || payment.status === "approved")
         .reduce((total, payment) => total + payment.amount, 0);
-    const outstanding = Math.max(0, billBalances - committedNotPaid);
+    const outstanding = contractorOutstandingTotal(db);
     const openBills = db.contractorBills.filter((bill) => bill.status === "verified" || bill.status === "approved" || bill.status === "partly_paid");
     const metrics: MetricSpec[] = [
         { label: "Awaiting approval", value: pending.length, tone: "warning", icon: <Clock3 className="h-4 w-4"/> },

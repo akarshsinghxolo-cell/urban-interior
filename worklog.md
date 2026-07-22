@@ -7488,3 +7488,187 @@ Verification on live site:
 Note: The deep-links from other modules (setActiveModule("staff"), setActiveModule
 ("attendancePayroll")) still work because the route IDs didn't change — only the
 parent module changed. canonicalModuleId() resolves them correctly.
+
+---
+Task ID: FIX-CONTRACTOR-BATCH1
+Agent: sub-agent (general-purpose / contractor-domain fixes)
+Task: Fix the 5 CRITICAL + HIGH severity problems from ANALYSIS-CONTRACTOR-001 (F.1–F.5). BATCH 1 of the prioritized remediation plan.
+
+Prior-work context reviewed:
+- ANALYSIS-CONTRACTOR-001 (worklog.md:6699) — the 23-problem analysis covering the contractor domain.
+- FIX-E2E-001/002/003/004 (worklog.md:6477–6590) — file-asset persistence fixes (addServerFileAsset pattern). Reused the same pattern in the new ConfirmMaterialReceiptDialog (F.1) so uploaded proof photos are persisted via addServerFileAsset and survive page reloads.
+- FIX-STAFF-SYNC (worklog.md:7419) — auth↔workspace staff sync pattern (no direct reuse, but informed the "mirror, don't replace" approach used in F.3's repairWorkCosts fix).
+
+Work Log:
+
+═══════════════════════════════════════════════════════════════════
+F.1 (CRITICAL) — Proof-gate deadlock
+═══════════════════════════════════════════════════════════════════
+Problem: `confirmMaterialReceipt(logId)` was called from DrawingsExecutionModules.tsx:480 without a photo URL. The `contractorPaymentProofStatus()` helper (helpers.ts:128-140) requires `executionLog.contractor_confirmation_attachment_id` to be truthy on at least one log for the work order. Without a photo, the attachment id was never set, so `requestContractorBillPayment`, `approveContractorPayment`, and `settleContractor` all threw — dead-locking the entire contractor payment chain.
+
+Files changed:
+1. `src/lib/rdash/store/types.ts:299`
+   - Added optional 3rd parameter `photoAttachmentId?: string` to the `confirmMaterialReceipt` type signature.
+   - Existing 2-arg signature preserved (backward compatible — both args optional).
+
+2. `src/lib/rdash/store/slices/execution.ts:615-664`
+   - `confirmMaterialReceipt(logId, photoUrl?, photoAttachmentId?)` now:
+     • If `photoAttachmentId` is supplied → use it directly as the confirmation attachment id (no re-upload).
+     • Else if `photoUrl` is supplied → upload + attach (legacy behaviour, unchanged).
+     • Else → `console.warn` + thread reply warning ("no proof photo attached. Payment release will remain blocked until a contractor confirmation photo is uploaded.") — but does NOT throw. The user is no longer dead-locked.
+   - Thread reply body now explicitly distinguishes "proof photo attached" vs "WARNING: no proof photo attached" so the audit trail shows which path was taken.
+
+3. `src/components/rdash/modules/DrawingsExecutionModules.tsx`
+   - Added `confirmLogId` state (line 343).
+   - Replaced the one-click `confirmMaterialReceipt(log.id)` button (line 480) with a button that opens the new `ConfirmMaterialReceiptDialog`.
+   - Added a "Proof missing — payment blocked" inline badge next to logs that are confirmed-but-without-proof (so the user can see at a glance which logs still need a photo).
+   - Added new `ConfirmMaterialReceiptDialog` component (lines 529-611) that:
+     • Shows a warning explaining the photo requirement.
+     • Has a file input (`MANAGED_FILE_ACCEPT`) for the contractor confirmation photo.
+     • "Upload & confirm" button: compresses (image-compress), uploads via `uploadManagedFile`, persists via `addServerFileAsset` (FIX-E2E-004 pattern), then calls `confirmMaterialReceipt(logId, uploaded.webViewLink)`.
+     • "Skip photo (warn)" button: calls `confirmMaterialReceipt(logId)` with no photo — logs the warning, lets the business proceed without hard-deadlocking.
+
+═══════════════════════════════════════════════════════════════════
+F.2 (HIGH) — accrueCommission not called from directAwardContractor
+═══════════════════════════════════════════════════════════════════
+Problem: `selectContractorBid` (contractors.ts:328-335) calls `accrueCommission` when the customer came through a source partner, but `directAwardContractor` did NOT — so direct-award work orders silently skipped the partner's commission accrual. The Commissions module showed nothing for direct-award jobs.
+
+Files changed:
+- `src/lib/rdash/store/slices/contractors.ts:479-500`
+  - Added the same partner-commission accrual block to `directAwardContractor` (inside the `if (!existingWorkOrder)` branch, right after the payment-terms forEach). The block:
+    1. Resolves `partnerId` from `customer.source_partner_id` (with `site.source_partner_id` fallback) — same as `selectContractorBid`.
+    2. If `partnerId && quotation`, calls `get().accrueCommission(workOrderId, quotation.id, partnerId)` in a try/catch.
+    3. Failures are logged via `console.warn("accrueCommission failed (direct award):", err)` — non-blocking.
+
+BREAKAGE CHECK:
+- `accrueCommission` (contractors.ts:1033-1102) returns early with no side effects if `workOrder` or `partner` is not found. Safe to call.
+- The try/catch ensures any unexpected error cannot block the direct award itself.
+- The `state` variable used (`state.db.customers.find(...)`, `state.db.sites.find(...)`) is the snapshot captured at line 365 (`const state = get();`) — still valid for the lookups because the commit hasn't happened yet for these specific reads (we read from the snapshot, not from get() post-commit).
+
+═══════════════════════════════════════════════════════════════════
+F.3 (HIGH) — WorkOrderCostLine field inconsistency (seed vs runtime)
+═══════════════════════════════════════════════════════════════════
+Problem: Seed data (seed.ts:149) wrote `contractor_id` / `contractor_name` on contractor cost lines, but runtime code (contractors.ts:756-757 createContractorRABill, contractors.ts:573-574 settleContractor) wrote `vendor_id` / `vendor_name`. ContractorDetailModule.tsx:70 filters with `cl.vendor_id === c.id && cl.type === "contractor"` — so seed cost lines were INVISIBLE in the "Recent payments" list and `totalEarned` was understated.
+
+Files changed:
+1. `src/lib/rdash/types.ts:959-986` (WorkOrderCostLine interface)
+   - Added comment block explaining `vendor_id` is the canonical field for ANY counterparty (vendor OR contractor).
+   - Marked `contractor_id` / `contractor_name` as `@deprecated` (kept optional for backward compat with old seed data and external integrations).
+
+2. `src/lib/rdash/seed.ts:148-161` (workOrderCostLines array)
+   - `cost-das-contractor-accrual` now writes BOTH `vendor_id`/`vendor_name` (canonical) AND `contractor_id`/`contractor_name` (mirror, for backward compat).
+
+3. `supabase/seed.sql:110-116` (deployment seed)
+   - Same mirror applied to the SQL seed row.
+
+4. `src/lib/rdash/store/slices/contractors.ts:769-786` (createContractorRABill costLine) + `:581-603` (settleContractor costLine)
+   - Both now write both `vendor_id`/`vendor_name` AND `contractor_id`/`contractor_name` (defense-in-depth — any consumer reading either field finds the right value).
+
+5. `src/lib/rdash/operational-repair.ts:273-293` (repairWorkCosts)
+   - The previous repair function UNSET `vendor_id` when the counterparty was a contractor (actively breaking the canonical filter for runtime cost lines). Now it MIRRORS vendor_id → contractor_id (and contractor_id → vendor_id for legacy rows that only have contractor_id) without unsetting either field. This runs on every server commit and on seed init, so it gradually back-fills any old rows.
+
+BREAKAGE CHECK:
+- ContractorDetailModule.tsx:70 filter (`cl.vendor_id === c.id`) — unchanged, now finds both seed and runtime cost lines (both write vendor_id).
+- Any consumer that reads `cl.contractor_id` — still works (mirror populated).
+- Operational repair runs on every commit, so any persisted old row gets mirrored on the next save.
+
+═══════════════════════════════════════════════════════════════════
+F.4 (HIGH) — "outstanding" computed 4 different ways
+═══════════════════════════════════════════════════════════════════
+Problem: Four modules computed contractor "outstanding" four different ways:
+1. ContractorDetailModule.tsx:72,182 — read dead `c.outstanding` master field (always ₹0).
+2. ContractorPerformanceModule.tsx:46 — `Math.max(0, totalBilled - totalPaid)` where totalPaid counted pending+approved payments (so a pending payment reduced outstanding).
+3. ContractorPaymentsModule.tsx:37-42 — CV-7 formula: `Σ bill.balance_amount − Σ pending+approved payments`.
+4. FinanceOverviewModule.tsx:15-17 — `Σ bill.balance_amount` for verified/approved/partly_paid/paid bills (no committed subtraction).
+
+Files changed:
+1. `src/lib/rdash/store/selectors.ts:133-188` (NEW)
+   - Added `contractorOutstanding(db, contractorId): number` — formula: `max(0, total_billed − total_paid − total_settled)` where:
+     • `total_billed` = Σ `bill.amount` for non-held contractor bills
+     • `total_paid` = Σ `payment.amount` for paid contractor payments
+     • `total_settled` = Σ `settlement.payable_amount` for this contractor (abandonment/mutual-termination settlements are a separate payment path that bypasses RA bills — must be subtracted too).
+   - Added `contractorOutstandingTotal(db): number` — workspace-level sum (single-pass for efficiency, used by workspace-wide modules).
+
+2. `src/lib/rdash/store.ts:839`
+   - Re-exports `contractorOutstanding` + `contractorOutstandingTotal` from selectors.
+
+3. `src/components/rdash/modules/ContractorDetailModule.tsx:4,72-76`
+   - Imports + uses `contractorOutstanding(db, c.id)` instead of `c.outstanding || 0`.
+
+4. `src/components/rdash/modules/ContractorPerformanceModule.tsx:4,46-51`
+   - Imports + uses `contractorOutstanding(db, contractor.id)` instead of `Math.max(0, totalBilled - totalPaid)`.
+
+5. `src/components/rdash/modules/ContractorPaymentsModule.tsx:4,30-42`
+   - Imports + uses `contractorOutstandingTotal(db)` for the "Contractor payable" metric.
+   - Still computes `committedNotPaid` separately for the "Committed (pending)" metric (finance users need this view — it answers a different question: "what's already in the payment-request pipeline?").
+   - Removed unused `billBalances` intermediate variable; kept `payableBills` (now `void`-marked) for any future per-bill drill-down.
+
+6. `src/components/rdash/modules/FinanceOverviewModule.tsx:3,15-22`
+   - Imports + uses `contractorOutstandingTotal(db)` instead of inline `Σ bill.balance_amount`.
+
+BREAKAGE CHECK:
+- Seed-data trace for "Sharma Ceiling Works" (con-gypsum):
+  • Bills: ₹14,500 (verified) → total_billed = 14,500
+  • Payments: ₹5,000 (paid) + ₹4,500 (pending) → total_paid = 5,000
+  • Settlements: none → total_settled = 0
+  • Outstanding = max(0, 14,500 − 5,000 − 0) = ₹9,500
+- All 4 modules now show ₹9,500 for this contractor (workspace total: ₹9,500).
+- Previously: ContractorDetailModule showed ₹0, ContractorPerformanceModule showed ₹5,000, ContractorPaymentsModule showed ₹5,000, FinanceOverviewModule showed ₹9,500 — all different.
+- The "Committed (pending)" metric (₹4,500) is still surfaced in ContractorPaymentsModule so finance users can derive "available to request" = outstanding − committed = ₹5,000.
+
+═══════════════════════════════════════════════════════════════════
+F.5 (HIGH) — Dead updateContractorBid
+═══════════════════════════════════════════════════════════════════
+Problem: `updateContractorBid(id, patch)` (contractors.ts:179) was implemented but NEVER called from any UI — `grep` across `src/` returned only the type declaration (types.ts:375), the implementation (contractors.ts:179), and 2 comments in store.ts. As a side effect, the `"withdrawn"` status (ContractorBidStatus includes "withdrawn") was unreachable from the UI.
+
+Files changed:
+1. `src/components/rdash/modules/ContractorDetailModule.tsx`
+   - Added `updateContractorBid` hook (line 26).
+   - Added `editingBid` state (line 32).
+   - Refactored the bid-history list (lines 218-236) from a single `<button>` to a `<div>` wrapper containing:
+     • The original "open work order" button (now flex-1).
+     • A new "Edit" ghost button (visible only when `b.status === "submitted"` — selected/rejected/withdrawn bids should not be editable post-decision).
+   - Imported `Pencil` icon (line 7).
+   - Added new `EditContractorBidDialog` component (lines 331-396) with:
+     • Editable fields: `quote_amount`, `estimated_days`, `with_material` (checkbox), `evaluation_notes`.
+     • "Save changes" button: builds a patch from changed fields only (no-op if nothing changed) and calls `updateContractorBid(id, patch)`.
+     • "Withdraw bid" button: calls `updateContractorBid(id, { status: "withdrawn" })` — the first UI path to reach the "withdrawn" status.
+     • Helper text under `quote_amount` reminding the user of the CV-1/CV-14 guard ("quote must be > 0 before this bid can be awarded").
+
+BREAKAGE CHECK:
+- `updateContractorBid` signature is `(id, patch: Partial<ContractorBid>)` — unchanged. The UI calls it with patches like `{ quote_amount, estimated_days, with_material, evaluation_notes }` and `{ status: "withdrawn" }`, both valid `Partial<ContractorBid>` shapes.
+- No existing call sites (it was dead) → no backward-compat risk.
+- The "Withdraw" path sets `status: "withdrawn"` which the bid-list StatusBadge already renders (line 226: `b.status === "withdrawn" ? "Withdrawn" : ...`).
+
+═══════════════════════════════════════════════════════════════════
+Breakage check protocol results
+═══════════════════════════════════════════════════════════════════
+1. `bun run lint` — ✅ PASS (0 errors, 0 warnings). Initial run had 1 parsing error in ContractorDetailModule.tsx (the literal `> 0` in a JSX text node); fixed by rephrasing to "greater than 0". Re-ran lint: clean.
+2. Dev server (`node node_modules/.bin/next dev -p 3000`) — ✅ GET / returns HTTP 200.
+3. Dev log — ✅ no runtime errors. Compilation: "Ready in 287ms". First request: "GET / 200 in 8.0s". Second request (warm): "GET / 200 in 19.2s".
+4. Backward-compat grep:
+   - `confirmMaterialReceipt` callers: only the new dialog in DrawingsExecutionModules.tsx — signature preserved (3rd param optional).
+   - `directAwardContractor` callers: SiteExecutionModule.tsx:67 (existing UI) — unchanged.
+   - `accrueCommission` callers: selectContractorBid (existing) + directAwardContractor (new) — both pass `(workOrderId, quotationId, partnerId)`. Safe.
+   - `updateContractorBid` callers: only the new dialog in ContractorDetailModule.tsx — no existing callers to break.
+   - `contractorOutstanding` / `contractorOutstandingTotal` callers: 4 modules — all use the correct signature (`(db, contractorId)` for per-contractor, `(db)` for workspace-total).
+   - WorkOrderCostLine `contractor_id` readers: operational-repair.ts:283-292 (now mirrors instead of unsetting), ContractorDetailModule.tsx:70 (still reads vendor_id — canonical). No consumer breaks.
+
+═══════════════════════════════════════════════════════════════════
+Issues encountered
+═══════════════════════════════════════════════════════════════════
+- One JSX parsing error during the first lint pass (literal `>` in text content). Fixed by rephrasing.
+- The F.4 task description mentioned `total_billed - total_paid - total_settled` as the formula, but the analysis section F.4 actually recommended the CV-7 formula. Reconciled by using the task's formula (which is more general — counts pending payments as still-owed, doesn't subtract committed). The CV-7 "available to commit" view is preserved as a separate "Committed (pending)" metric in ContractorPaymentsModule so finance users don't lose that information.
+- The F.1 task description pointed at `src/lib/rdash/store/slices/contractors.ts` but `confirmMaterialReceipt` actually lives in `src/lib/rdash/store/slices/execution.ts` (verified by grep). Fixed in the correct file.
+- The F.3 task description mentioned `seed.ts` and `contractors.ts` but I also found the same bug in `operational-repair.ts:273` (which was actively UNSETTING vendor_id on contractor cost lines) and `supabase/seed.sql` (deployment seed). Fixed both.
+- The F.4 task description mentioned SiteExecutionModule.tsx and ReportsModule.tsx but those modules don't actually compute contractor "outstanding" — the 4 real call sites (per analysis F.4) are ContractorDetailModule, ContractorPerformanceModule, ContractorPaymentsModule, FinanceOverviewModule. Fixed all 4.
+
+═══════════════════════════════════════════════════════════════════
+Summary
+═══════════════════════════════════════════════════════════════════
+All 5 fixes succeeded:
+- ✅ F.1 (CRITICAL): Proof-gate deadlock resolved. UI now prompts for a proof photo before confirming material receipt; store action accepts both `photoUrl` (legacy) and `photoAttachmentId` (new) and warns instead of throwing when neither is supplied. Payment chain is no longer hard-deadlocked.
+- ✅ F.2 (HIGH): `directAwardContractor` now accrues partner commission (same as `selectContractorBid`). Wrapped in try/catch — non-blocking on failure.
+- ✅ F.3 (HIGH): `vendor_id` is now the canonical counterparty field on WorkOrderCostLine across seed (TS + SQL), runtime (createContractorRABill + settleContractor), and the repair function. Both fields are mirrored for backward compat. The `repairWorkCosts` function no longer actively breaks the canonical filter.
+- ✅ F.4 (HIGH): Single `contractorOutstanding(db, contractorId)` + `contractorOutstandingTotal(db)` selector replaces 4 divergent inline computations. All 4 modules now show the same number for the same contractor. The CV-7 "committed" view is preserved as a separate metric in ContractorPaymentsModule.
+- ✅ F.5 (HIGH): `updateContractorBid` is now wired to an "Edit bid" dialog in ContractorDetailModule. The dialog supports editing quote_amount / estimated_days / with_material / evaluation_notes AND withdrawing a bid (sets status="withdrawn" — previously unreachable from the UI).

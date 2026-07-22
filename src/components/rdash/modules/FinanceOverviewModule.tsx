@@ -1,6 +1,6 @@
 "use client";
 import { Building2, HandCoins, IndianRupee, ReceiptText, WalletCards } from "lucide-react";
-import { useRDashStore, siteFinancials } from "@/lib/rdash/store";
+import { useRDashStore, siteFinancials, contractorOutstandingTotal } from "@/lib/rdash/store";
 import { formatINRShort } from "@/lib/rdash/format";
 import { Button } from "@/components/ui/button";
 import { MetricCard, StatusBadge } from "../primitives";
@@ -12,9 +12,14 @@ export function FinanceOverviewModule() {
     const vendorPayable = db.vendorBills
         .filter((bill) => bill.status === "approved" || bill.status === "partly_paid" || bill.status === "paid")
         .reduce((total, bill) => total + bill.balance_amount, 0);
-    const contractorPayable = db.contractorBills
-        .filter((bill) => bill.status === "verified" || bill.status === "approved" || bill.status === "partly_paid" || bill.status === "paid")
-        .reduce((total, bill) => total + bill.balance_amount, 0);
+    // FIX-CONTRACTOR-BATCH1 / F.4: use the unified contractorOutstandingTotal
+    // selector so this module's "Contractor payable" metric agrees with
+    // ContractorDetailModule, ContractorPerformanceModule, and
+    // ContractorPaymentsModule. The previous inline formula (sum of
+    // bill.balance_amount for verified/approved/partly_paid/paid bills) did
+    // not subtract paid payments or settlements — overstating the payable
+    // whenever a payment was recorded or a contractor was settled.
+    const contractorPayable = contractorOutstandingTotal(db);
     const siteRows = db.sites.map((site) => ({ site, financials: siteFinancials(db, site.id) }));
     const totalContracted = siteRows.reduce((total, row) => total + row.financials.contracted, 0);
     const totalCost = siteRows.reduce((total, row) => total + row.financials.totalCost, 0);

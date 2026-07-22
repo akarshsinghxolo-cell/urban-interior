@@ -146,7 +146,15 @@ const customerReceipts: CustomerReceipt[] = [
     { id: "receipt-aarav-kitchen-advance", receipt_no: "CR-2026-103", finance_context: "service", customer_id: "cust-aarav", site_id: "site-aarav-home", work_required_id: "work-aarav-kitchen", quotation_id: "quote-aarav-kitchen", amount: 25000, mode: "upi", reference: "UPI-AARAV-ADV-103", received_at: date(0), created_by: "Pooja Singh", created_at: at(0), updated_at: now() },
 ];
 const workOrderCostLines: WorkOrderCostLine[] = [
-    { id: "cost-das-contractor-accrual", work_order_id: "wo-das-ceiling", type: "contractor", description: "Sharma Ceiling Works — verified RA bill (50% progress)", amount: 14500, date: at(-1), source_kind: "bill", source_id: "cbill-das-ceiling", contractor_id: "con-gypsum", contractor_name: "Sharma Ceiling Works", created_at: at(-1) },
+    // FIX-CONTRACTOR-BATCH1 / F.3: Standardize on `vendor_id` / `vendor_name`
+    // as the canonical counterparty field for cost lines (matches runtime
+    // code in contractors.ts:756-757 + 573-574 and the ContractorDetailModule
+    // filter `cl.vendor_id === c.id`). Previously the seed wrote
+    // `contractor_id` / `contractor_name` here, so the contractor cost line
+    // was invisible in ContractorDetailModule's "Recent payments" list and
+    // the totalEarned aggregate was understated. We mirror to contractor_id
+    // too for backward compatibility with any consumer that still reads it.
+    { id: "cost-das-contractor-accrual", work_order_id: "wo-das-ceiling", type: "contractor", description: "Sharma Ceiling Works — verified RA bill (50% progress)", amount: 14500, date: at(-1), source_kind: "bill", source_id: "cbill-das-ceiling", vendor_id: "con-gypsum", vendor_name: "Sharma Ceiling Works", contractor_id: "con-gypsum", contractor_name: "Sharma Ceiling Works", created_at: at(-1) },
     { id: "cost-das-material-po", work_order_id: "wo-das-ceiling", type: "material", description: "Build Mart — Gypsum board + channels (PO-2026-601)", amount: purchaseOrders[0].total_amount, date: at(-4), source_kind: "po", source_id: "po-das-ceiling", vendor_id: "ven-build", vendor_name: "Build Mart", created_at: at(-4) },
     { id: "cost-das-material-direct", work_order_id: "wo-das-ceiling", type: "material", description: "Build Mart — Paint + primer (PO-2026-602 direct award)", amount: purchaseOrders[1].total_amount, date: at(-2), source_kind: "po", source_id: "po-das-paint-direct", vendor_id: "ven-build", vendor_name: "Build Mart", created_at: at(-2) },
     { id: "cost-das-labour-advance", work_order_id: "wo-das-ceiling", type: "labour", description: "Labour advance — carpenter helper (3 days)", amount: 2400, date: at(-3), source_kind: "manual", created_at: at(-3) },

@@ -1,0 +1,602 @@
+     1→/**
+     2→ * Contractors slice — contractor master records, contractor bids (quotation
+     3→ * award), contractor settlement, RA bills (running account bills), contractor
+     4→ * payment requests/approvals/recording, and partner commission accrual/pay.
+     5→ *
+     6→ * Phase 3h moved the 12 contractor actions out of store.ts. The shared
+     7→ * helpers `addDays` and `contractorPaymentProofStatus` were moved to
+     8→ * `../helpers`, and `canonicalPaymentEvent`, `materializePaymentSchedule`,
+     9→ * `eventMatchesPaymentTrigger` were moved to `../finance-helpers`, so this
+    10→ * slice can import them directly without duplicating logic.
+    11→ */
+    12→import type {
+    13→    Contractor, ContractorBid, ContractorSettlement,
+    14→    ContractorBill, ContractorPayment, Commission,
+    15→    WorkOrder, WorkOrderCostLine,
+    16→} from "../../types";
+    17→import type { ContractorsState } from "../types";
+    18→import type { StoreContext } from "../context";
+    19→import { assertRole, genId, nowIso, today, addDays, contractorPaymentProofStatus } from "../helpers";
+    20→import { formatINR } from "../../format";
+    21→import { assertWorkOrderRelations } from "../../business-rules";
+    22→import { materializePaymentSchedule } from "../finance-helpers";
+    23→// I: Import the canonical commission-rule lookup helper exposed by Agent A
+    24→// in masters.ts. Match priority: (1) partner-specific category rule →
+    25→// (2) partner-specific workOrder rule → (3) partner-specific all rule →
+    26→// (4) global all rule. Falls back to partner.commission_pct || 5 if no rule
+    27→// matches. Keeping this in lock-step with the master UI banner documented by
+    28→// Agent A in MastersSalesOpsModule.
+    29→import { findCommissionRule } from "./masters";
+    30→
+    31→export function createContractorsSlice(ctx: StoreContext): ContractorsState {
+    32→    const { commitState, get } = ctx;
+    33→
+    34→    return {
+    35→        addContractor: (c) => {
+    36→            const id = c.id || genId("con");
+    37→            const contractor: import("../../types").Contractor = {
+    38→                id,
+    39→                name: c.name || "New contractor",
+    40→                phone: c.phone,
+    41→                city: c.city,
+    42→                locality: c.locality,
+    43→                address: c.address,
+    44→                trade: c.trade,
+    45→                rating: c.rating,
+    46→                active_jobs: 0,
+    47→                outstanding: 0,
+    48→                reliability_score: c.reliability_score,
+    49→                on_time_pct: c.on_time_pct,
+    50→                past_jobs_count: c.past_jobs_count || 0,
+    51→                specializations: c.specializations || [],
+    52→                latitude: c.latitude,
+    53→                longitude: c.longitude,
+    54→                photo_attachment_id: c.photo_attachment_id,
+    55→                business_card_attachment_id: c.business_card_attachment_id,
+    56→                reliability_rating: c.reliability_rating,
+    57→                politeness_rating: c.politeness_rating,
+    58→                worker_count_range: c.worker_count_range,
+    59→                deadline_commitment: c.deadline_commitment,
+    60→                source_partner_id: c.source_partner_id,
+    61→                source_partner_name: c.source_partner_name,
+    62→                work_capabilities: c.work_capabilities || [],
+    63→            };
+    64→            commitState((s: any) => ({
+    65→                db: {
+    66→                    ...s.db,
+    67→                    master: {
+    68→                        ...s.db.master,
+    69→                        contractors: [contractor, ...s.db.master.contractors],
+    70→                    },
+    71→                },
+    72→            }));
+    73→            get().logAudit({
+    74→                actor: get().currentUser().name,
+    75→                actor_role: get().currentUser().role,
+    76→                action: `Created contractor "${contractor.name}"`,
+    77→                entity_type: "contractor",
+    78→                entity_id: id,
+    79→                kind: "create",
+    80→            });
+    81→            return id;
+    82→        },
+    83→
+    84→        updateContractor: (id, patch) => {
+    85→            commitState((s: any) => ({
+    86→                db: {
+    87→                    ...s.db,
+    88→                    master: {
+    89→                        ...s.db.master,
+    90→                        contractors: s.db.master.contractors.map((c: any) => c.id === id ? { ...c, ...patch } : c),
+    91→                    },
+    92→                },
+    93→            }));
+    94→            const actor_c = get().currentUser();
+    95→            get().logAudit({
+    96→                actor: actor_c.name,
+    97→                actor_role: actor_c.role,
+    98→                action: `Updated contractor ${id}`,
+    99→                entity_type: "contractor",
+   100→                entity_id: id,
+   101→                entity_label: patch.name || id,
+   102→                kind: "update",
+   103→                reason: `Edited by ${actor_c.name} (${actor_c.role})`,
+   104→            });
+   105→        },
+   106→
+   107→        addContractorBid: (b) => {
+   108→            const state = get();
+   109→            const id = b.id || genId("bid");
+   110→            const acceptedScope = state.db.acceptedScopes.find((scope: any) => scope.id === b.accepted_scope_id) ||
+   111→                (b.work_order_id
+   112→                    ? state.db.acceptedScopes.find((scope: any) => state.db.workOrders
+   113→                        .find((workOrder: any) => workOrder.id === b.work_order_id)
+   114→                        ?.accepted_scope_ids.includes(scope.id))
+   115→                    : undefined);
+   116→            const contractor = state.db.master.contractors.find((candidate: any) => candidate.id === b.contractor_id);
+   117→            if (!acceptedScope || !contractor)
+   118→                return "";
+   119→            // CV-14: Coerce undefined/null/NaN quote_amount to a finite number (default 0).
+   120→            // The UI used to pass `quote_amount: undefined` (JobBiddingBody) which silently propagated
+   121→            // through selectContractorBid as `contractor_award_amount: undefined` and rendered as "—" forever.
+   122→            const coercedQuote = Number.isFinite(b.quote_amount) && (b.quote_amount as number) >= 0
+   123→                ? (b.quote_amount as number)
+   124→                : 0;
+   125→            const workOrder = acceptedScope.work_order_id
+   126→                ? state.db.workOrders.find((row: any) => row.id === acceptedScope.work_order_id)
+   127→                : undefined;
+   128→            const work = state.db.workRequired.find((row: any) => row.id === acceptedScope.work_required_id);
+   129→            const now = nowIso();
+   130→            const bidNo = `CB-2026-${String(state.db.contractorBids.length + 1).padStart(3, "0")}`;
+   131→            const target = workOrder?.work_order_no || `Scope · ${acceptedScope.label}`;
+   132→            const threadId = state.openThreadFor("bid", id, `Contractor bid ${bidNo} · ${target}`, [contractor.name]);
+   133→            const bid: ContractorBid = {
+   134→                id,
+   135→                bid_no: bidNo,
+   136→                accepted_scope_id: acceptedScope.id,
+   137→                work_order_id: workOrder?.id,
+   138→                work_order_no: workOrder?.work_order_no || "Pending contractor award",
+   139→                site_id: acceptedScope.site_id,
+   140→                contractor_id: contractor.id,
+   141→                contractor_name: contractor.name,
+   142→                scope: b.scope || work?.title || acceptedScope.label,
+   143→                quote_amount: coercedQuote,
+   144→                rate_basis: b.rate_basis,
+   145→                estimated_days: b.estimated_days,
+   146→                with_material: b.with_material,
+   147→                reliability_score: contractor.reliability_score ?? b.reliability_score,
+   148→                on_time_pct: contractor.on_time_pct ?? b.on_time_pct,
+   149→                past_jobs_count: contractor.past_jobs_count ?? b.past_jobs_count,
+   150→                rating: contractor.rating ?? b.rating,
+   151→                evaluation_notes: b.evaluation_notes,
+   152→                status: "submitted",
+   153→                submitted_at: now,
+   154→                thread_id: threadId,
+   155→                created_at: now,
+   156→                updated_at: now,
+   157→            };
+   158→            commitState((s: any) => ({
+   159→                db: { ...s.db, contractorBids: [bid, ...s.db.contractorBids] },
+   160→            }));
+   161→            get().logAudit({
+   162→                actor: get().currentUser().name,
+   163→                actor_role: get().currentUser().role,
+   164→                action: `Contractor bid ${bidNo} submitted by ${contractor.name} for ${target}`,
+   165→                entity_type: "bid",
+   166→                entity_id: id,
+   167→                entity_label: bidNo,
+   168→                kind: "create",
+   169→                cross_post: [
+   170→                    { entity_type: "contractor", entity_id: contractor.id, entity_label: contractor.name },
+   171→                    ...(bid.work_order_id ? [{ entity_type: "workOrder", entity_id: bid.work_order_id, entity_label: bid.work_order_no }] : []),
+   172→                    ...(bid.site_id ? [{ entity_type: "site", entity_id: bid.site_id }] : []),
+   173→                    ...(workOrder?.customer_id ? [{ entity_type: "customer", entity_id: workOrder.customer_id }] : []),
+   174→                ],
+   175→            });
+   176→            return id;
+   177→        },
+   178→
+   179→        updateContractorBid: (id, patch) => commitState((s: any) => ({
+   180→            db: {
+   181→                ...s.db,
+   182→                contractorBids: s.db.contractorBids.map((bid: any) => bid.id === id ? { ...bid, ...patch, updated_at: nowIso() } : bid),
+   183→            },
+   184→        })),
+   185→
+   186→        selectContractorBid: (bidId) => {
+   187→            const state = get();
+   188→            const bid = state.db.contractorBids.find((row: any) => row.id === bidId);
+   189→            const acceptedScope = bid?.accepted_scope_id
+   190→                ? state.db.acceptedScopes.find((scope: any) => scope.id === bid.accepted_scope_id)
+   191→                : undefined;
+   192→            if (!bid || !acceptedScope)
+   193→                return;
+   194→            // CV-1 / CV-14: Reject awarding a bid with no real quote amount. Otherwise the work order's
+   195→            // contractor_award_amount becomes 0/undefined, every subsequent RA bill throws "exceeds the
+   196→            // contractor award / Work Order value", and the contractor payment chain dies entirely.
+   197→            if (!Number.isFinite(bid.quote_amount) || (bid.quote_amount as number) <= 0) {
+   198→                throw new Error("Cannot award a bid with no quote amount. Edit the bid to record the contractor's actual quote first.");
+   199→            }
+   200→            const now = nowIso();
+   201→            const existingWorkOrder = acceptedScope.work_order_id
+   202→                ? state.db.workOrders.find((row: any) => row.id === acceptedScope.work_order_id)
+   203→                : undefined;
+   204→            const workOrderId = existingWorkOrder?.id || genId("workOrder");
+   205→            const workOrderNo = existingWorkOrder?.work_order_no ||
+   206→                `WO-2026-${String(state.db.workOrders.length + 1).padStart(3, "0")}`;
+   207→            const quotation = state.db.quotations.find((quote: any) => quote.id === acceptedScope.quotation_id);
+   208→            const site = state.db.sites.find((row: any) => row.id === acceptedScope.site_id);
+   209→            const work = state.db.workRequired.find((row: any) => row.id === acceptedScope.work_required_id);
+   210→            const workOrder: WorkOrder = existingWorkOrder || {
+   211→                id: workOrderId,
+   212→                work_order_no: workOrderNo,
+   213→                customer_id: acceptedScope.customer_id,
+   214→                accepted_scope_ids: [acceptedScope.id],
+   215→                work_required_ids: [acceptedScope.work_required_id],
+   216→                quotation_ids: [acceptedScope.quotation_id],
+   217→                site_id: acceptedScope.site_id,
+   218→                area_ids: acceptedScope.area_ids,
+   219→                title: work?.title || acceptedScope.label,
+   220→                status: "scheduled",
+   221→                contractor_id: bid.contractor_id,
+   222→                contractor_name: bid.contractor_name,
+   223→                with_material: bid.with_material,
+   224→                material_responsibility: bid.with_material ? "contractor" : "company",
+   225→                contractor_award_amount: bid.quote_amount,
+   226→                // B-2: Formal bid path — tag selection_method="bid" so downstream
+   227→                // knows the price was competitively vetted.
+   228→                contractor_selection_method: "bid",
+   229→                start_date: today(),
+   230→                expected_end: bid.estimated_days
+   231→                    ? addDays(today(), bid.estimated_days)
+   232→                    : undefined,
+   233→                value: acceptedScope.accepted_value,
+   234→                progress: 0,
+   235→                site_address: site?.address,
+   236→                thread_id: state.openThreadFor("workOrder", workOrderId, `${workOrderNo} · ${work?.title || acceptedScope.label}`, [bid.contractor_name]),
+   237→                created_at: now,
+   238→                updated_at: now,
+   239→            };
+   240→            assertWorkOrderRelations(state.db, workOrder, "Work Order");
+   241→            commitState((s: any) => ({
+   242→                db: {
+   243→                    ...s.db,
+   244→                    contractorBids: s.db.contractorBids.map((row: any) => {
+   245→                        if (row.id === bidId)
+   246→                            return {
+   247→                                ...row,
+   248→                                status: "selected" as const,
+   249→                                work_order_id: workOrderId,
+   250→                                work_order_no: workOrderNo,
+   251→                                selected_at: now,
+   252→                                updated_at: now,
+   253→                            };
+   254→                        if (row.accepted_scope_id === acceptedScope.id &&
+   255→                            row.status === "submitted")
+   256→                            return {
+   257→                                ...row,
+   258→                                status: "rejected" as const,
+   259→                                rejected_at: now,
+   260→                                updated_at: now,
+   261→                            };
+   262→                        return row;
+   263→                    }),
+   264→                    acceptedScopes: s.db.acceptedScopes.map((scope: any) => scope.id === acceptedScope.id
+   265→                        ? {
+   266→                            ...scope,
+   267→                            status: "in_work_order" as const,
+   268→                            contractor_bid_id: bidId,
+   269→                            contractor_selection_method: "bid" as const,
+   270→                            work_order_id: workOrderId,
+   271→                        }
+   272→                        : scope),
+   273→                    workOrders: existingWorkOrder
+   274→                        ? s.db.workOrders.map((row: any) => row.id === workOrderId
+   275→                            ? {
+   276→                                ...row,
+   277→                                contractor_id: bid.contractor_id,
+   278→                                contractor_name: bid.contractor_name,
+   279→                                with_material: bid.with_material,
+   280→                                material_responsibility: bid.with_material
+   281→                                    ? "contractor"
+   282→                                    : "company",
+   283→                                contractor_award_amount: bid.quote_amount,
+   284→                                contractor_selection_method: "bid" as const,
+   285→                                updated_at: now,
+   286→                            }
+   287→                            : row)
+   288→                        : [workOrder, ...s.db.workOrders],
+   289→                    quotations: s.db.quotations.map((quote: any) => quote.id === acceptedScope.quotation_id
+   290→                        ? {
+   291→                            ...quote,
+   292→                            work_order_ids: Array.from(new Set([...quote.work_order_ids, workOrderId])),
+   293→                            updated_at: now,
+   294→                        }
+   295→                        : quote),
+   296→                    workRequired: s.db.workRequired.map((row: any) => row.id === acceptedScope.work_required_id
+   297→                        ? { ...row, status: "awarded" as const, updated_at: now }
+   298→                        : row),
+   299→                },
+   300→            }));
+   301→            if (!existingWorkOrder) {
+   302→                get().createBOQ(workOrderId);
+   303→                (quotation?.payment_terms || []).forEach((term: any) => {
+   304→                    const schedule = materializePaymentSchedule(term, quotation!, workOrder);
+   305→                    get().addPayment({
+   306→                        customer_id: acceptedScope.customer_id,
+   307→                        site_id: acceptedScope.site_id,
+   308→                        quotation_id: acceptedScope.quotation_id,
+   309→                        work_order_id: workOrderId,
+   310→                        amount: Math.round((acceptedScope.accepted_value * term.percentage) / 100),
+   311→                        status: "pending",
+   312→                        milestone_term_id: term.id,
+   313→                        milestone_label: `${term.label} ${term.percentage}%`,
+   314→                        due_event: schedule.due_event,
+   315→                        schedule_state: schedule.schedule_state,
+   316→                        due_date: schedule.due_date,
+   317→                    });
+   318→                });
+   319→                // B-2: Accrue partner commission when the customer came through a source partner.
+   320→                // The accrueCommission function already exists in this slice but was never called — so
+   321→                // partner commissions were never accrued on work-order creation, and the Commissions
+   322→                // module showed nothing. Now we trigger it whenever the awarded work order's customer
+   323→                // has a source_partner_id. Site-level partner attribution (Site.source_partner_id) is
+   324→                // also honoured as a fallback.
+   325→                const customer = state.db.customers.find((row: any) => row.id === acceptedScope.customer_id);
+   326→                const siteRow = state.db.sites.find((row: any) => row.id === acceptedScope.site_id);
+   327→                const partnerId = customer?.source_partner_id || siteRow?.source_partner_id;
+   328→                if (partnerId && quotation) {
+   329→                    try {
+   330→                        get().accrueCommission(workOrderId, quotation.id, partnerId);
+   331→                    } catch (err) {
+   332→                        // Don't block the award if commission accrual fails (e.g. partner removed mid-flight).
+   333→                        console.warn("accrueCommission failed:", err);
+   334→                    }
+   335→                }
+   336→            }
+   337→            const actor_bid = get().currentUser();
+   338→            get().addThreadReply(bid.thread_id || "", {
+   339→                author: actor_bid.name,
+   340→                role: actor_bid.role,
+   341→                body: `Bid selected — ${bid.contractor_name} awarded ${workOrderNo}.`,
+   342→                kind: "decision",
+   343→            });
+   344→            get().logAudit({
+   345→                actor: get().currentUser().name,
+   346→                actor_role: get().currentUser().role,
+   347→                action: `Awarded ${bid.contractor_name}: ${workOrderNo}`,
+   348→                entity_type: "bid",
+   349→                entity_id: bidId,
+   350→                entity_label: bid.bid_no,
+   351→                kind: "decision",
+   352→                source_module: "contractors",
+   353→                // Cross-post: bid selection is relevant to the Contractor, Customer, Site, and Work Order.
+   354→                cross_post: [
+   355→                    { entity_type: "contractor", entity_id: bid.contractor_id, entity_label: bid.contractor_name },
+   356→                    { entity_type: "workOrder", entity_id: workOrderId, entity_label: workOrderNo },
+   357→                    ...(acceptedScope.site_id ? [{ entity_type: "site", entity_id: acceptedScope.site_id }] : []),
+   358→                    { entity_type: "customer", entity_id: acceptedScope.customer_id },
+   359→                ],
+   360→            });
+   361→        },
+   362→
+   363→        directAwardContractor: (input) => {
+   364→            assertRole(get().currentUser().role, ["Owner", "Operations Manager"], "direct-award contractors");
+   365→            const state = get();
+   366→            const actor = state.currentUser();
+   367→            const trimmedReason = (input.award_reason || "").trim();
+   368→            if (!trimmedReason)
+   369→                throw new Error("A direct-award reason is required so the exception is auditable.");
+   370→            if (!input.contractor_id)
+   371→                throw new Error("Contractor is required for a direct award.");
+   372→            if (!input.accepted_scope_id)
+   373→                throw new Error("Accepted scope is required for a direct award.");
+   374→            const acceptedScope = state.db.acceptedScopes.find((scope: any) => scope.id === input.accepted_scope_id);
+   375→            if (!acceptedScope)
+   376→                throw new Error("Accepted scope not found.");
+   377→            if (acceptedScope.status === "cancelled")
+   378→                throw new Error("This accepted scope is cancelled.");
+   379→            const contractor = state.db.master.contractors.find((c: any) => c.id === input.contractor_id);
+   380→            if (!contractor)
+   381→                throw new Error("Contractor not found in master.");
+   382→            const now = nowIso();
+   383→            const existingWorkOrder = acceptedScope.work_order_id
+   384→                ? state.db.workOrders.find((row: any) => row.id === acceptedScope.work_order_id)
+   385→                : undefined;
+   386→            const workOrderId = existingWorkOrder?.id || genId("workOrder");
+   387→            const workOrderNo = existingWorkOrder?.work_order_no ||
+   388→                `WO-2026-${String(state.db.workOrders.length + 1).padStart(3, "0")}`;
+   389→            const quotation = state.db.quotations.find((quote: any) => quote.id === acceptedScope.quotation_id);
+   390→            const site = state.db.sites.find((row: any) => row.id === acceptedScope.site_id);
+   391→            const work = state.db.workRequired.find((row: any) => row.id === acceptedScope.work_required_id);
+   392→            const awardAmount = input.award_amount ?? acceptedScope.accepted_value;
+   393→            const workOrder: WorkOrder = existingWorkOrder || {
+   394→                id: workOrderId,
+   395→                work_order_no: workOrderNo,
+   396→                customer_id: acceptedScope.customer_id,
+   397→                accepted_scope_ids: [acceptedScope.id],
+   398→                work_required_ids: [acceptedScope.work_required_id],
+   399→                quotation_ids: [acceptedScope.quotation_id],
+   400→                site_id: acceptedScope.site_id,
+   401→                area_ids: acceptedScope.area_ids,
+   402→                title: work?.title || acceptedScope.label,
+   403→                status: "scheduled",
+   404→                contractor_id: contractor.id,
+   405→                contractor_name: contractor.name,
+   406→                with_material: input.with_material ?? false,
+   407→                material_responsibility: input.with_material ? "contractor" : "company",
+   408→                contractor_award_amount: awardAmount,
+   409→                contractor_selection_method: "direct_award",
+   410→                contractor_award_reason: trimmedReason,
+   411→                contractor_award_approved_by: actor.name,
+   412→                start_date: today(),
+   413→                expected_end: input.estimated_days ? addDays(today(), input.estimated_days) : undefined,
+   414→                value: acceptedScope.accepted_value,
+   415→                progress: 0,
+   416→                site_address: site?.address,
+   417→                thread_id: state.openThreadFor("workOrder", workOrderId, `${workOrderNo} · ${work?.title || acceptedScope.label}`, [contractor.name]),
+   418→                created_at: now,
+   419→                updated_at: now,
+   420→            };
+   421→            assertWorkOrderRelations(state.db, workOrder, "Work Order");
+   422→            commitState((s: any) => ({
+   423→                db: {
+   424→                    ...s.db,
+   425→                    acceptedScopes: s.db.acceptedScopes.map((scope: any) => scope.id === acceptedScope.id
+   426→                        ? {
+   427→                            ...scope,
+   428→                            status: "in_work_order" as const,
+   429→                            work_order_id: workOrderId,
+   430→                            contractor_selection_method: "direct_award" as const,
+   431→                        }
+   432→                        : scope),
+   433→                    workOrders: existingWorkOrder
+   434→                        ? s.db.workOrders.map((row: any) => row.id === workOrderId
+   435→                            ? {
+   436→                                ...row,
+   437→                                contractor_id: contractor.id,
+   438→                                contractor_name: contractor.name,
+   439→                                with_material: input.with_material ?? false,
+   440→                                material_responsibility: input.with_material ? "contractor" : "company",
+   441→                                contractor_award_amount: awardAmount,
+   442→                                contractor_selection_method: "direct_award" as const,
+   443→                                contractor_award_reason: trimmedReason,
+   444→                                contractor_award_approved_by: actor.name,
+   445→                                updated_at: now,
+   446→                            }
+   447→                            : row)
+   448→                        : [workOrder, ...s.db.workOrders],
+   449→                    quotations: s.db.quotations.map((quote: any) => quote.id === acceptedScope.quotation_id
+   450→                        ? {
+   451→                            ...quote,
+   452→                            work_order_ids: Array.from(new Set([...quote.work_order_ids, workOrderId])),
+   453→                            updated_at: now,
+   454→                        }
+   455→                        : quote),
+   456→                    workRequired: s.db.workRequired.map((row: any) => row.id === acceptedScope.work_required_id
+   457→                        ? { ...row, status: "awarded" as const, updated_at: now }
+   458→                        : row),
+   459→                },
+   460→            }));
+   461→            if (!existingWorkOrder) {
+   462→                get().createBOQ(workOrderId);
+   463→                (quotation?.payment_terms || []).forEach((term: any) => {
+   464→                    const schedule = materializePaymentSchedule(term, quotation!, workOrder);
+   465→                    get().addPayment({
+   466→                        customer_id: acceptedScope.customer_id,
+   467→                        site_id: acceptedScope.site_id,
+   468→                        quotation_id: acceptedScope.quotation_id,
+   469→                        work_order_id: workOrderId,
+   470→                        amount: Math.round((acceptedScope.accepted_value * term.percentage) / 100),
+   471→                        status: "pending",
+   472→                        milestone_term_id: term.id,
+   473→                        milestone_label: `${term.label} ${term.percentage}%`,
+   474→                        due_event: schedule.due_event,
+   475→                        schedule_state: schedule.schedule_state,
+   476→                        due_date: schedule.due_date,
+   477→                    });
+   478→                });
+   479→            }
+   480→            get().addThreadReply(workOrder.thread_id || "", {
+   481→                author: actor.name,
+   482→                role: actor.role,
+   483→                body: `Direct-award to ${contractor.name} (no formal bid round). Reason: "${trimmedReason}". ${input.note || ""}`,
+   484→                kind: "decision",
+   485→            });
+   486→            get().logAudit({
+   487→                actor: actor.name,
+   488→                actor_role: actor.role,
+   489→                action: `Direct-award contractor ${contractor.name} for ${workOrderNo} — reason: "${trimmedReason}"`,
+   490→                entity_type: "workOrder",
+   491→                entity_id: workOrderId,
+   492→                entity_label: workOrderNo,
+   493→                kind: "decision",
+   494→                reason: trimmedReason,
+   495→                source_module: "contractors",
+   496→                // Cross-post: direct award is relevant to the Contractor, Customer, and Site.
+   497→                cross_post: [
+   498→                    { entity_type: "contractor", entity_id: contractor.id, entity_label: contractor.name },
+   499→                    { entity_type: "customer", entity_id: acceptedScope.customer_id },
+   500→                    ...(acceptedScope.site_id ? [{ entity_type: "site", entity_id: acceptedScope.site_id }] : []),
+   501→                ],
+   502→            });
+   503→            return workOrderId;
+   504→        },
+   505→
+   506→        settleContractor: (params) => {
+   507→            assertRole(get().currentUser().role, ["Owner"], "settle contractors");
+   508→            const actor = get().currentUser();
+   509→            const state = get();
+   510→            const workOrder = state.db.workOrders.find((j: any) => j.id === params.workOrderId);
+   511→            if (!workOrder || !workOrder.contractor_id)
+   512→                return { settlementId: "" };
+   513→            const contractor = state.db.master.contractors.find((c: any) => c.id === workOrder.contractor_id);
+   514→            if (!contractor)
+   515→                return { settlementId: "" };
+   516→            const proof = contractorPaymentProofStatus(state.db, workOrder.id);
+   517→            if (!proof.ok)
+   518→                throw new Error(proof.reason);
+   519→            const advances = params.advancesPaid ??
+   520→                state.db.workOrderCostLines
+   521→                    .filter((c: any) => c.work_order_id === workOrder.id &&
+   522→                    c.type === "contractor" &&
+   523→                    c.source_kind === "contractor_payment")
+   524→                    .reduce((n: any, c: any) => n + c.amount, 0);
+   525→            const materialsIssued = params.materialsIssuedValue ?? 0;
+   526→            const recoveries = params.recoveries ?? 0;
+   527→            const completedPct = Math.max(0, Math.min(100, params.completedPct));
+   528→            const payable = Math.max(0, Math.round((completedPct / 100) * workOrder.value -
+   529→                advances -
+   530→                materialsIssued +
+   531→                recoveries));
+   532→            const settlementId = genId("sett");
+   533→            const settlementNo = `SET-${Date.now().toString(36).toUpperCase()}`;
+   534→            const now = nowIso();
+   535→            const threadId = state.openThreadFor("settlement", settlementId, `Settlement ${settlementNo} · ${contractor.name} · ${workOrder.work_order_no}`, [contractor.name]);
+   536→            let replacementJobId: string | undefined;
+   537→            commitState((s: any) => {
+   538→                const newSettlement: ContractorSettlement = {
+   539→                    id: settlementId,
+   540→                    settlement_no: settlementNo,
+   541→                    work_order_id: workOrder.id,
+   542→                    work_order_no: workOrder.work_order_no,
+   543→                    site_id: workOrder.site_id,
+   544→                    contractor_id: contractor.id,
+   545→                    contractor_name: contractor.name,
+   546→                    type: params.type || "abandonment",
+   547→                    completed_pct: completedPct,
+   548→                    contract_value: workOrder.value,
+   549→                    advances_paid: advances,
+   550→                    materials_issued_value: materialsIssued,
+   551→                    recoveries: recoveries,
+   552→                    payable_amount: payable,
+   553→                    reason: params.reason,
+   554→                    settled_at: now,
+   555→                    thread_id: threadId,
+   556→                    created_at: now,
+   557→                    updated_at: now,
+   558→                };
+   559→                const costLine: WorkOrderCostLine = {
+   560→                    id: genId("jcl"),
+   561→                    work_order_id: workOrder.id,
+   562→                    // CV-13: Classify contractor abandonment settlements as "contractor" (not "overhead")
+   563→                    // so the contractor cost KPI in P&L / site financials includes settlement payouts.
+   564→                    // computeJobPnL and siteFinancials (in selectors.ts) sum type "contractor" / "subcontract"
+   565→                    // for contractor cost; the settlement amount is now counted there. The `source_kind`
+   566→                    // remains "settlement" so the cost line's origin is still traceable.
+   567→                    type: "contractor",
+   568→                    description: `Settlement ${settlementNo} · ${contractor.name} · ${completedPct}% complete`,
+   569→                    amount: payable,
+   570→                    date: today(),
+   571→                    source_kind: "settlement",
+   572→                    source_id: settlementId,
+   573→                    vendor_id: contractor.id,
+   574→                    vendor_name: contractor.name,
+   575→                    created_at: now,
+   576→                };
+   577→                const updatedJobs = s.db.workOrders.map((j: any) => j.id === workOrder.id
+   578→                    ? {
+   579→                        ...j,
+   580→                        status: "abandoned" as const,
+   581→                        abandoned_at: now,
+   582→                        abandoned_reason: params.reason,
+   583→                        abandoned_contractor_id: contractor.id,
+   584→                        abandoned_contractor_name: contractor.name,
+   585→                        contractor_id: undefined,
+   586→                        contractor_name: undefined,
+   587→                        updated_at: now,
+   588→                    }
+   589→                    : j);
+   590→                return {
+   591→                    db: {
+   592→                        ...s.db,
+   593→                        contractorSettlements: [
+   594→                            newSettlement,
+   595→                            ...s.db.contractorSettlements,
+   596→                        ],
+   597→                        workOrderCostLines: [costLine, ...s.db.workOrderCostLines],
+   598→                        workOrders: updatedJobs,
+   599→                    },
+   600→                };
+
+[showing lines 1-600 of 1168; use offset=601 with limit to continue reading]

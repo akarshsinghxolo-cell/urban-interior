@@ -130,6 +130,63 @@ export function contractorBids(db: RDashDatabase, contractorId: string) {
     return db.contractorBids.filter((b) => b.contractor_id === contractorId);
 }
 
+/**
+ * FIX-CONTRACTOR-BATCH1 / F.4: Single source of truth for a contractor's
+ * outstanding (payable) balance.
+ *
+ * Formula: max(0, total_billed − total_paid − total_settled)
+ *   - total_billed  = Σ bill.amount for non-held contractor bills
+ *   - total_paid    = Σ payment.amount for paid contractor payments
+ *                     (bill.paid_amount is updated only when recordContractorPayment
+ *                     runs, so summing paid payments gives the same number but is
+ *                     robust against any bill.paid_amount drift.)
+ *   - total_settled = Σ settlement.payable_amount for this contractor
+ *                     (abandonment / mutual-termination settlements are a
+ *                     separate payment path that bypasses RA bills — they
+ *                     must be subtracted too or a settled-and-abandoned
+ *                     contractor would still show an "outstanding" balance
+ *                     equal to the unpaid portion of their old RA bills.)
+ *
+ * This replaces four divergent inline computations:
+ *   - ContractorDetailModule (read dead `c.outstanding` master field → always 0)
+ *   - ContractorPerformanceModule (billed − ALL payments, counted pending/approved as paid)
+ *   - ContractorPaymentsModule (CV-7 formula: bill balances − committed payments)
+ *   - FinanceOverviewModule (sum of bill balances, no committed subtraction)
+ *
+ * BREAKAGE CHECK: Signature `(db, contractorId) → number` works for all 4
+ * call sites — per-contractor modules pass a single id; workspace-level
+ * modules sum across `db.master.contractors`.
+ */
+export function contractorOutstanding(db: RDashDatabase, contractorId: string): number {
+    const totalBilled = db.contractorBills
+        .filter((b) => b.contractor_id === contractorId && b.status !== "held")
+        .reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalPaid = db.contractorPayments
+        .filter((p) => p.contractor_id === contractorId && p.status === "paid")
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalSettled = db.contractorSettlements
+        .filter((s) => s.contractor_id === contractorId)
+        .reduce((sum, s) => sum + (s.payable_amount || 0), 0);
+    return Math.max(0, Math.round((totalBilled - totalPaid - totalSettled) * 100) / 100);
+}
+
+/**
+ * Workspace-level outstanding = Σ contractorOutstanding across every
+ * contractor. Used by ContractorPaymentsModule and FinanceOverviewModule
+ * which show workspace-wide totals (not per-contractor rows).
+ */
+export function contractorOutstandingTotal(db: RDashDatabase): number {
+    const totalBilled = db.contractorBills
+        .filter((b) => b.status !== "held")
+        .reduce((sum, b) => sum + (b.amount || 0), 0);
+    const totalPaid = db.contractorPayments
+        .filter((p) => p.status === "paid")
+        .reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalSettled = db.contractorSettlements
+        .reduce((sum, s) => sum + (s.payable_amount || 0), 0);
+    return Math.max(0, Math.round((totalBilled - totalPaid - totalSettled) * 100) / 100);
+}
+
 export function inventoryValuation(db: RDashDatabase) {
     return db.inventory.reduce((n, i) => n + i.quantity * (i.rate || 0), 0);
 }

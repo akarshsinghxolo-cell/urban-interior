@@ -476,6 +476,28 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                         due_date: schedule.due_date,
                     });
                 });
+                // FIX-CONTRACTOR-BATCH1 / F.2: Accrue partner commission on
+                // direct-award work orders too. Previously only selectContractorBid
+                // called accrueCommission, so direct-award work orders silently
+                // skipped the source partner's commission — the Commissions module
+                // showed nothing for direct-award jobs and partners were never
+                // credited. The same customer/site source_partner_id resolution
+                // is used as in selectContractorBid (contractors.ts:325-335).
+                // BREAKAGE CHECK: accrueCommission (contractors.ts:1001-1070)
+                // returns early with no side effects when workOrder or partner
+                // is not found, and is wrapped in try/catch here so any
+                // unexpected error during accrual cannot block the award.
+                const customer = state.db.customers.find((row: any) => row.id === acceptedScope.customer_id);
+                const siteRow = state.db.sites.find((row: any) => row.id === acceptedScope.site_id);
+                const partnerId = customer?.source_partner_id || siteRow?.source_partner_id;
+                if (partnerId && quotation) {
+                    try {
+                        get().accrueCommission(workOrderId, quotation.id, partnerId);
+                    } catch (err) {
+                        // Don't block the direct award if commission accrual fails (e.g. partner removed mid-flight).
+                        console.warn("accrueCommission failed (direct award):", err);
+                    }
+                }
             }
             get().addThreadReply(workOrder.thread_id || "", {
                 author: actor.name,
@@ -570,8 +592,13 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     date: today(),
                     source_kind: "settlement",
                     source_id: settlementId,
+                    // FIX-CONTRACTOR-BATCH1 / F.3: vendor_id is canonical; mirror to
+                    // contractor_id for backward compat with any consumer that still
+                    // reads the legacy field.
                     vendor_id: contractor.id,
                     vendor_name: contractor.name,
+                    contractor_id: contractor.id,
+                    contractor_name: contractor.name,
                     created_at: now,
                 };
                 const updatedJobs = s.db.workOrders.map((j: any) => j.id === workOrder.id
@@ -753,8 +780,13 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 date: now,
                 source_kind: "bill",
                 source_id: id,
+                // FIX-CONTRACTOR-BATCH1 / F.3: vendor_id is canonical; mirror to
+                // contractor_id for backward compat with any consumer that still
+                // reads the legacy field.
                 vendor_id: contractor.id,
                 vendor_name: contractor.name,
+                contractor_id: contractor.id,
+                contractor_name: contractor.name,
                 created_at: now,
             };
             commitState((s: any) => ({

@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { Trophy, TrendingUp, TrendingDown, Star, HardHat, Award, Wrench, RefreshCw, } from "lucide-react";
-import { useRDashStore } from "@/lib/rdash/store";
+import { useRDashStore, contractorOutstanding } from "@/lib/rdash/store";
 import { formatINR, formatINRShort } from "@/lib/rdash/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -43,7 +43,12 @@ function computeContractorPerformance(db: any): ContractorPerf[] {
         const totalAwardValue = contractorWOs.reduce((n: number, wo: any) => n + (wo.contractor_award_amount || 0), 0);
         const totalBilled = contractorBillsFor.reduce((n: number, b: any) => n + (b.amount || 0), 0);
         const totalPaid = contractorPaymentsFor.reduce((n: number, p: any) => n + (p.amount || 0), 0);
-        const outstanding = Math.max(0, totalBilled - totalPaid);
+        // FIX-CONTRACTOR-BATCH1 / F.4: use the unified contractorOutstanding
+        // selector. The previous inline formula `Math.max(0, totalBilled - totalPaid)`
+        // counted pending+approved payments as "paid" (so a pending payment
+        // reduced outstanding) AND ignored abandonment settlements — giving a
+        // different number from every other module.
+        const outstanding = contractorOutstanding(db, contractor.id);
         const directAwards = contractorWOs.filter((wo: any) => wo.contractor_selection_method === "direct_award").length;
         const selectionRate = bids.length > 0 ? Math.round((selectedBids.length / bids.length) * 100) : 0;
         return {

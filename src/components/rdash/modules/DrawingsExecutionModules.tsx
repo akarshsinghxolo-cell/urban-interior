@@ -337,6 +337,10 @@ export function ExecutionLogsModule() {
     const [filter, setFilter] = React.useState<string>("all");
     const [logOpen, setLogOpen] = React.useState(false);
     const [activeJobId, setActiveJobId] = React.useState<string>("");
+    // FIX-CONTRACTOR-BATCH1 / F.1: track which execution log is currently
+    // open in the "Confirm material receipt" dialog so the user can attach
+    // a proof photo before the confirmation is recorded.
+    const [confirmLogId, setConfirmLogId] = React.useState<string | null>(null);
     const logs = db.executionLogs;
     const today = new Date().toISOString().slice(0, 10);
     const todaysLogs = logs.filter((l) => l.date === today);
@@ -477,9 +481,22 @@ export function ExecutionLogsModule() {
                         Decline variation
                       </Button>
                     </>)}
-                  {!log.contractor_material_confirmed && (<Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { confirmMaterialReceipt(log.id); toast.success(`Material receipt confirmed on ${log.log_no}`); }}>
-                      <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Confirm material receipt
-                    </Button>)}
+                  {!log.contractor_material_confirmed && (<>
+                      {/* FIX-CONTRACTOR-BATCH1 / F.1: Photo-first confirm flow. The
+                          previous one-click button called confirmMaterialReceipt(log.id)
+                          with no photo URL, so contractor_confirmation_attachment_id
+                          stayed undefined and the downstream proof gate
+                          (contractorPaymentProofStatus) hard-blocked every payment
+                          release. The new flow opens a small dialog with a file
+                          picker so the user can attach the contractor confirmation
+                          photo before marking the log confirmed. A "skip" option is
+                          still available (logs a warning) so the business is never
+                          hard-deadlocked. */}
+                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setConfirmLogId(log.id)}>
+                        <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Confirm material receipt
+                      </Button>
+                    </>)}
+                  {log.contractor_material_confirmed && !log.contractor_confirmation_attachment_id && (<span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] font-medium text-warning"><AlertTriangle className="h-3 w-3"/> Proof missing — payment blocked</span>)}
                   <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive hover:bg-destructive/10" onClick={() => { removeExecutionLog(log.id); toast.success("Log removed"); }}>
                     <Trash2 className="mr-1 h-3.5 w-3.5"/> Delete
                   </Button>
@@ -493,7 +510,103 @@ export function ExecutionLogsModule() {
                 toast.success(`Daily log filed for ${payload.date || "today"}`);
                 setLogOpen(false);
             }}/>)}
+      {confirmLogId && (<ConfirmMaterialReceiptDialog logId={confirmLogId} onClose={() => setConfirmLogId(null)} onConfirm={async (photoUrl, photoAttachmentId) => {
+                try {
+                    confirmMaterialReceipt(confirmLogId, photoUrl, photoAttachmentId);
+                    if (photoUrl || photoAttachmentId) {
+                        toast.success("Material receipt confirmed with proof photo");
+                    } else {
+                        toast.warning("Material receipt confirmed without proof — payment release will remain blocked until a photo is uploaded.");
+                    }
+                    setConfirmLogId(null);
+                }
+                catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Could not confirm material receipt");
+                }
+            }}/>)}
     </div>);
+}
+// FIX-CONTRACTOR-BATCH1 / F.1: Dialog that lets the user upload a contractor
+// material-receipt confirmation photo BEFORE calling confirmMaterialReceipt.
+// The user can also skip the photo (calls confirmMaterialReceipt with no
+// photo, which logs a warning). The photo is uploaded via the standard
+// uploadManagedFile flow + addServerFileAsset persistence so the resulting
+// FileAsset/EntityFileAttachment is tracked properly, then the attachment id
+// is passed directly to confirmMaterialReceipt via the new third parameter.
+function ConfirmMaterialReceiptDialog({ logId, onClose, onConfirm }: {
+    logId: string;
+    onClose: () => void;
+    onConfirm: (photoUrl?: string, photoAttachmentId?: string) => void | Promise<void>;
+}) {
+    const db = useRDashStore((s) => s.db);
+    const [file, setFile] = React.useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = React.useState<string>("");
+    const [uploading, setUploading] = React.useState(false);
+    const log = db.executionLogs.find((l) => l.id === logId);
+    const handleFile = (f: File | null) => {
+        if (!f) return;
+        setFile(f);
+        setPreviewUrl(URL.createObjectURL(f));
+    };
+    const handleConfirmWithPhoto = async () => {
+        if (!file) return;
+        try {
+            setUploading(true);
+            const dataUrl = file.type.startsWith("image/") ? await compressImage(file) : await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("Could not prepare file")); reader.onload = () => resolve(String(reader.result || "")); reader.readAsDataURL(file); });
+            const uploaded = await uploadManagedFile({ dataUrl, fileName: file.name, entityType: "execution_log", entityId: logId, kind: "site_proof", role: "proof", caption: "Contractor material receipt confirmation", visibility: "internal" });
+            // FIX-E2E-004: persist FileAsset + EntityFileAttachment so the
+            // uploaded proof survives page reloads and preview works.
+            if (uploaded.fileAsset && uploaded.attachment) {
+                useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
+            }
+            // Pass the Drive URL to confirmMaterialReceipt — it will create
+            // its own FileAsset + EntityFileAttachment (legacy behaviour),
+            // which dedupes against the one we just persisted via
+            // addServerFileAsset (same google_file_id).
+            await onConfirm(uploaded.webViewLink);
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Photo upload failed; material receipt was not confirmed.");
+        }
+        finally {
+            setUploading(false);
+        }
+    };
+    const handleSkipPhoto = async () => {
+        await onConfirm();
+    };
+    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md gap-0 p-0">
+        <DialogHeader className="border-b border-border px-5 py-3">
+          <DialogTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-primary"/> Confirm material receipt</DialogTitle>
+          <DialogDescription className="text-xs">{log ? `${log.log_no} · ${log.work_order_no}` : ""}</DialogDescription>
+        </DialogHeader>
+        <div className="px-5 py-4 space-y-3">
+          <div className="rounded-md border border-warning/30 bg-warning/[0.06] p-2.5 text-[11px] text-warning">
+            <div className="flex gap-1.5"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0"/>
+              <div className="flex-1">
+                <p className="font-semibold">A contractor confirmation photo is required to release payment.</p>
+                <p className="mt-0.5 text-warning/90">Upload a photo of the material received at site. Without it, the payment proof gate will keep blocking RA-bill payment release.</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contractor confirmation photo</label>
+            <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handleFile(e.target.files?.[0] || null)} className="h-9 text-sm" autoFocus/>
+            {previewUrl && (<div className="mt-2"><FilePreview file={{ fileName: file?.name || "preview", mimeType: file?.type || "image/*", url: previewUrl }} compact controls className="w-40"/></div>)}
+          </div>
+        </div>
+        <DialogFooter className="border-t border-border px-5 py-3">
+          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
+          <Button variant="ghost" size="sm" onClick={handleSkipPhoto} disabled={uploading} className="text-muted-foreground">
+            Skip photo (warn)
+          </Button>
+          <Button size="sm" onClick={handleConfirmWithPhoto} disabled={!file || uploading}>
+            <Upload className="mr-1 h-3.5 w-3.5"/> {uploading ? "Uploading…" : "Upload & confirm"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>);
 }
 function ExecutionLogDialog({ onClose, onSave }: {
     onClose: () => void;

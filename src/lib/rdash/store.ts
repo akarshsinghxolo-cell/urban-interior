@@ -836,4 +836,4 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
     return state;
 });
 // Re-export pure selectors from the store/ subfolder (Phase 1 split)
-export { computeJobPnL, allJobPnLs, vendorBalance, customerBalance, siteFinancials, jobBids, contractorSettlements, contractorBids, inventoryValuation, } from "./store/selectors";
+export { computeJobPnL, allJobPnLs, vendorBalance, customerBalance, siteFinancials, jobBids, contractorSettlements, contractorBids, contractorOutstanding, contractorOutstandingTotal, inventoryValuation, } from "./store/selectors";
