@@ -195,17 +195,21 @@ export function DiscountApprovalsModule() {
 }
 export function GstReturnsModule() {
     const db = useRDashStore((s) => s.db);
-    const gstCollected = db.quotations.reduce((n, q) => n + q.tax_amount, 0);
+    // FIX-AUDIT-001: Exclude draft quotations — drafts haven't been issued to
+    // the customer, so their tax shouldn't count in GST returns. Only "sent"
+    // and "accepted" quotations represent actual outward supplies.
+    const gstQuotations = db.quotations.filter((q) => q.status === "sent" || q.status === "accepted");
+    const gstCollected = gstQuotations.reduce((n, q) => n + q.tax_amount, 0);
     const gstPaid = db.vendorBills.filter((b) => b.status === "paid").reduce((n, b) => n + (b.tax_amount || 0), 0);
     const netGst = gstCollected - gstPaid;
-    const outputCount = db.quotations.length;
+    const outputCount = gstQuotations.length;
     const inputCount = db.vendorBills.filter((b) => b.tax_amount).length;
     const months = React.useMemo(() => {
         const m = new Map<string, {
             collected: number;
             paid: number;
         }>();
-        db.quotations.forEach((q) => {
+        gstQuotations.forEach((q) => {
             const month = new Date(q.created_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
             const e = m.get(month) || { collected: 0, paid: 0 };
             e.collected += q.tax_amount;
@@ -218,7 +222,7 @@ export function GstReturnsModule() {
             m.set(month, e);
         });
         return Array.from(m.entries()).map(([month, v]) => ({ month, ...v, net: v.collected - v.paid }));
-    }, [db.quotations, db.vendorBills]);
+    }, [gstQuotations, db.vendorBills]);
     return (<div className="flex flex-col gap-5">
       <div className="flex items-center gap-2.5">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><FileText className="h-5 w-5"/></span>
