@@ -6,6 +6,7 @@ import { formatINR, formatINRShort } from "@/lib/rdash/format";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
 interface VendorPerf {
     vendor_id: string;
@@ -103,9 +104,50 @@ export function VendorPerformanceModule() {
         billed: vendors.reduce((n, v) => n + v.total_billed, 0),
         paid: vendors.reduce((n, v) => n + v.total_paid, 0),
         outstanding: vendors.reduce((n, v) => n + v.outstanding, 0),
+        avgOnTime: vendors.length > 0 ? Math.round(vendors.reduce((n, v) => n + (v.on_time_delivery_pct || 0), 0) / vendors.length) : 0,
+        avgReliability: vendors.length > 0 ? Math.round(vendors.reduce((n, v) => n + (v.reliability_score || 0), 0) / vendors.length) : 0,
+        avgRating: vendors.length > 0 ? Math.round(vendors.reduce((n, v) => n + (v.rating || 0), 0) / vendors.length) : 0,
     }), [vendors]);
 
+    // CRON-9: Radar chart data for top 5 vendors
+    const radarData = React.useMemo(() => {
+        const top5 = [...vendors].sort((a, b) => b.total_po_value - a.total_po_value).slice(0, 5);
+        return top5.map((v) => ({
+            vendor: v.vendor_name.length > 12 ? v.vendor_name.slice(0, 10) + "…" : v.vendor_name,
+            "On-Time": v.on_time_delivery_pct || 0,
+            "Reliability": v.reliability_score || 0,
+            "Rating": (v.rating || 0) * 20, // scale 0-5 to 0-100
+        }));
+    }, [vendors]);
+
     return (<div className="flex flex-col gap-5">
+      {/* CRON-9: Vendor performance radar chart */}
+      {radarData.length > 0 && (
+        <div className="rounded-[var(--panel-radius)] border border-border bg-gradient-to-br from-card to-muted/10 p-4 shadow-card">
+          <div className="mb-2 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-bold">Performance Comparison</h3>
+              <p className="text-[10px] text-muted-foreground">Top 5 vendors by PO value · On-Time %, Reliability, Rating</p>
+            </div>
+          </div>
+          <div className="h-56 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} margin={{ top: 10, right: 30, left: 30, bottom: 10 }}>
+                <PolarGrid stroke="var(--border, #e5e7eb)" strokeOpacity={0.4} />
+                <PolarAngleAxis dataKey="vendor" tick={{ fontSize: 10, fill: "var(--muted-foreground, #71717a)" }} />
+                <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fontSize: 9, fill: "var(--muted-foreground, #71717a)" }} strokeOpacity={0.2} />
+                <Radar name="On-Time" dataKey="On-Time" stroke="var(--success, #22c55e)" fill="var(--success, #22c55e)" fillOpacity={0.15} animationDuration={600} />
+                <Radar name="Reliability" dataKey="Reliability" stroke="var(--primary, #6366f1)" fill="var(--primary, #6366f1)" fillOpacity={0.15} animationDuration={800} />
+                <Radar name="Rating" dataKey="Rating" stroke="var(--warning, #f59e0b)" fill="var(--warning, #f59e0b)" fillOpacity={0.15} animationDuration={1000} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8, border: "1px solid var(--border)" }}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-warning to-warning/80 text-warning-foreground shadow-md shadow-warning/20">

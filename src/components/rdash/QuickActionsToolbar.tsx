@@ -147,8 +147,20 @@ export function QuickActionsToolbar() {
         setActiveModule(action.navigate);
       }
     };
+    // CRON-9: Alt+N opens notification settings
+    const nHandler = (e: KeyboardEvent) => {
+      if (e.altKey && e.key === "n") {
+        e.preventDefault();
+        const details = document.querySelector("details summary") as HTMLElement;
+        if (details && details.textContent?.includes("Notification")) {
+          details.click();
+          details.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", nHandler);
+    return () => { window.removeEventListener("keydown", handler); window.removeEventListener("keydown", nHandler); };
   }, [openCreateDialog, setActiveModule]);
 
   const handleClick = (action: QuickAction) => {
