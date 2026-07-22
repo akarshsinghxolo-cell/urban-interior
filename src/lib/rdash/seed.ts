@@ -20,7 +20,7 @@ const line = (id: string, title: string, quantity: number, rate: number, extra: 
     title,
     quantity,
     rate,
-    amount: Math.round(quantity * rate),
+    amount: Math.round(quantity * rate * 100) / 100,  // STAGE-5-FIX: 2dp (was integer rounding, missed in Stage 3.3)
     unit_id: "sqft",
     unit_name: "Square feet",
     tax_rate: 18,
@@ -111,7 +111,7 @@ const buildVendorBidLines = (rates: number[]) => boqItems.map((item, index) => (
     unit_id: item.unit_id,
     unit_name: item.unit_name,
     rate: rates[index],
-    amount: Math.round(item.quantity * rates[index]),
+    amount: Math.round(item.quantity * rates[index] * 100) / 100,  // STAGE-5-FIX: 2dp (was integer rounding)
     tax_rate: 18,
 }));
 const vendorBids: VendorBid[] = [

@@ -1,3 +1,16 @@
+// STAGE-5-FIX (missed in Stage 3.2): Generate execution numbers using current year + max suffix.
+function nextExecutionNo(prefix: string, collection: { drawing_no?: string; log_no?: string; variation_no?: string }[]): string {
+    const year = new Date().getFullYear();
+    const field = prefix === "DRW" ? "drawing_no" : prefix === "LOG" ? "log_no" : "variation_no";
+    let maxSeq = 0;
+    for (const row of collection) {
+        const no = (row as Record<string, string | undefined>)[field];
+        if (!no) continue;
+        const m = no.match(new RegExp(`^${prefix}-\\d{4}-(\\d+)$`));
+        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+    }
+    return `${prefix}-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+}
 /**
  * Execution slice — drawings (upload/version/approve/link-to-BOQ), daily
  * execution logs (file/update/remove, progress verification, material receipt
@@ -48,7 +61,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
             const workOrder = d.work_order_id
                 ? get().db.workOrders.find((j: any) => j.id === d.work_order_id)
                 : undefined;
-            const drawingNo = `DRW-2026-${String(get().db.drawings.length + 1).padStart(3, "0")}`;
+            const drawingNo = nextExecutionNo("DRW", get().db.drawings);  // STAGE-5-FIX: dynamic year + max-suffix
             const threadId = get().openThreadFor("drawing", id, `${drawingNo} · ${d.title || "New drawing"}`, [d.uploaded_by || designer.name]);
             const drawing: Drawing = {
                 id,
@@ -262,7 +275,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
             if ((log.uploaded_photos || []).length !== uploadedPhotos.length) {
                 throw new Error("Execution photos must be uploaded to managed Google Drive before filing the log.");
             }
-            const logNo = `LOG-2026-${String(get().db.executionLogs.length + 1).padStart(3, "0")}`;
+            const logNo = nextExecutionNo("LOG", get().db.executionLogs);  // STAGE-5-FIX: dynamic year + max-suffix
             const threadId = get().openThreadFor("execution_log", id, `${logNo} · ${workOrder.work_order_no} · ${log.date || today()}`, [log.filed_by || fieldUser.name, "Operations Manager"]);
             const needsProgressReview = requestedProgress !== workOrder.progress;
             const entry: DailyExecutionLog = {
@@ -493,7 +506,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 throw new Error("Variation amount must be greater than zero.");
             const id = genId("variation");
             const now = nowIso();
-            const variationNo = `VO-2026-${String((state.db.variationRequests || []).length + 1).padStart(3, "0")}`;
+            const variationNo = nextExecutionNo("VO", state.db.variationRequests || []);  // STAGE-5-FIX: dynamic year + max-suffix
             const threadId = state.openThreadFor("generic", id, `${variationNo} · ${workOrder.work_order_no}`, [actor.name, workOrder.customer_name || "Customer", "Owner"]);
             const request: VariationRequest = {
                 id,

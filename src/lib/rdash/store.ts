@@ -569,11 +569,10 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             dirty: false,
         };
         activeWorkspaceTransaction = transaction;
-        // STAGE-5-FIX (5.3): Shared finish/error/cleanup helpers so both the
-        // sync and async paths use the same logic. Previously the lock was
-        // cleared synchronously in `finally`, which meant async actions
-        // (returning a Promise) lost atomicity — commitState calls inside them
-        // ran with NO active transaction, bypassing rollback.
+        // STAGE-5-FIX (5.3): Shared finish/error/cleanup helpers. The lock is
+        // cleared in the sync path's finally OR in the async path's .then/.catch
+        // — NOT in a shared finally (which would run synchronously and clear the
+        // lock before the async Promise resolves, defeating the fix).
         const finishSync = () => {
             if (transaction.dirty) {
                 const finalDb = attachCustomerLabels(get().db);
@@ -596,16 +595,19 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
             }
         };
+        const isPromise = (v: unknown): v is Promise<unknown> =>
+            v != null && typeof (v as { then?: unknown }).then === "function";
+
         try {
             const result = operation();
-            // Detect Promise return (async action) — don't clear lock synchronously.
-            if (result != null && typeof (result as { then?: unknown }).then === "function") {
-                return result as T & Promise<unknown> extends Promise<infer U> ? U : T
-                    ? (result as unknown as Promise<T>).then(
-                        (v: T) => { finishSync(); activeWorkspaceTransaction = null; return v; },
-                        (e: unknown) => { handleError(e); activeWorkspaceTransaction = null; throw e; },
-                    ) as unknown as T
-                    : result;
+            if (isPromise(result)) {
+                // Async path: chain finish/cleanup onto the Promise so the
+                // transaction lock persists until the async work resolves.
+                // Do NOT clear the lock in the sync finally below.
+                return result.then(
+                    (v: unknown) => { finishSync(); activeWorkspaceTransaction = null; return v; },
+                    (e: unknown) => { handleError(e); activeWorkspaceTransaction = null; throw e; },
+                ) as unknown as T;
             }
             // Sync path
             finishSync();
@@ -616,10 +618,13 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             throw error;
         }
         finally {
-            // Only clear for sync path. For async, it's cleared in .then/.catch.
-            // We can't easily tell here, so we clear defensively — async paths
-            // have already cleared by the time the microtask runs.
-            activeWorkspaceTransaction = null;
+            // Only clear the lock for the SYNC path. For the async path, the
+            // lock was already cleared in .then/.catch above. We detect the
+            // sync path by checking if the transaction is still active (async
+            // path already set it to null in .then/.catch).
+            if (activeWorkspaceTransaction === transaction) {
+                activeWorkspaceTransaction = null;
+            }
         }
     };
     // Core slice (Phase 3o) — 7 extractable core actions. hydrateSecureWorkspace +
