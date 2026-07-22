@@ -11,6 +11,9 @@ import { StaffEditDialog } from "../StaffEditDialog";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, invoiceStatusStyle } from "@/lib/rdash/format";
 import { Building2, Users, HardHat, HandCoins, Star, Phone, MapPin, TrendingUp, AlertTriangle, CheckCircle2, Search, Plus, ArrowRight, Pencil, CheckSquare, Wallet, Bell, Clock, ShieldCheck, FileUp, FileText, Trash2, CheckCircle, XCircle, } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermissionRecord, type StaffRoleKey } from "@/lib/rdash/staff-operations";
@@ -38,6 +41,16 @@ export function MastersModule({ submodule }: {
     const registerStaffDocument = useRDashStore((s) => s.registerStaffDocument);
     const updateStaffDocument = useRDashStore((s) => s.updateStaffDocument);
     const removeStaffDocument = useRDashStore((s) => s.removeStaffDocument);
+    const addSourcePartner = useRDashStore((s) => s.addSourcePartner);
+    const addContractorRate = useRDashStore((s) => s.addContractorRate);
+    const addCommissionRule = useRDashStore((s) => s.addCommissionRule);
+    // F.12: Add-dialog state for master entities that were previously read-only
+    const [addSpOpen, setAddSpOpen] = React.useState(false);
+    const [addCrOpen, setAddCrOpen] = React.useState(false);
+    const [addCruleOpen, setAddCruleOpen] = React.useState(false);
+    const [spDraft, setSpDraft] = React.useState({ name: "", phone: "", email: "", commission_pct: "5" });
+    const [crDraft, setCrDraft] = React.useState({ contractor_id: "", trade: "", rate: "" });
+    const [cruleDraft, setCruleDraft] = React.useState({ source_partner_id: "", rate_pct: "5", applies_to: "partner" as "partner" | "category", category_id: "" });
     const effectiveSubmodule = submodule === "vendors" && vendorsTab === "rates" ? "vendorRates"
         : submodule === "contractors" && contractorsTab === "rates" ? "contractorRates"
             : submodule;
@@ -277,7 +290,10 @@ export function MastersModule({ submodule }: {
     }
     if (effectiveSubmodule === "sourcePartners") {
         return (<div className="flex flex-col gap-5">
-        <MastersHeader icon={<HandCoins className="h-5 w-5"/>} title="Source Partners" desc="Referral partners with commission rates" count={db.master.sourcePartners.length} q={q} setQ={setQ}/>
+        <div className="flex items-start justify-between gap-3">
+          <MastersHeader icon={<HandCoins className="h-5 w-5"/>} title="Source Partners" desc="Referral partners with commission rates" count={db.master.sourcePartners.length} q={q} setQ={setQ}/>
+          <Button size="sm" className="h-8 gap-1.5 shrink-0" onClick={() => { setSpDraft({ name: "", phone: "", email: "", commission_pct: "5" }); setAddSpOpen(true); }}><Plus className="h-3.5 w-3.5"/> Add partner</Button>
+        </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <MetricCard label="Partners" value={db.master.sourcePartners.length} tone="primary" icon={<HandCoins className="h-4 w-4"/>}/>
           <MetricCard label="Total referred" value={db.customers.filter((p) => p.source_partner_id).length} tone="default" icon={<Users className="h-4 w-4"/>}/>
@@ -310,9 +326,13 @@ export function MastersModule({ submodule }: {
         return (<div className="flex flex-col gap-5">
         {submodule === "vendors" && renderVendorsTabToggle()}
         {submodule === "contractors" && renderContractorsTabToggle()}
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span>
-          <div><h2 className="text-lg font-bold tracking-tight">{title}</h2><p className="text-xs text-muted-foreground">Rate master configuration</p></div>
+        <div className="flex items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span>
+            <div><h2 className="text-lg font-bold tracking-tight">{title}</h2><p className="text-xs text-muted-foreground">Rate master configuration</p></div>
+          </div>
+          {isContractor && <Button size="sm" className="h-8 gap-1.5 shrink-0" onClick={() => { setCrDraft({ contractor_id: db.master.contractors[0]?.id || "", trade: "", rate: "" }); setAddCrOpen(true); }}><Plus className="h-3.5 w-3.5"/> Add rate</Button>}
+          {isCommission && <Button size="sm" className="h-8 gap-1.5 shrink-0" onClick={() => { setCruleDraft({ source_partner_id: db.master.sourcePartners[0]?.id || "", rate_pct: "5", applies_to: "partner", category_id: "" }); setAddCruleOpen(true); }}><Plus className="h-3.5 w-3.5"/> Add rule</Button>}
         </div>
         {/* B: Banner explains that commission rules are consumed by findCommissionRule
             (masters.ts), which Agent B's contractors.ts accrueCommission will use
