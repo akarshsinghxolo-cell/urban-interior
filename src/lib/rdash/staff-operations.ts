@@ -299,7 +299,7 @@ const ROUTE_PERMISSION_BY_ID: Record<string, string> = {
   mediaCommunication: "media", mediaCatalogues: "media", communicationCentre: "media",
   masterSetup: "masters", workCategoryMaster: "masters", vendorRates: "vendors", rateFinder: "vendors", vendors: "vendors", contractors: "masters",
   reportsDesk: "reports", salesReport: "reports", collectionReport: "reports", jobPnlReport: "reports", vendorExposureReport: "reports", taxReport: "reports", staffProductivity: "reports", quotationConversion: "reports", leadSourceReport: "reports", agingReportRep: "reports", visitCompliance: "reports", taskThroughput: "reports",
-  systemSettings: "system", usersRoles: "staff", staff: "staff", attendancePayroll: "payroll", controlBrainWorkflows: "approvals", approvalPolicies: "approvals", auditLog: "system", dataImport: "system", dataExport: "system",
+  systemSettings: "system", usersRoles: "staff", staff: "staff", attendancePayroll: "payroll", staffSalary: "payroll", hrStaff: "staff", controlBrainWorkflows: "approvals", approvalPolicies: "approvals", auditLog: "system", dataImport: "system", dataExport: "system",
 };
 
 const DATA_SOURCE_PERMISSION: Record<string, string> = {
@@ -318,6 +318,7 @@ export function permissionModuleForRoute(route: { id?: string; dataSource?: stri
     case "media-library": return "media";
     case "staff-board": return "staff";
     case "attendance-payroll": return "payroll";
+    case "staff-salary": return "payroll";
     case "reports-v2": return "reports";
     case "system": return "system";
     default: return "workspace";
