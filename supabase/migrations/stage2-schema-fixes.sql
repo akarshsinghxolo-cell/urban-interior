@@ -64,12 +64,14 @@ AS $$
 DECLARE
   result json;
 BEGIN
+  -- NOTE: auth.users uses raw_user_meta_data (not user_metadata, which is the
+  -- SDK's JS alias). raw_app_meta_data is the app metadata column.
   SELECT json_build_object(
     'id', u.id::text,
     'email', u.email,
     'email_confirmed_at', u.email_confirmed_at,
     'created_at', u.created_at,
-    'user_metadata', u.user_metadata
+    'user_metadata', u.raw_user_meta_data
   )
   INTO result
   FROM auth.users u
