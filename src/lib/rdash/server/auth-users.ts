@@ -258,7 +258,10 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
       display_name: displayName,
       staff_id: staffId,
       status: "active",
-      approved_by: user.userId,
+      // FIX: approved_by expects a UUID, but the super-owner's userId is
+      // "super-owner" (not a UUID). Set to null for the super-owner;
+      // real Supabase Auth users have UUID userIds.
+      approved_by: user.userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId) ? user.userId : null,
       approved_at: now,
       rejected_at: null,
       updated_at: now,
@@ -281,7 +284,7 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
     .from("uc_user_roles")
     .update({
       status: "rejected",
-      approved_by: user.userId,
+      approved_by: user.userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId) ? user.userId : null,
       rejected_at: now,
       updated_at: now,
     })
