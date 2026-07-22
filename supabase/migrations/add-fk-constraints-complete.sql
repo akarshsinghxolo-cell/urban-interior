@@ -679,14 +679,6 @@ ALTER TABLE "entity_visits" ADD COLUMN IF NOT EXISTS "report_task_id_gen" text G
 ALTER TABLE "entity_visits" DROP CONSTRAINT IF EXISTS "entity_visits_report_task_id_fkey";
 ALTER TABLE "entity_visits" ADD CONSTRAINT "entity_visits_report_task_id_fkey" FOREIGN KEY ("report_task_id_gen") REFERENCES "entity_tasks"(id) NOT VALID;
 
-ALTER TABLE "entity_visits" ADD COLUMN IF NOT EXISTS "checkout_thread_message_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'checkout_thread_message_id', '')) STORED;
-ALTER TABLE "entity_visits" DROP CONSTRAINT IF EXISTS "entity_visits_checkout_thread_message_id_fkey";
-ALTER TABLE "entity_visits" ADD CONSTRAINT "entity_visits_checkout_thread_message_id_fkey" FOREIGN KEY ("checkout_thread_message_id_gen") REFERENCES "entity_threadMessages"(id) NOT VALID;
-
-ALTER TABLE "entity_visits" ADD COLUMN IF NOT EXISTS "report_thread_message_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'report_thread_message_id', '')) STORED;
-ALTER TABLE "entity_visits" DROP CONSTRAINT IF EXISTS "entity_visits_report_thread_message_id_fkey";
-ALTER TABLE "entity_visits" ADD CONSTRAINT "entity_visits_report_thread_message_id_fkey" FOREIGN KEY ("report_thread_message_id_gen") REFERENCES "entity_threadMessages"(id) NOT VALID;
-
 ALTER TABLE "entity_tasks" ADD COLUMN IF NOT EXISTS "blocked_item_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'blocked_item_id', '')) STORED;
 ALTER TABLE "entity_tasks" DROP CONSTRAINT IF EXISTS "entity_tasks_blocked_item_id_fkey";
 ALTER TABLE "entity_tasks" ADD CONSTRAINT "entity_tasks_blocked_item_id_fkey" FOREIGN KEY ("blocked_item_id_gen") REFERENCES "entity_blocked"(id) NOT VALID;
@@ -698,30 +690,6 @@ ALTER TABLE "entity_payments" ADD CONSTRAINT "entity_payments_milestone_term_id_
 ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "abandoned_contractor_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'abandoned_contractor_id', '')) STORED;
 ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_abandoned_contractor_id_fkey";
 ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_abandoned_contractor_id_fkey" FOREIGN KEY ("abandoned_contractor_id_gen") REFERENCES "entity_master_contractors"(id) NOT VALID;
-
-ALTER TABLE "entity_grns" ADD COLUMN IF NOT EXISTS "obstacle_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'obstacle_id', '')) STORED;
-ALTER TABLE "entity_grns" DROP CONSTRAINT IF EXISTS "entity_grns_obstacle_id_fkey";
-ALTER TABLE "entity_grns" ADD CONSTRAINT "entity_grns_obstacle_id_fkey" FOREIGN KEY ("obstacle_id_gen") REFERENCES "entity_blocked"(id) NOT VALID;
-
-ALTER TABLE "entity_grns" ADD COLUMN IF NOT EXISTS "bill_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'bill_id', '')) STORED;
-ALTER TABLE "entity_grns" DROP CONSTRAINT IF EXISTS "entity_grns_bill_id_fkey";
-ALTER TABLE "entity_grns" ADD CONSTRAINT "entity_grns_bill_id_fkey" FOREIGN KEY ("bill_id_gen") REFERENCES "entity_vendorBills"(id) NOT VALID;
-
-ALTER TABLE "entity_vendorBills" ADD COLUMN IF NOT EXISTS "three_way_match_obstacle_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'three_way_match.obstacle_id', '')) STORED;
-ALTER TABLE "entity_vendorBills" DROP CONSTRAINT IF EXISTS "entity_vendorBills_three_way_match_obstacle_id_fkey";
-ALTER TABLE "entity_vendorBills" ADD CONSTRAINT "entity_vendorBills_three_way_match_obstacle_id_fkey" FOREIGN KEY ("three_way_match_obstacle_id_gen") REFERENCES "entity_blocked"(id) NOT VALID;
-
-ALTER TABLE "entity_variationRequests" ADD COLUMN IF NOT EXISTS "execution_log_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'execution_log_id', '')) STORED;
-ALTER TABLE "entity_variationRequests" DROP CONSTRAINT IF EXISTS "entity_variationRequests_execution_log_id_fkey";
-ALTER TABLE "entity_variationRequests" ADD CONSTRAINT "entity_variationRequests_execution_log_id_fkey" FOREIGN KEY ("execution_log_id_gen") REFERENCES "entity_executionLogs"(id) NOT VALID;
-
-ALTER TABLE "entity_threadMessages" ADD COLUMN IF NOT EXISTS "related_thread_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'related_thread_id', '')) STORED;
-ALTER TABLE "entity_threadMessages" DROP CONSTRAINT IF EXISTS "entity_threadMessages_related_thread_id_fkey";
-ALTER TABLE "entity_threadMessages" ADD CONSTRAINT "entity_threadMessages_related_thread_id_fkey" FOREIGN KEY ("related_thread_id_gen") REFERENCES "entity_threads"(id) NOT VALID;
-
-ALTER TABLE "entity_threadMessages" ADD COLUMN IF NOT EXISTS "related_audit_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'related_audit_id', '')) STORED;
-ALTER TABLE "entity_threadMessages" DROP CONSTRAINT IF EXISTS "entity_threadMessages_related_audit_id_fkey";
-ALTER TABLE "entity_threadMessages" ADD CONSTRAINT "entity_threadMessages_related_audit_id_fkey" FOREIGN KEY ("related_audit_id_gen") REFERENCES "entity_auditLog"(id) NOT VALID;
 
 ALTER TABLE "entity_threadMessageAttachments" ADD COLUMN IF NOT EXISTS "entity_file_attachment_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'entity_file_attachment_id', '')) STORED;
 ALTER TABLE "entity_threadMessageAttachments" DROP CONSTRAINT IF EXISTS "entity_threadMessageAttachments_entity_file_attachment_id_fk";
