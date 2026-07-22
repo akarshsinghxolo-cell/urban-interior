@@ -15,7 +15,7 @@ export function computeJobPnL(db: RDashDatabase, workOrderId: string): import(".
         work_order_id: result.work_order_id,
         customer_name: result.customer_name || customerNameForJob(db, result.work_order_id),
         work_order_no: result.work_order_no,
-        site_id: result.site_id,
+        site_id: result.site_id || "",  // STAGE-6-FIX: string | undefined → string
         contracted_revenue: result.contracted_revenue,
         invoiced: result.invoiced,
         collected: result.collected,

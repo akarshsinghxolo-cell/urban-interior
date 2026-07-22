@@ -169,6 +169,9 @@ export interface LineItem {
     unit_id?: string;
     unit_name?: string;
     rate: number;
+    rate_change_reason?: string;  // STAGE-6-FIX: used by BOQModule
+    rate_last_changed_by?: string;
+    rate_last_changed_at?: string;
     rate_basis?: "budget" | "vendor_bid" | "po" | "actual";
     amount: number;
     tax_rate?: number;
@@ -268,6 +271,10 @@ export interface AcceptedScope {
     /** How the contractor was chosen for this scope. "bid" = formal bidding; "direct_award" = skip bidding. */
     contractor_selection_method?: ContractorSelectionMethod;
     accepted_at: string;
+
+    created_at?: string;  // STAGE-6-FIX: used by WorkOrderTimelineModule
+    title?: string;
+    notes?: string;
 }
 export type WorkOrderStatus = "scheduled" | "in_progress" | "on_hold" | "completed" | "cancelled" | "abandoned";
 /** How a contractor was chosen for a WorkOrder.
@@ -419,6 +426,7 @@ export interface Task {
     checklist: unknown[];
     proofs: unknown[];
     thread_id?: ID;
+    payment_id?: ID;  // STAGE-6-FIX: used by PaymentRecoveryModule
     auto_generated?: boolean;
     completed_at?: string;
     completed_by?: string;

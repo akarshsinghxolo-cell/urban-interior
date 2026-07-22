@@ -1070,7 +1070,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             // the labour_rate / with_material_rate from the dialog inputs.
             const rate: ContractorRate = {
                 id,
-                contractor_id: r.contractor_id,
+                contractor_id: r.contractor_id || "",
                 trade: r.trade || sub?.name || contractor.trade || "Contractor rate",
                 rate: r.rate ?? r.labour_rate ?? 0,
                 unit_id: r.unit_id,
@@ -1120,7 +1120,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const id = genId("crule");
             const rule: CommissionRule = {
                 id,
-                source_partner_id: r.source_partner_id,
+                source_partner_id: r.source_partner_id || "",
                 source_partner_name: partner.name,
                 rate_pct: r.rate_pct ?? 0,
                 // The legacy type allows "all" | "category" | "workOrder". The
@@ -1128,9 +1128,9 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 // business labels) and we map them here: "quotation" → "all"
                 // (partner-specific catch-all), "work_order" → "workOrder"
                 // (partner-scoped workOrder rule).
-                applies_to: r.applies_to === "quotation" ? "all"
-                    : r.applies_to === "work_order" ? "workOrder"
-                        : r.applies_to || "all",
+                applies_to: (r.applies_to as any) === "quotation" ? "all"
+                    : (r.applies_to as any) === "work_order" ? "workOrder"
+                        : r.applies_to || "all",  // STAGE-6-FIX: cast for comparison
                 category_id: r.category_id,
             };
             void category;

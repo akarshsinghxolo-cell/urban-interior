@@ -170,12 +170,12 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
     const collectionNames: string[] = [];
     for (const key of Object.keys(db)) {
         if (key === "master" || key.startsWith("_")) continue;
-        const value = (db as Record<string, unknown>)[key];
+        const value = (db as unknown as Record<string, unknown>)[key];  // STAGE-6-FIX: double cast
         if (Array.isArray(value)) collectionNames.push(key);
     }
     if (db.master) {
         for (const key of Object.keys(db.master)) {
-            const value = (db.master as Record<string, unknown>)[key];
+            const value = (db.master as unknown as Record<string, unknown>)[key];  // STAGE-6-FIX: double cast
             if (Array.isArray(value)) collectionNames.push(`master.${key}`);
         }
     }

@@ -63,7 +63,8 @@ export type CoreSliceActions = Pick<CoreState,
     | "reconcileWorkspace"
     | "runIntegrityCheck"
     | "repairIntegrityNow"
-    | "cascadeDeleteRecord">;
+    | "cascadeDeleteRecord"
+    | "updateAuthUser">;  // STAGE-6-FIX: was missing from Pick list
 
 export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
     const { commitState, get, setBase } = ctx;

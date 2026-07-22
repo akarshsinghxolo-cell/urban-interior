@@ -103,7 +103,7 @@ export async function readGoogleDriveOAuthConfig(origin?: string) {
   };
 }
 
-export async function saveGoogleDriveOAuthConfig(user: AuthenticatedUser, input: { clientId?: string; clientSecret?: string }) {
+export async function saveGoogleDriveOAuthConfig(user: AuthenticatedUser, input: { clientId?: string; clientSecret?: string; credentialsKey?: string }) {
   if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner can configure Google Drive OAuth.");
   const existing = await storedSettings();
   const clientId = String(input.clientId || existing.clientId || process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || "").trim();

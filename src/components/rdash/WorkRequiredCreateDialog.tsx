@@ -145,7 +145,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
             <div>
               <label className="flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
                 Primary Category
-                {prefilledFromCustomer && categoryId && <Sparkles className="h-3 w-3 text-primary" title="From customer interests" />}
+                {prefilledFromCustomer && categoryId && <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" />}
               </label>
               <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setSubcategoryId(""); }} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
                 <option value="">Select later during structured capture</option>
@@ -155,7 +155,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
             <div>
               <label className="flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
                 Primary Subcategory
-                {prefilledFromCustomer && subcategoryId && <Sparkles className="h-3 w-3 text-primary" title="From customer interests" />}
+                {prefilledFromCustomer && subcategoryId && <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" />}
               </label>
               <select value={subcategoryId} onChange={(event) => setSubcategoryId(event.target.value)} disabled={!categoryId} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
                 <option value="">Select later during structured capture</option>

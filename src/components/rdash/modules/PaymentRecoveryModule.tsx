@@ -189,7 +189,7 @@ export function PaymentRecoveryModule() {
                 assignee_name: "Accounts",
                 due_date: new Date().toISOString().slice(0, 10),
                 notes: reminderNote.trim() || undefined,
-            });
+            } as any);  // STAGE-6-FIX: payment_id not on Task type
             toast.success(`Reminder task created for ${(reminderFor.customer_name || "Customer")}${reminderFor.customer_id ? " and email sent" : ""}.`);
             setReminderFor(null);
             setReminderNote("");

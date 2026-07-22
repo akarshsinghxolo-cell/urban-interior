@@ -654,7 +654,7 @@ export function DailyWork() {
       <section aria-label="Workspace KPIs" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         <MetricCard label="Active WOs" value={db.workOrders.filter((w) => w.status === "in_progress" || w.status === "scheduled").length} hint="In progress + scheduled" tone="primary" icon={<Briefcase className="h-4 w-4"/>} onClick={() => setActiveModule("siteExecution")}/>
         <MetricCard label="Pending approvals" value={approvals.length} hint="PO + payment + variation" tone="success" icon={<CheckCircle2 className="h-4 w-4"/>} onClick={() => setActiveModule("approvals")}/>
-        <MetricCard label="Overdue invoices" value={formatINRShort(db.invoices.filter((i) => i.status === "overdue" || (i.status === "issued" && i.due_date && isDateOnlyOverdue(i.due_date))).reduce((s, i) => s + i.amount, 0))} hint="Total value" tone="destructive" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("payments")}/>
+        <MetricCard label="Overdue invoices" value={formatINRShort(db.invoices.filter((i) => i.status === "overdue" || (i.status === "issued" && i.due_date && isDateOnlyOverdue(i.due_date))).reduce((s, i) => s + i.total_amount, 0))} hint="Total value" tone="destructive" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("payments")}/>
         <MetricCard label="Today's visits" value={db.visits.filter((v) => v.scheduled_at?.slice(0, 10) === indiaDate()).length} hint="Scheduled today" tone="primary" icon={<MapPin className="h-4 w-4"/>} onClick={() => setActiveModule("fieldOperations")}/>
         <MetricCard label="Follow-ups due" value={db.followups.filter((f) => f.due_date === indiaDate() && (f.status === "pending" || f.status === "scheduled")).length} hint="Due today" tone="warning" icon={<PhoneCall className="h-4 w-4"/>} onClick={() => setActiveModule("tasks")}/>
         <MetricCard label="Low-stock items" value={db.inventory.filter((i) => typeof i.min_qty === "number" && i.quantity <= (i.min_qty || 0)).length} hint="At/below min" tone="destructive" icon={<Package className="h-4 w-4"/>} onClick={() => setActiveModule("inventory")}/>
@@ -730,7 +730,7 @@ function TodaySiteExecutionsPanel() {
             const customer = db.customers.find((c) => c.id === wo?.customer_id);
             const site = db.sites.find((s) => s.id === wo?.site_id);
             const latest = woLogs[0];
-            out.push({
+            (out as any[]).push({
                 id: `exec-${woId}`,
                 title: `${wo?.work_order_no || woId} · ${woLogs.length} log${woLogs.length === 1 ? "" : "s"}`,
                 subtitle: site?.name,
@@ -788,7 +788,7 @@ function TodayAttendancePanel() {
             const staff = db.master.staff.find((s) => s.id === a.staff_id);
             const hasGps = !!(a.check_in_latitude && a.check_in_longitude);
             const tone = a.status === "present" ? "bg-success/10 text-success border-success/20"
-                : a.status === "absent" || a.status === "auto_absent" ? "bg-destructive/10 text-destructive border-destructive/20"
+                : a.status === "absent" || (a.status as string) === "auto_absent" ? "bg-destructive/10 text-destructive border-destructive/20"
                 : a.status === "half_day" ? "bg-warning/10 text-warning border-warning/20"
                 : "bg-muted text-muted-foreground border-border";
             return {
@@ -821,7 +821,7 @@ function TodayOverdueInvoicesPanel() {
             const wo = db.workOrders.find((w) => w.id === i.work_order_id);
             return {
                 id: i.id,
-                title: `${i.invoice_no} · ${formatINRShort(i.amount)}`,
+                title: `${i.invoice_no} · ${formatINRShort(i.total_amount)}`,
                 subtitle: wo?.work_order_no,
                 customerName: customer?.name,
                 status: { label: i.status, className: "bg-destructive/10 text-destructive border-destructive/20" },
@@ -833,7 +833,7 @@ function TodayOverdueInvoicesPanel() {
     }, [db, openDetail]);
     const totalOverdue = records.reduce((sum, r) => {
         const inv = db.invoices.find((i) => i.id === r.id);
-        return sum + (inv?.amount || 0);
+        return sum + (inv?.total_amount || 0);
     }, 0);
     return <QueueSection title={`Today's overdue invoices${totalOverdue > 0 ? ` · ${formatINRShort(totalOverdue)}` : ""}`} icon={<ShieldAlert className="h-4 w-4 text-destructive"/>} records={records} columns={3} emptyTone="danger" emptyTitle="No overdue invoices" emptyDescription="Invoices past their due date will appear here so the operations team can chase them." collapsible={true} defaultCollapsed={false} emptyAction={<EmptyCta label="Open Collections" onClick={() => setActiveModule("payments")}/>}/>;
 }
@@ -854,7 +854,7 @@ function TodayVisitsPanel() {
             const customer = db.customers.find((c) => c.id === v.customer_id);
             const site = db.sites.find((s) => s.id === v.site_id);
             const proofCount = (v.proof_attachment_ids || []).length;
-            let statusLabel = v.status;
+            let statusLabel: string = v.status;
             let statusClass = "bg-muted text-muted-foreground border-border";
             if (v.status === "completed") {
                 statusLabel = proofCount > 0 ? `Completed · ${proofCount} proof` : "Completed · no proof";

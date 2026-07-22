@@ -253,7 +253,7 @@ export function WorkspaceHealthWidget() {
         <span className="text-xs text-muted-foreground">Health summary unavailable.</span>
         <button
           type="button"
-          onClick={fetchSummary}
+          onClick={() => fetchSummary()}  // STAGE-6-FIX: wrap in arrow (fetchSummary takes no MouseEvent)
           className="ml-auto text-xs font-medium text-primary hover:underline"
         >
           Retry

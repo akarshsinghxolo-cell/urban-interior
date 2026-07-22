@@ -317,7 +317,7 @@ export function WorkspacePulseStrip() {
                 <span className="whitespace-nowrap">{greeting(now)},</span>{" "}
                 <span className="whitespace-nowrap text-primary">{firstName}</span>
               </h2>
-              {healthMsg ? (
+              {healthMsg && health ? (  // STAGE-6-FIX: explicit health guard (TS can't narrow through healthMsg)
                 <Popover>
                   <PopoverTrigger asChild>
                     <button

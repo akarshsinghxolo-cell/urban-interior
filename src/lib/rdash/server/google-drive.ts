@@ -382,11 +382,11 @@ async function resolveStorageFolder(db: RDashDatabase, entityType: FileAttachmen
         for (const part of path.split("/").map((value) => safeSegment(value, "General")).filter(Boolean)) {
             currentPath += "/" + part;
             const cacheKey = `${access.account.id}:${currentPath}`;
-            const folder = await findOrCreateFolder(access.accessToken, folderId, part, cacheKey);
+            const folder = await findOrCreateFolder(access.accessToken, folderId!, part, cacheKey)  // STAGE-6-FIX: non-null assertion;
             folderId = folder.id!;
             folderUrl = folder.webViewLink || `https://drive.google.com/drive/folders/${folderId}`;
         }
-        return { id: folderId, webViewLink: folderUrl };
+        return { id: folderId || "", webViewLink: folderUrl || "" };  // STAGE-6-FIX: fallback for string|undefined
     };
 
     let resolution: { id: string; webViewLink?: string };

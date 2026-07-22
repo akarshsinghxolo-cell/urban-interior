@@ -143,7 +143,7 @@ const customerReceipts: CustomerReceipt[] = [
     // Recent milestone receipts (within the 7-day sparkline window) so the
     // health-widget revenue trend visualizes real data instead of a flat line.
     { id: "receipt-das-ceiling-milestone-1", receipt_no: "CR-2026-102", finance_context: "service", customer_id: "cust-das", site_id: "site-das-apartment", work_required_id: "work-das-ceiling", quotation_id: "quote-das-ceiling", work_order_id: "wo-das-ceiling", invoice_id: "inv-das-ceiling-advance", amount: 18000, mode: "rtgs", reference: "RTGS-DAS-MS1-102", received_at: date(-3), created_by: "Meera Nair", created_at: at(-3), updated_at: now() },
-    { id: "receipt-aarav-kitchen-advance", receipt_no: "CR-2026-103", finance_context: "service", customer_id: "cust-aarav", site_id: "site-aarav-home", work_required_id: "work-aarav-kitchen", quotation_id: "quote-aarav-kitchen", amount: 25000, mode: "upi", reference: "UPI-AARAV-ADV-103", received_at: date(0), created_by: "Pooja Singh", created_at: at(0), updated_at: now() },
+    { id: "receipt-aarav-kitchen-advance", receipt_no: "CR-2026-103", finance_context: "service", customer_id: "cust-aarav", site_id: "site-aarav-home", work_required_id: "work-aarav-kitchen", quotation_id: "quote-aarav-kitchen", invoice_id: "inv-aarav-kitchen-advance", amount: 25000, mode: "upi", reference: "UPI-AARAV-ADV-103", received_at: date(0), created_by: "Pooja Singh", created_at: at(0), updated_at: now() },
 ];
 const workOrderCostLines: WorkOrderCostLine[] = [
     // FIX-CONTRACTOR-BATCH1 / F.3: Standardize on `vendor_id` / `vendor_name`

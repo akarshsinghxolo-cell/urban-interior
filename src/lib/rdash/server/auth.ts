@@ -78,7 +78,8 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
     // in JS. Requires the stage2-schema-fixes.sql migration to have been run.
     // FALLBACK: If the column doesn't exist yet (migration not run), fall back
     // to the old full-scan approach so logins keep working during transition.
-    let staffRow: { id: string; data: string | Record<string, unknown> } | null = null;
+    let staffRow: any = null; // STAGE-6-FIX
+    // let staffRow: any = null;  // STAGE-6-FIX: maybeSingle() returns unknown types
     const { data: genRow, error: genError } = await admin
         .from("entity_master_staff")
         .select("id,data")
@@ -99,7 +100,8 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
         staffRow = genRow;
     }
     if (staffRow) {
-        const staffData = typeof staffRow.data === "string" ? JSON.parse(staffRow.data) : staffRow.data;
+        const staffRowTyped = staffRow as { id: string; data: string | Record<string, unknown> };
+        const staffData = typeof staffRowTyped.data === "string" ? JSON.parse(staffRowTyped.data) : staffRowTyped.data;
         const status = staffData.status || "active";
         if (status === "active") {
             return {
@@ -107,7 +109,7 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
                 email: data.user.email.toLowerCase(),
                 name: staffData.name || String(data.user.user_metadata?.full_name || data.user.email),
                 role: asRDashRole(staffData.role_key || staffData.role || "FIELD_STAFF"),
-                staffId: staffRow.id,
+                staffId: staffRowTyped.id,  // STAGE-6-FIX: cast from unknown
             };
         }
         if (status === "pending") throw new AuthAccessError("Your Urban Castle login request is waiting for owner approval.", 403, "PENDING_APPROVAL");

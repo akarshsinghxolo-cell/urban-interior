@@ -131,7 +131,7 @@ export function CommandPalette() {
         });
         db.quotations.slice(0, 10).forEach((q) => {
             const customer = db.customers.find((c) => c.id === q.customer_id);
-            items.push({ id: `quo-${q.id}`, label: `${q.quotation_no} · ${q.subject || q.status}`, group: "Quotations", groupPriority: GP.quotations, iconNode: <FileText className="h-3.5 w-3.5 text-warning"/>, action: () => { openDetail("quotation", q.id); setOpen(false); }, keywords: `${customer?.name || ""} ${q.status}`, meta: customer?.name });
+            items.push({ id: `quo-${q.id}`, label: `${q.quotation_no} · ${(q as any).subject || q.status}`, group: "Quotations", groupPriority: GP.quotations, iconNode: <FileText className="h-3.5 w-3.5 text-warning"/>, action: () => { openDetail("quotation", q.id); setOpen(false); }, keywords: `${customer?.name || ""} ${q.status}`, meta: customer?.name });
         });
         db.master.vendors.slice(0, 10).forEach((v) => {
             items.push({ id: `ven-${v.id}`, label: v.name, group: "Vendors", groupPriority: GP.vendors, iconNode: <Package className="h-3.5 w-3.5 text-primary"/>, action: () => { openDetail("vendor", v.id); setOpen(false); }, keywords: `${v.city || ""} ${v.category || ""} ${v.phone || ""}`, meta: v.city });

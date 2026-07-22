@@ -132,8 +132,8 @@ export function SiteMeasurementModule() {
                     : await uploadCapturedMediaToGoogleDrive({ dataUrl: item.url, fileName: item.file_name, entityType: "visit", entityId: visitId, kind: "site_proof", role: "measurement", caption: `Measurement ${item.type}` });
                 // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
                 // shows in app preview and survives page reloads.
-                if (!isDriveUrl && uploaded.fileAsset && uploaded.attachment) {
-                    useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
+                if (!isDriveUrl && (uploaded as any).fileAsset && (uploaded as any).attachment) {  // STAGE-6-FIX: union type cast
+                    useRDashStore.getState().addServerFileAsset((uploaded as any).fileAsset, (uploaded as any).attachment);
                 }
                 return {
                     type: `measurement_${item.type}`,
