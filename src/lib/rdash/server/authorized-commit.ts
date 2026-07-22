@@ -12,7 +12,7 @@ import type { AuthenticatedUser } from "./auth";
 import type { WorkspaceSnapshot } from "./workspace";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 
-const workspaceId = process.env.RDASH_WORKSPACE_ID || "default";
+const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 
 function normalizeWorkspace(data: RDashDatabase) {
   return attachCustomerLabels(prepareWorkspaceData(repairOperationalWorkspace(data)));

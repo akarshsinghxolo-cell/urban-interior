@@ -9,7 +9,7 @@ import { NextResponse } from "next/server";
  * Public endpoint — does NOT require auth (it's needed before login).
  */
 export function GET() {
-  const sessionSecret = process.env.RDASH_SESSION_SECRET;
+  const sessionSecret = process.env.UC_SESSION_SECRET;
   const hasSessionSecret = Boolean(sessionSecret && sessionSecret.length >= 32);
   const usingDevFallback = !hasSessionSecret && process.env.NODE_ENV !== "production";
 
@@ -23,7 +23,7 @@ export function GET() {
       /^https:\/\/[a-z0-9-]+\.supabase\.co$/i.test(supabaseUrl),
   );
 
-  const ownerEmail = process.env.RDASH_OWNER_EMAIL || "akarshsingh4@gmail.com";
+  const ownerEmail = process.env.UC_OWNER_EMAIL || "akarshsingh4@gmail.com";
 
   return NextResponse.json({
     status: "ok",
@@ -36,15 +36,15 @@ export function GET() {
           ? "dev-fallback"
           : "missing",
       supabase: supabaseConfigured ? "configured" : "in-memory-fallback",
-      workspaceId: process.env.RDASH_WORKSPACE_ID || "default",
+      workspaceId: process.env.UC_WORKSPACE_ID || "default",
       ownerEmail,
     },
     warnings: [
       ...(!hasSessionSecret && !usingDevFallback
-        ? ["RDASH_SESSION_SECRET is missing — sign-in will fail in production."]
+        ? ["UC_SESSION_SECRET is missing — sign-in will fail in production."]
         : []),
       ...(!hasSessionSecret && usingDevFallback
-        ? ["Using dev-fallback session secret. Set RDASH_SESSION_SECRET for production."]
+        ? ["Using dev-fallback session secret. Set UC_SESSION_SECRET for production."]
         : []),
       ...(!supabaseConfigured
         ? ["Supabase not configured — app runs on in-memory seed data (resets on restart)."]

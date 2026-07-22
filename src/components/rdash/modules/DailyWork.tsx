@@ -229,10 +229,10 @@ function WeeklyThroughputChart({ data, dailyTarget = 5 }: { data: { day: string;
         if (typeof window === "undefined")
             return Math.max(streak, bestStreak);
         try {
-            const stored = parseInt(window.localStorage.getItem("rdash_all_time_best_streak") || "0", 10) || 0;
+            const stored = parseInt(window.localStorage.getItem("uc_all_time_best_streak") || "0", 10) || 0;
             const candidate = Math.max(streak, bestStreak, stored);
             if (candidate > stored) {
-                window.localStorage.setItem("rdash_all_time_best_streak", String(candidate));
+                window.localStorage.setItem("uc_all_time_best_streak", String(candidate));
             }
             return candidate;
         }

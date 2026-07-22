@@ -598,13 +598,27 @@ export function createSeedPayroll(staff: Staff[]) {
 export function assertStaffOperationAllowed(data: RDashDatabase, rolePermissions: StaffPermissionRecord[], role: string, staffId: string | undefined, collection: string, record: unknown) {
   const roleKey = normalizeRoleKey(role);
   if (roleKey === "OWNER" || roleKey === "OPERATIONS_MANAGER") return;
-  const recordStaffId = (record as Record<string, unknown> | undefined)?.staff_id || (record as Record<string, unknown> | undefined)?.assigned_to_staff_id || (record as Record<string, unknown> | undefined)?.assignee_id;
+  const recordObj = record as Record<string, unknown> | undefined;
+  const recordStaffId = recordObj?.staff_id || recordObj?.assigned_to_staff_id || recordObj?.assignee_id;
   const staffModule = moduleForCollection(collection);
   if (!canRole(rolePermissions, role, staffModule, "update") && !canRole(rolePermissions, role, staffModule, "create")) {
     throw new Error(`FORBIDDEN:${collection}`);
   }
-  if (roleKey === "FIELD_STAFF" && recordStaffId && recordStaffId !== staffId) {
-    throw new Error(`FORBIDDEN:Field Staff can change only their own ${collection}.`);
+  if (roleKey === "FIELD_STAFF") {
+    // Field Staff must have a staff identity bound to their session.
+    if (!staffId) {
+      throw new Error(`FORBIDDEN:No staff identity for this account. Contact the owner to link your staff profile.`);
+    }
+    // If the record specifies a different staff_id, reject.
+    if (recordStaffId && recordStaffId !== staffId) {
+      throw new Error(`FORBIDDEN:Field Staff can change only their own ${collection}.`);
+    }
+    // Force-bind staff_id to the session's identity (don't trust the client).
+    // This closes the bypass where a Field Staff omits staff_id to create
+    // unowned records that pollute attendance/payroll/GPS views.
+    if (recordObj) {
+      recordObj.staff_id = staffId;
+    }
   }
   const staff = staffId ? data.master.staff.find((member) => member.id === staffId) : undefined;
   if (staff && staff.status !== "active") {

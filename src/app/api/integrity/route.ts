@@ -6,7 +6,7 @@
 //        - "repair"          : runs repairIntegrityIssues, commits, returns { result, report }
 //        - "cascade-delete"  : runs cascadeDelete, commits, returns { result, report }
 //
-// Auth: requires a valid session (rdash_session cookie or Authorization
+// Auth: requires a valid session (uc_session cookie or Authorization
 // Bearer header). Only Owner / Operations Manager may run repair or
 // cascade-delete (mirrors the existing mutation policy).
 // ============================================================================

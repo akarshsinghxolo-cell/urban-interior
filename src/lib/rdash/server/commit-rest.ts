@@ -13,7 +13,7 @@ import { getSupabaseAdminClient } from "../../supabase/server";
 import type { WorkspaceOperation } from "../workspace-operations";
 import type { RDashDatabase, Master } from "../types";
 
-const workspaceId = process.env.RDASH_WORKSPACE_ID || "default";
+const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 
 // ----------------------------------------------------------------------------
 // Collection → entity_* table name mapping (81 collections)

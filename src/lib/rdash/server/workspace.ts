@@ -87,7 +87,7 @@ function secureMutationAudit(user: AuthenticatedUser, operations: ReturnType<typ
     actor_role: user.role,
     action: `Secure server commit: ${operationSummary(operations)}`,
     entity_type: "workspace",
-    entity_id: process.env.RDASH_WORKSPACE_ID || "default",
+    entity_id: process.env.UC_WORKSPACE_ID || "default",
     entity_label: "Urban Castle workspace",
     kind: "update",
   };

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
@@ -18,16 +19,10 @@ export const maxDuration = 30;
  *   - critical entity counts (customers, sites, quotations, payments, workOrders)
  *   - storage templates / instances / accounts sanity
  *
- * Auth: OPTIONAL bearer token (CRON_BEARER_TOKEN env var).
- *   - Vercel Cron calls this endpoint with NO Authorization header — that's
- *     allowed because the endpoint is read-only and returns no PII (just
- *     counts and aggregate health scores).
- *   - External monitoring tools (e.g. UptimeRobot, a hand-rolled cron on a
- *     different server) SHOULD send `Authorization: Bearer <CRON_BEARER_TOKEN>`
- *     so the endpoint can be locked down via env var rotation if needed.
- *   - When CRON_BEARER_TOKEN is set AND a request includes an Authorization
- *     header, the header MUST match the env var. When no Authorization header
- *     is sent, the request is allowed (Vercel Cron path).
+ * Auth: REQUIRED bearer token when CRON_SECRET (Vercel convention) or
+ *   CRON_BEARER_TOKEN (legacy alias) is set. Vercel Cron automatically sends
+ *   `Authorization: Bearer <CRON_SECRET>` when CRON_SECRET is in the env.
+ *   When neither env var is set (development), all requests are allowed.
  *
  * Response shape (HTTP 200 when healthy, 500 when something is broken):
  *   {
@@ -42,17 +37,20 @@ export const maxDuration = 30;
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
 
-  // Auth: optional bearer token. If CRON_BEARER_TOKEN is set AND the request
-  // includes an Authorization header, the header must match. No-header requests
-  // are allowed (Vercel Cron path). When CRON_BEARER_TOKEN is not set, all
-  // requests are allowed (development mode).
-  const expectedToken = process.env.CRON_BEARER_TOKEN?.trim();
+  // Auth: require bearer token when CRON_SECRET (Vercel convention) or
+  // CRON_BEARER_TOKEN (legacy) is set. Vercel Cron automatically sends
+  // Authorization: Bearer <CRON_SECRET> when CRON_SECRET is set in the env.
+  // When neither env var is set (development mode), all requests are allowed.
+  const expectedToken = (process.env.CRON_SECRET || process.env.CRON_BEARER_TOKEN || "").trim();
   const authHeader = request.headers.get("authorization") || "";
-  if (expectedToken && authHeader) {
+  if (expectedToken) {
     const suppliedToken = authHeader.toLowerCase().startsWith("bearer ")
       ? authHeader.slice("bearer ".length).trim()
       : "";
-    if (suppliedToken.length !== expectedToken.length || suppliedToken !== expectedToken) {
+    // Timing-safe comparison
+    const a = Buffer.from(suppliedToken);
+    const b = Buffer.from(expectedToken);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
       return NextResponse.json(
         { ok: false, error: "Unauthorized." },
         { status: 401 },
@@ -130,12 +128,15 @@ export async function GET(request: NextRequest) {
     );
   } catch (err) {
     const durationMs = Date.now() - startedAt;
+    // Log full error server-side; return generic message to client to avoid
+    // leaking internal table/column names or stack-trace fragments.
+    console.error("[qa/cron] health check failed:", err);
     return NextResponse.json(
       {
         ok: false,
         timestamp: new Date().toISOString(),
         durationMs,
-        error: err instanceof Error ? err.message : String(err),
+        error: "Health check failed. See server logs for details.",
       },
       { status: 500 },
     );

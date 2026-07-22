@@ -6,7 +6,7 @@
  * it as a Bearer token on every /api/ request via a fetch wrapper.
  * The cookie auth path also works for same-origin access.
  */
-const TOKEN_KEY = "rdash_session_token";
+const TOKEN_KEY = "uc_session_token";
 
 export function getSessionToken(): string | null {
     if (typeof window === "undefined") return null;

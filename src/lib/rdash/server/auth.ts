@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { normalizeRoleKey, roleLabel } from "../staff-operations";
 import { getSupabaseAdminClient, getSupabaseAuthClient, isSupabaseConfigured } from "../../supabase/server";
-export const AUTH_COOKIE = "rdash_session";
+export const AUTH_COOKIE = "uc_session";
 export type RDashRole = "Owner" | "Operations Manager" | "Field Staff" | "Sales / Telecaller" | "Procurement Staff" | "Finance" | "Accounts / Admin";
 export interface AuthenticatedUser {
     userId: string;
@@ -24,20 +24,14 @@ type Token = Omit<AuthenticatedUser, "expiresAt"> & {
     v: 1;
 };
 function secret() {
-    const value = process.env.RDASH_SESSION_SECRET;
-    if (value && value.length >= 32) return value;
-    // Dev fallback: when .env is missing or reset (common in preview/sandbox),
-    // derive a stable 64-char secret from the workspace ID + deployment marker.
-    // This keeps sign-in working without requiring manual .env setup.
-    // In production, RDASH_SESSION_SECRET MUST be set explicitly.
-    if (process.env.NODE_ENV === "production") {
-        throw new Error("RDASH_SESSION_SECRET must contain at least 32 random characters.");
+    const value = process.env.UC_SESSION_SECRET;
+    if (!value || value.length < 32) {
+        throw new Error(
+            "UC_SESSION_SECRET must contain at least 32 random characters. " +
+            "Generate one with: openssl rand -base64 48",
+        );
     }
-    const workspace = process.env.RDASH_WORKSPACE_ID || "default";
-    const marker = "urban-castle-dev-secret-fallback-";
-    // Pad to >= 32 chars with a deterministic but non-trivial suffix.
-    const fallback = (marker + workspace + "-7f3a9e2b1c8d4a5f6e0b2c4d6a8e0f2a").slice(0, 64);
-    return fallback;
+    return value;
 }
 
 function sign(value: string) { return createHmac("sha256", secret()).update(value).digest("base64url"); }
