@@ -5,6 +5,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 interface ExceptionItem {
   id: string;
@@ -160,6 +161,54 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
           )}
         </div>
       </div>
+
+      {/* CRON-8: Exception distribution pie chart */}
+      {totalExceptions > 0 && (
+        <div className="flex items-center gap-4 border-b border-border bg-gradient-to-br from-muted/20 to-transparent px-4 py-3">
+          <div className="h-20 w-20 shrink-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: "Direct Award", value: counts.direct_award, fill: "var(--warning, #f59e0b)" },
+                    { name: "Renegotiation", value: counts.renegotiation, fill: "#f97316" },
+                    { name: "Variation", value: counts.variation, fill: "#3b82f6" },
+                    { name: "Decision", value: counts.decision, fill: "var(--primary, #6366f1)" },
+                    { name: "Overdue", value: counts.overdue, fill: "var(--destructive, #ef4444)" },
+                  ].filter((d) => d.value > 0)}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={28}
+                  outerRadius={38}
+                  paddingAngle={2}
+                  dataKey="value"
+                  animationDuration={600}
+                >
+                  {[...Array(5)].map((_, i) => <Cell key={i} />)}
+                </Pie>
+                <Tooltip
+                  content={({ active, payload }: any) => active && payload?.length ? (
+                    <div className="rounded-lg border border-border bg-card p-2 shadow-lg">
+                      <p className="text-[10px] font-bold">{payload[0].name}</p>
+                      <p className="text-[10px] text-muted-foreground">{payload[0].value} item{payload[0].value === 1 ? "" : "s"}</p>
+                    </div>
+                  ) : null}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Exception Distribution</p>
+            <div className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+              {counts.direct_award > 0 && <p className="text-[10px]"><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-warning" />{counts.direct_award} Direct Award</p>}
+              {counts.renegotiation > 0 && <p className="text-[10px]"><span className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#f97316" }} />{counts.renegotiation} Renegotiation</p>}
+              {counts.variation > 0 && <p className="text-[10px]"><span className="mr-1 inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: "#3b82f6" }} />{counts.variation} Variation</p>}
+              {counts.decision > 0 && <p className="text-[10px]"><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-primary" />{counts.decision} Decision</p>}
+              {counts.overdue > 0 && <p className="text-[10px]"><span className="mr-1 inline-block h-2 w-2 rounded-sm bg-destructive" />{counts.overdue} Overdue</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary tiles — zero counts show "—" instead of "0" for clearer
           visual distinction between "nothing here" and "has items". */}

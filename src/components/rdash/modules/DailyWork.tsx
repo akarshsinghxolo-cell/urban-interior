@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import { WorkspacePulseStrip } from "../WorkspacePulseStrip";
 import { WorkspaceHealthWidget } from "../WorkspaceHealthWidget";
 import { HealthDashboardWidget } from "../HealthDashboardWidget";
+import { MobileQuickStats } from "../MobileQuickStats";
+import { NotificationSettings } from "../NotificationSettings";
 import { ActivityFeedWidget } from "../ActivityFeedWidget";
 import { ConversationActivityWidget } from "../ConversationActivityWidget";
 import { ExceptionDashboard } from "../ExceptionDashboard";
@@ -634,6 +636,16 @@ export function DailyWork() {
 
       {/* CRON-FIX: New animated health dashboard widget */}
       <HealthDashboardWidget />
+      {/* CRON-8: Mobile quick stats (hidden on desktop) */}
+      <MobileQuickStats />
+      {/* CRON-8: Notification settings panel */}
+      <details className="group rounded-lg border border-border/50 bg-card/40">
+        <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+          <span>Notification Settings</span>
+          <span className="text-[10px] transition-transform group-open:rotate-180">▼</span>
+        </summary>
+        <div className="border-t border-border/50 p-3"><NotificationSettings /></div>
+      </details>
 
       {/* Role header + Refresh (imported from WorkdeskDashboard) */}
       <div className="flex items-center justify-between gap-3">
