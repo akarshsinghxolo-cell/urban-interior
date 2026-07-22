@@ -8,10 +8,13 @@ import {
   ArrowUpRight,
   Building2,
   Database,
+  Eye,
+  EyeOff,
   HardHat,
   KeyRound,
   Layers,
   type LucideIcon,
+  Lock,
   ShieldCheck,
   Sparkles,
   TrendingUp,
@@ -105,6 +108,7 @@ export default function SignInPage() {
   const [displayName, setDisplayName] = React.useState("");
   const [requestedRole, setRequestedRole] = React.useState("FIELD_STAFF");
   const [busy, setBusy] = React.useState(false);
+  const [rememberEmail, setRememberEmail] = React.useState(false);  // CRON-FIX: remember email
   const [error, setError] = React.useState("");
   const [success, setSuccess] = React.useState("");
   const [config, setConfig] = React.useState<ConfigHealth | null>(null);
@@ -133,6 +137,17 @@ export default function SignInPage() {
       setActiveFeature((i) => (i + 1) % HERO_FEATURES.length);
     }, 3500);
     return () => clearInterval(id);
+  }, []);
+
+  // CRON-FIX: Load remembered email from localStorage
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem("uc_remember_email");
+      if (saved) {
+        setEmail(saved);
+        setRememberEmail(true);
+      }
+    } catch { /* non-fatal */ }
   }, []);
 
   async function submitSignIn(event: React.FormEvent<HTMLFormElement>) {
@@ -345,6 +360,11 @@ export default function SignInPage() {
             {mode === "signin" ? (
               <form onSubmit={submitSignIn} className="space-y-4">
                 <EmailPasswordFields email={email} password={password} onEmail={setEmail} onPassword={setPassword} passwordAutoComplete="current-password" />
+                {/* CRON-FIX: Remember email checkbox */}
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input type="checkbox" checked={rememberEmail} onChange={(e) => setRememberEmail(e.target.checked)} className="h-3.5 w-3.5 rounded border-input accent-primary" />
+                  Remember my email on this device
+                </label>
                 {error ? (
                   <div role="alert" className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -357,8 +377,18 @@ export default function SignInPage() {
                     <span className="leading-relaxed">{success}</span>
                   </div>
                 ) : null}
-                <Button type="submit" className="h-11 w-full text-base transition-all hover:shadow-md hover:shadow-primary/20" disabled={busy}>
-                  {busy ? "Signing in..." : "Sign in"}
+                <Button type="submit" className="h-11 w-full text-base transition-all hover:shadow-lg hover:shadow-primary/25 active:scale-[0.98] disabled:active:scale-100" disabled={busy}>
+                  {busy ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground/30 border-t-primary-foreground" />
+                      Signing in...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Lock className="h-4 w-4" />
+                      Sign in
+                    </span>
+                  )}
                 </Button>
 
                 {/* Demo owner credentials — always visible in dev/preview */}
@@ -531,6 +561,9 @@ function EmailPasswordFields({ email, password, onEmail, onPassword, passwordAut
   onPassword: (value: string) => void;
   passwordAutoComplete: string;
 }) {
+  // CRON-FIX: password visibility toggle + caps lock warning (UX + security)
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [capsLockOn, setCapsLockOn] = React.useState(false);
   return (
     <>
       <div className="space-y-1.5">
@@ -539,7 +572,34 @@ function EmailPasswordFields({ email, password, onEmail, onPassword, passwordAut
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="password">Password</Label>
-        <Input id="password" type="password" autoComplete={passwordAutoComplete} value={password} onChange={(event) => onPassword(event.target.value)} required className="h-11 text-base" />
+        <div className="relative">
+          <Input
+            id="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete={passwordAutoComplete}
+            value={password}
+            onChange={(event) => onPassword(event.target.value)}
+            onKeyUp={(event) => setCapsLockOn(event.getModifierState && event.getModifierState("CapsLock"))}
+            onKeyDown={(event) => setCapsLockOn(event.getModifierState && event.getModifierState("CapsLock"))}
+            onBlur={() => setCapsLockOn(false)}
+            required
+            className="h-11 text-base pr-11"
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            aria-label={showPassword ? "Hide password" : "Show password"}
+            tabIndex={-1}
+          >
+            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </div>
+        {capsLockOn ? (
+          <p className="flex items-center gap-1 text-xs text-warning animate-fade-in">
+            <AlertTriangle className="h-3 w-3" /> Caps Lock is on
+          </p>
+        ) : null}
       </div>
     </>
   );

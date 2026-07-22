@@ -11,6 +11,7 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 
 import { toast } from "sonner";
 import { WorkspacePulseStrip } from "../WorkspacePulseStrip";
 import { WorkspaceHealthWidget } from "../WorkspaceHealthWidget";
+import { HealthDashboardWidget } from "../HealthDashboardWidget";
 import { ActivityFeedWidget } from "../ActivityFeedWidget";
 import { ConversationActivityWidget } from "../ConversationActivityWidget";
 import { ExceptionDashboard } from "../ExceptionDashboard";
@@ -630,6 +631,9 @@ export function DailyWork() {
 
     return (<div className="flex flex-col gap-6">
       <WorkspacePulseStrip />
+
+      {/* CRON-FIX: New animated health dashboard widget */}
+      <HealthDashboardWidget />
 
       {/* Role header + Refresh (imported from WorkdeskDashboard) */}
       <div className="flex items-center justify-between gap-3">
