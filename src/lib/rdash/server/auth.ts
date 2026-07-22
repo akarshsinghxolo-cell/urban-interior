@@ -73,19 +73,15 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
     const { data, error } = await auth.auth.signInWithPassword({ email, password });
     if (error || !data.user?.id || !data.user.email) return null;
     const admin = getSupabaseAdminClient();
-    // FIX-DB-MERGE-001: Read from entity_master_staff (single source of truth)
-    // instead of uc_user_roles + StaffProfile. The auth_user_id field in the
-    // JSON data links the staff record to the Supabase auth.users table.
-    const { data: staffRows, error: staffError } = await admin
+    // STAGE-2-FIX: Use the auth_user_id_gen generated column (indexed) for an
+    // O(1) server-side lookup instead of loading ALL staff rows and filtering
+    // in JS. Requires the stage2-schema-fixes.sql migration to have been run.
+    const { data: staffRow, error: staffError } = await admin
         .from("entity_master_staff")
         .select("id,data")
-        .eq("workspace_id", "default");
+        .eq("auth_user_id_gen", data.user!.id)
+        .maybeSingle();
     if (staffError) throw new Error(`Urban Castle staff lookup failed: ${staffError.message}`);
-    // Find the staff record whose auth_user_id matches the logged-in user
-    const staffRow = (staffRows || []).find((row: any) => {
-        const d = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-        return d?.auth_user_id === data.user!.id;
-    });
     if (staffRow) {
         const staffData = typeof staffRow.data === "string" ? JSON.parse(staffRow.data) : staffRow.data;
         const status = staffData.status || "active";

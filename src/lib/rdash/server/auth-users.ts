@@ -168,17 +168,32 @@ async function ensureStaffProfileForAuthUser(input: {
 }
 
 export async function findAuthUserByEmail(email: string): Promise<User | null> {
+  // STAGE-2-FIX: Use an RPC (Postgres function) for an O(1) lookup on
+  // auth.users by email, instead of paginating through ALL users via
+  // listUsers (which was O(N) and DOS-able). Requires the
+  // get_auth_user_by_email function from stage2-schema-fixes.sql.
   const admin = getSupabaseAdminClient();
   const target = normalizeAuthEmail(email);
-  let page = 1;
-  for (;;) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 100 });
-    if (error) throw new Error(`Supabase user lookup failed: ${error.message}`);
-    const found = data.users.find((user) => normalizeAuthEmail(user.email || "") === target);
-    if (found) return found;
-    if (data.users.length < 100) return null;
-    page += 1;
+  const { data, error } = await (admin as unknown as {
+    rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+  }).rpc("get_auth_user_by_email", { p_email: target });
+  if (error) {
+    // If the RPC doesn't exist yet (migration not run), fall back to the old
+    // paginated approach so the app keeps working during the transition.
+    console.warn("[auth-users] get_auth_user_by_email RPC failed, falling back to listUsers:", error.message);
+    let page = 1;
+    for (;;) {
+      const { data: pageData, error: pageError } = await admin.auth.admin.listUsers({ page, perPage: 100 });
+      if (pageError) throw new Error(`Supabase user lookup failed: ${pageError.message}`);
+      const found = pageData.users.find((user) => normalizeAuthEmail(user.email || "") === target);
+      if (found) return found;
+      if (pageData.users.length < 100) return null;
+      page += 1;
+    }
   }
+  if (!data) return null;
+  // The RPC returns a json object with id, email, etc. — cast to User.
+  return data as unknown as User;
 }
 
 export async function createPendingAccessRequest(input: {
