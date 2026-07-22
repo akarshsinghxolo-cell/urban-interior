@@ -122,6 +122,7 @@ async function ensureStaffProfileForAuthUser(input: {
       name,
       email,
       phone: "",
+      auth_user_id: input.userId,  // FIX-DB-MERGE-001: links to Supabase auth.users
       role: roleId === "OWNER" ? "Owner"
         : roleId === "OPERATIONS_MANAGER" ? "Operations Manager"
         : roleId === "FIELD_STAFF" ? "Field Staff"
@@ -133,7 +134,7 @@ async function ensureStaffProfileForAuthUser(input: {
       role_key: roleId as any,
       department: "",
       designation: "",
-      status: input.status === "active" ? "active" : "inactive",
+      status: input.status === "active" ? "active" : input.status,
       salary_type: "monthly" as const,
       gps_tracking_enabled: true,
       login_enabled: true,

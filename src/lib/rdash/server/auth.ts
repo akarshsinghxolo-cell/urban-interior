@@ -79,13 +79,43 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
     const { data, error } = await auth.auth.signInWithPassword({ email, password });
     if (error || !data.user?.id || !data.user.email) return null;
     const admin = getSupabaseAdminClient();
+    // FIX-DB-MERGE-001: Read from entity_master_staff (single source of truth)
+    // instead of uc_user_roles + StaffProfile. The auth_user_id field in the
+    // JSON data links the staff record to the Supabase auth.users table.
+    const { data: staffRows, error: staffError } = await admin
+        .from("entity_master_staff")
+        .select("id,data")
+        .eq("workspace_id", "default");
+    if (staffError) throw new Error(`Urban Castle staff lookup failed: ${staffError.message}`);
+    // Find the staff record whose auth_user_id matches the logged-in user
+    const staffRow = (staffRows || []).find((row: any) => {
+        const d = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+        return d?.auth_user_id === data.user!.id;
+    });
+    if (staffRow) {
+        const staffData = typeof staffRow.data === "string" ? JSON.parse(staffRow.data) : staffRow.data;
+        const status = staffData.status || "active";
+        if (status === "active") {
+            return {
+                userId: data.user.id,
+                email: data.user.email.toLowerCase(),
+                name: staffData.name || String(data.user.user_metadata?.full_name || data.user.email),
+                role: asRDashRole(staffData.role_key || staffData.role || "FIELD_STAFF"),
+                staffId: staffRow.id,
+            };
+        }
+        if (status === "pending") throw new AuthAccessError("Your Urban Castle login request is waiting for owner approval.", 403, "PENDING_APPROVAL");
+        if (status === "rejected") throw new AuthAccessError("Your Urban Castle login request was rejected by the owner.", 403, "ACCESS_REJECTED");
+        if (status === "inactive") throw new AuthAccessError("This Urban Castle account is inactive. Contact the owner.", 403, "ACCESS_INACTIVE");
+    }
+    // Fallback: check uc_user_roles for backward compat (during migration period)
     const { data: rows, error: mappingError } = await admin
         .from("uc_user_roles")
         .select("role,staff_id,display_name,status")
         .eq("user_id", data.user.id)
         .in("status", ["active", "pending", "rejected", "inactive"]);
     if (mappingError) throw new Error(`Urban Castle Supabase role lookup failed: ${mappingError.message}`);
-    const activeRow = rows?.find((candidate) => candidate.status === "active");
+    const activeRow = rows?.find((candidate: any) => candidate.status === "active");
     if (activeRow?.role) {
         return {
             userId: data.user.id,
@@ -95,11 +125,11 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
             staffId: activeRow.staff_id || undefined,
         };
     }
-    const pendingRow = rows?.find((candidate) => candidate.status === "pending");
+    const pendingRow = rows?.find((candidate: any) => candidate.status === "pending");
     if (pendingRow) throw new AuthAccessError("Your Urban Castle login request is waiting for owner approval.", 403, "PENDING_APPROVAL");
-    const rejectedRow = rows?.find((candidate) => candidate.status === "rejected");
+    const rejectedRow = rows?.find((candidate: any) => candidate.status === "rejected");
     if (rejectedRow) throw new AuthAccessError("Your Urban Castle login request was rejected by the owner.", 403, "ACCESS_REJECTED");
-    const inactiveRow = rows?.find((candidate) => candidate.status === "inactive");
+    const inactiveRow = rows?.find((candidate: any) => candidate.status === "inactive");
     if (inactiveRow) throw new AuthAccessError("This Urban Castle account is inactive. Contact the owner.", 403, "ACCESS_INACTIVE");
     throw new AuthAccessError("This authenticated account has no Urban Castle role assignment yet.", 403, "NO_ROLE_ASSIGNMENT");
 }
