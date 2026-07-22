@@ -214,7 +214,7 @@ export function LeadsModule({ filterPresets }: {
         setActiveSavedViewId(view.id);
     };
     const allLeads = React.useMemo(() => {
-        const activeLeadStatuses: WorkRequiredStatus[] = ["new", "new", "visit_scheduled", "quotation_in_progress", "quotation_sent", "on_hold"];
+        const activeLeadStatuses: WorkRequiredStatus[] = ["new", "contacted", "visit_scheduled", "measurement_done", "quotation_in_progress", "quotation_sent", "negotiation", "on_hold"];  // STAGE-4-FIX: removed dup "new", added contacted/measurement_done/negotiation
         return db.workRequired
             .filter((workRequired) => activeLeadStatuses.includes(workRequired.status))
             .map((workRequired) => ({ customer: db.customers.find((customer) => customer.id === workRequired.customer_id), workRequired }))

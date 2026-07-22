@@ -61,22 +61,29 @@ export function FieldModeModule() {
     const [uploadingReport, setUploadingReport] = React.useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const lastTrackingPointAt = React.useRef(0);
-    React.useEffect(() => {
+    const disposedRef = React.useRef(false);
+    React.useEffect(() => () => { disposedRef.current = true; }, []);  // STAGE-4-FIX: unmount guard
+    // STAGE-4-FIX: deps without db.visits (was tearing down watchPosition on
+    // every visit mutation, dropping GPS points). Read visits via getState().
+    const activeVisitId = React.useMemo(() => {
         const active = db.visits.find((visit) => visit.assignee_type !== "contractor" && !visit.contractor_id && visit.status === "checked_in" && (canManageAll || visit.staff_id === user.staffId));
-        if (!active || !navigator.geolocation)
+        return active?.id || null;
+    }, [db.visits, canManageAll, user.staffId]);
+    React.useEffect(() => {
+        if (!activeVisitId || !navigator.geolocation)
             return;
         const watchId = navigator.geolocation.watchPosition((position) => {
             const now = Date.now();
             if (now - lastTrackingPointAt.current < 30000)
                 return;
             try {
-                recordTrackingPoint(active.id, { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, captured_at: new Date().toISOString() });
+                recordTrackingPoint(activeVisitId, { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, captured_at: new Date().toISOString() });
                 lastTrackingPointAt.current = now;
             }
             catch { }
         }, () => undefined, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
         return () => navigator.geolocation.clearWatch(watchId);
-    }, [db.visits, recordTrackingPoint, canManageAll, user.staffId]);
+    }, [activeVisitId, recordTrackingPoint]);  // STAGE-4-FIX: deps [activeVisitId, recordTrackingPoint]
     const visitMapPoints: MapPoint[] = React.useMemo(() => sorted.map((visit, index) => {
         const coordinates = visitPrimaryCoordinates(visit);
         return {
@@ -134,6 +141,7 @@ export function FieldModeModule() {
         setGpsStatus("capturing");
         setCapturingVisitId(v.id);
         navigator.geolocation.getCurrentPosition((position) => {
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
             try {
                 checkIn(v.id, {
                     latitude: position.coords.latitude,
@@ -168,6 +176,7 @@ export function FieldModeModule() {
         setGpsStatus("capturing");
         setCapturingVisitId(v.id);
         navigator.geolocation.getCurrentPosition((position) => {
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
             try {
                 checkOut(v.id, {
                     latitude: position.coords.latitude,
@@ -262,6 +271,7 @@ export function FieldModeModule() {
         }
         setQuickCheckInProgress(true);
         navigator.geolocation.getCurrentPosition((position) => {
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
             const { latitude, longitude, accuracy } = position.coords;
             // Find the nearest site within 500m of the current location.
             const candidates = db.sites

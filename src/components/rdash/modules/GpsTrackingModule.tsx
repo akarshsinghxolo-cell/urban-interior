@@ -200,6 +200,8 @@ export function GpsTrackingModule({ viewFilter }: {
     }, [refreshStaffLocations]);
     const initialView: GpsView = (VIEWS.some((v) => v.key === viewFilter) ? viewFilter : "map") as GpsView;
     const [view, setView] = React.useState<GpsView>(initialView);
+    // STAGE-4-FIX: sync view from prop changes (saved-view navigation)
+    React.useEffect(() => { if (VIEWS.some((v) => v.key === viewFilter)) setView(viewFilter as GpsView); }, [viewFilter]);
     const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
     const gpsPresets = React.useMemo(() => VIEWS.map((v) => ({ id: v.key, label: v.label, filter: { view: v.key } })), []);
     const handleViewChange = (v: GpsView) => {

@@ -187,7 +187,7 @@ export function NotificationCenter() {
       </button>
 
       {open && (<>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)}/>
+          <div className="fixed inset-0 z-40" role="button" tabIndex={0} aria-label="Close notifications" onClick={() => setOpen(false)} onKeyDown={(e) => { if (e.key === "Escape" || e.key === "Enter") setOpen(false); }}/>  {/* STAGE-4-FIX: a11y */}
           <div className="absolute right-0 top-11 z-50 flex max-h-[32rem] w-[22rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-popover animate-scale-in">
             <div className="relative border-b border-border bg-gradient-to-r from-primary/[0.06] to-transparent">
               <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary to-primary/30"/>

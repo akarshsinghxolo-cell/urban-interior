@@ -191,7 +191,7 @@ function prepareWorkspaceDatabase(input: RDashDatabase): RDashDatabase {
         balance_amount: invoice.balance_amount ??
             Math.max(0, (invoice.total_amount ?? invoice.subtotal ?? 0) -
                 (invoice.paid_amount ?? 0)),
-        thread_id: ensureThreadId(threads, invoice, "invoice", `${invoice.invoice_no || "Invoice"} Â· ${invoice.customer_name || ""}`, [invoice.customer_name || "Customer", "Accounts"]),
+        thread_id: ensureThreadId(threads, invoice, "invoice", `${invoice.invoice_no || "Invoice"} · ${invoice.customer_name || ""}`, [invoice.customer_name || "Customer", "Accounts"]),
     }));
     const workOrders = base.workOrders.map((workOrder) => ({
         ...workOrder,

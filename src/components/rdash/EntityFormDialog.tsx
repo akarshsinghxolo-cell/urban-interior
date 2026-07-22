@@ -129,6 +129,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         with_material_rate?: string;
         article_ids?: string[];
     }>>([]);
+    const disposedRef = React.useRef(false);
+    React.useEffect(() => () => { disposedRef.current = true; }, []);  // STAGE-4-FIX: unmount guard
     const [vendorWorkSubcats, setVendorWorkSubcats] = React.useState<string[]>([]);
     const [vendorArticleIds, setVendorArticleIds] = React.useState<string[]>([]);
     React.useEffect(() => {
@@ -267,7 +269,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         setConIfsc("");
         setConCategories([]);
         setConCapabilities([]);
-    }, [open, type, editId, db.customers, db.master.vendors, db.master.contractors]);
+    }, [open, type, editId]);  // STAGE-4-FIX: removed db refs (form was resetting on every background mutation)
     const referralOptions = React.useMemo(() => {
         if (!referralQuery.trim())
             return [];
@@ -316,6 +318,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         }
         setGpsLoading(true);
         navigator.geolocation.getCurrentPosition((pos) => {
+        if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
             setLat(pos.coords.latitude);
             setLng(pos.coords.longitude);
             setCoordinateInput(formatCoordinatePair({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }));
@@ -371,6 +374,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         }
         setFirstSiteGpsLoading(true);
         navigator.geolocation.getCurrentPosition((pos) => {
+        if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
             const latitude = pos.coords.latitude;
             const longitude = pos.coords.longitude;
             setFirstSiteLat(latitude);

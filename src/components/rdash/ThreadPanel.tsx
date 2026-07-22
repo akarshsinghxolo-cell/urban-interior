@@ -26,6 +26,8 @@ export function ThreadView({ threadId }: {
     const currentUser = useRDashStore((s) => s.currentUser);
     const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
     const addServerFileAsset = useRDashStore((s) => s.addServerFileAsset);
+    const disposedRef = React.useRef(true);
+    React.useEffect(() => { disposedRef.current = true; return () => { disposedRef.current = false; }; }, []);  // STAGE-4-FIX: unmount guard
     const [reply, setReply] = React.useState("");
     const [replyParentId, setReplyParentId] = React.useState<string | undefined>();
     const [uploadingProof, setUploadingProof] = React.useState(false);
@@ -120,7 +122,7 @@ export function ThreadView({ threadId }: {
                     // Fallback: create client-side (for backward compat with local uploads)
                     attachmentId = createFileAssetAndAttach({ google_file_id: uploaded.id, file_name: uploaded.name, web_view_link: uploaded.webViewLink, mime_type: uploaded.mimeType, file_size_bytes: uploaded.size, kind: "site_proof", storage_account_id: uploaded.storageAccountId, storage_folder_instance: uploaded.storageFolderInstance, storage_provider: uploaded.storageAccountId === "local" ? "local" : "google_drive", storage_mode: "managed", sync_status: "uploaded", thumbnail_url: uploaded.thumbnailLink }, { entity_type: entityType, entity_id: thread.record_id, role, visibility: "internal", customer_shareable: false, caption: "Thread attachment", created_by: user.name });
                 }
-                addReply(thread.id, {
+                if (disposedRef.current) addReply(thread.id, {
                     author: user.name,
                     role: user.role,
                     body: `Attachment: ${uploaded.name}`,
@@ -136,6 +138,7 @@ export function ThreadView({ threadId }: {
             toast.error(error instanceof Error ? error.message : "Attachment upload failed");
         }
         finally {
+            if (!disposedRef.current) return;  // STAGE-4-FIX: unmount guard
             setUploadingProof(false);
             event.target.value = "";
         }

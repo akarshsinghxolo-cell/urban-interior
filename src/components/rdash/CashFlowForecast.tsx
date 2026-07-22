@@ -26,6 +26,12 @@ interface FlowDay {
 export function CashFlowForecast() {
   const db = useRDashStore((s) => s.db);
 
+  // STAGE-4-FIX: refresh 'today' past midnight
+  const [nowTick, setNowTick] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
   const { days, totals } = React.useMemo(() => {
     const today = indiaDate();
     const days: FlowDay[] = [];
@@ -99,7 +105,7 @@ export function CashFlowForecast() {
       endingBalance: cumulative,
     };
     return { days, totals };
-  }, [db.customerReceipts, db.payments, db.vendorPayments, db.contractorPayments]);
+  }, [db.customerReceipts, db.payments, db.vendorPayments, db.contractorPayments, nowTick]);
 
   // Find max absolute value for chart scaling
   const maxAbs = Math.max(...days.map((d) => Math.abs(d.net)), 1);

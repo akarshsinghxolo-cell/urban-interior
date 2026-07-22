@@ -253,9 +253,7 @@ export function jobStatusStyle(s: WorkOrderStatus): StatusStyle {
 export function workRequiredStatusStyle(s: WorkRequiredStatus): StatusStyle {
     switch (s) {
         case "new":
-            return { label: "New", className: "bg-primary/10 text-primary border-primary/20" };
-        case "new":
-            return { label: "Qualified", className: "bg-primary/10 text-primary border-primary/20" };
+            return { label: "New", className: "bg-primary/10 text-primary border-primary/20" };  // STAGE-4-FIX: removed duplicate dead "new" case (was "Qualified" label, unreachable)
         case "visit_scheduled":
             return { label: "Visit planned", className: "bg-warning/10 text-warning border-warning/20" };
         case "measurement_done":

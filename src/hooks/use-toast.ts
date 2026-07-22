@@ -140,7 +140,7 @@ function useToast() {
                 listeners.splice(index, 1);
             }
         };
-    }, [state]);
+    }, []);  // STAGE-4-FIX: deps [] (setState is stable — was [state], causing pop/re-push on every state change)
     return {
         ...state,
         toast,

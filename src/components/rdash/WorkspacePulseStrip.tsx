@@ -58,10 +58,12 @@ function MiniSparkline({ values }: { values: number[] }) {
 function useCountUp(value: number, duration = 650) {
   const [display, setDisplay] = React.useState(0);
   const rafRef = React.useRef<number | null>(null);
+  const prevRef = React.useRef(0);  // STAGE-4-FIX: track previous value
   React.useEffect(() => {
     const start = performance.now();
-    const from = 0;
+    const from = prevRef.current;  // STAGE-4-FIX: animate from previous (was always 0)
     const to = value;
+    prevRef.current = value;
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
       // easeOutCubic

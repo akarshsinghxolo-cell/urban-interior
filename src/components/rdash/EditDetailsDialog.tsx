@@ -81,7 +81,7 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
       setExpectedEnd(w.expected_end || "");
       setStatus(w.status || "in_progress");
     }
-  }, [open, entity, type]);
+  }, [open, entityId, type]);  // STAGE-4-FIX: deps [open,entityId,type] (was [open,entity,type] — entity ref changes on every db mutation, resetting form)
 
   const staff = db.master.staff.filter((s) => s.status === "active");
   const contractors = db.master.contractors;

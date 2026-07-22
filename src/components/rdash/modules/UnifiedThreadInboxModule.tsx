@@ -35,14 +35,14 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     const [selectedThreadId, setSelectedThreadId] = React.useState<string | null>(null);
     // Pinned threads — persisted to localStorage so users can bookmark
     // important conversations for quick access.
-    const [pinnedThreadIds, setPinnedThreadIds] = React.useState<Set<string>>(() => {
+    // STAGE-4-FIX: init empty to avoid hydration mismatch, load in useEffect
+    const [pinnedThreadIds, setPinnedThreadIds] = React.useState<Set<string>>(() => new Set());
+    React.useEffect(() => {
         try {
             const stored = localStorage.getItem("uc-pinned-threads");
-            return stored ? new Set(JSON.parse(stored)) : new Set();
-        } catch {
-            return new Set();
-        }
-    });
+            if (stored) setPinnedThreadIds(new Set(JSON.parse(stored)));
+        } catch { /* non-fatal */ }
+    }, []);
     const togglePin = React.useCallback((threadId: string, threadTitle: string) => {
         setPinnedThreadIds((prev) => {
             const next = new Set(prev);
@@ -71,14 +71,14 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     // Unread state — tracks the last-viewed timestamp per thread. A thread is
     // "unread" if it has messages newer than the last-viewed timestamp.
     // Persisted to localStorage so unread state survives reloads.
-    const [lastViewedMap, setLastViewedMap] = React.useState<Record<string, string>>(() => {
+    // STAGE-4-FIX: init empty to avoid hydration mismatch, load in useEffect
+    const [lastViewedMap, setLastViewedMap] = React.useState<Record<string, string>>(() => ({}));
+    React.useEffect(() => {
         try {
             const stored = localStorage.getItem("uc-thread-last-viewed");
-            return stored ? JSON.parse(stored) : {};
-        } catch {
-            return {};
-        }
-    });
+            if (stored) setLastViewedMap(JSON.parse(stored));
+        } catch { /* non-fatal */ }
+    }, []);
     const isThreadUnread = React.useCallback((thread: Thread): boolean => {
         const lastViewed = lastViewedMap[thread.id];
         if (!lastViewed) return true; // never viewed → unread

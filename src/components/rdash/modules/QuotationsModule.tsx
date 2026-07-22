@@ -90,6 +90,8 @@ export function QuotationsModule({ filterPresets, statusFilter, view, }: {
         ? toStatusKey(presets[0].filter?.status)
         : toStatusKey(statusFilter);
     const [activeStatus, setActiveStatus] = React.useState<StatusKey>(initialStatus);
+    // STAGE-4-FIX: sync activeStatus from prop changes (saved-view navigation)
+    React.useEffect(() => { if (statusFilter) setActiveStatus(toStatusKey(statusFilter)); }, [statusFilter]);
     const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
     const currentPresetId = React.useMemo(() => {
         if (!presets)

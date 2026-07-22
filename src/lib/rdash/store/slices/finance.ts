@@ -490,7 +490,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                 nextSequenceNo("INV", get().db.invoices);
             const total = invoice.total_amount ?? invoice.subtotal ?? 0;
             const paid = invoice.paid_amount ?? 0;
-            const threadId = get().openThreadFor("invoice", id, `${invoiceNo} Â· ${invoice.customer_name || "Customer"}`, [actor.name, invoice.customer_name || "Customer"]);
+            const threadId = get().openThreadFor("invoice", id, `${invoiceNo} · ${invoice.customer_name || "Customer"}`, [actor.name, invoice.customer_name || "Customer"]);
             const now = nowIso();
             const row: CustomerInvoice = {
                 id,
@@ -561,7 +561,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
             }
             assertServiceFinanceContext(get().db, { ...before, ...patch }, "Customer invoice");
             const threadId = before.thread_id ||
-                get().openThreadFor("invoice", id, `${before.invoice_no || "Invoice"} Â· ${before.customer_name || ""}`, [actor.name, before.customer_name || "Customer"]);
+                get().openThreadFor("invoice", id, `${before.invoice_no || "Invoice"} · ${before.customer_name || ""}`, [actor.name, before.customer_name || "Customer"]);
             commitState((s: any) => ({
                 db: {
                     ...s.db,
@@ -637,7 +637,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
             }
             const invoiceNo = nextSequenceNo("INV", get().db.invoices);
             const id = genId("inv");
-            const threadId = get().openThreadFor("invoice", id, `${invoiceNo} Â· ${payment.customer_name || "Customer"}`, [payment.customer_name || "Customer", "Accounts"]);
+            const threadId = get().openThreadFor("invoice", id, `${invoiceNo} · ${payment.customer_name || "Customer"}`, [payment.customer_name || "Customer", "Accounts"]);
             const invoice = buildInvoiceDraftFromPayment(payment, invoiceNo, threadId);
             const row = { ...invoice, id, thread_id: threadId };
             commitState((s: any) => ({

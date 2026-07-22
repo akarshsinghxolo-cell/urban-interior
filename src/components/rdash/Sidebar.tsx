@@ -6,6 +6,9 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { ALL_MODULES, type ModuleDef, type Submodule } from "@/lib/rdash/modules";
 import { canRole, permissionModuleForRoute, type StaffPermissionRecord } from "@/lib/rdash/staff-operations";
 
+// STAGE-4-FIX: stable ref for empty permissions (avoids recreating [] every render)
+const EMPTY_PERMISSIONS: StaffPermissionRecord[] = [];
+
 function moduleMatches(module: ModuleDef, query: string) {
     if (!query) return true;
     const q = query.toLowerCase();
@@ -164,7 +167,7 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
     const authUser = useRDashStore((s) => s.authUser);
     const db = useRDashStore((s) => s.db);
     const role = authUser?.role || "Owner";
-    const permissions = ((db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || []);
+    const permissions = ((db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || EMPTY_PERMISSIONS);  // STAGE-4-FIX: stable ref
     const canSeeRoute = React.useCallback((route: ModuleDef | Submodule) => canRole(permissions, role, permissionModuleForRoute(route), "view"), [permissions, role]);
     const modules = React.useMemo(() => ALL_MODULES
         .map((module) => ({ ...module, submodules: module.submodules.filter((submodule) => canSeeRoute(submodule)) }))
@@ -247,7 +250,7 @@ export function Sidebar() {
       </aside>
 
       {mobileNavOpen && (<div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" onClick={() => setMobileNavOpen(false)}/>
+          <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" role="button" tabIndex={0} aria-label="Close navigation" onClick={() => setMobileNavOpen(false)} onKeyDown={(e) => { if (e.key === "Escape" || e.key === "Enter") setMobileNavOpen(false); }}/>  {/* STAGE-4-FIX: a11y */}
           <div className="absolute inset-y-0 left-0 w-[320px] max-w-[85vw] shadow-popover" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
             <button type="button" className="absolute right-3 top-3 z-10 rounded-md p-1 text-muted-foreground hover:bg-accent" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation">
               <X className="h-5 w-5"/>
