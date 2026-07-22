@@ -76,12 +76,28 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
     // STAGE-2-FIX: Use the auth_user_id_gen generated column (indexed) for an
     // O(1) server-side lookup instead of loading ALL staff rows and filtering
     // in JS. Requires the stage2-schema-fixes.sql migration to have been run.
-    const { data: staffRow, error: staffError } = await admin
+    // FALLBACK: If the column doesn't exist yet (migration not run), fall back
+    // to the old full-scan approach so logins keep working during transition.
+    let staffRow: { id: string; data: string | Record<string, unknown> } | null = null;
+    const { data: genRow, error: genError } = await admin
         .from("entity_master_staff")
         .select("id,data")
         .eq("auth_user_id_gen", data.user!.id)
         .maybeSingle();
-    if (staffError) throw new Error(`Urban Castle staff lookup failed: ${staffError.message}`);
+    if (genError) {
+        // Column doesn't exist — fall back to full scan (pre-migration path)
+        const { data: staffRows, error: staffError } = await admin
+            .from("entity_master_staff")
+            .select("id,data")
+            .eq("workspace_id", "default");
+        if (staffError) throw new Error(`Urban Castle staff lookup failed: ${staffError.message}`);
+        staffRow = (staffRows || []).find((row: any) => {
+            const d = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+            return d?.auth_user_id === data.user!.id;
+        }) || null;
+    } else {
+        staffRow = genRow;
+    }
     if (staffRow) {
         const staffData = typeof staffRow.data === "string" ? JSON.parse(staffRow.data) : staffRow.data;
         const status = staffData.status || "active";
