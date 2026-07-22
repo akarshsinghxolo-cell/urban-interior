@@ -22,9 +22,6 @@ ALTER TABLE "entity_workRequired" ADD COLUMN IF NOT EXISTS "site_id_gen" text GE
 ALTER TABLE "entity_workRequired" DROP CONSTRAINT IF EXISTS "entity_workRequired_site_id_fkey";
 ALTER TABLE "entity_workRequired" ADD CONSTRAINT "entity_workRequired_site_id_fkey" FOREIGN KEY ("site_id_gen") REFERENCES "entity_sites"(id);
 
-ALTER TABLE "entity_workRequired" ADD COLUMN IF NOT EXISTS "area_ids_gen" text GENERATED ALWAYS AS (data->>'area_ids') STORED;
-ALTER TABLE "entity_workRequired" DROP CONSTRAINT IF EXISTS "entity_workRequired_area_ids_fkey";
-ALTER TABLE "entity_workRequired" ADD CONSTRAINT "entity_workRequired_area_ids_fkey" FOREIGN KEY ("area_ids_gen") REFERENCES "entity_areas"(id);
 
 ALTER TABLE "entity_measurementRevisions" ADD COLUMN IF NOT EXISTS "site_id_gen" text GENERATED ALWAYS AS (data->>'site_id') STORED;
 ALTER TABLE "entity_measurementRevisions" DROP CONSTRAINT IF EXISTS "entity_measurementRevisions_site_id_fkey";
@@ -74,21 +71,9 @@ ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "site_id_gen" text GENE
 ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_site_id_fkey";
 ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_site_id_fkey" FOREIGN KEY ("site_id_gen") REFERENCES "entity_sites"(id);
 
-ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "quotation_ids_gen" text GENERATED ALWAYS AS (data->>'quotation_ids') STORED;
-ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_quotation_ids_fkey";
-ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_quotation_ids_fkey" FOREIGN KEY ("quotation_ids_gen") REFERENCES "entity_quotations"(id);
 
-ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "accepted_scope_ids_gen" text GENERATED ALWAYS AS (data->>'accepted_scope_ids') STORED;
-ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_accepted_scope_ids_fkey";
-ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_accepted_scope_ids_fkey" FOREIGN KEY ("accepted_scope_ids_gen") REFERENCES "entity_acceptedScopes"(id);
 
-ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "work_required_ids_gen" text GENERATED ALWAYS AS (data->>'work_required_ids') STORED;
-ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_work_required_ids_fkey";
-ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_work_required_ids_fkey" FOREIGN KEY ("work_required_ids_gen") REFERENCES "entity_workRequired"(id);
 
-ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "area_ids_gen" text GENERATED ALWAYS AS (data->>'area_ids') STORED;
-ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_area_ids_fkey";
-ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_area_ids_fkey" FOREIGN KEY ("area_ids_gen") REFERENCES "entity_areas"(id);
 
 ALTER TABLE "entity_boqs" ADD COLUMN IF NOT EXISTS "work_order_id_gen" text GENERATED ALWAYS AS (data->>'work_order_id') STORED;
 ALTER TABLE "entity_boqs" DROP CONSTRAINT IF EXISTS "entity_boqs_work_order_id_fkey";
@@ -718,9 +703,6 @@ ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "abandoned_contractor_i
 ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_abandoned_contractor_id_fkey";
 ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_abandoned_contractor_id_fkey" FOREIGN KEY ("abandoned_contractor_id_gen") REFERENCES "entity_master_contractors"(id);
 
-ALTER TABLE "entity_drawings" ADD COLUMN IF NOT EXISTS "derived_boq_item_ids_gen" text GENERATED ALWAYS AS (data->>'derived_boq_item_ids') STORED;
-ALTER TABLE "entity_drawings" DROP CONSTRAINT IF EXISTS "entity_drawings_derived_boq_item_ids_fkey";
-ALTER TABLE "entity_drawings" ADD CONSTRAINT "entity_drawings_derived_boq_item_ids_fkey" FOREIGN KEY ("derived_boq_item_ids_gen") REFERENCES "entity_boqs"(id);
 
 ALTER TABLE "entity_grns" ADD COLUMN IF NOT EXISTS "obstacle_id_gen" text GENERATED ALWAYS AS (data->>'obstacle_id') STORED;
 ALTER TABLE "entity_grns" DROP CONSTRAINT IF EXISTS "entity_grns_obstacle_id_fkey";
@@ -794,9 +776,6 @@ ALTER TABLE "entity_blocked" ADD COLUMN IF NOT EXISTS "linked_quotation_id_gen" 
 ALTER TABLE "entity_blocked" DROP CONSTRAINT IF EXISTS "entity_blocked_linked_quotation_id_fkey";
 ALTER TABLE "entity_blocked" ADD CONSTRAINT "entity_blocked_linked_quotation_id_fkey" FOREIGN KEY ("linked_quotation_id_gen") REFERENCES "entity_quotations"(id);
 
-ALTER TABLE "entity_variationRequests" ADD COLUMN IF NOT EXISTS "affected_boq_item_ids_gen" text GENERATED ALWAYS AS (data->>'affected_boq_item_ids') STORED;
-ALTER TABLE "entity_variationRequests" DROP CONSTRAINT IF EXISTS "entity_variationRequests_affected_boq_item_ids_fkey";
-ALTER TABLE "entity_variationRequests" ADD CONSTRAINT "entity_variationRequests_affected_boq_item_ids_fkey" FOREIGN KEY ("affected_boq_item_ids_gen") REFERENCES "entity_boqs"(id);
 
 ALTER TABLE "entity_auditLog" ADD COLUMN IF NOT EXISTS "customer_id_gen" text GENERATED ALWAYS AS (data->>'customer_id') STORED;
 ALTER TABLE "entity_auditLog" DROP CONSTRAINT IF EXISTS "entity_auditLog_customer_id_fkey";
