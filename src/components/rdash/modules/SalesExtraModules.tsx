@@ -209,7 +209,7 @@ export function GstReturnsModule() {
             collected: number;
             paid: number;
         }>();
-        gstQuotations.forEach((q) => {
+        db.quotations.filter((q) => q.status === "sent" || q.status === "accepted").forEach((q) => {
             const month = new Date(q.created_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
             const e = m.get(month) || { collected: 0, paid: 0 };
             e.collected += q.tax_amount;
@@ -222,7 +222,7 @@ export function GstReturnsModule() {
             m.set(month, e);
         });
         return Array.from(m.entries()).map(([month, v]) => ({ month, ...v, net: v.collected - v.paid }));
-    }, [gstQuotations, db.vendorBills]);
+    }, [db.quotations, db.vendorBills]);
     return (<div className="flex flex-col gap-5">
       <div className="flex items-center gap-2.5">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><FileText className="h-5 w-5"/></span>
