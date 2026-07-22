@@ -106,6 +106,63 @@ async function ensureStaffProfileForAuthUser(input: {
         .select("id")
         .single();
   if (error || !profile) throw new Error(`Could not save staff profile: ${error?.message || "unknown error"}`);
+
+  // FIX-STAFF-SYNC: Also upsert into entity_master_staff so the staff member
+  // appears in the HR module (Attendance, Payroll, Staff Board). The auth
+  // system writes to StaffProfile (normalized table), but the workspace/HR
+  // module reads from entity_master_staff (workspace blob table). Without
+  // this sync, approved users can log in but are invisible in HR — they
+  // can't be assigned visits, tracked for attendance, or processed for
+  // payroll.
+  try {
+    const now = new Date().toISOString();
+    const staffEntityData = {
+      id,
+      code,
+      name,
+      email,
+      phone: "",
+      role: roleId === "OWNER" ? "Owner"
+        : roleId === "OPERATIONS_MANAGER" ? "Operations Manager"
+        : roleId === "FIELD_STAFF" ? "Field Staff"
+        : roleId === "SALES_TELECALLER" ? "Sales / Telecaller"
+        : roleId === "PROCUREMENT_STAFF" ? "Procurement Staff"
+        : roleId === "FINANCE" ? "Finance"
+        : roleId === "ACCOUNTS_ADMIN" ? "Accounts / Admin"
+        : "Staff",
+      role_key: roleId as any,
+      department: "",
+      designation: "",
+      status: input.status === "active" ? "active" : "inactive",
+      salary_type: "monthly" as const,
+      gps_tracking_enabled: true,
+      login_enabled: true,
+      login_email: email,
+      attendance_policy: {
+        id: `policy-${id}`,
+        grace_period_minutes: 15,
+        late_grace_minutes: 15,
+        absent_deduction_enabled: false,
+        absent_deduction_days: 0,
+      },
+      created_at: now,
+      updated_at: now,
+    };
+    await admin.from("entity_master_staff").upsert({
+      id,
+      workspace_id: "default",
+      revision: 0,
+      updated_at: now,
+      updated_by: "auth-system",
+      data: staffEntityData,
+    }, { onConflict: "id" });
+  } catch (syncError) {
+    // Non-fatal — the StaffProfile was saved successfully, so login will
+    // work. The entity_master_staff sync is for HR visibility. Log but
+    // don't block the approval.
+    console.error("[auth-users] Failed to sync staff to entity_master_staff:", syncError);
+  }
+
   return profile.id;
 }
 
@@ -295,7 +352,23 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
   if (error) throw new Error(`Could not reject user: ${error.message}`);
   const rejected = data as RDashUserRoleAssignment;
   if (rejected.staff_id) {
-    await getSupabaseAdminClient().from("StaffProfile").update({ status: "inactive" }).eq("id", rejected.staff_id).then(() => undefined, () => undefined);
+    const adminClient = getSupabaseAdminClient();
+    await adminClient.from("StaffProfile").update({ status: "inactive" }).eq("id", rejected.staff_id).then(() => undefined, () => undefined);
+    // FIX-STAFF-SYNC: Also mark as inactive in entity_master_staff so the
+    // HR module reflects the rejection.
+    try {
+      const existing = await adminClient.from("entity_master_staff").select("data").eq("id", rejected.staff_id).maybeSingle();
+      if (existing.data) {
+        const staffData = typeof existing.data.data === "string" ? JSON.parse(existing.data.data) : existing.data.data;
+        staffData.status = "inactive";
+        staffData.updated_at = now;
+        await adminClient.from("entity_master_staff").update({
+          data: staffData,
+          updated_at: now,
+          updated_by: "auth-system",
+        }).eq("id", rejected.staff_id);
+      }
+    } catch { /* non-fatal */ }
   }
   return rejected;
 }
