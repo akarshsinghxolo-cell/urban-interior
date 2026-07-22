@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { QuickActionsToolbar } from "./QuickActionsToolbar";
+import { FavoritesBar } from "./FavoritesBar";
 const DailyWork = React.lazy(() => import("./modules/DailyWork").then((module) => ({ default: module.DailyWork })));
 const CustomerDesk = React.lazy(() => import("./modules/CustomerDesk").then((module) => ({ default: module.CustomerDesk })));
 const SiteExecutionModule = React.lazy(() => import("./modules/SiteExecutionModule").then((module) => ({ default: module.SiteExecutionModule })));
@@ -445,6 +446,8 @@ export function RDashApp() {
           {/* CRON-2: Quick actions toolbar with keyboard shortcuts (Alt+1-6) */}
           <div className="mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] pt-3">
             <QuickActionsToolbar />
+            {/* CRON-5: Favorites bar for pinned records */}
+            <FavoritesBar />
           </div>
           <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-32 lg:pb-0">
             <section aria-label="Active workspace" className="rd-module-enter mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] py-[var(--page-pad)]" key={activeModuleId}>

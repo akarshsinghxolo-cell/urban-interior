@@ -2,6 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
+import { useFavorites } from "./FavoritesBar";
 import { FilePreview } from "./FilePreview";
 import { attachedFilesForIds, assetPreview } from "@/lib/rdash/file-attachments";
 import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
@@ -57,6 +58,28 @@ export function DetailPanel() {
       </aside>
     </>);
 }
+
+function FavoriteStarButton() {
+    const detail = useRDashStore((s) => s.detailPanel);
+    const { isFavorite, toggleFavorite } = useFavorites();
+    if (!detail.kind || !detail.recordId) return null;
+    const fav = isFavorite(detail.recordId);
+    const label = resolveTitle(detail.kind, detail.recordId, useRDashStore.getState().db);
+    return (
+        <button
+            type="button"
+            onClick={() => toggleFavorite({ id: detail.recordId!, kind: detail.kind, label: label || "Record" })}
+            className={cn("rounded-md p-1.5 transition-colors", fav
+                ? "text-warning hover:bg-warning/10"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground")}
+            aria-label={fav ? "Remove from favorites" : "Add to favorites"}
+            title={fav ? "Remove from favorites" : "Add to favorites"}
+        >
+            <Star className={cn("h-4 w-4", fav && "fill-current")} />
+        </button>
+    );
+}
+
 function PanelHeader({ tab, setTab }: {
     tab: Tab;
     setTab: (t: Tab) => void;
@@ -169,6 +192,8 @@ function PanelHeader({ tab, setTab }: {
           </div>
         </div>
         <div className="flex items-center gap-0.5">
+          {/* CRON-5: Favorite/pin button */}
+          <FavoriteStarButton />
           <button type="button" onClick={closeDetail} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" aria-label="Close panel">
             <X className="h-4 w-4"/>
           </button>
