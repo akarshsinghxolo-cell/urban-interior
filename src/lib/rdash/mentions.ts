@@ -183,7 +183,7 @@ export function buildMentionableEntities(db: any): MentionableEntity[] {
     (db.tasks || []).forEach((t: any) => push("task", t.id, t.title, t.assignee_name, "Tasks"));
     (db.visits || []).forEach((v: any) => push("visit", v.id, v.title || v.location_name, v.staff_name, "Visits"));
     (db.vendorBills || []).forEach((b: any) => push("vendorBill", b.id, b.bill_no || b.id, b.vendor_name, "Vendor Bills"));  // STAGE-3-FIX: bill_no (not bill_number)
-    (db.payments || []).forEach((p: any) => push("payment", p.id, p.payment_no || p.label || p.id, p.customer_name, "Payments"));  // STAGE-3-FIX: payment_no (not payment_number)
+    (db.payments || []).forEach((p: any) => push("payment", p.id, p.milestone_label || p.payment_no || p.id, p.customer_name, "Payments"));  // STAGE-3-FIX: milestone_label (Payment has no payment_no)
     (db.invoices || []).forEach((i: any) => push("invoice", i.id, i.invoice_no || i.id, i.customer_name, "Invoices"));  // STAGE-3-FIX: invoice_no (not invoice_number)
     return out;
 }

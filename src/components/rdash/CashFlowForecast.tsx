@@ -33,11 +33,11 @@ export function CashFlowForecast() {
 
     // Seed cumulative with current cash position (sum of received receipts minus paid vendor/contractor payments)
     const receivedToDate = db.customerReceipts
-      .filter((r) => new Date(r.received_at) <= new Date(`${today}T23:59:59`))
+      .filter((r) => new Date(r.received_at) <= new Date(`${today}T23:59:59+05:30`))  // STAGE-3-FIX: IST
       .reduce((s, r) => s + r.amount, 0);
     const paidToDate =
-      db.vendorPayments.filter((p) => p.status === "paid" && p.paid_at && new Date(p.paid_at) <= new Date(`${today}T23:59:59`)).reduce((s, p) => s + p.amount, 0) +
-      db.contractorPayments.filter((p) => p.status === "paid" && p.paid_at && new Date(p.paid_at) <= new Date(`${today}T23:59:59`)).reduce((s, p) => s + p.amount, 0);
+      db.vendorPayments.filter((p) => p.status === "paid" && p.paid_at && new Date(p.paid_at) <= new Date(`${today}T23:59:59+05:30`)).reduce((s, p) => s + p.amount, 0) +
+      db.contractorPayments.filter((p) => p.status === "paid" && p.paid_at && new Date(p.paid_at) <= new Date(`${today}T23:59:59+05:30`)).reduce((s, p) => s + p.amount, 0);
     cumulative = receivedToDate - paidToDate;
 
     const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

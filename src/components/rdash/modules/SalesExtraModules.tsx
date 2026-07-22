@@ -211,8 +211,9 @@ export function GstReturnsModule() {
             collected: number;
             paid: number;
         }>();
-        db.quotations.filter((q) => q.status === "sent" || q.status === "accepted").forEach((q) => {
-            const month = new Date(q.created_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+        // STAGE-3-FIX: monthly breakdown also uses invoices (not quotations)
+        gstInvoices.forEach((q: any) => {
+            const month = new Date(q.created_at || q.issued_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
             const e = m.get(month) || { collected: 0, paid: 0 };
             e.collected += q.tax_amount || 0;
             m.set(month, e);
