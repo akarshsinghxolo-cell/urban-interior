@@ -6,6 +6,9 @@ import {
   Wrench, type LucideIcon,
 } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
+import { ThemeToggle } from "./ThemeToggle";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Clock, History } from "lucide-react";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
 
 /**
@@ -47,6 +50,84 @@ const toneStyles = {
   warning: "bg-warning/10 text-warning border-warning/20 hover:bg-warning/20 hover:border-warning/40",
   default: "bg-muted/40 text-foreground border-border/50 hover:bg-muted/60 hover:border-border",
 };
+
+
+function RecentItemsDropdown() {
+  const auditLog = useRDashStore((s) => s.db.auditLog);
+  const openDetail = useRDashStore((s) => s.openDetail);
+  const [open, setOpen] = React.useState(false);
+
+  const recent = React.useMemo(() => {
+    return (auditLog || []).slice(0, 6);
+  }, [auditLog]);
+
+  const handleClick = (entry: any) => {
+    if (entry.entity_id && entry.entity_type) {
+      const kind = entry.entity_type === "workOrder" ? "workOrder" :
+                   entry.entity_type === "quotation" ? "quotation" :
+                   entry.entity_type === "customer" ? "customer" :
+                   entry.entity_type === "site" ? "site" :
+                   entry.entity_type === "task" ? "task" :
+                   entry.entity_type === "visit" ? "visit" : undefined;
+      if (kind) {
+        openDetail(kind as any, entry.entity_id);
+        setOpen(false);
+      }
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Recent activity (Alt+R)"
+          className="group flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/40 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all hover:bg-muted/60 hover:text-foreground active:scale-95"
+        >
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          <span className="hidden sm:inline">Recent</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-72 p-0">
+        <div className="border-b border-border bg-gradient-to-r from-primary/[0.05] to-transparent px-3 py-2">
+          <p className="flex items-center gap-1.5 text-xs font-bold">
+            <History className="h-3.5 w-3.5 text-primary" /> Recent Activity
+          </p>
+        </div>
+        <div className="max-h-80 overflow-y-auto rd-scroll">
+          {recent.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              No recent activity yet
+            </div>
+          ) : (
+            recent.map((entry: any) => (
+              <button
+                key={entry.id}
+                type="button"
+                onClick={() => handleClick(entry)}
+                className="flex w-full items-start gap-2 border-b border-border/40 px-3 py-2 text-left transition-colors last:border-0 hover:bg-accent/40"
+              >
+                <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/40 text-[10px]">
+                  {entry.kind === "create" ? "+" :
+                   entry.kind === "update" ? "~" :
+                   entry.kind === "approve" ? "v" :
+                   entry.kind === "delete" ? "x" : "*"}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{entry.entity_label || entry.action}</p>
+                  <p className="truncate text-[10px] text-muted-foreground">{entry.action}</p>
+                </div>
+                <span className="shrink-0 text-[9px] text-muted-foreground/60">
+                  {new Date(entry.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function QuickActionsToolbar() {
   const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
@@ -102,6 +183,10 @@ export function QuickActionsToolbar() {
           </button>
         );
       })}
+      {/* Divider */}
+      <div className="mx-0.5 h-6 w-px bg-border/50" />
+      {/* CRON-3: Dark mode toggle */}
+      <ThemeToggle className="h-8 w-8 rounded-lg border-0 bg-transparent hover:bg-accent" />
     </div>
   );
 }

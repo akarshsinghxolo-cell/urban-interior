@@ -15,17 +15,20 @@ const PIPELINE_STAGES: {
     key: WorkRequiredStatus;
     label: string;
     color: string;
+    headerBg: string;
+    accent: string;
+    icon: string;
 }[] = [
-    { key: "new", label: "New", color: "border-l-primary" },
-    { key: "contacted", label: "Qualified", color: "border-l-primary" },
-    { key: "visit_scheduled", label: "Visit planned", color: "border-l-warning" },
-    { key: "measurement_done", label: "Measured", color: "border-l-warning" },
-    { key: "quotation_in_progress", label: "Quoting", color: "border-l-warning" },
-    { key: "quotation_sent", label: "Quote sent", color: "border-l-primary" },
-    { key: "negotiation", label: "Negotiation", color: "border-l-primary" },
-    { key: "accepted", label: "Accepted", color: "border-l-success" },
-    { key: "on_hold", label: "On hold", color: "border-l-muted" },
-    { key: "lost", label: "Lost", color: "border-l-destructive" },
+    { key: "new", label: "New", color: "border-l-primary", headerBg: "from-primary/10 to-primary/5", accent: "text-primary", icon: "✨" },
+    { key: "contacted", label: "Qualified", color: "border-l-primary", headerBg: "from-primary/10 to-primary/5", accent: "text-primary", icon: "💬" },
+    { key: "visit_scheduled", label: "Visit planned", color: "border-l-warning", headerBg: "from-warning/10 to-warning/5", accent: "text-warning", icon: "📍" },
+    { key: "measurement_done", label: "Measured", color: "border-l-warning", headerBg: "from-warning/10 to-warning/5", accent: "text-warning", icon: "📐" },
+    { key: "quotation_in_progress", label: "Quoting", color: "border-l-warning", headerBg: "from-warning/10 to-warning/5", accent: "text-warning", icon: "📝" },
+    { key: "quotation_sent", label: "Quote sent", color: "border-l-primary", headerBg: "from-primary/10 to-primary/5", accent: "text-primary", icon: "📤" },
+    { key: "negotiation", label: "Negotiation", color: "border-l-primary", headerBg: "from-primary/10 to-primary/5", accent: "text-primary", icon: "🤝" },
+    { key: "accepted", label: "Accepted", color: "border-l-success", headerBg: "from-success/15 to-success/5", accent: "text-success", icon: "✅" },
+    { key: "on_hold", label: "On hold", color: "border-l-muted", headerBg: "from-muted/20 to-muted/5", accent: "text-muted-foreground", icon: "⏸" },
+    { key: "lost", label: "Lost", color: "border-l-destructive", headerBg: "from-destructive/10 to-destructive/5", accent: "text-destructive", icon: "✕" },
 ];
 function DraggableCard({ req, customer, onOpen, }: {
     req: WorkRequired;
@@ -39,7 +42,7 @@ function DraggableCard({ req, customer, onOpen, }: {
         zIndex: isDragging ? 50 : undefined,
     };
     return (<div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <button type="button" onClick={onOpen} className={cn("group w-full rounded-lg border border-border bg-card p-2.5 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-soft", isDragging && "cursor-grabbing ring-2 ring-primary/40")}>
+      <button type="button" onClick={onOpen} className={cn("group w-full rounded-lg border border-border bg-gradient-to-br from-card to-muted/20 p-3 text-left shadow-card transition-all hover:-translate-y-1 hover:shadow-lg hover:border-primary/30 active:scale-[0.98]", isDragging && "cursor-grabbing ring-2 ring-primary/40 shadow-xl")}>
         <div className="flex items-center gap-2">
           {customer && <Avatar name={customer.name} size={28}/>}
           <div className="min-w-0 flex-1">
@@ -65,7 +68,7 @@ function DroppableColumn({ stageKey, children }: {
     children: React.ReactNode;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: `drop-${stageKey}` });
-    return (<div ref={setNodeRef} className={cn("flex min-h-[120px] flex-col gap-1.5 transition-colors", isOver && "bg-primary/[0.04] rounded-lg")}>
+    return (<div ref={setNodeRef} className={cn("flex min-h-[120px] flex-col gap-2 rounded-lg p-1 transition-all duration-150", isOver && "bg-primary/[0.06] ring-2 ring-primary/30 ring-offset-1")}>
       {children}
     </div>);
 }
@@ -164,19 +167,24 @@ export function SalesPipelineModule() {
             const items = byStage.get(stage.key) || [];
             const stageValue = items.reduce((n, { req }) => n + (req.budget || 0), 0);
             return (<div key={stage.key} className="flex w-72 shrink-0 flex-col gap-2">
-                <div className={cn("rounded-md border border-border border-l-4 bg-muted/30 px-3 py-2", stage.color)}>
+                <div className={cn("rounded-lg border border-border border-l-4 bg-gradient-to-br px-3 py-2.5 shadow-sm transition-all hover:shadow-md", stage.color, stage.headerBg)}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-foreground">{stage.label}</span>
-                    <span className="rounded-full bg-card px-1.5 py-0.5 text-[10px] font-bold text-muted-foreground">{items.length}</span>
+                    <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground">
+                      <span className="text-sm">{stage.icon}</span>
+                      {stage.label}
+                    </span>
+                    <span className={cn("rounded-full bg-card/80 px-2 py-0.5 text-[10px] font-bold tabular-nums shadow-sm", stage.accent)}>{items.length}</span>
                   </div>
-                  {stageValue > 0 && <p className="mt-0.5 text-[10px] font-mono text-muted-foreground">{formatINRShort(stageValue)}</p>}
+                  {stageValue > 0 && <p className={cn("mt-1 text-[11px] font-mono font-semibold tabular-nums", stage.accent)}>{formatINRShort(stageValue)}</p>}
                 </div>
                 <DroppableColumn stageKey={stage.key}>
                   {items.map(({ req, customer }) => (<DraggableCard key={req.id} req={req} customer={customer} onOpen={() => customer && openDetail("customer", customer.id)}/>))}
-                  {items.length === 0 && (<div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-border/70 bg-muted/20 px-3 py-6 text-center">
-                    <Plus className="h-4 w-4 text-muted-foreground/50" />
-                    <p className="text-[10px] font-medium text-muted-foreground/80">No items</p>
-                    <p className="text-[10px] text-muted-foreground/60">Drag a lead here</p>
+                  {items.length === 0 && (<div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-muted/10 px-3 py-8 text-center transition-colors hover:border-primary/30 hover:bg-primary/[0.02]">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/40">
+                      <Plus className="h-3.5 w-3.5 text-muted-foreground/60" />
+                    </div>
+                    <p className="text-[10px] font-semibold text-muted-foreground/80">No items</p>
+                    <p className="text-[9px] text-muted-foreground/50">Drag a lead here</p>
                   </div>)}
                 </DroppableColumn>
               </div>);
