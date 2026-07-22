@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, Wallet, ArrowRight, PiggyBank } from "lucide-
 import { useRDashStore } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { formatINRShort, formatINR } from "@/lib/rdash/format";
+import { RadialBarChart, RadialBar, ResponsiveContainer, PolarAngleAxis } from "recharts";
 
 interface SiteMargin {
   workOrderId: string;
@@ -88,8 +89,29 @@ export function ProfitabilitySnapshot() {
         </button>
       </div>
 
-      {/* Summary tiles */}
-      <div className="grid grid-cols-3 gap-px border-b border-border bg-border">
+      {/* CRON-6: Animated margin gauge + summary tiles */}
+      <div className="flex items-center gap-4 border-b border-border bg-gradient-to-br from-muted/20 to-transparent px-4 py-3">
+        {/* Radial margin gauge */}
+        <div className="relative h-20 w-20 shrink-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <RadialBarChart
+              innerRadius="70%"
+              outerRadius="100%"
+              data={[{ value: Math.min(100, Math.max(0, totals.blendedPct)), fill: totals.blendedPct >= 20 ? "var(--success, #22c55e)" : totals.blendedPct >= 10 ? "var(--warning, #f59e0b)" : "var(--destructive, #ef4444)" }]}
+              startAngle={90}
+              endAngle={-270}
+            >
+              <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+              <RadialBar background={{ fill: "var(--muted, #e5e7eb)" }} dataKey="value" cornerRadius={10} animationDuration={800} />
+            </RadialBarChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className={cn("text-sm font-bold tabular-nums", marginTone(totals.blendedPct))}>{totals.blendedPct.toFixed(0)}%</span>
+            <span className="text-[8px] font-medium uppercase text-muted-foreground">margin</span>
+          </div>
+        </div>
+        {/* Summary tiles */}
+        <div className="grid flex-1 grid-cols-3 gap-px rounded-lg border border-border bg-border">
         <div className="bg-card px-3 py-2.5">
           <div className="flex items-center gap-1.5">
             <Wallet className="h-3 w-3 text-primary" />
@@ -113,6 +135,7 @@ export function ProfitabilitySnapshot() {
             {formatINRShort(totals.totalMargin)}
             <span className="ml-1 text-[10px] font-medium">({totals.blendedPct.toFixed(1)}%)</span>
           </p>
+        </div>
         </div>
       </div>
 
