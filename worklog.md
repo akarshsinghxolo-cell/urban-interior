@@ -7414,3 +7414,42 @@ Stage Summary:
 - The single business-blocking issue is the proof-gate deadlock (F.1): the UI cannot satisfy `contractorPaymentProofStatus`, so `requestContractorBillPayment`, `approveContractorPayment`, and `settleContractor` all throw. The entire contractor payment chain is unusable from the standard UI.
 - The contractor domain is architecturally complete but operationally unused on production (0 rows in all 9 contractor tables). This means the bugs are latent — they would manifest immediately if any user attempted to use the contractor flow.
 - No code changes made. Report appended to worklog.md.
+
+---
+Task ID: FIX-STAFF-SYNC
+Agent: main (Z.ai Code)
+Task: Fix "user approval approves something different and user is not staff in HR"
+
+Root cause: TWO separate staff tables with ZERO sync:
+1. StaffProfile (normalized table) — written by the auth approval flow
+2. entity_master_staff (workspace blob table) — read by the HR module
+
+When a user was approved:
+- uc_user_roles row created (status: active) → user can log in ✅
+- StaffProfile row created → auth system knows the staff ✅
+- entity_master_staff row NOT created → HR module sees 0 staff ❌
+
+Result: approved users could log in but were invisible in HR — couldn't be
+assigned visits, tracked for attendance, or processed for payroll. The User
+Approvals module showed "ACTIVE 2" but the Staff Board showed 0 staff from
+the approval flow (only seed staff appeared).
+
+Fix: ensureStaffProfileForAuthUser now ALSO upserts into entity_master_staff
+with the same data (name, email, role, status, attendance policy). The
+reject function also marks the staff row inactive in entity_master_staff.
+This sync runs on:
+- Initial signup (status: pending)
+- Approval (status: active)
+- Rejection (status: inactive)
+
+Backfill: Manually synced the 2 existing approved users from StaffProfile
+to entity_master_staff via Supabase REST (they were approved before the fix
+was deployed).
+
+Verification on live site:
+- Before fix: entity_master_staff had 0 rows, HR module showed 0 approved staff
+- After fix + backfill: entity_master_staff has 3 rows (all active)
+- Approved a NEW pending user ("Deepak Upadhyay") → automatically appeared in
+  entity_master_staff with status=active (sync code worked, no manual backfill)
+- User Approvals: PENDING 0, ACTIVE 3, TOTAL 3
+- HR Staff Board: workspace API confirms 3 staff in master.staff
