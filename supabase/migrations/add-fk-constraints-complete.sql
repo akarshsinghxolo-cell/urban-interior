@@ -689,11 +689,6 @@ ALTER TABLE "entity_payments" ADD CONSTRAINT "entity_payments_milestone_term_id_
 
 ALTER TABLE "entity_workOrders" ADD COLUMN IF NOT EXISTS "abandoned_contractor_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'abandoned_contractor_id', '')) STORED;
 ALTER TABLE "entity_workOrders" DROP CONSTRAINT IF EXISTS "entity_workOrders_abandoned_contractor_id_fkey";
-ALTER TABLE "entity_workOrders" ADD CONSTRAINT "entity_workOrders_abandoned_contractor_id_fkey" FOREIGN KEY ("abandoned_contractor_id_gen") REFERENCES "entity_master_contractors"(id) NOT VALID;
-
-ALTER TABLE "entity_threadMessageAttachments" ADD COLUMN IF NOT EXISTS "entity_file_attachment_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'entity_file_attachment_id', '')) STORED;
-ALTER TABLE "entity_threadMessageAttachments" DROP CONSTRAINT IF EXISTS "entity_threadMessageAttachments_entity_file_attachment_id_fk";
-ALTER TABLE "entity_threadMessageAttachments" ADD CONSTRAINT "entity_threadMessageAttachments_entity_file_attachment_id_fk" FOREIGN KEY ("entity_file_attachment_id_gen") REFERENCES "entity_entityFileAttachments"(id) NOT VALID;
 
 ALTER TABLE "entity_customers" ADD COLUMN IF NOT EXISTS "source_partner_id_gen" text GENERATED ALWAYS AS (NULLIF(data->>'source_partner_id', '')) STORED;
 ALTER TABLE "entity_customers" DROP CONSTRAINT IF EXISTS "entity_customers_source_partner_id_fkey";
