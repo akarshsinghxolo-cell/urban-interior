@@ -33,10 +33,20 @@ export function HealthDashboardWidget() {
   const [refreshing, setRefreshing] = React.useState(false);
   const [lastFetchedAt, setLastFetchedAt] = React.useState(Date.now());
 
-  // Derive metrics from the live store
+  // CRON-2: Wire to real integrity report from the store (was static 100)
+  const integrityReport = useRDashStore((s) => s.integrityReport);
+  const runIntegrityCheck = useRDashStore((s) => s.runIntegrityCheck);
+
+  // Run integrity check on mount + when db changes (debounced via useMemo deps)
+  React.useEffect(() => {
+    const id = setTimeout(() => runIntegrityCheck(), 300);
+    return () => clearTimeout(id);
+  }, [db, runIntegrityCheck]);
+
+  // Derive metrics from the live store + real integrity report
   const metrics = React.useMemo(() => {
-    const integrityScore = 100; // App-level FK registry enforces integrity
-    const totalRecords =
+    const integrityScore = integrityReport?.healthScore ?? 100;
+    const totalRecords = integrityReport?.totalRecords ?? (
       db.customers.length +
       db.sites.length +
       db.quotations.length +
@@ -46,8 +56,9 @@ export function HealthDashboardWidget() {
       db.payments.length +
       db.invoices.length +
       db.purchaseOrders.length +
-      db.vendorBills.length;
-    const totalReferences = 646; // Static — app FK registry rule count
+      db.vendorBills.length
+    );
+    const totalReferences = integrityReport?.totalReferences ?? 646;
     const pendingApprovals = db.actions.filter((a: any) => a.status === "pending").length;
     const overdueTasks = db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date < new Date().toISOString().slice(0, 10)).length;
     const openRisks = db.risks.filter((r: any) => r.status === "open" || r.status === "identified").length;
@@ -55,6 +66,8 @@ export function HealthDashboardWidget() {
     const monthRevenue = (db.customerReceipts || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
     const todayVisits = db.visits.filter((v: any) => v.scheduled_at?.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
     const liveWork = db.workOrders.filter((w: any) => w.status === "in_progress" || w.status === "scheduled").length;
+    const criticalIssues = integrityReport?.bySeverity?.critical ?? 0;
+    const warningIssues = integrityReport?.bySeverity?.warning ?? 0;
     return {
       integrityScore,
       totalRecords,
@@ -66,8 +79,10 @@ export function HealthDashboardWidget() {
       monthRevenue,
       todayVisits,
       liveWork,
+      criticalIssues,
+      warningIssues,
     };
-  }, [db]);
+  }, [db, integrityReport]);
 
   const healthBadge = metrics.integrityScore >= 90 ? "healthy" : metrics.integrityScore >= 70 ? "watch" : "attention";
   const badgeColor = healthBadge === "healthy" ? "text-success" : healthBadge === "watch" ? "text-warning" : "text-destructive";
@@ -81,6 +96,8 @@ export function HealthDashboardWidget() {
     { label: "Pending", value: metrics.pendingApprovals, icon: AlertTriangle, tone: metrics.pendingApprovals > 0 ? "warning" : "default" },
     { label: "Overdue", value: metrics.overdueTasks, icon: AlertTriangle, tone: metrics.overdueTasks > 0 ? "destructive" : "default" },
     { label: "Open Risks", value: metrics.openRisks, icon: AlertTriangle, tone: metrics.openRisks > 0 ? "destructive" : "default" },
+    { label: "Critical", value: metrics.criticalIssues, icon: AlertTriangle, tone: metrics.criticalIssues > 0 ? "destructive" : "success" },
+    { label: "Warnings", value: metrics.warningIssues, icon: Activity, tone: metrics.warningIssues > 0 ? "warning" : "success" },
     { label: "Customers", value: db.customers.length, icon: Users, tone: "default" },
   ];
 
@@ -93,6 +110,7 @@ export function HealthDashboardWidget() {
 
   const refresh = () => {
     setRefreshing(true);
+    runIntegrityCheck();
     setLastFetchedAt(Date.now());
     setTimeout(() => setRefreshing(false), 500);
   };
