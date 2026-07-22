@@ -7989,3 +7989,16 @@ The main remaining work is:
 4. Cleaning up old duplicate Drive folders
 
 No code is broken. No lint errors. No compile errors. The app is live and functional.
+
+---
+Task ID: AUDIT-DB-ARCHITECTURE
+Agent: main (Z.ai Code)
+Task: Analyze entire API + Supabase table schema — identify redundant tables that should be merged, and missing FK constraints that should exist.
+
+Analysis appended above. Summary:
+- 88 tables → should be ~35
+- 3 staff tables (StaffProfile + entity_master_staff + uc_user_roles) → should be 1
+- 2 workspace-meta tables → should be 1
+- 1 GenericRecord dumping ground → should be 2 proper config tables
+- 83 entity_* tables with 0 FK constraints → should have ~60 FK constraints
+- 3 API layers (workspace/auth/direct) → should be 1 unified layer
