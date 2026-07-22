@@ -135,7 +135,7 @@ export async function createPendingAccessRequest(input: {
   const admin = getSupabaseAdminClient();
 
   const { data: existingAssignments, error: assignmentError } = await admin
-    .from("rdash_user_roles")
+    .from("uc_user_roles")
     .select("id,status,email,role,display_name,user_id,staff_id,approved_by,approved_at,rejected_at,created_at,updated_at")
     .ilike("email", email)
     .in("status", ["pending", "active"])
@@ -152,7 +152,7 @@ export async function createPendingAccessRequest(input: {
       status: "pending",
     });
     if (!existingAssignment.staff_id) {
-      const { error: linkError } = await admin.from("rdash_user_roles").update({ staff_id: staffId, updated_at: new Date().toISOString() }).eq("id", existingAssignment.id);
+      const { error: linkError } = await admin.from("uc_user_roles").update({ staff_id: staffId, updated_at: new Date().toISOString() }).eq("id", existingAssignment.id);
       if (linkError) throw new Error(`Could not link staff profile: ${linkError.message}`);
       existingAssignment.staff_id = staffId;
     }
@@ -187,7 +187,7 @@ export async function createPendingAccessRequest(input: {
   }
 
   const { data: assignment, error: insertError } = await admin
-    .from("rdash_user_roles")
+    .from("uc_user_roles")
     .insert({
       user_id: resolvedUserId,
       email,
@@ -211,10 +211,10 @@ export function assertOwner(user: AuthenticatedUser) {
 
 export async function listRoleAssignments(user: AuthenticatedUser) {
   assertOwner(user);
-  // Supabase-only: read from rdash_user_roles table.
+  // Supabase-only: read from uc_user_roles table.
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
-    .from("rdash_user_roles")
+    .from("uc_user_roles")
     .select("id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at")
     .order("created_at", { ascending: false });
   if (error) throw new Error(`Could not load user approvals: ${error.message}`);
@@ -233,7 +233,7 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
   const admin = getSupabaseAdminClient();
   const role = normalizeRequestedRole(input.role);
   const { data: pendingRows, error: lookupError } = await admin
-    .from("rdash_user_roles")
+    .from("uc_user_roles")
     .select("id,status,email,role,display_name,user_id,staff_id,approved_by,approved_at,rejected_at,created_at,updated_at")
     .eq("id", id)
     .eq("status", "pending")
@@ -252,7 +252,7 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
   });
   const now = new Date().toISOString();
   const { data, error } = await admin
-    .from("rdash_user_roles")
+    .from("uc_user_roles")
     .update({
       role,
       display_name: displayName,
@@ -278,7 +278,7 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
   const admin = getSupabaseAdminClient();
   const now = new Date().toISOString();
   const { data, error } = await admin
-    .from("rdash_user_roles")
+    .from("uc_user_roles")
     .update({
       status: "rejected",
       approved_by: user.userId,

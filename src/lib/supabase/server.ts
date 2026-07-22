@@ -68,7 +68,7 @@ export type StaffLocationPingRow = {
 type RDashSupabaseSchema = {
   public: {
     Tables: {
-      rdash_user_roles: {
+      uc_user_roles: {
         Row: RDashUserRoleRow;
         Insert: Partial<RDashUserRoleRow> & Pick<RDashUserRoleRow, "user_id" | "role">;
         Update: Partial<RDashUserRoleRow>;

@@ -17,7 +17,7 @@ export const runtime = "nodejs";
  * For the super-owner: the name is hardcoded in source (auth.ts SUPER_OWNER),
  * but this endpoint overrides it in the session token. The override lasts
  * until logout. To make it permanent across logins, the name would need to
- * be stored in the database (Supabase rdash_user_roles table) — but in
+ * be stored in the database (Supabase uc_user_roles table) — but in
  * in-memory/demo mode, session-level persistence is the best we can do.
  *
  * For Supabase users: in production, this would also call Supabase Auth's

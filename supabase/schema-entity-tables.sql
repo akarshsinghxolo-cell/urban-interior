@@ -19,9 +19,9 @@
 create extension if not exists pgcrypto;
 
 -- ----------------------------------------------------------------------------
--- rdash_user_roles — Supabase Auth role mapping (unchanged from original)
+-- uc_user_roles — Supabase Auth role mapping (unchanged from original)
 -- ----------------------------------------------------------------------------
-create table if not exists public.rdash_user_roles (
+create table if not exists public.uc_user_roles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   email text,
@@ -36,8 +36,8 @@ create table if not exists public.rdash_user_roles (
   updated_at timestamptz not null default now()
 );
 
-alter table public.rdash_user_roles drop constraint if exists rdash_user_roles_role_check;
-alter table public.rdash_user_roles add constraint rdash_user_roles_role_check check (
+alter table public.uc_user_roles drop constraint if exists uc_user_roles_role_check;
+alter table public.uc_user_roles add constraint uc_user_roles_role_check check (
   role in (
     'OWNER', 'OPERATIONS_MANAGER', 'FIELD_STAFF', 'SALES_TELECALLER',
     'PROCUREMENT_STAFF', 'FINANCE', 'ACCOUNTS_ADMIN',
@@ -46,16 +46,16 @@ alter table public.rdash_user_roles add constraint rdash_user_roles_role_check c
   )
 );
 
-alter table public.rdash_user_roles drop constraint if exists rdash_user_roles_status_check;
-alter table public.rdash_user_roles add constraint rdash_user_roles_status_check
+alter table public.uc_user_roles drop constraint if exists uc_user_roles_status_check;
+alter table public.uc_user_roles add constraint uc_user_roles_status_check
   check (status in ('pending', 'active', 'rejected', 'inactive'));
 
-create unique index if not exists rdash_user_roles_one_active_role
-  on public.rdash_user_roles (user_id) where status = 'active';
-create unique index if not exists rdash_user_roles_one_open_request
-  on public.rdash_user_roles (user_id) where status in ('pending', 'active');
-create index if not exists rdash_user_roles_email_idx
-  on public.rdash_user_roles (lower(email));
+create unique index if not exists uc_user_roles_one_active_role
+  on public.uc_user_roles (user_id) where status = 'active';
+create unique index if not exists uc_user_roles_one_open_request
+  on public.uc_user_roles (user_id) where status in ('pending', 'active');
+create index if not exists uc_user_roles_email_idx
+  on public.uc_user_roles (lower(email));
 
 -- ----------------------------------------------------------------------------
 -- StaffProfile — real staff records (login/attendance/GPS)
@@ -1129,7 +1129,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select role from public.rdash_user_roles
+  select role from public.uc_user_roles
   where user_id = auth.uid()
     and status = 'active'
   limit 1;
@@ -1256,5 +1256,5 @@ grant execute on all functions in schema public to authenticated;
 
 -- ============================================================================
 -- Done. 87 entity_* tables (including entity_auditLog) + entity_workspace_revision
--- + StaffProfile + StaffLocationPing + rdash_user_roles + RLS policies.
+-- + StaffProfile + StaffLocationPing + uc_user_roles + RLS policies.
 -- ============================================================================

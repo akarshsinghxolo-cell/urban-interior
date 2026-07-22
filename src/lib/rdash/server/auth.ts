@@ -80,7 +80,7 @@ async function supabaseCredentials(email: string, password: string): Promise<Omi
     if (error || !data.user?.id || !data.user.email) return null;
     const admin = getSupabaseAdminClient();
     const { data: rows, error: mappingError } = await admin
-        .from("rdash_user_roles")
+        .from("uc_user_roles")
         .select("role,staff_id,display_name,status")
         .eq("user_id", data.user.id)
         .in("status", ["active", "pending", "rejected", "inactive"]);
@@ -122,7 +122,7 @@ export async function authenticateCredentials(emailInput: string, password: stri
 
     // ── Supabase auth (for all other users) ──────────────────────────────
     // Non-owner users must exist in Supabase Auth AND have an approved role
-    // assignment in the rdash_user_roles table.
+    // assignment in the uc_user_roles table.
     return supabaseCredentials(email, password);
 }
 

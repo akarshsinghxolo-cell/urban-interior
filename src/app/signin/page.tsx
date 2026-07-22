@@ -404,7 +404,7 @@ export default function SignInPage() {
               <p className="flex items-center gap-1.5 font-semibold text-foreground">
                 <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Owner approval required
               </p>
-              <p className="mt-1 leading-relaxed">Only active users in <span className="font-mono text-foreground/80">rdash_user_roles</span> can enter the app. Pending users stay blocked until the Owner approves them.</p>
+              <p className="mt-1 leading-relaxed">Only active users in <span className="font-mono text-foreground/80">uc_user_roles</span> can enter the app. Pending users stay blocked until the Owner approves them.</p>
             </div>
 
             {/* Configuration health panel */}
