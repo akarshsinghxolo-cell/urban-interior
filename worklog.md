@@ -6659,3 +6659,38 @@ Stage Summary:
 - vercel.json committed with the cron definition
 - Vercel will pick up the cron config on next deploy
 
+
+---
+Task ID: FIX-USERS-001
+Agent: main (Z.ai Code)
+Task: Fix "unable to add new users" — tested via agent-browser on live site.
+
+Work Log:
+- Signed in as owner, navigated to User Approvals module.
+- Tried the "Request access" signup form on /signin with a test user.
+- Captured the error: POST /api/auth/signup → 400 "Could not find the table 'public.rdash_user_roles' in the schema cache"
+- Root cause #1: The live Supabase DB has a table named 'uc_user_roles' (renamed during Urban Castle rebranding), but all code references still used the old name 'rdash_user_roles'. 13 references across 5 files + SQL DDL.
+- Fix #1: Replaced all 'rdash_user_roles' with 'uc_user_roles' across:
+    src/lib/rdash/server/auth-users.ts (8 refs)
+    src/lib/rdash/server/auth.ts (2 refs)
+    src/lib/supabase/server.ts (1 ref)
+    src/app/api/auth/profile/route.ts (1 ref)
+    src/app/signin/page.tsx (1 ref)
+    supabase/schema-entity-tables.sql (14 refs)
+- After deploy, signup worked (202 "Access request created"). Pending user appeared in User Approvals module.
+- Tried approving the pending user. Captured error: PATCH /api/auth/users → 400 "Could not approve user: invalid input syntax for type uuid: \"super-owner\""
+- Root cause #2: The approve/reject functions set approved_by to user.userId, but the super-owner's userId is the string "super-owner" (not a UUID). The uc_user_roles.approved_by column expects a UUID.
+- Fix #2: Added UUID regex validation before setting approved_by. Real Supabase Auth users have UUID userIds; the super-owner gets null.
+- After deploy, approval worked: PENDING 0, ACTIVE 1. User "testuser.qa@example.com" is now active with role FIELD_STAFF.
+
+Verification:
+- Signup: POST /api/auth/signup → 202 "Access request created" ✅
+- Pending user visible in User Approvals module ✅
+- Approve: PATCH /api/auth/users → 200, user status → active ✅
+- DB: uc_user_roles row has status=active, approved_at=2026-07-22T03:59:20 ✅
+
+Stage Summary:
+- BOTH bugs fixed: table name mismatch + UUID validation.
+- New users can now sign up via "Request access" on /signin.
+- Owner can approve/reject pending users in the User Approvals module.
+- Approved users can sign in with their Supabase Auth credentials.
