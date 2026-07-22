@@ -1,3 +1,24 @@
+// STAGE-3-FIX: Generate vendor bill/payment number using current year + max suffix.
+function nextVendorBillNo(bills: { bill_no?: string }[]): string {
+    const year = new Date().getFullYear();
+    let maxSeq = 0;
+    for (const b of bills) {
+        if (!b.bill_no) continue;
+        const m = b.bill_no.match(/^VB-\d{4}-(\d+)$/);
+        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+    }
+    return `VB-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+}
+function nextVendorPaymentNo(payments: { payment_no?: string }[]): string {
+    const year = new Date().getFullYear();
+    let maxSeq = 0;
+    for (const p of payments) {
+        if (!p.payment_no) continue;
+        const m = p.payment_no.match(/^VP-\d{4}-(\d+)$/);
+        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+    }
+    return `VP-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+}
 /**
  * Vendor-bills slice — vendor invoice (bill) lifecycle: create, approve,
  * pay, three-way PO–GRN–invoice matching, and mismatch resolution.
@@ -39,7 +60,7 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
                 throw new Error("Vendor invoice total must be greater than zero.");
             const id = genId("vbill");
             const billNo = b.bill_no ||
-                `VB-2026-${String(state.db.vendorBills.length + 1).padStart(3, "0")}`;
+                nextVendorBillNo(state.db.vendorBills);
             const threadId = get().openThreadFor("vendor_bill", id, `${billNo} · ${po.vendor_name}`, [financeUser.name, po.vendor_name]);
             // D: Enforce vendor_bill approval policy. If a matching approval
             // policy exists for the trigger "vendor_bill" at this amount,
@@ -300,7 +321,7 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
             const status: VendorBill["status"] = balance === 0 ? "paid" : "partly_paid";
             const payment: VendorPayment = {
                 id,
-                payment_no: `VP-2026-${String(state.db.vendorPayments.length + 1).padStart(3, "0")}`,
+                payment_no: nextVendorPaymentNo(state.db.vendorPayments),
                 vendor_bill_id: bill.id,
                 vendor_id: bill.vendor_id,
                 vendor_name: bill.vendor_name,

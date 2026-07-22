@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { indiaDate } from "@/lib/rdash/date";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { RDashDatabase } from "@/lib/rdash/types";
@@ -23,7 +24,7 @@ interface CalEvent {
     recordId: string;
 }
 function ymd(d: Date) {
-    return d.toISOString().slice(0, 10);
+    return indiaDate(d);  // STAGE-3-FIX: IST (was UTC)
 }
 function collectEvents(db: RDashDatabase): CalEvent[] {
     const events: CalEvent[] = [];

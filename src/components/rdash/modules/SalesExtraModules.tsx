@@ -198,11 +198,13 @@ export function GstReturnsModule() {
     // FIX-AUDIT-001: Exclude draft quotations — drafts haven't been issued to
     // the customer, so their tax shouldn't count in GST returns. Only "sent"
     // and "accepted" quotations represent actual outward supplies.
-    const gstQuotations = db.quotations.filter((q) => q.status === "sent" || q.status === "accepted");
-    const gstCollected = gstQuotations.reduce((n, q) => n + q.tax_amount, 0);
+    // STAGE-3-FIX: GST output tax arises on INVOICES (actual supply), not quotations.
+    // The old code filtered quotations by sent/accepted, overstating output tax.
+    const gstInvoices = (db.invoices || []).filter((i: any) => i.status !== "cancelled" && i.status !== "draft");
+    const gstCollected = gstInvoices.reduce((n: number, i: any) => n + (i.tax_amount || 0), 0);
     const gstPaid = db.vendorBills.filter((b) => b.status === "paid").reduce((n, b) => n + (b.tax_amount || 0), 0);
     const netGst = gstCollected - gstPaid;
-    const outputCount = gstQuotations.length;
+    const outputCount = gstInvoices.length;
     const inputCount = db.vendorBills.filter((b) => b.tax_amount).length;
     const months = React.useMemo(() => {
         const m = new Map<string, {
@@ -212,7 +214,7 @@ export function GstReturnsModule() {
         db.quotations.filter((q) => q.status === "sent" || q.status === "accepted").forEach((q) => {
             const month = new Date(q.created_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
             const e = m.get(month) || { collected: 0, paid: 0 };
-            e.collected += q.tax_amount;
+            e.collected += q.tax_amount || 0;
             m.set(month, e);
         });
         db.vendorBills.filter((b) => b.tax_amount).forEach((b) => {

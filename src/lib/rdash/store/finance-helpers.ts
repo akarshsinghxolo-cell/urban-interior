@@ -156,8 +156,16 @@ export function buildInvoiceDraftFromPayment(payment: Payment, nextNo: string, t
 }
 
 export function syncInvoiceWithPayment(invoice: CustomerInvoice, payment: Payment): CustomerInvoice {
-    const paidAmount = Math.min(invoice.paid_amount || 0, payment.amount);
-    const balance = Math.max(0, payment.amount - paidAmount);
+    // STAGE-3-FIX: Never reduce paid_amount and never overwrite total_amount.
+    // The old code clipped paid_amount to payment.amount and reset total_amount
+    // to payment.amount, which destroyed multi-receipt invoice state.
+    // total_amount = max(existing total, payment amount) — covers the case where
+    // the invoice was issued for a single payment, then more payments were added.
+    const totalAmount = Math.max(invoice.total_amount || 0, payment.amount);
+    // paid_amount is only re-derived from receipts in recordCustomerReceipt;
+    // here we preserve the existing paid_amount (never reduce it).
+    const paidAmount = invoice.paid_amount || 0;
+    const balance = Math.max(0, Math.round((totalAmount - paidAmount) * 100) / 100);
     const status: CustomerInvoice["status"] = payment.status === "cancelled"
         ? "cancelled"
         : balance === 0 && paidAmount > 0
@@ -177,7 +185,7 @@ export function syncInvoiceWithPayment(invoice: CustomerInvoice, payment: Paymen
         title: payment.milestone_label || invoice.title,
         status,
         subtotal: payment.amount,
-        total_amount: payment.amount,
+        total_amount: totalAmount,
         paid_amount: paidAmount,
         balance_amount: balance,
         due_date: payment.due_date || invoice.due_date,

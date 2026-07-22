@@ -182,9 +182,9 @@ export function buildMentionableEntities(db: any): MentionableEntity[] {
     (db.master?.staff || []).forEach((s: any) => push("staff", s.id, s.name, s.designation, "Staff"));
     (db.tasks || []).forEach((t: any) => push("task", t.id, t.title, t.assignee_name, "Tasks"));
     (db.visits || []).forEach((v: any) => push("visit", v.id, v.title || v.location_name, v.staff_name, "Visits"));
-    (db.vendorBills || []).forEach((b: any) => push("vendorBill", b.id, b.bill_number || b.id, b.vendor_name, "Vendor Bills"));
-    (db.payments || []).forEach((p: any) => push("payment", p.id, p.payment_number || p.label || p.id, p.customer_name, "Payments"));
-    (db.invoices || []).forEach((i: any) => push("invoice", i.id, i.invoice_number || i.id, i.customer_name, "Invoices"));
+    (db.vendorBills || []).forEach((b: any) => push("vendorBill", b.id, b.bill_no || b.id, b.vendor_name, "Vendor Bills"));  // STAGE-3-FIX: bill_no (not bill_number)
+    (db.payments || []).forEach((p: any) => push("payment", p.id, p.payment_no || p.label || p.id, p.customer_name, "Payments"));  // STAGE-3-FIX: payment_no (not payment_number)
+    (db.invoices || []).forEach((i: any) => push("invoice", i.id, i.invoice_no || i.id, i.customer_name, "Invoices"));  // STAGE-3-FIX: invoice_no (not invoice_number)
     return out;
 }
 

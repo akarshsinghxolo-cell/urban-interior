@@ -1,4 +1,5 @@
 import type { WorkRequired, WorkRequiredStatus, RDashDatabase } from "./types";
+import { indiaDate } from "./date";
 export type CustomerProgress = {
     key: "new" | "contacted" | "visit" | "measurement" | "quote" | "decision" | "negotiation" | "accepted" | "execution" | "on_hold" | "lost" | "completed";
     label: string;
@@ -68,7 +69,7 @@ export function customerCollectionPenalty(db: RDashDatabase, customerId: string)
     const invoices = db.invoices.filter((inv) => inv.customer_id === customerId);
     if (!invoices.length)
         return 0;
-    const today = new Date().toISOString().slice(0, 10);
+    const today = indiaDate();  // STAGE-3-FIX: IST date (was UTC)
     const issuedValue = invoices.reduce((sum, inv) => sum + inv.total_amount, 0);
     if (issuedValue <= 0)
         return 0;

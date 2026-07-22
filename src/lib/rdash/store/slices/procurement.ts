@@ -1,3 +1,16 @@
+// STAGE-3-FIX: Generate procurement numbers using current year + max suffix.
+function nextProcurementNo(prefix: string, collection: { rfq_no?: string; po_no?: string; grn_no?: string; dispatch_no?: string }[]): string {
+    const year = new Date().getFullYear();
+    const field = prefix === "RFQ" ? "rfq_no" : prefix === "PO" ? "po_no" : prefix === "GRN" ? "grn_no" : "dispatch_no";
+    let maxSeq = 0;
+    for (const row of collection) {
+        const no = (row as Record<string, string | undefined>)[field];
+        if (!no) continue;
+        const m = no.match(new RegExp(`^${prefix}-\\d{4}-(\\d+)$`));
+        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+    }
+    return `${prefix}-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+}
 /**
  * Procurement slice — vendor + staff master records, vendor RFQs/bids, purchase
  * orders (create/approve/send), goods received notes (GRN, including field-staff
@@ -274,7 +287,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             const now = nowIso();
             const rfq: import("../../types").VendorRFQ = {
                 id,
-                rfq_no: `RFQ-2026-${String(state.db.vendorRfqs.length + 1).padStart(3, "0")}`,
+                rfq_no: nextProcurementNo("RFQ", state.db.vendorRfqs),
                 site_id: workOrder.site_id,
                 work_order_id: workOrder.id,
                 boq_id: boq.id,
@@ -481,7 +494,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             const workOrder = assertProcurementContext(get().db, po, "Purchase Order");
             const financeUser = userForAnyRole(get().db, ["Finance", "Accounts"], "Finance");
             const id = genId("po");
-            const poNo = `PO-2026-${String(get().db.purchaseOrders.length + 1).padStart(3, "0")}`;
+            const poNo = nextProcurementNo("PO", get().db.purchaseOrders);
             const threadId = get().openThreadFor("po", id, `${poNo} · ${po.vendor_name || ""}`, [financeUser.name, "Owner", po.vendor_name || ""]);
             const items = po.items || [];
             const subtotal = items.reduce((n: any, i: any) => n + i.amount, 0);
@@ -819,7 +832,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 };
             });
             const id = genId("grn");
-            const grnNo = `GRN-2026-${String(state.db.grns.length + 1).padStart(3, "0")}`;
+            const grnNo = nextProcurementNo("GRN", state.db.grns);
             const threadId = state.openThreadFor("grn", id, `${grnNo} · ${po.vendor_name}`, [actor.name, po.vendor_name]);
             const isPhysicalException = grn.inspection_status !== "accepted" ||
                 Boolean(grn.mismatch_notes?.trim() || grn.damage_shortage_notes?.trim());
@@ -1183,7 +1196,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
         issueDispatch: (d) => {
             const fieldUser = userForRole(get().db, "Field Staff");
             const id = genId("disp");
-            const dispNo = `DISP-2026-${String(get().db.dispatches.length + 1).padStart(3, "0")}`;
+            const dispNo = nextProcurementNo("DISP", get().db.dispatches);
             const threadId = get().openThreadFor("dispatch", id, `${dispNo} · site issue`, [fieldUser.name]);
             const items = d.items || [];
             const newDisp: SiteDispatch = {

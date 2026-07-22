@@ -1,3 +1,17 @@
+// STAGE-3-FIX: Generate a sequence number using the current year and the
+// max existing suffix (not array length, which breaks on delete).
+function nextSequenceNo(prefix: string, collection: { receipt_no?: string; invoice_no?: string }[]): string {
+    const year = new Date().getFullYear();
+    const field = prefix.startsWith("CR") ? "receipt_no" : "invoice_no";
+    let maxSeq = 0;
+    for (const row of collection) {
+        const no = (row as Record<string, string | undefined>)[field];
+        if (!no) continue;
+        const m = no.match(new RegExp(`^${prefix}-\\d{4}-(\\d+)$`));
+        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+    }
+    return `${prefix}-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+}
 import type { Payment, CustomerInvoice, CustomerReceipt } from "../../types";
 import type { FinanceState } from "../types";
 import type { StoreContext } from "../context";
@@ -246,7 +260,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                 throw new Error("A bank, UPI, cheque or cash reference is required.");
             if (!Number.isFinite(amount) || amount <= 0)
                 throw new Error("Receipt amount must be greater than zero.");
-            if (amount > invoice.balance_amount + 0.01)
+            if (amount > invoice.balance_amount + 0.001)  // STAGE-3-FIX: tightened from 0.01
                 throw new Error("Receipt amount cannot exceed the invoice balance.");
             const linkedPayment = paymentId
                 ? state.db.payments.find((row: any) => row.id === paymentId)
@@ -259,12 +273,12 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                 throw new Error("Receipt payment milestone does not belong to this invoice.");
             if (linkedPayment) {
                 const milestoneBalance = Math.max(0, linkedPayment.amount - (linkedPayment.received_amount || 0));
-                if (amount > milestoneBalance + 0.01)
+                if (amount > milestoneBalance + 0.001)  // STAGE-3-FIX: tightened from 0.01
                     throw new Error("Receipt amount cannot exceed the linked collection milestone balance.");
             }
             const now = nowIso();
             const receiptId = genId("receipt");
-            const receiptNo = `CR-2026-${String(state.db.customerReceipts.length + 1).padStart(3, "0")}`;
+            const receiptNo = nextSequenceNo("CR", state.db.customerReceipts);
             const threadId = invoice.thread_id ||
                 state.openThreadFor("invoice", invoice.id, `${invoice.invoice_no} · Customer receipt`, [actor.name]);
             const receipt: CustomerReceipt = {
@@ -473,7 +487,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
             const actor = get().currentUser();
             const id = invoice.id || genId("inv");
             const invoiceNo = invoice.invoice_no ||
-                `INV-2026-${String(get().db.invoices.length + 1).padStart(3, "0")}`;
+                nextSequenceNo("INV", get().db.invoices);
             const total = invoice.total_amount ?? invoice.subtotal ?? 0;
             const paid = invoice.paid_amount ?? 0;
             const threadId = get().openThreadFor("invoice", id, `${invoiceNo} Â· ${invoice.customer_name || "Customer"}`, [actor.name, invoice.customer_name || "Customer"]);
@@ -621,7 +635,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                 }));
                 return existing.id;
             }
-            const invoiceNo = `INV-2026-${String(get().db.invoices.length + 1).padStart(3, "0")}`;
+            const invoiceNo = nextSequenceNo("INV", get().db.invoices);
             const id = genId("inv");
             const threadId = get().openThreadFor("invoice", id, `${invoiceNo} Â· ${payment.customer_name || "Customer"}`, [payment.customer_name || "Customer", "Accounts"]);
             const invoice = buildInvoiceDraftFromPayment(payment, invoiceNo, threadId);
@@ -692,15 +706,20 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
             // record type. "vendor_bill" approvals/rejections route to
             // approveVendorBill / rejectVendorBill so the cost-line posting
             // and status transition happen correctly.
+            // STAGE-3-FIX (3.6): Wrap ALL cascades in try/catch so a failure in one
+            // doesn't leave the approval stuck in "pending" forever.
             if (approvalBefore && decision === "approved") {
                 if (approvalBefore.linked_record_type === "po" && approvalBefore.linked_record_id) {
-                    get().approvePO(approvalBefore.linked_record_id);
+                    try { get().approvePO(approvalBefore.linked_record_id); }
+                    catch (err) { console.warn("[resolveApproval] approvePO failed", err); }
                 }
                 if (approvalBefore.linked_record_type === "quotation" && approvalBefore.linked_record_id) {
-                    get().updateQuotation(approvalBefore.linked_record_id, { status: "sent" });
+                    try { get().updateQuotation(approvalBefore.linked_record_id, { status: "sent" }); }
+                    catch (err) { console.warn("[resolveApproval] updateQuotation failed", err); }
                 }
                 if (approvalBefore.linked_record_type === "contractor_payment" && approvalBefore.linked_record_id) {
-                    get().approveContractorPayment(id);
+                    try { get().approveContractorPayment(id); }
+                    catch (err) { console.warn("[resolveApproval] approveContractorPayment failed", err); }
                 }
                 if (approvalBefore.linked_record_type === ("vendor_bill" as any) && approvalBefore.linked_record_id) {
                     try { get().approveVendorBill(approvalBefore.linked_record_id); }
@@ -712,12 +731,13 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                 try { get().rejectVendorBill(approvalBefore.linked_record_id, "Rejected via approvals module"); }
                 catch (err) { console.warn("[resolveApproval] rejectVendorBill failed", err); }
             }
+            // STAGE-3-FIX (3.4): Keep decided approvals in the array (don't delete history).
+            // The old .filter(a => a.status === "pending") destroyed the audit trail.
             commitState((s: any) => ({
                 db: {
                     ...s.db,
                     actions: s.db.actions
-                        .map((a: any) => a.id === id ? { ...a, status: decision } : a)
-                        .filter((a: any) => a.status === "pending"),
+                        .map((a: any) => a.id === id ? { ...a, status: decision, resolved_at: nowIso() } : a),
                 },
             }));
         },

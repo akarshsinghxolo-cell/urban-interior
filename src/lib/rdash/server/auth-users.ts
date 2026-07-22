@@ -331,10 +331,10 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
       display_name: displayName,
       staff_id: staffId,
       status: "active",
-      // FIX: approved_by expects a UUID, but the super-owner's userId is
-      // "super-owner" (not a UUID). Set to null for the super-owner;
-      // real Supabase Auth users have UUID userIds.
-      approved_by: user.userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId) ? user.userId : null,
+      // STAGE-3-FIX: Store the user's email when userId isn't a UUID (super-owner).
+      // The approved_by column is TEXT, so we can store either a UUID or an email.
+      // This preserves the audit trail for super-owner approvals (previously null).
+      approved_by: user.userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId) ? user.userId : user.email,
       approved_at: now,
       rejected_at: null,
       updated_at: now,

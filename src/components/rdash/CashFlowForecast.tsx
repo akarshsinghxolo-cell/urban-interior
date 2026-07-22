@@ -45,13 +45,13 @@ export function CashFlowForecast() {
     for (let i = 0; i < 14; i++) {
       const dayStr = addDays(today, i);
       const d = new Date(`${dayStr}T12:00:00+05:30`);
-      const dayEnd = new Date(`${dayStr}T23:59:59`);
+      const dayEnd = new Date(`${dayStr}T23:59:59+05:30`);  // STAGE-3-FIX: IST (was local/no offset)
 
       // Inflows: customer receipts expected on this day
       const inflow = db.customerReceipts
         .filter((r) => {
           const dt = new Date(r.received_at);
-          return dt >= new Date(`${dayStr}T00:00:00`) && dt <= dayEnd;
+          return dt >= new Date(`${dayStr}T00:00:00+05:30`) && dt <= dayEnd;  // STAGE-3-FIX: IST
         })
         .reduce((s, r) => s + r.amount, 0) +
         db.payments
@@ -68,14 +68,14 @@ export function CashFlowForecast() {
           .filter((p) => {
             // Use created_at as proxy due date if no explicit due date
             const dt = new Date(p.created_at);
-            return dt >= new Date(`${dayStr}T00:00:00`) && dt <= dayEnd;
+            return dt >= new Date(`${dayStr}T00:00:00+05:30`) && dt <= dayEnd;  // STAGE-3-FIX: IST
           })
           .reduce((s, p) => s + p.amount, 0) +
         db.contractorPayments
           .filter((p) => p.status !== "paid" && p.status !== "cancelled")
           .filter((p) => {
             const dt = new Date(p.created_at);
-            return dt >= new Date(`${dayStr}T00:00:00`) && dt <= dayEnd;
+            return dt >= new Date(`${dayStr}T00:00:00+05:30`) && dt <= dayEnd;  // STAGE-3-FIX: IST
           })
           .reduce((s, p) => s + p.amount, 0);
 

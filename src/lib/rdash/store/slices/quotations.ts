@@ -1,3 +1,14 @@
+// STAGE-3-FIX: Generate quotation number using current year + max suffix.
+function nextQuotationNo(quotations: { quote_no?: string }[]): string {
+    const year = new Date().getFullYear();
+    let maxSeq = 0;
+    for (const q of quotations) {
+        if (!q.quote_no) continue;
+        const m = q.quote_no.match(/^Q-\d{4}-(\d+)$/);
+        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
+    }
+    return `Q-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+}
 /**
  * Quotations slice — quotation master records, items, milestones, acceptance,
  * revision-with-holds, contractor-bidding reopening, and WorkOrder job updates.
@@ -221,7 +232,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const designer = userForRole(state.db, "Designer");
             const id = genId("quot");
             const now = nowIso();
-            const quoteNo = `Q-2026-${String(state.db.quotations.length + 1).padStart(3, "0")}`;
+            const quoteNo = nextQuotationNo(state.db.quotations);
             const customer = q.customer_id
                 ? state.db.customers.find((p: any) => p.id === q.customer_id)
                 : undefined;
@@ -264,7 +275,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 : starterItems.reduce((sum: any, item: any) => sum + item.amount, 0);
             const taxAmount = q.tax_amount != null
                 ? q.tax_amount
-                : Math.round(starterItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0));
+                : Math.round(starterItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0) * 100) / 100;
             const totalAmount = q.total_amount != null ? q.total_amount : subtotal + taxAmount;
             const threadId = state.openThreadFor("quotation", id, `${quoteNo} · ${q.title || "New quotation"}`, [designer.name, customerName]);
             const initialWorkRequiredStatus = workRequiredLifecycleForQuotation(q.status || "draft");
@@ -400,7 +411,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 unit_id: item.unit_id,
                 unit_name: item.unit_name,
                 rate,
-                amount: Math.round(quantity * rate),
+                amount: Math.round(quantity * rate * 100) / 100,
                 tax_rate: item.tax_rate,
                 status: "active",
                 source_kind: "quotation",
@@ -409,7 +420,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const scopeLines = [...quotation.scope_lines, newItem];
             assertQuotationRelations(get().db, { ...quotation, scope_lines: scopeLines, items: scopeLines }, "Quotation");
             const subtotal = scopeLines.reduce((total: any, line: any) => total + line.amount, 0);
-            const taxAmount = Math.round(scopeLines.reduce((total: any, line: any) => total + (line.amount * (line.tax_rate || 0)) / 100, 0));
+            const taxAmount = Math.round(scopeLines.reduce((total: any, line: any) => total + (line.amount * (line.tax_rate || 0)) / 100, 0) * 100) / 100;
             commitState((state: any) => ({
                 db: {
                     ...state.db,
@@ -438,14 +449,14 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     return item;
                 const next = { ...item, ...patch };
                 if (patch.quantity !== undefined || patch.rate !== undefined)
-                    next.amount = Math.round(next.quantity * next.rate);
+                    next.amount = Math.round(next.quantity * next.rate * 100) / 100;
                 return next;
             });
             if (!scopeLines.some((item: any) => item.id === itemId))
                 throw new Error("Quotation line not found.");
             assertQuotationRelations(get().db, { ...quotation, scope_lines: scopeLines, items: scopeLines }, "Quotation");
             const subtotal = scopeLines.reduce((total: any, line: any) => total + line.amount, 0);
-            const taxAmount = Math.round(scopeLines.reduce((total: any, line: any) => total + (line.amount * (line.tax_rate || 0)) / 100, 0));
+            const taxAmount = Math.round(scopeLines.reduce((total: any, line: any) => total + (line.amount * (line.tax_rate || 0)) / 100, 0) * 100) / 100;
             commitState((state: any) => ({
                 db: {
                     ...state.db,
@@ -624,7 +635,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             }));
             const activeItems = newItems.filter((item: any) => !item.held);
             const subtotal = activeItems.reduce((sum: any, item: any) => sum + item.amount, 0);
-            const taxAmount = Math.round(activeItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0));
+            const taxAmount = Math.round(activeItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0) * 100) / 100;
             const now = nowIso();
             const threadId = state.openThreadFor("quotation", newId, `Revision · ${newNo}`, [actor.name, original.customer_name || "Customer"]);
             const newQuote: Quotation = {
@@ -747,7 +758,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             }));
             const activeItems = newItems.filter((item: any) => !item.held);
             const subtotal = activeItems.reduce((sum: any, item: any) => sum + item.amount, 0);
-            const taxAmount = Math.round(activeItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0));
+            const taxAmount = Math.round(activeItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0) * 100) / 100;
             const now = nowIso();
             const threadId = state.openThreadFor("quotation", newId, `${revisionKind === "variation" ? "Variation" : "Renegotiation"} · ${newNo}`, [actor.name, original.customer_name || "Customer"]);
             const newQuote: Quotation = {
