@@ -60,6 +60,17 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 source_partner_id: c.source_partner_id,
                 source_partner_name: c.source_partner_name,
                 work_capabilities: c.work_capabilities || [],
+                // FIX-CONTRACTOR-BATCH2 / F.6: persist the new business / tax /
+                // banking / category fields captured by EntityFormDialog.
+                business_gst: c.business_gst,
+                pan: c.pan,
+                bank_account: c.bank_account,
+                ifsc: c.ifsc,
+                categories: c.categories,
+                // FIX-CONTRACTOR-BATCH2 / F.13: default new contractors to
+                // "active" so the deactivate/activate lifecycle starts from a
+                // known state.
+                status: c.status || "active",
             };
             commitState((s: any) => ({
                 db: {
@@ -127,14 +138,28 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 : undefined;
             const work = state.db.workRequired.find((row: any) => row.id === acceptedScope.work_required_id);
             const now = nowIso();
-            const bidNo = `CB-2026-${String(state.db.contractorBids.length + 1).padStart(3, "0")}`;
+            // FIX-CONTRACTOR-BATCH2 / F.17: previously hardcoded "2026" — in
+            // 2027+ the bid numbers would still say "2026". Use the live year.
+            const bidYear = new Date().getFullYear();
+            const bidNo = `CB-${bidYear}-${String(state.db.contractorBids.length + 1).padStart(3, "0")}`;
             const target = workOrder?.work_order_no || `Scope · ${acceptedScope.label}`;
             const threadId = state.openThreadFor("bid", id, `Contractor bid ${bidNo} · ${target}`, [contractor.name]);
+            // FIX-CONTRACTOR-BATCH2 / F.9: populate the previously-dead
+            // `customer_name` field by resolving the customer through the
+            // acceptedScope → workOrder / customer chain. The UI fallback
+            // (ContractorDetailModule:209) used to show "Customer" for every
+            // bid because this field was never set.
+            const bidCustomer = workOrder?.customer_id
+                ? state.db.customers.find((row: any) => row.id === workOrder.customer_id)
+                : acceptedScope.customer_id
+                    ? state.db.customers.find((row: any) => row.id === acceptedScope.customer_id)
+                    : undefined;
             const bid: ContractorBid = {
                 id,
                 bid_no: bidNo,
                 accepted_scope_id: acceptedScope.id,
                 work_order_id: workOrder?.id,
+                customer_name: bidCustomer?.name,
                 work_order_no: workOrder?.work_order_no || "Pending contractor award",
                 site_id: acceptedScope.site_id,
                 contractor_id: contractor.id,
@@ -202,8 +227,10 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 ? state.db.workOrders.find((row: any) => row.id === acceptedScope.work_order_id)
                 : undefined;
             const workOrderId = existingWorkOrder?.id || genId("workOrder");
+            // FIX-CONTRACTOR-BATCH2 / F.17: dynamic year (was hardcoded "2026").
+            const woYear = new Date().getFullYear();
             const workOrderNo = existingWorkOrder?.work_order_no ||
-                `WO-2026-${String(state.db.workOrders.length + 1).padStart(3, "0")}`;
+                `WO-${woYear}-${String(state.db.workOrders.length + 1).padStart(3, "0")}`;
             const quotation = state.db.quotations.find((quote: any) => quote.id === acceptedScope.quotation_id);
             const site = state.db.sites.find((row: any) => row.id === acceptedScope.site_id);
             const work = state.db.workRequired.find((row: any) => row.id === acceptedScope.work_required_id);
@@ -384,8 +411,10 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 ? state.db.workOrders.find((row: any) => row.id === acceptedScope.work_order_id)
                 : undefined;
             const workOrderId = existingWorkOrder?.id || genId("workOrder");
+            // FIX-CONTRACTOR-BATCH2 / F.17: dynamic year (was hardcoded "2026").
+            const woYearDirect = new Date().getFullYear();
             const workOrderNo = existingWorkOrder?.work_order_no ||
-                `WO-2026-${String(state.db.workOrders.length + 1).padStart(3, "0")}`;
+                `WO-${woYearDirect}-${String(state.db.workOrders.length + 1).padStart(3, "0")}`;
             const quotation = state.db.quotations.find((quote: any) => quote.id === acceptedScope.quotation_id);
             const site = state.db.sites.find((row: any) => row.id === acceptedScope.site_id);
             const work = state.db.workRequired.find((row: any) => row.id === acceptedScope.work_required_id);
@@ -555,12 +584,20 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const settlementNo = `SET-${Date.now().toString(36).toUpperCase()}`;
             const now = nowIso();
             const threadId = state.openThreadFor("settlement", settlementId, `Settlement ${settlementNo} · ${contractor.name} · ${workOrder.work_order_no}`, [contractor.name]);
+            // FIX-CONTRACTOR-BATCH2 / F.10: populate the previously-dead
+            // `customer_name` field so the settlement card can show the
+            // customer name instead of just the work order number. Resolved
+            // through the work order's customer_id.
+            const settlementCustomer = workOrder.customer_id
+                ? state.db.customers.find((row: any) => row.id === workOrder.customer_id)
+                : undefined;
             let replacementJobId: string | undefined;
             commitState((s: any) => {
                 const newSettlement: ContractorSettlement = {
                     id: settlementId,
                     settlement_no: settlementNo,
                     work_order_id: workOrder.id,
+                    customer_name: settlementCustomer?.name,
                     work_order_no: workOrder.work_order_no,
                     site_id: workOrder.site_id,
                     contractor_id: contractor.id,
@@ -736,9 +773,11 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const id = genId("cbill");
             const now = nowIso();
             const threadId = state.openThreadFor("settlement", id, `Contractor RA bill · ${workOrder.work_order_no} · ${contractor.name}`, [contractor.name, actor.name]);
+            // FIX-CONTRACTOR-BATCH2 / F.17: dynamic year (was hardcoded "2026").
+            const billYear = new Date().getFullYear();
             const bill: ContractorBill = {
                 id,
-                bill_no: `CTB-2026-${String(state.db.contractorBills.length + 1).padStart(3, "0")}`,
+                bill_no: `CTB-${billYear}-${String(state.db.contractorBills.length + 1).padStart(3, "0")}`,
                 ra_no: `RA-${String(state.db.contractorBills.filter((row: any) => row.work_order_id === workOrderId).length + 1).padStart(2, "0")}`,
                 description,
                 customer_id: workOrder.customer_id,
@@ -846,9 +885,11 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const policy = state.requiresApproval("contractor_payment", amount);
             const id = genId("cpay");
             const now = nowIso();
+            // FIX-CONTRACTOR-BATCH2 / F.17: dynamic year (was hardcoded "2026").
+            const payYear = new Date().getFullYear();
             const payment: ContractorPayment = {
                 id,
-                payment_no: `CP-2026-${String(state.db.contractorPayments.length + 1).padStart(3, "0")}`,
+                payment_no: `CP-${payYear}-${String(state.db.contractorPayments.length + 1).padStart(3, "0")}`,
                 contractor_bill_id: bill.id,
                 work_order_id: bill.work_order_id,
                 site_id: bill.site_id,
@@ -1058,14 +1099,28 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 : `fallback: partner.commission_pct || 5`;
             const rate = matchedRule?.rate_pct ?? partner.commission_pct ?? 5;
             const id = genId("comm");
-            const commissionNo = `COMM-${Date.now().toString().slice(-5)}`;
+            // FIX-CONTRACTOR-BATCH2 / F.18: previously used
+            // `COMM-${Date.now().toString().slice(-5)}` which only kept the
+            // last 5 digits of the millisecond timestamp — collisions were
+            // possible within a 100-second window. Now we use the full base36
+            // timestamp + a short random suffix so two commissions accrued in
+            // the same call stack still get unique numbers.
+            const commissionNo = `COMM-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
             const threadId = state.openThreadFor("commission", id, `${commissionNo} · ${partner.name}`, [partner.name, "Owner"]);
+            // FIX-CONTRACTOR-BATCH2 / F.11: populate the previously-dead
+            // `customer_name` field so CommissionsModule can show the actual
+            // customer instead of "—". Resolved through the work order's
+            // customer_id.
+            const commissionCustomer = workOrder.customer_id
+                ? state.db.customers.find((row: any) => row.id === workOrder.customer_id)
+                : undefined;
             const comm: Commission = {
                 id,
                 commission_no: commissionNo,
                 source_partner_id: partner.id,
                 source_partner_name: partner.name,
                 customer_id: workOrder.customer_id,
+                customer_name: commissionCustomer?.name,
                 site_id: workOrder.site_id,
                 work_order_id: workOrderId,
                 work_order_no: workOrder.work_order_no,
@@ -1192,6 +1247,245 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 entity_id: contractorId,
                 entity_label: contractor.name,
                 kind: "system",
+                source_module: "contractors",
+            });
+        },
+
+        // FIX-CONTRACTOR-BATCH2 / F.7: Surface the previously-unreachable
+        // "disputed" status on ContractorBill. The store action flips the
+        // status and writes a thread reply + audit log entry. The matching
+        // resolveContractorBillDispute action flips it back to "verified" so
+        // the bill can re-enter the normal payment release flow.
+        disputeContractorBill: (billId, reason) => {
+            const actor = get().currentUser();
+            const bill = get().db.contractorBills.find((row: any) => row.id === billId);
+            if (!bill)
+                throw new Error("Contractor bill not found.");
+            const now = nowIso();
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    contractorBills: s.db.contractorBills.map((row: any) => row.id === billId
+                        ? {
+                            ...row,
+                            status: "disputed",
+                            disputed_at: now,
+                            disputed_by: actor.name,
+                            dispute_reason: reason,
+                            updated_at: now,
+                        }
+                        : row),
+                },
+            }));
+            if (bill.thread_id) {
+                get().addThreadReply(bill.thread_id, {
+                    author: actor.name,
+                    role: actor.role,
+                    body: `Bill marked as disputed: ${reason}. Payment release is frozen until the dispute is resolved.`,
+                    kind: "decision",
+                });
+            }
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Disputed contractor bill ${bill.bill_no}: ${reason}`,
+                entity_type: "contractorBill",
+                entity_id: billId,
+                entity_label: bill.bill_no,
+                kind: "update",
+                source_module: "contractors",
+            });
+        },
+
+        resolveContractorBillDispute: (billId) => {
+            const actor = get().currentUser();
+            const bill = get().db.contractorBills.find((row: any) => row.id === billId);
+            if (!bill)
+                throw new Error("Contractor bill not found.");
+            const now = nowIso();
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    contractorBills: s.db.contractorBills.map((row: any) => row.id === billId
+                        ? {
+                            ...row,
+                            status: "verified",
+                            updated_at: now,
+                        }
+                        : row),
+                },
+            }));
+            if (bill.thread_id) {
+                get().addThreadReply(bill.thread_id, {
+                    author: actor.name,
+                    role: actor.role,
+                    body: `Dispute resolved — bill restored to "verified" and re-entered the payment release flow.`,
+                    kind: "decision",
+                });
+            }
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Resolved dispute on contractor bill ${bill.bill_no}`,
+                entity_type: "contractorBill",
+                entity_id: billId,
+                entity_label: bill.bill_no,
+                kind: "update",
+                source_module: "contractors",
+            });
+        },
+
+        // FIX-CONTRACTOR-BATCH2 / F.8: Surface the previously-unreachable
+        // "held" and "cancelled" statuses on ContractorPayment. Held freezes
+        // a pending/approved payment pending investigation; cancelled voids
+        // it entirely. Paid payments cannot be held or cancelled (the money
+        // has already left the bank — use a separate reversal flow if needed).
+        holdContractorPayment: (paymentId, reason) => {
+            const actor = get().currentUser();
+            const payment = get().db.contractorPayments.find((row: any) => row.id === paymentId);
+            if (!payment)
+                throw new Error("Contractor payment not found.");
+            if (payment.status === "paid")
+                throw new Error("Cannot hold a payment that has already been paid. Record a reversal instead.");
+            const now = nowIso();
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    contractorPayments: s.db.contractorPayments.map((row: any) => row.id === paymentId
+                        ? {
+                            ...row,
+                            status: "held",
+                            held_at: now,
+                            held_by: actor.name,
+                            hold_reason: reason,
+                            updated_at: now,
+                        }
+                        : row),
+                },
+            }));
+            if (payment.thread_id) {
+                get().addThreadReply(payment.thread_id, {
+                    author: actor.name,
+                    role: actor.role,
+                    body: `Payment held: ${reason}.`,
+                    kind: "decision",
+                });
+            }
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Held contractor payment ${payment.payment_no}: ${reason}`,
+                entity_type: "contractorPayment",
+                entity_id: paymentId,
+                entity_label: payment.payment_no,
+                kind: "update",
+                source_module: "contractors",
+            });
+        },
+
+        cancelContractorPayment: (paymentId, reason) => {
+            const actor = get().currentUser();
+            const payment = get().db.contractorPayments.find((row: any) => row.id === paymentId);
+            if (!payment)
+                throw new Error("Contractor payment not found.");
+            if (payment.status === "paid")
+                throw new Error("Cannot cancel a payment that has already been paid. Record a reversal instead.");
+            const now = nowIso();
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    contractorPayments: s.db.contractorPayments.map((row: any) => row.id === paymentId
+                        ? {
+                            ...row,
+                            status: "cancelled",
+                            cancelled_at: now,
+                            cancelled_by: actor.name,
+                            cancel_reason: reason,
+                            updated_at: now,
+                        }
+                        : row),
+                },
+            }));
+            if (payment.thread_id) {
+                get().addThreadReply(payment.thread_id, {
+                    author: actor.name,
+                    role: actor.role,
+                    body: `Payment cancelled: ${reason}.`,
+                    kind: "decision",
+                });
+            }
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Cancelled contractor payment ${payment.payment_no}: ${reason}`,
+                entity_type: "contractorPayment",
+                entity_id: paymentId,
+                entity_label: payment.payment_no,
+                kind: "delete",
+                source_module: "contractors",
+            });
+        },
+
+        // FIX-CONTRACTOR-BATCH2 / F.13: Soft-delete / archive a contractor.
+        // Sets status="inactive" (kept in master for historical lookup).
+        // No hard delete — preserves referential integrity with bids / bills /
+        // payments / settlements / work orders. activateContractor reverses
+        // it. Optionally recompute the workOrderCostLine filter so inactive
+        // contractors stop appearing in bid-invitation dropdowns.
+        deactivateContractor: (contractorId, reason) => {
+            const actor = get().currentUser();
+            const contractor = get().db.master.contractors.find((row: any) => row.id === contractorId);
+            if (!contractor)
+                throw new Error("Contractor not found.");
+            const now = nowIso();
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    master: {
+                        ...s.db.master,
+                        contractors: s.db.master.contractors.map((row: any) => row.id === contractorId
+                            ? { ...row, status: "inactive", updated_at: now }
+                            : row),
+                    },
+                },
+            }));
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Deactivated contractor ${contractor.name}${reason ? ` — ${reason}` : ""}`,
+                entity_type: "contractor",
+                entity_id: contractorId,
+                entity_label: contractor.name,
+                kind: "update",
+                source_module: "contractors",
+            });
+        },
+
+        activateContractor: (contractorId) => {
+            const actor = get().currentUser();
+            const contractor = get().db.master.contractors.find((row: any) => row.id === contractorId);
+            if (!contractor)
+                throw new Error("Contractor not found.");
+            const now = nowIso();
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    master: {
+                        ...s.db.master,
+                        contractors: s.db.master.contractors.map((row: any) => row.id === contractorId
+                            ? { ...row, status: "active", updated_at: now }
+                            : row),
+                    },
+                },
+            }));
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Re-activated contractor ${contractor.name}`,
+                entity_type: "contractor",
+                entity_id: contractorId,
+                entity_label: contractor.name,
+                kind: "update",
                 source_module: "contractors",
             });
         },

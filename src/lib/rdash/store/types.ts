@@ -401,6 +401,27 @@ export interface ContractorsState {
    *  from actual RA-bill + payment performance. Writes the recomputed fields
    *  back to the contractor master. */
   recomputeContractorPerformance: (contractorId: string) => void;
+  // FIX-CONTRACTOR-BATCH2 / F.7: Mark a contractor bill as "disputed" so
+  // recomputeContractorPerformance can penalize the contractor's reliability
+  // score and the ContractorPaymentsModule can surface the dispute state. The
+  // inverse action (resolveContractorBillDispute) flips the status back to
+  // "verified" so the bill can re-enter the normal payment release flow.
+  disputeContractorBill: (billId: string, reason: string) => void;
+  resolveContractorBillDispute: (billId: string) => void;
+  // FIX-CONTRACTOR-BATCH2 / F.8: Hold / cancel a contractor payment. "held"
+  // freezes a pending/approved payment pending investigation; "cancelled"
+  // voids it entirely. Both write an audit trail + thread reply so the
+  // decision is traceable.
+  holdContractorPayment: (paymentId: string, reason: string) => void;
+  cancelContractorPayment: (paymentId: string, reason: string) => void;
+  // FIX-CONTRACTOR-BATCH2 / F.13: Soft-delete / archive a contractor.
+  // deactivateContractor sets status="inactive" (kept in master for
+  // historical lookup, filtered out of bid/direct-award dropdowns).
+  // activateContractor reverses it. No hard delete — preserves referential
+  // integrity with contractorBids / contractorBills / contractorPayments /
+  // contractorSettlements / workOrders.
+  deactivateContractor: (contractorId: string, reason?: string) => void;
+  activateContractor: (contractorId: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -543,6 +564,15 @@ export interface MastersState {
   /** F: Reopen a paid/approved payroll period (Owner only, audit-trail required
    *  implicitly via the logAudit call). Sets status back to "open". */
   reopenPayrollPeriod: (id: string) => void;
+  // FIX-CONTRACTOR-BATCH2 / F.12: CRUD for the contractor-rate / commission-
+  // rule / source-partner master tables. Previously these were read-only in
+  // the UI — only seed/import could create rows — so the findCommissionRule
+  // lookup was operationally unreachable on production (0 rows in all 3
+  // tables). The MastersSalesOpsModule now exposes "Add" dialogs that drive
+  // these actions.
+  addContractorRate: (r: Partial<import("../types").ContractorRate>) => string;
+  addCommissionRule: (r: Partial<import("../types").CommissionRule>) => string;
+  addSourcePartner: (p: Partial<import("../types").SourcePartner>) => string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

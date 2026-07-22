@@ -1,4 +1,4 @@
-import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule, PayrollPeriod, PayrollLine, SalaryAdjustment, AutomationRule, AutomationAction, ApprovalPolicy } from "../../types";
+import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule, ContractorRate, SourcePartner, PayrollPeriod, PayrollLine, SalaryAdjustment, AutomationRule, AutomationAction, ApprovalPolicy } from "../../types";
 import type { MastersState } from "../types";
 import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
@@ -1048,6 +1048,153 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 entity_label: `${period.month}/${period.year}`,
                 kind: "update",
             });
+        },
+
+        // FIX-CONTRACTOR-BATCH2 / F.12: Add a contractor rate row. The UI in
+        // MastersSalesOpsModule "Add contractor rate" dialog drives this. The
+        // store previously had NO action for contractor-rate CRUD — the only
+        // way to create rows was via seed/import, so the contractor rates tab
+        // was operationally read-only.
+        addContractorRate: (r) => {
+            const actor = get().currentUser();
+            const contractor = get().db.master.contractors.find((c: any) => c.id === r.contractor_id);
+            if (!contractor)
+                throw new Error("Contractor not found.");
+            const sub = r.work_subcategory_id
+                ? get().db.master.workSubcategories.find((s: any) => s.id === r.work_subcategory_id)
+                : undefined;
+            const id = genId("crate");
+            const now = nowIso();
+            // If a subcategory was provided, default `trade` to the subcategory
+            // name (so the legacy trade/rate display still works) and backfill
+            // the labour_rate / with_material_rate from the dialog inputs.
+            const rate: ContractorRate = {
+                id,
+                contractor_id: r.contractor_id,
+                trade: r.trade || sub?.name || contractor.trade || "Contractor rate",
+                rate: r.rate ?? r.labour_rate ?? 0,
+                unit_id: r.unit_id,
+                work_subcategory_id: r.work_subcategory_id,
+                work_subcategory_name: sub?.name || r.work_subcategory_name,
+                labour_rate: r.labour_rate,
+                with_material_rate: r.with_material_rate,
+            };
+            void now; // created_at field doesn't exist on ContractorRate type — kept for parity with future schema extension.
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    master: {
+                        ...s.db.master,
+                        contractorRates: [...s.db.master.contractorRates, rate],
+                    },
+                },
+            }));
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Added contractor rate for ${contractor.name} · ${rate.trade} — ${rate.rate}${rate.labour_rate != null || rate.with_material_rate != null ? ` (labour ${rate.labour_rate ?? "—"} / with material ${rate.with_material_rate ?? "—"})` : ""}`,
+                entity_type: "contractorRate",
+                entity_id: id,
+                entity_label: `${contractor.name} · ${rate.trade}`,
+                kind: "create",
+                source_module: "masters",
+            });
+            return id;
+        },
+
+        // FIX-CONTRACTOR-BATCH2 / F.12: Add a commission-rule row. Drives
+        // the findCommissionRule lookup used by accrueCommission — without
+        // this UI, the master.commissionRules table was always empty on
+        // production (0 rows), so accruals always fell back to
+        // partner.commission_pct || 5.
+        addCommissionRule: (r) => {
+            const actor = get().currentUser();
+            const partner = get().db.master.sourcePartners.find((p: any) => p.id === r.source_partner_id);
+            if (!partner)
+                throw new Error("Source partner not found.");
+            if (r.applies_to === "category" && !r.category_id)
+                throw new Error("Category-scoped commission rules require a category_id.");
+            const category = r.category_id
+                ? get().db.master.workCategories.find((c: any) => c.id === r.category_id)
+                : undefined;
+            const id = genId("crule");
+            const rule: CommissionRule = {
+                id,
+                source_partner_id: r.source_partner_id,
+                source_partner_name: partner.name,
+                rate_pct: r.rate_pct ?? 0,
+                // The legacy type allows "all" | "category" | "workOrder". The
+                // UI form lets the user pick "quotation" | "work_order" (the
+                // business labels) and we map them here: "quotation" → "all"
+                // (partner-specific catch-all), "work_order" → "workOrder"
+                // (partner-scoped workOrder rule).
+                applies_to: r.applies_to === "quotation" ? "all"
+                    : r.applies_to === "work_order" ? "workOrder"
+                        : r.applies_to || "all",
+                category_id: r.category_id,
+            };
+            void category;
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    master: {
+                        ...s.db.master,
+                        commissionRules: [...s.db.master.commissionRules, rule],
+                    },
+                },
+            }));
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Added commission rule for ${partner.name} — ${rule.rate_pct}% (${rule.applies_to}${rule.category_id ? ` · ${rule.category_id}` : ""})`,
+                entity_type: "commissionRule",
+                entity_id: id,
+                entity_label: `${partner.name} · ${rule.rate_pct}%`,
+                kind: "create",
+                source_module: "masters",
+            });
+            return id;
+        },
+
+        // FIX-CONTRACTOR-BATCH2 / F.12: Add a source-partner row. Drives the
+        // customer/site source_partner_id dropdown AND the commission-rule
+        // partner picker. Without this UI, source partners could only be
+        // created via seed — so on production, no new partners could ever be
+        // added, and the entire commission-accrual chain (which depends on
+        // customer.source_partner_id) was unreachable.
+        addSourcePartner: (p) => {
+            const actor = get().currentUser();
+            if (!p.name || !p.name.trim())
+                throw new Error("Source partner name is required.");
+            const id = genId("sp");
+            const partner: SourcePartner = {
+                id,
+                name: p.name.trim(),
+                type: p.type,
+                phone: p.phone,
+                email: p.email,
+                commission_pct: p.commission_pct,
+            };
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    master: {
+                        ...s.db.master,
+                        sourcePartners: [...s.db.master.sourcePartners, partner],
+                    },
+                },
+            }));
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Added source partner ${partner.name}${partner.commission_pct != null ? ` (${partner.commission_pct}% default commission)` : ""}`,
+                entity_type: "sourcePartner",
+                entity_id: id,
+                entity_label: partner.name,
+                kind: "create",
+                source_module: "masters",
+            });
+            return id;
         },
     };
 }

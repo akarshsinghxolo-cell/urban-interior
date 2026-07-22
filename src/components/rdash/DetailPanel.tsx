@@ -128,6 +128,8 @@ function PanelHeader({ tab, setTab }: {
             case "vendor": return <Truck className="h-4 w-4"/>;
             case "vendorRate": return <Wallet className="h-4 w-4"/>;
             case "contractor": return <HardHat className="h-4 w-4"/>;
+            case "contractorBill": return <Receipt className="h-4 w-4"/>;
+            case "contractorPayment": return <Wallet className="h-4 w-4"/>;
             case "staff": return <User className="h-4 w-4"/>;
             case "audit": return <History className="h-4 w-4"/>;
             case "media": return <FileText className="h-4 w-4"/>;
@@ -242,6 +244,8 @@ function mapDetailKindToThreadKind(kind: string): string | null {
         vendor: "generic",
         vendorRate: "generic",
         contractor: "generic",
+        contractorBill: "generic",
+        contractorPayment: "generic",
         staff: "generic",
         audit: "generic",
         media: "generic",
@@ -302,6 +306,10 @@ function OverviewBody({ kind, id }: {
             return <VendorRateEntityOverview rate={rec as any}/>;
         case "contractor":
             return <ContractorEntityOverview contractor={rec as any}/>;
+        case "contractorBill":
+            return <ContractorBillEntityOverview bill={rec as any}/>;
+        case "contractorPayment":
+            return <ContractorPaymentEntityOverview payment={rec as any}/>;
         case "staff":
             return <StaffEntityOverview staff={rec as any}/>;
         case "audit":
@@ -336,6 +344,8 @@ function findRecord(kind: string, id: string, db: any): any {
         case "vendor": return db.master.vendors.find((x: any) => x.id === id);
         case "vendorRate": return db.master.vendorRates.find((x: any) => x.id === id);
         case "contractor": return db.master.contractors.find((x: any) => x.id === id);
+        case "contractorBill": return db.contractorBills.find((x: any) => x.id === id);
+        case "contractorPayment": return db.contractorPayments.find((x: any) => x.id === id);
         case "staff": return db.master.staff.find((x: any) => x.id === id);
         case "audit": return db.auditLog.find((x: any) => x.id === id);
         case "media": return db.master.fileAssets.find((x: any) => x.id === id);
@@ -371,6 +381,8 @@ function resolveTitle(kind: string, id: string, db: any): string {
         case "vendor": return r.name;
         case "vendorRate": return `${r.article_name || "Vendor rate"} · ${formatINR(r.rate || 0)}`;
         case "contractor": return r.name;
+        case "contractorBill": return `${r.bill_no || "Contractor bill"} · ${r.contractor_name || "Contractor"}`;
+        case "contractorPayment": return `${r.payment_no || "Contractor payment"} · ${r.contractor_name || "Contractor"}`;
         case "staff": return r.name;
         case "audit": return `${titleCase(r.kind || "event")} · ${r.entity_label || r.entity_type || "Audit"}`;
         case "media": return r.file_name;
@@ -501,18 +513,135 @@ function ContractorEntityOverview({ contractor }: { contractor: any }) {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
+    // FIX-CONTRACTOR-BATCH2 / F.13: wire the previously-dead "Blacklist /
+    // hold" button to the new deactivateContractor / activateContractor
+    // store actions. Soft-delete (status="inactive") is safer than hard
+    // delete — preserves referential integrity with bids / bills / payments /
+    // settlements / work orders.
+    const deactivateContractor = useRDashStore((s) => s.deactivateContractor);
+    const activateContractor = useRDashStore((s) => s.activateContractor);
     const [entityTab, setEntityTab] = React.useState("overview");
     const workOrders = db.workOrders.filter((row: any) => row.contractor_id === contractor.id || row.abandoned_contractor_id === contractor.id);
     const rates = db.master.contractorRates.filter((row: any) => row.contractor_id === contractor.id);
     const bills = db.contractorBills.filter((row: any) => row.contractor_id === contractor.id);
     const payments = db.contractorPayments.filter((row: any) => row.contractor_id === contractor.id);
+    const contractorStatus: string = contractor.status || "active";
+    const handleToggleStatus = () => {
+        try {
+            if (contractorStatus === "active") {
+                deactivateContractor(contractor.id, "Deactivated from contractor detail panel");
+                toast.success(`${contractor.name} deactivated — hidden from bid/direct-award dropdowns.`);
+            }
+            else {
+                activateContractor(contractor.id);
+                toast.success(`${contractor.name} re-activated.`);
+            }
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not change contractor status");
+        }
+    };
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
       <EntityTabs tabs={["overview", "work", "rates", "finance", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Work orders" value={workOrders.length}/><EntityStat label="Bills" value={bills.length}/><EntityStat label="Outstanding" value={formatINRShort(contractor.outstanding || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{contractor.name}</p><p className="mt-1 text-muted-foreground">{contractor.phone || "No phone"} · {contractor.trade || "Trade"} · {contractor.city || "—"}</p><p className="mt-1 text-muted-foreground">Rating {contractor.rating || "—"} · Reliability {contractor.reliability_score || "—"}/100 · Worker range {contractor.worker_count_range || "—"}</p></div></>}
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Work orders" value={workOrders.length}/><EntityStat label="Bills" value={bills.length}/><EntityStat label="Outstanding" value={formatINRShort(contractor.outstanding || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{contractor.name}{contractorStatus !== "active" ? <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{contractorStatus}</span> : null}</p><p className="mt-1 text-muted-foreground">{contractor.phone || "No phone"} · {contractor.trade || "Trade"} · {contractor.city || "—"}</p><p className="mt-1 text-muted-foreground">Rating {contractor.rating || "—"} · Reliability {contractor.reliability_score || "—"}/100 · Worker range {contractor.worker_count_range || "—"}</p>{(contractor.business_gst || contractor.pan || contractor.bank_account) && <p className="mt-1 text-muted-foreground">GST {contractor.business_gst || "—"} · PAN {contractor.pan || "—"} · Bank {contractor.bank_account || "—"}{contractor.ifsc ? ` (${contractor.ifsc})` : ""}</p>}</div></>}
       {entityTab === "work" && <div className="space-y-2">{workOrders.map((job: any) => <LinkedRow key={job.id} icon={<Building2 className="h-3.5 w-3.5"/>} label={job.work_order_no} value={`${titleCase(job.status)} · ${formatINR(job.value || 0)}`} onClick={() => openDetail("workOrder", job.id)}/>)}{!workOrders.length ? <EmptyContext label="No work order has been assigned to this contractor."/> : null}</div>}
       {entityTab === "rates" && <div className="space-y-2">{rates.map((row: any) => <div key={row.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between"><span>{row.trade}</span><span className="font-mono">{formatINR(row.rate)}</span></div></div>)}{!rates.length ? <EmptyContext label="No contractor rates recorded."/> : null}</div>}
-      {entityTab === "finance" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no || "Contractor bill"} value={`${titleCase(bill.status || "pending")} · ${formatINR(bill.total_amount || bill.amount || 0)}`} onClick={bill.work_order_id ? () => { openDetail("workOrder", bill.work_order_id); } : undefined}/>)}{payments.map((payment: any) => <div key={payment.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between"><span className="font-semibold">{payment.payment_no}</span><span className="font-mono">{formatINR(payment.amount || 0)}</span></div></div>)}{!bills.length && !payments.length ? <EmptyContext label="No contractor bill/payment trail."/> : null}</div>}
-      {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("siteExecution")}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Assign / match contractor</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("contractorPayments")}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bills/payment</Button><Button size="sm" variant="outline" onClick={() => toast.info("Blacklist/hold requires contractor status workflow") }><XCircle className="mr-1.5 h-3.5 w-3.5"/>Blacklist / hold</Button></div>}
+      {entityTab === "finance" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no || "Contractor bill"} value={`${titleCase(bill.status || "pending")} · ${formatINR(bill.total_amount || bill.amount || 0)}`} onClick={() => openDetail("contractorBill" as any, bill.id)}/>)}{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Contractor payment"} value={`${titleCase(payment.status || "pending")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("contractorPayment" as any, payment.id)}/>)}{!bills.length && !payments.length ? <EmptyContext label="No contractor bill/payment trail."/> : null}</div>}
+      {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("siteExecution")}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Assign / match contractor</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("contractorPayments")}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bills/payment</Button><Button size="sm" variant={contractorStatus === "active" ? "destructive" : "outline"} onClick={handleToggleStatus} title={contractorStatus === "active" ? "Deactivate this contractor — they will be hidden from bid/direct-award dropdowns but their historical records are preserved." : "Re-activate this contractor"}>{contractorStatus === "active" ? <><XCircle className="mr-1.5 h-3.5 w-3.5"/>Deactivate</> : <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Activate</>}</Button></div>}
+    </div>;
+}
+
+// FIX-CONTRACTOR-BATCH2 / F.15: DetailPanel drill-through for contractor
+// bills. Previously the ContractorPaymentsModule set detailKind="workOrder"
+// on every bill row — clicking opened the work order, not the bill, so the
+// user could not see the bill's description / progress_pct / verified_at /
+// verified_by / due_date / dispute fields. Now the module sets
+// detailKind="contractorBill" (F.23) and this overview renders the full
+// bill context.
+function ContractorBillEntityOverview({ bill }: { bill: any }) {
+    const db = useRDashStore((s) => s.db);
+    const openDetail = useRDashStore((s) => s.openDetail);
+    const disputeContractorBill = useRDashStore((s) => s.disputeContractorBill);
+    const resolveContractorBillDispute = useRDashStore((s) => s.resolveContractorBillDispute);
+    const [entityTab, setEntityTab] = React.useState("overview");
+    const workOrder = db.workOrders.find((row: any) => row.id === bill.work_order_id);
+    const site = db.sites.find((row: any) => row.id === bill.site_id);
+    const contractor = db.master.contractors.find((row: any) => row.id === bill.contractor_id);
+    const customer = db.customers.find((row: any) => row.id === bill.customer_id);
+    const payments = db.contractorPayments.filter((row: any) => row.contractor_bill_id === bill.id);
+    const [disputeReason, setDisputeReason] = React.useState("");
+    const [disputeOpen, setDisputeOpen] = React.useState(false);
+    const handleDispute = () => {
+        try {
+            disputeContractorBill(bill.id, disputeReason.trim() || "Disputed from contractor bill detail panel");
+            toast.success(`Bill ${bill.bill_no} marked as disputed.`);
+            setDisputeOpen(false);
+            setDisputeReason("");
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not dispute bill");
+        }
+    };
+    const handleResolve = () => {
+        try {
+            resolveContractorBillDispute(bill.id);
+            toast.success(`Dispute resolved on ${bill.bill_no}.`);
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not resolve dispute");
+        }
+    };
+    return <div className="h-full overflow-y-auto p-4 rd-scroll">
+      <EntityTabs tabs={["overview", "payments", "actions"]} active={entityTab} onChange={setEntityTab}/>
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Bill amount" value={formatINR(bill.amount || 0)}/><EntityStat label="Paid" value={formatINR(bill.paid_amount || 0)}/><EntityStat label="Balance" value={formatINR(bill.balance_amount || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{bill.bill_no}{bill.ra_no ? ` · ${bill.ra_no}` : ""}</p><p className="mt-1 text-muted-foreground">{bill.contractor_name || "Contractor"} · {workOrder?.work_order_no || "—"} · {site?.name || "—"}</p><p className="mt-1 text-muted-foreground">Status: <span className="font-semibold">{titleCase(bill.status || "—")}</span> · Progress {bill.progress_pct ?? "—"}% · Due {bill.due_date ? formatDate(bill.due_date) : "—"}</p>{bill.verified_at && <p className="mt-1 text-muted-foreground">Verified {formatDate(bill.verified_at)} by {bill.verified_by || "—"}</p>}{bill.status === "disputed" && bill.disputed_at && <p className="mt-1 text-destructive">Disputed {formatDate(bill.disputed_at)} by {bill.disputed_by || "—"}{bill.dispute_reason ? ` — ${bill.dispute_reason}` : ""}</p>}{bill.description && <p className="mt-2 text-foreground/80">{bill.description}</p>}</div></>}
+      {entityTab === "payments" && <div className="space-y-2">{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Payment"} value={`${titleCase(payment.status || "—")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("contractorPayment" as any, payment.id)}/>)}{!payments.length ? <EmptyContext label="No payments recorded against this bill yet."/> : null}</div>}
+      {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2">{customer && <Button size="sm" variant="outline" onClick={() => openDetail("customer" as any, customer.id)}><User className="mr-1.5 h-3.5 w-3.5"/>Open customer</Button>}{workOrder && <Button size="sm" variant="outline" onClick={() => openDetail("workOrder", workOrder.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/>Open work order</Button>}{contractor && <Button size="sm" variant="outline" onClick={() => openDetail("contractor" as any, contractor.id)}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Open contractor</Button>}{bill.status === "disputed" ? <Button size="sm" variant="outline" onClick={handleResolve} title="Restore the bill to verified status so it can re-enter the payment release flow."><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Resolve dispute</Button> : <Button size="sm" variant="destructive" onClick={() => setDisputeOpen((v) => !v)} title="Mark this bill as disputed — payment release will be frozen until the dispute is resolved."><AlertCircle className="mr-1.5 h-3.5 w-3.5"/>Dispute bill</Button>}{disputeOpen && bill.status !== "disputed" && <div className="sm:col-span-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-2"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Dispute reason</label><Input value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="e.g. Rate mismatch on line 3 — re-measurement required." className="h-8 text-xs"/><div className="mt-1 flex gap-2"><Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleDispute}>Confirm dispute</Button></div></div>}</div>}
+    </div>;
+}
+
+// FIX-CONTRACTOR-BATCH2 / F.15: DetailPanel drill-through for contractor
+// payments. Mirrors the bill overview — shows mode/reference/approved_at/
+// approved_by, links to the parent bill + work order + contractor, and
+// exposes the F.8 hold/cancel actions (pending/approved payments only).
+function ContractorPaymentEntityOverview({ payment }: { payment: any }) {
+    const db = useRDashStore((s) => s.db);
+    const openDetail = useRDashStore((s) => s.openDetail);
+    const holdContractorPayment = useRDashStore((s) => s.holdContractorPayment);
+    const cancelContractorPayment = useRDashStore((s) => s.cancelContractorPayment);
+    const [entityTab, setEntityTab] = React.useState("overview");
+    const bill = db.contractorBills.find((row: any) => row.id === payment.contractor_bill_id);
+    const workOrder = db.workOrders.find((row: any) => row.id === payment.work_order_id);
+    const site = db.sites.find((row: any) => row.id === payment.site_id);
+    const contractor = db.master.contractors.find((row: any) => row.id === payment.contractor_id);
+    const [actionReason, setActionReason] = React.useState("");
+    const [actionOpen, setActionOpen] = React.useState<null | "hold" | "cancel">(null);
+    const canActOnPayment = payment.status === "pending" || payment.status === "approved";
+    const handleHold = () => {
+        try {
+            holdContractorPayment(payment.id, actionReason.trim() || "Held from contractor payment detail panel");
+            toast.success(`Payment ${payment.payment_no} held.`);
+            setActionOpen(null);
+            setActionReason("");
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not hold payment");
+        }
+    };
+    const handleCancel = () => {
+        try {
+            cancelContractorPayment(payment.id, actionReason.trim() || "Cancelled from contractor payment detail panel");
+            toast.success(`Payment ${payment.payment_no} cancelled.`);
+            setActionOpen(null);
+            setActionReason("");
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not cancel payment");
+        }
+    };
+    return <div className="h-full overflow-y-auto p-4 rd-scroll">
+      <EntityTabs tabs={["overview", "actions"]} active={entityTab} onChange={setEntityTab}/>
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Amount" value={formatINR(payment.amount || 0)}/><EntityStat label="Mode" value={titleCase(String(payment.mode || "—").replaceAll("_", " "))}/><EntityStat label="Status" value={titleCase(payment.status || "—")}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{payment.payment_no}</p><p className="mt-1 text-muted-foreground">{payment.contractor_name || "Contractor"} · {workOrder?.work_order_no || "—"} · {site?.name || "—"}</p><p className="mt-1 text-muted-foreground">Reference: <span className="font-mono">{payment.reference || "—"}</span></p>{payment.approved_at && <p className="mt-1 text-muted-foreground">Approved {formatDate(payment.approved_at)} by {payment.approved_by || "—"}</p>}{payment.paid_at && <p className="mt-1 text-muted-foreground">Paid {formatDate(payment.paid_at)}</p>}{payment.status === "held" && payment.held_at && <p className="mt-1 text-warning">Held {formatDate(payment.held_at)} by {payment.held_by || "—"}{payment.hold_reason ? ` — ${payment.hold_reason}` : ""}</p>}{payment.status === "cancelled" && payment.cancelled_at && <p className="mt-1 text-destructive">Cancelled {formatDate(payment.cancelled_at)} by {payment.cancelled_by || "—"}{payment.cancel_reason ? ` — ${payment.cancel_reason}` : ""}</p>}</div></>}
+      {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2">{bill && <Button size="sm" variant="outline" onClick={() => openDetail("contractorBill" as any, bill.id)}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bill</Button>}{workOrder && <Button size="sm" variant="outline" onClick={() => openDetail("workOrder", workOrder.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/>Open work order</Button>}{contractor && <Button size="sm" variant="outline" onClick={() => openDetail("contractor" as any, contractor.id)}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Open contractor</Button>}{canActOnPayment && <Button size="sm" variant="outline" onClick={() => setActionOpen(actionOpen === "hold" ? null : "hold")} title="Freeze this payment pending investigation."><AlertCircle className="mr-1.5 h-3.5 w-3.5"/>Hold payment</Button>}{canActOnPayment && <Button size="sm" variant="destructive" onClick={() => setActionOpen(actionOpen === "cancel" ? null : "cancel")} title="Void this payment entirely."><XCircle className="mr-1.5 h-3.5 w-3.5"/>Cancel payment</Button>}{actionOpen && <div className="sm:col-span-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-2"><label className="text-[10px] font-semibold uppercase text-muted-foreground">{actionOpen === "hold" ? "Hold reason" : "Cancel reason"}</label><Input value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder={actionOpen === "hold" ? "e.g. Awaiting invoice reconciliation." : "e.g. Duplicate payment — entered in error."} className="h-8 text-xs"/><div className="mt-1 flex gap-2"><Button size="sm" variant={actionOpen === "hold" ? "outline" : "destructive"} className="h-7 text-xs" onClick={actionOpen === "hold" ? handleHold : handleCancel}>Confirm {actionOpen}</Button></div></div>}{!canActOnPayment && <EmptyContext label={`No hold/cancel actions available — payment is already ${payment.status}.`}/>}</div>}
     </div>;
 }
 

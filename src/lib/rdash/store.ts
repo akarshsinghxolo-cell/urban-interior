@@ -474,12 +474,19 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 return;
             }
             if (payload.data && typeof payload.revision === "number") {
+                // FIX-PERF-001: Don't replace the entire db on successful commit.
+                // The client already applied the change locally via commitState.
+                // Replacing db with the server response creates a new reference
+                // that triggers re-renders in all 154 components subscribed to
+                // s.db — causing the "entire workspace refreshes" UX issue.
+                // Instead, only update metadata (revision, sync status) and keep
+                // the local db reference. The server response is still stored as
+                // lastAcceptedServerDb for conflict recovery.
                 const accepted = attachCustomerLabels(prepareWorkspaceDatabase(payload.data));
                 serverRevisionForQueue = payload.revision;
                 lastAcceptedServerRevision = payload.revision;
                 lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
                 setBase({
-                    db: accepted,
                     serverRevision: payload.revision,
                     workspaceSyncStatus: "saved",
                     workspaceSyncError: null,
@@ -819,8 +826,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         // ── sendComm moved to threads slice (Phase 3b) ──
         // ── Masters slice: attendance actions (Phase 3d, part 2) ──
         ...((() => {
-            const { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary } = createMastersSlice(ctx);
-            return { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary };
+            const { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addContractorRate, addCommissionRule, addSourcePartner } = createMastersSlice(ctx);
+            return { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addContractorRate, addCommissionRule, addSourcePartner };
         })()),
         // ── finance config actions (toggleCommercialTerm, toggleTaxConfig, toggleValidityConfig,
         //     setDefaultPaymentTermTemplate) moved to finance slice (Phase 3e) ──

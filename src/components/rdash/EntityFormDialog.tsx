@@ -113,6 +113,15 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     const [conPoliteness, setConPoliteness] = React.useState<"very" | "moderate" | "less">("moderate");
     const [conWorkerCount, setConWorkerCount] = React.useState<"1-3" | "4-8" | "9-15" | "16-40">("1-3");
     const [conDeadline, setConDeadline] = React.useState<"strict" | "usual" | "lazy" | "very_lazy">("usual");
+    // FIX-CONTRACTOR-BATCH2 / F.6: business / tax / banking / category fields,
+    // previously declared-but-never-populated dead fields on the Contractor
+    // master type. Now captured in this dialog and persisted via addContractor
+    // / updateContractor (the slice passes them through to the master record).
+    const [conBusinessGst, setConBusinessGst] = React.useState("");
+    const [conPan, setConPan] = React.useState("");
+    const [conBankAccount, setConBankAccount] = React.useState("");
+    const [conIfsc, setConIfsc] = React.useState("");
+    const [conCategories, setConCategories] = React.useState<string[]>([]);
     const [conCapabilities, setConCapabilities] = React.useState<Array<{
         subcategory_id: string;
         subcategory_name?: string;
@@ -183,6 +192,14 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                     setConPoliteness(c.politeness_rating || "moderate");
                     setConWorkerCount(c.worker_count_range || "1-3");
                     setConDeadline(c.deadline_commitment || "usual");
+                    // FIX-CONTRACTOR-BATCH2 / F.6: load the business / tax /
+                    // banking / category fields so the edit dialog shows the
+                    // previously-saved values (the fields were dead before).
+                    setConBusinessGst(c.business_gst || "");
+                    setConPan(c.pan || "");
+                    setConBankAccount(c.bank_account || "");
+                    setConIfsc(c.ifsc || "");
+                    setConCategories(c.categories || []);
                     setConCapabilities((c.work_capabilities || []).map((wc) => ({
                         subcategory_id: wc.subcategory_id,
                         subcategory_name: wc.subcategory_name,
@@ -242,6 +259,13 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         setConPoliteness("moderate");
         setConWorkerCount("1-3");
         setConDeadline("usual");
+        // FIX-CONTRACTOR-BATCH2 / F.6: reset the new business / tax / banking /
+        // category fields when the dialog is opened for a NEW contractor.
+        setConBusinessGst("");
+        setConPan("");
+        setConBankAccount("");
+        setConIfsc("");
+        setConCategories([]);
         setConCapabilities([]);
     }, [open, type, editId, db.customers, db.master.vendors, db.master.contractors]);
     const referralOptions = React.useMemo(() => {
@@ -439,6 +463,13 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             }
             return [...arr, { subcategory_id: subId, subcategory_name: sub.name, labour_rate: "", with_material_rate: "" }];
         });
+    };
+    // FIX-CONTRACTOR-BATCH2 / F.6: toggle a work-category tag for the
+    // contractor. Stored as category names (human-readable on the contractor
+    // card) rather than IDs — matches the existing specializations[] display
+    // pattern and avoids a separate lookup in the list view.
+    const toggleContractorCategory = (name: string) => {
+        setConCategories((arr) => arr.includes(name) ? arr.filter((x) => x !== name) : [...arr, name]);
     };
     const updateCapability = (subId: string, patch: Partial<typeof conCapabilities[number]>) => {
         setConCapabilities((arr) => arr.map((c) => c.subcategory_id === subId ? { ...c, ...patch } : c));
@@ -662,6 +693,15 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         labour_rate: c.labour_rate ? parseFloat(c.labour_rate) : undefined,
                         with_material_rate: c.with_material_rate ? parseFloat(c.with_material_rate) : undefined,
                     })),
+                    // FIX-CONTRACTOR-BATCH2 / F.6: persist the new business / tax /
+                    // banking / category fields. The Contractor type now declares
+                    // these as optional and addContractor / updateContractor pass
+                    // them through to the master record.
+                    business_gst: conBusinessGst.trim() || undefined,
+                    pan: conPan.trim() || undefined,
+                    bank_account: conBankAccount.trim() || undefined,
+                    ifsc: conIfsc.trim() || undefined,
+                    categories: conCategories,
                 };
                 setSaving(true);
                 const id = isEditMode && editId ? editId : addContractor(payload);
@@ -976,6 +1016,42 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                           <button type="button" onClick={() => toggleContractorCapability(cap.subcategory_id)} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5"/></button>
                         </div>))}
                     </div>)}
+                </div>
+                {/* FIX-CONTRACTOR-BATCH2 / F.6: Business / tax / banking /
+                    work-category fields. Previously declared-but-never-
+                    populated dead fields on the Contractor type — now
+                    captured here so the master record has the data the
+                    finance team needs for GST reconciliation, TDS, bank
+                    transfers, and contractor-type filtering. */}
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">Business / tax / banking</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Optional — captured for GST reconciliation, TDS and bank transfers.</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] font-semibold uppercase text-muted-foreground">GSTIN</label>
+                      <Input value={conBusinessGst} onChange={(e) => setConBusinessGst(e.target.value.toUpperCase())} placeholder="22AAAAA0000A1Z5" maxLength={15} className="h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold uppercase text-muted-foreground">PAN</label>
+                      <Input value={conPan} onChange={(e) => setConPan(e.target.value.toUpperCase())} placeholder="AAAAA0000A" maxLength={10} className="h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold uppercase text-muted-foreground">Bank account no.</label>
+                      <Input value={conBankAccount} onChange={(e) => setConBankAccount(e.target.value)} placeholder="Bank account number" className="h-9 text-sm"/>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold uppercase text-muted-foreground">IFSC</label>
+                      <Input value={conIfsc} onChange={(e) => setConIfsc(e.target.value.toUpperCase())} placeholder="SBIN0001234" maxLength={11} className="h-9 text-sm"/>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work categories</p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">Broad trade categories this contractor serves — used for filtering the contractor list and bid-invitation dropdowns.</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {allCategories.map((cat) => <button key={cat.id} type="button" onClick={() => toggleContractorCategory(cat.name)} className={cn("rounded-md border px-2 py-1 text-[11px] font-medium transition-colors", conCategories.includes(cat.name) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>{cat.name}</button>)}
+                  </div>
+                  {conCategories.length > 0 && <p className="mt-2 text-[10px] text-success">{conCategories.length} work categor{conCategories.length === 1 ? "y" : "ies"} selected</p>}
                 </div>
               </>)}
           </div>

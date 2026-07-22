@@ -74,6 +74,8 @@ function detailRecordExists(db: RDashDatabase, kind: Exclude<DetailPanelKind, nu
         vendor: db.master.vendors,
         vendorRate: db.master.vendorRates,
         contractor: db.master.contractors,
+        contractorBill: db.contractorBills,
+        contractorPayment: db.contractorPayments,
         staff: db.master.staff,
         audit: db.auditLog,
         media: db.master.fileAssets,
@@ -130,6 +132,17 @@ function detailRecordCustomerId(db: RDashDatabase, kind: Exclude<DetailPanelKind
         return db.blocked.find((row) => row.id === recordId)?.customer_id;
     if (kind === "commission")
         return db.commissions.find((row) => row.id === recordId)?.customer_id;
+    // FIX-CONTRACTOR-BATCH2 / F.15: contractor bills / payments resolve
+    // through their work_order_id → workOrder.customer_id chain so the
+    // customer-context navigation header shows the correct root customer.
+    if (kind === "contractorBill") {
+        const bill = db.contractorBills.find((row) => row.id === recordId);
+        return bill ? db.workOrders.find((row) => row.id === bill.work_order_id)?.customer_id : undefined;
+    }
+    if (kind === "contractorPayment") {
+        const payment = db.contractorPayments.find((row) => row.id === recordId);
+        return payment ? db.workOrders.find((row) => row.id === payment.work_order_id)?.customer_id : undefined;
+    }
     if (kind === "inventory") {
         const inventory = db.inventory.find((row) => row.id === recordId);
         return inventory?.work_order_id ? db.workOrders.find((row) => row.id === inventory.work_order_id)?.customer_id : undefined;

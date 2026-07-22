@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { useRDashStore, contractorBids, contractorSettlements, contractorOutstanding } from "@/lib/rdash/store";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
-import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, Gavel, HandCoins, Pencil, } from "lucide-react";
+import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, XCircle, Gavel, HandCoins, Pencil, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,20 @@ export function ContractorDetailModule() {
     const createContractorRABill = useRDashStore((s) => s.createContractorRABill);
     const canReleaseContractorPayment = useRDashStore((s) => s.canReleaseContractorPayment);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
+    // FIX-CONTRACTOR-BATCH2 / F.13: pull in deactivateContractor /
+    // activateContractor so the contractor detail panel can soft-delete /
+    // re-activate a contractor (previously no UI existed — once a contractor
+    // was created, it lived forever in the master).
+    const deactivateContractor = useRDashStore((s) => s.deactivateContractor);
+    const activateContractor = useRDashStore((s) => s.activateContractor);
+    // FIX-CONTRACTOR-BATCH2 / F.21: role-gate the "Create RA bill" button to
+    // match the store action's assertRole(["Owner", "Finance",
+    // "Operations Manager"], ...) check in createContractorRABill
+    // (contractors.ts:707). Previously the button was shown to ALL users,
+    // so a FIELD_STAFF / SALES_TELECALLER clicking it would get a runtime
+    // error toast. Now the button is hidden for roles that can't act on it.
+    const currentUser = useRDashStore((s) => s.currentUser);
+    const canCreateRABill = ["Owner", "Finance", "Operations Manager"].includes(currentUser().role);
     // FIX-CONTRACTOR-BATCH1 / F.5: Wire updateContractorBid (previously dead
     // store action — implemented in contractors.ts:179 but never called from
     // any UI). The new "Edit bid" / "Withdraw bid" dialog below lets the user
@@ -178,6 +192,31 @@ export function ContractorDetailModule() {
                 <span className="inline-flex items-center gap-0.5 rounded-full bg-warning/10 px-2.5 py-1 text-sm font-bold text-warning">
                   <Star className="h-3.5 w-3.5 fill-warning"/>{selected.rating || "—"}
                 </span>
+                {/* FIX-CONTRACTOR-BATCH2 / F.13: Activate / Deactivate buttons.
+                    Previously a contractor could not be removed or archived —
+                    once created, it lived forever in the master. Now the user
+                    can soft-delete (status="inactive") and re-activate. */}
+                {((selected.status || "active") === "active") ? (<Button size="sm" variant="outline" className="h-8 border-destructive/40 text-destructive hover:bg-destructive/10" onClick={() => {
+                    try {
+                        deactivateContractor(selected.id, "Deactivated from contractor detail module");
+                        toast.success(`${selected.name} deactivated — hidden from bid/direct-award dropdowns.`);
+                    }
+                    catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Could not deactivate contractor");
+                    }
+                }} title="Deactivate — hide this contractor from bid/direct-award dropdowns. Historical records are preserved.">
+                    <XCircle className="mr-1 h-3.5 w-3.5"/> Deactivate
+                </Button>) : (<Button size="sm" variant="outline" className="h-8 border-success/40 text-success hover:bg-success/10" onClick={() => {
+                    try {
+                        activateContractor(selected.id);
+                        toast.success(`${selected.name} re-activated.`);
+                    }
+                    catch (error) {
+                        toast.error(error instanceof Error ? error.message : "Could not activate contractor");
+                    }
+                }} title="Re-activate this contractor so they reappear in bid/direct-award dropdowns.">
+                    <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Activate
+                </Button>)}
               </div>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -270,9 +309,11 @@ export function ContractorDetailModule() {
                         <StatusBadge label={titleCase(j.status)} className={j.status === "in_progress" ? "bg-primary/10 text-primary border-primary/20" : j.status === "on_hold" ? "bg-warning/10 text-warning border-warning/20" : j.status === "abandoned" ? "bg-destructive/15 text-destructive border-destructive/25" : "bg-muted text-muted-foreground border-border"}/>
                         <ArrowRight className="h-3 w-3 text-muted-foreground"/>
                       </button>
-                      <Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-[11px]" onClick={() => setPayDialog({ workOrder: j })}>
+                      {/* FIX-CONTRACTOR-BATCH2 / F.21: only show "Create RA bill"
+                          to roles the store action allows. */}
+                      {canCreateRABill && (<Button size="sm" variant="outline" className="h-7 shrink-0 px-2 text-[11px]" onClick={() => setPayDialog({ workOrder: j })}>
                         <DollarSign className="mr-1 h-3 w-3"/> Create RA bill
-                      </Button>
+                      </Button>)}
                     </div>))}
                 </div>)}
             </div>
@@ -300,7 +341,9 @@ export function ContractorDetailModule() {
             }} onSubmit={(amount, description, progressPct) => {
                 try {
                     createContractorRABill(payDialog.workOrder.id, selected.id, amount, description, progressPct);
-                    toast.success(amount > 25000 ? `Verified RA bill created. Request one or more payment releases from Contractor Bills & Payments` : `Verified RA bill created`);
+                    // FIX-CONTRACTOR-BATCH2 / F.14: simplified wording — bill
+                    // creation never requires approval (only payment release does).
+                    toast.success(`Verified RA bill created — request payment release from Contractor Bills & Payments when ready.`);
                     setPayDialog(null);
                 }
                 catch (error) {
@@ -408,7 +451,16 @@ function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUp
     const [amount, setAmount] = React.useState("");
     const [description, setDescription] = React.useState(`${contractor.name} — progress payment for ${workOrder.work_order_no}`);
     const [progressPct, setProgressPct] = React.useState(workOrder.progress?.toString() || "");
-    const requiresApproval = (parseFloat(amount) || 0) > 25000;
+    // FIX-CONTRACTOR-BATCH2 / F.14: the ₹25,000 threshold doesn't apply to
+    // bill creation — createContractorRABill always creates a "verified"
+    // bill and posts the cost line immediately. The threshold only matters
+    // later, in requestContractorBillPayment, where it gates payment RELEASE
+    // approval. The previous wording ("Request approval" / "Post payment"
+    // button labels + "Above ₹25,000 policy — owner approval required")
+    // misled users into thinking the bill itself needed approval. Now the
+    // dialog consistently says "Submit bill" and the threshold note
+    // clarifies when it actually applies.
+    const overThreshold = (parseFloat(amount) || 0) > 25000;
     // CV-2: The store now warns (via thread reply) but no longer hard-blocks RA bill creation when
     // contractor confirmation proof is missing. We still surface the warning prominently and offer
     // an in-context shortcut to upload the proof, but the submit button is no longer disabled —
@@ -426,8 +478,11 @@ function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUp
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Amount (₹)</label>
             <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 58000" className="h-9 text-sm" autoFocus/>
-            {amount && (<p className={cn("mt-1 text-[10px] font-medium", requiresApproval ? "text-warning" : "text-success")}>
-                {requiresApproval ? "⚠ Above ₹25,000 policy — owner approval required" : "✓ Below ₹25,000 threshold — auto-approved, cost posted immediately"}
+            {amount && (<p className={cn("mt-1 text-[10px] font-medium", overThreshold ? "text-muted-foreground" : "text-muted-foreground")}>
+                {/* FIX-CONTRACTOR-BATCH2 / F.14: corrected wording — bill
+                    creation never requires approval; only the payment release
+                    request (next step) does. */}
+                Bill is created as "verified" and the cost is posted immediately{overThreshold ? ". Payments above ₹25,000 will require owner approval when you request release from Contractor Bills & Payments." : "."}
               </p>)}
           </div>
           {proofMissing && (<div className="rounded-md border border-warning/40 bg-warning/[0.08] p-2.5 text-xs text-warning">
@@ -455,7 +510,7 @@ function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUp
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
           <Button size="sm" onClick={() => onSubmit(parseFloat(amount) || 0, description, progressPct ? parseFloat(progressPct) : undefined)} disabled={!amount || !description}>
-            <DollarSign className="mr-1 h-3.5 w-3.5"/> {requiresApproval ? "Request approval" : "Post payment"}
+            <DollarSign className="mr-1 h-3.5 w-3.5"/> Submit bill
           </Button>
         </DialogFooter>
       </DialogContent>

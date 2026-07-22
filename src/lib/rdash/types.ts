@@ -880,11 +880,22 @@ export interface ContractorBill {
     amount: number;
     paid_amount: number;
     balance_amount: number;
-    status: "draft" | "submitted" | "verified" | "approved" | "partly_paid" | "paid" | "held";
+    // FIX-CONTRACTOR-BATCH2 / F.7: "disputed" is now a first-class status —
+    // the ContractorPaymentsModule "Dispute bill" / "Resolve dispute" actions
+    // flip it on/off, and recomputeContractorPerformance (contractors.ts) uses
+    // it to penalize the contractor's reliability score. "draft"/"submitted"/
+    // "approved"/"held" are reserved for future use — no store action sets
+    // them today, but they remain in the union so the type reflects the
+    // intended lifecycle (draft → submitted → verified → approved →
+    // partly_paid → paid, with "held"/"disputed" as orthogonal holds).
+    status: "draft" | "submitted" | "verified" | "approved" | "partly_paid" | "paid" | "held" | "disputed";
     progress_pct: number;
     due_date?: string;
     verified_at?: string;
     verified_by?: string;
+    disputed_at?: string;
+    disputed_by?: string;
+    dispute_reason?: string;
     thread_id?: ID;
     created_at: string;
     updated_at: string;
@@ -900,14 +911,32 @@ export interface ContractorPayment {
     amount: number;
     mode: PaymentMode | string;
     reference: string;
-    status: "pending" | "approved" | "paid" | "held" | "cancelled";
+    // FIX-CONTRACTOR-BATCH2 / F.8: "held" and "cancelled" are now reachable
+    // via the ContractorPaymentsModule "Hold" / "Cancel payment" actions
+    // (contractors.ts holdContractorPayment / cancelContractorPayment).
+    // "disputed" is reserved for future use (no UI yet) — kept in the union
+    // so the type matches the equivalent ContractorBill status.
+    status: "pending" | "approved" | "paid" | "held" | "cancelled" | "disputed";
     paid_at?: string;
     approved_at?: string;
     approved_by?: string;
+    held_at?: string;
+    held_by?: string;
+    hold_reason?: string;
+    cancelled_at?: string;
+    cancelled_by?: string;
+    cancel_reason?: string;
     thread_id?: ID;
     created_at: string;
     updated_at: string;
 }
+// FIX-CONTRACTOR-BATCH2 / F.11: "payable" and "cancelled" are reserved for
+// future use — accrueCommission creates "accrued" rows and payCommission
+// transitions them to "paid". The intermediate "payable" status and the
+// "cancelled" status are kept in the union so the type reflects the
+// intended lifecycle (accrued → payable → paid, with "cancelled" as the
+// void path). They will be wired up when a manual "mark as payable" /
+// "cancel commission" UI is added.
 export type CommissionStatus = "accrued" | "payable" | "paid" | "cancelled";
 export interface Commission {
     id: ID;
@@ -984,6 +1013,11 @@ export interface WorkOrderCostLine {
     contractor_name?: string;
     created_at: string;
 }
+// FIX-CONTRACTOR-BATCH2 / F.9: "open" is reserved for future use — bids
+// are currently created with status="submitted" by addContractorBid. The
+// "withdrawn" status IS reachable from the UI via the EditContractorBidDialog
+// (FIX-CONTRACTOR-BATCH1 / F.5). "open" is kept so the type reflects the
+// intended lifecycle (open → submitted → selected | rejected | withdrawn).
 export type ContractorBidStatus = "open" | "submitted" | "selected" | "rejected" | "withdrawn";
 export interface ContractorBid {
     id: ID;
@@ -1018,6 +1052,12 @@ export interface ContractorBid {
 // --- 10. Contractor domain ---
     updated_at: string;
 }
+// FIX-CONTRACTOR-BATCH2 / F.10: "mutual_termination", "partial_completion"
+// and "final_close" are reserved for future use — the DetailPanel
+// settlement dialog currently hardcodes type="abandonment" and the store
+// action settles with that default. They remain in the union so the type
+// reflects the intended settlement lifecycle. setContractorSettlementType
+// can be wired up later to expose the type selector in the UI.
 export type SettlementType = "abandonment" | "mutual_termination" | "partial_completion" | "final_close";
 export interface ContractorSettlement {
     id: ID;
@@ -1594,6 +1634,28 @@ export interface Contractor {
         labour_rate?: number;
         with_material_rate?: number;
     }>;
+    // FIX-CONTRACTOR-BATCH2 / F.6: Business / tax / banking fields, previously
+    // declared-but-never-populated dead fields. Now captured in the
+    // EntityFormDialog contractor branch and persisted on the master record.
+    business_gst?: string;
+    pan?: string;
+    bank_account?: string;
+    ifsc?: string;
+    /** Free-form work-category tags (resolved from the master.workCategories
+     * list at create/edit time). Mirrors the customer interest_category_ids
+     * pattern but kept as names for human readability on the contractor card. */
+    categories?: string[];
+    // FIX-CONTRACTOR-BATCH2 / F.13: Soft-delete / archive support. A
+    // contractor can be deactivated (status="inactive") or reactivated
+    // (status="active") from the ContractorDetailModule. Inactive contractors
+    // remain in the master for historical lookup but are filtered out of
+    // bid-invitation and direct-award dropdowns.
+    status?: "active" | "inactive" | "blacklisted";
+    // FIX-CONTRACTOR-BATCH2 / F.16: Timestamp of the last
+    // recomputeContractorPerformance call. Persisted so the
+    // ContractorPerformanceModule can show "last recomputed" alongside the
+    // score.
+    performance_recomputed_at?: string;
 }
 export type StaffRoleKey = "OWNER" | "OPERATIONS_MANAGER" | "FIELD_STAFF" | "SALES_TELECALLER" | "PROCUREMENT_STAFF" | "FINANCE" | "ACCOUNTS_ADMIN";
 export type StaffSalaryType = "monthly" | "daily_wage" | "contract";
@@ -1631,6 +1693,7 @@ export interface SourcePartner {
     name: string;
     type?: string;
     phone?: string;
+    email?: string;
     commission_pct?: number;
 }
 export interface CommissionRule {
@@ -1692,6 +1755,14 @@ export interface ContractorRate {
     trade: string;
     rate: number;
     unit_id?: string;
+    // FIX-CONTRACTOR-BATCH2 / F.12: Optional subcategory + labour/material
+    // split — populated by the new "Add Contractor Rate" dialog in
+    // MastersSalesOpsModule. The legacy `trade`/`rate` pair is kept for
+    // backward compatibility with seed rows that don't have a subcategory.
+    work_subcategory_id?: ID;
+    work_subcategory_name?: string;
+    labour_rate?: number;
+    with_material_rate?: number;
 }
 export type FileAssetKind = "document" | "media" | "catalogue" | "drawing" | "site_proof" | "other";
 export type FileAssetStorageMode = "managed" | "external_reference";

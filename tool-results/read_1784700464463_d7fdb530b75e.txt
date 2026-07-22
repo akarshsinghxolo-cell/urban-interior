@@ -1,0 +1,642 @@
+     1→"use client";
+     2→import * as React from "react";
+     3→import { cn } from "@/lib/utils";
+     4→import { useRDashStore, type SavedView } from "@/lib/rdash/store";
+     5→import type { DetailPanelKind } from "@/lib/rdash/store";
+     6→import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
+     7→import { SavedViewsBar } from "../SavedViewsBar";
+     8→import { BulkActionBar, SelectCheckbox, type BulkAction } from "../BulkActions";
+     9→import { EntityFormDialog } from "../EntityFormDialog";
+    10→import { StaffEditDialog } from "../StaffEditDialog";
+    11→import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, invoiceStatusStyle } from "@/lib/rdash/format";
+    12→import { Building2, Users, HardHat, HandCoins, Star, Phone, MapPin, TrendingUp, AlertTriangle, CheckCircle2, Search, Plus, ArrowRight, Pencil, CheckSquare, Wallet, Bell, Clock, ShieldCheck, FileUp, FileText, Trash2, CheckCircle, XCircle, } from "lucide-react";
+    13→import { Button } from "@/components/ui/button";
+    14→import { toast } from "sonner";
+    15→import { OperationalMediaPanel } from "../OperationalMediaPanel";
+    16→import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermissionRecord, type StaffRoleKey } from "@/lib/rdash/staff-operations";
+    17→import type { StaffDocument } from "@/lib/rdash/types";
+    18→export function MastersModule({ submodule }: {
+    19→    submodule: string;
+    20→}) {
+    21→    const db = useRDashStore((s) => s.db);
+    22→    const openDetail = useRDashStore((s) => s.openDetail);
+    23→    const [q, setQ] = React.useState("");
+    24→    const [addVendorOpen, setAddVendorOpen] = React.useState(false);
+    25→    const [addContractorOpen, setAddContractorOpen] = React.useState(false);
+    26→    const [editVendorId, setEditVendorId] = React.useState<string | undefined>(undefined);
+    27→    const [editContractorId, setEditContractorId] = React.useState<string | undefined>(undefined);
+    28→    const [editStaffId, setEditStaffId] = React.useState<string | undefined>(undefined);
+    29→    const [staffEditOpen, setStaffEditOpen] = React.useState(false);
+    30→    const [vendorsTab, setVendorsTab] = React.useState<"vendors" | "rates">("vendors");
+    31→    const [contractorsTab, setContractorsTab] = React.useState<"contractors" | "rates">("contractors");
+    32→    const [permissionRole, setPermissionRole] = React.useState<StaffRoleKey>("OPERATIONS_MANAGER");
+    33→    const [permissionModuleKey, setPermissionModuleKey] = React.useState("");
+    34→    const [docDraft, setDocDraft] = React.useState<{ staffId: string; documentType: StaffDocument["document_type"]; documentNo: string; fileName: string; fileUrl: string; mimeType?: string; fileSizeBytes?: number }>({ staffId: "", documentType: "photo", documentNo: "", fileName: "", fileUrl: "" });
+    35→    const upsertStaffRolePermission = useRDashStore((s) => s.upsertStaffRolePermission);
+    36→    const updateStaffRolePermission = useRDashStore((s) => s.updateStaffRolePermission);
+    37→    const removeStaffRolePermission = useRDashStore((s) => s.removeStaffRolePermission);
+    38→    const registerStaffDocument = useRDashStore((s) => s.registerStaffDocument);
+    39→    const updateStaffDocument = useRDashStore((s) => s.updateStaffDocument);
+    40→    const removeStaffDocument = useRDashStore((s) => s.removeStaffDocument);
+    41→    const effectiveSubmodule = submodule === "vendors" && vendorsTab === "rates" ? "vendorRates"
+    42→        : submodule === "contractors" && contractorsTab === "rates" ? "contractorRates"
+    43→            : submodule;
+    44→    const renderVendorsTabToggle = () => (<div className="inline-flex w-fit gap-1 rounded-md border border-border bg-muted/40 p-1">
+    45→      <button type="button" onClick={() => setVendorsTab("vendors")} className={cn("rounded px-3 py-1 text-xs font-semibold transition-colors", vendorsTab === "vendors" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+    46→        Vendors
+    47→      </button>
+    48→      <button type="button" onClick={() => setVendorsTab("rates")} className={cn("rounded px-3 py-1 text-xs font-semibold transition-colors", vendorsTab === "rates" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+    49→        Rates
+    50→      </button>
+    51→    </div>);
+    52→    const renderContractorsTabToggle = () => (<div className="inline-flex w-fit gap-1 rounded-md border border-border bg-muted/40 p-1">
+    53→      <button type="button" onClick={() => setContractorsTab("contractors")} className={cn("rounded px-3 py-1 text-xs font-semibold transition-colors", contractorsTab === "contractors" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+    54→        Contractors
+    55→      </button>
+    56→      <button type="button" onClick={() => setContractorsTab("rates")} className={cn("rounded px-3 py-1 text-xs font-semibold transition-colors", contractorsTab === "rates" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+    57→        Rates
+    58→      </button>
+    59→    </div>);
+    60→    if (effectiveSubmodule === "vendors" || effectiveSubmodule === "vendorExposure") {
+    61→        const isExposure = submodule === "vendorExposure";
+    62→        const allVendors = db.master.vendors;
+    63→        const vendors = (isExposure
+    64→            ? [...allVendors].sort((a, b) => (b.outstanding || 0) - (a.outstanding || 0))
+    65→            : allVendors.filter((v) => !q || v.name.toLowerCase().includes(q.toLowerCase()) || (v.city || "").toLowerCase().includes(q.toLowerCase())));
+    66→        const totalOutstanding = allVendors.reduce((n, v) => n + (v.outstanding || 0), 0);
+    67→        const withDue = allVendors.filter((v) => (v.outstanding || 0) > 0).length;
+    68→        return (<div className="flex flex-col gap-5">
+    69→        {!isExposure && renderVendorsTabToggle()}
+    70→        <div className="flex flex-wrap items-start justify-between gap-3">
+    71→          <MastersHeader icon={<Building2 className="h-5 w-5"/>} title={isExposure ? "Vendor Exposure" : "Vendors"} desc={isExposure ? "Outstanding payables & reliability — sorted by exposure" : "Material suppliers with outstanding, rates and reliability scores"} count={allVendors.length} q={q} setQ={setQ}/>
+    72→          {!isExposure && (<Button size="sm" onClick={() => { setEditVendorId(undefined); setAddVendorOpen(true); }}>
+    73→              <Plus className="mr-1.5 h-3.5 w-3.5"/> Add Vendor
+    74→            </Button>)}
+    75→        </div>
+    76→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    77→          <MetricCard label="Total vendors" value={allVendors.length} tone="primary" icon={<Building2 className="h-4 w-4"/>}/>
+    78→          <MetricCard label="Outstanding" value={formatINRShort(totalOutstanding)} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
+    79→          <MetricCard label="Vendors with dues" value={withDue} tone="warning" icon={<AlertTriangle className="h-4 w-4"/>}/>
+    80→          <MetricCard label="Avg reliability" value={`${Math.round(allVendors.reduce((n, v) => n + (v.reliability_score || 0), 0) / (allVendors.length || 1))}/100`} tone="success" icon={<Star className="h-4 w-4"/>}/>
+    81→        </div>
+    82→        <div className="rd-stagger grid gap-3 lg:grid-cols-2">
+    83→          {vendors.map((v) => {
+    84→                const rates = db.master.vendorRates.filter((r) => r.vendor_id === v.id);
+    85→                return (<div key={v.id} role="button" tabIndex={0} onClick={() => openDetail("vendor" as any, v.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDetail("vendor" as any, v.id); } }} className="group relative cursor-pointer rounded-[var(--panel-radius)] border border-border bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
+    86→                {!isExposure && (<button type="button" onClick={(event) => { event.stopPropagation(); setEditVendorId(v.id); setAddVendorOpen(true); }} className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/80 text-muted-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100" aria-label={`Edit ${v.name}`} title="Edit vendor">
+    87→                    <Pencil className="h-3.5 w-3.5"/>
+    88→                  </button>)}
+    89→                <div className="flex items-start justify-between pr-8">
+    90→                  <div className="flex items-center gap-2.5">
+    91→                    <Avatar name={v.name} size={40}/>
+    92→                    <div><p className="text-sm font-bold">{v.name}</p><p className="text-[11px] text-muted-foreground">{v.category} · {v.city}</p></div>
+    93→                  </div>
+    94→                  <div className="flex gap-1">
+    95→                    <StatusBadge label={`${v.reliability_score || 0}/100`} className={(v.reliability_score || 0) >= 85 ? "bg-success/10 text-success border-success/20" : (v.reliability_score || 0) >= 70 ? "bg-warning/10 text-warning border-warning/20" : "bg-destructive/10 text-destructive border-destructive/20"}/>
+    96→                    {v.outstanding ? <StatusBadge label="Due" className="bg-destructive/10 text-destructive border-destructive/20"/> : null}
+    97→                  </div>
+    98→                </div>
+    99→                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+   100→                  <div className="rounded-md bg-muted/40 p-2"><p className="text-[10px] uppercase text-muted-foreground">Phone</p><p className="font-medium truncate">{v.phone || "—"}</p></div>
+   101→                  <div className="rounded-md bg-muted/40 p-2"><p className="text-[10px] uppercase text-muted-foreground">Outstanding</p><p className={cn("font-mono font-bold", v.outstanding ? "text-destructive" : "text-success")}>{formatINRShort(v.outstanding || 0)}</p></div>
+   102→                  <div className="rounded-md bg-muted/40 p-2"><p className="text-[10px] uppercase text-muted-foreground">On-time</p><p className="font-bold">{v.on_time_pct || 0}%</p></div>
+   103→                </div>
+   104→                {rates.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{rates.map((r) => <span key={r.id} className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px]">{r.article_name}: {formatINR(r.rate)}</span>)}</div>}
+   105→                <div className="mt-3 border-t border-border pt-3">
+   106→                  <OperationalMediaPanel entityType="vendor" entityId={v.id} title="Vendor files, catalogues & boards" compact/>
+   107→                </div>
+   108→              </div>);
+   109→            })}
+   110→          {vendors.length === 0 && (<div className="lg:col-span-2">
+   111→              <EmptyState title="No vendors" description="Vendors will appear here once added." icon={<Building2 className="h-8 w-8"/>}/>
+   112→            </div>)}
+   113→        </div>
+   114→        {!isExposure && <EntityFormDialog type="vendor" open={addVendorOpen} onClose={() => { setAddVendorOpen(false); setEditVendorId(undefined); }} editId={editVendorId}/>}
+   115→      </div>);
+   116→    }
+   117→    if (effectiveSubmodule === "staff") {
+   118→        const staff = db.master.staff.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()) || s.role.toLowerCase().includes(q.toLowerCase()));
+   119→        const permissions = ((db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || []);
+   120→        const roleCoverage = Array.from(new Set(permissions.map((p) => p.role_key))).length;
+   121→        const selectedPermissions = permissions.filter((p) => p.role_key === permissionRole).sort((a, b) => a.module_label.localeCompare(b.module_label));
+   122→        const missingModules = STAFF_MODULES.filter(([moduleKey]) => !selectedPermissions.some((p) => p.module_key === moduleKey));
+   123→        const staffDocuments = ((db as unknown as { staffDocuments?: StaffDocument[] }).staffDocuments || []);
+   124→        const fileAssetsById = new Map<string, any>((db.master.fileAssets || []).map((file: any) => [file.id, file]));
+   125→        const staffById = new Map<string, any>(db.master.staff.map((member) => [member.id, member]));
+   126→        const addPermission = () => {
+   127→            const staffModule = STAFF_MODULES.find(([key]) => key === permissionModuleKey);
+   128→            if (!staffModule) return toast.error("Choose a module to add permission.");
+   129→            upsertStaffRolePermission({
+   130→                id: `perm-${permissionRole.toLowerCase()}-${staffModule[0]}`,
+   131→                role_key: permissionRole,
+   132→                module_key: staffModule[0],
+   133→                module_label: staffModule[1],
+   134→                can_view: true,
+   135→                can_create: false,
+   136→                can_update: false,
+   137→                can_approve: false,
+   138→                can_delete: false,
+   139→                updated_at: new Date().toISOString(),
+   140→            });
+   141→            setPermissionModuleKey("");
+   142→            toast.success("Permission added");
+   143→        };
+   144→        const registerDocument = () => {
+   145→            if (!docDraft.staffId) return toast.error("Choose staff for the document.");
+   146→            if (!docDraft.fileName.trim()) return toast.error("Choose a file or enter a document file name.");
+   147→            if (!docDraft.fileUrl.trim().startsWith("https://drive.google.com/")) return toast.error("Paste the Google Drive file link for this staff document.");
+   148→            registerStaffDocument({ staffId: docDraft.staffId, documentType: docDraft.documentType, documentNo: docDraft.documentNo, fileName: docDraft.fileName.trim(), fileUrl: docDraft.fileUrl.trim() || undefined, mimeType: docDraft.mimeType, fileSizeBytes: docDraft.fileSizeBytes });
+   149→            setDocDraft({ staffId: docDraft.staffId, documentType: "photo", documentNo: "", fileName: "", fileUrl: "" });
+   150→            toast.success("Staff document uploaded as pending verification");
+   151→        };
+   152→        return (<div className="flex flex-col gap-5">
+   153→        <div className="flex flex-wrap items-start justify-between gap-3">
+   154→          <MastersHeader icon={<Users className="h-5 w-5"/>} title="Staff Operations Master" desc="Staff profile, login, role permissions, attendance, GPS, visits, tasks and payroll spine" count={db.master.staff.length} q={q} setQ={setQ}/>
+   155→          <Button size="sm" onClick={() => { setEditStaffId(undefined); setStaffEditOpen(true); }}><Plus className="mr-1.5 h-3.5 w-3.5"/> Add Staff</Button>
+   156→        </div>
+   157→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   158→          <MetricCard label="Total staff" value={db.master.staff.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
+   159→          <MetricCard label="Active" value={db.master.staff.filter((s) => s.status === "active").length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   160→          <MetricCard label="Monthly payroll" value={formatINRShort(db.master.staff.reduce((n, s) => n + (s.monthly_salary || 0), 0))} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
+   161→          <MetricCard label="Role matrices" value={roleCoverage} tone="default" icon={<ShieldCheck className="h-4 w-4"/>}/>
+   162→        </div>
+   163→        <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
+   164→          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+   165→            <div><p className="text-sm font-bold">Editable permission matrix</p><p className="text-[11px] text-muted-foreground">Add, remove and toggle role permissions. The same persisted rows control sidebar visibility and server mutation checks.</p></div>
+   166→            <StatusBadge label={`${permissions.length} rules`} className="bg-primary/10 text-primary border-primary/20"/>
+   167→          </div>
+   168→          <div className="mb-3 flex flex-wrap gap-1.5">
+   169→            {STAFF_ROLE_KEYS.map((role) => <button key={role} type="button" onClick={() => setPermissionRole(role)} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", permissionRole === role ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/30 text-muted-foreground hover:text-foreground")}>{STAFF_ROLE_LABELS[role]}</button>)}
+   170→          </div>
+   171→          <div className="mb-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+   172→            <select value={permissionModuleKey} onChange={(event) => setPermissionModuleKey(event.target.value)} className="h-9 rounded-md border border-input bg-card px-3 text-xs outline-none ring-ring focus-visible:ring-2">
+   173→              <option value="">Add missing module permission…</option>
+   174→              {missingModules.map(([moduleKey, label]) => <option key={moduleKey} value={moduleKey}>{label}</option>)}
+   175→            </select>
+   176→            <Button size="sm" variant="outline" onClick={addPermission}><Plus className="mr-1 h-3.5 w-3.5"/> Add permission</Button>
+   177→          </div>
+   178→          <div className="overflow-x-auto rounded-lg border border-border">
+   179→            <table className="w-full min-w-[780px] text-left text-xs">
+   180→              <thead className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2">Module</th><th className="px-3 py-2 text-center">View</th><th className="px-3 py-2 text-center">Create</th><th className="px-3 py-2 text-center">Update</th><th className="px-3 py-2 text-center">Approve</th><th className="px-3 py-2 text-center">Delete</th><th className="px-3 py-2 text-right">Action</th></tr></thead>
+   181→              <tbody className="divide-y divide-border">
+   182→                {selectedPermissions.map((p) => {
+   183→                    const toggle = (key: "can_view" | "can_create" | "can_update" | "can_approve" | "can_delete") => updateStaffRolePermission(p.id, { [key]: !p[key] } as Partial<StaffPermissionRecord>);
+   184→                    return <tr key={p.id} className="bg-card/60 hover:bg-muted/20"><td className="px-3 py-2"><p className="font-semibold">{p.module_label}</p><p className="text-[10px] text-muted-foreground">{p.module_key}</p></td>{(["can_view", "can_create", "can_update", "can_approve", "can_delete"] as const).map((key) => <td key={key} className="px-3 py-2 text-center"><input type="checkbox" checked={Boolean(p[key])} onChange={() => toggle(key)} className="h-4 w-4 accent-primary" aria-label={`${p.module_label} ${key}`}/></td>)}<td className="px-3 py-2 text-right"><Button size="sm" variant="ghost" onClick={() => { removeStaffRolePermission(p.id); toast.success("Permission removed"); }}><Trash2 className="mr-1 h-3.5 w-3.5"/>Remove</Button></td></tr>;
+   185→                })}
+   186→                {!selectedPermissions.length && <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">No permissions for this role. Add a module permission above.</td></tr>}
+   187→              </tbody>
+   188→            </table>
+   189→          </div>
+   190→        </div>
+   191→        <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
+   192→          <div className="mb-3 flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-bold">Staff document upload & verification</p><p className="text-[11px] text-muted-foreground">Register Google Drive staff files, link them to file assets, then verify, reject, expire or remove them.</p></div><StatusBadge label={`${staffDocuments.length} documents`} className="bg-success/10 text-success border-success/20"/></div>
+   193→          <div className="grid gap-2 md:grid-cols-6">
+   194→            <select value={docDraft.staffId} onChange={(event) => setDocDraft((value) => ({ ...value, staffId: event.target.value }))} className="h-9 rounded-md border border-input bg-card px-3 text-xs md:col-span-2"><option value="">Select staff…</option>{db.master.staff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
+   195→            <select value={docDraft.documentType} onChange={(event) => setDocDraft((value) => ({ ...value, documentType: event.target.value as StaffDocument["document_type"] }))} className="h-9 rounded-md border border-input bg-card px-3 text-xs"><option value="photo">Photo</option><option value="aadhaar">Aadhaar</option><option value="pan">PAN</option><option value="id_proof">ID proof</option><option value="address_proof">Address proof</option><option value="bank">Bank</option><option value="other">Other</option></select>
+   196→            <input value={docDraft.documentNo} onChange={(event) => setDocDraft((value) => ({ ...value, documentNo: event.target.value }))} placeholder="Document no." className="h-9 rounded-md border border-input bg-card px-3 text-xs"/>
+   197→            <input value={docDraft.fileUrl} onChange={(event) => setDocDraft((value) => ({ ...value, fileUrl: event.target.value }))} placeholder="Google Drive file URL required" className="h-9 rounded-md border border-input bg-card px-3 text-xs md:col-span-2"/>
+   198→            <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1 rounded-md border border-input bg-muted/30 px-3 text-xs font-semibold hover:bg-muted"><FileUp className="h-3.5 w-3.5"/> Choose file<input type="file" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) setDocDraft((value) => ({ ...value, fileName: file.name, mimeType: file.type || undefined, fileSizeBytes: file.size })); }}/></label>
+   199→            <input value={docDraft.fileName} onChange={(event) => setDocDraft((value) => ({ ...value, fileName: event.target.value }))} placeholder="File name" className="h-9 rounded-md border border-input bg-card px-3 text-xs md:col-span-4"/>
+   200→            <Button size="sm" className="md:col-span-2" onClick={registerDocument}><FileText className="mr-1 h-3.5 w-3.5"/> Register upload</Button>
+   201→          </div>
+   202→          <div className="mt-3 divide-y divide-border rounded-lg border border-border">
+   203→            {staffDocuments.map((doc) => { const staffRow = staffById.get(doc.staff_id); const file = doc.file_asset_id ? fileAssetsById.get(doc.file_asset_id) as any : undefined; return <div key={doc.id} className="grid gap-2 px-3 py-2 text-xs lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"><div><p className="font-semibold">{staffRow?.name || doc.staff_id} · {titleCase(doc.document_type.replaceAll("_", " "))}</p><p className="text-[10px] text-muted-foreground">{doc.document_no || "No document number"} · {file?.file_name || "No linked file"}</p></div><div className="flex flex-wrap items-center gap-1.5"><StatusBadge label={titleCase(doc.status)} className={doc.status === "verified" ? "bg-success/10 text-success border-success/20" : doc.status === "rejected" ? "bg-destructive/10 text-destructive border-destructive/20" : doc.status === "expired" ? "bg-warning/10 text-warning border-warning/20" : "bg-muted text-muted-foreground border-border"}/>{file?.web_view_link ? <a className="rounded border border-border px-2 py-0.5 text-[10px] text-primary" href={file.web_view_link} target="_blank" rel="noreferrer">Open file</a> : null}</div><div className="flex flex-wrap justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => updateStaffDocument(doc.id, { status: "verified" })}><CheckCircle className="mr-1 h-3.5 w-3.5"/>Verify</Button><Button size="sm" variant="ghost" onClick={() => updateStaffDocument(doc.id, { status: "rejected" })}><XCircle className="mr-1 h-3.5 w-3.5"/>Reject</Button><Button size="sm" variant="ghost" onClick={() => updateStaffDocument(doc.id, { status: "expired" })}>Expire</Button><Button size="sm" variant="ghost" onClick={() => removeStaffDocument(doc.id)}><Trash2 className="mr-1 h-3.5 w-3.5"/>Remove</Button></div></div>; })}
+   204→            {!staffDocuments.length && <div className="px-3 py-8 text-center text-xs text-muted-foreground">No staff documents uploaded yet.</div>}
+   205→          </div>
+   206→        </div>
+   207→        <div className="rd-stagger grid gap-3 lg:grid-cols-2">
+   208→          {staff.map((s) => {
+   209→                const tasks = db.tasks.filter((t) => t.assignee_id === s.id);
+   210→                const visits = db.visits.filter((v) => v.staff_id === s.id);
+   211→                const docs = staffDocuments.filter((doc) => doc.staff_id === s.id);
+   212→                return (<div key={s.id} role="button" tabIndex={0} onClick={() => openDetail("staff" as any, s.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDetail("staff" as any, s.id); } }} className="group relative flex cursor-pointer items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
+   213→                <button type="button" onClick={(event) => { event.stopPropagation(); setEditStaffId(s.id); setStaffEditOpen(true); }} className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/80 text-muted-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100" aria-label={`Edit ${s.name}`} title="Edit staff">
+   214→                  <Pencil className="h-3.5 w-3.5"/>
+   215→                </button>
+   216→                <Avatar name={s.name} size={42}/>
+   217→                <div className="min-w-0 flex-1 pr-6">
+   218→                  <p className="text-sm font-bold">{s.name}</p>
+   219→                  <p className="text-[11px] text-muted-foreground">{s.role} · {s.department || "Team"} · {s.city}</p>
+   220→                  <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+   221→                    <span className="inline-flex items-center gap-0.5"><Phone className="h-2.5 w-2.5"/>{s.phone}</span>
+   222→                    {s.monthly_salary && <span className="font-mono">· {formatINR(s.monthly_salary)}/mo</span>}
+   223→                    {s.login_email && <span>· login</span>}
+   224→                    <span>· {docs.filter((doc) => doc.status === "verified").length}/{docs.length} docs verified</span>
+   225→                  </div>
+   226→                </div>
+   227→                <div className="flex flex-col items-end gap-1">
+   228→                  <StatusBadge label={titleCase(s.status || "active")} className="bg-success/10 text-success border-success/20"/>
+   229→                  <span className="text-[10px] text-muted-foreground">{tasks.length} tasks · {visits.length} visits</span>
+   230→                </div>
+   231→              </div>);
+   232→            })}
+   233→        </div>
+   234→        <StaffEditDialog staffId={editStaffId} open={staffEditOpen} onClose={() => { setStaffEditOpen(false); setEditStaffId(undefined); }}/>
+   235→      </div>);
+   236→    }
+   237→    if (effectiveSubmodule === "contractors") {
+   238→        const contractors = db.master.contractors;
+   239→        return (<div className="flex flex-col gap-5">
+   240→        {renderContractorsTabToggle()}
+   241→        <div className="flex flex-wrap items-start justify-between gap-3">
+   242→          <MastersHeader icon={<HardHat className="h-5 w-5"/>} title="Contractors" desc="Trade crews with ratings, active workOrders and outstanding" count={contractors.length} q={q} setQ={setQ}/>
+   243→          <Button size="sm" onClick={() => { setEditContractorId(undefined); setAddContractorOpen(true); }}>
+   244→            <Plus className="mr-1.5 h-3.5 w-3.5"/> Add Contractor
+   245→          </Button>
+   246→        </div>
+   247→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   248→          <MetricCard label="Contractors" value={contractors.length} tone="primary" icon={<HardHat className="h-4 w-4"/>}/>
+   249→          <MetricCard label="Active workOrders" value={contractors.reduce((n, c) => n + (c.active_jobs || 0), 0)} tone="warning" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   250→          <MetricCard label="Avg rating" value={`${(contractors.reduce((n, c) => n + (c.rating || 0), 0) / (contractors.length || 1)).toFixed(1)}★`} tone="success" icon={<Star className="h-4 w-4"/>}/>
+   251→          <MetricCard label="Outstanding" value={formatINRShort(contractors.reduce((n, c) => n + (c.outstanding || 0), 0))} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
+   252→        </div>
+   253→        <div className="rd-stagger grid gap-3 lg:grid-cols-2">
+   254→          {contractors.map((c) => {
+   255→                const workOrders = db.workOrders.filter((j) => j.contractor_id === c.id);
+   256→                return (<div key={c.id} role="button" tabIndex={0} onClick={() => openDetail("contractor" as any, c.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") {
+   257→                    e.preventDefault();
+   258→                    openDetail("contractor" as any, c.id);
+   259→                } }} className="group relative cursor-pointer rounded-[var(--panel-radius)] border border-border bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
+   260→                <button type="button" onClick={(e) => { e.stopPropagation(); setEditContractorId(c.id); setAddContractorOpen(true); }} className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/80 text-muted-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100" aria-label={`Edit ${c.name}`} title="Edit contractor">
+   261→                  <Pencil className="h-3.5 w-3.5"/>
+   262→                </button>
+   263→                <div className="flex items-center justify-between pr-8">
+   264→                  <div className="flex items-center gap-2.5"><Avatar name={c.name} size={38}/><div><p className="text-sm font-bold">{c.name}</p><p className="text-[11px] text-muted-foreground">{c.trade} · {c.city}</p></div></div>
+   265→                  <span className="inline-flex items-center gap-0.5 text-sm font-bold"><Star className="h-3.5 w-3.5 fill-warning text-warning"/>{c.rating || "—"}</span>
+   266→                </div>
+   267→                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+   268→                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[10px] uppercase text-muted-foreground">Phone</p><p className="text-[10px] font-medium truncate">{c.phone || "—"}</p></div>
+   269→                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[10px] uppercase text-muted-foreground">Work Orders</p><p className="text-sm font-bold">{c.active_jobs || 0}</p></div>
+   270→                  <div className="rounded-md bg-muted/40 p-1.5 text-center"><p className="text-[10px] uppercase text-muted-foreground">Due</p><p className={cn("font-mono font-bold text-xs", c.outstanding ? "text-destructive" : "text-success")}>{formatINRShort(c.outstanding || 0)}</p></div>
+   271→                </div>
+   272→              </div>);
+   273→            })}
+   274→        </div>
+   275→        <EntityFormDialog type="contractor" open={addContractorOpen} onClose={() => { setAddContractorOpen(false); setEditContractorId(undefined); }} editId={editContractorId}/>
+   276→      </div>);
+   277→    }
+   278→    if (effectiveSubmodule === "sourcePartners") {
+   279→        // FIX-CONTRACTOR-BATCH2 / F.12: add a "Add Source Partner" button +
+   280→        // dialog. Previously the source partner list was read-only — the
+   281→        // store had NO addSourcePartner action, so on production the
+   282→        // customer/site source_partner_id dropdown was always empty.
+   283→        return <SourcePartnersView q={q} setQ={setQ}/>;
+   284→    }
+   285→    if (effectiveSubmodule === "vendorRates" || effectiveSubmodule === "contractorRates" || effectiveSubmodule === "commissionRules") {
+   286→        // FIX-CONTRACTOR-BATCH2 / F.12: split each master-list view into its
+   287→        // own component so we can add an "Add" button + dialog at the top
+   288→        // (previously these lists were read-only — the store had no
+   289→        // addContractorRate / addCommissionRule / addSourcePartner actions,
+   290→        // so on production the master tables were always empty).
+   291→        if (isVendorEffective(effectiveSubmodule)) {
+   292→            return <VendorRatesView submodule={submodule} renderVendorsTabToggle={renderVendorsTabToggle} renderContractorsTabToggle={renderContractorsTabToggle}/>;
+   293→        }
+   294→        if (isContractorEffective(effectiveSubmodule)) {
+   295→            return <ContractorRatesView submodule={submodule} renderVendorsTabToggle={renderVendorsTabToggle} renderContractorsTabToggle={renderContractorsTabToggle}/>;
+   296→        }
+   297→        return <CommissionRulesView submodule={submodule} renderVendorsTabToggle={renderVendorsTabToggle} renderContractorsTabToggle={renderContractorsTabToggle}/>;
+   298→    }
+   299→    return <EmptyState title="Not configured" description={`Submodule "${submodule}" doesn't have a dedicated view yet.`} icon={<Building2 className="h-8 w-8"/>}/>;
+   300→}
+   301→// FIX-CONTRACTOR-BATCH2 / F.12: tiny guards so the if-chain above stays
+   302→// readable. Kept as exported functions so they can be unit-tested in future.
+   303→function isVendorEffective(effectiveSubmodule: string) {
+   304→    return effectiveSubmodule === "vendorRates";
+   305→}
+   306→function isContractorEffective(effectiveSubmodule: string) {
+   307→    return effectiveSubmodule === "contractorRates";
+   308→}
+   309→function MastersHeader({ icon, title, desc, count, q, setQ }: {
+   310→    icon: React.ReactNode;
+   311→    title: string;
+   312→    desc: string;
+   313→    count: number;
+   314→    q: string;
+   315→    setQ: (v: string) => void;
+   316→}) {
+   317→    return (<div className="flex flex-wrap items-start justify-between gap-3">
+   318→      <div className="flex items-center gap-2.5">
+   319→        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span>
+   320→        <div><h2 className="text-lg font-bold tracking-tight">{title}</h2><p className="text-xs text-muted-foreground">{desc}</p></div>
+   321→      </div>
+   322→      <div className="relative w-56">
+   323→        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
+   324→        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${title.toLowerCase()}…`} className="h-9 w-full rounded-md border border-input bg-card pl-8 pr-3 text-sm outline-none ring-ring focus-visible:ring-2"/>
+   325→      </div>
+   326→    </div>);
+   327→}
+   328→export function SalesOpsModule({ submodule, filterPresets, statusFilter, expiringFilter, }: {
+   329→    submodule: string;
+   330→    filterPresets?: import("@/lib/rdash/modules").FilterPreset[];
+   331→    statusFilter?: string;
+   332→    expiringFilter?: string;
+   333→}) {
+   334→    const db = useRDashStore((s) => s.db);
+   335→    const openDetail = useRDashStore((s) => s.openDetail);
+   336→    if (submodule === "opportunities") {
+   337→        return (<OpportunitiesView quotations={db.quotations} openDetail={openDetail} filterPresets={filterPresets} statusFilter={statusFilter} expiringFilter={expiringFilter}/>);
+   338→    }
+   339→    if (submodule === "salesOrders") {
+   340→        const orders = db.quotations.filter((q) => q.status === "accepted");
+   341→        return (<div className="flex flex-col gap-5">
+   342→        <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-success/10 text-success"><CheckCircle2 className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Accepted Site Quotations</h2><p className="text-xs text-muted-foreground">Customer-approved coverage enters contractor bidding; contractor award creates the work order</p></div></div>
+   343→        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   344→          <MetricCard label="Orders" value={orders.length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   345→          <MetricCard label="Total value" value={formatINRShort(orders.reduce((n, q) => n + q.total_amount, 0))} tone="primary" icon={<TrendingUp className="h-4 w-4"/>}/>
+   346→          <MetricCard label="Awarded work orders" value={orders.filter((q) => q.work_order_ids.length > 0).length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   347→          <MetricCard label="Awaiting contractor award" value={orders.filter((q) => q.work_order_ids.length === 0).length} tone="warning" icon={<AlertTriangle className="h-4 w-4"/>}/>
+   348→        </div>
+   349→        <div className="rd-stagger grid gap-3 lg:grid-cols-2">
+   350→          {orders.map((q) => (<div key={q.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:bg-gradient-to-br hover:from-card hover:to-accent/30 hover:shadow-soft">
+   351→              <div className="flex items-center justify-between">
+   352→                <div className="flex items-center gap-2.5"><Avatar name={(q.customer_name || "Customer")} size={36}/><div><p className="text-sm font-bold">{q.quotation_no}</p><p className="text-[11px] text-muted-foreground">{(q.customer_name || "Customer")}</p></div></div>
+   353→                <span className="font-mono text-sm font-bold">{formatINRShort(q.total_amount)}</span>
+   354→              </div>
+   355→              <div className="mt-2 flex items-center gap-2">
+   356→                {q.work_order_ids.length > 0 ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openDetail("workOrder", q.work_order_ids[0])}><ArrowRight className="mr-1 h-3 w-3"/> Open work order</Button> : <StatusBadge label="Contractor bidding" className="bg-warning/10 text-warning border-warning/20"/>}
+   357→              </div>
+   358→            </div>))}
+   359→        </div>
+   360→      </div>);
+   361→    }
+   362→    if (submodule === "invoices") {
+   363→        return (<InvoicesView invoices={db.invoices} openDetail={openDetail} filterPresets={filterPresets} statusFilter={statusFilter}/>);
+   364→    }
+   365→    return null;
+   366→}
+   367→function InvoicesView({ invoices, openDetail, filterPresets, statusFilter, }: {
+   368→    invoices: import("@/lib/rdash/types").CustomerInvoice[];
+   369→    openDetail: (kind: DetailPanelKind, id: string) => void;
+   370→    filterPresets?: import("@/lib/rdash/modules").FilterPreset[];
+   371→    statusFilter?: string;
+   372→}) {
+   373→    const presets: import("@/lib/rdash/modules").FilterPreset[] = filterPresets && filterPresets.length > 0
+   374→        ? filterPresets
+   375→        : [
+   376→            { id: "all", label: "All", filter: {} },
+   377→            { id: "paid", label: "Paid", filter: { status: "paid" } },
+   378→            { id: "issued", label: "Issued", filter: { status: "issued" } },
+   379→            { id: "overdue", label: "Overdue", filter: { status: "overdue" } },
+   380→        ];
+   381→    const initialIdx = React.useMemo(() => {
+   382→        if (statusFilter) {
+   383→            const i = presets.findIndex((p) => p.filter.status === statusFilter);
+   384→            if (i >= 0)
+   385→                return i;
+   386→        }
+   387→        return 0;
+   388→    }, [statusFilter, presets]);
+   389→    const [presetIdx, setPresetIdx] = React.useState(initialIdx);
+   390→    const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
+   391→    const activeStatus = presets[presetIdx]?.filter.status;
+   392→    const filtered = activeStatus ? invoices.filter((invoice) => invoice.status === activeStatus) : invoices;
+   393→    const handlePresetChange = (i: number) => {
+   394→        setPresetIdx(i);
+   395→        setActiveSavedViewId(null);
+   396→    };
+   397→    const handleApplySavedView = (view: SavedView) => {
+   398→        if (view.presetId) {
+   399→            const idx = presets.findIndex((p) => p.id === view.presetId);
+   400→            if (idx >= 0)
+   401→                setPresetIdx(idx);
+   402→        }
+   403→        setActiveSavedViewId(view.id);
+   404→    };
+   405→    const db = useRDashStore((s) => s.db);
+   406→    const updateInvoice = useRDashStore((s) => s.updateInvoice);
+   407→    const [selectMode, setSelectMode] = React.useState(false);
+   408→    const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+   409→    const toggleSelect = (id: string) => setSelectedIds((s) => { const n = new Set(s); if (n.has(id)) {
+   410→        n.delete(id);
+   411→    }
+   412→    else {
+   413→        n.add(id);
+   414→    } return n; });
+   415→    const clearSelection = () => { setSelectedIds(new Set()); setSelectMode(false); };
+   416→    const selectedArr = Array.from(selectedIds);
+   417→    const bulkActions: BulkAction[] = [
+   418→        {
+   419→            label: "Mark issued",
+   420→            icon: <Clock className="h-3.5 w-3.5"/>,
+   421→            onClick: (ids) => {
+   422→                ids.forEach((id) => updateInvoice(id, { status: "issued" }));
+   423→                toast.success(`${ids.length} invoice${ids.length > 1 ? "s" : ""} marked issued`);
+   424→                clearSelection();
+   425→            },
+   426→        },
+   427→        {
+   428→            label: "Mark Overdue",
+   429→            icon: <AlertTriangle className="h-3.5 w-3.5"/>,
+   430→            variant: "destructive",
+   431→            onClick: (ids) => {
+   432→                ids.forEach((id) => updateInvoice(id, { status: "overdue" }));
+   433→                toast.warning(`${ids.length} invoice${ids.length > 1 ? "s" : ""} marked overdue`);
+   434→                clearSelection();
+   435→            },
+   436→        },
+   437→    ];
+   438→    return (<div className="flex flex-col gap-5">
+   439→      <div className="flex items-center justify-between gap-3">
+   440→        <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><TrendingUp className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Invoices</h2><p className="text-xs text-muted-foreground">Customer invoices linked to a customer, Site and payment milestone · {filtered.length} shown. Record a receipt from the payment, never by changing the invoice alone.</p></div></div>
+   441→        <div className="flex items-center gap-2">
+   442→          <button type="button" onClick={() => { setSelectMode((s) => !s); if (selectMode)
+   443→        setSelectedIds(new Set()); }} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", selectMode ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground")}>
+   444→            <CheckSquare className="h-3.5 w-3.5"/> {selectMode ? "Exit select" : "Select"}
+   445→          </button>
+   446→          {selectMode && filtered.length > 1 && (<button type="button" onClick={() => setSelectedIds(new Set(filtered.map((p) => p.id)))} className="text-[11px] font-medium text-primary hover:underline">
+   447→              Select all ({filtered.length})
+   448→            </button>)}
+   449→        </div>
+   450→      </div>
+   451→      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   452→        <MetricCard label="Total invoices" value={invoices.length} tone="primary" icon={<TrendingUp className="h-4 w-4"/>}/>
+   453→        <MetricCard label="Paid" value={formatINRShort(invoices.filter((invoice) => invoice.status === "paid").reduce((n, invoice) => n + invoice.total_amount, 0))} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   454→        <MetricCard label="Open" value={formatINRShort(invoices.filter((invoice) => invoice.status === "issued" || invoice.status === "partial").reduce((n, invoice) => n + invoice.balance_amount, 0))} tone="warning" icon={<AlertTriangle className="h-4 w-4"/>}/>
+   455→        <MetricCard label="Overdue" value={formatINRShort(invoices.filter((invoice) => invoice.status === "overdue").reduce((n, invoice) => n + invoice.balance_amount, 0))} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
+   456→      </div>
+   457→      <section aria-label="Invoice status filters" className="flex flex-wrap items-center gap-1.5">
+   458→        {presets.map((p, i) => {
+   459→            const active = i === presetIdx;
+   460→            return (<button key={p.id} type="button" role="tab" aria-selected={active} onClick={() => handlePresetChange(i)} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", active
+   461→                    ? "bg-primary text-primary-foreground shadow-sm"
+   462→                    : "border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground hover:shadow-sm")}>
+   463→              {p.label}
+   464→              <span className={cn("ml-1.5 rounded px-1 text-[10px]", active ? "bg-primary-foreground/20" : "bg-muted")}>
+   465→                {p.filter.status ? invoices.filter((invoice) => invoice.status === p.filter.status).length : invoices.length}
+   466→              </span>
+   467→            </button>);
+   468→        })}
+   469→      </section>
+   470→
+   471→      <SavedViewsBar workspaceKey="invoices" presets={presets} currentPresetId={presets[presetIdx]?.id} currentSearch="" currentExtra={activeStatus ? { status: activeStatus } : undefined} onApply={handleApplySavedView} activeSavedViewId={activeSavedViewId}/>
+   472→      {selectMode && (<BulkActionBar selectedIds={selectedArr} totalCount={filtered.length} onClear={clearSelection} actions={bulkActions}/>)}
+   473→      <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
+   474→        {filtered.length === 0 ? (<div className="px-4 py-8 text-center text-sm text-muted-foreground">No invoices match this filter.</div>) : (filtered.map((invoice) => {
+   475→            const checked = selectedIds.has(invoice.id);
+   476→            const status = invoiceStatusStyle(invoice.status);
+   477→            const amount = invoice.balance_amount || invoice.total_amount;
+   478→            if (selectMode) {
+   479→                return (<div key={invoice.id} className={cn("flex w-full items-center gap-3 border-b border-border px-4 py-2.5 last:border-0 transition-colors", checked ? "bg-primary/[0.03]" : "hover:bg-accent/20")}>
+   480→                  <SelectCheckbox checked={checked} onToggle={toggleSelect} id={invoice.id}/>
+   481→                  <Avatar name={(invoice.customer_name || "Customer")} size={32}/>
+   482→                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invoice.invoice_no} - {(invoice.customer_name || "Customer")}</p><p className="text-[10px] text-muted-foreground">{db.sites.find((site) => site.id === invoice.site_id)?.name || "Retail / unlinked site"} · Due {formatDate(invoice.due_date)} - {invoice.title}</p></div>
+   483→                  <span className="font-mono text-sm font-bold">{formatINR(amount)}</span>
+   484→                  <StatusBadge label={status.label} className={status.className}/>
+   485→                </div>);
+   486→            }
+   487→            return (<button key={invoice.id} type="button" onClick={() => openDetail("invoice", invoice.id)} className="flex w-full items-center gap-3 border-b border-border px-4 py-2.5 text-left last:border-0 hover:bg-accent/20">
+   488→                <Avatar name={(invoice.customer_name || "Customer")} size={32}/>
+   489→                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{invoice.invoice_no} - {(invoice.customer_name || "Customer")}</p><p className="text-[10px] text-muted-foreground">{db.sites.find((site) => site.id === invoice.site_id)?.name || "Retail / unlinked site"} · Due {formatDate(invoice.due_date)} - {invoice.title}</p></div>
+   490→                <span className="font-mono text-sm font-bold">{formatINR(amount)}</span>
+   491→                <StatusBadge label={status.label} className={status.className}/>
+   492→              </button>);
+   493→        }))}
+   494→      </div>
+   495→    </div>);
+   496→}
+   497→function OpportunitiesView({ quotations, openDetail, filterPresets, statusFilter, expiringFilter, }: {
+   498→    quotations: import("@/lib/rdash/types").Quotation[];
+   499→    openDetail: (kind: DetailPanelKind, id: string) => void;
+   500→    filterPresets?: import("@/lib/rdash/modules").FilterPreset[];
+   501→    statusFilter?: string;
+   502→    expiringFilter?: string;
+   503→}) {
+   504→    const presets: import("@/lib/rdash/modules").FilterPreset[] = filterPresets && filterPresets.length > 0
+   505→        ? filterPresets
+   506→        : [
+   507→            { id: "all", label: "All Open", filter: {} },
+   508→            { id: "sent", label: "Sent", filter: { status: "sent" } },
+   509→            { id: "cancelled", label: "Cancelled", filter: { status: "cancelled" } },
+   510→            { id: "expiring", label: "Expiring Soon", filter: { expiring: "3d" } },
+   511→        ];
+   512→    const initialIdx = React.useMemo(() => {
+   513→        if (statusFilter) {
+   514→            const i = presets.findIndex((p) => p.filter.status === statusFilter);
+   515→            if (i >= 0)
+   516→                return i;
+   517→        }
+   518→        if (expiringFilter) {
+   519→            const i = presets.findIndex((p) => p.filter.expiring);
+   520→            if (i >= 0)
+   521→                return i;
+   522→        }
+   523→        return 0;
+   524→    }, [statusFilter, expiringFilter, presets]);
+   525→    const [presetIdx, setPresetIdx] = React.useState(initialIdx);
+   526→    const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
+   527→    const active = presets[presetIdx];
+   528→    const handlePresetChange = (i: number) => {
+   529→        setPresetIdx(i);
+   530→        setActiveSavedViewId(null);
+   531→    };
+   532→    const handleApplySavedView = (view: SavedView) => {
+   533→        if (view.presetId) {
+   534→            const idx = presets.findIndex((p) => p.id === view.presetId);
+   535→            if (idx >= 0)
+   536→                setPresetIdx(idx);
+   537→        }
+   538→        setActiveSavedViewId(view.id);
+   539→    };
+   540→    const openQuotes = quotations.filter((q) => q.status === "sent");
+   541→    const now = Date.now();
+   542→    const isExpiringSoon = (q: {
+   543→        valid_until: string;
+   544→    }) => new Date(q.valid_until).getTime() < now + 3 * 86400000;
+   545→    const filtered = !active?.filter.status
+   546→        ? active?.filter.expiring
+   547→            ? openQuotes.filter((q) => isExpiringSoon(q))
+   548→            : openQuotes
+   549→        : openQuotes.filter((q) => q.status === active.filter.status);
+   550→    const countFor = (preset: import("@/lib/rdash/modules").FilterPreset) => {
+   551→        if (preset.filter.expiring)
+   552→            return openQuotes.filter((q) => isExpiringSoon(q)).length;
+   553→        if (preset.filter.status)
+   554→            return openQuotes.filter((q) => q.status === preset.filter.status).length;
+   555→        return openQuotes.length;
+   556→    };
+   557→    return (<div className="flex flex-col gap-5">
+   558→      <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><TrendingUp className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Opportunities</h2><p className="text-xs text-muted-foreground">Active quotations awaiting customer decision · {filtered.length} shown</p></div></div>
+   559→      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   560→        <MetricCard label="Open quotes" value={openQuotes.length} tone="primary" icon={<TrendingUp className="h-4 w-4"/>}/>
+   561→        <MetricCard label="Value" value={formatINRShort(openQuotes.reduce((n, q) => n + q.total_amount, 0))} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
+   562→        <MetricCard label="Avg deal" value={formatINRShort(openQuotes.length ? openQuotes.reduce((n, q) => n + q.total_amount, 0) / openQuotes.length : 0)} tone="default" icon={<TrendingUp className="h-4 w-4"/>}/>
+   563→        <MetricCard label="Expiring soon" value={openQuotes.filter((q) => isExpiringSoon(q)).length} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
+   564→      </div>
+   565→      <section aria-label="Opportunity filters" className="flex flex-wrap items-center gap-1.5">
+   566→        {presets.map((p, i) => {
+   567→            const isActive = i === presetIdx;
+   568→            return (<button key={p.id} type="button" role="tab" aria-selected={isActive} onClick={() => handlePresetChange(i)} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", isActive
+   569→                    ? "bg-primary text-primary-foreground shadow-sm"
+   570→                    : "border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground hover:shadow-sm")}>
+   571→              {p.label}
+   572→              <span className={cn("ml-1.5 rounded px-1 text-[10px]", isActive ? "bg-primary-foreground/20" : "bg-muted")}>
+   573→                {countFor(p)}
+   574→              </span>
+   575→            </button>);
+   576→        })}
+   577→      </section>
+   578→      <SavedViewsBar workspaceKey="opportunities" presets={presets} currentPresetId={presets[presetIdx]?.id} currentSearch="" onApply={handleApplySavedView} activeSavedViewId={activeSavedViewId}/>
+   579→      <div className="rd-stagger grid gap-3 lg:grid-cols-2">
+   580→        {filtered.length === 0 ? (<div className="col-span-full rounded-[var(--panel-radius)] border border-dashed border-border bg-gradient-to-b from-muted/30 to-transparent px-4 py-10 text-center text-sm text-muted-foreground">No opportunities match this filter.</div>) : (filtered.map((q) => {
+   581→            const expiring = isExpiringSoon(q);
+   582→            return (<button key={q.id} type="button" onClick={() => openDetail("quotation", q.id)} className={cn("group flex items-center gap-3 rounded-[var(--panel-radius)] border bg-card p-3 text-left shadow-card transition-all duration-200 hover:-translate-y-0.5 hover:bg-gradient-to-br hover:from-card hover:to-accent/30 hover:shadow-soft", expiring ? "border-destructive/30" : "border-border")}>
+   583→                <Avatar name={(q.customer_name || "Customer")} size={36}/>
+   584→                <div className="min-w-0 flex-1">
+   585→                  <p className="truncate text-sm font-semibold">{q.quotation_no} · {(q.customer_name || "Customer")}</p>
+   586→                  <p className="text-[11px] text-muted-foreground">{q.title} · valid until {formatDate(q.valid_until)}</p>
+   587→                  {expiring && <p className="mt-0.5 text-[10px] font-semibold text-destructive">⚠ Expiring soon</p>}
+   588→                </div>
+   589→                <div className="text-right"><p className="font-mono text-sm font-bold">{formatINRShort(q.total_amount)}</p><StatusBadge label={titleCase(q.status)} className="bg-primary/10 text-primary border-primary/20"/></div>
+   590→              </button>);
+   591→        }))}
+   592→      </div>
+   593→    </div>);
+   594→}
+   595→export function ObstacleThreadsModule() {
+   596→    const db = useRDashStore((s) => s.db);
+   597→    const openDetail = useRDashStore((s) => s.openDetail);
+   598→    const resolveBlocked = useRDashStore((s) => s.resolveBlocked);
+   599→    const active = db.blocked.filter((b) => !b.resolved);
+   600→    const resolved = db.blocked.filter((b) => b.resolved);
+   601→    return (<div className="flex flex-col gap-5">
+   602→      <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive"><AlertTriangle className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Obstacle Threads</h2><p className="text-xs text-muted-foreground">Blocked work with discussion threads — resolve to unblock</p></div></div>
+   603→      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+   604→        <MetricCard label="Active obstacles" value={active.length} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
+   605→        <MetricCard label="Resolved" value={resolved.length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   606→        <MetricCard label="With thread" value={db.blocked.filter((b) => b.thread_id).length} tone="primary" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+   607→        <MetricCard label="With workOrder" value={db.blocked.filter((b) => b.linked_work_order_id).length} tone="default" icon={<Building2 className="h-4 w-4"/>}/>
+   608→      </div>
+   609→      <div className="space-y-3">
+   610→        <h3 className="text-sm font-semibold text-foreground">Active ({active.length})</h3>
+   611→        {active.length === 0 ? <EmptyState title="No active obstacles 🎉" description="All blocked work has been resolved." icon={<CheckCircle2 className="h-8 w-8"/>}/> : (<div className="space-y-2">
+   612→            {active.map((b) => {
+   613→                const thread = b.thread_id ? db.threads.find((t) => t.id === b.thread_id) : null;
+   614→                return (<div key={b.id} className="rounded-[var(--panel-radius)] border border-destructive/25 bg-destructive/[0.04] p-3 shadow-card">
+   615→                  <div className="flex items-start gap-3">
+   616→                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive"/>
+   617→                    <div className="min-w-0 flex-1">
+   618→                      <p className="text-sm font-bold">{b.title}</p>
+   619→                      <p className="text-[11px] text-muted-foreground">{b.reason}</p>
+   620→                      {(b.customer_name || "Customer") && <p className="mt-0.5 text-[10px] text-muted-foreground">Customer: {(b.customer_name || "Customer")}</p>}
+   621→                      {thread && <p className="mt-0.5 text-[10px] text-primary">{thread.messages.length} messages in thread</p>}
+   622→                    </div>
+   623→                    <div className="flex shrink-0 flex-col gap-1">
+   624→                      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openDetail("blocked", b.id)}>Open</Button>
+   625→                      <Button size="sm" className="h-7 text-xs" onClick={() => { resolveBlocked(b.id); toast.success("Obstacle resolved"); }}><CheckCircle2 className="mr-1 h-3 w-3"/> Resolve</Button>
+   626→                    </div>
+   627→                  </div>
+   628→                </div>);
+   629→            })}
+   630→          </div>)}
+   631→        {resolved.length > 0 && (<>
+   632→            <h3 className="mt-4 text-sm font-semibold text-muted-foreground">Resolved ({resolved.length})</h3>
+   633→            <div className="space-y-1">
+   634→              {resolved.map((b) => (<div key={b.id} className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-1.5 text-xs opacity-60">
+   635→                  <CheckCircle2 className="h-3.5 w-3.5 text-success"/><span className="truncate">{b.title}</span>
+   636→                </div>))}
+   637→            </div>
+   638→          </>)}
+   639→      </div>
+   640→    </div>);
+   641→}
+   642→
