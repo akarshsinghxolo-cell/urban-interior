@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Command, UserCircle2, Keyboard, PanelLeft, } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Command, UserCircle2, Keyboard, PanelLeft, LogOut, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { clearSessionToken } from "@/lib/rdash/client-auth";
 import { ThemeToggle } from "./ThemeToggle";
@@ -30,7 +30,7 @@ export function WorkspaceHeader() {
     const workspaceSyncError = useRDashStore((s) => s.workspaceSyncError);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
     const setMoreMenuOpen = useRDashStore((s) => s.setMoreMenuOpen);
-    const refresh = () => { toast.success("Workspace refreshed"); };
+    const refresh = () => { window.location.reload(); };
     return (<header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-border bg-background/85 backdrop-blur-md">
       <CreateMenu showTrigger={false} enableHotkeys={false}/>
       <div className="flex items-center gap-3 px-[var(--page-pad)] py-2.5">
@@ -115,6 +115,10 @@ export function WorkspaceHeader() {
             <DropdownMenuItem onClick={() => { setMoreMenuOpen(false); setActiveModule("systemSettings"); }}>
               <Settings className="mr-2 h-4 w-4"/> Settings
             </DropdownMenuItem>
+             <DropdownMenuSeparator />
+             <DropdownMenuItem onClick={() => { setMoreMenuOpen(false); clearSessionToken(); void fetch("/api/auth/logout", { method: "POST" }).finally(() => window.location.assign("/signin")); }}>
+               <LogOut className="mr-2 h-4 w-4"/> Sign out
+             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -129,7 +133,7 @@ export function WorkspaceHeader() {
                 {tabs.length > 1 && (<button type="button" aria-label="Close tab" onClick={(e) => {
                             e.stopPropagation();
                             closeTab(t.id);
-                        }} className="ml-0.5 flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100">
+                        }} className="ml-0.5 flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100">
                     <X className="h-3 w-3"/>
                   </button>)}
               </div>);

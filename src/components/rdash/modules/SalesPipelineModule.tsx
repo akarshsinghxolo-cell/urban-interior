@@ -195,7 +195,7 @@ export function LeadsModule({ filterPresets }: {
         : [
             { id: "all", label: "All Leads", filter: {} },
             { id: "new", label: "New Today", filter: { lead_recency: "today" } },
-            { id: "new", label: "Qualified", filter: { lead_qualified: "yes" } },
+            { id: "qualified", label: "Qualified", filter: { lead_qualified: "yes" } },
             { id: "unqualified", label: "Unqualified", filter: { lead_qualified: "no" } },
         ];
     const [presetIdx, setPresetIdx] = React.useState(0);

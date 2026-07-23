@@ -168,7 +168,7 @@ export function CommandPalette() {
         });
         db.threads.slice(0, 12).forEach((t) => {
             const last = t.messages[t.messages.length - 1];
-            items.push({ id: `thr-${t.id}`, label: t.title, group: "Threads", groupPriority: GP.threads, iconNode: <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground"/>, action: () => { setActiveModule("unifiedThreadInbox"); setOpen(false); }, keywords: `${t.kind} ${last?.body?.slice(0, 80) || ""}`, meta: t.kind });
+            items.push({ id: `thr-${t.id}`, label: t.title, group: "Threads", groupPriority: GP.threads, iconNode: <MessagesSquare className="h-3.5 w-3.5 text-muted-foreground"/>, action: () => { try { localStorage.setItem("uc-open-thread-id", t.id); } catch { /* non-fatal */ } setActiveModule("unifiedThreadInbox"); setOpen(false); }, keywords: `${t.kind} ${last?.body?.slice(0, 80) || ""}`, meta: t.kind });
         });
         db.tasks.filter((t) => t.status !== "completed" && t.status !== "cancelled").slice(0, 12).forEach((t) => {
             const customer = db.customers.find((c) => c.id === t.customer_id);

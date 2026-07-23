@@ -261,7 +261,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         return Array.from(map.entries());
     }, [filteredFeed]);
 
-    const openThread = (thread: Thread) => {
+    const openThread = React.useCallback((thread: Thread) => {
         const kind = threadKindToDetailKind(thread.kind);
         if (kind) {
             openDetail(kind, thread.record_id, "unifiedThreadInbox");
@@ -269,7 +269,16 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         setSelectedThreadId(thread.id);
         markThreadRead(thread.id, thread.updated_at);
         trackRecentThread(thread.id);
-    };
+    }, [markThreadRead, openDetail, trackRecentThread]);
+    React.useEffect(() => {
+        let requestedThreadId: string | null = null;
+        try { requestedThreadId = localStorage.getItem("uc-open-thread-id"); } catch { /* non-fatal */ }
+        if (!requestedThreadId) return;
+        const requestedThread = db.threads.find((thread) => thread.id === requestedThreadId);
+        if (!requestedThread) return;
+        openThread(requestedThread);
+        try { localStorage.removeItem("uc-open-thread-id"); } catch { /* non-fatal */ }
+    }, [db.threads, openThread]);
 
     return (<div className="flex h-full flex-col gap-0">
         {/* Header */}

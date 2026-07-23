@@ -167,6 +167,10 @@ export default function SignInPage() {
         setSessionToken(payload.token);
         initAuthFetch();
       }
+      try {
+        if (rememberEmail) localStorage.setItem("uc_remember_email", email.trim());
+        else localStorage.removeItem("uc_remember_email");
+      } catch { /* non-fatal */ }
       router.replace("/");
       router.refresh();
     } catch (cause) {
@@ -590,7 +594,6 @@ function EmailPasswordFields({ email, password, onEmail, onPassword, passwordAut
             onClick={() => setShowPassword(!showPassword)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
             aria-label={showPassword ? "Hide password" : "Show password"}
-            tabIndex={-1}
           >
             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>

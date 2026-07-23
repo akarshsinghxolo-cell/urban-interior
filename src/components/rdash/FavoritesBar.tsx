@@ -102,7 +102,7 @@ export function FavoritesBar() {
             <button
               type="button"
               onClick={() => removeFavorite(fav.id)}
-              className="ml-0.5 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+              className="ml-0.5 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={`Remove ${fav.label} from favorites`}
             >
               <X className="h-3 w-3" />
