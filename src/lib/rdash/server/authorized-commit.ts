@@ -38,8 +38,8 @@ export interface CommitResult extends WorkspaceSnapshot {
 }
 
 /**
- * Commits a batch of operations via the REST data layer (entity_* tables).
- * Falls back to in-memory workspace when Supabase entity_* tables are not applied.
+ * Validates the candidate workspace, appends a server-owned audit entry, and
+ * commits all resulting row operations in one PostgreSQL transaction.
  */
 export async function commitAuthorizedPostgresOperations(
   user: AuthenticatedUser,
@@ -48,7 +48,6 @@ export async function commitAuthorizedPostgresOperations(
   _expectedRevisions?: Record<string, number>,
   expectedRowVersions?: Record<string, number>,
 ): Promise<CommitResult> {
-  // Use the workspace.ts getWorkspace which handles the fallback
   const { getWorkspace, saveWorkspace } = await import("./workspace");
   const current = await getWorkspace();
   if (current.revision !== revision) throw new Error("CONFLICT");
@@ -59,21 +58,19 @@ export async function commitAuthorizedPostgresOperations(
   const issues = validateBusinessData(candidate);
   if (issues.length) throw new Error(`INVALID:${issues[0]}`);
 
-  // Build the audit entry and append it as an extra operation.
   const auditEntry = audit(user, operations);
-
   const operationsWithAudit: WorkspaceOperation[] = [
     ...operations,
     { collection: "auditLog", upsert: [auditEntry as unknown as Record<string, unknown>] },
   ];
+  const persistedCandidate = applyWorkspaceOperations(current.data, operationsWithAudit);
 
-  // Commit via saveWorkspace (handles both REST and in-memory)
-  const result = await saveWorkspace(revision, applyWorkspaceOperations(current.data, operationsWithAudit));
-  const newRevision = result.revision;
+  const result = await saveWorkspace(revision, persistedCandidate, expectedRowVersions);
   return {
-    revision: newRevision,
-    data: candidate,
-    updatedAt: new Date().toISOString(),
-    newRevision,
+    revision: result.revision,
+    data: result.data,
+    updatedAt: result.updatedAt,
+    bumpedRowVersions: result.bumpedRowVersions,
+    newRevision: result.revision,
   };
 }

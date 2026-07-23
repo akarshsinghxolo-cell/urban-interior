@@ -1,13 +1,9 @@
 /**
- * REST-based commit pipeline using Supabase REST API (@supabase/supabase-js).
+ * Supabase REST workspace data layer.
  *
- * This is the sole data layer (no Prisma, no blob). Each collection maps to an
- * `entity_*` table with a uniform structure: {id, workspace_id, revision, data}.
- *
- * Per-row CAS: PATCH /entity_<table>?id=eq.X&revision=eq.N
- *   → 0 rows updated = concurrent edit = CONFLICT (409)
- *
- * Works locally AND on Vercel (REST over HTTPS — no pooler needed).
+ * Reads remain collection-based. Writes are delegated to the
+ * commit_workspace_operations PostgreSQL function so one logical workspace
+ * save is atomic and workspace/row CAS checks occur in the same transaction.
  */
 import { getSupabaseAdminClient } from "../../supabase/server";
 import type { WorkspaceOperation } from "../workspace-operations";
@@ -15,11 +11,7 @@ import type { RDashDatabase, Master } from "../types";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 
-// ----------------------------------------------------------------------------
-// Collection → entity_* table name mapping (81 collections)
-// ----------------------------------------------------------------------------
 const COLLECTION_TO_TABLE: Record<string, string> = {
-  // Top-level collections (56)
   customers: "entity_customers",
   sites: "entity_sites",
   areas: "entity_areas",
@@ -77,7 +69,6 @@ const COLLECTION_TO_TABLE: Record<string, string> = {
   taxConfigs: "entity_taxConfigs",
   validityConfigs: "entity_validityConfigs",
   auditLog: "entity_auditLog",
-  // Master collections (25) — prefixed with "master."
   "master.units": "entity_master_units",
   "master.workCategories": "entity_master_workCategories",
   "master.workSubcategories": "entity_master_workSubcategories",
@@ -109,13 +100,6 @@ function tableFor(collection: string): string | null {
   return COLLECTION_TO_TABLE[collection] || null;
 }
 
-/**
- * Reads the full workspace from entity_* tables via REST.
- * Each table is read in parallel. Returns the assembled RDashDatabase.
- *
- * For large workspaces, this reads all 81 tables — but each read is a targeted
- * SELECT (not a full blob). Future optimization: lazy-load collections on demand.
- */
 export async function getRestWorkspace(): Promise<{
   revision: number;
   data: RDashDatabase;
@@ -123,40 +107,47 @@ export async function getRestWorkspace(): Promise<{
   rowVersions: Record<string, number>;
 }> {
   const admin = getSupabaseAdminClient();
-
-  // Read whole-workspace revision (single row).
   const { data: wsRevRow } = await admin
     .from("entity_workspace_revision")
     .select("revision,updated_at")
     .eq("id", workspaceId)
     .maybeSingle();
-  const wsRevision: number = typeof wsRevRow?.revision === "number" ? wsRevRow.revision : 0;
-  const updatedAt: string = (wsRevRow?.updated_at as string) || new Date().toISOString();
 
-  // Read all entity_* tables in parallel.
+  const revision = typeof wsRevRow?.revision === "number" ? wsRevRow.revision : 0;
+  const updatedAt = (wsRevRow?.updated_at as string) || new Date().toISOString();
+
   const readCollection = async (collection: string): Promise<{ collection: string; rows: any[] }> => {
     const table = tableFor(collection);
     if (!table) return { collection, rows: [] };
-    const { data, error } = await admin.from(table).select("id,revision,data").eq("workspace_id", workspaceId);
+    const { data, error } = await admin
+      .from(table)
+      .select("id,revision,data")
+      .eq("workspace_id", workspaceId);
     if (error || !data) return { collection, rows: [] };
     return { collection, rows: data as any[] };
   };
 
-  const collections = Object.keys(COLLECTION_TO_TABLE);
-  const results = await Promise.all(collections.map(readCollection));
-
-  // Assemble the RDashDatabase.
+  const results = await Promise.all(Object.keys(COLLECTION_TO_TABLE).map(readCollection));
   const data: any = { master: {} };
   const rowVersions: Record<string, number> = {};
+
   for (const { collection, rows } of results) {
-    const decoded = rows.map((r) => {
-      if (r.revision) rowVersions[r.id] = r.revision;
-      try {
-        return typeof r.data === "string" ? JSON.parse(r.data) : r.data;
-      } catch {
-        return null;
-      }
-    }).filter(Boolean);
+    const decoded = rows
+      .map((row) => {
+        if (typeof row.revision === "number") {
+          // Keep the legacy id key for the current client and also expose the
+          // collision-safe collection-qualified key for newer clients.
+          rowVersions[row.id] = row.revision;
+          rowVersions[`${collection}:${row.id}`] = row.revision;
+        }
+        try {
+          return typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
     if (collection.startsWith("master.")) {
       const key = collection.slice("master.".length) as keyof Master;
       data.master[key] = decoded;
@@ -164,218 +155,110 @@ export async function getRestWorkspace(): Promise<{
       data[collection] = decoded;
     }
   }
+
   data._workspace_mode = "rest";
   data._data_source = "supabase-rest";
 
-  // QA-INTEGRITY-001: Normalize the workspace before returning so missing
-  // master.storageFolderTemplates (and other auto-seedable master fields) are
-  // backfilled in-memory. Without this, every workspace load returns 0
-  // templates even though normalizeStorageMaster knows how to seed them —
-  // which trips the integrity checker (313 issues: 11 critical "template_id
-  // references missing template") and breaks downstream features that look
-  // up templates by purpose (storage path resolver, upload route, etc.).
-  // prepareWorkspaceData is idempotent: it only fills in missing fields,
-  // never overwrites real user data.
   let normalizedData: RDashDatabase;
   try {
     const { prepareWorkspaceData } = await import("../work-category-master");
     const { attachCustomerLabels } = await import("../customer");
     normalizedData = attachCustomerLabels(prepareWorkspaceData(data as Partial<RDashDatabase>));
-  } catch (normalizeErr) {
-    // Normalization is best-effort — if it throws, return the raw data so the
-    // client can still operate. Log for debugging.
-    console.error("[getRestWorkspace] prepareWorkspaceData failed, returning raw data:", normalizeErr);
+  } catch (error) {
+    console.error("[getRestWorkspace] prepareWorkspaceData failed, returning raw data:", error);
     normalizedData = data as RDashDatabase;
   }
 
-  return { revision: wsRevision, data: normalizedData, updatedAt, rowVersions };
+  return { revision, data: normalizedData, updatedAt, rowVersions };
 }
 
-/**
- * Seeds the Supabase entity_* tables from buildSeedDatabase().
- * Called automatically on first run when the workspace is empty.
- */
-async function seedRestWorkspace(): Promise<void> {
-  const { buildSeedDatabase } = await import("../seed");
-  const { diffWorkspaceOperations } = await import("../workspace-operations");
-  const seedData = buildSeedDatabase() as RDashDatabase;
-
-  // Build empty db to diff against.
-  const emptyDb = structuredClone(seedData) as any;
-  for (const key of Object.keys(emptyDb)) {
-    if (Array.isArray(emptyDb[key])) emptyDb[key] = [];
-  }
-  if (emptyDb.master) {
-    for (const key of Object.keys(emptyDb.master)) {
-      if (Array.isArray(emptyDb.master[key])) emptyDb.master[key] = [];
-    }
-  }
-
-  const operations = diffWorkspaceOperations(emptyDb, seedData);
-  if (operations.length > 0) {
-    await commitRestOperations(operations);
-  }
-}
-
-/**
- * Commits a batch of operations as per-row REST writes.
- *
- * Each operation {collection, upsert[], deleteIds[]} translates to:
- *   - upsert: PATCH /entity_<table> (per row, with CAS via revision)
- *   - delete: DELETE /entity_<table>?id=in.(id1,id2,...)
- *
- * Per-row CAS: if expectedRowVersions[id] is provided, the update only succeeds
- * if the current revision matches. Mismatch = 0 rows = conflict (409).
- *
- * Returns bumped versions for the lightweight response.
- */
-export async function commitRestOperations(
-  operations: WorkspaceOperation[],
-  expectedRowVersions?: Record<string, number>,
-): Promise<{
+export interface AtomicCommitResult {
   upserted: number;
   deleted: number;
   conflicts: number;
   bumpedRowVersions: Record<string, number>;
-  newRevision?: number;
-}> {
-  const admin = getSupabaseAdminClient();
-  let upserted = 0;
-  let deleted = 0;
-  let conflicts = 0;
-  const bumpedRowVersions: Record<string, number> = {};
-  const conflictRows: Array<{ collection: string; id: string }> = [];
-
-  // FIX-FK-001: When FK constraints are active, deletes must happen in
-  // REVERSE order (children first, parents last). The operations array is
-  // ordered parent-first (customers, sites, areas, ...), so we reverse it
-  // for deletes. Upserts stay in forward order (parents first).
-  const deleteOps = [...operations].reverse();
-  const upsertOps = operations;
-
-  // Phase 1: Deletes (children first, reversed)
-  for (const op of deleteOps) {
-    const table = tableFor(op.collection);
-    if (!table) continue;
-    if (op.deleteIds?.length) {
-      const { error } = await admin.from(table).delete().in("id", op.deleteIds);
-      if (!error) deleted += op.deleteIds.length;
-    }
-  }
-
-  // Phase 2: Upserts (parents first, forward order — same as before)
-  for (const op of upsertOps) {
-    const table = tableFor(op.collection);
-    if (!table) {
-      console.warn(`[commit-rest] no table for collection: ${op.collection}`);
-      continue;
-    }
-
-    if (op.upsert?.length) {
-      for (const row of op.upsert) {
-        const id = String(row.id);
-        if (!id) continue;
-        const dataJson = typeof row === "object" ? row : {};
-        const expectedVer = expectedRowVersions?.[id];
-
-        // Try to read the current revision (for CAS + to know if it's create vs update).
-        const { data: existing } = await admin.from(table).select("revision").eq("id", id).maybeSingle();
-        const existingRevision: number = typeof existing?.revision === "number" ? existing.revision : 0;
-
-        if (existing) {
-          // UPDATE path — check CAS if expected version provided.
-          if (expectedVer !== undefined && existingRevision !== expectedVer) {
-            conflicts++;
-            conflictRows.push({ collection: op.collection, id });
-            continue;
-          }
-          const newRevision = existingRevision + 1;
-          const { error } = await admin.from(table).update({
-            data: dataJson,
-            revision: newRevision,
-            updated_at: new Date().toISOString(),
-          }).eq("id", id);
-          if (!error) {
-            upserted++;
-            bumpedRowVersions[id] = newRevision;
-          }
-        } else {
-          // CREATE path.
-          const { error } = await admin.from(table).insert({
-            id,
-            workspace_id: workspaceId,
-            revision: 0,
-            data: dataJson,
-            updated_at: new Date().toISOString(),
-          });
-          if (!error) {
-            upserted++;
-            bumpedRowVersions[id] = 0;
-          } else if (String(error.code || "").includes("23505")) {
-            // Unique constraint — row was created concurrently = conflict.
-            conflicts++;
-            conflictRows.push({ collection: op.collection, id });
-          }
-        }
-      }
-    }
-  }
-
-  if (conflicts > 0) {
-    console.warn(`[commit-rest] ${conflicts} row conflicts detected:`, conflictRows.slice(0, 5));
-  }
-
-  // Bump whole-workspace revision (read current, increment, update).
-  let newRevision: number | undefined;
-  const { data: currentRev } = await admin
-    .from("entity_workspace_revision")
-    .select("revision")
-    .eq("id", workspaceId)
-    .maybeSingle();
-  const currentRevision: number = typeof currentRev?.revision === "number" ? currentRev.revision : 0;
-  const nextRevision = currentRevision + 1;
-  const { error: bumpError } = await admin
-    .from("entity_workspace_revision")
-    .upsert({
-      id: workspaceId,
-      workspace_id: workspaceId,
-      revision: nextRevision,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "id" });
-  if (!bumpError) {
-    newRevision = nextRevision;
-  }
-
-  return { upserted, deleted, conflicts, bumpedRowVersions, newRevision };
+  newRevision: number;
 }
 
-/**
- * Resets the workspace: deletes all entity_* rows + re-seeds.
- */
-export async function resetRestWorkspace(): Promise<{ revision: number; data: RDashDatabase; updatedAt: string }> {
+export async function commitRestOperations(
+  operations: WorkspaceOperation[],
+  expectedWorkspaceRevision: number,
+  expectedRowVersions: Record<string, number> = {},
+): Promise<AtomicCommitResult> {
+  const mappedOperations = operations.map((operation) => {
+    const table = tableFor(operation.collection);
+    if (!table) throw new Error(`INVALID:Unknown workspace collection ${operation.collection}.`);
+    return {
+      collection: operation.collection,
+      table,
+      upsert: operation.upsert || [],
+      deleteIds: operation.deleteIds || [],
+    };
+  });
+
   const admin = getSupabaseAdminClient();
+  const { data, error } = await admin.rpc("commit_workspace_operations", {
+    p_workspace_id: workspaceId,
+    p_expected_workspace_revision: expectedWorkspaceRevision,
+    p_operations: mappedOperations,
+    p_expected_row_versions: expectedRowVersions,
+  });
 
-  // Delete all rows from all entity_* tables (parallel).
+  if (error) {
+    const message = `${error.message || ""} ${error.details || ""}`;
+    if (message.includes("WORKSPACE_CONFLICT") || message.includes("ROW_CONFLICT")) {
+      throw new Error("CONFLICT");
+    }
+    if (message.includes("INVALID_")) {
+      throw new Error(`INVALID:${error.message}`);
+    }
+    throw new Error(`Workspace transaction failed: ${error.message}`);
+  }
+
+  const result = (data || {}) as Partial<AtomicCommitResult>;
+  if (typeof result.newRevision !== "number") {
+    throw new Error("Workspace transaction returned no revision.");
+  }
+
+  return {
+    upserted: result.upserted || 0,
+    deleted: result.deleted || 0,
+    conflicts: result.conflicts || 0,
+    bumpedRowVersions: result.bumpedRowVersions || {},
+    newRevision: result.newRevision,
+  };
+}
+
+export async function resetRestWorkspace(): Promise<{
+  revision: number;
+  data: RDashDatabase;
+  updatedAt: string;
+}> {
+  const admin = getSupabaseAdminClient();
   const tables = Object.values(COLLECTION_TO_TABLE);
-  await Promise.all(tables.map(async (table) => {
-    try { await admin.from(table).delete().eq("workspace_id", workspaceId); } catch { /* ignore */ }
-  }));
+  await Promise.all(
+    tables.map(async (table) => {
+      try {
+        await admin.from(table).delete().eq("workspace_id", workspaceId);
+      } catch {
+        // Existing reset behavior is intentionally preserved for now.
+      }
+    }),
+  );
 
-  // Reset workspace revision to 0.
-  await admin.from("entity_workspace_revision").upsert({
-    id: workspaceId,
-    workspace_id: workspaceId,
-    revision: 0,
-    updated_at: new Date().toISOString(),
-  }, { onConflict: "id" });
+  await admin.from("entity_workspace_revision").upsert(
+    {
+      id: workspaceId,
+      workspace_id: workspaceId,
+      revision: 0,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "id" },
+  );
 
-  // Re-seed from buildSeedDatabase.
   const { buildSeedDatabase } = await import("../seed");
   const { diffWorkspaceOperations } = await import("../workspace-operations");
   const seedData = buildSeedDatabase() as RDashDatabase;
-
-  // Build empty db to diff against. MUST deep-clone so emptying arrays in
-  // emptyDb doesn't mutate seedData (shallow copy shares the .master ref).
   const emptyDb = structuredClone(seedData) as any;
   for (const key of Object.keys(emptyDb)) {
     if (Array.isArray(emptyDb[key])) emptyDb[key] = [];
@@ -388,15 +271,11 @@ export async function resetRestWorkspace(): Promise<{ revision: number; data: RD
 
   const operations = diffWorkspaceOperations(emptyDb, seedData);
   if (operations.length > 0) {
-    await commitRestOperations(operations);
+    await commitRestOperations(operations, 0, {});
   }
-
   return getRestWorkspace();
 }
 
-/**
- * Reads the current whole-workspace revision (for CAS checks).
- */
 export async function getRestWorkspaceRevision(): Promise<number> {
   const admin = getSupabaseAdminClient();
   const { data } = await admin
