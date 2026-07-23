@@ -8,6 +8,7 @@ import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { SavedViewsBar } from "../SavedViewsBar";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, workRequiredStatusStyle, visitStatusStyle, taskStatusStyle } from "@/lib/rdash/format";
 import { ShieldCheck, AlertTriangle, CheckCircle2, XCircle, MapPin, TrendingDown, FileText, ListChecks, ClipboardList, Download, Printer, Layers, Settings, Phone, Calendar, DollarSign, Plus, UserPlus, } from "lucide-react";
+import { calculateQuotationMetrics, calculateSalesPipelineMetrics, collectWonWorkRequiredIds, isOpenSalesStatus, isWonSalesStatus } from "@/lib/rdash/metrics";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 export function ApprovalsModule() {
@@ -154,7 +155,7 @@ export function CustomerDeskExtrasModule({ submodule, filterPresets, }: {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     if (submodule === "requests") {
-        return (<RequestsView reqs={db.workRequired} customers={db.customers} openDetail={openDetail} filterPresets={filterPresets}/>);
+        return (<RequestsView reqs={db.workRequired} customers={db.customers} quotations={db.quotations} workOrders={db.workOrders} openDetail={openDetail} filterPresets={filterPresets}/>);
     }
     if (submodule === "pendingActionsCust") {
         const tasks = db.tasks.filter((t) => t.status === "todo" || t.status === "in_progress");
@@ -180,7 +181,8 @@ export function CustomerDeskExtrasModule({ submodule, filterPresets, }: {
       </div>);
     }
     if (submodule === "workRequiredReview") {
-        const reqs = db.workRequired.filter((r) => r.status !== "accepted" && r.status !== "lost");
+        const wonWorkRequiredIds = collectWonWorkRequiredIds(db.quotations, db.workOrders);
+        const reqs = db.workRequired.filter((record) => isOpenSalesStatus(record.status) && !wonWorkRequiredIds.has(record.id));
         return (<div className="flex flex-col gap-5">
         <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><ClipboardList className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">WorkRequired Review</h2><p className="text-xs text-muted-foreground">Active workRequired needing qualification and follow-up</p></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -210,16 +212,18 @@ export function QuotationExtrasModule({ submodule }: {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     if (submodule === "workRequiredBoq") {
+        const currentQuotations = calculateQuotationMetrics(db.quotations).current;
+        const totalItems = currentQuotations.reduce((sum, quotation) => sum + quotation.scope_lines.length, 0);
         return (<div className="flex flex-col gap-5">
         <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Layers className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Work Requirement BOQ</h2><p className="text-xs text-muted-foreground">Article-level material breakdown for awarded work orders</p></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard label="Quotations" value={db.quotations.length} tone="primary" icon={<FileText className="h-4 w-4"/>}/>
-          <MetricCard label="Total items" value={db.quotations.reduce((n, q) => n + q.scope_lines.length, 0)} tone="default" icon={<Layers className="h-4 w-4"/>}/>
-          <MetricCard label="Total value" value={formatINRShort(db.quotations.reduce((n, q) => n + q.total_amount, 0))} tone="success" icon={<DollarSign className="h-4 w-4"/>}/>
-          <MetricCard label="Avg items/quote" value={db.quotations.length ? Math.round(db.quotations.reduce((n, q) => n + q.scope_lines.length, 0) / db.quotations.length) : 0} tone="warning" icon={<Layers className="h-4 w-4"/>}/>
+          <MetricCard label="Quotations" value={currentQuotations.length} tone="primary" icon={<FileText className="h-4 w-4"/>}/>
+          <MetricCard label="Total items" value={totalItems} tone="default" icon={<Layers className="h-4 w-4"/>}/>
+          <MetricCard label="Total value" value={formatINRShort(currentQuotations.reduce((sum, quotation) => sum + quotation.total_amount, 0))} tone="success" icon={<DollarSign className="h-4 w-4"/>}/>
+          <MetricCard label="Avg items/quote" value={currentQuotations.length ? Math.round(totalItems / currentQuotations.length) : 0} tone="warning" icon={<Layers className="h-4 w-4"/>}/>
         </div>
         <div className="space-y-3">
-          {db.quotations.map((q) => (<div key={q.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
+          {currentQuotations.map((q) => (<div key={q.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
               <button type="button" onClick={() => openDetail("quotation", q.id)} className="flex w-full items-center justify-between text-left hover:text-primary">
                 <div><p className="text-sm font-bold">{q.quotation_no} · {(q.customer_name || "Customer")}</p><p className="text-[10px] text-muted-foreground">{q.title} · {q.scope_lines.length} items</p></div>
                 <span className="font-mono text-sm font-bold">{formatINR(q.total_amount)}</span>
@@ -290,9 +294,11 @@ export function MastersExtrasModule({ submodule }: {
     }
     return null;
 }
-function RequestsView({ reqs, customers, openDetail, filterPresets, }: {
+function RequestsView({ reqs, customers, quotations, workOrders, openDetail, filterPresets, }: {
     reqs: import("@/lib/rdash/types").WorkRequired[];
     customers: import("@/lib/rdash/types").Customer[];
+    quotations: import("@/lib/rdash/types").Quotation[];
+    workOrders: import("@/lib/rdash/types").WorkOrder[];
     openDetail: (kind: DetailPanelKind, id: string) => void;
     filterPresets?: import("@/lib/rdash/modules").FilterPreset[];
 }) {
@@ -306,12 +312,20 @@ function RequestsView({ reqs, customers, openDetail, filterPresets, }: {
         ];
     const [presetIdx, setPresetIdx] = React.useState(0);
     const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
+    const wonWorkRequiredIds = React.useMemo(() => collectWonWorkRequiredIds(quotations, workOrders), [quotations, workOrders]);
+    const metrics = React.useMemo(() => calculateSalesPipelineMetrics(reqs, { wonWorkRequiredIds }), [reqs, wonWorkRequiredIds]);
+    const isWon = React.useCallback((record: import("@/lib/rdash/types").WorkRequired) => isWonSalesStatus(record.status) || wonWorkRequiredIds.has(record.id), [wonWorkRequiredIds]);
+    const isActive = React.useCallback((record: import("@/lib/rdash/types").WorkRequired) => isOpenSalesStatus(record.status) && !isWon(record), [isWon]);
     const activeStatus = presets[presetIdx]?.filter.req_status;
     const filtered = !activeStatus
         ? reqs
         : activeStatus === "active"
-            ? reqs.filter((r) => !["accepted", "lost"].includes(r.status))
-            : reqs.filter((r) => r.status === activeStatus);
+            ? reqs.filter(isActive)
+            : activeStatus === "accepted"
+                ? reqs.filter(isWon)
+                : activeStatus === "lost"
+                    ? reqs.filter((record) => record.status === "lost" && !isWon(record))
+                    : reqs.filter((record) => record.status === activeStatus);
     const handlePresetChange = (i: number) => {
         setPresetIdx(i);
         setActiveSavedViewId(null);
@@ -324,14 +338,22 @@ function RequestsView({ reqs, customers, openDetail, filterPresets, }: {
         }
         setActiveSavedViewId(view.id);
     };
-    const countFor = (status: string) => !status ? reqs.length : status === "active" ? reqs.filter((r) => !["accepted", "lost"].includes(r.status)).length : reqs.filter((r) => r.status === status).length;
+    const countFor = (status: string) => !status
+        ? reqs.length
+        : status === "active"
+            ? metrics.openCount
+            : status === "accepted"
+                ? metrics.wonCount
+                : status === "lost"
+                    ? metrics.lostCount
+                    : reqs.filter((record) => record.status === status).length;
     return (<div className="flex flex-col gap-5">
       <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><ClipboardList className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Requests</h2><p className="text-xs text-muted-foreground">All customer workRequired with status tracking · {filtered.length} shown</p></div></div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Total" value={reqs.length} tone="primary" icon={<ClipboardList className="h-4 w-4"/>}/>
-        <MetricCard label="Won" value={reqs.filter((r) => r.status === "accepted").length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
-        <MetricCard label="Active" value={reqs.filter((r) => !["accepted", "lost"].includes(r.status)).length} tone="warning" icon={<AlertTriangle className="h-4 w-4"/>}/>
-        <MetricCard label="Pipeline value" value={formatINRShort(reqs.reduce((n, r) => n + (r.budget || 0), 0))} tone="primary" icon={<DollarSign className="h-4 w-4"/>}/>
+        <MetricCard label="Total" value={metrics.totalLeads} tone="primary" icon={<ClipboardList className="h-4 w-4"/>}/>
+        <MetricCard label="Won" value={metrics.wonCount} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+        <MetricCard label="Active" value={metrics.openCount} tone="warning" icon={<AlertTriangle className="h-4 w-4"/>}/>
+        <MetricCard label="Pipeline value" value={formatINRShort(metrics.pipelineValue)} tone="primary" icon={<DollarSign className="h-4 w-4"/>}/>
       </div>
       <section aria-label="Request status filters" className="flex flex-wrap items-center gap-1.5">
         {presets.map((p, i) => {

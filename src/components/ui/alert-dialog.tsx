@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { PortalActivityBoundary } from "@/components/ui/portal-activity";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
@@ -10,7 +11,7 @@ function AlertDialogTrigger({ ...props }: React.ComponentProps<typeof AlertDialo
     return (<AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props}/>);
 }
 function AlertDialogPortal({ ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Portal>) {
-    return (<AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props}/>);
+    return (<PortalActivityBoundary><AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props}/></PortalActivityBoundary>);
 }
 function AlertDialogOverlay({ className, ...props }: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>) {
     return (<AlertDialogPrimitive.Overlay data-slot="alert-dialog-overlay" className={cn("data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50", className)} {...props}/>);

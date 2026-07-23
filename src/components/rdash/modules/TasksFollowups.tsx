@@ -34,7 +34,8 @@ const SCOPES: {
     { key: "staff", label: "Staff" },
     { key: "completed", label: "Completed" },
 ];
-export function TasksFollowups({ submoduleFilter, filterPresets, dataSource, }: {
+export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataSource, }: {
+    moduleId: string;
     submoduleFilter?: Record<string, string>;
     filterPresets?: FilterPreset[];
     dataSource?: DataSource;
@@ -63,9 +64,9 @@ export function TasksFollowups({ submoduleFilter, filterPresets, dataSource, }: 
     const [activePresetId, setActivePresetId] = React.useState<string>(presets?.[0]?.id ?? "all");
     const [scope, setScope] = React.useState<Scope>("all");
     const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
-    const activeModuleId = useRDashStore((s) => s.activeModuleId);
+    const activeWorkspaceModuleId = useRDashStore((state) => state.activeModuleId);
     React.useEffect(() => {
-        if (activeModuleId !== "tasks" && activeModuleId !== "followups" && activeModuleId !== "history")
+        if (activeWorkspaceModuleId !== moduleId || (moduleId !== "tasks" && moduleId !== "followups" && moduleId !== "history"))
             return;
         const onKey = (e: KeyboardEvent) => {
             const target = e.target as HTMLElement;
@@ -94,7 +95,7 @@ export function TasksFollowups({ submoduleFilter, filterPresets, dataSource, }: 
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [presets, activeModuleId]);
+    }, [presets, moduleId, activeWorkspaceModuleId]);
     const handlePresetChange = (id: string) => {
         setActivePresetId(id);
         setActiveSavedViewId(null);

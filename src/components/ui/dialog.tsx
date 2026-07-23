@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { PortalActivityBoundary } from "@/components/ui/portal-activity";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,7 +11,7 @@ function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive
     return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props}/>;
 }
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
-    return <DialogPrimitive.Portal data-slot="dialog-portal" {...props}/>;
+    return <PortalActivityBoundary><DialogPrimitive.Portal data-slot="dialog-portal" {...props}/></PortalActivityBoundary>;
 }
 function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
     return <DialogPrimitive.Close data-slot="dialog-close" {...props}/>;

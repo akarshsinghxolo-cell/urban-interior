@@ -1,22 +1,19 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, X, ChevronRight, ChevronLeft, Command, UserCircle2, Keyboard, PanelLeft, LogOut, } from "lucide-react";
+import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, ChevronRight, ChevronLeft, Command, UserCircle2, Keyboard, PanelLeft, LogOut, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { clearSessionToken } from "@/lib/rdash/client-auth";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationCenter } from "./NotificationCenter";
 import { CreateMenu } from "./CreateMenu";
 import { DemoModeBadge } from "./DemoModeBadge";
+import { WorkspaceTabs } from "./WorkspaceTabs";
 import { EnhancedSearch } from "./EnhancedSearch";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 export function WorkspaceHeader() {
-    const tabs = useRDashStore((s) => s.tabs);
-    const activeTabId = useRDashStore((s) => s.activeTabId);
-    const setActiveTab = useRDashStore((s) => s.setActiveTab);
-    const closeTab = useRDashStore((s) => s.closeTab);
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
     const toggleSidebar = useRDashStore((s) => s.toggleSidebar);
     const sidebarCollapsed = useRDashStore((s) => s.sidebarCollapsed);
@@ -29,6 +26,8 @@ export function WorkspaceHeader() {
     const workspaceSyncStatus = useRDashStore((s) => s.workspaceSyncStatus);
     const workspaceSyncError = useRDashStore((s) => s.workspaceSyncError);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
+    const setKeyboardShortcutsOpen = useRDashStore((s) => s.setKeyboardShortcutsOpen);
+    const moreMenuOpen = useRDashStore((s) => s.moreMenuOpen);
     const setMoreMenuOpen = useRDashStore((s) => s.setMoreMenuOpen);
     const refresh = () => { window.location.reload(); };
     return (<header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-border bg-background/85 backdrop-blur-md">
@@ -43,8 +42,8 @@ export function WorkspaceHeader() {
         </Button>
 
         <div className="hidden shrink-0 items-center gap-0.5 sm:flex">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(-1)} disabled={moduleHistoryIndex <= 0} aria-label="Go back (Left Arrow)" title="Back (Left Arrow)"><ChevronLeft className="h-4 w-4"/></Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(1)} disabled={moduleHistoryIndex >= moduleHistoryLength - 1} aria-label="Go forward (Right Arrow)" title="Forward (Right Arrow)"><ChevronRight className="h-4 w-4"/></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(-1)} disabled={moduleHistoryIndex <= 0} aria-label="Go back in module history" title="Back"><ChevronLeft className="h-4 w-4"/></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(1)} disabled={moduleHistoryIndex >= moduleHistoryLength - 1} aria-label="Go forward in module history" title="Forward"><ChevronRight className="h-4 w-4"/></Button>
         </div>
         <DemoModeBadge />
 
@@ -53,23 +52,11 @@ export function WorkspaceHeader() {
           <Command className="h-4 w-4"/>
         </Button>
 
-        {/* Visible keyboard-shortcuts hint button — dispatches the "?" keydown
-            that KeyboardShortcutsHelp listens for. Previously this was only
-            reachable via the "More" dropdown, and the dropdown's dispatched
-            event (Cmd+/) didn't match the listener (expects "?" with no
-            modifiers), so the overlay never opened. Now it's a first-class
-            header button with a discoverable "?" badge. */}
-        {/* Keyboard-shortcuts button — hidden on mobile (keyboard shortcuts are
-            less relevant on touch devices; still reachable via the "More"
-            dropdown). Shown on md+ where a physical keyboard is likely. */}
         <Button
           variant="outline"
           size="icon"
           className="relative hidden h-11 w-11 shrink-0 md:inline-flex"
-          onClick={() => {
-            const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true });
-            window.dispatchEvent(e);
-          }}
+          onClick={() => setKeyboardShortcutsOpen(true)}
           aria-label="Show keyboard shortcuts"
           title="Keyboard shortcuts (?)"
         >
@@ -93,14 +80,14 @@ export function WorkspaceHeader() {
         {workspaceSyncStatus === "saving" ? <span className="hidden text-[10px] font-medium text-muted-foreground lg:inline">Saving…</span> : null}
         {workspaceSyncStatus === "error" ? <span title={workspaceSyncError || "Server save failed"} className="hidden text-[10px] font-semibold text-destructive lg:inline">Save rejected</span> : null}
 
-        <DropdownMenu>
+        <DropdownMenu open={moreMenuOpen} onOpenChange={setMoreMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon" className="h-11 w-11 shrink-0" aria-label="More workspace actions">
               <MoreHorizontal className="h-4 w-4"/>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem onClick={() => { const e = new KeyboardEvent("keydown", { key: "?", bubbles: true, cancelable: true }); window.dispatchEvent(e); }}>
+            <DropdownMenuItem onClick={() => setKeyboardShortcutsOpen(true)}>
               <Keyboard className="mr-2 h-4 w-4"/> Keyboard shortcuts
               <kbd className="ml-auto rounded border border-border bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">?</kbd>
             </DropdownMenuItem>
@@ -122,22 +109,6 @@ export function WorkspaceHeader() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {tabs.length > 0 && (<div className="flex items-center gap-1 overflow-x-auto px-[var(--page-pad)] pb-1 rd-scroll">
-          {tabs.map((t) => {
-                const active = t.id === activeTabId;
-                return (<div key={t.id} role="tab" aria-selected={active} onClick={() => setActiveTab(t.id)} className={cn("group flex shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-sm font-medium transition-colors", active
-                        ? "rd-tab-active border-primary text-foreground"
-                        : "border-transparent text-muted-foreground hover:text-foreground")}>
-                {t.icon && !t.label.trim().startsWith(t.icon) && (<span className="text-sm leading-none">{t.icon}</span>)}
-                <span className="max-w-[220px] truncate" title={t.label}>{t.label}</span>
-                {tabs.length > 1 && (<button type="button" aria-label="Close tab" onClick={(e) => {
-                            e.stopPropagation();
-                            closeTab(t.id);
-                        }} className="ml-0.5 flex h-6 w-6 items-center justify-center rounded text-muted-foreground/70 opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100">
-                    <X className="h-3 w-3"/>
-                  </button>)}
-              </div>);
-            })}
-        </div>)}
+      <WorkspaceTabs />
     </header>);
 }

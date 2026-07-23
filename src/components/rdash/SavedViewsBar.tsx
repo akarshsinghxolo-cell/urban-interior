@@ -5,6 +5,7 @@ import { useRDashStore, type SavedView } from "@/lib/rdash/store";
 import type { FilterPreset } from "@/lib/rdash/modules";
 import { Bookmark, BookmarkPlus, X, Check, Pencil, Star } from "lucide-react";
 import { toast } from "sonner";
+import { loadSavedViews, SAVED_VIEWS_STORAGE_KEY } from "@/lib/rdash/saved-views-storage";
 export interface SavedViewsBarProps {
     workspaceKey: string;
     presets?: FilterPreset[] | null;
@@ -26,6 +27,15 @@ export function SavedViewsBar({ workspaceKey, presets, currentPresetId, currentS
     const [renameDraft, setRenameDraft] = React.useState("");
     const nameInputRef = React.useRef<HTMLInputElement>(null);
     const renameInputRef = React.useRef<HTMLInputElement>(null);
+    React.useEffect(() => {
+        const syncSavedViews = () => useRDashStore.setState({ savedViews: loadSavedViews() });
+        syncSavedViews();
+        const onStorage = (event: StorageEvent) => {
+            if (event.key === SAVED_VIEWS_STORAGE_KEY) syncSavedViews();
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+    }, []);
     const myViews = savedViews.filter((v) => v.workspaceKey === workspaceKey);
     React.useEffect(() => {
         if (naming) {
@@ -118,7 +128,7 @@ export function SavedViewsBar({ workspaceKey, presets, currentPresetId, currentS
               <Star className={cn("h-3 w-3 transition-colors", isActive ? "fill-primary text-primary" : "text-muted-foreground")}/>
               <span className="max-w-[160px] truncate">{view.label}</span>
             </button>
-            <span className="flex items-center opacity-0 transition-opacity group-hover:opacity-100">
+            <span className="flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               <button type="button" onClick={() => handleStartRename(view)} className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={`Rename ${view.label}`} title="Rename">
                 <Pencil className="h-3 w-3"/>
               </button>

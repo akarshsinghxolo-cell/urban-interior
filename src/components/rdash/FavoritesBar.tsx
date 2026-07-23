@@ -26,7 +26,66 @@ interface FavoriteItem {
   addedAt: number;
 }
 
-const STORAGE_KEY = "uc_favorites";
+const STORAGE_KEY = "uc_favorites_v2";
+const LEGACY_STORAGE_KEY = "uc_favorites";
+const FAVORITES_CHANGED_EVENT = "uc:favorites-changed";
+const MAX_FAVORITES = 12;
+
+function favoriteKey(item: Pick<FavoriteItem, "id" | "kind">): string {
+  return `${item.kind || "unknown"}:${item.id}`;
+}
+
+function isFavoriteItem(value: unknown): value is FavoriteItem {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<FavoriteItem>;
+  return typeof item.id === "string" && typeof item.label === "string" &&
+    typeof item.addedAt === "number" && typeof item.kind === "string";
+}
+
+function readFavorites(): FavoriteItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "[]";
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(isFavoriteItem).slice(-MAX_FAVORITES) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFavorites(items: readonly FavoriteItem[]): void {
+  const next = items.slice(-MAX_FAVORITES);
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+    window.dispatchEvent(new CustomEvent(FAVORITES_CHANGED_EVENT));
+  } catch {
+    // Favorites are a non-critical device preference.
+  }
+}
+
+function useFavoriteItems() {
+  const [favorites, setFavorites] = React.useState<FavoriteItem[]>([]);
+  React.useEffect(() => {
+    const sync = () => setFavorites(readFavorites());
+    sync();
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY || event.key === LEGACY_STORAGE_KEY) sync();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(FAVORITES_CHANGED_EVENT, sync);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(FAVORITES_CHANGED_EVENT, sync);
+    };
+  }, []);
+  const updateFavorites = React.useCallback((update: (current: FavoriteItem[]) => FavoriteItem[]) => {
+    const next = update(readFavorites()).slice(-MAX_FAVORITES);
+    writeFavorites(next);
+    setFavorites(next);
+  }, []);
+  return [favorites, updateFavorites] as const;
+}
 
 const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   customer: Users,
@@ -47,28 +106,12 @@ const KIND_COLOR: Record<string, string> = {
 };
 
 export function FavoritesBar() {
-  const [favorites, setFavorites] = React.useState<FavoriteItem[]>([]);
+  const [favorites, updateFavorites] = useFavoriteItems();
   const openDetail = useRDashStore((s) => s.openDetail);
 
-  // Load from localStorage on mount
-  React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setFavorites(JSON.parse(stored));
-    } catch { /* non-fatal */ }
-  }, []);
-
-  // Save to localStorage when favorites change
-  const saveFavorites = React.useCallback((items: FavoriteItem[]) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch { /* non-fatal */ }
-  }, []);
-
-  const removeFavorite = (id: string) => {
-    const next = favorites.filter((f) => f.id !== id);
-    setFavorites(next);
-    saveFavorites(next);
+  const removeFavorite = (target: FavoriteItem) => {
+    const targetKey = favoriteKey(target);
+    updateFavorites((current) => current.filter((favorite) => favoriteKey(favorite) !== targetKey));
   };
 
   if (favorites.length === 0) return null;
@@ -85,7 +128,7 @@ export function FavoritesBar() {
         const colorClass = KIND_COLOR[kindKey] || KIND_COLOR.task;
         return (
           <div
-            key={fav.id}
+            key={favoriteKey(fav)}
             className="group flex shrink-0 items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs transition-all hover:shadow-sm"
           >
             <button
@@ -101,7 +144,7 @@ export function FavoritesBar() {
             </button>
             <button
               type="button"
-              onClick={() => removeFavorite(fav.id)}
+              onClick={() => removeFavorite(fav)}
               className="ml-0.5 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
               aria-label={`Remove ${fav.label} from favorites`}
             >
@@ -119,33 +162,19 @@ export function FavoritesBar() {
  * Used by the DetailPanel to add a "pin to favorites" star button.
  */
 export function useFavorites() {
-  const [favorites, setFavorites] = React.useState<FavoriteItem[]>([]);
-
-  React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setFavorites(JSON.parse(stored));
-    } catch { /* non-fatal */ }
-  }, []);
+  const [favorites, updateFavorites] = useFavoriteItems();
 
   const toggleFavorite = React.useCallback((item: Omit<FavoriteItem, "addedAt">) => {
-    setFavorites((prev) => {
-      const exists = prev.find((f) => f.id === item.id);
-      let next: FavoriteItem[];
-      if (exists) {
-        next = prev.filter((f) => f.id !== item.id);
-      } else {
-        next = [...prev, { ...item, addedAt: Date.now() }].slice(-12); // max 12 favorites
-      }
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch { /* non-fatal */ }
-      return next;
+    const targetKey = favoriteKey(item);
+    updateFavorites((current) => {
+      const exists = current.some((favorite) => favoriteKey(favorite) === targetKey);
+      if (exists) return current.filter((favorite) => favoriteKey(favorite) !== targetKey);
+      return [...current, { ...item, addedAt: Date.now() }];
     });
-  }, []);
+  }, [updateFavorites]);
 
-  const isFavorite = React.useCallback((id: string) => {
-    return favorites.some((f) => f.id === id);
+  const isFavorite = React.useCallback((id: string, kind?: DetailPanelKind) => {
+    return favorites.some((favorite) => favorite.id === id && (!kind || favorite.kind === kind));
   }, [favorites]);
 
   return { favorites, toggleFavorite, isFavorite };

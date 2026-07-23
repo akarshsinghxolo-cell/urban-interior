@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/rdash/server/auth";
 import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 
 export const runtime = "nodejs";
 
@@ -52,9 +53,8 @@ export async function GET(request: NextRequest) {
     const activeVisits = (db.visits || []).filter(
       (v) => v.status === "scheduled" || v.status === "en_route" || v.status === "checked_in",
     );
-    const pipelineValue = (db.quotations || [])
-      .filter((q) => q.status === "sent" || q.status === "draft")
-      .reduce((sum, q) => sum + (q.total_amount || 0), 0);
+    const quotationMetrics = calculateQuotationMetrics(db.quotations || []);
+    const pipelineValue = quotationMetrics.pipelineValue;
 
     // Exceptions (direct-award POs + variations)
     const directAwardPOs = (db.purchaseOrders || []).filter(
@@ -128,14 +128,14 @@ export async function GET(request: NextRequest) {
     // Returns [{date: 'YYYY-MM-DD', value: number}, ...] for the last 7 days
     // (oldest first). Days with no receipts show 0.
     const revenueSeries: Array<{ date: string; value: number }> = [];
+    const indiaToday = indiaDate();
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      d.setHours(0, 0, 0, 0);
-      const dayKey = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      const day = new Date(`${indiaToday}T12:00:00+05:30`);
+      day.setDate(day.getDate() - i);
+      const dayKey = indiaDate(day);
       const dayTotal = customerReceipts
-        .filter((r) => (r.received_at || "").slice(0, 10) === dayKey)
-        .reduce((s, r) => s + (r.amount || 0), 0);
+        .filter((receipt) => receipt.received_at && indiaDate(receipt.received_at) === dayKey)
+        .reduce((sum, receipt) => sum + (receipt.amount || 0), 0);
       revenueSeries.push({ date: dayKey, value: dayTotal });
     }
 
@@ -178,9 +178,7 @@ export async function GET(request: NextRequest) {
         },
         commercial: {
           pipelineValue,
-          pipelineQuotations: (db.quotations || []).filter(
-            (q) => q.status === "sent" || q.status === "draft",
-          ).length,
+          pipelineQuotations: quotationMetrics.openCount,
           customers: (db.customers || []).length,
         },
         exceptions: {

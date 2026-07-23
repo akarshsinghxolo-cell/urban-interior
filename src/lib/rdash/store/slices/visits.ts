@@ -22,6 +22,7 @@ import type {
     RDashDatabase, Visit, VisitRoutePoint, AttendanceRecord, Followup,
 } from "../../types";
 import type { VisitsState } from "../types";
+import { advanceWorkRequiredLifecycleStatus } from "../../work-required-lifecycle";
 import type { StoreContext } from "../context";
 import type { CurrentUserContext } from "../ui-types";
 import {
@@ -324,7 +325,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                     ...snapshot.db,
                     visits: [visit, ...snapshot.db.visits],
                     workRequired: visit.work_required_id && (visit.visit_type === "measurement" || visit.visit_type === "site_visit")
-                        ? snapshot.db.workRequired.map((work: any) => work.id === visit.work_required_id ? { ...work, status: "visit_scheduled", updated_at: now } : work)
+                        ? snapshot.db.workRequired.map((work: any) => work.id === visit.work_required_id ? { ...work, status: advanceWorkRequiredLifecycleStatus(work.status, "visit_scheduled"), updated_at: now } : work)
                         : snapshot.db.workRequired,
                 },
             }));

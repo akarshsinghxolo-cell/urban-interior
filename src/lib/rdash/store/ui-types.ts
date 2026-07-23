@@ -59,3 +59,34 @@ export interface CreateDialogRequest {
     workRequiredId?: string;
     visitType?: VisitType;
 }
+
+export type ActionDialogType = "record-payment" | "send-catalogue" | "send-reference" | "send-pinterest" | "send-material";
+export interface ActionDialogState {
+    type: ActionDialogType | null;
+    customerId?: string;
+}
+export interface EditDialogRequest {
+    type: "task" | "followup" | "visit" | "workOrder";
+    entityId: string;
+}
+export type WorkspaceOverlaySnapshot =
+    | { type: "commandPalette" }
+    | { type: "actionDialog"; value: ActionDialogState }
+    | { type: "createDialog"; value: CreateDialogRequest }
+    | { type: "quotationAcceptance"; quotationId: string }
+    | { type: "editDialog"; value: EditDialogRequest }
+    | { type: "mobileNav" }
+    | { type: "moreMenu" }
+    | { type: "quickAdd" }
+    | { type: "keyboardShortcuts" };
+export interface WorkspaceNavigationSnapshot {
+    moduleId: string;
+    activeTabId: string | null;
+    moduleHistoryIndex: number;
+    moduleHistoryLength: number;
+    selectedCustomerId: string | null;
+    detailPanel: DetailPanelState;
+    contextHistory: ContextHistoryEntry[];
+    contextHistoryIndex: number;
+    overlays: WorkspaceOverlaySnapshot[];
+}

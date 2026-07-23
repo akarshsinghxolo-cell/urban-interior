@@ -4,6 +4,7 @@ import { Heart, Smile, Meh, Frown, TrendingUp, ArrowRight, Star, ThumbsUp, Check
 import { useRDashStore } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 
 interface SatisfactionMetric {
   label: string;
@@ -27,10 +28,12 @@ export function CustomerSatisfaction() {
   const setActiveModule = useRDashStore((s) => s.setActiveModule);
 
   const metrics = React.useMemo<SatisfactionMetric[]>(() => {
-    // 1. Quotation acceptance rate
-    const totalQuotes = db.quotations.filter((q) => q.status !== "draft").length;
-    const acceptedQuotes = db.quotations.filter((q) => q.status === "accepted").length;
-    const quotePct = totalQuotes > 0 ? (acceptedQuotes / totalQuotes) * 100 : 0;
+    // 1. Quotation acceptance rate — latest revision per chain and only
+    // customer decisions in the denominator (accepted/rejected/expired).
+    const quotationMetrics = calculateQuotationMetrics(db.quotations);
+    const totalQuotes = quotationMetrics.decidedCount;
+    const acceptedQuotes = quotationMetrics.acceptedCount;
+    const quotePct = quotationMetrics.conversionRate;
 
     // 2. Payment receipt rate
     const totalInvoiced = db.invoices.reduce((s, inv) => s + inv.total_amount, 0);
@@ -74,7 +77,8 @@ export function CustomerSatisfaction() {
   const customerScores = React.useMemo(() => {
     return db.customers.map((c) => {
       const quotes = db.quotations.filter((q) => q.customer_id === c.id);
-      const accepted = quotes.filter((q) => q.status === "accepted").length;
+      const quoteMetrics = calculateQuotationMetrics(quotes);
+      const accepted = quoteMetrics.acceptedCount;
       const wos = db.workOrders.filter((w) => w.customer_id === c.id);
       const completedWos = wos.filter((w) => w.status === "completed").length;
       const receipts = db.customerReceipts.filter((r) => r.customer_id === c.id);
@@ -82,7 +86,7 @@ export function CustomerSatisfaction() {
       const sites = db.sites.filter((s) => s.customer_id === c.id);
 
       // Composite score
-      const quoteScore = quotes.length > 0 ? (accepted / quotes.length) * 40 : 20;
+      const quoteScore = quoteMetrics.decidedCount > 0 ? (quoteMetrics.conversionRate / 100) * 40 : 20;
       const woScore = wos.length > 0 ? (completedWos / wos.length) * 30 : 15;
       const paymentScore = receiptAmount > 0 ? 30 : 0;
       const score = Math.round(quoteScore + woScore + paymentScore);
@@ -91,7 +95,7 @@ export function CustomerSatisfaction() {
         id: c.id,
         name: c.name,
         score,
-        quotes: quotes.length,
+        quotes: quoteMetrics.totalCount,
         accepted,
         wos: wos.length,
         completedWos,

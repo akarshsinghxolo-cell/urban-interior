@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermissionRecord, type StaffRoleKey } from "@/lib/rdash/staff-operations";
 import type { StaffDocument } from "@/lib/rdash/types";
+import { latestQuotationRevisions } from "@/lib/rdash/metrics";
 export function MastersModule({ submodule }: {
     submodule: string;
 }) {
@@ -393,7 +394,7 @@ export function SalesOpsModule({ submodule, filterPresets, statusFilter, expirin
         return (<OpportunitiesView quotations={db.quotations} openDetail={openDetail} filterPresets={filterPresets} statusFilter={statusFilter} expiringFilter={expiringFilter}/>);
     }
     if (submodule === "salesOrders") {
-        const orders = db.quotations.filter((q) => q.status === "accepted");
+        const orders = latestQuotationRevisions(db.quotations).filter((q) => q.status === "accepted");
         return (<div className="flex flex-col gap-5">
         <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-success/10 text-success"><CheckCircle2 className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Accepted Site Quotations</h2><p className="text-xs text-muted-foreground">Customer-approved coverage enters contractor bidding; contractor award creates the work order</p></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -593,7 +594,8 @@ function OpportunitiesView({ quotations, openDetail, filterPresets, statusFilter
         }
         setActiveSavedViewId(view.id);
     };
-    const openQuotes = quotations.filter((q) => q.status === "sent");
+    const currentQuotations = React.useMemo(() => latestQuotationRevisions(quotations), [quotations]);
+    const openQuotes = currentQuotations.filter((q) => q.status === "sent");
     const now = Date.now();
     const isExpiringSoon = (q: {
         valid_until: string;
@@ -602,12 +604,12 @@ function OpportunitiesView({ quotations, openDetail, filterPresets, statusFilter
         ? active?.filter.expiring
             ? openQuotes.filter((q) => isExpiringSoon(q))
             : openQuotes
-        : openQuotes.filter((q) => q.status === active.filter.status);
+        : currentQuotations.filter((q) => q.status === active.filter.status);
     const countFor = (preset: import("@/lib/rdash/modules").FilterPreset) => {
         if (preset.filter.expiring)
             return openQuotes.filter((q) => isExpiringSoon(q)).length;
         if (preset.filter.status)
-            return openQuotes.filter((q) => q.status === preset.filter.status).length;
+            return currentQuotations.filter((q) => q.status === preset.filter.status).length;
         return openQuotes.length;
     };
     return (<div className="flex flex-col gap-5">

@@ -22,17 +22,13 @@ import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
  *     reconciliation fires even if no manager ever opens the corresponding
  *     module. This makes the daily workspace state match reality on login.
  *
- *  2. A "Refresh workspace" floating button (top-right) that any manager can
- *     press to re-run reconciliation on demand, with a toast summary.
- *
- *  3. A small "Recent activity" mini-feed (last 5 audit log entries) that
- *     floats at the bottom-right so the dashboard KPIs / activity are
- *     reachable from anywhere in the app.
+ *  2. A "Reconcile workspace" floating button that a manager can use to
+ *     retry reconciliation on demand, with a toast summary.
  *
  * The cross-module deep-link wiring, global search index expansion, and
  * dashboard KPI enhancements live in their respective modules
  * (CommandPalette, WorkdeskDashboard) — this wrapper only adds the
- * reconciliation hook + refresh button + recent-activity overlay.
+ * reconciliation hook + refresh button.
  */
 export function UrbanCastleApp() {
   React.useEffect(() => {
@@ -44,48 +40,64 @@ export function UrbanCastleApp() {
   // instead of exiting on the first swipe. See use-browser-history-sync.ts.
   useBrowserHistorySync();
 
-  // Track whether reconciliation has already been run for the current
-  // session so we don't fire it on every authUser re-render.
   const authUser = useRDashStore((s) => s.authUser);
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
-  const reconcileRanRef = React.useRef(false);
+  const reconciledSessionRef = React.useRef<string | null>(null);
+  const authSessionKey = authUser ? `${authUser.email}:${authUser.expiresAt}` : null;
 
   React.useEffect(() => {
-    if (!authUser || reconcileRanRef.current) return;
-    reconcileRanRef.current = true;
-    // Defer to next tick so hydration completes before reconciliation runs.
-    const handle = window.setTimeout(() => {
+    if (!authSessionKey || reconciledSessionRef.current === authSessionKey) return;
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    let attempt = 0;
+    const retryDelays = [800, 2_000, 5_000, 15_000];
+
+    const runReconciliation = () => {
+      if (cancelled) return;
       try {
         const summary = reconcileWorkspace();
+        reconciledSessionRef.current = authSessionKey;
         if (summary.total > 0) {
-          toast.success(`Workspace reconciled`, {
+          toast.success("Workspace reconciled", {
             description: `${summary.attendance} attendance · ${summary.followups} follow-ups · ${summary.visits} visits · ${summary.recurringTasks} recurring tasks`,
             duration: 5000,
           });
         }
+      } catch (error) {
+        attempt += 1;
+        if (attempt < retryDelays.length) {
+          retryTimer = window.setTimeout(runReconciliation, retryDelays[attempt]);
+          return;
+        }
+        console.error("[UrbanCastleApp] automatic reconciliation exhausted retries:", error);
+        toast.error("Automatic reconciliation could not complete", {
+          description: "The workspace remains available. Use Reconcile to retry after checking the connection.",
+          duration: 7000,
+        });
       }
-      catch {
-        // Reconciliation errors are non-fatal — workspace is still usable.
-      }
-    }, 800);
-    return () => window.clearTimeout(handle);
-  }, [authUser, reconcileWorkspace]);
+    };
+
+    retryTimer = window.setTimeout(runReconciliation, retryDelays[0]);
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
+  }, [authSessionKey, reconcileWorkspace]);
 
   return (
     <>
       <RDashApp />
-      <RefreshWorkspaceButton />
-      <RecentActivityOverlay />
+      <ReconcileWorkspaceButton />
     </>
   );
 }
 
 /**
- * Floating "Refresh workspace" button — only visible to Owner/Operations
+ * Floating "Reconcile workspace" button — only visible to Owner/Operations
  * Manager (reconciliation is a no-op for other roles). Positioned top-right
  * so it doesn't overlap the mobile bottom nav or the quick-add FAB.
  */
-function RefreshWorkspaceButton() {
+function ReconcileWorkspaceButton() {
   const role = useRDashStore((s) => s.authUser?.role || "Unauthenticated");
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
   const [running, setRunning] = React.useState(false);
@@ -117,65 +129,13 @@ function RefreshWorkspaceButton() {
   return (
     <button
       type="button"
-      aria-label="Refresh workspace"
+      aria-label="Reconcile workspace"
       title="Run attendance, follow-up, visit and recurring-task reconciliation"
       onClick={onClick}
       className="fixed bottom-20 right-3 z-[55] hidden h-8 items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 text-[11px] font-semibold text-muted-foreground shadow-soft backdrop-blur-sm transition-all hover:bg-card hover:text-foreground hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 lg:inline-flex"
     >
       <RefreshCw className={`h-3.5 w-3.5 ${running ? "animate-spin" : ""}`} />
-      <span className="hidden sm:inline">Refresh</span>
+      <span className="hidden sm:inline">Reconcile</span>
     </button>
-  );
-}
-
-/**
- * Recent activity overlay — a small, dismissible pill at the bottom-right
- * showing the last 5 audit log entries. Clicking an entry opens the audit
- * detail. This makes the "recent activity feed" requirement reachable from
- * any module without modifying WorkdeskDashboard (which Agent B owns).
- */
-function RecentActivityOverlay() {
-  const auditLog = useRDashStore((s) => s.db.auditLog);
-  const openDetail = useRDashStore((s) => s.openDetail);
-  const [open, setOpen] = React.useState(false);
-  const recent = React.useMemo(() => {
-    return [...auditLog]
-      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-      .slice(0, 5);
-  }, [auditLog]);
-  if (recent.length === 0) return null;
-  return (
-    <div className="fixed bottom-4 right-3 z-[55] hidden lg:block">
-      {open ? (
-        <div className="w-72 overflow-hidden rounded-lg border border-border bg-card shadow-soft">
-          <div className="flex items-center justify-between border-b border-border bg-muted/30 px-3 py-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Recent activity</span>
-            <button type="button" onClick={() => setOpen(false)} className="text-[10px] text-muted-foreground hover:text-foreground">Hide</button>
-          </div>
-          <div className="max-h-72 overflow-y-auto rd-scroll">
-            {recent.map((e) => (
-              <button
-                key={e.id}
-                type="button"
-                onClick={() => { openDetail("audit" as any, e.id); setOpen(false); }}
-                className="block w-full border-b border-border px-3 py-1.5 text-left text-[10px] transition-colors last:border-0 hover:bg-accent/30"
-              >
-                <p className="truncate font-medium text-foreground">{e.action}</p>
-                <p className="truncate text-muted-foreground">{e.actor} · {e.entity_label || e.entity_type}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 py-1.5 text-[10px] font-semibold text-muted-foreground shadow-soft backdrop-blur-sm transition-all hover:bg-card hover:text-foreground"
-        >
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
-          {recent.length} recent events
-        </button>
-      )}
-    </div>
   );
 }

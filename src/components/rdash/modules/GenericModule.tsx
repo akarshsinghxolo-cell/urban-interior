@@ -11,6 +11,8 @@ import { StaffEditDialog } from "../StaffEditDialog";
 import { ContextRow, type ContextAction } from "../ContextMenuHost";
 import { buildQuotationActions, buildPaymentActions, buildVisitActions, buildJobActions, buildGenericActions, } from "../recordActions";
 import { quotationStatusStyle, paymentStatusStyle, jobStatusStyle, visitStatusStyle, entityStatusStyle, formatINR, formatINRShort, relativeDay, formatDate, titleCase, } from "@/lib/rdash/format";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
+import { indiaDate } from "@/lib/rdash/date";
 import type { DataSource, ModuleRenderer, FilterPreset } from "@/lib/rdash/modules";
 import { toast } from "sonner";
 import { useTheme } from "next-themes";
@@ -224,7 +226,7 @@ function resolveRecords(db: import("@/lib/rdash/types").RDashDatabase, dataSourc
                 kind: "workOrder" as const,
             }));
         case "visits": {
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const todayStr = indiaDate();
             const weekStart = new Date();
             weekStart.setHours(0, 0, 0, 0);
             const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
@@ -235,7 +237,7 @@ function resolveRecords(db: import("@/lib/rdash/types").RDashDatabase, dataSourc
                     return false;
                 const d = new Date(scheduledAt);
                 if (filter.scope === "today")
-                    return scheduledAt.slice(0, 10) === todayStr;
+                    return indiaDate(scheduledAt) === todayStr;
                 if (filter.scope === "week")
                     return d >= weekStart && d < weekEnd;
                 if (filter.scope === "upcoming")
@@ -370,11 +372,12 @@ function computeMetrics(renderer: GenericRenderer, db: import("@/lib/rdash/types
     const totalAmount = records.reduce((n, r) => n + (r.amount || 0), 0);
     const open = records.filter((r) => r.status?.label && !["completed", "received", "accepted", "accepted", "active"].some((s) => r.status!.label.toLowerCase().includes(s.toLowerCase()))).length;
     if (renderer === "quotations") {
+        const quotationMetrics = calculateQuotationMetrics(db.quotations);
         return [
-            { label: "Quotations", value: records.length },
-            { label: "Accepted", value: db.quotations.filter((q) => q.status === "accepted").length, tone: "success" as const },
-            { label: "Pending", value: db.quotations.filter((q) => q.status === "sent" || q.status === "draft").length, tone: "warning" as const },
-            { label: "Pipeline value", value: formatINRShort(totalAmount), tone: "primary" as const },
+            { label: "Quotations", value: quotationMetrics.totalCount },
+            { label: "Accepted", value: quotationMetrics.acceptedCount, tone: "success" as const },
+            { label: "Pending", value: quotationMetrics.openCount, tone: "warning" as const },
+            { label: "Pipeline value", value: formatINRShort(quotationMetrics.pipelineValue), tone: "primary" as const },
         ];
     }
     if (renderer === "payments") {
@@ -561,7 +564,9 @@ function ReportsShell({ label, db, }: {
 }) {
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const totalRevenue = db.customerReceipts.reduce((n, receipt) => n + receipt.amount, 0);
-    const totalPipeline = db.quotations.reduce((n, q) => n + q.total_amount, 0);
+    const quotationMetrics = calculateQuotationMetrics(db.quotations);
+    const currentQuotations = quotationMetrics.current;
+    const totalPipeline = quotationMetrics.pipelineValue;
     const totalJobValue = db.workOrders.reduce((n, j) => n + j.value, 0);
     const stats = [
         { label: "Revenue (received)", value: formatINRShort(totalRevenue), tone: "success" as const },
@@ -569,7 +574,7 @@ function ReportsShell({ label, db, }: {
         { label: "WorkOrder value", value: formatINRShort(totalJobValue), tone: "warning" as const },
         { label: "Customers", value: db.customers.length, tone: "default" as const },
     ];
-    const maxQ = Math.max(...db.quotations.map((q) => q.total_amount), 1);
+    const maxQ = Math.max(...currentQuotations.map((quotation) => quotation.total_amount), 1);
     return (<div className="flex flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
         <div>
@@ -586,7 +591,7 @@ function ReportsShell({ label, db, }: {
       <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
         <h3 className="mb-3 text-sm font-semibold">Quotation value distribution</h3>
         <div className="flex flex-col gap-2">
-          {db.quotations.map((q) => (<div key={q.id} className="flex items-center gap-3">
+          {currentQuotations.map((q) => (<div key={q.id} className="flex items-center gap-3">
               <span className="w-24 shrink-0 truncate text-xs text-muted-foreground">{q.quotation_no}</span>
               <div className="h-3 flex-1 overflow-hidden rounded-full bg-muted">
                 <div className="h-full rounded-full bg-primary" style={{ width: `${(q.total_amount / maxQ) * 100}%` }}/>
@@ -651,7 +656,7 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
     db: import("@/lib/rdash/types").RDashDatabase;
     setActiveModule: (id: string, label?: string, icon?: string) => void;
 }) {
-    const activeSubmoduleId = useRDashStore((s) => s.activeModuleId);
+    const activeSubmoduleId = moduleId;
     const { theme, setTheme } = useTheme();
     const role = useRDashStore((s) => s.authUser?.role || "Unauthenticated");
     const authUser = useRDashStore((s) => s.authUser);

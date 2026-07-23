@@ -200,27 +200,26 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             if (role !== "Owner" && role !== "Operations Manager") {
                 return summary;
             }
-            // STAGE-5-FIX (5.9): Log errors instead of swallowing silently.
-            // Previously a broken reconciliation helper would fail forever
-            // with no signal — the summary reported 0 touched, masking the bug.
-            try {
-                summary.attendance = get().runAttendanceReconciliation();
-            }
-            catch (err) { console.warn("[reconcileWorkspace] attendance reconciliation failed:", err); }
-            try {
-                summary.followups = get().runFollowupReconciliation();
-            }
-            catch (err) { console.warn("[reconcileWorkspace] followups reconciliation failed:", err); }
-            try {
-                summary.visits = get().runVisitReconciliation();
-            }
-            catch (err) { console.warn("[reconcileWorkspace] visits reconciliation failed:", err); }
-            try {
-                summary.recurringTasks = get().runRecurringTasks();
-            }
-            catch (err) { console.warn("[reconcileWorkspace] recurringTasks reconciliation failed:", err); }
+            const failures: Error[] = [];
+            const run = (label: string, operation: () => number): number => {
+                try {
+                    return operation();
+                } catch (error) {
+                    const cause = error instanceof Error ? error : new Error(String(error));
+                    console.warn(`[reconcileWorkspace] ${label} reconciliation failed:`, cause);
+                    failures.push(new Error(`${label}: ${cause.message}`, { cause }));
+                    return 0;
+                }
+            };
+            summary.attendance = run("attendance", () => get().runAttendanceReconciliation());
+            summary.followups = run("follow-ups", () => get().runFollowupReconciliation());
+            summary.visits = run("visits", () => get().runVisitReconciliation());
+            summary.recurringTasks = run("recurring tasks", () => get().runRecurringTasks());
             summary.total = summary.attendance + summary.followups +
                 summary.visits + summary.recurringTasks;
+            if (failures.length > 0) {
+                throw new AggregateError(failures, `Workspace reconciliation failed in ${failures.length} step${failures.length === 1 ? "" : "s"}.`);
+            }
             return summary;
         },
         logAudit: (entry) => {

@@ -2,6 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { formatINR, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
 import { Repeat, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Package, Layers, Plus, Power, TrendingDown, TrendingUp, } from "lucide-react";
@@ -43,11 +44,12 @@ export function RecurringTasksModule() {
 export function LostClosedReviewModule() {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
-    const lostQuotes = db.quotations.filter((q) => q.status === "rejected" || q.status === "expired");
+    const quotationMetrics = calculateQuotationMetrics(db.quotations);
+    const lostQuotes = quotationMetrics.current.filter((q) => q.status === "rejected" || q.status === "expired");
     const lostWorkRequireds = db.workRequired.filter((r) => r.status === "lost");
     const cancelledJobs = db.workOrders.filter((j) => j.status === "cancelled");
     const lostValue = [...lostQuotes, ...lostWorkRequireds.map((r) => ({ total_amount: r.budget || 0 } as any))].reduce((n, q) => n + (q.total_amount || 0), 0);
-    const winRate = db.quotations.length ? Math.round((db.quotations.filter((q) => q.status === "accepted").length / db.quotations.length) * 100) : 0;
+    const winRate = quotationMetrics.conversionRate;
     return (<div className="flex flex-col gap-5">
       <div className="flex items-center gap-2.5">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/10 text-destructive"><TrendingDown className="h-5 w-5"/></span>
@@ -67,7 +69,7 @@ export function LostClosedReviewModule() {
       <div className="rounded-[var(--panel-radius)] border border-primary/20 bg-primary/[0.04] p-4">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-primary"/>
-          <p className="text-sm font-semibold text-primary">Win rate: {winRate}% — {db.quotations.filter((q) => q.status === "accepted").length} won of {db.quotations.length} quoted</p>
+          <p className="text-sm font-semibold text-primary">Win rate: {winRate}% — {quotationMetrics.acceptedCount} won of {quotationMetrics.decidedCount} decided</p>
         </div>
         <p className="mt-1 text-xs text-foreground/80">Review the lost deals below to identify patterns — price, timing, competitor, or scope mismatch.</p>
       </div>

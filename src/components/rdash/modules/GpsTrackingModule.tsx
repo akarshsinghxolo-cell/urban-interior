@@ -154,10 +154,12 @@ function useRoadRoute(points: Array<{
     }, [JSON.stringify(points)]);
     return route;
 }
-export function GpsTrackingModule({ viewFilter }: {
+export function GpsTrackingModule({ moduleId, viewFilter }: {
+    moduleId: string;
     viewFilter?: string;
 }) {
     const db = useRDashStore((s) => s.db);
+    const activeWorkspaceModuleId = useRDashStore((s) => s.activeModuleId);
     const staffLocationPings = useRDashStore((s) => s.staffLocationPings);
     const replaceStaffLocationPings = useRDashStore((s) => s.replaceStaffLocationPings);
     const currentUser = useRDashStore((s) => s.currentUser);
@@ -188,16 +190,18 @@ export function GpsTrackingModule({ viewFilter }: {
         }
     }, [replaceStaffLocationPings]);
     React.useEffect(() => {
+        if (activeWorkspaceModuleId !== moduleId) return;
         void refreshStaffLocations();
         const interval = window.setInterval(() => { void refreshStaffLocations(); }, 20000);
-        const onVisibility = () => { if (document.visibilityState === "visible")
-            void refreshStaffLocations(); };
+        const onVisibility = () => {
+            if (document.visibilityState === "visible") void refreshStaffLocations();
+        };
         document.addEventListener("visibilitychange", onVisibility);
         return () => {
             window.clearInterval(interval);
             document.removeEventListener("visibilitychange", onVisibility);
         };
-    }, [refreshStaffLocations]);
+    }, [activeWorkspaceModuleId, moduleId, refreshStaffLocations]);
     const initialView: GpsView = (VIEWS.some((v) => v.key === viewFilter) ? viewFilter : "map") as GpsView;
     const [view, setView] = React.useState<GpsView>(initialView);
     // STAGE-4-FIX: sync view from prop changes (saved-view navigation)

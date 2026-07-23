@@ -3,10 +3,10 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { relativeDay, titleCase, formatINR } from "@/lib/rdash/format";
-import { Bell, AlertTriangle, CheckCircle2, Clock, X, Wallet, ShieldCheck, Ban, MapPin, CheckCheck, Filter, BellOff, ChevronDown, Activity, Plus, Pencil, ArrowRight, Send, CheckCircle, MessageSquare, } from "lucide-react";
+import { Bell, AlertTriangle, CheckCircle2, Clock, X, Wallet, ShieldCheck, Ban, MapPin, CheckCheck, Filter, BellOff } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel, } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-type NotifCategory = "overdue" | "approval" | "blocked" | "risk" | "visit" | "activity";
+type NotifCategory = "overdue" | "approval" | "blocked" | "risk" | "visit";
 interface NotifItem {
     id: string;
     kind: "alert" | "reminder" | "info";
@@ -17,7 +17,6 @@ interface NotifItem {
     action?: () => void;
     actionLabel?: string;
     read?: boolean;
-    iconOverride?: React.ElementType;
 }
 const CATEGORY_META: Record<NotifCategory, {
     label: string;
@@ -30,29 +29,76 @@ const CATEGORY_META: Record<NotifCategory, {
     blocked: { label: "Blocked", icon: Ban, color: "bg-destructive/10 text-destructive border-destructive/20", dotColor: "bg-destructive" },
     risk: { label: "Risk", icon: AlertTriangle, color: "bg-destructive/10 text-destructive border-destructive/20", dotColor: "bg-destructive" },
     visit: { label: "Visits", icon: MapPin, color: "bg-primary/10 text-primary border-primary/20", dotColor: "bg-primary" },
-    activity: { label: "Activity", icon: Activity, color: "bg-primary/10 text-primary border-primary/20", dotColor: "bg-primary" },
 };
-const AUDIT_KIND_ICON: Record<string, React.ElementType> = {
-    create: Plus,
-    update: Pencil,
-    approve: CheckCircle,
-    send: Send,
-    receive: Wallet,
-    comment: MessageSquare,
-    decision: CheckCircle,
-    alert: AlertTriangle,
-    system: Activity,
-    delete: X,
-};
+interface NotificationPreferenceState {
+    version: 1;
+    read: string[];
+    dismissed: string[];
+    snoozed: Record<string, number>;
+}
+
+
+function notificationPreferenceKey(email: string | undefined): string {
+    return `uc_notification_preferences_v1:${email?.trim().toLowerCase() || "anonymous"}`;
+}
+
+function readNotificationPreferences(key: string): NotificationPreferenceState {
+    try {
+        const parsed = JSON.parse(window.localStorage.getItem(key) || "null") as Partial<NotificationPreferenceState> | null;
+        return {
+            version: 1,
+            read: Array.isArray(parsed?.read) ? parsed.read.filter((id): id is string => typeof id === "string").slice(-500) : [],
+            dismissed: Array.isArray(parsed?.dismissed) ? parsed.dismissed.filter((id): id is string => typeof id === "string").slice(-500) : [],
+            snoozed: parsed?.snoozed && typeof parsed.snoozed === "object" ? Object.fromEntries(
+                Object.entries(parsed.snoozed).filter(([id, wakeAt]) => typeof id === "string" && typeof wakeAt === "number" && Number.isFinite(wakeAt)),
+            ) : {},
+        };
+    } catch {
+        return { version: 1, read: [], dismissed: [], snoozed: {} };
+    }
+}
+
 export function NotificationCenter() {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
+    const authEmail = useRDashStore((s) => s.authUser?.email);
+    const preferenceKey = React.useMemo(() => notificationPreferenceKey(authEmail), [authEmail]);
     const [open, setOpen] = React.useState(false);
     const [dismissed, setDismissed] = React.useState<Set<string>>(() => new Set());
     const [readItems, setReadItems] = React.useState<Set<string>>(() => new Set());
     const [snoozed, setSnoozed] = React.useState<Record<string, number>>({});
     const [filter, setFilter] = React.useState<NotifCategory | "all">("all");
+    const [loadedPreferenceKey, setLoadedPreferenceKey] = React.useState<string | null>(null);
+    React.useEffect(() => {
+        setLoadedPreferenceKey(null);
+        const applyStored = () => {
+            const stored = readNotificationPreferences(preferenceKey);
+            setReadItems(new Set(stored.read));
+            setDismissed(new Set(stored.dismissed));
+            setSnoozed(stored.snoozed);
+            setLoadedPreferenceKey(preferenceKey);
+        };
+        applyStored();
+        const onStorage = (event: StorageEvent) => {
+            if (event.key === preferenceKey) applyStored();
+        };
+        window.addEventListener("storage", onStorage);
+        return () => window.removeEventListener("storage", onStorage);
+    }, [preferenceKey]);
+    React.useEffect(() => {
+        if (loadedPreferenceKey !== preferenceKey) return;
+        const now = Date.now();
+        const payload: NotificationPreferenceState = {
+            version: 1,
+            read: Array.from(readItems).slice(-500),
+            dismissed: Array.from(dismissed).slice(-500),
+            snoozed: Object.fromEntries(Object.entries(snoozed).filter(([, wakeAt]) => wakeAt > now)),
+        };
+        try {
+            window.localStorage.setItem(preferenceKey, JSON.stringify(payload));
+        } catch { /* non-fatal */ }
+    }, [dismissed, loadedPreferenceKey, preferenceKey, readItems, snoozed]);
     const notifs: NotifItem[] = React.useMemo(() => {
         const items: NotifItem[] = [];
         db.payments.filter((p) => p.status === "overdue").forEach((p) => {
@@ -88,42 +134,7 @@ export function NotificationCenter() {
                 actionLabel: "Open", action: () => { openDetail("visit", v.id); setOpen(false); },
             });
         });
-        [...db.auditLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 15).forEach((entry) => {
-            const detailKindMap: Exclude<import("@/lib/rdash/store").DetailPanelKind, null> | undefined = (() => {
-                switch (entry.entity_type) {
-                    case "quotation": return "quotation";
-                    case "workOrder": return "workOrder";
-                    case "po": return "po";
-                    case "grn": return "grn";
-                    case "dispatch": return "dispatch";
-                    case "payment": return "payment";
-                    case "task": return "task";
-                    case "visit": return "visit";
-                    case "customer": return "customer";
-                    case "vendorBill": return "vendorBill";
-                    case "commission": return "commission";
-                    case "blocked": return "blocked";
-                    case "followup": return "followup";
-                    case "inventory": return "inventory";
-                    case "boq": return "boq";
-                    default: return undefined;
-                }
-            })();
-            const canOpen = !!detailKindMap && !!entry.entity_id;
-            items.push({
-                id: `audit-${entry.id}`,
-                kind: entry.kind === "alert" ? "alert" : "info",
-                category: "activity",
-                title: entry.action,
-                body: `by ${entry.actor}${entry.actor_role ? ` · ${entry.actor_role}` : ""}`,
-                time: entry.timestamp,
-                actionLabel: canOpen ? "Open" : undefined,
-                action: canOpen ? () => { openDetail(detailKindMap!, entry.entity_id!); setOpen(false); } : undefined,
-                iconOverride: AUDIT_KIND_ICON[entry.kind] || Activity,
-                read: true,
-            });
-        });
-        return items.sort((a, b) => b.time.localeCompare(a.time));
+        return items.sort((a, b) => b.time.localeCompare(a.time) || a.id.localeCompare(b.id));
     }, [db, openDetail, setActiveModule]);
     const activeSnoozed = React.useMemo(() => {
         const now = Date.now();
@@ -134,6 +145,19 @@ export function NotificationCenter() {
         });
         return active;
     }, [snoozed]);
+    React.useEffect(() => {
+        const now = Date.now();
+        const wakeTimes = Object.values(snoozed).filter((wakeAt) => wakeAt > now);
+        if (wakeTimes.length === 0) return;
+        const nextWakeAt = Math.min(...wakeTimes);
+        const timer = window.setTimeout(() => {
+            const currentTime = Date.now();
+            setSnoozed((current) => Object.fromEntries(
+                Object.entries(current).filter(([, wakeAt]) => wakeAt > currentTime),
+            ));
+        }, Math.max(0, nextWakeAt - now) + 50);
+        return () => window.clearTimeout(timer);
+    }, [snoozed]);
     const visible = notifs.filter((n) => !dismissed.has(n.id) && !(n.id in activeSnoozed));
     const unread = visible.filter((n) => !n.read && !readItems.has(n.id));
     const alertCount = unread.filter((n) => n.kind === "alert").length;
@@ -142,23 +166,15 @@ export function NotificationCenter() {
         setSnoozed((prev) => ({ ...prev, [id]: wakeTs }));
         toast.success(`Snoozed for ${hours}h`);
     };
-    const cancelSnooze = (id: string) => {
-        setSnoozed((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-        });
-        toast.success("Snooze cancelled");
-    };
     const categoryCounts = React.useMemo(() => {
-        const counts: Record<NotifCategory, number> = { overdue: 0, approval: 0, blocked: 0, risk: 0, visit: 0, activity: 0 };
+        const counts: Record<NotifCategory, number> = { overdue: 0, approval: 0, blocked: 0, risk: 0, visit: 0 };
         visible.forEach((n) => { if (!n.read && !readItems.has(n.id))
             counts[n.category]++; });
         return counts;
     }, [visible, readItems]);
     const filtered = filter === "all" ? visible : visible.filter((n) => n.category === filter);
     const markAllRead = () => {
-        setReadItems(new Set(visible.map((n) => n.id)));
+        setReadItems((current) => new Set([...current, ...visible.map((notification) => notification.id)]));
         toast.success("All notifications marked as read");
     };
     const markCategoryRead = (cat: NotifCategory) => {
@@ -170,13 +186,8 @@ export function NotificationCenter() {
         toast.success(`${meta.label} marked as read`);
     };
     const dismissAll = () => {
-        setDismissed(new Set(notifs.map((n) => n.id)));
+        setDismissed((current) => new Set([...current, ...notifs.map((notification) => notification.id)]));
         toast.success("All notifications dismissed");
-    };
-    const KIND_ICON = {
-        alert: AlertTriangle,
-        reminder: Clock,
-        info: CheckCircle2,
     };
     return (<div className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)} className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-all hover:bg-accent hover:text-foreground" aria-label={`Notifications (${unread.length} unread)`}>
@@ -232,9 +243,8 @@ export function NotificationCenter() {
                   <p className="text-xs">{visible.length === 0 ? "All caught up! No pending alerts." : "No notifications in this category."}</p>
                 </div>) : (filtered.map((n) => {
                 const meta = CATEGORY_META[n.category];
-                const KindIcon = KIND_ICON[n.kind];
-                const isRead = readItems.has(n.id);
-                const ItemIcon = n.iconOverride || meta.icon;
+                const isRead = n.read === true || readItems.has(n.id);
+                const ItemIcon = meta.icon;
                 return (<div key={n.id} className={cn("group flex items-start gap-2.5 border-b border-border px-3 py-2.5 last:border-0 transition-colors hover:bg-accent/30", !isRead && "bg-primary/[0.02]")}>
                       <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border", meta.color)}>
                         <ItemIcon className="h-3.5 w-3.5"/>
@@ -256,7 +266,7 @@ export function NotificationCenter() {
                       <div className="flex shrink-0 items-center gap-0.5">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button type="button" className="rounded p-0.5 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label="Snooze" title="Snooze notification">
+                            <button type="button" className="rounded p-0.5 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label="Snooze" title="Snooze notification">
                               <BellOff className="h-3 w-3"/>
                             </button>
                           </DropdownMenuTrigger>
@@ -272,7 +282,7 @@ export function NotificationCenter() {
                               </DropdownMenuItem>))}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                        <button type="button" onClick={() => setDismissed((d) => new Set([...d, n.id]))} className="rounded p-0.5 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label="Dismiss">
+                        <button type="button" onClick={() => setDismissed((d) => new Set([...d, n.id]))} className="rounded p-0.5 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label="Dismiss">
                           <X className="h-3 w-3"/>
                         </button>
                       </div>

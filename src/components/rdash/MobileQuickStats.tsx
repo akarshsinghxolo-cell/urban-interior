@@ -5,6 +5,7 @@ import { Users, Wrench, FileText, AlertTriangle, Wallet, CalendarClock } from "l
 import { useRDashStore } from "@/lib/rdash/store";
 import { formatINRShort } from "@/lib/rdash/format";
 import { indiaDate } from "@/lib/rdash/date";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 import { AnimatedCounter } from "./AnimatedHealthRing";
 
 /**
@@ -24,12 +25,13 @@ export function MobileQuickStats() {
 
   const stats = React.useMemo(() => {
     const today = indiaDate();
+    const quotationCount = calculateQuotationMetrics(db.quotations).totalCount;
     return [
       { label: "Customers", value: db.customers.length, icon: Users, tone: "primary" as const, module: "customerDesk" },
       { label: "Live Work", value: db.workOrders.filter((w: any) => w.status === "in_progress" || w.status === "scheduled").length, icon: Wrench, tone: "success" as const, module: "siteExecution" },
-      { label: "Quotes", value: db.quotations.length, icon: FileText, tone: "default" as const, module: "quotationDesk" },
+      { label: "Quotes", value: quotationCount, icon: FileText, tone: "default" as const, module: "quotationDesk" },
       { label: "Overdue", value: db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date < today).length, icon: AlertTriangle, tone: "destructive" as const, module: "tasks" },
-      { label: "Today Visits", value: db.visits.filter((v: any) => v.scheduled_at?.slice(0, 10) === today).length, icon: CalendarClock, tone: "warning" as const, module: "fieldOperations" },
+      { label: "Today Visits", value: db.visits.filter((visit: any) => visit.scheduled_at && indiaDate(visit.scheduled_at) === today).length, icon: CalendarClock, tone: "warning" as const, module: "fieldOperations" },
       { label: "Cash", value: (db.customerReceipts || []).reduce((s: number, r: any) => s + (r.amount || 0), 0), icon: Wallet, tone: "primary" as const, module: "financeOverview", format: "currency" as const },
     ];
   }, [db]);

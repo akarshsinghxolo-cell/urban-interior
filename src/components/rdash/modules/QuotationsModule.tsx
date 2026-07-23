@@ -12,6 +12,7 @@ import { quotationStatusStyle, formatINR, formatINRShort, formatDate, titleCase,
 import type { FilterPreset } from "@/lib/rdash/modules";
 import type { QuotationStatus } from "@/lib/rdash/types";
 import { toast } from "sonner";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 
 // Provenance badge for quotation revisions — shows whether this is an original,
 // a renegotiation, or a variation (post-Work-Order change order).
@@ -162,10 +163,14 @@ export function QuotationsModule({ filterPresets, statusFilter, view, }: {
         }
         return list;
     }, [db.quotations, activeStatus, q, isRevisions, isConversion]);
-    const totalPipeline = db.quotations.reduce((n, qq) => n + qq.total_amount, 0);
-    const acceptedValue = db.quotations.filter((qq) => qq.status === "accepted").reduce((n, qq) => n + qq.total_amount, 0);
-    const openQuotes = db.quotations.filter((qq) => qq.status === "sent" || qq.status === "draft").length;
-    const acceptedCount = db.quotations.filter((qq) => qq.status === "accepted").length;
+    const quotationMetrics = React.useMemo(
+        () => calculateQuotationMetrics(db.quotations),
+        [db.quotations],
+    );
+    const totalPipeline = quotationMetrics.pipelineValue;
+    const acceptedValue = quotationMetrics.acceptedValue;
+    const openQuotes = quotationMetrics.openCount;
+    const acceptedCount = quotationMetrics.acceptedCount;
     return (<div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-2.5">
@@ -204,15 +209,15 @@ export function QuotationsModule({ filterPresets, statusFilter, view, }: {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Quotations" value={db.quotations.length} tone="primary" icon={<FileText className="h-4 w-4"/>}/>
+        <MetricCard label="Quotations" value={quotationMetrics.totalCount} tone="primary" icon={<FileText className="h-4 w-4"/>}/>
         <MetricCard label="Accepted" value={acceptedCount} tone="success" icon={<FileText className="h-4 w-4"/>}/>
         <MetricCard label="Open (draft+sent)" value={openQuotes} tone="warning" icon={<FileText className="h-4 w-4"/>}/>
         <MetricCard label="Pipeline value" value={formatINRShort(totalPipeline)} tone="default" icon={<FileText className="h-4 w-4"/>}/>
       </div>
       {isConversion && (<div className="grid gap-3 md:grid-cols-3">
-          <MetricCard label="Awaiting decision" value={db.quotations.filter((quote) => quote.status === "sent").length} tone="warning"/>
-          <MetricCard label="Accepted, awaiting contractor award" value={db.quotations.filter((quote) => quote.status === "accepted" && quote.work_order_ids.length === 0).length} tone="primary"/>
-          <MetricCard label="Awarded into work orders" value={db.quotations.filter((quote) => quote.work_order_ids.length > 0).length} tone="success"/>
+          <MetricCard label="Awaiting decision" value={quotationMetrics.current.filter((quote) => quote.status === "sent").length} tone="warning"/>
+          <MetricCard label="Accepted, awaiting contractor award" value={quotationMetrics.current.filter((quote) => quote.status === "accepted" && quote.work_order_ids.length === 0).length} tone="primary"/>
+          <MetricCard label="Awarded into work orders" value={quotationMetrics.current.filter((quote) => quote.work_order_ids.length > 0).length} tone="success"/>
         </div>)}
       {!isRevisions && !isConversion && (<div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="Quotation status">
           {STATUS_CHIPS.map((c) => {

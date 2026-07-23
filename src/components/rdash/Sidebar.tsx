@@ -31,7 +31,6 @@ function ModuleItem({ module, collapsed }: { module: ModuleDef; collapsed?: bool
     const hasActiveSubmodule = module.submodules.some((sm) => sm.id === activeModuleId);
     const active = activeModuleId === module.id;
     const [expanded, setExpanded] = React.useState(() => active || hasActiveSubmodule || module.id === "workdesk");
-    const [hovered, setHovered] = React.useState(false);
     const submodules = visibleSubmodules(module, moduleSearch.trim());
     React.useEffect(() => {
         if (moduleSearch.trim() || active || hasActiveSubmodule) setExpanded(true);
@@ -49,25 +48,28 @@ function ModuleItem({ module, collapsed }: { module: ModuleDef; collapsed?: bool
         );
     }
 
-    // Expanded mode: full sidebar with labels
+    // Expanded mode: navigation and disclosure are separate controls. This
+    // avoids a nested interactive SVG/button inside the module button.
+    const submoduleRegionId = `sidebar-submodules-${module.id}`;
     return (<div className="flex flex-col">
-      <button type="button" onClick={() => setActiveModule(module.id)} className={cn("group relative flex min-h-[44px] items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-all duration-150", active
+      <div className={cn("group relative flex min-h-[44px] items-stretch rounded-md text-sm transition-all duration-150", active
             ? "bg-primary text-primary-foreground shadow-sm before:absolute before:inset-y-1 before:left-0 before:w-[3px] before:rounded-l-full before:bg-primary-foreground before:content-[''] before:shadow-[0_0_8px_rgba(var(--primary-rgb,10_37_92),0.4)]"
             : "hover:bg-accent hover:text-accent-foreground hover:translate-x-0.5")}>
-        <span className="text-base leading-none" aria-hidden="true">{module.icon}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium leading-tight">{module.label}</span>
-          {module.description && (<span className={cn("mt-0.5 block text-[10px] leading-snug line-clamp-2", active ? "text-primary-foreground/70" : "text-muted-foreground/80")} title={module.description}>
-              {module.description}
-            </span>)}
-        </span>
-        {module.submodules.length > 0 && (<ChevronDown className={cn("h-3.5 w-3.5 shrink-0 opacity-60 transition-transform", !expanded && "-rotate-90")} onClick={(e) => {
-                e.stopPropagation();
-                setExpanded((v) => !v);
-            }} role="button" aria-label="Toggle submodules"/>)}
-      </button>
+        <button type="button" onClick={() => setActiveModule(module.id)} className="flex min-w-0 flex-1 items-center gap-2 rounded-l-md px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" aria-current={active ? "page" : undefined}>
+          <span className="text-base leading-none" aria-hidden="true">{module.icon}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium leading-tight">{module.label}</span>
+            {module.description && (<span className={cn("mt-0.5 block text-[10px] leading-snug line-clamp-2", active ? "text-primary-foreground/70" : "text-muted-foreground/80")} title={module.description}>
+                {module.description}
+              </span>)}
+          </span>
+        </button>
+        {module.submodules.length > 0 && (<button type="button" onClick={() => setExpanded((value) => !value)} className="flex w-9 shrink-0 items-center justify-center rounded-r-md opacity-70 hover:bg-black/5 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring" aria-label={`${expanded ? "Collapse" : "Expand"} ${module.label} submodules`} aria-expanded={expanded} aria-controls={submoduleRegionId}>
+            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", !expanded && "-rotate-90")}/>
+          </button>)}
+      </div>
 
-      {expanded && submodules.length > 0 && (<div className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
+      {expanded && submodules.length > 0 && (<div id={submoduleRegionId} className="ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
           {submodules.map((sm) => {
                 const subActive = activeModuleId === sm.id;
                 return (<button key={sm.id} type="button" onClick={() => setActiveModule(sm.id)} className={cn("rd-nav-active min-h-[40px] rounded-md px-2 py-2 text-left text-xs transition-all", subActive
@@ -122,6 +124,8 @@ function CollapsedModuleItem({ module, active, activeModuleId, setActiveModule }
                 onClick={() => setActiveModule(module.id)}
                 onMouseEnter={handleEnter}
                 onMouseLeave={handleLeave}
+                onFocus={handleEnter}
+                onBlur={handleLeave}
                 className={cn("flex h-10 w-10 items-center justify-center rounded-lg text-lg transition-all", active
                     ? "bg-primary text-primary-foreground shadow-sm"
                     : "hover:bg-accent hover:text-accent-foreground")}

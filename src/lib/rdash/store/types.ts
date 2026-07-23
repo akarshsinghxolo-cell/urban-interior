@@ -11,7 +11,8 @@ import type { StaffLocationPing } from "../staff-location";
 import type {
   WorkspaceTab, DetailPanelKind, DetailPanelState, ContextCustomerTab, ContextDetailTab,
   ContextHistoryEntry, CreateDialogRequest, SavedView, AuthenticatedWorkspaceUser,
-  CurrentUserContext, GuardResult, WorkspaceSyncStatus,
+  CurrentUserContext, GuardResult, WorkspaceSyncStatus, ActionDialogState, ActionDialogType,
+  EditDialogRequest, WorkspaceNavigationSnapshot,
 } from "./ui-types";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -119,20 +120,19 @@ export interface UIState {
   mobileNavOpen: boolean;
   sidebarCollapsed: boolean;
   moreMenuOpen: boolean;
+  quickAddOpen: boolean;
+  keyboardShortcutsOpen: boolean;
   taskPriorityOrder: string[];
   recentCreated: { id: string; kind: string; label: string; ts: number }[];
   createDialog: CreateDialogRequest | null;
   detailPanel: DetailPanelState;
   contextHistory: ContextHistoryEntry[];
   contextHistoryIndex: number;
-  actionDialog: {
-    type: "record-payment" | "send-catalogue" | "send-reference" | "send-pinterest" | "send-material" | null;
-    customerId?: string;
-  };
+  actionDialog: ActionDialogState;
   commandPaletteOpen: boolean;
   savedViews: SavedView[];
   quotationAcceptanceDialog: { quotationId: string } | null;
-  editDialog: { type: "task" | "followup" | "visit" | "workOrder"; entityId: string } | null;
+  editDialog: EditDialogRequest | null;
   openCreateDialog: (request: CreateDialogRequest) => void;
   closeCreateDialog: () => void;
   openContextCustomer: (customerId: string, customerTab?: ContextCustomerTab, sourceModule?: string) => void;
@@ -141,7 +141,7 @@ export interface UIState {
   setContextDetailTab: (tab: ContextDetailTab) => void;
   navigateContextHistory: (direction: -1 | 1) => void;
   clearContextHistory: () => void;
-  openActionDialog: (type: "record-payment" | "send-catalogue" | "send-reference" | "send-pinterest" | "send-material", customerId?: string) => void;
+  openActionDialog: (type: ActionDialogType, customerId?: string) => void;
   closeActionDialog: () => void;
   setCommandPaletteOpen: (v: boolean) => void;
   addSavedView: (view: Omit<SavedView, "id" | "createdAt">) => void;
@@ -149,7 +149,7 @@ export interface UIState {
   renameSavedView: (id: string, label: string) => void;
   openQuotationAcceptanceDialog: (quotationId: string) => void;
   closeQuotationAcceptanceDialog: () => void;
-  openEditDialog: (request: { type: "task" | "followup" | "visit" | "workOrder"; entityId: string }) => void;
+  openEditDialog: (request: EditDialogRequest) => void;
   closeEditDialog: () => void;
   quotationAcceptanceWarnings: (quotationId: string, coverageIds?: string[]) => string[];
   setActiveModule: (id: string) => void;
@@ -164,10 +164,13 @@ export interface UIState {
   setSidebarCollapsed: (v: boolean) => void;
   toggleSidebar: () => void;
   setMoreMenuOpen: (v: boolean) => void;
+  setQuickAddOpen: (v: boolean) => void;
+  setKeyboardShortcutsOpen: (v: boolean) => void;
   setTaskPriorityOrder: (ids: string[]) => void;
   addRecentCreated: (entry: { id: string; kind: string; label: string }) => void;
   openDetail: (kind: DetailPanelKind, recordId: string, fromModule?: string) => void;
   closeDetail: () => void;
+  restoreNavigationSnapshot: (snapshot: WorkspaceNavigationSnapshot) => void;
   /**
    * I: Deep-link filter for the Reports module. Set by any module that wants
    * to deep-link into a specific report (e.g., CustomerDesk → "Customer
@@ -195,6 +198,7 @@ export interface CrmState {
   archiveArea: (id: string, options: { reason: string; replacementAreaId?: string }) => void;
   addWorkRequired: (work: Partial<import("../types").WorkRequired>) => string;
   updateWorkRequired: (id: string, patch: Partial<import("../types").WorkRequired>) => void;
+  transitionWorkRequiredStatus: (id: string, status: import("../types").WorkRequiredStatus, options?: { reason?: string; source?: "drag" | "keyboard" | "system" }) => void;
   addMeasurementRevision: (revision: Partial<import("../types").MeasurementRevision> & { site_id: string; area_id: string }) => string;
   captureStructuredWorkRequired: (workRequiredId: string, lines: Array<{
     site_id: string; area_id?: string; area_name?: string; create_area?: boolean;

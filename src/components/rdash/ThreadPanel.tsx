@@ -509,7 +509,7 @@ function MessageBubble({ m, nested = false, onReply }: {
         <MentionBody body={m.body}/>
         {m.attachments && m.attachments.length > 0 && <MessageAttachments attachments={m.attachments}/>}
         {proof && <FilePreview file={proof} compact controls className="mt-1.5 max-w-xs"/>}
-        <button type="button" onClick={onReply} className="mt-1 text-[10px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 hover:underline">Reply</button>
+        <button type="button" onClick={onReply} className="mt-1 text-[10px] font-medium text-primary opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:underline">Reply</button>
       </div>
     </div>);
 }
