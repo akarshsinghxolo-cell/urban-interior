@@ -4,13 +4,14 @@ import { cn } from "@/lib/utils";
 import { useRDashStore, contractorBids, contractorSettlements, contractorOutstanding } from "@/lib/rdash/store";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
-import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, XCircle, Gavel, HandCoins, Pencil, } from "lucide-react";
+import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, XCircle, Gavel, HandCoins, Pencil, Plus, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
+import { EntityFormDialog } from "../EntityFormDialog";
 export function ContractorDetailModule() {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
@@ -43,6 +44,7 @@ export function ContractorDetailModule() {
         workOrder: any;
     } | null>(null);
     const [categoryFilter, setCategoryFilter] = React.useState<string>("all");
+    const [addContractorOpen, setAddContractorOpen] = React.useState(false);
     const [editingBid, setEditingBid] = React.useState<any | null>(null);
 
     // Build a map of subcategory_id → category_id for resolving work_capabilities to categories
@@ -117,8 +119,12 @@ export function ContractorDetailModule() {
 
     // Reset selection if the filtered list doesn't contain the selected contractor
     React.useEffect(() => {
-        if (selectedId && !contractors.find((c) => c.id === selectedId)) {
-            setSelectedId(contractors[0]?.id || null);
+        if (contractors.length === 0) {
+            if (selectedId !== null) setSelectedId(null);
+            return;
+        }
+        if (!selectedId || !contractors.some((contractor) => contractor.id === selectedId)) {
+            setSelectedId(contractors[0].id);
         }
     }, [contractors, selectedId]);
 
@@ -148,9 +154,12 @@ export function ContractorDetailModule() {
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
         <div className="rounded-[var(--panel-radius)] border border-border bg-card p-2 shadow-card">
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5">
             <h3 className="text-sm font-semibold">All contractors</h3>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-medium outline-none ring-ring focus-visible:ring-2" aria-label="Filter by work category">
+            <Button size="sm" className="h-8 shrink-0" onClick={() => { setCategoryFilter("all"); setAddContractorOpen(true); }}>
+              <Plus className="mr-1.5 h-3.5 w-3.5"/> Add Contractor
+            </Button>
+            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs font-medium outline-none ring-ring focus-visible:ring-2" aria-label="Filter by work category">
               <option value="all">All categories</option>
               {availableCategories.map((cat) => (<option key={cat.value} value={cat.value}>{cat.label}</option>))}
             </select>
@@ -331,6 +340,8 @@ export function ContractorDetailModule() {
               </div>)}
           </div>)}
       </div>
+
+      <EntityFormDialog type="contractor" open={addContractorOpen} onClose={() => setAddContractorOpen(false)}/>
 
       {payDialog && selected && (<CreateRABillDialog contractor={selected} workOrder={payDialog.workOrder} releaseGuard={canReleaseContractorPayment(payDialog.workOrder.id)} onClose={() => setPayDialog(null)} onUploadProof={() => {
                 // CV-2: In-context shortcut — send the user to the Execution Logs module so they can
