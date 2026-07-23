@@ -111,6 +111,21 @@ type RDashSupabaseSchema = {
         Args: { p_workspace_id: string; p_data_json: string; p_revision: number };
         Returns: void;
       };
+      commit_workspace_operations: {
+        Args: {
+          p_workspace_id: string;
+          p_expected_workspace_revision: number;
+          p_operations: Array<Record<string, unknown>>;
+          p_expected_row_versions: Record<string, number>;
+        };
+        Returns: {
+          upserted: number;
+          deleted: number;
+          conflicts: number;
+          bumpedRowVersions: Record<string, number>;
+          newRevision: number;
+        };
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
