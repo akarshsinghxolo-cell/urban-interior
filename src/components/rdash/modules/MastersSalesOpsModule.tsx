@@ -251,12 +251,7 @@ export function MastersModule({ submodule }: {
         const contractors = db.master.contractors;
         return (<div className="flex flex-col gap-5">
         {renderContractorsTabToggle()}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <MastersHeader icon={<HardHat className="h-5 w-5"/>} title="Contractors" desc="Trade crews with ratings, active workOrders and outstanding" count={contractors.length} q={q} setQ={setQ}/>
-          <Button size="sm" onClick={() => { setEditContractorId(undefined); setAddContractorOpen(true); }}>
-            <Plus className="mr-1.5 h-3.5 w-3.5"/> Add Contractor
-          </Button>
-        </div>
+        <MastersHeader icon={<HardHat className="h-5 w-5"/>} title="Contractors" desc="Trade crews with ratings, active workOrders and outstanding" count={contractors.length} q={q} setQ={setQ}/>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard label="Contractors" value={contractors.length} tone="primary" icon={<HardHat className="h-4 w-4"/>}/>
           <MetricCard label="Active workOrders" value={contractors.reduce((n, c) => n + (c.active_jobs || 0), 0)} tone="warning" icon={<CheckCircle2 className="h-4 w-4"/>}/>

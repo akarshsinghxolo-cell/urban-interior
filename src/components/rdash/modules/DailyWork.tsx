@@ -11,7 +11,6 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 
 import { toast } from "sonner";
 import { WorkspacePulseStrip } from "../WorkspacePulseStrip";
 import { WorkspaceHealthWidget } from "../WorkspaceHealthWidget";
-import { HealthDashboardWidget } from "../HealthDashboardWidget";
 import { MobileQuickStats } from "../MobileQuickStats";
 import { NotificationSettings } from "../NotificationSettings";
 import { ActivityFeedWidget } from "../ActivityFeedWidget";
@@ -634,8 +633,6 @@ export function DailyWork() {
     return (<div className="flex flex-col gap-6">
       <WorkspacePulseStrip />
 
-      {/* CRON-FIX: New animated health dashboard widget */}
-      <HealthDashboardWidget />
       {/* CRON-8: Mobile quick stats (hidden on desktop) */}
       <MobileQuickStats />
       {/* CRON-8: Notification settings panel */}

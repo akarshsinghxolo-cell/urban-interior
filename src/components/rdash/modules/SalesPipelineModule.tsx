@@ -9,7 +9,7 @@ import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, workRequ
 import { TrendingUp, Users, Target, DollarSign, Filter, Phone, MapPin, Calendar, Plus, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, closestCorners, DragOverlay, type DragEndEvent, type DragStartEvent, } from "@dnd-kit/core";
+import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, closestCorners, type DragEndEvent, } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 const PIPELINE_STAGES: {
     key: WorkRequiredStatus;
@@ -68,7 +68,7 @@ function DroppableColumn({ stageKey, children }: {
     children: React.ReactNode;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: `drop-${stageKey}` });
-    return (<div ref={setNodeRef} className={cn("flex min-h-[120px] flex-col gap-2 rounded-lg p-1 transition-all duration-150", isOver && "bg-primary/[0.06] ring-2 ring-primary/30 ring-offset-1")}>
+    return (<div ref={setNodeRef} className={cn("grid min-h-[104px] flex-1 gap-2 rounded-lg p-1 transition-all duration-150 sm:grid-cols-2 xl:grid-cols-3", isOver && "bg-primary/[0.06] ring-2 ring-primary/30 ring-offset-1")}>
       {children}
     </div>);
 }
@@ -77,15 +77,8 @@ export function SalesPipelineModule() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const updateWorkRequired = useRDashStore((s) => s.updateWorkRequired);
     const sensor = useSensor(PointerSensor, { activationConstraint: { distance: 6 } });
-    const [activeId, setActiveId] = React.useState<string | null>(null);
-    const activeReq = activeId ? db.workRequired.find((r) => r.id === activeId) : null;
-    const activeProfile = activeReq ? db.customers.find((p) => p.id === activeReq.customer_id) : undefined;
-    const handleDragStart = (e: DragStartEvent) => {
-        setActiveId(String(e.active.id));
-    };
     const handleDragEnd = (e: DragEndEvent) => {
         const { active, over } = e;
-        setActiveId(null);
         if (!over)
             return;
         const dropId = String(over.id);
@@ -118,7 +111,6 @@ export function SalesPipelineModule() {
         return m;
     }, [filteredWorkRequireds, db.customers]);
     const totalValue = filteredWorkRequireds.reduce((n, r) => n + (r.budget || 0), 0);
-    const wonValue = filteredWorkRequireds.filter((r) => r.status === "accepted").reduce((n, r) => n + (r.budget || 0), 0);
     const wonCount = filteredWorkRequireds.filter((r) => r.status === "accepted").length;
     const winRate = filteredWorkRequireds.length ? Math.round((wonCount / filteredWorkRequireds.length) * 100) : 0;
     const priorityChips: {
@@ -161,13 +153,13 @@ export function SalesPipelineModule() {
             </button>);
         })}
       </section>
-      <DndContext sensors={[sensor]} collisionDetection={closestCorners} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex gap-3 overflow-x-auto pb-2 rd-scroll">
+      <DndContext sensors={[sensor]} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+        <div className="flex flex-col gap-3">
           {PIPELINE_STAGES.map((stage) => {
             const items = byStage.get(stage.key) || [];
             const stageValue = items.reduce((n, { req }) => n + (req.budget || 0), 0);
-            return (<div key={stage.key} className="flex w-72 shrink-0 flex-col gap-2">
-                <div className={cn("rounded-lg border border-border border-l-4 bg-gradient-to-br px-3 py-2.5 shadow-sm transition-all hover:shadow-md", stage.color, stage.headerBg)}>
+            return (<section key={stage.key} aria-label={`${stage.label} pipeline stage`} className="grid gap-2 rounded-xl border border-border bg-card/30 p-2 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]">
+                <div className={cn("rounded-lg border border-border border-l-4 bg-gradient-to-br px-3 py-2.5 shadow-sm transition-all hover:shadow-md sm:h-full", stage.color, stage.headerBg)}>
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-foreground">
                       <span className="text-sm">{stage.icon}</span>
@@ -179,7 +171,7 @@ export function SalesPipelineModule() {
                 </div>
                 <DroppableColumn stageKey={stage.key}>
                   {items.map(({ req, customer }) => (<DraggableCard key={req.id} req={req} customer={customer} onOpen={() => customer && openDetail("customer", customer.id)}/>))}
-                  {items.length === 0 && (<div className="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-muted/10 px-3 py-8 text-center transition-colors hover:border-primary/30 hover:bg-primary/[0.02]">
+                  {items.length === 0 && (<div className="flex min-h-[96px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-muted/10 px-3 py-5 text-center transition-colors hover:border-primary/30 hover:bg-primary/[0.02] sm:col-span-2 xl:col-span-3">
                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/40">
                       <Plus className="h-3.5 w-3.5 text-muted-foreground/60" />
                     </div>
@@ -187,7 +179,7 @@ export function SalesPipelineModule() {
                     <p className="text-[9px] text-muted-foreground/50">Drag a lead here</p>
                   </div>)}
                 </DroppableColumn>
-              </div>);
+              </section>);
         })}
         </div>
       </DndContext>

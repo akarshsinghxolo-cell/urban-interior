@@ -10,7 +10,6 @@ import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
-import { OnboardingWizard } from "./OnboardingWizard";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
 const DailyWork = React.lazy(() => import("./modules/DailyWork").then((module) => ({ default: module.DailyWork })));
 const CustomerDesk = React.lazy(() => import("./modules/CustomerDesk").then((module) => ({ default: module.CustomerDesk })));
@@ -567,8 +566,6 @@ export function RDashApp() {
         <StaffLocationTracker />
         <DetailPanel />
         <CommandPalette />
-      {/* CRON-6: Onboarding wizard for first-time users */}
-      <OnboardingWizard />
         <KeyboardShortcutsHelp />
         <ActionDialogsHost />
         <QuotationAcceptanceDialogHost />
