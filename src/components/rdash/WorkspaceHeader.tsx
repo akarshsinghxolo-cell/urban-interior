@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 export function WorkspaceHeader() {
-    const activeModuleId = useRDashStore((s) => s.activeModuleId);
     const tabs = useRDashStore((s) => s.tabs);
     const activeTabId = useRDashStore((s) => s.activeTabId);
     const setActiveTab = useRDashStore((s) => s.setActiveTab);
