@@ -1,0 +1,40 @@
+name: Cleanup merged development branches
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.event.head_commit.message == 'Run one-shot merged branch cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete merged branch refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          branches=(
+            "agent/fix-theme-notifications-shortcuts"
+            "codex/remove-onboarding-tour"
+            "agent/atomic-workspace-commits"
+            "agent/bucket-1-low-risk-fixes"
+            "agent/fix-supabase-rpc-types"
+            "agent/upgrade-node-24"
+          )
+
+          for branch in "${branches[@]}"; do
+            if gh api "repos/${REPOSITORY}/git/ref/heads/${branch}" >/dev/null 2>&1; then
+              gh api --method DELETE "repos/${REPOSITORY}/git/refs/heads/${branch}"
+              echo "Deleted ${branch}"
+            else
+              echo "Already absent: ${branch}"
+            fi
+          done
