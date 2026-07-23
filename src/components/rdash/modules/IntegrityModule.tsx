@@ -3,7 +3,7 @@
 // ============================================================================
 // Surfaces the integrity layer (FK registry + checker + cascade-delete +
 // repair) to managers. Renders:
-//   1. Header with a circular health-score gauge (RadialBarChart) + KPIs
+//   1. Header with the shared workspace-health dashboard + integrity KPIs
 //   2. Action bar — Run check now / Auto-repair (with confirm) / Export CSV
 //   3. Issues table — filterable by severity + collection, expandable rows
 //   4. Duplicate IDs panel
@@ -25,6 +25,7 @@ import type { IntegrityIssue, CascadeResult, ForeignKeyRule } from "@/lib/rdash/
 import { FOREIGN_KEYS, parentCollections, childCollections } from "@/lib/rdash/integrity/fk-registry";
 import { cascadeDelete } from "@/lib/rdash/integrity/cascade";
 import { MetricCard, EmptyState } from "../primitives";
+import { HealthDashboardWidget } from "../HealthDashboardWidget";
 import { confirmDialog } from "../ConfirmDialog";
 import { toast } from "sonner";
 import {
@@ -48,7 +49,6 @@ import {
 import {
     Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { RadialBarChart, RadialBar, ResponsiveContainer, PolarAngleAxis } from "recharts";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -166,43 +166,6 @@ function downloadFile(content: string, filename: string, mime: string) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function formatDateTime(iso: string): string {
-    try {
-        return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-    } catch {
-        return iso;
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// Sub-components
-// ─────────────────────────────────────────────────────────────────────────
-
-function HealthGauge({ score }: { score: number }) {
-    const color = score < 60 ? "var(--destructive)" : score < 80 ? "var(--warning)" : "var(--success)";
-    const data = [{ name: "health", value: score, fill: color }];
-    return (
-        <div className="relative h-32 w-32 shrink-0">
-            <ResponsiveContainer width="100%" height="100%">
-                <RadialBarChart
-                    innerRadius="70%"
-                    outerRadius="100%"
-                    data={data}
-                    startAngle={90}
-                    endAngle={90 + (360 * score) / 100}
-                >
-                    <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
-                    <RadialBar background={{ fill: "var(--muted)" }} dataKey="value" cornerRadius={8} angleAxisId={0} />
-                </RadialBarChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="rd-tabular text-2xl font-bold leading-none" style={{ color }}>{score}</span>
-                <span className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Health</span>
-            </div>
-        </div>
-    );
-}
-
 function SeverityBadge({ severity }: { severity: IntegrityIssue["severity"] }) {
     const meta = SEVERITY_META[severity];
     return (
@@ -234,19 +197,6 @@ export function IntegrityModule() {
     const cascadeDeleteRecord = useRDashStore((s) => s.cascadeDeleteRecord);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const openDetail = useRDashStore((s) => s.openDetail);
-
-    // Run the first check on mount if no report is present.
-    React.useEffect(() => {
-        if (!useRDashStore.getState().integrityReport) {
-            try {
-                runIntegrityCheck();
-            } catch (error) {
-                toast.error("Integrity check failed", {
-                    description: error instanceof Error ? error.message : undefined,
-                });
-            }
-        }
-    }, [runIntegrityCheck]);
 
     const [severityFilter, setSeverityFilter] = React.useState<string>("all");
     const [collectionFilter, setCollectionFilter] = React.useState<string>("all");
@@ -525,72 +475,24 @@ export function IntegrityModule() {
                 </div>
             </div>
 
-            {/* Top section: health gauge + KPIs (responsive grid) */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                {/* Health gauge card */}
-                <Card className="lg:col-span-1">
-                    <CardHeader className="pb-2">
-                        <CardTitle className="flex items-center gap-2 text-sm">
-                            <ShieldCheck className="h-4 w-4 text-primary" /> Workspace health
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="flex items-center gap-4 pt-0">
-                        {report ? (
-                            <>
-                                <HealthGauge score={report.healthScore} />
-                                <div className="flex min-w-0 flex-col gap-1.5 text-xs">
-                                    <p className="text-[11px] text-muted-foreground">
-                                        {report.healthScore >= 80 ? "All clear — no critical issues." :
-                                            report.healthScore >= 60 ? "Some warnings — review below." :
-                                            "Critical issues found — repair needed."}
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground">
-                                        Last check: {formatDateTime(report.generatedAt)}
-                                    </p>
-                                    <p className="text-[11px] text-muted-foreground">
-                                        References: {report.totalReferences.toLocaleString("en-IN")} · Records: {report.totalRecords.toLocaleString("en-IN")}
-                                    </p>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="flex h-32 w-full items-center justify-center text-xs text-muted-foreground">
-                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Running first check…
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+            <HealthDashboardWidget />
 
-                {/* KPI cards */}
-                <div className="grid grid-cols-2 gap-3 lg:col-span-2 sm:grid-cols-4">
-                    <MetricCard
-                        label="Critical"
-                        value={report?.bySeverity.critical ?? 0}
-                        tone={report && report.bySeverity.critical > 0 ? "destructive" : "success"}
-                        icon={<ShieldX className="h-4 w-4" />}
-                        hint="Broken required references"
-                    />
-                    <MetricCard
-                        label="Warnings"
-                        value={report?.bySeverity.warning ?? 0}
-                        tone={report && report.bySeverity.warning > 0 ? "warning" : "default"}
-                        icon={<ShieldAlert className="h-4 w-4" />}
-                        hint="Missing optional references"
-                    />
-                    <MetricCard
-                        label="Auto-fixable"
-                        value={report ? report.issues.filter((i) => i.autoFixable).length : 0}
-                        tone="primary"
-                        icon={<Wrench className="h-4 w-4" />}
-                        hint="Cascade + nullify issues"
-                    />
-                    <MetricCard
-                        label="Dup IDs"
-                        value={report ? report.duplicateIds.length : 0}
-                        tone={report && report.duplicateIds.length > 0 ? "destructive" : "success"}
-                        icon={<FileWarning className="h-4 w-4" />}
-                        hint="Duplicate ID conflicts"
-                    />
-                </div>
+            {/* Integrity-only metrics not duplicated by the shared health dashboard */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <MetricCard
+                    label="Auto-fixable"
+                    value={report ? report.issues.filter((i) => i.autoFixable).length : 0}
+                    tone="primary"
+                    icon={<Wrench className="h-4 w-4" />}
+                    hint="Cascade + nullify issues"
+                />
+                <MetricCard
+                    label="Duplicate IDs"
+                    value={report ? report.duplicateIds.length : 0}
+                    tone={report && report.duplicateIds.length > 0 ? "destructive" : "success"}
+                    icon={<FileWarning className="h-4 w-4" />}
+                    hint="Duplicate ID conflicts"
+                />
             </div>
 
             {/* Issues table */}
