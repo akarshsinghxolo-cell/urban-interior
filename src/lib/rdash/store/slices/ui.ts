@@ -227,12 +227,13 @@ export function createUISlice(ctx: StoreContext): UIActions {
                 icon: resolved.icon,
             };
             const current = state.moduleHistory[state.moduleHistoryIndex];
-            const history = current?.moduleId === moduleId
+            const candidateHistory = current?.moduleId === moduleId
                 ? state.moduleHistory
                 : [
                     ...state.moduleHistory.slice(0, state.moduleHistoryIndex + 1),
                     entry,
                 ];
+            const history = candidateHistory.slice(-100);
             commitState({
                 activeModuleId: moduleId,
                 activeTabId: exists

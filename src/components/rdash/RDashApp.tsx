@@ -83,6 +83,10 @@ const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedVie
 const MapCacheRegistration = React.lazy(() => import("./MapCacheRegistration").then((module) => ({ default: module.MapCacheRegistration })));
 const AutoGeofenceMonitor = React.lazy(() => import("./AutoGeofenceMonitor").then((module) => ({ default: module.AutoGeofenceMonitor })));
 const StaffLocationTracker = React.lazy(() => import("./StaffLocationTracker").then((module) => ({ default: module.StaffLocationTracker })));
+function localDateKey(date = new Date()) {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+    return local.toISOString().slice(0, 10);
+}
 function ModuleLoadingFallback() {
     return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 text-sm text-muted-foreground shadow-card">Loading workspace module...</div>;
 }
@@ -216,7 +220,6 @@ export function RDashApp() {
     const activeModuleId = useRDashStore((s) => s.activeModuleId);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
-    const navigateModuleHistory = useRDashStore((s) => s.navigateModuleHistory);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
     const hydrateSecureWorkspace = useRDashStore((s) => s.hydrateSecureWorkspace);
     const [secureWorkspaceReady, setSecureWorkspaceReady] = React.useState(false);
@@ -436,18 +439,10 @@ export function RDashApp() {
                 }, 1200);
                 return;
             }
-            if (event.key === "ArrowLeft") {
-                event.preventDefault();
-                navigateModuleHistory(-1);
-            }
-            if (event.key === "ArrowRight") {
-                event.preventDefault();
-                navigateModuleHistory(1);
-            }
         };
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [navigateModuleHistory, setActiveModule]);
+    }, [setActiveModule]);
     if (!secureWorkspaceReady) {
         return <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4"><div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-card"><h1 className="text-lg font-bold">Loading protected workspace</h1><p className="mt-2 text-sm text-muted-foreground">{secureWorkspaceError || "Verifying your session and loading the server workspace…"}</p>{secureWorkspaceError ? <button type="button" className="mt-4 text-sm font-semibold text-primary underline" onClick={() => window.location.reload()}>Retry</button> : null}</div></main>;
     }
@@ -509,8 +504,9 @@ export function RDashApp() {
             const Icon = item.icon;
             const active = activeModuleId === item.target.id;
             // CRON-4: Add count badges to mobile nav items
-            const badgeCount = item.target.id === "tasks" ? db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date <= new Date().toISOString().slice(0, 10)).length :
-                               item.target.id === "fieldOperations" ? db.visits.filter((v: any) => v.scheduled_at?.slice(0, 10) === new Date().toISOString().slice(0, 10)).length :
+            const todayKey = localDateKey();
+            const badgeCount = item.target.id === "tasks" ? db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date <= todayKey).length :
+                               item.target.id === "fieldOperations" ? db.visits.filter((v: any) => v.scheduled_at?.slice(0, 10) === todayKey).length :
                                item.target.id === "customerDesk" ? db.customers.length :
                                item.target.id === "workdesk" ? db.actions.filter((a: any) => a.status === "pending").length : 0;
             return (<button key={item.label} type="button" aria-label={item.label} aria-current={active ? "page" : undefined} onClick={() => setActiveModule(item.target.id)} className={cn("relative flex flex-1 flex-col items-center gap-0.5 px-2 py-2.5 text-[11px] font-bold transition-colors", active

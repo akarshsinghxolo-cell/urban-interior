@@ -43,7 +43,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(payload(saved), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Operation commit was rejected.";
-    const current = await getWorkspace().catch(() => null);
     const status = message === "UNAUTHORIZED"
       ? 401
       : message.startsWith("FORBIDDEN:")
@@ -56,8 +55,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       error: message
         .replace(/^(FORBIDDEN:|INVALID:)/, "")
-        .replace(/^CONFLICT$/, "The workspace changed on another device. The server version was restored."),
-      ...(current ? payload(current) : {}),
+        .replace(/^CONFLICT$/, "The workspace changed on another device. Refresh before retrying."),
     }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }

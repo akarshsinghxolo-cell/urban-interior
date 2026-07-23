@@ -69,13 +69,15 @@ export interface WorkspaceWithRevisions extends WorkspaceSnapshot {
   rowVersions?: Record<string, number>;
 }
 
-export async function getWorkspace(_includeRevisions = false): Promise<WorkspaceWithRevisions> {
+export async function getWorkspace(includeRevisions = false): Promise<WorkspaceWithRevisions> {
   if (await checkSupabaseSchema()) {
     const { getRestWorkspace } = await getRestModule();
-    return getRestWorkspace();
+    const workspace = await getRestWorkspace();
+    if (includeRevisions) return workspace;
+    return { revision: workspace.revision, data: workspace.data, updatedAt: workspace.updatedAt };
   }
   const ws = await getInMemoryWorkspace();
-  return { ...ws, rowVersions: {} };
+  return includeRevisions ? { ...ws, rowVersions: {} } : ws;
 }
 
 function secureMutationAudit(user: AuthenticatedUser, operations: ReturnType<typeof diffWorkspaceOperations>): AuditLogEntry {

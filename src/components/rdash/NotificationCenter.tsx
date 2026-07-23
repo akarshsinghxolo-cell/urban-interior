@@ -88,7 +88,7 @@ export function NotificationCenter() {
                 actionLabel: "Open", action: () => { openDetail("visit", v.id); setOpen(false); },
             });
         });
-        db.auditLog.slice(0, 15).forEach((entry) => {
+        [...db.auditLog].sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 15).forEach((entry) => {
             const detailKindMap: Exclude<import("@/lib/rdash/store").DetailPanelKind, null> | undefined = (() => {
                 switch (entry.entity_type) {
                     case "quotation": return "quotation";
@@ -135,7 +135,7 @@ export function NotificationCenter() {
         return active;
     }, [snoozed]);
     const visible = notifs.filter((n) => !dismissed.has(n.id) && !(n.id in activeSnoozed));
-    const unread = visible.filter((n) => !readItems.has(n.id));
+    const unread = visible.filter((n) => !n.read && !readItems.has(n.id));
     const alertCount = unread.filter((n) => n.kind === "alert").length;
     const snoozeNotification = (id: string, hours: number) => {
         const wakeTs = Date.now() + hours * 3600000;
@@ -152,7 +152,7 @@ export function NotificationCenter() {
     };
     const categoryCounts = React.useMemo(() => {
         const counts: Record<NotifCategory, number> = { overdue: 0, approval: 0, blocked: 0, risk: 0, visit: 0, activity: 0 };
-        visible.forEach((n) => { if (!readItems.has(n.id))
+        visible.forEach((n) => { if (!n.read && !readItems.has(n.id))
             counts[n.category]++; });
         return counts;
     }, [visible, readItems]);
@@ -198,7 +198,7 @@ export function NotificationCenter() {
                   {unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{unread.length} new</span>)}
                 </div>
                 <div className="flex items-center gap-1">
-                  {filter !== "all" && filtered.some((n) => !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
+                  {filter !== "all" && filtered.some((n) => !n.read && !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
                       <CheckCheck className="h-3 w-3"/> Mark these read
                     </button>)}
                   {unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
