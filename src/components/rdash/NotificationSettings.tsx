@@ -14,6 +14,49 @@ import {
 
 type PermissionState = NotificationPermission | "unsupported";
 
+function NotificationToggle({
+  on,
+  onClick,
+  label,
+  icon,
+}: {
+  on: boolean;
+  onClick: () => void;
+  label: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors",
+        on ? "border-primary/30 bg-primary/5" : "border-border bg-muted/30",
+      )}
+    >
+      <span className="flex items-center gap-2 text-xs font-medium">
+        {icon}
+        {label}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cn(
+          "flex h-4 w-7 items-center rounded-full p-0.5 transition-colors",
+          on ? "bg-primary" : "bg-muted-foreground/30",
+        )}
+      >
+        <span
+          className={cn(
+            "h-3 w-3 rounded-full bg-white shadow-sm transition-transform",
+            on && "translate-x-3",
+          )}
+        />
+      </span>
+    </button>
+  );
+}
+
 export function NotificationSettings() {
   const [settings, setSettings] = React.useState<NotificationPreferences>(
     DEFAULT_NOTIFICATION_PREFERENCES,
@@ -50,47 +93,6 @@ export function NotificationSettings() {
       respectPreferences: false,
     });
   };
-
-  const Toggle = ({
-    on,
-    onClick,
-    label,
-    icon,
-  }: {
-    on: boolean;
-    onClick: () => void;
-    label: string;
-    icon: React.ReactNode;
-  }) => (
-    <button
-      type="button"
-      aria-pressed={on}
-      onClick={onClick}
-      className={cn(
-        "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors",
-        on ? "border-primary/30 bg-primary/5" : "border-border bg-muted/30",
-      )}
-    >
-      <span className="flex items-center gap-2 text-xs font-medium">
-        {icon}
-        {label}
-      </span>
-      <span
-        aria-hidden="true"
-        className={cn(
-          "flex h-4 w-7 items-center rounded-full p-0.5 transition-colors",
-          on ? "bg-primary" : "bg-muted-foreground/30",
-        )}
-      >
-        <span
-          className={cn(
-            "h-3 w-3 rounded-full bg-white shadow-sm transition-transform",
-            on && "translate-x-3",
-          )}
-        />
-      </span>
-    </button>
-  );
 
   const permissionLabel =
     permission === "granted"
@@ -153,7 +155,7 @@ export function NotificationSettings() {
         </div>
       ) : (
         <div className="space-y-2">
-          <Toggle
+          <NotificationToggle
             on={settings.enabled}
             onClick={() => update({ enabled: !settings.enabled })}
             label="All notifications"
@@ -161,19 +163,19 @@ export function NotificationSettings() {
           />
           {settings.enabled && (
             <>
-              <Toggle
+              <NotificationToggle
                 on={settings.approvals}
                 onClick={() => update({ approvals: !settings.approvals })}
                 label="Pending approvals"
                 icon={<Shield className="h-3.5 w-3.5 text-success" />}
               />
-              <Toggle
+              <NotificationToggle
                 on={settings.overdue}
                 onClick={() => update({ overdue: !settings.overdue })}
                 label="Overdue items"
                 icon={<Bell className="h-3.5 w-3.5 text-warning" />}
               />
-              <Toggle
+              <NotificationToggle
                 on={settings.sound}
                 onClick={() => update({ sound: !settings.sound })}
                 label={settings.sound ? "Sound on" : "Sound off"}
