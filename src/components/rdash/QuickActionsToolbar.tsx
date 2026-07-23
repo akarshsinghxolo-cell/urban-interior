@@ -1,29 +1,22 @@
 "use client";
-import * as React from "react";
-import { cn } from "@/lib/utils";
-import {
-  Plus, Users, FileText, CalendarClock, PhoneCall,
-  Wrench, type LucideIcon,
-} from "lucide-react";
-import { useRDashStore } from "@/lib/rdash/store";
-import { ThemeToggle } from "./ThemeToggle";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Clock, History } from "lucide-react";
-import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
 
-/**
- * QuickActionsToolbar — a floating, keyboard-accessible toolbar with the most
- * common "create" actions. Sits below the workspace header for instant access.
- *
- * Features:
- * - 6 quick-action buttons with Lucide icons + keyboard shortcuts (1-6)
- * - Hover expansion (icon → icon + label)
- * - Active scale animation on press
- * - Keyboard shortcuts: Alt+1=Customer, Alt+2=Quotation, Alt+3=Visit,
- *   Alt+4=Follow-up, Alt+5=Task, Alt+6=Work Order
- * - Tooltip with shortcut hint
- * - Responsive: collapses to icon-only on mobile
- */
+import * as React from "react";
+import {
+  CalendarClock,
+  Clock,
+  FileText,
+  History,
+  PhoneCall,
+  Plus,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { useRDashStore } from "@/lib/rdash/store";
+import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface QuickAction {
   id: string;
@@ -51,29 +44,65 @@ const toneStyles = {
   default: "bg-muted/40 text-foreground border-border/50 hover:bg-muted/60 hover:border-border",
 };
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT"
+  );
+}
 
 function RecentItemsDropdown() {
-  const auditLog = useRDashStore((s) => s.db.auditLog);
-  const openDetail = useRDashStore((s) => s.openDetail);
+  const auditLog = useRDashStore((state) => state.db.auditLog);
+  const openDetail = useRDashStore((state) => state.openDetail);
   const [open, setOpen] = React.useState(false);
 
-  const recent = React.useMemo(() => {
-    return (auditLog || []).slice(0, 6);
-  }, [auditLog]);
+  const recent = React.useMemo(() => (auditLog || []).slice(0, 6), [auditLog]);
+
+  React.useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (
+        !event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.key.toLowerCase() !== "r" ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      setOpen(true);
+    };
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, []);
 
   const handleClick = (entry: any) => {
-    if (entry.entity_id && entry.entity_type) {
-      const kind = entry.entity_type === "workOrder" ? "workOrder" :
-                   entry.entity_type === "quotation" ? "quotation" :
-                   entry.entity_type === "customer" ? "customer" :
-                   entry.entity_type === "site" ? "site" :
-                   entry.entity_type === "task" ? "task" :
-                   entry.entity_type === "visit" ? "visit" : undefined;
-      if (kind) {
-        openDetail(kind as any, entry.entity_id);
-        setOpen(false);
-      }
-    }
+    if (!entry.entity_id || !entry.entity_type) return;
+
+    const kind =
+      entry.entity_type === "workOrder"
+        ? "workOrder"
+        : entry.entity_type === "quotation"
+          ? "quotation"
+          : entry.entity_type === "customer"
+            ? "customer"
+            : entry.entity_type === "site"
+              ? "site"
+              : entry.entity_type === "task"
+                ? "task"
+                : entry.entity_type === "visit"
+                  ? "visit"
+                  : undefined;
+
+    if (!kind) return;
+    openDetail(kind as any, entry.entity_id);
+    setOpen(false);
   };
 
   return (
@@ -108,17 +137,29 @@ function RecentItemsDropdown() {
                 className="flex w-full items-start gap-2 border-b border-border/40 px-3 py-2 text-left transition-colors last:border-0 hover:bg-accent/40"
               >
                 <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-muted/40 text-[10px]">
-                  {entry.kind === "create" ? "+" :
-                   entry.kind === "update" ? "~" :
-                   entry.kind === "approve" ? "v" :
-                   entry.kind === "delete" ? "x" : "*"}
+                  {entry.kind === "create"
+                    ? "+"
+                    : entry.kind === "update"
+                      ? "~"
+                      : entry.kind === "approve"
+                        ? "v"
+                        : entry.kind === "delete"
+                          ? "x"
+                          : "*"}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium">{entry.entity_label || entry.action}</p>
-                  <p className="truncate text-[10px] text-muted-foreground">{entry.action}</p>
+                  <p className="truncate text-xs font-medium">
+                    {entry.entity_label || entry.action}
+                  </p>
+                  <p className="truncate text-[10px] text-muted-foreground">
+                    {entry.action}
+                  </p>
                 </div>
                 <span className="shrink-0 text-[9px] text-muted-foreground/60">
-                  {new Date(entry.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                  {new Date(entry.timestamp).toLocaleTimeString("en-IN", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
                 </span>
               </button>
             ))
@@ -130,37 +171,84 @@ function RecentItemsDropdown() {
 }
 
 export function QuickActionsToolbar() {
-  const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
-  const setActiveModule = useRDashStore((s) => s.setActiveModule);
+  const openCreateDialog = useRDashStore((state) => state.openCreateDialog);
+  const setActiveModule = useRDashStore((state) => state.setActiveModule);
 
-  // Keyboard shortcuts: Alt+1 through Alt+6
   React.useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (!e.altKey) return;
-      const idx = ["1", "2", "3", "4", "5", "6"].indexOf(e.key);
-      if (idx === -1) return;
-      e.preventDefault();
-      const action = ACTIONS[idx];
+    const timeoutIds = new Set<number>();
+    const schedule = (callback: () => void, delay: number) => {
+      const id = window.setTimeout(() => {
+        timeoutIds.delete(id);
+        callback();
+      }, delay);
+      timeoutIds.add(id);
+    };
+
+    const openNotificationSettings = () => {
+      setActiveModule("workdesk");
+      let attempts = 0;
+
+      const findAndOpen = () => {
+        const details = Array.from(document.querySelectorAll<HTMLDetailsElement>("details")).find(
+          (element) => {
+            const summary = element.firstElementChild;
+            return (
+              summary?.tagName === "SUMMARY" &&
+              summary.textContent?.trim().startsWith("Notification Settings")
+            );
+          },
+        );
+
+        if (details) {
+          details.open = true;
+          details.scrollIntoView({ behavior: "smooth", block: "center" });
+          const summary = details.firstElementChild;
+          if (summary instanceof HTMLElement) summary.focus();
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < 20) schedule(findAndOpen, 50);
+      };
+
+      schedule(findAndOpen, 0);
+    };
+
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (
+        !event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isEditableTarget(event.target)
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (key === "n") {
+        event.preventDefault();
+        openNotificationSettings();
+        return;
+      }
+
+      const index = ["1", "2", "3", "4", "5", "6"].indexOf(key);
+      if (index === -1) return;
+
+      event.preventDefault();
+      const action = ACTIONS[index];
       if (action.kind) {
         openCreateDialog({ kind: action.kind });
       } else if (action.navigate) {
         setActiveModule(action.navigate);
       }
     };
-    // CRON-9: Alt+N opens notification settings
-    const nHandler = (e: KeyboardEvent) => {
-      if (e.altKey && e.key === "n") {
-        e.preventDefault();
-        const details = document.querySelector("details summary") as HTMLElement;
-        if (details && details.textContent?.includes("Notification")) {
-          details.click();
-          details.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }
+
+    window.addEventListener("keydown", handleShortcut);
+    return () => {
+      window.removeEventListener("keydown", handleShortcut);
+      timeoutIds.forEach((id) => window.clearTimeout(id));
     };
-    window.addEventListener("keydown", handler);
-    window.addEventListener("keydown", nHandler);
-    return () => { window.removeEventListener("keydown", handler); window.removeEventListener("keydown", nHandler); };
   }, [openCreateDialog, setActiveModule]);
 
   const handleClick = (action: QuickAction) => {
@@ -183,21 +271,20 @@ export function QuickActionsToolbar() {
             title={`${action.label} (Alt+${action.shortcut})`}
             className={cn(
               "group flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all active:scale-95",
-              toneStyles[action.tone]
+              toneStyles[action.tone],
             )}
           >
             <Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="hidden sm:inline">{action.label}</span>
-            {/* Keyboard shortcut badge */}
-            <kbd className="hidden ml-0.5 rounded border border-current/20 bg-current/5 px-1 text-[9px] font-mono opacity-50 group-hover:opacity-100 transition-opacity sm:inline">
+            <kbd className="ml-0.5 hidden rounded border border-current/20 bg-current/5 px-1 font-mono text-[9px] opacity-50 transition-opacity group-hover:opacity-100 sm:inline">
               {action.shortcut}
             </kbd>
           </button>
         );
       })}
-      {/* Divider */}
+
+      <RecentItemsDropdown />
       <div className="mx-0.5 h-6 w-px bg-border/50" />
-      {/* CRON-3: Dark mode toggle */}
       <ThemeToggle className="h-8 w-8 rounded-lg border-0 bg-transparent hover:bg-accent" />
     </div>
   );
