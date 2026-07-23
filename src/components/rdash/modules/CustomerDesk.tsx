@@ -16,6 +16,7 @@ import { workByCustomer } from "@/lib/rdash/seed";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
+import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds, latestQuotationRevisions } from "@/lib/rdash/metrics";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,7 +71,8 @@ export function CustomerDesk({ view }: {
     const selectedVisits = (db.visits || []).filter((v) => v.customer_id === selected?.id);
     const selectedSites = (db.sites || []).filter((s) => s.customer_id === selected?.id);
     const selectedAreas = (db.areas || []).filter((r) => selectedSites.some((s) => s.id === r.site_id));
-    const openReqCount = (db.workRequired || []).filter((r) => !["accepted", "lost"].includes(r.status)).length;
+    const wonWorkRequiredIds = React.useMemo(() => collectWonWorkRequiredIds(db.quotations || [], db.workOrders || []), [db.quotations, db.workOrders]);
+    const openReqCount = React.useMemo(() => calculateSalesPipelineMetrics(db.workRequired || [], { wonWorkRequiredIds }).openCount, [db.workRequired, wonWorkRequiredIds]);
     // B-9: Build a comprehensive Set of entity IDs that belong to this customer so the timeline
     // audit-log filter can match entries by ID (instead of the previous fragile substring match
     // on entity_label). Covers quotations, payments, tasks, visits, sites, workRequired, workOrders,
@@ -442,7 +444,9 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
     const singleSite = sites.length === 1 ? sites[0] : undefined;
     const mapHref = singleSite ? customerMapHref(singleSite.address, singleSite.latitude, singleSite.longitude) : undefined;
     const whatsappHref = customerWhatsappHref(phone);
-    const currentQuote = quotations.find((quote) => quote.status === "sent" || quote.status === "draft" || quote.status === "accepted");
+    const currentQuote = latestQuotationRevisions(quotations)
+        .filter((quote) => quote.status === "sent" || quote.status === "draft" || quote.status === "accepted")
+        .sort((a, b) => (b.updated_at || b.created_at || "").localeCompare(a.updated_at || a.created_at || ""))[0];
     const currentJob = customerJobs.find((workOrder) => workOrder.status === "scheduled" || workOrder.status === "in_progress" || workOrder.status === "on_hold");
     const tabs = [
         { key: "overview" as const, label: "Overview", icon: <Activity className="h-3.5 w-3.5"/> },

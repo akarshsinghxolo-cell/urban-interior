@@ -2,314 +2,261 @@
 
 import * as React from "react";
 import { useRDashStore } from "./store";
+import type { WorkspaceNavigationSnapshot, WorkspaceOverlaySnapshot } from "./store/ui-types";
+import {
+  ROOT_LAYER,
+  browserNavigationState,
+  commonPrefixLength,
+  isBrowserNavigationState,
+  navigationLayerListsEqual,
+  navigationLayers,
+  type BrowserNavigationState,
+  type NavigationLayer,
+} from "./navigation-history";
 
-/**
- * useBrowserHistorySync
- *
- * Mirrors the app's in-app navigation onto the real browser history so the
- * mobile back gesture (iOS edge-swipe, Android hardware/gesture back) walks
- * the user back through the app instead of exiting it on the first swipe.
- *
- * ── Why this exists ──────────────────────────────────────────────────────
- * The app is a single-route SPA (`/`) that drives all "screens" through
- * Zustand state (`activeModuleId`, `detailPanel`, dialogs…). The browser
- * therefore has only ONE history entry. The OS back gesture has nowhere to
- * go, so on iOS PWA (standalone) it exits the app, and on Android it jumps
- * to the previous app/tab. Users report this as "swiping back closes the
- * app". This hook gives the browser a history entry per navigated "layer".
- *
- * ── Layer model ──────────────────────────────────────────────────────────
- * A stack of layers, deepest last:
- *   [root]                            workdesk module, nothing open
- *   [root, module]                    a non-workdesk module
- *   [root, module?, detail]           a detail panel open
- *   [root, module?, detail?, overlay] a modal/palette/nav-drawer open
- *
- * Each layer transition pushes / pops a real `history` entry, so the OS back
- * affordance always has somewhere to go until the user is truly at the root,
- * at which point back exits the app (intentional — recommended default).
- *
- * ── Sync rules ───────────────────────────────────────────────────────────
- *  • Opening a layer (deeper nav)        → history.pushState
- *  • Closing a layer via in-app X button → history.go(-n)  (browser pops to
- *    the previous entry, which already represents the previous layer)
- *  • Sibling swap (e.g. sidebar module switch) → history.replaceState
- *    (sidebar items don't stack history; back returns to root, not to the
- *    previous module — standard business-app behaviour)
- *  • Browser back (popstate)             → restore the app to the layer
- *    described by event.state
- *
- * ── Overlays ─────────────────────────────────────────────────────────────
- * Overlays (command palette, action/create/edit/quotation dialogs, mobile
- * nav drawer, more menu) are treated as a single transient "overlay" layer.
- * We push an entry when one opens (so back closes it instead of exiting)
- * and pop on close. We do NOT restore a specific overlay on popstate —
- * overlays are ephemeral by nature.
- */
-
-type Layer =
-  | { type: "root" }
-  | { type: "module"; id: string }
-  | { type: "detail"; kind: string; recordId: string }
-  | { type: "overlay" };
-
-const ROOT: Layer = { type: "root" };
-/** Module id that represents the "home"/root screen (no history entry). */
-const ROOT_MODULE = "workdesk";
-
-interface HistoryState {
-  layer: Layer;
-  /** Position of this entry in our layer stack (0 = root). */
-  depth: number;
+function mergedHistoryState(state: BrowserNavigationState): Record<string, unknown> {
+  const current = window.history.state;
+  const base = current && typeof current === "object" && !Array.isArray(current)
+    ? current as Record<string, unknown>
+    : {};
+  return { ...base, ...state };
 }
 
-function layersEqual(a: Layer, b: Layer): boolean {
-  if (a.type !== b.type) return false;
-  if (a.type === "module" && b.type === "module") return a.id === b.id;
-  if (a.type === "detail" && b.type === "detail")
-    return a.kind === b.kind && a.recordId === b.recordId;
-  return true;
-}
-
-function commonPrefixLen(a: Layer[], b: Layer[]): number {
-  const n = Math.min(a.length, b.length);
-  let i = 0;
-  while (i < n && layersEqual(a[i], b[i])) i++;
-  return i;
-}
-
-/** Push `layer` onto history as a new entry. */
-function pushLayer(layer: Layer, depth: number) {
+function pushBrowserState(state: BrowserNavigationState): void {
   try {
-    history.pushState({ layer, depth } satisfies HistoryState, "");
+    window.history.pushState(mergedHistoryState(state), "");
   } catch {
-    /* non-browser / SSR — ignore */
+    // Browser history is best-effort in embedded/private browsing contexts.
   }
 }
 
-/** Replace the current history entry's state with `layer`. */
-function replaceLayer(layer: Layer, depth: number) {
+function replaceBrowserState(state: BrowserNavigationState): void {
   try {
-    history.replaceState({ layer, depth } satisfies HistoryState, "");
+    window.history.replaceState(mergedHistoryState(state), "");
   } catch {
-    /* ignore */
+    // Browser history is best-effort in embedded/private browsing contexts.
   }
 }
 
 export function useBrowserHistorySync(): void {
-  // ── Reactive state for computing the desired layer stack ───────────────
-  const activeModuleId = useRDashStore((s) => s.activeModuleId);
-  const detailKind = useRDashStore((s) => s.detailPanel.kind);
-  const detailRecordId = useRDashStore((s) => s.detailPanel.recordId);
-  const commandPaletteOpen = useRDashStore((s) => s.commandPaletteOpen);
-  const actionDialogType = useRDashStore((s) => s.actionDialog.type);
-  const createDialog = useRDashStore((s) => s.createDialog);
-  const quotationAcceptanceDialog = useRDashStore(
-    (s) => s.quotationAcceptanceDialog,
-  );
-  const editDialog = useRDashStore((s) => s.editDialog);
-  const mobileNavOpen = useRDashStore((s) => s.mobileNavOpen);
-  const moreMenuOpen = useRDashStore((s) => s.moreMenuOpen);
+  const moduleId = useRDashStore((state) => state.activeModuleId);
+  const activeTabId = useRDashStore((state) => state.activeTabId);
+  const moduleHistoryIndex = useRDashStore((state) => state.moduleHistoryIndex);
+  const moduleHistoryLength = useRDashStore((state) => state.moduleHistory.length);
+  const selectedCustomerId = useRDashStore((state) => state.selectedCustomerId);
+  const detailPanel = useRDashStore((state) => state.detailPanel);
+  const contextHistory = useRDashStore((state) => state.contextHistory);
+  const contextHistoryIndex = useRDashStore((state) => state.contextHistoryIndex);
+  const commandPaletteOpen = useRDashStore((state) => state.commandPaletteOpen);
+  const actionDialog = useRDashStore((state) => state.actionDialog);
+  const createDialog = useRDashStore((state) => state.createDialog);
+  const quotationAcceptanceDialog = useRDashStore((state) => state.quotationAcceptanceDialog);
+  const editDialog = useRDashStore((state) => state.editDialog);
+  const mobileNavOpen = useRDashStore((state) => state.mobileNavOpen);
+  const moreMenuOpen = useRDashStore((state) => state.moreMenuOpen);
+  const quickAddOpen = useRDashStore((state) => state.quickAddOpen);
+  const keyboardShortcutsOpen = useRDashStore((state) => state.keyboardShortcutsOpen);
 
-  // ── Refs ───────────────────────────────────────────────────────────────
-  // The layer stack as currently reflected in browser history.
-  const stackRef = React.useRef<Layer[]>([ROOT]);
-  // True while we are applying a popstate-driven restore (suppresses the
-  // sync effect from re-pushing entries the browser just popped).
-  const restoringRef = React.useRef(false);
-  // Layers to push after an in-flight history.go(-n) completes (used when a
-  // single user action both removes and adds layers, e.g. closing an overlay
-  // and switching modules).
-  const pendingPushRef = React.useRef<Layer[]>([]);
-  const mountedRef = React.useRef(false);
-
-  // ── Desired layer stack derived from store state ───────────────────────
-  const desiredStack: Layer[] = React.useMemo(() => {
-    const stack: Layer[] = [ROOT];
-    if (activeModuleId && activeModuleId !== ROOT_MODULE)
-      stack.push({ type: "module", id: activeModuleId });
-    if (detailKind && detailRecordId)
-      stack.push({
-        type: "detail",
-        kind: detailKind,
-        recordId: detailRecordId,
-      });
-    const overlayOpen =
-      commandPaletteOpen ||
-      actionDialogType !== null ||
-      createDialog !== null ||
-      quotationAcceptanceDialog !== null ||
-      editDialog !== null ||
-      mobileNavOpen ||
-      moreMenuOpen;
-    if (overlayOpen) stack.push({ type: "overlay" });
-    return stack;
+  const overlays = React.useMemo<WorkspaceOverlaySnapshot[]>(() => {
+    const result: WorkspaceOverlaySnapshot[] = [];
+    if (commandPaletteOpen) result.push({ type: "commandPalette" });
+    if (actionDialog.type) result.push({ type: "actionDialog", value: actionDialog });
+    if (createDialog) result.push({ type: "createDialog", value: createDialog });
+    if (quotationAcceptanceDialog) {
+      result.push({ type: "quotationAcceptance", quotationId: quotationAcceptanceDialog.quotationId });
+    }
+    if (editDialog) result.push({ type: "editDialog", value: editDialog });
+    if (mobileNavOpen) result.push({ type: "mobileNav" });
+    if (moreMenuOpen) result.push({ type: "moreMenu" });
+    if (quickAddOpen) result.push({ type: "quickAdd" });
+    if (keyboardShortcutsOpen) result.push({ type: "keyboardShortcuts" });
+    return result;
   }, [
-    activeModuleId,
-    detailKind,
-    detailRecordId,
     commandPaletteOpen,
-    actionDialogType,
+    actionDialog,
     createDialog,
     quotationAcceptanceDialog,
     editDialog,
     mobileNavOpen,
     moreMenuOpen,
+    quickAddOpen,
+    keyboardShortcutsOpen,
   ]);
 
-  // ── Restore app state to match a target layer stack (on popstate) ──────
-  // Reads fresh state via getState() so the callback is stable.
-  const applyStack = React.useCallback((stack: Layer[]) => {
-    const s = useRDashStore.getState();
-    // Close every overlay + detail first, then re-open down to the target.
-    if (s.commandPaletteOpen) s.setCommandPaletteOpen(false);
-    if (s.actionDialog.type !== null) s.closeActionDialog();
-    if (s.createDialog !== null) s.closeCreateDialog();
-    if (s.quotationAcceptanceDialog !== null) s.closeQuotationAcceptanceDialog();
-    if (s.editDialog !== null) s.closeEditDialog();
-    if (s.mobileNavOpen) s.setMobileNavOpen(false);
-    if (s.moreMenuOpen) s.setMoreMenuOpen(false);
-    if (s.detailPanel.kind) s.closeDetail();
+  const desiredSnapshot = React.useMemo<WorkspaceNavigationSnapshot>(() => ({
+    moduleId,
+    activeTabId,
+    moduleHistoryIndex,
+    moduleHistoryLength,
+    selectedCustomerId,
+    detailPanel,
+    contextHistory,
+    contextHistoryIndex,
+    overlays,
+  }), [
+    moduleId,
+    activeTabId,
+    moduleHistoryIndex,
+    moduleHistoryLength,
+    selectedCustomerId,
+    detailPanel,
+    contextHistory,
+    contextHistoryIndex,
+    overlays,
+  ]);
+  const desiredLayers = React.useMemo(() => navigationLayers(desiredSnapshot), [desiredSnapshot]);
 
-    let moduleApplied = false;
-    for (const layer of stack) {
-      if (layer.type === "root") {
-        if (!moduleApplied) {
-          s.setActiveModule(ROOT_MODULE);
-          moduleApplied = true;
-        }
-      } else if (layer.type === "module") {
-        s.setActiveModule(layer.id);
-        moduleApplied = true;
-      } else if (layer.type === "detail") {
-        // Re-open the detail record. `openDetail` resolves the customer /
-        // context internally; fromModule defaults to the active module.
-        s.openDetail(layer.kind as never, layer.recordId);
-      }
-      // overlay: deliberately not restored (transient).
-    }
+  const entriesRef = React.useRef<BrowserNavigationState[]>([]);
+  const positionRef = React.useRef(0);
+  const sequenceRef = React.useRef(0);
+  const applyingPopRef = React.useRef(false);
+  const pendingPopEntryIdRef = React.useRef<string | null>(null);
+  const mountedRef = React.useRef(false);
+
+  const nextEntryId = React.useCallback(() => {
+    sequenceRef.current += 1;
+    return `uc-nav-${Date.now().toString(36)}-${sequenceRef.current.toString(36)}`;
   }, []);
 
-  // ── Seed the initial history entry on mount ────────────────────────────
   React.useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
-    replaceLayer(ROOT, 0);
-    stackRef.current = [ROOT];
-  }, []);
+    const rootLayers: NavigationLayer[] = [ROOT_LAYER];
+    const initial = browserNavigationState(rootLayers, desiredSnapshot, nextEntryId());
+    entriesRef.current = [initial];
+    positionRef.current = 0;
+    replaceBrowserState(initial);
+  }, [desiredSnapshot, nextEntryId]);
 
-  // ── Sync effect: mirror desiredStack onto browser history ──────────────
   React.useEffect(() => {
-    if (!mountedRef.current) return;
-
-    // If we just applied a popstate restore, adopt the resulting stack
-    // without touching history (the browser already moved).
-    if (restoringRef.current) {
-      restoringRef.current = false;
-      stackRef.current = desiredStack;
+    if (!mountedRef.current || pendingPopEntryIdRef.current) return;
+    if (applyingPopRef.current) {
+      applyingPopRef.current = false;
       return;
     }
 
-    const oldStack = stackRef.current;
-    const common = commonPrefixLen(oldStack, desiredStack);
-    const removed = oldStack.length - common;
-    const added = desiredStack.slice(common);
+    const entries = entriesRef.current;
+    const current = entries[positionRef.current];
+    if (!current) return;
 
-    if (removed === 0 && added.length === 0) return;
-
-    // Case A — sibling swap (e.g. sidebar module switch):
-    // replace the current top entry. Back goes to root, not the previous
-    // module — standard for sidebar navigation.
-    if (removed === 1 && added.length === 1) {
-      stackRef.current = desiredStack;
-      replaceLayer(added[0], desiredStack.length - 1);
+    if (navigationLayerListsEqual(current.layers, desiredLayers)) {
+      const updated = browserNavigationState(desiredLayers, desiredSnapshot, current.entryId);
+      entries[positionRef.current] = updated;
+      replaceBrowserState(updated);
       return;
     }
 
-    // Case B — layers removed only (e.g. closed a detail/overlay via X):
-    // pop browser entries to match.
-    if (removed > 0 && added.length === 0) {
-      restoringRef.current = true;
-      stackRef.current = desiredStack; // optimistic; popstate confirms
-      try {
-        history.go(-removed);
-      } catch {
-        restoringRef.current = false;
-      }
-      return;
-    }
+    const currentSnapshot = current.snapshot;
+    const contextTraversal =
+      desiredSnapshot.contextHistory.length === currentSnapshot.contextHistory.length &&
+      desiredSnapshot.contextHistoryIndex !== currentSnapshot.contextHistoryIndex;
+    const moduleTraversal =
+      desiredSnapshot.moduleHistoryLength === currentSnapshot.moduleHistoryLength &&
+      desiredSnapshot.moduleHistoryIndex !== currentSnapshot.moduleHistoryIndex;
 
-    // Case C — removed + added (e.g. closed an overlay AND switched module):
-    // go back to the common prefix, then push the new tail once the browser
-    // settles.
-    if (removed > 0 && added.length > 0) {
-      restoringRef.current = true;
-      pendingPushRef.current = added;
-      stackRef.current = oldStack.slice(0, common);
-      try {
-        history.go(-removed);
-      } catch {
-        restoringRef.current = false;
-        pendingPushRef.current = [];
-        // Fall back to pushing directly.
-        for (const layer of added) {
-          stackRef.current.push(layer);
-          pushLayer(layer, stackRef.current.length - 1);
+    if (contextTraversal || moduleTraversal) {
+      const direction = contextTraversal
+        ? Math.sign(desiredSnapshot.contextHistoryIndex - currentSnapshot.contextHistoryIndex)
+        : Math.sign(desiredSnapshot.moduleHistoryIndex - currentSnapshot.moduleHistoryIndex);
+      let targetIndex = -1;
+      for (
+        let index = positionRef.current + direction;
+        index >= 0 && index < entries.length;
+        index += direction
+      ) {
+        const candidate = entries[index];
+        if (
+          navigationLayerListsEqual(candidate.layers, desiredLayers) &&
+          candidate.snapshot.contextHistoryIndex === desiredSnapshot.contextHistoryIndex &&
+          candidate.snapshot.moduleHistoryIndex === desiredSnapshot.moduleHistoryIndex
+        ) {
+          targetIndex = index;
+          break;
         }
       }
+      if (targetIndex >= 0) {
+        pendingPopEntryIdRef.current = entries[targetIndex].entryId;
+        try {
+          window.history.go(targetIndex - positionRef.current);
+          return;
+        } catch {
+          pendingPopEntryIdRef.current = null;
+        }
+      }
+    }
+
+    const common = commonPrefixLength(current.layers, desiredLayers);
+    const isPureRemoval = common === desiredLayers.length && desiredLayers.length < current.layers.length;
+
+    if (isPureRemoval) {
+      let targetIndex = -1;
+      for (let index = positionRef.current - 1; index >= 0; index -= 1) {
+        if (navigationLayerListsEqual(entries[index].layers, desiredLayers)) {
+          targetIndex = index;
+          break;
+        }
+      }
+      if (targetIndex >= 0) {
+        pendingPopEntryIdRef.current = entries[targetIndex].entryId;
+        try {
+          window.history.go(targetIndex - positionRef.current);
+          return;
+        } catch {
+          pendingPopEntryIdRef.current = null;
+        }
+      }
+      // No matching managed entry exists (for example after a full reload).
+      // Replace the current entry rather than creating a Back loop.
+      const replacement = browserNavigationState(desiredLayers, desiredSnapshot, current.entryId);
+      entries[positionRef.current] = replacement;
+      replaceBrowserState(replacement);
       return;
     }
 
-    // Case D — added only (e.g. opened a detail panel / overlay):
-    // push new entries.
-    // removed === 0 && added.length > 0
-    for (const layer of added) {
-      stackRef.current.push(layer);
-      pushLayer(layer, stackRef.current.length - 1);
-    }
-  }, [desiredStack]);
+    // A direct addition can contain more than one layer when React batches
+    // state changes. Persist each intermediate layer so Back closes one layer
+    // at a time. Lateral transitions are a single exact destination.
+    const additionsOnly = common === current.layers.length && desiredLayers.length > current.layers.length;
+    const layersToPush = additionsOnly
+      ? desiredLayers.slice(current.layers.length).map((_, offset) => desiredLayers.slice(0, current.layers.length + offset + 1))
+      : [desiredLayers];
 
-  // ── popstate listener (browser back / forward) ────────────────────────
+    entriesRef.current = entries.slice(0, positionRef.current + 1);
+    for (const layers of layersToPush) {
+      const entry = browserNavigationState(layers, desiredSnapshot, nextEntryId());
+      entriesRef.current.push(entry);
+      positionRef.current = entriesRef.current.length - 1;
+      pushBrowserState(entry);
+    }
+  }, [desiredLayers, desiredSnapshot, nextEntryId]);
+
   React.useEffect(() => {
-    function onPopState(e: PopStateEvent) {
-      // (1) Self-initiated navigation (we called history.go(-n)). Consume
-      // the guard, align the stack to where the browser landed, and flush
-      // any pending pushes.
-      if (restoringRef.current) {
-        restoringRef.current = false;
-        const targetDepth = (e.state as HistoryState | null)?.depth ?? 0;
-        stackRef.current = stackRef.current.slice(0, targetDepth + 1);
-        const pending = pendingPushRef.current;
-        pendingPushRef.current = [];
-        for (const layer of pending) {
-          stackRef.current.push(layer);
-          pushLayer(layer, stackRef.current.length - 1);
-        }
+    const onPopState = (event: PopStateEvent) => {
+      // Ignore route-level history entries owned by Next.js or another page.
+      if (!isBrowserNavigationState(event.state)) {
+        pendingPopEntryIdRef.current = null;
+        applyingPopRef.current = false;
         return;
       }
 
-      // (2) User-initiated back. Restore the app to the layer described by
-      // event.state.
-      const state = (e.state as HistoryState | null) ?? null;
-      const targetDepth = state?.depth ?? 0;
-      const targetStack =
-        stackRef.current.slice(0, targetDepth + 1).length > 0
-          ? stackRef.current.slice(0, targetDepth + 1)
-          : [ROOT];
-
-      restoringRef.current = true;
-      stackRef.current = targetStack;
-      try {
-        applyStack(targetStack);
-      } catch {
-        // Restoration is best-effort; don't crash the back gesture.
-        restoringRef.current = false;
+      const state = event.state;
+      const knownIndex = entriesRef.current.findIndex((entry) => entry.entryId === state.entryId);
+      if (knownIndex >= 0) {
+        positionRef.current = knownIndex;
+        entriesRef.current[knownIndex] = state;
+      } else {
+        // A valid entry can outlive the in-memory list after Fast Refresh or a
+        // browser page restore. It is still safe because the state is fully
+        // validated and contains the complete navigation snapshot.
+        entriesRef.current = [state];
+        positionRef.current = 0;
       }
-      // applyStack mutates store state → desiredStack recomputes → sync
-      // effect runs with restoringRef=true → adopts stack, no history push.
-    }
+      pendingPopEntryIdRef.current = null;
+      applyingPopRef.current = true;
+      useRDashStore.getState().restoreNavigationSnapshot(state.snapshot);
+    };
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [applyStack]);
+  }, []);
 }

@@ -1,6 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { calculateQuotationMetrics, calculateSalesPipelineMetrics, collectWonWorkRequiredIds, isWonSalesStatus } from "@/lib/rdash/metrics";
 import { useRDashStore, computeJobPnL, allJobPnLs, vendorBalance, customerBalance } from "@/lib/rdash/store";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
@@ -508,7 +509,8 @@ function ReportsOverview({ db }: {
     db: RDashDatabase;
 }) {
     const totalRevenue = db.customerReceipts.reduce((n, receipt) => n + receipt.amount, 0);
-    const totalPipeline = db.quotations.reduce((n, q) => n + q.total_amount, 0);
+    const quotationMetrics = calculateQuotationMetrics(db.quotations);
+    const totalPipeline = quotationMetrics.pipelineValue;
     const totalJobValue = db.workOrders.reduce((n, j) => n + j.value, 0);
     const overdueAmt = db.payments.filter((p) => p.status === "overdue").reduce((n, p) => n + paymentOutstanding(p), 0);
     const pnls = allJobPnLs(db);
@@ -535,13 +537,14 @@ function ReportsOverview({ db }: {
             <BarRow label="Gross margin" value={Math.max(0, totalMargin)} max={Math.max(totalRevenue, totalCost, 1)} color="bg-primary" valueLabel={`${marginPct}%`}/>
           </div>
         </ReportCard>
-        <ReportCard title="Quotation status funnel" subtitle="Conversion from draft to accepted" icon={<Target className="h-4 w-4"/>}>
+        <ReportCard title="Quotation status funnel" subtitle="Current quotation chains from draft to decision" icon={<Target className="h-4 w-4"/>}>
           <div className="space-y-2">
-            {(["draft", "sent", "accepted", "rejected", "cancelled"] as const).map((st) => {
-            const count = db.quotations.filter((q) => q.status === st).length;
-            const max = Math.max(...["draft", "sent", "accepted", "rejected", "cancelled"].map((s) => db.quotations.filter((q) => q.status === s).length), 1);
-            return <BarRow key={st} label={titleCase(st)} value={count} max={max} color={st === "accepted" ? "bg-success" : st === "rejected" ? "bg-destructive" : "bg-primary"} valueLabel={`${count}`}/>;
-        })}
+            {(() => {
+              const statuses = ["draft", "sent", "accepted", "rejected", "expired", "cancelled"] as const;
+              const counts = statuses.map((status) => ({ status, count: quotationMetrics.current.filter((quotation) => quotation.status === status).length }));
+              const max = Math.max(...counts.map((entry) => entry.count), 1);
+              return counts.map(({ status, count }) => <BarRow key={status} label={titleCase(status)} value={count} max={max} color={status === "accepted" ? "bg-success" : status === "rejected" || status === "expired" ? "bg-destructive" : "bg-primary"} valueLabel={`${count}`}/>);
+            })()}
           </div>
         </ReportCard>
       </div>
@@ -852,18 +855,24 @@ function QuotationConversionReport({ db: dbRaw, filter }: {
         { key: "sent", label: "Sent", color: "bg-primary" },
         { key: "accepted", label: "Accepted", color: "bg-success" },
         { key: "rejected", label: "Rejected", color: "bg-destructive" },
+        { key: "expired", label: "Expired", color: "bg-destructive" },
         { key: "cancelled", label: "Cancelled", color: "bg-muted" },
     ] as const;
-    const counts = stages.map((s) => ({ ...s, count: db.quotations.filter((q) => q.status === s.key).length, value: db.quotations.filter((q) => q.status === s.key).reduce((n, q) => n + q.total_amount, 0) }));
-    const total = db.quotations.length || 1;
-    const maxValue = Math.max(...counts.map((c) => c.value), 1);
-    const conversionRate = db.quotations.length ? Math.round((counts.find((c) => c.key === "accepted")!.count / total) * 100) : 0;
+    const quotationMetrics = calculateQuotationMetrics(db.quotations);
+    const counts = stages.map((stage) => ({
+        ...stage,
+        count: quotationMetrics.current.filter((quotation) => quotation.status === stage.key).length,
+        value: quotationMetrics.current.filter((quotation) => quotation.status === stage.key).reduce((sum, quotation) => sum + quotation.total_amount, 0),
+    }));
+    const total = quotationMetrics.totalCount || 1;
+    const maxValue = Math.max(...counts.map((count) => count.value), 1);
+    const conversionRate = quotationMetrics.conversionRate;
     return (<div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Total quotations" value={db.quotations.length} tone="primary" icon={<BarChart3 className="h-4 w-4"/>}/>
+        <MetricCard label="Total quotations" value={quotationMetrics.totalCount} tone="primary" icon={<BarChart3 className="h-4 w-4"/>}/>
         <MetricCard label="Accepted" value={counts.find((c) => c.key === "accepted")!.count} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
         <MetricCard label="Conversion rate" value={`${conversionRate}%`} tone={conversionRate > 30 ? "success" : "warning"} icon={<Target className="h-4 w-4"/>}/>
-        <MetricCard label="Pipeline value" value={formatINRShort(db.quotations.reduce((n, q) => n + q.total_amount, 0))} tone="primary" icon={<DollarSign className="h-4 w-4"/>}/>
+        <MetricCard label="Pipeline value" value={formatINRShort(quotationMetrics.pipelineValue)} tone="primary" icon={<DollarSign className="h-4 w-4"/>}/>
       </div>
       <ReportCard title="Conversion funnel" subtitle="Quotation status distribution by count and value" icon={<Target className="h-4 w-4"/>}>
         <div className="space-y-3">
@@ -892,6 +901,11 @@ function LeadSourceReport({ db: dbRaw, filter }: {
     filter?: { customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string; reportId?: string } | null;
 }) {
     const db = applyReportFilter(dbRaw, filter);
+    const wonWorkRequiredIds = React.useMemo(
+        () => collectWonWorkRequiredIds(db.quotations, db.workOrders),
+        [db.quotations, db.workOrders],
+    );
+    const salesMetrics = calculateSalesPipelineMetrics(db.workRequired, { wonWorkRequiredIds });
     const sources = React.useMemo(() => {
         const m = new Map<string, {
             count: number;
@@ -903,19 +917,18 @@ function LeadSourceReport({ db: dbRaw, filter }: {
             const e = m.get(src) || { count: 0, value: 0, won: 0 };
             e.count++;
             e.value += r.budget || 0;
-            if (r.status === "accepted")
-                e.won++;
+            if (isWonSalesStatus(r.status) || wonWorkRequiredIds.has(r.id)) e.won++;
             m.set(src, e);
         });
         return Array.from(m.entries()).map(([source, v]) => ({ source, ...v })).sort((a, b) => b.count - a.count);
-    }, [db.workRequired]);
+    }, [db.workRequired, wonWorkRequiredIds]);
     const maxCount = Math.max(...sources.map((s) => s.count), 1);
     return (<div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Lead sources" value={sources.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
-        <MetricCard label="Total leads" value={db.workRequired.length} tone="default" icon={<Target className="h-4 w-4"/>}/>
-        <MetricCard label="Won" value={db.workRequired.filter((r) => r.status === "accepted").length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
-        <MetricCard label="Win rate" value={`${db.workRequired.length ? Math.round((db.workRequired.filter((r) => r.status === "accepted").length / db.workRequired.length) * 100) : 0}%`} tone="primary" icon={<TrendingUp className="h-4 w-4"/>}/>
+        <MetricCard label="Total leads" value={salesMetrics.totalLeads} tone="default" icon={<Target className="h-4 w-4"/>}/>
+        <MetricCard label="Won" value={salesMetrics.wonCount} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+        <MetricCard label="Win rate" value={`${salesMetrics.winRate}%`} hint={`${salesMetrics.decidedCount} decided`} tone="primary" icon={<TrendingUp className="h-4 w-4"/>}/>
       </div>
       <ReportCard title="Leads by source" subtitle="Count, won, and total budget value per acquisition channel" icon={<Users className="h-4 w-4"/>}>
         <div className="space-y-3">

@@ -63,7 +63,7 @@ function FavoriteStarButton() {
     const detail = useRDashStore((s) => s.detailPanel);
     const { isFavorite, toggleFavorite } = useFavorites();
     if (!detail.kind || !detail.recordId) return null;
-    const fav = isFavorite(detail.recordId);
+    const fav = isFavorite(detail.recordId, detail.kind);
     const label = resolveTitle(detail.kind, detail.recordId, useRDashStore.getState().db);
     return (
         <button
@@ -1020,7 +1020,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             <input type="number" defaultValue={it.rate} min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
             updateQuotationItem(quotationId, it.id, { rate: v }); }} className="rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono text-muted-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
             <span className="py-0.5 text-right font-mono font-semibold text-foreground">{formatINR(it.amount)}</span>
-            <button type="button" onClick={() => { removeQuotationItem(quotationId, it.id); toast.success("Item removed"); }} className="flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" aria-label={`Remove ${it.title}`}>
+            <button type="button" onClick={() => { removeQuotationItem(quotationId, it.id); toast.success("Item removed"); }} className="flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${it.title}`}>
               <Trash2 className="h-3.5 w-3.5"/>
             </button>
           </div>)))}
@@ -1150,7 +1150,7 @@ function QuotationMilestoneEditor({ quotationId, milestones, totalAmount, }: {
             <select defaultValue={m.due_event} onChange={(e) => updateMilestone(quotationId, m.id, { due_event: e.target.value })} className="min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-muted-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none">
               {DUE_EVENTS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
             </select>
-            <button type="button" onClick={() => { removeMilestone(quotationId, m.id); toast.success("Milestone removed"); }} className="flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100" aria-label={`Remove ${m.label}`}>
+            <button type="button" onClick={() => { removeMilestone(quotationId, m.id); toast.success("Milestone removed"); }} className="flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${m.label}`}>
               <Trash2 className="h-3.5 w-3.5"/>
             </button>
           </div>)))}
@@ -1374,7 +1374,7 @@ function JobBiddingBody({ j }: {
           <p className="text-[11px] text-muted-foreground">Compare quotes, reliability, and on-time % — then award the workOrder.</p>
         </div>
         <div className="flex gap-2">
-          {j.contractor_id && j.status !== "abandoned" && (<Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { reopenJobForBidding(j.id); toast.success("Bidding re-opened — collect new quotes"); }}>
+          {j.contractor_id && (j.status === "scheduled" || j.status === "on_hold") && (<Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { reopenJobForBidding(j.id); toast.success("Bidding re-opened — collect new quotes"); }}>
               Re-open bidding
             </Button>)}
           <Button size="sm" className="h-7 text-xs" onClick={() => setAddOpen((v) => !v)}>

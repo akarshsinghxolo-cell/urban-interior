@@ -34,13 +34,13 @@ export function TeamPerformance() {
       .filter((s) => s.status === "active")
       .map((s) => {
         const tasksCompleted = db.tasks.filter(
-          (t) => t.assignee_id === s.id && t.status === "completed" && t.completed_at?.slice(0, 10) === today,
+          (task) => task.assignee_id === s.id && task.status === "completed" && task.completed_at && indiaDate(task.completed_at) === today,
         ).length;
         const tasksActive = db.tasks.filter(
           (t) => t.assignee_id === s.id && (t.status === "todo" || t.status === "in_progress"),
         ).length;
         const visitsToday = db.visits.filter(
-          (v) => v.staff_id === s.id && v.scheduled_at?.slice(0, 10) === today,
+          (visit) => visit.staff_id === s.id && visit.scheduled_at && indiaDate(visit.scheduled_at) === today,
         ).length;
         const attendance = db.attendance.find(
           (a) => a.staff_id === s.id && a.date === today,

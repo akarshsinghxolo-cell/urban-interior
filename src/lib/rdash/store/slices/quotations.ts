@@ -26,7 +26,6 @@ function nextQuotationNo(quotations: { quote_no?: string }[]): string {
  * `quotationAcceptanceWarnings`) were moved to `../quotations-helpers` so both
  * call sites share a single implementation. The remaining quotation-only
  * helpers (`assertQuotationEditable`, `assertQuotationStatusTransition`,
- * `workRequiredLifecycleForQuotation`, `workRequiredLifecycleForJob`,
  * `quotationWorkRequiredIds`, `primaryWorkRequiredId`,
  * `upsertQuotationFollowup`) live here as module-scope helpers.
  */
@@ -39,6 +38,13 @@ import { assertRole, genId, nowIso, today, userForRole, addDays } from "../helpe
 import { assertQuotationRelations, assertWorkOrderRelations } from "../../business-rules";
 import { findOpenLinkedFollowup } from "../finance-helpers";
 import { coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
+import {
+    assertWorkOrderStatusTransition,
+    workRequiredStatusAfterQuotationAcceptance,
+    workRequiredStatusAfterQuotationChange,
+    workRequiredStatusAfterWorkOrderChange,
+    workRequiredStatusForQuotationRevision,
+} from "../../work-required-lifecycle";
 
 function assertQuotationEditable(quotation: Quotation, action: string) {
     if (quotation.status !== "draft")
@@ -59,24 +65,6 @@ function assertQuotationStatusTransition(before: Quotation, nextStatus: Quotatio
     };
     if (!allowed[before.status].includes(nextStatus))
         throw new Error(`${before.quotation_no} cannot move from ${before.status} to ${nextStatus}. Create a revision for commercial changes.`);
-}
-function workRequiredLifecycleForQuotation(status: Quotation["status"]): import("../../types").WorkRequiredStatus {
-    if (status === "draft")
-        return "quotation_in_progress";
-    if (status === "sent")
-        return "quotation_sent";
-    if (status === "accepted")
-        return "accepted";
-    if (status === "rejected" || status === "expired" || status === "cancelled")
-        return "on_hold";
-    return "on_hold";
-}
-function workRequiredLifecycleForJob(status: WorkOrder["status"]): import("../../types").WorkRequiredStatus {
-    if (status === "completed")
-        return "completed";
-    if (status === "on_hold" || status === "abandoned" || status === "cancelled")
-        return "on_hold";
-    return "contractor_bidding";
 }
 function quotationWorkRequiredIds(quotation: Quotation): string[] {
     return quotation.coverage.map((coverage: any) => coverage.work_required_id);
@@ -161,9 +149,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             assertQuotationRelations(get().db, candidate, "Quotation");
             const threadId = before.thread_id ||
                 get().openThreadFor("quotation", id, `${before.quotation_no} · ${before.title}`, [actor.name, before.customer_name || "Customer"]);
-            const nextWorkRequiredStatus = patch.status
-                ? workRequiredLifecycleForQuotation(patch.status)
-                : undefined;
+            const nextQuotationStatus = patch.status;
             const changedAt = nowIso();
             commitState((s: any) => ({
                 db: {
@@ -179,11 +165,11 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             updated_at: changedAt,
                         }
                         : quote),
-                    workRequired: nextWorkRequiredStatus
+                    workRequired: nextQuotationStatus
                         ? s.db.workRequired.map((work: any) => before.coverage.some((coverage: any) => coverage.work_required_id === work.id)
                             ? {
                                 ...work,
-                                status: nextWorkRequiredStatus,
+                                status: workRequiredStatusAfterQuotationChange(s.db, work, id, nextQuotationStatus),
                                 updated_at: changedAt,
                             }
                             : work)
@@ -278,7 +264,6 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 : Math.round(starterItems.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0) * 100) / 100;
             const totalAmount = q.total_amount != null ? q.total_amount : subtotal + taxAmount;
             const threadId = state.openThreadFor("quotation", id, `${quoteNo} · ${q.title || "New quotation"}`, [designer.name, customerName]);
-            const initialWorkRequiredStatus = workRequiredLifecycleForQuotation(q.status || "draft");
             // A: Pull defaults from the active commercial masters. Caller-provided
             //    values still win — we only fill in the gaps the user didn't set.
             const defaults = resolveQuotationDefaults(state.db);
@@ -299,13 +284,16 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     approvalReason = `Discount of ${discountPct}% exceeds the ${policy.name} threshold (${policy.operator} ${policy.threshold}%).`;
                 }
             }
+            if (q.status && q.status !== "draft") {
+                throw new Error("New quotations must start as Draft. Use the quotation workflow to send or accept them.");
+            }
             const quotation: Quotation = {
                 id,
                 quotation_no: quoteNo,
                 customer_id: q.customer_id || "",
                 site_id: siteId,
                 title: q.title || "New quotation",
-                status: q.status || "draft",
+                status: "draft",
                 revision_no: 0,
                 valid_until: validUntil,
                 validity_days: defaults.validity_days,
@@ -332,7 +320,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     ...s.db,
                     quotations: [quotation, ...s.db.quotations],
                     workRequired: s.db.workRequired.map((work: any) => coverage.some((entry: any) => entry.work_required_id === work.id)
-                        ? { ...work, status: initialWorkRequiredStatus, updated_at: now }
+                        ? { ...work, status: workRequiredStatusAfterQuotationChange(s.db, work, id, quotation.status), updated_at: now }
                         : work),
                 },
             }));
@@ -700,7 +688,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     workRequired: state.db.workRequired.map((work: any) => original.coverage.some((coverage: any) => coverage.work_required_id === work.id)
                         ? {
                             ...work,
-                            status: "quotation_in_progress" as const,
+                            status: workRequiredStatusForQuotationRevision(state.db, work, original.id),
                             updated_at: now,
                         }
                         : work),
@@ -831,6 +819,13 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             return newId;
         },
         reopenJobForBidding: (workOrderId) => {
+            const before = get().db.workOrders.find((workOrder: any) => workOrder.id === workOrderId);
+            if (!before)
+                throw new Error("Work Order not found.");
+            if (before.status !== "scheduled" && before.status !== "on_hold") {
+                throw new Error("Bidding can only be re-opened before execution starts. Use contractor abandonment for active work.");
+            }
+            assertWorkOrderStatusTransition(before.status, "scheduled");
             const now = nowIso();
             commitState((s: any) => ({
                 db: {
@@ -848,6 +843,13 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                         (b.status === "selected" || b.status === "submitted")
                         ? { ...b, status: "withdrawn", updated_at: now }
                         : b),
+                    workRequired: s.db.workRequired.map((work: any) => before.work_required_ids.includes(work.id)
+                        ? {
+                            ...work,
+                            status: workRequiredStatusAfterWorkOrderChange(s.db, work, workOrderId, "scheduled"),
+                            updated_at: now,
+                        }
+                        : work),
                 },
             }));
             const workOrder = get().db.workOrders.find((j: any) => j.id === workOrderId);
@@ -926,7 +928,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     workRequired: state.db.workRequired.map((work: any) => coverageToAccept.some((coverage: any) => coverage.work_required_id === work.id)
                         ? {
                             ...work,
-                            status: "contractor_bidding" as const,
+                            status: workRequiredStatusAfterQuotationAcceptance(work.status),
                             updated_at: acceptedAt,
                         }
                         : work),
@@ -1031,24 +1033,25 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             if (patch.progress !== undefined && patch.progress !== before.progress) {
                 throw new Error("Work Order progress can only be changed by verifying a daily execution log.");
             }
+            if (patch.status) {
+                assertWorkOrderStatusTransition(before.status, patch.status);
+            }
             if (patch.status === "completed" && before.progress < 100) {
                 throw new Error(`Work Order ${before.work_order_no} cannot be completed until verified progress reaches 100%.`);
             }
             assertWorkOrderRelations(get().db, { ...before, ...patch }, "Work Order");
-            const nextWorkRequiredStatus = patch.status
-                ? workRequiredLifecycleForJob(patch.status)
-                : undefined;
+            const nextWorkOrderStatus = patch.status;
             commitState((s: any) => ({
                 db: {
                     ...s.db,
                     workOrders: s.db.workOrders.map((workOrder: any) => workOrder.id === id
                         ? { ...workOrder, ...patch, updated_at: now }
                         : workOrder),
-                    workRequired: nextWorkRequiredStatus && before
+                    workRequired: nextWorkOrderStatus && before
                         ? s.db.workRequired.map((work: any) => ({ ...before, ...patch }).work_required_ids.includes(work.id)  // STAGE-5-FIX (5.12): use patched ids
                             ? {
                                 ...work,
-                                status: nextWorkRequiredStatus,
+                                status: workRequiredStatusAfterWorkOrderChange(s.db, work, id, nextWorkOrderStatus),
                                 updated_at: now,
                             }
                             : work)

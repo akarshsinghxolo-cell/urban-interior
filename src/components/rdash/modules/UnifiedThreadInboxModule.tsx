@@ -270,15 +270,28 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
         markThreadRead(thread.id, thread.updated_at);
         trackRecentThread(thread.id);
     }, [markThreadRead, openDetail, trackRecentThread]);
-    React.useEffect(() => {
-        let requestedThreadId: string | null = null;
-        try { requestedThreadId = localStorage.getItem("uc-open-thread-id"); } catch { /* non-fatal */ }
-        if (!requestedThreadId) return;
-        const requestedThread = db.threads.find((thread) => thread.id === requestedThreadId);
-        if (!requestedThread) return;
+    const openRequestedThread = React.useCallback((threadId: string) => {
+        const requestedThread = db.threads.find((thread) => thread.id === threadId);
+        if (!requestedThread)
+            return false;
         openThread(requestedThread);
         try { localStorage.removeItem("uc-open-thread-id"); } catch { /* non-fatal */ }
+        return true;
     }, [db.threads, openThread]);
+    React.useEffect(() => {
+        const onOpenThread = (event: Event) => {
+            const threadId = (event as CustomEvent<{ threadId?: string }>).detail?.threadId;
+            if (threadId)
+                openRequestedThread(threadId);
+        };
+        window.addEventListener("uc:open-thread", onOpenThread);
+        let requestedThreadId: string | null = null;
+        try { requestedThreadId = localStorage.getItem("uc-open-thread-id"); } catch { /* non-fatal */ }
+        if (requestedThreadId && !openRequestedThread(requestedThreadId)) {
+            try { localStorage.removeItem("uc-open-thread-id"); } catch { /* non-fatal */ }
+        }
+        return () => window.removeEventListener("uc:open-thread", onOpenThread);
+    }, [openRequestedThread]);
 
     return (<div className="flex h-full flex-col gap-0">
         {/* Header */}
@@ -376,7 +389,7 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                                         <span className="max-w-[10rem] truncate text-foreground">{t.title}</span>
                                         <span className="text-[10px] text-muted-foreground">{label}</span>
                                         {lastMsg && <span className="text-[10px] text-muted-foreground/70">· {relativeDay(lastMsg.created_at)}</span>}
-                                        <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); togglePin(t.id, t.title); }} className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-100" title="Unpin">
+                                        <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); togglePin(t.id, t.title); }} className="ml-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" title="Unpin">
                                             <PinOff className="h-3 w-3 text-muted-foreground hover:text-destructive"/>
                                         </span>
                                     </button>
@@ -526,12 +539,12 @@ function InboxMessageCard({ message: m, thread, onOpen, isPinned, onTogglePin, i
                         <span className="max-w-md truncate">{thread.title}</span>
                     </button>
                     {/* Pin/unpin button — always visible if pinned, hover-only otherwise */}
-                    <button type="button" onClick={onTogglePin} className={cn("inline-flex items-center gap-0.5 text-[10px] font-medium transition-all hover:underline", isPinned ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100")} title={isPinned ? "Unpin thread" : "Pin thread for quick access"}>
+                    <button type="button" onClick={onTogglePin} className={cn("inline-flex items-center gap-0.5 text-[10px] font-medium transition-all hover:underline", isPinned ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100")} title={isPinned ? "Unpin thread" : "Pin thread for quick access"}>
                         {isPinned ? <Pin className="h-3 w-3 fill-primary"/> : <Pin className="h-3 w-3"/>}
                         {isPinned ? "Pinned" : "Pin"}
                     </button>
                     {/* Mark as unread / read toggle */}
-                    <button type="button" onClick={onToggleUnread} className={cn("inline-flex items-center gap-0.5 text-[10px] font-medium transition-all hover:underline", isUnread ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100")} title={isUnread ? "Mark as read" : "Mark as unread"}>
+                    <button type="button" onClick={onToggleUnread} className={cn("inline-flex items-center gap-0.5 text-[10px] font-medium transition-all hover:underline", isUnread ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100")} title={isUnread ? "Mark as read" : "Mark as unread"}>
                         {isUnread ? <CheckCheck className="h-3 w-3"/> : <Circle className="h-3 w-3"/>}
                         {isUnread ? "Read" : "Unread"}
                     </button>
@@ -542,12 +555,12 @@ function InboxMessageCard({ message: m, thread, onOpen, isPinned, onTogglePin, i
                             () => toast.success("Message copied to clipboard"),
                             () => toast.error("Could not copy to clipboard"),
                         );
-                    }} className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity hover:underline group-hover:opacity-100" title="Copy message to clipboard">
+                    }} className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100" title="Copy message to clipboard">
                         <Copy className="h-3 w-3"/>Copy
                     </button>
                     {/* Quick reply toggle — only for comment/decision/proof (not system/alert) */}
                     {!isSystem && !isAlert && (
-                        <button type="button" onClick={() => setShowReply((v) => !v)} className="inline-flex items-center gap-0.5 text-[10px] font-medium text-primary opacity-0 transition-opacity hover:underline group-hover:opacity-100" title="Quick reply">
+                        <button type="button" onClick={() => setShowReply((v) => !v)} className="inline-flex items-center gap-0.5 text-[10px] font-medium text-primary opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100" title="Quick reply">
                             <Send className="h-3 w-3"/>Reply
                         </button>
                     )}

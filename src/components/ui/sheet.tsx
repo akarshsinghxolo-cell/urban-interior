@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { PortalActivityBoundary } from "@/components/ui/portal-activity";
 import * as SheetPrimitive from "@radix-ui/react-dialog";
 import { XIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,7 @@ function SheetClose({ ...props }: React.ComponentProps<typeof SheetPrimitive.Clo
     return <SheetPrimitive.Close data-slot="sheet-close" {...props}/>;
 }
 function SheetPortal({ ...props }: React.ComponentProps<typeof SheetPrimitive.Portal>) {
-    return <SheetPrimitive.Portal data-slot="sheet-portal" {...props}/>;
+    return <PortalActivityBoundary><SheetPrimitive.Portal data-slot="sheet-portal" {...props}/></PortalActivityBoundary>;
 }
 function SheetOverlay({ className, ...props }: React.ComponentProps<typeof SheetPrimitive.Overlay>) {
     return (<SheetPrimitive.Overlay data-slot="sheet-overlay" className={cn("data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50", className)} {...props}/>);

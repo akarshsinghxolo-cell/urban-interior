@@ -372,7 +372,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
             {uploadedMedia.length > 0 && (<div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {uploadedMedia.map((m) => (<div key={m.id} className="group relative overflow-hidden rounded-md border border-border bg-muted/30">
                     <FilePreview file={{ fileName: m.file_name, mimeType: m.mime_type || (m.type === "pdf" ? "application/pdf" : m.type === "video" ? "video/*" : "image/*"), url: m.url }} compact controls/>
-                    <button type="button" onClick={() => setUploadedMedia((arr) => arr.filter((x) => x.id !== m.id))} className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100" aria-label="Remove">
+                    <button type="button" onClick={() => setUploadedMedia((arr) => arr.filter((x) => x.id !== m.id))} className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${m.file_name}`}>
                       <X className="h-3 w-3"/>
                     </button>
                     <p className="truncate px-1 py-0.5 text-[10px] text-muted-foreground">{m.file_name}</p>

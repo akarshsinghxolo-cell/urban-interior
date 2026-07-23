@@ -506,7 +506,7 @@ export function FieldModeModule() {
               {photos.length > 0 && (<div className="mb-2 grid grid-cols-3 gap-2">
                   {photos.map((p, i) => (<div key={i} className="group relative overflow-hidden rounded-lg border border-border">
                       <FilePreview file={{ fileName: p.name, mimeType: p.mimeType, url: p.url }} compact controls/>
-                      <button type="button" onClick={() => removePhoto(i)} className="absolute right-1 top-1 rounded-md bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                      <button type="button" onClick={() => removePhoto(i)} className="absolute right-1 top-1 rounded-md bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${p.name}`}>
                         <X className="h-3 w-3"/>
                       </button>
                       <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 py-0.5 text-[8px] text-white">

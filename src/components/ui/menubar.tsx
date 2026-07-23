@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { PortalActivityBoundary } from "@/components/ui/portal-activity";
 import * as MenubarPrimitive from "@radix-ui/react-menubar";
 import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,7 @@ function MenubarGroup({ ...props }: React.ComponentProps<typeof MenubarPrimitive
     return <MenubarPrimitive.Group data-slot="menubar-group" {...props}/>;
 }
 function MenubarPortal({ ...props }: React.ComponentProps<typeof MenubarPrimitive.Portal>) {
-    return <MenubarPrimitive.Portal data-slot="menubar-portal" {...props}/>;
+    return <PortalActivityBoundary><MenubarPrimitive.Portal data-slot="menubar-portal" {...props}/></PortalActivityBoundary>;
 }
 function MenubarRadioGroup({ ...props }: React.ComponentProps<typeof MenubarPrimitive.RadioGroup>) {
     return (<MenubarPrimitive.RadioGroup data-slot="menubar-radio-group" {...props}/>);

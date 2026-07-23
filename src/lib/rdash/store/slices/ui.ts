@@ -1,166 +1,58 @@
 /**
- * UI slice — tabs, modules, detail panel, dialogs, saved views, navigation.
- *
- * Phase 3o moved the 31 UI/workspace/navigation actions out of store.ts.
- * The actions split into 5 contiguous groups:
- *   Group 1: openCreateDialog, closeCreateDialog, openActionDialog,
- *            closeActionDialog, setCommandPaletteOpen
- *   Group 2: addSavedView, deleteSavedView, renameSavedView,
- *            openQuotationAcceptanceDialog, closeQuotationAcceptanceDialog,
- *            quotationAcceptanceWarnings
- *   Group 3: setActiveModule, navigateModuleHistory, setModuleSearch,
- *            setWorkspaceSearch, openTab, closeTab, setActiveTab
- *   Group 4: selectCustomer, setMobileNavOpen, setMoreMenuOpen,
- *            setTaskPriorityOrder, addRecentCreated, openContextCustomer,
- *            openContextDetail, setContextCustomerTab, setContextDetailTab,
- *            navigateContextHistory, clearContextHistory
- *   Group 5: openDetail, closeDetail
- *
- * 3 module-scope helpers were moved with the slice because they are only
- * used by UI actions: `detailRecordExists`, `detailRecordCustomerId`,
- * `contextDetailPanel`. The pure helper `quotationAcceptanceWarnings` (the
- * function form that operates on a quotation + db) was already in
- * `../quotations-helpers`; the action of the same name is a thin wrapper
- * that resolves the quotation then delegates to the helper. To avoid the
- * name collision inside the slice, the helper is imported under the alias
- * `computeQuotationAcceptanceWarnings`.
- *
- * State fields (activeModuleId, tabs, detailPanel, savedViews, etc.) and
- * their initial values stay in store.ts — slices only return actions.
+ * UI slice — tabs, modules, detail panels, typed overlays, saved views, and
+ * browser-restorable navigation snapshots. Pure record/navigation helpers
+ * live in `detail-navigation.ts`; this slice validates and commits state.
  */
-import type { RDashDatabase } from "../../types";
 import type { UIState } from "../types";
 import type { StoreContext } from "../context";
 import type {
-    ContextHistoryEntry, DetailPanelKind, DetailPanelState,
+    ActionDialogState, ContextHistoryEntry, CreateDialogRequest, DetailPanelState,
+    EditDialogRequest, WorkspaceNavigationSnapshot, WorkspaceTab,
 } from "../ui-types";
 import { canonicalModuleId, resolveRenderer } from "../../modules";
 import { quotationAcceptanceWarnings as computeQuotationAcceptanceWarnings } from "../quotations-helpers";
+import { persistSavedViews } from "../../saved-views-storage";
+import { contextDetailPanel, detailRecordCustomerId, detailRecordExists, isEntityInspectorKind, workspaceOverlayIsValid } from "../../detail-navigation";
+
+const MAX_MODULE_HISTORY_ENTRIES = 100;
+
+function ensureModuleTab(state: { tabs: WorkspaceTab[] }, moduleId: string) {
+    const resolved = resolveRenderer(moduleId);
+    const existing = state.tabs.find((tab) => tab.moduleId === moduleId);
+    const tab: WorkspaceTab = existing || {
+        id: `tab-${moduleId}`,
+        moduleId,
+        label: resolved.label,
+        icon: resolved.icon,
+    };
+    const tabs = existing
+        ? state.tabs.map((entry) => entry.id === existing.id ? { ...entry, label: resolved.label, icon: resolved.icon } : entry)
+        : [...state.tabs, tab];
+    return { tab, tabs, resolved };
+}
+
+function appendModuleHistory(state: any, moduleId: string, label: string, icon?: string) {
+    const current = state.moduleHistory[state.moduleHistoryIndex];
+    if (current?.moduleId === moduleId) {
+        return { moduleHistory: state.moduleHistory, moduleHistoryIndex: state.moduleHistoryIndex };
+    }
+    const entry = { id: `nav-${moduleId}-${Date.now()}`, moduleId, label, icon };
+    const candidate = [...state.moduleHistory.slice(0, state.moduleHistoryIndex + 1), entry];
+    const moduleHistory = candidate.slice(-MAX_MODULE_HISTORY_ENTRIES);
+    return { moduleHistory, moduleHistoryIndex: moduleHistory.length - 1 };
+}
 
 /** State fields that stay inline in store.ts; the slice returns only actions. */
 type UIActions = Omit<UIState,
     | "activeModuleId" | "moduleHistory" | "moduleHistoryIndex"
     | "moduleSearch" | "workspaceSearch" | "tabs" | "activeTabId"
     | "selectedCustomerId" | "mobileNavOpen" | "sidebarCollapsed" | "moreMenuOpen"
+    | "quickAddOpen" | "keyboardShortcutsOpen"
     | "taskPriorityOrder" | "recentCreated" | "createDialog"
     | "detailPanel" | "contextHistory" | "contextHistoryIndex"
     | "actionDialog" | "commandPaletteOpen" | "savedViews"
     | "quotationAcceptanceDialog"
     | "reportFilter">;
-
-function detailRecordExists(db: RDashDatabase, kind: Exclude<DetailPanelKind, null>, id: string) {
-    const records: Record<Exclude<DetailPanelKind, null>, Array<{
-        id: string;
-    }>> = {
-        quotation: db.quotations,
-        workOrder: db.workOrders,
-        task: db.tasks,
-        followup: db.followups,
-        visit: db.visits,
-        payment: db.payments,
-        invoice: db.invoices,
-        po: db.purchaseOrders,
-        grn: db.grns,
-        dispatch: db.dispatches,
-        boq: db.boqs,
-        vendorBill: db.vendorBills,
-        commission: db.commissions,
-        blocked: db.blocked,
-        customer: db.customers,
-        site: db.sites,
-        area: db.areas,
-        workRequired: db.workRequired,
-        inventory: db.inventory,
-        vendor: db.master.vendors,
-        vendorRate: db.master.vendorRates,
-        contractor: db.master.contractors,
-        contractorBill: db.contractorBills,
-        contractorPayment: db.contractorPayments,
-        staff: db.master.staff,
-        audit: db.auditLog,
-        media: db.master.fileAssets,
-    };
-    return records[kind].some((record) => record.id === id);
-}
-
-function detailRecordCustomerId(db: RDashDatabase, kind: Exclude<DetailPanelKind, null>, recordId: string): string | undefined {
-    if (kind === "customer")
-        return db.customers.some((row) => row.id === recordId) ? recordId : undefined;
-    if (kind === "site")
-        return db.sites.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "area") {
-        const area = db.areas.find((row) => row.id === recordId);
-        return area ? db.sites.find((site) => site.id === area.site_id)?.customer_id : undefined;
-    }
-    if (kind === "workRequired")
-        return db.workRequired.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "quotation")
-        return db.quotations.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "workOrder")
-        return db.workOrders.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "task")
-        return db.tasks.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "followup")
-        return db.followups.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "visit")
-        return db.visits.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "payment")
-        return db.payments.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "invoice")
-        return db.invoices.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "po") {
-        const po = db.purchaseOrders.find((row) => row.id === recordId);
-        return po ? db.workOrders.find((row) => row.id === po.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "grn") {
-        const grn = db.grns.find((row) => row.id === recordId);
-        return grn ? db.workOrders.find((row) => row.id === grn.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "dispatch") {
-        const dispatch = db.dispatches.find((row) => row.id === recordId);
-        return dispatch ? db.workOrders.find((row) => row.id === dispatch.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "boq") {
-        const boq = db.boqs.find((row) => row.id === recordId);
-        return boq ? db.workOrders.find((row) => row.id === boq.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "vendorBill") {
-        const bill = db.vendorBills.find((row) => row.id === recordId);
-        return bill ? db.workOrders.find((row) => row.id === bill.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "blocked")
-        return db.blocked.find((row) => row.id === recordId)?.customer_id;
-    if (kind === "commission")
-        return db.commissions.find((row) => row.id === recordId)?.customer_id;
-    // FIX-CONTRACTOR-BATCH2 / F.15: contractor bills / payments resolve
-    // through their work_order_id → workOrder.customer_id chain so the
-    // customer-context navigation header shows the correct root customer.
-    if (kind === "contractorBill") {
-        const bill = db.contractorBills.find((row) => row.id === recordId);
-        return bill ? db.workOrders.find((row) => row.id === bill.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "contractorPayment") {
-        const payment = db.contractorPayments.find((row) => row.id === recordId);
-        return payment ? db.workOrders.find((row) => row.id === payment.work_order_id)?.customer_id : undefined;
-    }
-    if (kind === "inventory") {
-        const inventory = db.inventory.find((row) => row.id === recordId);
-        return inventory?.work_order_id ? db.workOrders.find((row) => row.id === inventory.work_order_id)?.customer_id : undefined;
-    }
-    // Entity-master records are intentionally not customer-rooted. They open the
-    // same right-side panel as an entity inspector and can still link onward to
-    // customer-rooted operational records from their overview tabs.
-    if (kind === "vendor" || kind === "vendorRate" || kind === "contractor" || kind === "staff" || kind === "audit" || kind === "media")
-        return undefined;
-    return undefined;
-}
-
-function contextDetailPanel(entry: ContextHistoryEntry): DetailPanelState {
-    return { kind: entry.kind, recordId: entry.recordId, fromModule: "context", panelTab: entry.detailTab || "overview" };
-}
-function isEntityInspectorKind(kind: Exclude<DetailPanelKind, null>) {
-    return kind === "vendor" || kind === "vendorRate" || kind === "contractor" || kind === "staff" || kind === "audit" || kind === "media";
-}
 
 export function createUISlice(ctx: StoreContext): UIActions {
     const { commitState, get } = ctx;
@@ -180,22 +72,28 @@ export function createUISlice(ctx: StoreContext): UIActions {
         openActionDialog: (type, customerId) => commitState({ actionDialog: { type, customerId } }),
         closeActionDialog: () => commitState({ actionDialog: { type: null, customerId: undefined } }),
         setCommandPaletteOpen: (v) => commitState({ commandPaletteOpen: v }),
-        addSavedView: (view) => commitState((s: any) => ({
-            savedViews: [
+        addSavedView: (view) => commitState((s: any) => {
+            const savedViews = [
                 ...s.savedViews,
                 {
                     ...view,
                     id: `sv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
                     createdAt: Date.now(),
                 },
-            ],
-        })),
-        deleteSavedView: (id) => commitState((s: any) => ({
-            savedViews: s.savedViews.filter((v: any) => v.id !== id),
-        })),
-        renameSavedView: (id, label) => commitState((s: any) => ({
-            savedViews: s.savedViews.map((v: any) => v.id === id ? { ...v, label } : v),
-        })),
+            ].slice(-100);
+            persistSavedViews(savedViews);
+            return { savedViews };
+        }),
+        deleteSavedView: (id) => commitState((s: any) => {
+            const savedViews = s.savedViews.filter((v: any) => v.id !== id);
+            persistSavedViews(savedViews);
+            return { savedViews };
+        }),
+        renameSavedView: (id, label) => commitState((s: any) => {
+            const savedViews = s.savedViews.map((v: any) => v.id === id ? { ...v, label } : v);
+            persistSavedViews(savedViews);
+            return { savedViews };
+        }),
         openQuotationAcceptanceDialog: (quotationId) => commitState({ quotationAcceptanceDialog: { quotationId } }),
         openEditDialog: (request) => commitState({ editDialog: request }),
         closeEditDialog: () => commitState({ editDialog: null }),
@@ -209,39 +107,13 @@ export function createUISlice(ctx: StoreContext): UIActions {
         setActiveModule: (id) => {
             const state = get();
             const moduleId = canonicalModuleId(id);
-            const resolved = resolveRenderer(moduleId);
-            const tabId = `tab-${moduleId}`;
-            const exists = state.tabs.some((tab: any) => tab.moduleId === moduleId);
-            const tabs = exists
-                ? state.tabs.map((tab: any) => tab.moduleId === moduleId
-                    ? { ...tab, label: resolved.label, icon: resolved.icon }
-                    : tab)
-                : [
-                    ...state.tabs,
-                    { id: tabId, moduleId, label: resolved.label, icon: resolved.icon },
-                ];
-            const entry = {
-                id: `nav-${moduleId}-${Date.now()}`,
-                moduleId,
-                label: resolved.label,
-                icon: resolved.icon,
-            };
-            const current = state.moduleHistory[state.moduleHistoryIndex];
-            const candidateHistory = current?.moduleId === moduleId
-                ? state.moduleHistory
-                : [
-                    ...state.moduleHistory.slice(0, state.moduleHistoryIndex + 1),
-                    entry,
-                ];
-            const history = candidateHistory.slice(-100);
+            const { tab, tabs, resolved } = ensureModuleTab(state, moduleId);
+            const history = appendModuleHistory(state, moduleId, resolved.label, resolved.icon);
             commitState({
                 activeModuleId: moduleId,
-                activeTabId: exists
-                    ? state.tabs.find((tab: any) => tab.moduleId === moduleId)!.id
-                    : tabId,
+                activeTabId: tab.id,
                 tabs,
-                moduleHistory: history,
-                moduleHistoryIndex: history.length - 1,
+                ...history,
                 mobileNavOpen: false,
                 detailPanel: { kind: null, recordId: null },
                 contextHistory: [],
@@ -252,13 +124,13 @@ export function createUISlice(ctx: StoreContext): UIActions {
             const state = get();
             const targetIndex = state.moduleHistoryIndex + direction;
             const target = state.moduleHistory[targetIndex];
-            if (!target)
-                return;
+            if (!target) return;
             const moduleId = canonicalModuleId(target.moduleId);
-            const tab = state.tabs.find((row: any) => row.moduleId === moduleId);
+            const { tab, tabs } = ensureModuleTab(state, moduleId);
             commitState({
                 activeModuleId: moduleId,
-                activeTabId: tab?.id || state.activeTabId,
+                activeTabId: tab.id,
+                tabs,
                 moduleHistoryIndex: targetIndex,
                 mobileNavOpen: false,
                 detailPanel: { kind: null, recordId: null },
@@ -268,45 +140,59 @@ export function createUISlice(ctx: StoreContext): UIActions {
         },
         setModuleSearch: (q) => commitState({ moduleSearch: q }),
         setWorkspaceSearch: (q) => commitState({ workspaceSearch: q }),
-        openTab: (tab) => commitState((state: any) => {
+        openTab: (tab) => {
+            const state = get();
             const moduleId = canonicalModuleId(tab.moduleId);
-            const existing = state.tabs.find((entry: any) => entry.moduleId === moduleId);
-            if (existing)
-                return { activeModuleId: moduleId, activeTabId: existing.id };
-            const resolved = resolveRenderer(moduleId);
-            const normalizedTab = {
-                ...tab,
-                id: `tab-${moduleId}`,
-                moduleId,
-                label: resolved.label,
-                icon: resolved.icon,
-            };
-            return {
-                tabs: [...state.tabs, normalizedTab],
+            const ensured = ensureModuleTab(state, moduleId);
+            const history = appendModuleHistory(state, moduleId, ensured.resolved.label, ensured.resolved.icon);
+            commitState({
+                tabs: ensured.tabs,
                 activeModuleId: moduleId,
-                activeTabId: normalizedTab.id,
+                activeTabId: ensured.tab.id,
+                ...history,
+                mobileNavOpen: false,
+                detailPanel: { kind: null, recordId: null },
+                contextHistory: [],
+                contextHistoryIndex: -1,
+            });
+        },
+        closeTab: (id) => commitState((state: any) => {
+            if (state.tabs.length <= 1) return {};
+            const index = state.tabs.findIndex((tab: WorkspaceTab) => tab.id === id);
+            if (index < 0) return {};
+            const tabs = state.tabs.filter((tab: WorkspaceTab) => tab.id !== id);
+            if (state.activeTabId !== id) return { tabs };
+            const next = tabs[Math.min(index, tabs.length - 1)] || tabs[0];
+            if (!next) return {};
+            const moduleId = canonicalModuleId(next.moduleId);
+            const resolved = resolveRenderer(moduleId);
+            const history = appendModuleHistory(state, moduleId, resolved.label, resolved.icon);
+            return {
+                tabs,
+                activeTabId: next.id,
+                activeModuleId: moduleId,
+                ...history,
+                mobileNavOpen: false,
+                detailPanel: { kind: null, recordId: null },
+                contextHistory: [],
+                contextHistoryIndex: -1,
             };
-        }),
-        closeTab: (id) => commitState((s: any) => {
-            const idx = s.tabs.findIndex((t: any) => t.id === id);
-            const tabs = s.tabs.filter((t: any) => t.id !== id);
-            let activeTabId = s.activeTabId;
-            let activeModuleId = s.activeModuleId;
-            if (s.activeTabId === id) {
-                const next = tabs[Math.min(idx, tabs.length - 1)] || tabs[0];
-                activeTabId = next?.id ?? null;
-                activeModuleId = next?.moduleId ?? "workdesk";
-            }
-            return { tabs, activeTabId, activeModuleId };
         }),
         setActiveTab: (id) => {
             const state = get();
-            const tab = state.tabs.find((entry: any) => entry.id === id);
-            const moduleId = canonicalModuleId(tab?.moduleId || "workdesk");
-            const fallbackTab = state.tabs.find((entry: any) => entry.moduleId === moduleId);
+            const tab = state.tabs.find((entry: WorkspaceTab) => entry.id === id);
+            if (!tab) return;
+            const moduleId = canonicalModuleId(tab.moduleId);
+            const resolved = resolveRenderer(moduleId);
+            const history = appendModuleHistory(state, moduleId, resolved.label, resolved.icon);
             commitState({
-                activeTabId: fallbackTab?.id || state.activeTabId,
+                activeTabId: tab.id,
                 activeModuleId: moduleId,
+                ...history,
+                mobileNavOpen: false,
+                detailPanel: { kind: null, recordId: null },
+                contextHistory: [],
+                contextHistoryIndex: -1,
             });
         },
         selectCustomer: (id) => commitState({ selectedCustomerId: id }),
@@ -314,6 +200,8 @@ export function createUISlice(ctx: StoreContext): UIActions {
         setSidebarCollapsed: (v) => commitState({ sidebarCollapsed: v }),
         toggleSidebar: () => commitState((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
         setMoreMenuOpen: (v) => commitState({ moreMenuOpen: v }),
+        setQuickAddOpen: (v) => commitState({ quickAddOpen: v }),
+        setKeyboardShortcutsOpen: (v) => commitState({ keyboardShortcutsOpen: v }),
         setTaskPriorityOrder: (ids) => commitState({ taskPriorityOrder: ids }),
         addRecentCreated: (entry) => commitState((s: any) => ({
             recentCreated: [
@@ -439,6 +327,109 @@ export function createUISlice(ctx: StoreContext): UIActions {
             });
         },
         closeDetail: () => commitState({ detailPanel: { kind: null, recordId: null }, contextHistory: [], contextHistoryIndex: -1 }),
+        restoreNavigationSnapshot: (snapshot: WorkspaceNavigationSnapshot) => {
+            const state = get();
+            const moduleId = canonicalModuleId(snapshot.moduleId || "workdesk");
+            const resolved = resolveRenderer(moduleId);
+            const existingTab = state.tabs.find((tab: any) => tab.moduleId === moduleId);
+            const activeTab = existingTab || {
+                id: `tab-${moduleId}`,
+                moduleId,
+                label: resolved.label,
+                icon: resolved.icon,
+            };
+            const tabs = existingTab
+                ? state.tabs.map((tab: WorkspaceTab) => tab.id === existingTab.id ? { ...tab, label: resolved.label, icon: resolved.icon } : tab)
+                : [...state.tabs, activeTab];
+            const validContextHistory = snapshot.contextHistory.filter((entry) =>
+                detailRecordExists(state.db, entry.kind, entry.recordId) &&
+                (!entry.customerId || state.db.customers.some((customer) => customer.id === entry.customerId)),
+            );
+            const validOverlays = (snapshot.overlays || []).filter((overlay) => workspaceOverlayIsValid(state.db, overlay));
+            const requestedContext = snapshot.contextHistoryIndex >= 0
+                ? snapshot.contextHistory[snapshot.contextHistoryIndex]
+                : undefined;
+            const contextHistoryIndex = requestedContext
+                ? validContextHistory.findIndex((entry) =>
+                    entry.kind === requestedContext.kind && entry.recordId === requestedContext.recordId)
+                : -1;
+            const requestedDetail = snapshot.detailPanel;
+            const validDetail = requestedDetail.kind && requestedDetail.recordId && detailRecordExists(state.db, requestedDetail.kind, requestedDetail.recordId)
+                ? { ...requestedDetail }
+                : { kind: null, recordId: null } as DetailPanelState;
+            const currentContext = contextHistoryIndex >= 0 ? validContextHistory[contextHistoryIndex] : undefined;
+            const detailPanel = validDetail.kind && validDetail.fromModule === "context"
+                ? currentContext
+                    ? { ...contextDetailPanel(currentContext), panelTab: validDetail.panelTab || currentContext.detailTab || "overview" }
+                    : { kind: null, recordId: null } as DetailPanelState
+                : validDetail;
+            const detailCustomerId = detailPanel.kind && detailPanel.recordId
+                ? detailRecordCustomerId(state.db, detailPanel.kind, detailPanel.recordId)
+                : undefined;
+            const requestedModuleHistoryIndex = snapshot.moduleHistoryIndex;
+            const matchingHistoryIndex = state.moduleHistory.reduce((match: number, entry: WorkspaceTab, index: number) =>
+                canonicalModuleId(entry.moduleId) === moduleId ? index : match, -1);
+            const requestedHistoryMatches =
+                Number.isInteger(requestedModuleHistoryIndex) &&
+                requestedModuleHistoryIndex >= 0 &&
+                requestedModuleHistoryIndex < state.moduleHistory.length &&
+                canonicalModuleId(state.moduleHistory[requestedModuleHistoryIndex].moduleId) === moduleId;
+            const restoredHistory = requestedHistoryMatches || matchingHistoryIndex >= 0
+                ? {
+                    moduleHistory: state.moduleHistory,
+                    moduleHistoryIndex: requestedHistoryMatches ? requestedModuleHistoryIndex : matchingHistoryIndex,
+                }
+                : appendModuleHistory(
+                    { ...state, moduleHistoryIndex: state.moduleHistory.length - 1 },
+                    moduleId,
+                    resolved.label,
+                    resolved.icon,
+                );
+            let commandPaletteOpen = false;
+            let actionDialog: ActionDialogState = { type: null, customerId: undefined };
+            let createDialog: CreateDialogRequest | null = null;
+            let quotationAcceptanceDialog: { quotationId: string } | null = null;
+            let editDialog: EditDialogRequest | null = null;
+            let mobileNavOpen = false;
+            let moreMenuOpen = false;
+            let quickAddOpen = false;
+            let keyboardShortcutsOpen = false;
+            for (const overlay of validOverlays) {
+                if (overlay.type === "commandPalette") commandPaletteOpen = true;
+                else if (overlay.type === "actionDialog" && overlay.value.type) actionDialog = overlay.value;
+                else if (overlay.type === "createDialog") createDialog = overlay.value;
+                else if (overlay.type === "quotationAcceptance") quotationAcceptanceDialog = { quotationId: overlay.quotationId };
+                else if (overlay.type === "editDialog") editDialog = overlay.value;
+                else if (overlay.type === "mobileNav") mobileNavOpen = true;
+                else if (overlay.type === "moreMenu") moreMenuOpen = true;
+                else if (overlay.type === "quickAdd") quickAddOpen = true;
+                else if (overlay.type === "keyboardShortcuts") keyboardShortcutsOpen = true;
+            }
+            commitState({
+                activeModuleId: moduleId,
+                activeTabId: activeTab.id,
+                tabs,
+                moduleHistory: restoredHistory.moduleHistory,
+                moduleHistoryIndex: restoredHistory.moduleHistoryIndex,
+                selectedCustomerId: currentContext?.customerId || detailCustomerId || (
+                    !detailPanel.kind && snapshot.selectedCustomerId && state.db.customers.some((customer) => customer.id === snapshot.selectedCustomerId)
+                        ? snapshot.selectedCustomerId
+                        : null
+                ),
+                detailPanel,
+                contextHistory: validContextHistory,
+                contextHistoryIndex,
+                commandPaletteOpen,
+                actionDialog,
+                createDialog,
+                quotationAcceptanceDialog,
+                editDialog,
+                mobileNavOpen,
+                moreMenuOpen,
+                quickAddOpen,
+                keyboardShortcutsOpen,
+            });
+        },
         /**
          * I: Set a deep-link filter for the Reports module. Any module can call
          * this + setActiveModule("salesReport" | "jobPnlReport" | ...) to deep-

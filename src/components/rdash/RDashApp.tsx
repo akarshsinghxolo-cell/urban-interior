@@ -3,60 +3,16 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Compass, MapPin, Pin, Zap, Menu, Plus } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
-import { resolveRenderer } from "@/lib/rdash/modules";
 import { initAuthFetch, clearSessionToken, getSessionToken } from "@/lib/rdash/client-auth";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
+import { WorkspaceModulePanels } from "./WorkspaceModuleRouter";
 import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
-const DailyWork = React.lazy(() => import("./modules/DailyWork").then((module) => ({ default: module.DailyWork })));
-const CustomerDesk = React.lazy(() => import("./modules/CustomerDesk").then((module) => ({ default: module.CustomerDesk })));
-const SiteExecutionModule = React.lazy(() => import("./modules/SiteExecutionModule").then((module) => ({ default: module.SiteExecutionModule })));
-const DrawingsModule = React.lazy(() => import("./modules/DrawingsExecutionModules").then((module) => ({ default: module.DrawingsModule })));
-const ExecutionLogsModule = React.lazy(() => import("./modules/DrawingsExecutionModules").then((module) => ({ default: module.ExecutionLogsModule })));
-const TasksFollowups = React.lazy(() => import("./modules/TasksFollowups").then((module) => ({ default: module.TasksFollowups })));
-const GenericModule = React.lazy(() => import("./modules/GenericModule").then((module) => ({ default: module.GenericModule })));
+import { indiaBusinessDate } from "@/lib/rdash/format";
 const DetailPanel = React.lazy(() => import("./DetailPanel").then((module) => ({ default: module.DetailPanel })));
-const BOQModule = React.lazy(() => import("./modules/BOQModule").then((module) => ({ default: module.BOQModule })));
-const ProcurementModule = React.lazy(() => import("./modules/ProcurementModule").then((module) => ({ default: module.ProcurementModule })));
-const GRNModule = React.lazy(() => import("./modules/GRNModule").then((module) => ({ default: module.GRNModule })));
-const InventoryModule = React.lazy(() => import("./modules/InventoryModule").then((module) => ({ default: module.InventoryModule })));
-const DispatchModule = React.lazy(() => import("./modules/DispatchModule").then((module) => ({ default: module.DispatchModule })));
-const JobPnLModule = React.lazy(() => import("./modules/JobPnLModule").then((module) => ({ default: module.JobPnLModule })));
-const SiteProfitabilityModule = React.lazy(() => import("./modules/SiteProfitabilityModule").then((module) => ({ default: module.SiteProfitabilityModule })));
-const StaffSalaryModule = React.lazy(() => import("./modules/StaffSalaryModule").then((module) => ({ default: module.StaffSalaryModule })));
-const VendorPerformanceModule = React.lazy(() => import("./modules/VendorPerformanceModule").then((module) => ({ default: module.VendorPerformanceModule })));
-const ContractorPerformanceModule = React.lazy(() => import("./modules/ContractorPerformanceModule").then((module) => ({ default: module.ContractorPerformanceModule })));
-const WorkOrderTimelineModule = React.lazy(() => import("./modules/WorkOrderTimelineModule").then((module) => ({ default: module.WorkOrderTimelineModule })));
-const VendorBillsModule = React.lazy(() => import("./modules/VendorBillsModule").then((module) => ({ default: module.VendorBillsModule })));
-const ContractorPaymentsModule = React.lazy(() => import("./modules/ContractorPaymentsModule").then((module) => ({ default: module.ContractorPaymentsModule })));
-const FinanceOverviewModule = React.lazy(() => import("./modules/FinanceOverviewModule").then((module) => ({ default: module.FinanceOverviewModule })));
-const PaymentRecoveryModule = React.lazy(() => import("./modules/PaymentRecoveryModule").then((module) => ({ default: module.PaymentRecoveryModule })));
-const ReportsModule = React.lazy(() => import("./modules/ReportsModule").then((module) => ({ default: module.ReportsModule })));
-const CalendarModule = React.lazy(() => import("./modules/CalendarModule").then((module) => ({ default: module.CalendarModule })));
-const SiteMeasurementModule = React.lazy(() => import("./modules/SiteMeasurementModule").then((module) => ({ default: module.SiteMeasurementModule })));
-const ApprovalPoliciesModule = React.lazy(() => import("./modules/ApprovalPoliciesModule").then((module) => ({ default: module.ApprovalPoliciesModule })));
-const ControlBrainModule = React.lazy(() => import("./modules/ControlBrainModule").then((module) => ({ default: module.ControlBrainModule })));
-const AuditLogModule = React.lazy(() => import("./modules/AuditLogModule").then((module) => ({ default: module.AuditLogModule })));
-const DataImportModule = React.lazy(() => import("./modules/DataImportModule").then((module) => ({ default: module.DataImportModule })));
-const DataExportModule = React.lazy(() => import("./modules/DataExportModule").then((module) => ({ default: module.DataExportModule })));
-const RateFinderModule = React.lazy(() => import("./modules/RateFinderModule").then((module) => ({ default: module.RateFinderModule })));
-const GpsTrackingModule = React.lazy(() => import("./modules/GpsTrackingModule").then((module) => ({ default: module.GpsTrackingModule })));
-const VisitProofsModule = React.lazy(() => import("./modules/VisitProofsModule").then((module) => ({ default: module.VisitProofsModule })));
-const AttendancePayrollModule = React.lazy(() => import("./modules/AttendancePayrollModule").then((module) => ({ default: module.AttendancePayrollModule })));
-const FieldModeModule = React.lazy(() => import("./modules/FieldModeModule").then((module) => ({ default: module.FieldModeModule })));
-const CommunicationCentreModule = React.lazy(() => import("./modules/CommunicationCentreModule").then((module) => ({ default: module.CommunicationCentreModule })));
-const QuotationConfigModule = React.lazy(() => import("./modules/QuotationConfigModule").then((module) => ({ default: module.QuotationConfigModule })));
-const StaffBoardModule = React.lazy(() => import("./modules/StaffBoardHistoryModule").then((module) => ({ default: module.StaffBoardModule })));
-const GstReturnsModule = React.lazy(() => import("./modules/SalesExtraModules").then((module) => ({ default: module.GstReturnsModule })));
-const MastersModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.MastersModule })));
-const SalesOpsModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.SalesOpsModule })));
-const ObstacleThreadsModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.ObstacleThreadsModule })));
-const ApprovalsModule = React.lazy(() => import("./modules/RemainingModules").then((module) => ({ default: module.ApprovalsModule })));
-const SiteVisitsModule = React.lazy(() => import("./modules/RemainingModules").then((module) => ({ default: module.SiteVisitsModule })));
-const QuotationsModule = React.lazy(() => import("./modules/QuotationsModule").then((module) => ({ default: module.QuotationsModule })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { PromptDialogProvider } from "./PromptDialog";
@@ -65,156 +21,10 @@ const ActionDialogsHost = React.lazy(() => import("./ActionDialogs").then((modul
 const QuotationAcceptanceDialog = React.lazy(() => import("./QuotationAcceptanceDialog").then((module) => ({ default: module.QuotationAcceptanceDialog })));
 const EditDetailsDialogHost = React.lazy(() => import("./EditDetailsDialogHost").then((module) => ({ default: module.EditDetailsDialogHost })));
 const ScrollToTop = React.lazy(() => import("./ScrollToTop").then((module) => ({ default: module.ScrollToTop })));
-const WorkCategoryMasterModule = React.lazy(() => import("./modules/WorkCategoryMasterModule").then((module) => ({ default: module.WorkCategoryMasterModule })));
-const VendorPriceMasterModule = React.lazy(() => import("./modules/VendorPriceMasterModule").then((module) => ({ default: module.VendorPriceMasterModule })));
-const MediaLibraryModule = React.lazy(() => import("./modules/MediaLibraryModule").then((module) => ({ default: module.MediaLibraryModule })));
-const GoogleDriveManagerModule = React.lazy(() => import("./modules/GoogleDriveManagerModule").then((module) => ({ default: module.GoogleDriveManagerModule })));
-const UserApprovalsModule = React.lazy(() => import("./modules/UserApprovalsModule").then((module) => ({ default: module.UserApprovalsModule })));
-const SalesPipelineModule = React.lazy(() => import("./modules/SalesPipelineModule").then((module) => ({ default: module.SalesPipelineModule })));
-const CommissionsModule = React.lazy(() => import("./modules/CommissionsModule").then((module) => ({ default: module.CommissionsModule })));
-const ThreadsModule = React.lazy(() => import("./modules/ThreadsModule").then((module) => ({ default: module.ThreadsModule })));
-const UnifiedThreadInboxModule = React.lazy(() => import("./modules/UnifiedThreadInboxModule").then((module) => ({ default: module.UnifiedThreadInboxModule })));
-const IntegrityModule = React.lazy(() => import("./modules/IntegrityModule").then((module) => ({ default: module.IntegrityModule })));
-const ContractorDetailModule = React.lazy(() => import("./modules/ContractorDetailModule").then((module) => ({ default: module.ContractorDetailModule })));
-const CustomerDeskExtrasModule = React.lazy(() => import("./modules/RemainingModules").then((module) => ({ default: module.CustomerDeskExtrasModule })));
 const QuickAddSheet = React.lazy(() => import("./QuickAddSheet").then((module) => ({ default: module.QuickAddSheet })));
-const BlockedRisksCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.BlockedRisksCombined })));
-const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.CalendarRecurringCombined })));
 const MapCacheRegistration = React.lazy(() => import("./MapCacheRegistration").then((module) => ({ default: module.MapCacheRegistration })));
 const AutoGeofenceMonitor = React.lazy(() => import("./AutoGeofenceMonitor").then((module) => ({ default: module.AutoGeofenceMonitor })));
 const StaffLocationTracker = React.lazy(() => import("./StaffLocationTracker").then((module) => ({ default: module.StaffLocationTracker })));
-function localDateKey(date = new Date()) {
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-    return local.toISOString().slice(0, 10);
-}
-function ModuleLoadingFallback() {
-    return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 text-sm text-muted-foreground shadow-card">Loading workspace module...</div>;
-}
-function ModuleRouter() {
-    const activeModuleId = useRDashStore((s) => s.activeModuleId);
-    const route = resolveRenderer(activeModuleId);
-    switch (route.renderer) {
-        case "daily-work":
-            return <DailyWork />;
-        case "customer-desk":
-            return <CustomerDesk view={route.filter?.view === "timeline" ? "timeline" : "default"}/>;
-        case "customer-extras":
-            return <CustomerDeskExtrasModule submodule={route.filter?.sub || "requests"} filterPresets={route.filterPresets} />;
-        case "site-execution":
-            return <SiteExecutionModule initialTab={route.filter?.tab}/>;
-        case "tasks":
-            return <TasksFollowups submoduleFilter={route.filter} filterPresets={route.filterPresets} dataSource={route.dataSource}/>;
-        case "quotations":
-            return <QuotationsModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;
-        case "boq":
-            return <BOQModule />;
-        case "drawings":
-            return <DrawingsModule />;
-        case "execution-logs":
-            return <ExecutionLogsModule />;
-        case "procurement":
-            return <ProcurementModule />;
-        case "grn":
-            return <GRNModule />;
-        case "inventory":
-            return <InventoryModule />;
-        case "dispatch":
-            return <DispatchModule view={route.filter?.view}/>;
-        case "workOrder-pnl":
-            return <JobPnLModule />;
-        case "site-profitability":
-            return <SiteProfitabilityModule />;
-        case "staff-salary":
-            return <StaffSalaryModule />;
-        case "vendor-performance":
-            return <VendorPerformanceModule />;
-        case "contractor-performance":
-            return <ContractorPerformanceModule />;
-        case "wo-timeline":
-            return <WorkOrderTimelineModule />;
-        case "vendor-bills":
-            return <VendorBillsModule />;
-        case "contractor-payments":
-            return <ContractorPaymentsModule />;
-        case "contractor-detail":
-            return <ContractorDetailModule />;
-        case "finance-overview":
-            return <FinanceOverviewModule />;
-        case "payment-recovery":
-            return <PaymentRecoveryModule />;
-        case "reports-v2":
-            return <ReportsModule reportId={activeModuleId}/>;
-        case "calendar":
-            return route.filter?.view === "recurring" ? <CalendarRecurringCombined /> : <CalendarModule />;
-        case "site-measurement":
-            return <SiteMeasurementModule />;
-        case "approval-policies":
-            return <ApprovalPoliciesModule />;
-        case "control-brain":
-            return <ControlBrainModule />;
-        case "audit-log":
-            return <AuditLogModule />;
-        case "data-import":
-            return <DataImportModule />;
-        case "data-export":
-            return <DataExportModule />;
-        case "rate-finder":
-            return <RateFinderModule />;
-        case "gps-tracking":
-            return <GpsTrackingModule viewFilter={route.filter?.view}/>;
-        case "visit-proofs":
-            return <VisitProofsModule />;
-        case "attendance-payroll":
-            return <AttendancePayrollModule />;
-        case "field-mode":
-            return <FieldModeModule />;
-        case "communication-centre":
-            return <CommunicationCentreModule channelFilter={route.filter?.channel}/>;
-        case "quotation-config":
-            return <QuotationConfigModule config={route.filter?.config}/>;
-        case "staff-board":
-            return <StaffBoardModule />;
-        case "gst-returns":
-            return <GstReturnsModule />;
-        case "sales-pipeline":
-            return <SalesPipelineModule />;
-        case "commissions":
-            return <CommissionsModule />;
-        case "threads":
-            return <ThreadsModule />;
-        case "unified-thread-inbox":
-            return <UnifiedThreadInboxModule />;
-        case "masters":
-            return <WorkCategoryMasterModule initialView="catalogue"/>;
-        case "masters-v2":
-            return activeModuleId === "vendorRates"
-                ? <VendorPriceMasterModule />
-                : <MastersModule submodule={route.filter?.sub || activeModuleId}/>;
-        case "sales-ops":
-            return <SalesOpsModule submodule={route.filter?.sub || activeModuleId} filterPresets={route.filterPresets} statusFilter={route.filter?.status} expiringFilter={route.filter?.expiring}/>;
-        case "obstacle-threads":
-            return route.filter?.view === "combined" ? <BlockedRisksCombined /> : <ObstacleThreadsModule />;
-        case "approvals-v2":
-            return <ApprovalsModule />;
-        case "site-visits":
-            return <SiteVisitsModule />;
-        case "media-library":
-            return <MediaLibraryModule initialView={route.filter?.view}/>;
-        case "drive-manager":
-            return <GoogleDriveManagerModule />;
-        case "auth-users":
-            return <UserApprovalsModule />;
-        case "integrity":
-            return <IntegrityModule />;
-        case "system":
-            return <GenericModule renderer="system" dataSource={route.dataSource} filter={route.filter} filterPresets={route.filterPresets} moduleId={route.moduleId} label={route.label} description={route.description}/>;
-        default:
-            return renderUnreachableModule(route.renderer);
-    }
-}
-function renderUnreachableModule(_renderer: never) {
-    return <DailyWork />;
-}
 export function RDashApp() {
     const db = useRDashStore((s) => s.db);
     const activeModuleId = useRDashStore((s) => s.activeModuleId);
@@ -222,8 +32,9 @@ export function RDashApp() {
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
     const hydrateSecureWorkspace = useRDashStore((s) => s.hydrateSecureWorkspace);
+    const quickAddOpen = useRDashStore((s) => s.quickAddOpen);
+    const setQuickAddOpen = useRDashStore((s) => s.setQuickAddOpen);
     const [secureWorkspaceReady, setSecureWorkspaceReady] = React.useState(false);
-    const [quickAddOpen, setQuickAddOpen] = React.useState(false);
     const [secureWorkspaceError, setSecureWorkspaceError] = React.useState<string | null>(null);
     // CRON-7: Request notification permission on mount + check pending approvals
     React.useEffect(() => {
@@ -458,11 +269,7 @@ export function RDashApp() {
             <FavoritesBar />
           </div>
           <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-32 lg:pb-0">
-            <section aria-label="Active workspace" className="rd-module-enter mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] py-[var(--page-pad)]" key={activeModuleId}>
-              <React.Suspense fallback={<ModuleLoadingFallback />}>
-                <ModuleRouter />
-              </React.Suspense>
-            </section>
+            <WorkspaceModulePanels />
           </main>
           <button type="button" aria-label="Quick add" onClick={() => setQuickAddOpen(true)} className="absolute bottom-24 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition-all hover:scale-105 hover:bg-primary/90 active:scale-95 animate-pulse-ring lg:hidden" style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
             <Plus className="h-5 w-5"/>
@@ -504,9 +311,9 @@ export function RDashApp() {
             const Icon = item.icon;
             const active = activeModuleId === item.target.id;
             // CRON-4: Add count badges to mobile nav items
-            const todayKey = localDateKey();
+            const todayKey = indiaBusinessDate();
             const badgeCount = item.target.id === "tasks" ? db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date <= todayKey).length :
-                               item.target.id === "fieldOperations" ? db.visits.filter((v: any) => v.scheduled_at?.slice(0, 10) === todayKey).length :
+                               item.target.id === "fieldOperations" ? db.visits.filter((v: any) => indiaBusinessDate(v.scheduled_at) === todayKey).length :
                                item.target.id === "customerDesk" ? db.customers.length :
                                item.target.id === "workdesk" ? db.actions.filter((a: any) => a.status === "pending").length : 0;
             return (<button key={item.label} type="button" aria-label={item.label} aria-current={active ? "page" : undefined} onClick={() => setActiveModule(item.target.id)} className={cn("relative flex flex-1 flex-col items-center gap-0.5 px-2 py-2.5 text-[11px] font-bold transition-colors", active

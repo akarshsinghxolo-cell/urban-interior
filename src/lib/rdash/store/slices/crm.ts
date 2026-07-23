@@ -24,6 +24,7 @@
 import type { Customer, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
+import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
     assertAreaBelongsToSite, assertAreasBelongToSite,
@@ -90,6 +91,9 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             const before = get().db.workRequired.find((row: any) => row.id === id);
             if (!before)
                 throw new Error("Work Required not found.");
+            if (patch.status !== undefined && patch.status !== before.status) {
+                throw new Error("Work Required status must be changed through transitionWorkRequiredStatus so lifecycle rules are enforced.");
+            }
             const next = { ...before, ...patch };
             assertSiteBelongsToCustomer(get().db, next.site_id, next.customer_id, "Work Required");
             assertAreasBelongToSite(get().db, next.area_ids, next.site_id, "Work Required");
@@ -103,6 +107,41 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     workRequired: s.db.workRequired.map((row: any) => row.id === id ? { ...row, ...patch, updated_at: nowIso() } : row),
                 },
             }));
+        },
+        transitionWorkRequiredStatus: (id, status, options) => {
+            const before = get().db.workRequired.find((row: any) => row.id === id);
+            if (!before)
+                throw new Error("Work Required not found.");
+            const decision = evaluateWorkRequiredTransition(get().db, before, status);
+            if (!decision.allowed)
+                throw new Error(decision.reason || "This lifecycle transition is not allowed.");
+            const reason = options?.reason?.trim();
+            if (decision.requiresReason && !reason)
+                throw new Error("A reason is required for this lifecycle transition.");
+            const changedAt = nowIso();
+            commitState((state: any) => ({
+                db: {
+                    ...state.db,
+                    workRequired: state.db.workRequired.map((row: any) => row.id === id
+                        ? { ...row, status, updated_at: changedAt }
+                        : row),
+                },
+            }));
+            const actor = get().currentUser();
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Moved work required "${before.title}" from ${before.status} to ${status}`,
+                entity_type: "workRequired",
+                entity_id: id,
+                entity_label: before.title,
+                kind: "update",
+                reason: reason || `Lifecycle transition via ${options?.source || "system"}`,
+                cross_post: [
+                    { entity_type: "customer", entity_id: before.customer_id },
+                    { entity_type: "site", entity_id: before.site_id },
+                ],
+            });
         },
         addCustomer: (p) => {
             assertUniqueCustomerIdentity(get().db.customers, p);
@@ -768,7 +807,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                             ["new", "contacted", "visit_scheduled"].includes(existing.status)
                             ? {
                                 ...existing,
-                                status: "measurement_done" as const,
+                                status: advanceWorkRequiredLifecycleStatus(existing.status, "measurement_done"),
                                 updated_at: now,
                             }
                             : existing)

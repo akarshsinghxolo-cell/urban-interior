@@ -108,7 +108,7 @@ function isOverdueDate(dueDate: string | undefined, at = new Date()) {
 // normalizeVisitSchedule moved to slices/visits.ts (Phase 3l)
 // isPaymentChaseNeeded, assertServiceFinanceContext moved to finance-helpers (Phase 3f)
 // assertProcurementContext moved to slices/procurement.ts (Phase 3i)
-// workRequiredLifecycleForQuotation, workRequiredLifecycleForJob moved to slices/quotations.ts (Phase 3j)
+// Work Required lifecycle policies live in work-required-lifecycle.ts and are shared across slices.
 // paymentFollowupTitle, invoiceStatusFromPayment, paymentStatusFromInvoice,
 // buildInvoiceDraftFromPayment, syncInvoiceWithPayment moved to finance-helpers (Phase 3f)
 function createSystemThread(kind: ThreadKind, recordId: string, title: string, participants: string[] = ["Owner"]) {
@@ -651,6 +651,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         mobileNavOpen: false,
         sidebarCollapsed: false,
         moreMenuOpen: false,
+        quickAddOpen: false,
+        keyboardShortcutsOpen: false,
         authUser: null,
         serverRevision: 0,
         workspaceSyncStatus: "idle",

@@ -26,8 +26,7 @@ import { useRDashStore } from "@/lib/rdash/store";
  *   - a relative timestamp ("2m ago")
  *   - click-to-deep-link to the Audit Log module
  *
- * This complements the RecentActivityTimeline (which shows thread messages)
- * by surfacing operational events — POs created, quotations accepted,
+ * It surfaces operational audit events — POs created, quotations accepted,
  * variations raised, payments made, etc.
  *
  * Design: a fixed-height card (max-h-72) with a scrollable list, a header

@@ -39,8 +39,11 @@ export function formatDateTime(iso: string | undefined | null): string {
         timeZone: INDIA_TIME_ZONE,
     });
 }
-export function indiaBusinessDate(value = new Date()): string {
-    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: INDIA_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(value);
+export function indiaBusinessDate(value: Date | string | number = new Date()): string {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime()))
+        return "";
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: INDIA_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
     const pick = (type: string) => parts.find((part) => part.type === type)?.value || "";
     return `${pick("year")}-${pick("month")}-${pick("day")}`;
 }

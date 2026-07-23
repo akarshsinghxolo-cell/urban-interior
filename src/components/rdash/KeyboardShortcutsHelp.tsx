@@ -2,7 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
-import { Keyboard, Command, ArrowLeft, ArrowRight, Search, MessageSquare, Plus, X, Moon, Sun } from "lucide-react";
+import { Keyboard, Command, Search, MessageSquare, Plus, X, Moon, Sun } from "lucide-react";
 
 /**
  * Keyboard Shortcuts Help Overlay — press `?` (or Shift+/) to toggle.
@@ -11,7 +11,8 @@ import { Keyboard, Command, ArrowLeft, ArrowRight, Search, MessageSquare, Plus, 
  * Closes on Escape, clicking the backdrop, or clicking the X button.
  */
 export function KeyboardShortcutsHelp() {
-    const [open, setOpen] = React.useState(false);
+    const open = useRDashStore((state) => state.keyboardShortcutsOpen);
+    const setOpen = useRDashStore((state) => state.setKeyboardShortcutsOpen);
 
     React.useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -26,7 +27,7 @@ export function KeyboardShortcutsHelp() {
             const isHelpKey = event.key === "?" || (event.key === "/" && event.shiftKey);
             if (isHelpKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
                 event.preventDefault();
-                setOpen((v) => !v);
+                setOpen(!open);
             }
             // Close on Escape.
             if (event.key === "Escape" && open) {
@@ -46,8 +47,6 @@ export function KeyboardShortcutsHelp() {
         {
             section: "Navigation",
             items: [
-                { keys: ["←"], label: "Go back in module history", icon: <ArrowLeft className="h-3.5 w-3.5"/> },
-                { keys: ["→"], label: "Go forward in module history", icon: <ArrowRight className="h-3.5 w-3.5"/> },
                 { keys: ["⌘", "K"], label: "Open command palette (search modules, customers, work orders)", icon: <Search className="h-3.5 w-3.5"/> },
             ],
         },

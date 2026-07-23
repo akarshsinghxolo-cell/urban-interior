@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Clock, Package, ArrowRight, RefreshCw, } from "lucide-react";
+import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Clock, Package, ArrowRight, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
 import { addDays } from "@/lib/rdash/store/helpers";
@@ -18,7 +18,7 @@ import { ConversationActivityWidget } from "../ConversationActivityWidget";
 import { ExceptionDashboard } from "../ExceptionDashboard";
 import { ProfitabilitySnapshot } from "../ProfitabilitySnapshot";
 import { CashFlowForecast } from "../CashFlowForecast";
-import { RecentActivityTimeline } from "../RecentActivityTimeline";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 import { TeamPerformance } from "../TeamPerformance";
 import { CustomerSatisfaction } from "../CustomerSatisfaction";
 import { MaterialPriceTracker } from "../MaterialPriceTracker";
@@ -46,18 +46,15 @@ function DailyKpiBanner() {
     const weeklyRevenue = db.customerReceipts
         .filter((r) => new Date(r.received_at) >= weekAgo)
         .reduce((t, r) => t + r.amount, 0);
-    const pipelineValue = db.quotations
-        .filter((q) => ["sent", "draft"].includes(q.status))
-        .reduce((t, q) => t + q.total_amount, 0);
-    const totalQuoted = db.quotations.filter((q) => q.status !== "draft").length;
-    const accepted = db.quotations.filter((q) => q.status === "accepted").length;
-    const conversionRate = totalQuoted > 0 ? Math.round((accepted / totalQuoted) * 100) : 0;
+    const quotationMetrics = calculateQuotationMetrics(db.quotations);
+    const pipelineValue = quotationMetrics.pipelineValue;
+    const conversionRate = quotationMetrics.conversionRate;
     const activeJobValue = db.workOrders
         .filter((wo) => wo.status === "in_progress" || wo.status === "scheduled")
         .reduce((t, wo) => t + wo.value, 0);
     const tasksDueToday = db.tasks.filter((t) => t.due_date === today && (t.status === "todo" || t.status === "in_progress")).length;
     const overdueTasks = db.tasks.filter((t) => isDateOnlyOverdue(t.due_date) && (t.status === "todo" || t.status === "in_progress")).length;
-    const visitsToday = db.visits.filter((v) => v.scheduled_at?.slice(0, 10) === today).length;
+    const visitsToday = db.visits.filter((visit) => visit.scheduled_at && indiaDate(visit.scheduled_at) === today).length;
     const kpis = [
         { label: "Revenue (7d)", value: formatINRShort(weeklyRevenue), tone: "success", icon: <TrendingUp className="h-3.5 w-3.5"/> },
         { label: "Pipeline", value: formatINRShort(pipelineValue), tone: "primary", icon: <FileText className="h-3.5 w-3.5"/> },
@@ -436,7 +433,7 @@ export function DailyWork() {
     const completedToday: QueueRecord[] = React.useMemo(() => {
         const out: QueueRecord[] = [];
         const todayPrefix = indiaDate();
-        db.tasks.filter((t) => t.status === "completed" && t.completed_at && t.completed_at.slice(0, 10) === todayPrefix).forEach((task) => {
+        db.tasks.filter((task) => task.status === "completed" && task.completed_at && indiaDate(task.completed_at) === todayPrefix).forEach((task) => {
             const customer = db.customers.find((row) => row.id === task.customer_id);
             out.push({
                 id: `task-${task.id}`,
@@ -449,7 +446,7 @@ export function DailyWork() {
                 actions: buildTaskActions(task.id, taskDispatch, { onOpen: () => openDetail("task", task.id), readOnly: true }),
             });
         });
-        db.visits.filter((v) => v.status === "completed" && v.scheduled_at && v.scheduled_at.slice(0, 10) === todayPrefix).forEach((visit) => {
+        db.visits.filter((visit) => visit.status === "completed" && visit.scheduled_at && indiaDate(visit.scheduled_at) === todayPrefix).forEach((visit) => {
             const customer = db.customers.find((row) => row.id === visit.customer_id);
             out.push({
                 id: `visit-${visit.id}`,
@@ -462,7 +459,7 @@ export function DailyWork() {
                 actions: buildVisitActions(visit.id, null, { onOpen: () => openDetail("visit", visit.id) }),
             });
         });
-        db.followups.filter((f) => f.status === "completed" && f.completed_at && f.completed_at.slice(0, 10) === todayPrefix).forEach((followup) => {
+        db.followups.filter((followup) => followup.status === "completed" && followup.completed_at && indiaDate(followup.completed_at) === todayPrefix).forEach((followup) => {
             const customer = db.customers.find((row) => row.id === followup.customer_id);
             out.push({
                 id: `followup-${followup.id}`,
@@ -499,8 +496,9 @@ export function DailyWork() {
             });
         });
         visits.forEach((visit) => {
-            const isToday = visit.scheduled_at?.slice(0, 10) === todayPrefix;
-            const isOverdue = isDateOnlyOverdue(visit.scheduled_at?.slice(0, 10));
+            const scheduledDate = visit.scheduled_at ? indiaDate(visit.scheduled_at) : undefined;
+            const isToday = scheduledDate === todayPrefix;
+            const isOverdue = isDateOnlyOverdue(scheduledDate);
             if (!isToday && !isOverdue)
                 return;
             const customer = db.customers.find((row) => row.id === visit.customer_id);
@@ -511,7 +509,7 @@ export function DailyWork() {
                 customerName: customer?.name,
                 subtitle: visit.location_name,
                 priority: visit.status === "checked_in" ? "urgent" : "high",
-                due: visit.scheduled_at?.slice(0, 10),
+                due: scheduledDate,
                 assignee: visit.staff_name,
                 onClick: () => openDetail("visit", visit.id),
             });
@@ -604,9 +602,9 @@ export function DailyWork() {
         for (let i = 6; i >= 0; i--) {
             const dayStr = addDays(today, -i);
             const d = new Date(`${dayStr}T12:00:00+05:30`);
-            const count = db.tasks.filter((t) => t.status === "completed" && t.completed_at?.slice(0, 10) === dayStr).length +
-                db.visits.filter((v) => v.status === "completed" && v.scheduled_at?.slice(0, 10) === dayStr).length +
-                db.followups.filter((f) => f.status === "completed" && f.completed_at?.slice(0, 10) === dayStr).length;
+            const count = db.tasks.filter((task) => task.status === "completed" && task.completed_at && indiaDate(task.completed_at) === dayStr).length +
+                db.visits.filter((visit) => visit.status === "completed" && visit.scheduled_at && indiaDate(visit.scheduled_at) === dayStr).length +
+                db.followups.filter((followup) => followup.status === "completed" && followup.completed_at && indiaDate(followup.completed_at) === dayStr).length;
             days.push({ day: dayStr, label: dayLabels[d.getUTCDay()], count, isToday: i === 0 });
         }
         return days;
@@ -644,16 +642,11 @@ export function DailyWork() {
         <div className="border-t border-border/50 p-3"><NotificationSettings /></div>
       </details>
 
-      {/* Role header + Refresh (imported from WorkdeskDashboard) */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-bold tracking-tight">Daily Work</h2>
-          <p className="text-xs text-muted-foreground">{roleSubtitle}</p>
-        </div>
-        <button type="button" onClick={() => toast.success("Workspace refreshed")} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground">
-          <RefreshCw className="h-3.5 w-3.5"/>
-          Refresh
-        </button>
+      {/* Role header. Workspace refresh/reconciliation controls live in the
+          global header so this module does not present a second, divergent action. */}
+      <div className="min-w-0">
+        <h2 className="text-lg font-bold tracking-tight">Daily Work</h2>
+        <p className="text-xs text-muted-foreground">{roleSubtitle}</p>
       </div>
 
       {/* Workflow steps (imported from WorkdeskDashboard) */}
@@ -668,7 +661,7 @@ export function DailyWork() {
         <MetricCard label="Active WOs" value={db.workOrders.filter((w) => w.status === "in_progress" || w.status === "scheduled").length} hint="In progress + scheduled" tone="primary" icon={<Briefcase className="h-4 w-4"/>} onClick={() => setActiveModule("siteExecution")}/>
         <MetricCard label="Pending approvals" value={approvals.length} hint="PO + payment + variation" tone="success" icon={<CheckCircle2 className="h-4 w-4"/>} onClick={() => setActiveModule("approvals")}/>
         <MetricCard label="Overdue invoices" value={formatINRShort(db.invoices.filter((i) => i.status === "overdue" || (i.status === "issued" && i.due_date && isDateOnlyOverdue(i.due_date))).reduce((s, i) => s + i.total_amount, 0))} hint="Total value" tone="destructive" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("payments")}/>
-        <MetricCard label="Today's visits" value={db.visits.filter((v) => v.scheduled_at?.slice(0, 10) === indiaDate()).length} hint="Scheduled today" tone="primary" icon={<MapPin className="h-4 w-4"/>} onClick={() => setActiveModule("fieldOperations")}/>
+        <MetricCard label="Today's visits" value={db.visits.filter((visit) => visit.scheduled_at && indiaDate(visit.scheduled_at) === indiaDate()).length} hint="Scheduled today" tone="primary" icon={<MapPin className="h-4 w-4"/>} onClick={() => setActiveModule("fieldOperations")}/>
         <MetricCard label="Follow-ups due" value={db.followups.filter((f) => f.due_date === indiaDate() && (f.status === "pending" || f.status === "scheduled")).length} hint="Due today" tone="warning" icon={<PhoneCall className="h-4 w-4"/>} onClick={() => setActiveModule("tasks")}/>
         <MetricCard label="Low-stock items" value={db.inventory.filter((i) => typeof i.min_qty === "number" && i.quantity <= (i.min_qty || 0)).length} hint="At/below min" tone="destructive" icon={<Package className="h-4 w-4"/>} onClick={() => setActiveModule("inventory")}/>
         <MetricCard label="Pending vendor bills" value={db.vendorBills.filter((b) => b.status === "pending" || b.status === "approved").length} hint="Awaiting payment" tone="warning" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("vendorBills")}/>
@@ -694,11 +687,10 @@ export function DailyWork() {
         <CashFlowForecast />
       </div>
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <RecentActivityTimeline onOpenInbox={() => setActiveModule("unifiedThreadInbox")} />
+        <ConversationActivityWidget onOpenInbox={() => setActiveModule("unifiedThreadInbox")}/>
         <CustomerSatisfaction />
       </div>
       <MaterialPriceTracker />
-      <ConversationActivityWidget onOpenInbox={() => setActiveModule("unifiedThreadInbox")}/>
       <QueueSection title="My action queue" icon={<ListTodo className="h-4 w-4 text-primary"/>} records={queueRecords} columns={3} emptyTone="primary" emptyTitle="No active tasks" emptyDescription="Assigned work that needs action will appear here. Create a task to get started." collapsible={false} emptyAction={<EmptyCta label="Create task" onClick={() => openCreateDialog({ kind: "task" })}/>}/>
       <QueueSection title="Approvals requiring decision" icon={<CheckCircle2 className="h-4 w-4 text-success"/>} records={approvalRecords} columns={3} emptyTone="success" emptyTitle="No pending approvals" emptyDescription="Approval requests that need a decision will appear here. You are all caught up." collapsible={false}/>
       <QueueSection title="Blocked work" icon={<Ban className="h-4 w-4 text-warning"/>} records={blockedRecords} columns={3} emptyTone="warning" emptyTitle="No blocked work" emptyDescription="Unresolved blockers and obstacles will appear here. Nothing is holding up delivery." collapsible={false}/>
@@ -728,8 +720,8 @@ function TodaySiteExecutionsPanel() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const todayPrefix = indiaDate();
     const records: QueueRecord[] = React.useMemo(() => {
-        const logs = db.executionLogs.filter((l) => (l.date === todayPrefix) ||
-            (l.created_at?.slice(0, 10) === todayPrefix));
+        const logs = db.executionLogs.filter((log) => (log.date === todayPrefix) ||
+            (log.created_at && indiaDate(log.created_at) === todayPrefix));
         // Group by work order
         const byWo = new Map<string, typeof logs>();
         for (const l of logs) {
@@ -767,8 +759,8 @@ function TodayDispatchesPanel() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const todayPrefix = indiaDate();
     const records: QueueRecord[] = React.useMemo(() => {
-        const dispatches = db.dispatches.filter((d) => (d.issued_at?.slice(0, 10) === todayPrefix) ||
-            (d.created_at?.slice(0, 10) === todayPrefix));
+        const dispatches = db.dispatches.filter((dispatch) => (dispatch.issued_at && indiaDate(dispatch.issued_at) === todayPrefix) ||
+            (dispatch.created_at && indiaDate(dispatch.created_at) === todayPrefix));
         return dispatches.map((d) => {
             const wo = db.workOrders.find((w) => w.id === d.work_order_id);
             const customer = db.customers.find((c) => c.id === wo?.customer_id);
@@ -779,7 +771,7 @@ function TodayDispatchesPanel() {
                 subtitle: site?.name || d.work_order_no,
                 customerName: customer?.name,
                 status: { label: d.status, className: "bg-warning/10 text-warning border-warning/20" },
-                due: d.issued_at?.slice(0, 10),
+                due: d.issued_at ? indiaDate(d.issued_at) : undefined,
                 assignee: d.issued_by,
                 onClick: () => openDetail("dispatch", d.id),
             } as QueueRecord;
@@ -861,8 +853,8 @@ function TodayVisitsPanel() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const todayPrefix = indiaDate();
     const records: QueueRecord[] = React.useMemo(() => {
-        const todays = db.visits.filter((v) => (v.scheduled_at?.slice(0, 10) === todayPrefix) ||
-            (v.check_in_at?.slice(0, 10) === todayPrefix));
+        const todays = db.visits.filter((visit) => (visit.scheduled_at && indiaDate(visit.scheduled_at) === todayPrefix) ||
+            (visit.check_in_at && indiaDate(visit.check_in_at) === todayPrefix));
         return todays.map((v) => {
             const customer = db.customers.find((c) => c.id === v.customer_id);
             const site = db.sites.find((s) => s.id === v.site_id);

@@ -4,6 +4,7 @@ import { Activity, ArrowUpRight, CalendarClock, ClipboardCopy, FileText, PhoneCa
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
+import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
 import { indiaDate } from "@/lib/rdash/date";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -269,9 +270,10 @@ export function WorkspacePulseStrip() {
   const liveWorkOrders = db.workOrders.filter(
     (w) => w.status === "in_progress" || w.status === "scheduled",
   );
-  const pipelineValue = db.quotations
-    .filter((q) => q.status === "sent" || q.status === "draft")
-    .reduce((t, q) => t + q.total_amount, 0);
+  const pipelineValue = React.useMemo(
+    () => calculateQuotationMetrics(db.quotations).pipelineValue,
+    [db.quotations],
+  );
   const todayActions = db.tasks.filter(
     (t) => t.due_date === indiaDate() && t.status !== "completed" && t.status !== "cancelled",
   );

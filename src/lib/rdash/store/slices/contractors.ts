@@ -27,6 +27,11 @@ import { materializePaymentSchedule } from "../finance-helpers";
 // matches. Keeping this in lock-step with the master UI banner documented by
 // Agent A in MastersSalesOpsModule.
 import { findCommissionRule } from "./masters";
+import {
+    assertWorkOrderStatusTransition,
+    workRequiredStatusAfterContractorAward,
+    workRequiredStatusAfterWorkOrderChange,
+} from "../../work-required-lifecycle";
 
 export function createContractorsSlice(ctx: StoreContext): ContractorsState {
     const { commitState, get } = ctx;
@@ -321,7 +326,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                         }
                         : quote),
                     workRequired: s.db.workRequired.map((row: any) => row.id === acceptedScope.work_required_id
-                        ? { ...row, status: "awarded" as const, updated_at: now }
+                        ? { ...row, status: workRequiredStatusAfterContractorAward(row.status), updated_at: now }
                         : row),
                 },
             }));
@@ -483,7 +488,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                         }
                         : quote),
                     workRequired: s.db.workRequired.map((row: any) => row.id === acceptedScope.work_required_id
-                        ? { ...row, status: "awarded" as const, updated_at: now }
+                        ? { ...row, status: workRequiredStatusAfterContractorAward(row.status), updated_at: now }
                         : row),
                 },
             }));
@@ -564,6 +569,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const contractor = state.db.master.contractors.find((c: any) => c.id === workOrder.contractor_id);
             if (!contractor)
                 return { settlementId: "" };
+            assertWorkOrderStatusTransition(workOrder.status, "abandoned");
             const proof = contractorPaymentProofStatus(state.db, workOrder.id);
             if (!proof.ok)
                 throw new Error(proof.reason);
@@ -660,6 +666,13 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                         ],
                         workOrderCostLines: [costLine, ...s.db.workOrderCostLines],
                         workOrders: updatedJobs,
+                        workRequired: s.db.workRequired.map((work: any) => workOrder.work_required_ids.includes(work.id)
+                            ? {
+                                ...work,
+                                status: workRequiredStatusAfterWorkOrderChange(s.db, work, workOrder.id, "abandoned"),
+                                updated_at: now,
+                            }
+                            : work),
                     },
                 };
             });
@@ -697,9 +710,33 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                             ...s.db,
                             workOrders: [replacement, ...s.db.workOrders],
                             contractorSettlements: settlements,
+                            acceptedScopes: s.db.acceptedScopes.map((scope: any) => workOrder.accepted_scope_ids.includes(scope.id)
+                                ? {
+                                    ...scope,
+                                    status: "in_work_order" as const,
+                                    work_order_id: replId,
+                                    contractor_bid_id: undefined,
+                                    contractor_selection_method: undefined,
+                                }
+                                : scope),
+                            quotations: s.db.quotations.map((quotation: any) => workOrder.quotation_ids.includes(quotation.id)
+                                ? {
+                                    ...quotation,
+                                    work_order_ids: Array.from(new Set([...quotation.work_order_ids, replId])),
+                                    updated_at: now2,
+                                }
+                                : quotation),
+                            workRequired: s.db.workRequired.map((work: any) => workOrder.work_required_ids.includes(work.id)
+                                ? {
+                                    ...work,
+                                    status: workRequiredStatusAfterWorkOrderChange(s.db, work, replId, "scheduled"),
+                                    updated_at: now2,
+                                }
+                                : work),
                         },
                     };
                 });
+                get().createBOQ(replId);
                 get().logAudit({
                     actor: actor.name,
                     actor_role: actor.role,

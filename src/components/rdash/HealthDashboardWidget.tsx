@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
+import { resolveRenderer } from "@/lib/rdash/modules";
+import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
 
 /**
  * HealthDashboardWidget — a premium health overview card with:
@@ -30,6 +32,8 @@ interface HealthMetric {
 
 export function HealthDashboardWidget() {
   const db = useRDashStore((s) => s.db);
+  const activeModuleId = useRDashStore((s) => s.activeModuleId);
+  const isActive = resolveRenderer(activeModuleId).renderer === "integrity";
   const [refreshing, setRefreshing] = React.useState(false);
   const [lastFetchedAt, setLastFetchedAt] = React.useState(Date.now());
 
@@ -39,9 +43,10 @@ export function HealthDashboardWidget() {
 
   // Run integrity check on mount + when db changes (debounced via useMemo deps)
   React.useEffect(() => {
-    const id = setTimeout(() => runIntegrityCheck(), 300);
-    return () => clearTimeout(id);
-  }, [db, runIntegrityCheck]);
+    if (!isActive) return;
+    const id = window.setTimeout(() => runIntegrityCheck(), 300);
+    return () => window.clearTimeout(id);
+  }, [db, isActive, runIntegrityCheck]);
 
   // Derive metrics from the live store + real integrity report
   const metrics = React.useMemo(() => {
@@ -60,11 +65,12 @@ export function HealthDashboardWidget() {
     );
     const totalReferences = integrityReport?.totalReferences ?? 646;
     const pendingApprovals = db.actions.filter((a: any) => a.status === "pending").length;
-    const overdueTasks = db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date < new Date().toISOString().slice(0, 10)).length;
+    const overdueTasks = db.tasks.filter((task: any) => task.status !== "completed" && task.status !== "cancelled" && isDateOnlyOverdue(task.due_date)).length;
     const openRisks = db.risks.filter((r: any) => r.status === "open" || r.status === "identified").length;
     const cashPosition = (db.customerReceipts || []).reduce((s: number, r: any) => s + (r.amount || 0), 0) - (db.vendorPayments || []).reduce((s: number, p: any) => s + (p.amount || 0), 0);
     const monthRevenue = (db.customerReceipts || []).reduce((s: number, r: any) => s + (r.amount || 0), 0);
-    const todayVisits = db.visits.filter((v: any) => v.scheduled_at?.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+    const today = indiaDate();
+    const todayVisits = db.visits.filter((visit: any) => visit.scheduled_at && indiaDate(visit.scheduled_at) === today).length;
     const liveWork = db.workOrders.filter((w: any) => w.status === "in_progress" || w.status === "scheduled").length;
     const criticalIssues = integrityReport?.bySeverity?.critical ?? 0;
     const warningIssues = integrityReport?.bySeverity?.warning ?? 0;

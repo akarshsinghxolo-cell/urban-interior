@@ -1,5 +1,6 @@
 "use client";
 import * as React from "react";
+import { PortalActivityBoundary } from "@/components/ui/portal-activity";
 import { Drawer as DrawerPrimitive } from "vaul";
 import { cn } from "@/lib/utils";
 function Drawer({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Root>) {
@@ -9,7 +10,7 @@ function DrawerTrigger({ ...props }: React.ComponentProps<typeof DrawerPrimitive
     return <DrawerPrimitive.Trigger data-slot="drawer-trigger" {...props}/>;
 }
 function DrawerPortal({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Portal>) {
-    return <DrawerPrimitive.Portal data-slot="drawer-portal" {...props}/>;
+    return <PortalActivityBoundary><DrawerPrimitive.Portal data-slot="drawer-portal" {...props}/></PortalActivityBoundary>;
 }
 function DrawerClose({ ...props }: React.ComponentProps<typeof DrawerPrimitive.Close>) {
     return <DrawerPrimitive.Close data-slot="drawer-close" {...props}/>;

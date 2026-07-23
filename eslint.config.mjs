@@ -1,55 +1,76 @@
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
-import { dirname } from "path";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const eslintConfig = [
+  ...nextCoreWebVitals,
+  ...nextTypescript,
+  {
+    linterOptions: {
+      reportUnusedDisableDirectives: "warn",
+    },
+    rules: {
+      // Correctness rules must fail CI. These identify code paths that cannot
+      // execute safely or hide accidental control-flow defects.
+      "no-debugger": "error",
+      "no-unreachable": "error",
+      "no-fallthrough": "error",
+      "no-redeclare": "error",
+      "no-case-declarations": "error",
 
-const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
-  rules: {
-    // TypeScript rules
-    "@typescript-eslint/no-explicit-any": "off",
-    "@typescript-eslint/no-unused-vars": "off",
-    "@typescript-eslint/no-non-null-assertion": "off",
-    "@typescript-eslint/ban-ts-comment": "off",
-    "@typescript-eslint/prefer-as-const": "off",
-    "@typescript-eslint/no-unused-disable-directive": "off",
-    
-    // React rules
-    "react-hooks/exhaustive-deps": "off",
-    "react-hooks/purity": "off",
-    // set-state-in-effect: flags legitimate patterns like initializing dialog
-    // draft state on open, syncing derived selection state, and reading
-    // initial viewport width. These are not bugs — the rule is a performance
-    // hint. All 47 occurrences across 33 files are valid use cases.
-    "react-hooks/set-state-in-effect": "off",
-    "react/no-unescaped-entities": "off",
-    "react/display-name": "off",
-    "react/prop-types": "off",
-    "react-compiler/react-compiler": "off",
-    
-    // Next.js rules
-    "@next/next/no-img-element": "off",
-    "@next/next/no-html-link-for-pages": "off",
-    
-    // General JavaScript rules
-    "prefer-const": "off",
-    "no-unused-vars": "off",
-    "no-console": "off",
-    "no-debugger": "off",
-    "no-empty": "off",
-    "no-irregular-whitespace": "off",
-    "no-case-declarations": "off",
-    "no-fallthrough": "off",
-    "no-mixed-spaces-and-tabs": "off",
-    "no-redeclare": "off",
-    "no-undef": "off",
-    "no-unreachable": "off",
-    "no-useless-escape": "off",
+      // Gradual TypeScript hardening. Bucket 4/issue 49 owns eliminating the
+      // existing `any` surface; warnings prevent new debt without blocking the
+      // current application while those boundaries are migrated.
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
+      "@typescript-eslint/no-non-null-assertion": "warn",
+      "@typescript-eslint/ban-ts-comment": [
+        "warn",
+        { "ts-expect-error": "allow-with-description" },
+      ],
+      "@typescript-eslint/prefer-as-const": "warn",
+
+      // Hooks stay enabled. Existing legacy patterns are warnings so the
+      // project can adopt the rules incrementally instead of suppressing them.
+      "react-hooks/exhaustive-deps": "warn",
+      "react-hooks/purity": "warn",
+      "react-hooks/set-state-in-effect": "warn",
+      "react/no-unescaped-entities": "warn",
+      "react/display-name": "warn",
+
+      // Framework and general hygiene.
+      "@next/next/no-img-element": "warn",
+      "prefer-const": "warn",
+      "no-console": ["warn", { allow: ["warn", "error", "info"] }],
+      "no-empty": ["warn", { allowEmptyCatch: true }],
+      "no-useless-escape": "warn",
+
+      // TypeScript and Next.js provide the authoritative checks for these.
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "react/prop-types": "off",
+      "react-compiler/react-compiler": "off",
+      "@next/next/no-html-link-for-pages": "off",
+    },
   },
-}, {
-  ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts", "examples/**", "skills"]
-}];
+  {
+    ignores: [
+      "node_modules/**",
+      ".next/**",
+      "out/**",
+      "build/**",
+      "next-env.d.ts",
+      "examples/**",
+      "skills/**",
+    ],
+  },
+];
 
 export default eslintConfig;
