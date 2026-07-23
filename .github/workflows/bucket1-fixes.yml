@@ -1,0 +1,66 @@
+name: Apply bucket-one fixes
+
+on:
+  push:
+    branches:
+      - agent/bucket-1-low-risk-fixes
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/bucket-1-low-risk-fixes
+          fetch-depth: 0
+
+      - name: Apply exact source patches
+        id: patch
+        continue-on-error: true
+        run: python3 scripts/apply_bucket1_fixes.py > bucket1-patch.log 2>&1
+
+      - name: Upload patch failure
+        if: steps.patch.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bucket1-patch-failure
+          path: bucket1-patch.log
+
+      - name: Stop after patch mismatch
+        if: steps.patch.outcome == 'failure'
+        run: |
+          cat bucket1-patch.log
+          exit 1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Commit verified source fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          git commit -m "Fix bucket-one UX and reliability issues"
+          git push origin HEAD:agent/bucket-1-low-risk-fixes
