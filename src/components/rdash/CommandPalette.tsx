@@ -220,7 +220,7 @@ export function CommandPalette() {
             }, keywords: `${t.kind} ${last?.body?.slice(0, 80) || ""}`, meta: t.kind });
         });
         db.tasks.forEach((t) => {
-            const customer = customerById.get(t.customer_id);
+            const customer = t.customer_id ? customerById.get(t.customer_id) : undefined;
             items.push({ id: `task-${t.id}`, label: t.title, group: "Tasks", groupPriority: GP.tasks, iconNode: <ListPlus className="h-3.5 w-3.5 text-primary"/>, action: () => { openDetail("task", t.id); setOpen(false); }, keywords: `${customer?.name || ""} ${t.task_scope} ${t.status}`, meta: t.due_date });
         });
         db.workOrders.forEach((j) => {
