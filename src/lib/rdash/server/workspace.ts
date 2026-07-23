@@ -62,19 +62,18 @@ export interface WorkspaceSnapshot {
   data: RDashDatabase;
   updatedAt: string;
   rowVersions?: Record<string, number>;
+  bumpedRowVersions?: Record<string, number>;
 }
 
 export interface WorkspaceWithRevisions extends WorkspaceSnapshot {
   rowVersions?: Record<string, number>;
 }
 
-export async function getWorkspace(includeRevisions = false): Promise<WorkspaceWithRevisions> {
-  // Check if Supabase entity_* tables exist
+export async function getWorkspace(_includeRevisions = false): Promise<WorkspaceWithRevisions> {
   if (await checkSupabaseSchema()) {
     const { getRestWorkspace } = await getRestModule();
     return getRestWorkspace();
   }
-  // Fallback: return in-memory seed data
   const ws = await getInMemoryWorkspace();
   return { ...ws, rowVersions: {} };
 }
@@ -117,22 +116,28 @@ export function enforceMutation(user: AuthenticatedUser, current: RDashDatabase,
   return trustedCandidate;
 }
 
-export async function saveWorkspace(revision: number, data: RDashDatabase): Promise<WorkspaceSnapshot> {
+export async function saveWorkspace(
+  revision: number,
+  data: RDashDatabase,
+  expectedRowVersions?: Record<string, number>,
+): Promise<WorkspaceSnapshot> {
   const current = await getWorkspace();
   if (current.revision !== revision) throw new Error("CONFLICT");
   assertNotImplicitSeedReset(current.data, data);
   const operations = diffWorkspaceOperations(current.data, data);
   if (!operations.length) return current;
 
-  // If Supabase is ready, commit via REST. Otherwise, update in-memory.
   if (await checkSupabaseSchema()) {
     const { commitRestOperations } = await getRestModule();
-    const result = await commitRestOperations(operations);
-    if (result.conflicts > 0) throw new Error("CONFLICT");
-    return getWorkspace();
+    const result = await commitRestOperations(operations, revision, expectedRowVersions);
+    const saved = await getWorkspace();
+    return {
+      ...saved,
+      revision: result.newRevision,
+      bumpedRowVersions: result.bumpedRowVersions,
+    };
   }
 
-  // In-memory fallback: apply operations directly
   const { applyWorkspaceOperations } = await import("../workspace-operations");
   inMemoryWorkspace = {
     revision: current.revision + 1,
@@ -155,7 +160,6 @@ export async function resetWorkspace(user: AuthenticatedUser, confirmation: stri
     return resetRestWorkspace();
   }
 
-  // In-memory fallback: re-seed
   const { buildSeedDatabase } = await import("../seed");
   inMemoryWorkspace = {
     revision: 1,
