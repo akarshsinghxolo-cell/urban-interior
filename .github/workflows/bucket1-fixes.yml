@@ -40,6 +40,40 @@ jobs:
           cat bucket1-patch.log
           exit 1
 
+      - name: Add atomic RPC type
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("src/lib/supabase/server.ts")
+          text = path.read_text(encoding="utf-8")
+          old = '''      write_workspace_snapshot: {
+                Args: { p_workspace_id: string; p_data_json: string; p_revision: number };
+                Returns: void;
+              };'''
+          new = '''      write_workspace_snapshot: {
+                Args: { p_workspace_id: string; p_data_json: string; p_revision: number };
+                Returns: void;
+              };
+              commit_workspace_operations: {
+                Args: {
+                  p_workspace_id: string;
+                  p_expected_workspace_revision: number;
+                  p_operations: Array<Record<string, unknown>>;
+                  p_expected_row_versions: Record<string, number>;
+                };
+                Returns: {
+                  upserted: number;
+                  deleted: number;
+                  conflicts: number;
+                  bumpedRowVersions: Record<string, number>;
+                  newRevision: number;
+                };
+              };'''
+          if text.count(old) != 1:
+              raise SystemExit(f"Expected one write_workspace_snapshot signature, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
