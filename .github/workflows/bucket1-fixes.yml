@@ -52,9 +52,24 @@ jobs:
         run: npm run lint
 
       - name: Build
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: npm run build > bucket1-build.log 2>&1
         env:
           NEXT_TELEMETRY_DISABLED: '1'
+
+      - name: Upload build failure
+        if: steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: bucket1-build-failure
+          path: bucket1-build.log
+
+      - name: Stop after build failure
+        if: steps.build.outcome == 'failure'
+        run: |
+          cat bucket1-build.log
+          exit 1
 
       - name: Commit verified source fixes
         run: |
