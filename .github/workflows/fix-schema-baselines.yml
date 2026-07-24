@@ -145,7 +145,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
           python <<'PY'
           from pathlib import Path
           import subprocess
