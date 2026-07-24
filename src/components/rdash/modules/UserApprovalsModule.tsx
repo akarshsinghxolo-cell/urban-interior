@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Clock3, ShieldCheck, UserCheck, UserX, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, UserCheck, UserX, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +36,17 @@ interface RDashUserRow {
   updated_at: string;
 }
 
+interface StaffIdentityDriftRow {
+  identity_key: string;
+  email: string | null;
+  role: string | null;
+  role_status: string | null;
+  profile_status: string | null;
+  master_status: string | null;
+  drift_reasons: string[];
+  is_drifted: boolean;
+}
+
 function statusClass(status: ApprovalStatus) {
   if (status === "active") return "bg-success/10 text-success border-success/20";
   if (status === "pending") return "bg-warning/10 text-warning border-warning/20";
@@ -50,6 +61,7 @@ function roleLabel(role: string) {
 export function UserApprovalsModule() {
   const authUser = useRDashStore((state) => state.authUser);
   const [users, setUsers] = React.useState<RDashUserRow[]>([]);
+  const [staffDrift, setStaffDrift] = React.useState<StaffIdentityDriftRow[]>([]);
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
 
@@ -58,9 +70,14 @@ export function UserApprovalsModule() {
     setError("");
     try {
       const response = await fetch("/api/auth/users", { cache: "no-store" });
-      const payload = await response.json().catch(() => ({})) as { users?: RDashUserRow[]; error?: string };
+      const payload = await response.json().catch(() => ({})) as {
+        users?: RDashUserRow[];
+        staffDrift?: StaffIdentityDriftRow[];
+        error?: string;
+      };
       if (!response.ok) throw new Error(payload.error || "Could not load user approvals.");
       setUsers(payload.users || []);
+      setStaffDrift(payload.staffDrift || []);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load user approvals.");
     } finally {
@@ -83,8 +100,8 @@ export function UserApprovalsModule() {
       });
       const payload = await response.json().catch(() => ({})) as { user?: RDashUserRow; error?: string };
       if (!response.ok || !payload.user) throw new Error(payload.error || "Could not update user approval.");
-      setUsers((rows) => rows.map((row) => row.id === payload.user!.id ? payload.user! : row));
       toast.success(input.action === "approve" ? "User approved" : "User rejected");
+      await loadUsers();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not update user approval.";
       setError(message);
@@ -97,6 +114,7 @@ export function UserApprovalsModule() {
   const pending = users.filter((user) => user.status === "pending");
   const active = users.filter((user) => user.status === "active");
   const rejected = users.filter((user) => user.status === "rejected");
+  const driftedStaff = staffDrift.filter((row) => row.is_drifted);
 
   if (authUser?.role !== "Owner") {
     return (
@@ -120,14 +138,53 @@ export function UserApprovalsModule() {
         <Button size="sm" variant="outline" onClick={() => void loadUsers()} disabled={busy}>Refresh</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <MetricCard label="Pending" value={pending.length} tone="warning" icon={<Clock3 className="h-4 w-4" />} />
         <MetricCard label="Active" value={active.length} tone="success" icon={<UserCheck className="h-4 w-4" />} />
         <MetricCard label="Rejected" value={rejected.length} tone="destructive" icon={<UserX className="h-4 w-4" />} />
         <MetricCard label="Total users" value={users.length} tone="primary" icon={<Users className="h-4 w-4" />} />
+        <MetricCard
+          label="Identity drift"
+          value={driftedStaff.length}
+          tone={driftedStaff.length ? "destructive" : "success"}
+          icon={driftedStaff.length ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+        />
       </div>
 
       {error ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
+
+      <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
+        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
+          <h3 className="text-sm font-semibold">Staff identity drift report</h3>
+          <span className="text-[11px] text-muted-foreground">StaffProfile · HR staff · access role</span>
+        </div>
+        {driftedStaff.length === 0 ? (
+          <div className="flex items-center gap-2 px-4 py-4 text-sm text-success">
+            <CheckCircle2 className="h-4 w-4" />
+            All {staffDrift.length} staff identities are synchronized.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {driftedStaff.map((row) => (
+              <div key={row.identity_key} className="grid gap-2 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                <div>
+                  <p className="text-sm font-semibold">{row.email || row.identity_key}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {row.role ? roleLabel(row.role) : "No access role"} · role {row.role_status || "missing"} · profile {row.profile_status || "missing"} · HR {row.master_status || "missing"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-1.5 lg:justify-end">
+                  {row.drift_reasons.map((reason) => (
+                    <span key={reason} className="rounded-full border border-destructive/25 bg-destructive/[0.06] px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                      {reason.replaceAll("_", " ")}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
