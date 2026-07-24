@@ -259,7 +259,7 @@ export function GoogleDriveManagerModule() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => toast.success("Drive settings saved in workspace data")}>Save Settings</Button>
-              <Button size="sm" variant="outline" onClick={() => { setDriveLabel(`Urban Drive ${accounts.length + 1}`); setTab("connect"); }}><Plus className="mr-1 h-3.5 w-3.5" />Connect Another Drive</Button>
+              <p className="self-center text-xs text-muted-foreground">Connect additional Google accounts from the Connect Drive tab.</p>
               <Button size="sm" variant="outline" disabled={!writeDestination || working} onClick={() => writeDestination && refreshAccount(writeDestination.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Check Active Quota / Auto-switch</Button>
               <Button size="sm" variant="ghost" disabled={!lastUploaded?.web_view_link} onClick={() => lastUploaded?.web_view_link && window.open(lastUploaded.web_view_link, "_blank", "noopener,noreferrer")}>Open last uploaded file</Button>
             </div>
