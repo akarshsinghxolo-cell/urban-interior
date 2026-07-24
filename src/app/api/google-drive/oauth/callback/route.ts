@@ -1,9 +1,20 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { completeGoogleDriveConnect } from "@/lib/rdash/server/drive-connections";
 import { getWorkspace, saveWorkspace } from "@/lib/rdash/server/workspace";
 import { resolvePublicOrigin } from "@/lib/rdash/server/public-origin";
 export const runtime = "nodejs";
+
+function storageAccountId(connectionId: string) {
+    const workspaceId = process.env.UC_WORKSPACE_ID || "default";
+    const workspaceKey = createHash("sha256")
+        .update(`${workspaceId}:${connectionId}`)
+        .digest("hex")
+        .slice(0, 24);
+    return `storage-${workspaceKey}`;
+}
+
 function back(origin: string, path: string, key: string, value: string) {
     const url = new URL(path, origin);
     url.searchParams.set(key, value);
@@ -29,7 +40,7 @@ export async function GET(request: NextRequest) {
             const previous = current.data.master.storageAccounts.find((account) => account.oauth_connection_id === result.connection.id);
             const priority = previous?.priority_order || Math.max(0, ...current.data.master.storageAccounts.map((account) => account.priority_order || 0)) + 1;
             const account = {
-                id: previous?.id || `storage-${result.connection.id}`,
+                id: previous?.id || storageAccountId(result.connection.id),
                 // Reauthorizing an existing Google identity must not silently
                 // rename the workspace slot or reassign its existing files.
                 label: previous?.label || result.label,
