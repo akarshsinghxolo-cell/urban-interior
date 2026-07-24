@@ -129,6 +129,7 @@ export interface MeasurementRevision {
     site_id: ID;
     area_id: ID;
     work_required_id?: ID;
+    visit_id?: ID;
     revision_no: number;
     length?: number;
     width?: number;

@@ -79,7 +79,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
         setSystemName("");
         setSpecification("");
         setPriority("medium");
-        setAreaIds(permittedInitialIds.length ? permittedInitialIds : siteAreas.map((area) => area.id));
+        setAreaIds(permittedInitialIds);
         setPrefilledFromCustomer(didPrefill);
     }, [initialAreaIdsKey, open, siteAreas, customerInterests, db.master.workCategories, db.master.workSubcategories]);
     const toggleArea = (areaId: string) => {
@@ -98,6 +98,14 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
         }
         if (!areaIds.length) {
             toast.error("Select at least one covered Area.");
+            return;
+        }
+        if (!categoryId) {
+            toast.error("Select the primary Work Category.");
+            return;
+        }
+        if (subcategories.length > 0 && !subcategoryId) {
+            toast.error("Select the primary Work Subcategory.");
             return;
         }
         try {
@@ -148,7 +156,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
                 {prefilledFromCustomer && categoryId && <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" />}
               </label>
               <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setSubcategoryId(""); }} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                <option value="">Select later during structured capture</option>
+                <option value="">Select work category</option>
                 {db.master.workCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
             </div>
@@ -158,7 +166,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
                 {prefilledFromCustomer && subcategoryId && <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" />}
               </label>
               <select value={subcategoryId} onChange={(event) => setSubcategoryId(event.target.value)} disabled={!categoryId} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
-                <option value="">Select later during structured capture</option>
+                <option value="">{categoryId ? "Select work subcategory" : "Select category first"}</option>
                 {subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
               </select>
             </div>
