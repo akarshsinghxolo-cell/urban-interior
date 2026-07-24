@@ -251,6 +251,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 if (!work || work.customer_id !== customerId || work.site_id !== siteId)
                     throw new Error("The selected Work Required must belong to the same Customer and Site as the Visit.");
             }
+            // A Work Required can have one active measurement lifecycle at a time.
             if (v.visit_type === "measurement" && v.work_required_id) {
                 const activeMeasurementVisit = state.db.visits.find((visit: any) =>
                     visit.visit_type === "measurement" &&
