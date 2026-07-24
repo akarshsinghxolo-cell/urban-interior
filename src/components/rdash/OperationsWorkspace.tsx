@@ -2,11 +2,14 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore, type DetailPanelKind } from "@/lib/rdash/store";
-import { MetricCard, StatusBadge, Avatar, EmptyState, WorkflowChip, WorkflowConnector, SectionHeader } from "./primitives";
+import { MetricCard, StatusBadge, Avatar, EmptyState, WorkflowChip, WorkflowConnector } from "./primitives";
 import { ContextRow, type ContextAction } from "./ContextMenuHost";
-import { formatINR, formatINRShort, relativeDay, formatDate, titleCase } from "@/lib/rdash/format";
-import { Search, Inbox, Plus, Filter } from "lucide-react";
+import { formatINRShort, relativeDay } from "@/lib/rdash/format";
+import { Search, Plus, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+const QUEUE_PAGE_SIZE = 25;
+
 export interface MetricSpec {
     label: string;
     value: React.ReactNode;
@@ -111,7 +114,7 @@ export function OperationsWorkspace({ title, description, icon, workflow, metric
         </div>)}
 
       <div className="rd-stagger space-y-4">
-        {queues.map((queue, qi) => (<QueueBlock key={qi} queue={queue}/>))}
+        {queues.map((queue, qi) => (<QueueBlock key={`${queue.title}-${qi}`} queue={queue}/>))}
       </div>
     </div>);
 }
@@ -119,6 +122,12 @@ function QueueBlock({ queue }: {
     queue: QueueSpec;
 }) {
     const [open, setOpen] = React.useState(queue.defaultOpen !== false);
+    const [visibleCount, setVisibleCount] = React.useState(QUEUE_PAGE_SIZE);
+    React.useEffect(() => {
+        setVisibleCount(QUEUE_PAGE_SIZE);
+    }, [queue.title, queue.records.length]);
+    const visibleRecords = queue.records.slice(0, visibleCount);
+    const remaining = Math.max(0, queue.records.length - visibleRecords.length);
     return (<div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
       <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between gap-2 border-b border-border bg-muted/30 px-4 py-2.5 text-left">
         <div className="flex items-center gap-2">
@@ -131,9 +140,16 @@ function QueueBlock({ queue }: {
         <span className="text-xs text-muted-foreground">{open ? "Hide" : "Show"}</span>
       </button>
       {open && (<div className="p-2">
-          {queue.records.length === 0 ? (<EmptyState tone="default" title={queue.emptyHint || "No records yet"} description="Records will appear here as they are created." icon={queue.icon}/>) : (<div className="space-y-1.5">
-              {queue.records.map((r) => (<RecordRowItem key={r.id} row={r}/>))}
+          {queue.records.length === 0 ? (<EmptyState tone="default" title={queue.emptyHint || "No records yet"} description="Records will appear here as they are created." icon={queue.icon}/>) : (<>
+            <div className="space-y-1.5">
+              {visibleRecords.map((r) => (<RecordRowItem key={r.id} row={r}/>))}
+            </div>
+            {remaining > 0 && (<div className="mt-2 flex justify-center border-t border-border/70 px-2 pt-2">
+              <Button type="button" size="sm" variant="ghost" onClick={() => setVisibleCount((count) => count + QUEUE_PAGE_SIZE)}>
+                Show {Math.min(QUEUE_PAGE_SIZE, remaining)} more · {remaining} remaining
+              </Button>
             </div>)}
+          </>)}
         </div>)}
     </div>);
 }
