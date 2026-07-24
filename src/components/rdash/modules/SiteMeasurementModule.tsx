@@ -35,6 +35,7 @@ interface MeasurementRecord {
     date: string;
     status: VisitStatus;
     areas: AreaMeasurement[];
+    captureAreas: AreaMeasurement[];
     totalArea: number;
     gps?: {
         lat: number;
@@ -60,29 +61,43 @@ export function SiteMeasurementModule() {
     const records: MeasurementRecord[] = measurementVisits.map((v) => {
         const customer = db.customers.find((p) => p.id === v.customer_id);
         const site = v.site_id ? db.sites.find((s) => s.id === v.site_id) : undefined;
-        const areas: AreaMeasurement[] = site
-            ? db.areas
-                .filter((r) => r.site_id === site.id && !r.is_archived)
-                .map((r) => ({
-                id: r.id,
-                name: r.name,
-                length: r.length || 0,
-                width: r.width || 0,
-                height: r.height || 0,
-                unit: (r.unit as "ft" | "m") || "ft",
-                notes: r.notes,
-            }))
-            : [];
+        const work = v.work_required_id ? db.workRequired.find((row) => row.id === v.work_required_id) : undefined;
+        const revisions = db.measurementRevisions.filter((revision) => revision.visit_id === v.id && revision.status === "verified");
+        const areas: AreaMeasurement[] = revisions.map((revision) => {
+            const area = db.areas.find((row) => row.id === revision.area_id);
+            return {
+                id: revision.area_id,
+                name: area?.name || "Archived area",
+                length: revision.length || 0,
+                width: revision.width || 0,
+                height: revision.height || 0,
+                unit: revision.unit,
+                notes: revision.notes,
+            };
+        });
+        const captureAreas: AreaMeasurement[] = areas.length > 0
+            ? areas
+            : db.areas
+                .filter((area) => site && area.site_id === site.id && !area.is_archived && Boolean(work?.area_ids.includes(area.id)))
+                .map((area) => ({
+                    id: area.id,
+                    name: area.name,
+                    length: area.length || 0,
+                    width: area.width || 0,
+                    height: area.height || 0,
+                    unit: (area.unit as "ft" | "m") || "ft",
+                    notes: area.notes,
+                }));
         const totalArea = areas.reduce((n, r) => n + (r.length * r.width), 0);
         return {
             id: v.id, visitId: v.id, site, customerName: customer?.name || v.location_name, location: v.location_name,
-            staffName: v.staff_name, date: v.scheduled_at, status: v.status, areas, totalArea,
+            staffName: v.staff_name, date: v.scheduled_at, status: v.status, areas, captureAreas, totalArea,
             gps: v.latitude != null && v.longitude != null ? { lat: v.latitude, lng: v.longitude } : undefined,
             proofs: v.proof_attachment_ids, reportFiled: Boolean(v.report_filed), notes: v.notes,
         };
     });
-    const completed = records.filter((r) => r.areas.length > 0).length;
-    const pending = records.filter((r) => r.areas.length === 0 && r.status !== "completed").length;
+    const completed = records.filter((r) => r.reportFiled && r.areas.length > 0).length;
+    const pending = records.filter((r) => !r.reportFiled).length;
     const totalArea = records.reduce((n, r) => n + r.totalArea, 0);
     const openCapture = (visitId: string) => {
         const visit = db.visits.find((row) => row.id === visitId);
@@ -171,6 +186,7 @@ export function SiteMeasurementModule() {
                     site_id: site.id,
                     area_id: areaId,
                     work_required_id: visit.work_required_id,
+                    visit_id: visit.id,
                     length: measurement.length,
                     width: measurement.width,
                     height: measurement.height,
@@ -243,10 +259,10 @@ export function SiteMeasurementModule() {
                   <Ruler className="mr-1.5 h-3.5 w-3.5"/> {r.reportFiled ? "Filed — new Visit required" : "Edit measurement"}
                 </Button>
               </div>) : (<div className="mt-3 flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 py-4">
-                <p className="text-xs text-muted-foreground">No measurement captured yet</p>
-                <Button size="sm" onClick={() => openCapture(r.visitId)}>
+                <p className="text-xs text-muted-foreground">{r.reportFiled ? "Filed report has no visit-linked measurement revisions" : "No measurement captured for this visit yet"}</p>
+                {!r.reportFiled && <Button size="sm" onClick={() => openCapture(r.visitId)}>
                   <Ruler className="mr-1.5 h-3.5 w-3.5"/> Capture measurement
-                </Button>
+                </Button>}
               </div>)}
             <div className="mt-3 border-t border-border pt-3">
               <OperationalMediaPanel entityType="visit" entityId={r.visitId} title="Measurement files & references" compact/>
@@ -256,7 +272,7 @@ export function SiteMeasurementModule() {
 
       {records.length === 0 && (<EmptyState title="No measurement visits scheduled" description="Schedule a measurement visit from Customer Desk to begin capturing room-wise dimensions." icon={<Ruler className="h-8 w-8"/>}/>)}
 
-      {openDialog && activeVisitId && (<MeasurementDialog visitId={activeVisitId} record={records.find((r) => r.visitId === activeVisitId)!} initialAreas={records.find((r) => r.visitId === activeVisitId)?.areas || []} onClose={() => setOpenDialog(false)} onSave={handleSave}/>)}
+      {openDialog && activeVisitId && (<MeasurementDialog visitId={activeVisitId} record={records.find((r) => r.visitId === activeVisitId)!} initialAreas={records.find((r) => r.visitId === activeVisitId)?.captureAreas || []} onClose={() => setOpenDialog(false)} onSave={handleSave}/>)}
     </div>);
 }
 function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
