@@ -21,12 +21,6 @@ export type GenericRecordRow = {
   dataJson: string;
 };
 
-export type WorkspaceMetaRow = {
-  id: string;
-  revision: number;
-  updatedAt: string;
-};
-
 export type StaffProfileRow = {
   id: string;
   code: string;
@@ -103,12 +97,6 @@ type RDashSupabaseSchema = {
         Update: Partial<GenericRecordRow>;
         Relationships: [];
       };
-      WorkspaceMeta: {
-        Row: WorkspaceMetaRow;
-        Insert: Partial<WorkspaceMetaRow> & Pick<WorkspaceMetaRow, "id">;
-        Update: Partial<WorkspaceMetaRow>;
-        Relationships: [];
-      };
       StaffProfile: {
         Row: StaffProfileRow;
         Insert: Partial<StaffProfileRow> & Pick<StaffProfileRow, "id" | "code" | "name" | "roleId" | "status" | "salaryType" | "dataJson">;
@@ -135,10 +123,6 @@ type RDashSupabaseSchema = {
       };
     };
     Functions: {
-      write_workspace_snapshot: {
-        Args: { p_workspace_id: string; p_data_json: string; p_revision: number };
-        Returns: void;
-      };
       commit_workspace_operations: {
         Args: {
           p_workspace_id: string;
