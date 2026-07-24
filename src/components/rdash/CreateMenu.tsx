@@ -178,7 +178,7 @@ function CreateDialog({ request, onClose }: {
         setVisitSiteId(prefillSiteId || "");
         setVisitTargetType("site");
         setVisitVendorId("");
-        setVisitWorkRequiredId("");
+        setVisitWorkRequiredId(prefillWorkRequiredId || "");
         setVisitType(prefillVisitType || "site_visit");
     }, [defaultAssignee, defaultVisitAssignee, kind, prefillCustomerId, prefillSiteId, prefillVisitType, prefillWorkRequiredId]);
     const handleSubmit = () => {
@@ -509,7 +509,13 @@ function CreateDialog({ request, onClose }: {
                   <SelectTrigger><SelectValue placeholder={visitTargetType === "vendor" ? "Vendor Visits do not use Site measurement scope" : visitSiteId ? "Select site work requirement…" : "Select Site first"}/></SelectTrigger>
                   <SelectContent>
                     {visitType !== "measurement" && <SelectItem value="none">No linked Work Required</SelectItem>}
-                    {db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId).map((work) => <SelectItem key={work.id} value={work.id}>{work.title}</SelectItem>)}
+                    {db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId).map((work) => {
+                        const areaNames = work.area_ids.map((areaId) => db.areas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
+                        const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
+                        const subcategory = db.master.workSubcategories.find((row) => row.id === work.work_subcategory_id);
+                        const scope = [category?.name || work.title, subcategory?.name].filter(Boolean).join(" · ");
+                        return <SelectItem key={work.id} value={work.id}>{areaNames || "Site-wide"} → {scope}</SelectItem>;
+                    })}
                   </SelectContent>
                 </Select>
               </Field>
