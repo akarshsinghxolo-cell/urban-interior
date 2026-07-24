@@ -4,7 +4,7 @@
 -- revisioned entity_* tables and committed through commit_workspace_operations().
 --
 -- Tables (4 total):
---   rdash_user_roles    - maps Supabase Auth users to app roles/approval status
+--   uc_user_roles       - maps Supabase Auth users to app roles/approval status
 --   "GenericRecord"     - JSON key/value store for settings such as Google Drive
 --   "StaffProfile"      - normalized staff identity/profile records
 --   "StaffLocationPing" - normalized append-oriented GPS telemetry
@@ -15,9 +15,9 @@
 create extension if not exists pgcrypto;
 
 -- ----------------------------------------------------------------------------
--- rdash_user_roles — Supabase Auth role mapping
+-- uc_user_roles — Supabase Auth role mapping
 -- ----------------------------------------------------------------------------
-create table if not exists public.rdash_user_roles (
+create table if not exists public.uc_user_roles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   email text,
@@ -32,8 +32,8 @@ create table if not exists public.rdash_user_roles (
   updated_at timestamptz not null default now()
 );
 
-alter table public.rdash_user_roles drop constraint if exists rdash_user_roles_role_check;
-alter table public.rdash_user_roles add constraint rdash_user_roles_role_check check (
+alter table public.uc_user_roles drop constraint if exists uc_user_roles_role_check;
+alter table public.uc_user_roles add constraint uc_user_roles_role_check check (
   role in (
     'OWNER', 'OPERATIONS_MANAGER', 'FIELD_STAFF', 'SALES_TELECALLER',
     'PROCUREMENT_STAFF', 'FINANCE', 'ACCOUNTS_ADMIN',
@@ -42,24 +42,25 @@ alter table public.rdash_user_roles add constraint rdash_user_roles_role_check c
   )
 );
 
-alter table public.rdash_user_roles drop constraint if exists rdash_user_roles_status_check;
-alter table public.rdash_user_roles add constraint rdash_user_roles_status_check
+alter table public.uc_user_roles drop constraint if exists uc_user_roles_status_check;
+alter table public.uc_user_roles add constraint uc_user_roles_status_check
   check (status in ('pending', 'active', 'rejected', 'inactive'));
 
-create unique index if not exists rdash_user_roles_one_active_role
-  on public.rdash_user_roles (user_id) where status = 'active';
-create unique index if not exists rdash_user_roles_one_open_request
-  on public.rdash_user_roles (user_id) where status in ('pending', 'active');
-create index if not exists rdash_user_roles_email_idx
-  on public.rdash_user_roles (lower(email));
+create unique index if not exists uc_user_roles_one_active_role
+  on public.uc_user_roles (user_id) where status = 'active';
+create unique index if not exists uc_user_roles_one_open_request
+  on public.uc_user_roles (user_id) where status in ('pending', 'active');
+create index if not exists uc_user_roles_email_idx
+  on public.uc_user_roles (lower(email));
 
-alter table public.rdash_user_roles enable row level security;
-drop policy if exists "Users can read their own RDash role" on public.rdash_user_roles;
-create policy "Users can read their own RDash role"
-  on public.rdash_user_roles for select to authenticated
+alter table public.uc_user_roles enable row level security;
+drop policy if exists "Users can read their own RDash role" on public.uc_user_roles;
+drop policy if exists "Users can read their own UC role" on public.uc_user_roles;
+create policy "Users can read their own UC role"
+  on public.uc_user_roles for select to authenticated
   using (auth.uid() = user_id);
-grant select on public.rdash_user_roles to authenticated;
-grant all on public.rdash_user_roles to service_role;
+grant select on public.uc_user_roles to authenticated;
+grant all on public.uc_user_roles to service_role;
 
 -- ----------------------------------------------------------------------------
 -- GenericRecord — JSON key/value store, keyed by (collection, id)
@@ -71,7 +72,6 @@ create table if not exists public."GenericRecord" (
   primary key (collection, id)
 );
 create index if not exists "GenericRecord_collection_idx" on public."GenericRecord" (collection);
-
 
 -- ----------------------------------------------------------------------------
 -- StaffProfile — real staff records. (roleId / attendancePolicyId are kept as
@@ -130,4 +130,3 @@ create index if not exists "StaffLocationPing_staffId_capturedAt_idx"
 alter table public."GenericRecord" enable row level security;
 alter table public."StaffProfile" enable row level security;
 alter table public."StaffLocationPing" enable row level security;
-
