@@ -65,6 +65,29 @@ export type StaffLocationPingRow = {
   dataJson: string;
 };
 
+type StaffIdentityDriftRow = {
+  identity_key: string;
+  role_assignment_id: string | null;
+  user_id: string | null;
+  staff_id: string | null;
+  email: string | null;
+  role: string | null;
+  role_status: string | null;
+  expected_profile_status: string | null;
+  profile_email: string | null;
+  profile_role: string | null;
+  profile_status: string | null;
+  profile_auth_user_id: string | null;
+  master_email: string | null;
+  master_role: string | null;
+  master_status: string | null;
+  master_auth_user_id: string | null;
+  profile_exists: boolean;
+  master_exists: boolean;
+  drift_reasons: string[];
+  is_drifted: boolean;
+};
+
 type RDashSupabaseSchema = {
   public: {
     Tables: {
@@ -105,7 +128,12 @@ type RDashSupabaseSchema = {
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
+    Views: {
+      staff_identity_drift_report: {
+        Row: StaffIdentityDriftRow;
+        Relationships: [];
+      };
+    };
     Functions: {
       write_workspace_snapshot: {
         Args: { p_workspace_id: string; p_data_json: string; p_revision: number };
@@ -124,6 +152,26 @@ type RDashSupabaseSchema = {
           conflicts: number;
           bumpedRowVersions: Record<string, number>;
           newRevision: number;
+        };
+      };
+      sync_staff_identity_bundle: {
+        Args: {
+          p_assignment_id: string | null;
+          p_user_id: string;
+          p_email: string;
+          p_role: string;
+          p_display_name: string;
+          p_status: string;
+          p_staff_id: string | null;
+          p_approved_by: string | null;
+          p_approved_at: string | null;
+          p_rejected_at: string | null;
+          p_workspace_id: string;
+        };
+        Returns: {
+          assignment: RDashUserRoleRow;
+          staffId: string;
+          workspaceRevision: number;
         };
       };
     };
