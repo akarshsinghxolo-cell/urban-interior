@@ -290,7 +290,33 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         ],
     },
 ];
-export const ALL_MODULES: ModuleDef[] = MODULE_GROUPS.flatMap((group) => group.modules);
+// Keep route/permission group ownership stable while allowing the sidebar and
+// other module pickers to follow the business workflow across group boundaries.
+const MODULE_DISPLAY_ORDER = [
+    "workdesk",
+    "customerDesk",
+    "salesPipeline",
+    "fieldOperations",
+    "siteExecution",
+    "quotationDesk",
+    "procurementInventory",
+    "contractorDetail",
+    "vendors",
+    "masterSetup",
+    "financeDesk",
+    "mediaCommunication",
+    "hrStaff",
+    "reportsDesk",
+    "systemSettings",
+] as const;
+const MODULE_DISPLAY_RANK = new Map<string, number>(
+    MODULE_DISPLAY_ORDER.map((id, index) => [id, index]),
+);
+export const ALL_MODULES: ModuleDef[] = MODULE_GROUPS
+    .flatMap((group) => group.modules)
+    .sort((left, right) =>
+        (MODULE_DISPLAY_RANK.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (MODULE_DISPLAY_RANK.get(right.id) ?? Number.MAX_SAFE_INTEGER));
 export const ALL_SUBMODULES: Submodule[] = ALL_MODULES.flatMap((module) => module.submodules);
 export interface ModuleRoute {
     id: string;
