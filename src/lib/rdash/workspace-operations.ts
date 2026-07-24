@@ -11,8 +11,8 @@ export const topLevelCollections: Array<keyof RDashDatabase> = [
   "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders", "grns", "inventory", "stockMovements",
   "dispatches", "vendorBills", "vendorPayments", "contractorBills", "contractorPayments", "commissions", "workOrderCostLines",
   "contractorBids", "contractorSettlements", "drawings", "executionLogs", "variationRequests", "visits", "tasks", "followups",
-  "actions", "payments", "invoices", "customerReceipts", "blocked", "risks", "threads", "attendance", "staffLocationPings",
-  "staffRolePermissions", "staffAuthUsers", "leaveRequests", "payrollPeriods", "payrollLines", "salaryAdjustments", "staffDocuments", "approvalPolicies",
+  "actions", "payments", "invoices", "customerReceipts", "blocked", "risks", "threads", "attendance",
+  "staffRolePermissions", "leaveRequests", "payrollPeriods", "payrollLines", "salaryAdjustments", "staffDocuments", "approvalPolicies",
   "automationRules", "recurringTasks", "commSends", "entityFileAttachments", "entityReferenceAssignments", "commercialTerms",
   "paymentTermTemplates", "taxConfigs", "validityConfigs", "auditLog",
 ];
