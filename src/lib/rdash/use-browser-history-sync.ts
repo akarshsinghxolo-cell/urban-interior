@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import { useRDashStore } from "./store";
 import type { WorkspaceNavigationSnapshot, WorkspaceOverlaySnapshot } from "./store/ui-types";
 import {
@@ -13,6 +14,9 @@ import {
   type BrowserNavigationState,
   type NavigationLayer,
 } from "./navigation-history";
+
+const ROOT_EXIT_GUARD_PREFIX = "uc-root-exit";
+const ROOT_EXIT_CONFIRMATION_MS = 2_000;
 
 function mergedHistoryState(state: BrowserNavigationState): Record<string, unknown> {
   const current = window.history.state;
@@ -36,6 +40,24 @@ function replaceBrowserState(state: BrowserNavigationState): void {
   } catch {
     // Browser history is best-effort in embedded/private browsing contexts.
   }
+}
+
+function shouldGuardMobileRootExit(): boolean {
+  try {
+    const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
+    return Boolean(
+      window.matchMedia?.("(pointer: coarse)").matches ||
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      navigatorWithStandalone.standalone ||
+      /Android|iPhone|iPad|iPod|Mobile/i.test(window.navigator.userAgent),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isRootExitGuard(state: BrowserNavigationState): boolean {
+  return state.entryId.startsWith(`${ROOT_EXIT_GUARD_PREFIX}-`);
 }
 
 export function useBrowserHistorySync(): void {
@@ -112,10 +134,12 @@ export function useBrowserHistorySync(): void {
   const applyingPopRef = React.useRef(false);
   const pendingPopEntryIdRef = React.useRef<string | null>(null);
   const mountedRef = React.useRef(false);
+  const mobileRootGuardEnabledRef = React.useRef(false);
+  const rootExitArmedUntilRef = React.useRef(0);
 
-  const nextEntryId = React.useCallback(() => {
+  const nextEntryId = React.useCallback((prefix = "uc-nav") => {
     sequenceRef.current += 1;
-    return `uc-nav-${Date.now().toString(36)}-${sequenceRef.current.toString(36)}`;
+    return `${prefix}-${Date.now().toString(36)}-${sequenceRef.current.toString(36)}`;
   }, []);
 
   React.useEffect(() => {
@@ -123,6 +147,24 @@ export function useBrowserHistorySync(): void {
     mountedRef.current = true;
     const rootLayers: NavigationLayer[] = [ROOT_LAYER];
     const initial = browserNavigationState(rootLayers, desiredSnapshot, nextEntryId());
+
+    mobileRootGuardEnabledRef.current = shouldGuardMobileRootExit();
+    if (mobileRootGuardEnabledRef.current) {
+      // Keep one managed root entry behind the active workspace entry. The
+      // first mobile Back press reaches this guard and stays inside the app;
+      // a second press within the confirmation window is allowed to leave.
+      const exitGuard = browserNavigationState(
+        rootLayers,
+        desiredSnapshot,
+        nextEntryId(ROOT_EXIT_GUARD_PREFIX),
+      );
+      entriesRef.current = [exitGuard, initial];
+      positionRef.current = 1;
+      replaceBrowserState(exitGuard);
+      pushBrowserState(initial);
+      return;
+    }
+
     entriesRef.current = [initial];
     positionRef.current = 0;
     replaceBrowserState(initial);
@@ -240,6 +282,28 @@ export function useBrowserHistorySync(): void {
       }
 
       const state = event.state;
+      if (mobileRootGuardEnabledRef.current && isRootExitGuard(state)) {
+        pendingPopEntryIdRef.current = null;
+        applyingPopRef.current = false;
+        const now = Date.now();
+
+        if (now <= rootExitArmedUntilRef.current) {
+          rootExitArmedUntilRef.current = 0;
+          window.history.back();
+          return;
+        }
+
+        rootExitArmedUntilRef.current = now + ROOT_EXIT_CONFIRMATION_MS;
+        const activeRoot = browserNavigationState([ROOT_LAYER], state.snapshot, nextEntryId());
+        entriesRef.current = [state, activeRoot];
+        positionRef.current = 1;
+        pushBrowserState(activeRoot);
+        toast.info("Press Back again to exit Urban Castle", {
+          duration: ROOT_EXIT_CONFIRMATION_MS,
+        });
+        return;
+      }
+
       const knownIndex = entriesRef.current.findIndex((entry) => entry.entryId === state.entryId);
       if (knownIndex >= 0) {
         positionRef.current = knownIndex;
@@ -258,5 +322,5 @@ export function useBrowserHistorySync(): void {
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [nextEntryId]);
 }
