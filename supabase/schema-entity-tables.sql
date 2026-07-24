@@ -1,7 +1,7 @@
 -- ============================================================================
 -- Urban Castle — entity_* REST schema (Path B)
 -- ============================================================================
--- One table per collection (86 total). Each table has the same structure:
+-- One table per collection (80 total). Each table has the same structure:
 --   id           text PRIMARY KEY
 --   workspace_id text (default 'default')
 --   revision     int  (per-row CAS counter, bumped on every update)
@@ -581,17 +581,6 @@ create table if not exists public."entity_attendance" (
 create index if not exists "entity_attendance_workspace_idx" on public."entity_attendance" (workspace_id);
 create index if not exists "entity_attendance_revision_idx" on public."entity_attendance" (revision);
 
-create table if not exists public."entity_staffLocationPings" (
-  id text primary key,
-  workspace_id text not null default 'default',
-  revision int not null default 0,
-  updated_at timestamptz not null default now(),
-  updated_by text,
-  data jsonb not null
-);
-
-create index if not exists "entity_staffLocationPings_workspace_idx" on public."entity_staffLocationPings" (workspace_id);
-create index if not exists "entity_staffLocationPings_revision_idx" on public."entity_staffLocationPings" (revision);
 
 create table if not exists public."entity_staffRolePermissions" (
   id text primary key,
@@ -605,17 +594,6 @@ create table if not exists public."entity_staffRolePermissions" (
 create index if not exists "entity_staffRolePermissions_workspace_idx" on public."entity_staffRolePermissions" (workspace_id);
 create index if not exists "entity_staffRolePermissions_revision_idx" on public."entity_staffRolePermissions" (revision);
 
-create table if not exists public."entity_staffAuthUsers" (
-  id text primary key,
-  workspace_id text not null default 'default',
-  revision int not null default 0,
-  updated_at timestamptz not null default now(),
-  updated_by text,
-  data jsonb not null
-);
-
-create index if not exists "entity_staffAuthUsers_workspace_idx" on public."entity_staffAuthUsers" (workspace_id);
-create index if not exists "entity_staffAuthUsers_revision_idx" on public."entity_staffAuthUsers" (revision);
 
 create table if not exists public."entity_leaveRequests" (
   id text primary key,
@@ -1189,9 +1167,7 @@ declare
     'entity_risks',
     'entity_threads',
     'entity_attendance',
-    'entity_staffLocationPings',
     'entity_staffRolePermissions',
-    'entity_staffAuthUsers',
     'entity_leaveRequests',
     'entity_payrollPeriods',
     'entity_payrollLines',
@@ -1255,6 +1231,6 @@ grant execute on all functions in schema public to service_role;
 grant execute on all functions in schema public to authenticated;
 
 -- ============================================================================
--- Done. 87 entity_* tables (including entity_auditLog) + entity_workspace_revision
+-- Done. 80 entity_* tables (including entity_auditLog) + entity_workspace_revision
 -- + StaffProfile + StaffLocationPing + uc_user_roles + RLS policies.
 -- ============================================================================
