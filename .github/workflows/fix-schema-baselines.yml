@@ -146,12 +146,40 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          ! grep -Eq 'WorkspaceMeta|write_workspace_snapshot|workspace\.snapshot' supabase/schema.sql
-          ! grep -Eq 'entity_staffLocationPings|entity_staffAuthUsers' supabase/schema-entity-tables.sql
-          grep -Fq 'create table if not exists public."GenericRecord"' supabase/schema.sql
-          grep -Fq 'create table if not exists public."StaffLocationPing"' supabase/schema.sql
-          grep -Fq 'create table if not exists public."StaffLocationPing"' supabase/schema-entity-tables.sql
-          test "$(git diff --name-only | sort | tr '\n' ' ')" = "supabase/schema-entity-tables.sql supabase/schema.sql "
+          python <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          expected = {
+              "supabase/schema.sql",
+              "supabase/schema-entity-tables.sql",
+          }
+          changed = set(subprocess.check_output(
+              ["git", "diff", "--name-only"],
+              text=True,
+          ).splitlines())
+          if changed != expected:
+              raise SystemExit(f"Unexpected changed paths: {sorted(changed)}")
+
+          schema = Path("supabase/schema.sql").read_text(encoding="utf-8")
+          entity = Path("supabase/schema-entity-tables.sql").read_text(encoding="utf-8")
+          for token in ("WorkspaceMeta", "write_workspace_snapshot", "workspace.snapshot"):
+              if token in schema:
+                  raise SystemExit(f"schema.sql still contains {token}")
+          for token in ("entity_staffLocationPings", "entity_staffAuthUsers"):
+              if token in entity:
+                  raise SystemExit(f"schema-entity-tables.sql still contains {token}")
+          required = (
+              (schema, 'create table if not exists public."GenericRecord"'),
+              (schema, 'create table if not exists public."StaffLocationPing"'),
+              (entity, 'create table if not exists public."StaffLocationPing"'),
+              (entity, "'entity_master_staff',"),
+          )
+          for text, token in required:
+              if token not in text:
+                  raise SystemExit(f"Required canonical declaration missing: {token}")
+          print("Validated paths:", ", ".join(sorted(changed)))
+          PY
 
       - name: Commit corrected baselines
         shell: bash
