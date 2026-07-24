@@ -746,7 +746,11 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 : undefined;
             const now = nowIso();
             const id = revision.id || genId("measurement");
-            const previous = state.db.measurementRevisions.filter((row: any) => row.area_id === area.id && row.site_id === site.id);
+            const previous = state.db.measurementRevisions.filter((row: any) =>
+                row.area_id === area.id &&
+                row.site_id === site.id &&
+                row.work_required_id === work?.id
+            );
             const unit = revision.unit || area.unit || "ft";
             const length = revision.length ?? area.length;
             const width = revision.width ?? area.width;
@@ -764,6 +768,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 site_id: site.id,
                 area_id: area.id,
                 work_required_id: work?.id,
+                visit_id: revision.visit_id,
                 revision_no: previous.length + 1,
                 length,
                 width,
@@ -785,6 +790,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         row,
                         ...s.db.measurementRevisions.map((existing: any) => existing.site_id === site.id &&
                             existing.area_id === area.id &&
+                            existing.work_required_id === work?.id &&
                             existing.status === "verified"
                             ? { ...existing, status: "superseded" as const }
                             : existing),
