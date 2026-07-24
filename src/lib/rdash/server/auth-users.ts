@@ -20,7 +20,31 @@ export interface RDashUserRoleAssignment {
   updated_at: string;
 }
 
+export interface StaffIdentityDriftRow {
+  identity_key: string;
+  role_assignment_id: string | null;
+  user_id: string | null;
+  staff_id: string | null;
+  email: string | null;
+  role: string | null;
+  role_status: string | null;
+  expected_profile_status: string | null;
+  profile_email: string | null;
+  profile_role: string | null;
+  profile_status: string | null;
+  profile_auth_user_id: string | null;
+  master_email: string | null;
+  master_role: string | null;
+  master_status: string | null;
+  master_auth_user_id: string | null;
+  profile_exists: boolean;
+  master_exists: boolean;
+  drift_reasons: string[];
+  is_drifted: boolean;
+}
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ROLE_ASSIGNMENT_SELECT = "id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at";
 
 export function normalizeAuthEmail(email: string) {
   return email.trim().toLowerCase();
@@ -47,139 +71,67 @@ export function validateSignupInput(input: { email?: string; password?: string; 
   return { email, password, displayName };
 }
 
-function staffIdForAuthUser(userId: string) {
-  return `staff-auth-${userId.replace(/-/g, "").slice(0, 12)}`;
-}
-
-function staffCodeForAuthUser(userId: string) {
-  return `AUTH-${userId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
-}
-
 function validAssignmentEmail(email: string | null | undefined) {
   const normalized = normalizeAuthEmail(email || "");
   if (!EMAIL_PATTERN.test(normalized)) throw new Error("The auth user does not have a valid work email.");
   return normalized;
 }
 
-async function ensureStaffProfileForAuthUser(input: {
+function approvedByUuid(user: AuthenticatedUser) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId)
+    ? user.userId
+    : null;
+}
+
+async function syncStaffIdentity(input: {
+  assignmentId?: string | null;
   userId: string;
   email: string;
   displayName: string;
   role: string;
-  status: "pending" | "active" | "inactive";
+  status: RDashUserApprovalStatus;
   staffId?: string | null;
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  rejectedAt?: string | null;
 }) {
-  const email = validAssignmentEmail(input.email);
-  const roleId = normalizeRequestedRole(input.role);
-  const name = String(input.displayName || email).trim();
   const admin = getSupabaseAdminClient();
-  const byStaffId = input.staffId
-    ? (await admin.from("StaffProfile").select("id,code").eq("id", input.staffId).maybeSingle()).data
-    : null;
-  const byEmail = byStaffId
-    ? null
-    : (await admin.from("StaffProfile").select("id,code").eq("email", email).limit(1).maybeSingle()).data;
-  const existing = byStaffId || byEmail;
-  const id = existing?.id || input.staffId || staffIdForAuthUser(input.userId);
-  const code = existing?.code || staffCodeForAuthUser(input.userId);
-  const dataJson = JSON.stringify({ source: "supabase_auth", authUserId: input.userId, email });
-  const { data: profile, error } = existing
-    ? await admin
-        .from("StaffProfile")
-        .update({ name, email, roleId, status: input.status, dataJson })
-        .eq("id", id)
-        .select("id")
-        .single()
-    : await admin
-        .from("StaffProfile")
-        .insert({
-          id,
-          code,
-          name,
-          email,
-          roleId,
-          status: input.status,
-          salaryType: "monthly",
-          gpsTrackingEnabled: true,
-          dataJson,
-        })
-        .select("id")
-        .single();
-  if (error || !profile) throw new Error(`Could not save staff profile: ${error?.message || "unknown error"}`);
-
-  // FIX-STAFF-SYNC: Also upsert into entity_master_staff so the staff member
-  // appears in the HR module (Attendance, Payroll, Staff Board). The auth
-  // system writes to StaffProfile (normalized table), but the workspace/HR
-  // module reads from entity_master_staff (workspace blob table). Without
-  // this sync, approved users can log in but are invisible in HR — they
-  // can't be assigned visits, tracked for attendance, or processed for
-  // payroll.
-  try {
-    const now = new Date().toISOString();
-    const staffEntityData = {
-      id,
-      code,
-      name,
-      email,
-      phone: "",
-      auth_user_id: input.userId,  // FIX-DB-MERGE-001: links to Supabase auth.users
-      role: roleId === "OWNER" ? "Owner"
-        : roleId === "OPERATIONS_MANAGER" ? "Operations Manager"
-        : roleId === "FIELD_STAFF" ? "Field Staff"
-        : roleId === "SALES_TELECALLER" ? "Sales / Telecaller"
-        : roleId === "PROCUREMENT_STAFF" ? "Procurement Staff"
-        : roleId === "FINANCE" ? "Finance"
-        : roleId === "ACCOUNTS_ADMIN" ? "Accounts / Admin"
-        : "Staff",
-      role_key: roleId as any,
-      department: "",
-      designation: "",
-      status: input.status === "active" ? "active" : input.status,
-      salary_type: "monthly" as const,
-      gps_tracking_enabled: true,
-      login_enabled: true,
-      login_email: email,
-      attendance_policy: {
-        id: `policy-${id}`,
-        grace_period_minutes: 15,
-        late_grace_minutes: 15,
-        absent_deduction_enabled: false,
-        absent_deduction_days: 0,
-      },
-      created_at: now,
-      updated_at: now,
-    };
-    await admin.from("entity_master_staff").upsert({
-      id,
-      workspace_id: "default",
-      revision: 0,
-      updated_at: now,
-      updated_by: "auth-system",
-      data: staffEntityData,
-    }, { onConflict: "id" });
-  } catch (syncError) {
-    // Non-fatal — the StaffProfile was saved successfully, so login will
-    // work. The entity_master_staff sync is for HR visibility. Log but
-    // don't block the approval.
-    console.error("[auth-users] Failed to sync staff to entity_master_staff:", syncError);
+  const { data, error } = await admin.rpc("sync_staff_identity_bundle", {
+    p_assignment_id: input.assignmentId || null,
+    p_user_id: input.userId,
+    p_email: validAssignmentEmail(input.email),
+    p_role: normalizeRequestedRole(input.role),
+    p_display_name: String(input.displayName || input.email).trim(),
+    p_status: input.status,
+    p_staff_id: String(input.staffId || "").trim() || null,
+    p_approved_by: input.approvedBy || null,
+    p_approved_at: input.approvedAt || null,
+    p_rejected_at: input.rejectedAt || null,
+    p_workspace_id: process.env.UC_WORKSPACE_ID || "default",
+  });
+  if (error) throw new Error(`Could not synchronize staff identity: ${error.message}`);
+  const result = data as {
+    assignment?: RDashUserRoleAssignment;
+    staffId?: string;
+    workspaceRevision?: number;
+  } | null;
+  if (!result?.assignment?.id || !result.staffId) {
+    throw new Error("Staff synchronization returned an incomplete result.");
   }
-
-  return profile.id;
+  return {
+    assignment: result.assignment,
+    staffId: result.staffId,
+    workspaceRevision: Number(result.workspaceRevision || 0),
+  };
 }
 
 export async function findAuthUserByEmail(email: string): Promise<User | null> {
-  // STAGE-2-FIX: Use an RPC (Postgres function) for an O(1) lookup on
-  // auth.users by email, instead of paginating through ALL users via
-  // listUsers (which was O(N) and DOS-able). Requires the
-  // get_auth_user_by_email function from stage2-schema-fixes.sql.
   const admin = getSupabaseAdminClient();
   const target = normalizeAuthEmail(email);
   const { data, error } = await (admin as unknown as {
     rpc: (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
   }).rpc("get_auth_user_by_email", { p_email: target });
   if (error) {
-    // If the RPC doesn't exist yet (migration not run), fall back to the old
-    // paginated approach so the app keeps working during the transition.
     console.warn("[auth-users] get_auth_user_by_email RPC failed, falling back to listUsers:", error.message);
     let page = 1;
     for (;;) {
@@ -192,7 +144,6 @@ export async function findAuthUserByEmail(email: string): Promise<User | null> {
     }
   }
   if (!data) return null;
-  // The RPC returns a json object with id, email, etc. — cast to User.
   return data as unknown as User;
 }
 
@@ -209,7 +160,7 @@ export async function createPendingAccessRequest(input: {
 
   const { data: existingAssignments, error: assignmentError } = await admin
     .from("uc_user_roles")
-    .select("id,status,email,role,display_name,user_id,staff_id,approved_by,approved_at,rejected_at,created_at,updated_at")
+    .select(ROLE_ASSIGNMENT_SELECT)
     .ilike("email", email)
     .in("status", ["pending", "active"])
     .limit(1);
@@ -217,25 +168,21 @@ export async function createPendingAccessRequest(input: {
   const existingAssignment = existingAssignments?.[0] as RDashUserRoleAssignment | undefined;
   if (existingAssignment?.status === "active") throw new Error("This email already has active Urban Castle access.");
   if (existingAssignment?.status === "pending") {
-    const staffId = existingAssignment.staff_id || await ensureStaffProfileForAuthUser({
+    const synced = await syncStaffIdentity({
+      assignmentId: existingAssignment.id,
       userId: existingAssignment.user_id,
       email,
       displayName: existingAssignment.display_name || displayName,
       role: existingAssignment.role,
       status: "pending",
+      staffId: existingAssignment.staff_id,
     });
-    if (!existingAssignment.staff_id) {
-      const { error: linkError } = await admin.from("uc_user_roles").update({ staff_id: staffId, updated_at: new Date().toISOString() }).eq("id", existingAssignment.id);
-      if (linkError) throw new Error(`Could not link staff profile: ${linkError.message}`);
-      existingAssignment.staff_id = staffId;
-    }
-    return { status: "pending" as const, assignment: existingAssignment };
+    return { status: "pending" as const, assignment: synced.assignment };
   }
 
   const existingAuthUser = await findAuthUserByEmail(email);
   let createdAuthUserId: string | null = null;
-  const userId = existingAuthUser?.id || null;
-  let resolvedUserId = userId;
+  let resolvedUserId = existingAuthUser?.id || null;
 
   if (!resolvedUserId) {
     const created = await admin.auth.admin.createUser({
@@ -251,31 +198,19 @@ export async function createPendingAccessRequest(input: {
     resolvedUserId = created.data.user.id;
   }
 
-  let staffId: string;
   try {
-    staffId = await ensureStaffProfileForAuthUser({ userId: resolvedUserId, email, displayName, role, status: "pending" });
+    const synced = await syncStaffIdentity({
+      userId: resolvedUserId,
+      email,
+      displayName,
+      role,
+      status: "pending",
+    });
+    return { status: "pending" as const, assignment: synced.assignment };
   } catch (error) {
     if (createdAuthUserId) await admin.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
     throw error;
   }
-
-  const { data: assignment, error: insertError } = await admin
-    .from("uc_user_roles")
-    .insert({
-      user_id: resolvedUserId,
-      email,
-      role,
-      staff_id: staffId,
-      display_name: displayName,
-      status: "pending",
-    })
-    .select("id,status,email,role,display_name,user_id,staff_id,approved_by,approved_at,rejected_at,created_at,updated_at")
-    .single();
-  if (insertError) {
-    if (createdAuthUserId) await admin.auth.admin.deleteUser(createdAuthUserId).catch(() => undefined);
-    throw new Error(`Could not create the Urban Castle access request: ${insertError.message}`);
-  }
-  return { status: "pending" as const, assignment: assignment as RDashUserRoleAssignment };
 }
 
 export function assertOwner(user: AuthenticatedUser) {
@@ -284,14 +219,25 @@ export function assertOwner(user: AuthenticatedUser) {
 
 export async function listRoleAssignments(user: AuthenticatedUser) {
   assertOwner(user);
-  // Supabase-only: read from uc_user_roles table.
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
     .from("uc_user_roles")
-    .select("id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at")
+    .select(ROLE_ASSIGNMENT_SELECT)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`Could not load user approvals: ${error.message}`);
   return (data || []) as RDashUserRoleAssignment[];
+}
+
+export async function listStaffIdentityDrift(user: AuthenticatedUser) {
+  assertOwner(user);
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("staff_identity_drift_report")
+    .select("*")
+    .order("is_drifted", { ascending: false })
+    .order("email", { ascending: true, nullsFirst: false });
+  if (error) throw new Error(`Could not load staff identity drift report: ${error.message}`);
+  return (data || []) as StaffIdentityDriftRow[];
 }
 
 export async function approveRoleAssignment(user: AuthenticatedUser, input: {
@@ -307,7 +253,7 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
   const role = normalizeRequestedRole(input.role);
   const { data: pendingRows, error: lookupError } = await admin
     .from("uc_user_roles")
-    .select("id,status,email,role,display_name,user_id,staff_id,approved_by,approved_at,rejected_at,created_at,updated_at")
+    .select(ROLE_ASSIGNMENT_SELECT)
     .eq("id", id)
     .eq("status", "pending")
     .limit(1);
@@ -315,36 +261,19 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
   const pending = pendingRows?.[0] as RDashUserRoleAssignment | undefined;
   if (!pending) throw new Error("No pending user approval was found.");
   const displayName = String(input.displayName || pending.display_name || pending.email || "Urban Castle User").trim();
-  const staffId = await ensureStaffProfileForAuthUser({
+  const now = new Date().toISOString();
+  const synced = await syncStaffIdentity({
+    assignmentId: pending.id,
     userId: pending.user_id,
     email: validAssignmentEmail(pending.email),
     displayName,
     role,
     status: "active",
     staffId: String(input.staffId || pending.staff_id || "").trim() || null,
+    approvedBy: approvedByUuid(user),
+    approvedAt: now,
   });
-  const now = new Date().toISOString();
-  const { data, error } = await admin
-    .from("uc_user_roles")
-    .update({
-      role,
-      display_name: displayName,
-      staff_id: staffId,
-      status: "active",
-      // STAGE-3-FIX: Store the user's email when userId isn't a UUID (super-owner).
-      // The approved_by column is TEXT, so we can store either a UUID or an email.
-      // This preserves the audit trail for super-owner approvals (previously null).
-      approved_by: user.userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId) ? user.userId : user.email,
-      approved_at: now,
-      rejected_at: null,
-      updated_at: now,
-    })
-    .eq("id", id)
-    .eq("status", "pending")
-    .select("id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at")
-    .single();
-  if (error) throw new Error(`Could not approve user: ${error.message}`);
-  return data as RDashUserRoleAssignment;
+  return synced.assignment;
 }
 
 export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?: string }) {
@@ -352,39 +281,26 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
   const id = String(input.id || "").trim();
   if (!id) throw new Error("Missing role assignment id.");
   const admin = getSupabaseAdminClient();
-  const now = new Date().toISOString();
-  const { data, error } = await admin
+  const { data: pendingRows, error: lookupError } = await admin
     .from("uc_user_roles")
-    .update({
-      status: "rejected",
-      approved_by: user.userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.userId) ? user.userId : null,
-      rejected_at: now,
-      updated_at: now,
-    })
+    .select(ROLE_ASSIGNMENT_SELECT)
     .eq("id", id)
     .eq("status", "pending")
-    .select("id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at")
-    .single();
-  if (error) throw new Error(`Could not reject user: ${error.message}`);
-  const rejected = data as RDashUserRoleAssignment;
-  if (rejected.staff_id) {
-    const adminClient = getSupabaseAdminClient();
-    await adminClient.from("StaffProfile").update({ status: "inactive" }).eq("id", rejected.staff_id).then(() => undefined, () => undefined);
-    // FIX-STAFF-SYNC: Also mark as inactive in entity_master_staff so the
-    // HR module reflects the rejection.
-    try {
-      const existing = await adminClient.from("entity_master_staff").select("data").eq("id", rejected.staff_id).maybeSingle();
-      if (existing.data) {
-        const staffData = typeof existing.data.data === "string" ? JSON.parse(existing.data.data) : existing.data.data;
-        staffData.status = "inactive";
-        staffData.updated_at = now;
-        await adminClient.from("entity_master_staff").update({
-          data: staffData,
-          updated_at: now,
-          updated_by: "auth-system",
-        }).eq("id", rejected.staff_id);
-      }
-    } catch { /* non-fatal */ }
-  }
-  return rejected;
+    .limit(1);
+  if (lookupError) throw new Error(`Could not load user for rejection: ${lookupError.message}`);
+  const pending = pendingRows?.[0] as RDashUserRoleAssignment | undefined;
+  if (!pending) throw new Error("No pending user approval was found.");
+  const now = new Date().toISOString();
+  const synced = await syncStaffIdentity({
+    assignmentId: pending.id,
+    userId: pending.user_id,
+    email: validAssignmentEmail(pending.email),
+    displayName: pending.display_name || pending.email || "Urban Castle User",
+    role: pending.role,
+    status: "rejected",
+    staffId: pending.staff_id,
+    approvedBy: approvedByUuid(user),
+    rejectedAt: now,
+  });
+  return synced.assignment;
 }
