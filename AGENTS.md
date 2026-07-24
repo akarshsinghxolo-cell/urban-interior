@@ -2,6 +2,15 @@
 
 These instructions apply to all coding-agent work in this repository.
 
+## Project identity and durable memory
+
+- ChatGPT project / operating context: `UC project 1`
+- GitHub repository: `akarshsinghxolo-cell/urban-interior`
+- Primary production site: `urban-castle.vercel.app`
+- Supabase project: `urban-interior`
+- This `AGENTS.md` file is the canonical durable memory for coding-agent permissions, workflow, safety boundaries, verification, and completion requirements.
+- Coding agents must read this file before inspecting, editing, testing, deploying, or changing the database.
+
 ## Operating mode
 
 Act as an end-to-end coding agent, not only as a code advisor. Use repository-wide context and complete the edit-test-debug cycle whenever the available tools permit it.
