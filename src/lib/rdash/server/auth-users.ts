@@ -237,7 +237,7 @@ export async function listStaffIdentityDrift(user: AuthenticatedUser) {
     .order("is_drifted", { ascending: false })
     .order("email", { ascending: true, nullsFirst: false });
   if (error) throw new Error(`Could not load staff identity drift report: ${error.message}`);
-  return (data || []) as StaffIdentityDriftRow[];
+  return (data || []) as unknown as StaffIdentityDriftRow[];
 }
 
 export async function approveRoleAssignment(user: AuthenticatedUser, input: {
