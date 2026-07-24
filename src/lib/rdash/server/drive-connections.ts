@@ -13,6 +13,7 @@ type DriveConnection = {
   id: string;
   refreshToken: string;
   email?: string;
+  googleAccountId?: string;
   rootFolderId?: string;
   rootFolderName?: string;
   rootFolderUrl?: string;
@@ -52,6 +53,30 @@ function emptyVault(): Vault {
 function safeReturnPath(value: string | null) {
   return value && value.startsWith("/") && !value.startsWith("//") ? value : "/";
 }
+
+function normalizedEmail(value?: string) {
+  return value?.trim().toLowerCase() || "";
+}
+
+function sameGoogleIdentity(
+  connection: Pick<DriveConnection, "googleAccountId" | "email">,
+  identity: { googleAccountId?: string; email?: string },
+) {
+  if (connection.googleAccountId && identity.googleAccountId) {
+    return connection.googleAccountId === identity.googleAccountId;
+  }
+  const leftEmail = normalizedEmail(connection.email);
+  const rightEmail = normalizedEmail(identity.email);
+  return Boolean(leftEmail && rightEmail && leftEmail === rightEmail);
+}
+
+export type DriveConnectionSummary = {
+  id: string;
+  email?: string;
+  googleAccountId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
 
 function parseSettings(raw: string | null | undefined): Partial<GoogleDriveOAuthSettings> {
   if (!raw) return {};
@@ -144,6 +169,18 @@ async function readVault(): Promise<Vault> {
 }
 
 // UPLOAD-016: Atomic vault write — serialize concurrent writes to prevent corruption
+export async function readGoogleDriveConnectionSummaries(user: AuthenticatedUser): Promise<DriveConnectionSummary[]> {
+  if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner can view Google Drive connections.");
+  const vault = await readVault();
+  return vault.connections.map(({ id, email, googleAccountId, createdAt, updatedAt }) => ({
+    id,
+    email,
+    googleAccountId,
+    createdAt,
+    updatedAt,
+  }));
+}
+
 async function writeVault(vault: Vault) {
   // Wait for any pending write to complete
   while (vaultWritePromise) {
@@ -260,26 +297,53 @@ export async function completeGoogleDriveConnect(user: AuthenticatedUser, input:
   const token = await exchange.json().catch(() => ({})) as { refresh_token?: string; access_token?: string; error_description?: string };
   if (!exchange.ok || !token.access_token) throw new Error(token.error_description || "Google rejected the Drive connection request.");
   const previous = pending.existingConnectionId ? vault.connections.find((connection) => connection.id === pending.existingConnectionId) : undefined;
-  const refresh = token.refresh_token || previous?.refreshToken;
-  if (!refresh) throw new Error("Google did not return a reusable connection token. Disconnect this Google account from Google permissions and connect it again.");
-  const aboutResponse = await google(`${DRIVE_API}/about?fields=user(emailAddress,displayName),storageQuota(limit,usage)`, token.access_token);
-  const about = await aboutResponse.json().catch(() => ({})) as { user?: { emailAddress?: string }; storageQuota?: { limit?: string; usage?: string } };
+  if (pending.existingConnectionId && !previous) {
+    throw new Error("The Drive connection being reauthorized no longer exists. Start a new Drive connection instead.");
+  }
+  const aboutResponse = await google(`${DRIVE_API}/about?fields=user(permissionId,emailAddress,displayName),storageQuota(limit,usage)`, token.access_token);
+  const about = await aboutResponse.json().catch(() => ({})) as {
+    user?: { permissionId?: string; emailAddress?: string };
+    storageQuota?: { limit?: string; usage?: string };
+  };
   if (!aboutResponse.ok) throw new Error("Google Drive did not allow Urban Castle to read account storage details.");
+
+  const identity = {
+    googleAccountId: about.user?.permissionId?.trim() || undefined,
+    email: normalizedEmail(about.user?.emailAddress) || undefined,
+  };
+  if (!identity.googleAccountId && !identity.email) {
+    throw new Error("Google did not return an account identity. The Drive was not connected.");
+  }
+  if (previous && !sameGoogleIdentity(previous, identity)) {
+    throw new Error(`Reconnect “${previous.email || previous.id}” using that same Google account. To add a different account, start a new Drive connection.`);
+  }
+
+  // A new authorization for an already-known Google identity reuses the
+  // existing server connection instead of creating a duplicate Drive slot.
+  const duplicate = previous ? undefined : vault.connections.find((connection) => sameGoogleIdentity(connection, identity));
+  const target = previous || duplicate;
+  const refresh = token.refresh_token || target?.refreshToken;
+  if (!refresh) throw new Error("Google did not return a reusable connection token. Disconnect this Google account from Google permissions and connect it again.");
+
   const root = await findOrCreateRoot(token.access_token);
-  const id = previous?.id || `drive-connection-${randomBytes(12).toString("base64url")}`;
+  const id = target?.id || `drive-connection-${randomBytes(12).toString("base64url")}`;
   const connection: DriveConnection = {
     id,
     refreshToken: refresh,
-    email: about.user?.emailAddress,
+    email: identity.email,
+    googleAccountId: identity.googleAccountId || target?.googleAccountId,
     rootFolderId: root.id,
     rootFolderName: root.name,
     rootFolderUrl: root.webViewLink,
     quotaUsedBytes: Number(about.storageQuota?.usage || 0),
     quotaLimitBytes: Number(about.storageQuota?.limit || 0),
-    createdAt: previous?.createdAt || new Date().toISOString(),
+    createdAt: target?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  vault.connections = [...vault.connections.filter((item) => item.id !== id), connection];
+  vault.connections = [
+    ...vault.connections.filter((item) => item.id !== id && !sameGoogleIdentity(item, identity)),
+    connection,
+  ];
   vault.pending = vault.pending.filter((item) => item.state !== input.state && item.expiresAt > Date.now());
   await writeVault(vault);
   return { connection, label: pending.label, returnTo: pending.returnTo };
@@ -307,10 +371,27 @@ export async function refreshDriveConnection(connectionId: string) {
   const connection = vault.connections.find((item) => item.id === connectionId);
   if (!connection) throw new Error("This Google Drive account is not connected on the server.");
   const accessToken = await refreshToken(connection.refreshToken);
-  const aboutResponse = await google(`${DRIVE_API}/about?fields=user(emailAddress),storageQuota(limit,usage)`, accessToken);
-  const about = await aboutResponse.json().catch(() => ({})) as { user?: { emailAddress?: string }; storageQuota?: { limit?: string; usage?: string } };
+  const aboutResponse = await google(`${DRIVE_API}/about?fields=user(permissionId,emailAddress),storageQuota(limit,usage)`, accessToken);
+  const about = await aboutResponse.json().catch(() => ({})) as {
+    user?: { permissionId?: string; emailAddress?: string };
+    storageQuota?: { limit?: string; usage?: string };
+  };
   if (!aboutResponse.ok) throw new Error("Google Drive storage quota could not be refreshed.");
-  const updated: DriveConnection = { ...connection, email: about.user?.emailAddress || connection.email, quotaUsedBytes: Number(about.storageQuota?.usage || 0), quotaLimitBytes: Number(about.storageQuota?.limit || 0), updatedAt: new Date().toISOString() };
+  const refreshedIdentity = {
+    googleAccountId: about.user?.permissionId?.trim() || undefined,
+    email: normalizedEmail(about.user?.emailAddress) || undefined,
+  };
+  if (!sameGoogleIdentity(connection, refreshedIdentity)) {
+    throw new Error("Google Drive returned a different account identity. Reconnect the original account before refreshing it.");
+  }
+  const updated: DriveConnection = {
+    ...connection,
+    email: refreshedIdentity.email || connection.email,
+    googleAccountId: refreshedIdentity.googleAccountId || connection.googleAccountId,
+    quotaUsedBytes: Number(about.storageQuota?.usage || 0),
+    quotaLimitBytes: Number(about.storageQuota?.limit || 0),
+    updatedAt: new Date().toISOString(),
+  };
   vault.connections = vault.connections.map((item) => item.id === connectionId ? updated : item);
   await writeVault(vault);
   return updated;

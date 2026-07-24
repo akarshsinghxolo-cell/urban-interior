@@ -21,6 +21,13 @@ type OAuthConfig = {
   configured: boolean;
   redirectUri: string;
   updatedAt: string | null;
+  connections?: Array<{
+    id: string;
+    email?: string;
+    googleAccountId?: string;
+    createdAt: string;
+    updatedAt: string;
+  }>;
 };
 type Tab = "overview" | "connect" | "oauth" | "guide";
 type AccessPolicy = "internal" | "customer" | "vendor" | "contractor";
@@ -53,6 +60,9 @@ export function GoogleDriveManagerModule() {
   const [fileDraft, setFileDraft] = React.useState({ accountId: "", name: "", kind: "document", url: "", googleFileId: "", tags: "" });
 
   const accounts = db.master.storageAccounts || [];
+  const serverConnections = config?.connections || [];
+  const mappedConnectionIds = new Set(accounts.map((account) => account.oauth_connection_id).filter(Boolean));
+  const orphanConnections = serverConnections.filter((connection) => !mappedConnectionIds.has(connection.id));
   const templates = db.master.storageFolderTemplates || [];
   const instances = db.master.storageFolderInstances || [];
   const files = (db.master.fileAssets || []).filter((f: FileAsset) => f.status === "active");
@@ -96,6 +106,9 @@ export function GoogleDriveManagerModule() {
   const connectConnection = async (label: string, connectionId?: string) => {
     const cleaned = label.trim();
     if (!cleaned) return toast.error("Enter a clear name for this Google Drive account");
+    if (!connectionId && accounts.some((account) => account.label.trim().toLowerCase() === cleaned.toLowerCase())) {
+      return toast.error("That Drive label is already in use. Choose a unique label for the new Google account.");
+    }
     try {
       const cfgResp = await fetch("/api/google-drive/oauth/config", { cache: "no-store" });
       const cfg = await cfgResp.json().catch(() => ({})) as { configured?: boolean };
@@ -104,7 +117,12 @@ export function GoogleDriveManagerModule() {
         setTab("oauth");
         return;
       }
-      toast.info("Opening Google permission screen…", { duration: 3000 });
+      toast.info(
+        connectionId
+          ? `Reconnecting ${cleaned}. Choose the same Google account shown for this Drive slot.`
+          : `Connecting ${cleaned}. Complete consent for one Google account only.`,
+        { duration: 5000 },
+      );
     } catch { /* proceed */ }
     const params = new URLSearchParams({ label: cleaned, returnTo: "/" });
     if (connectionId) params.set("connectionId", connectionId);
@@ -151,7 +169,7 @@ export function GoogleDriveManagerModule() {
   }));
 
   // OAuth save
-  const saveConfig = async (connectAfter = false) => {
+  const saveConfig = async () => {
     if (!clientId.trim()) return toast.error("Client ID is required.");
     if (!clientSecret.trim() && !config?.hasClientSecret) return toast.error("Client Secret is required.");
     setSaving(true);
@@ -162,8 +180,7 @@ export function GoogleDriveManagerModule() {
       const p = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(p.error || "Could not save OAuth config.");
       setConfig(p); setClientSecret("");
-      toast.success("Google Drive OAuth credentials saved to database.");
-      if (connectAfter) { toast.info("Opening Google permission screen…"); setTimeout(() => connectConnection(driveLabel || `Urban Drive ${accounts.length + 1}`), 1000); }
+      toast.success("Google Drive OAuth credentials saved. Connect each Drive separately from the Connect Drive tab.");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Save failed."); }
     finally { setSaving(false); }
   };
@@ -186,14 +203,17 @@ export function GoogleDriveManagerModule() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Cloud className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-bold tracking-tight">Google Drive Manager</h2>
-            <p className="text-xs text-muted-foreground">Connect Google Drive via OAuth. Tokens are stored in the database — drives stay connected across sessions.</p>
+            <p className="text-xs text-muted-foreground">Each Google account is authorized, identified, and stored as an independent Drive connection.</p>
           </div>
         </div>
-        {config?.configured ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-bold text-success"><CheckCircle2 className="h-3.5 w-3.5" /> OAuth Configured</span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-bold text-warning"><AlertTriangle className="h-3.5 w-3.5" /> OAuth Not Configured</span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {config?.configured ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-bold text-success"><CheckCircle2 className="h-3.5 w-3.5" /> OAuth credentials saved</span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-warning/30 bg-warning/10 px-3 py-1 text-xs font-bold text-warning"><AlertTriangle className="h-3.5 w-3.5" /> OAuth credentials missing</span>
+          )}
+          <span className="rounded-full border border-border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">{accounts.length} workspace Drive{accounts.length === 1 ? "" : "s"}</span>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -239,7 +259,7 @@ export function GoogleDriveManagerModule() {
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => toast.success("Drive settings saved in workspace data")}>Save Settings</Button>
-              <Button size="sm" variant="outline" onClick={() => connectConnection(driveLabel || `Urban Drive ${accounts.length + 1}`)}><Plus className="mr-1 h-3.5 w-3.5" />Add Next Drive Slot</Button>
+              <Button size="sm" variant="outline" onClick={() => { setDriveLabel(`Urban Drive ${accounts.length + 1}`); setTab("connect"); }}><Plus className="mr-1 h-3.5 w-3.5" />Connect Another Drive</Button>
               <Button size="sm" variant="outline" disabled={!writeDestination || working} onClick={() => writeDestination && refreshAccount(writeDestination.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Check Active Quota / Auto-switch</Button>
               <Button size="sm" variant="ghost" disabled={!lastUploaded?.web_view_link} onClick={() => lastUploaded?.web_view_link && window.open(lastUploaded.web_view_link, "_blank", "noopener,noreferrer")}>Open last uploaded file</Button>
             </div>
@@ -266,7 +286,7 @@ export function GoogleDriveManagerModule() {
                         <td className="px-4 py-4 align-top"><div className="flex gap-2"><span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span><div className="min-w-0"><p className="font-bold">{account.label}</p><p className="truncate text-[11px] text-muted-foreground">{account.email || "Google account identity pending"} · Folder: {account.root_folder_name || "Urban Castle"}</p><p className="mt-1 text-[10px] text-muted-foreground">{ownFiles.length} active file(s) linked here</p></div></div></td>
                         <td className="w-[220px] px-4 py-4 align-top"><Capacity account={account} /></td>
                         <td className="w-[240px] px-4 py-4 align-top"><div className="grid gap-2"><Input type="number" min={1} className="h-9" value={account.priority_order} onChange={(e) => updateAccount(account.id, { priority_order: Math.max(1, Number(e.target.value) || 1) })} /><select value={account.status} onChange={(e) => updateAccount(account.id, { status: e.target.value as StorageAccount["status"], write_enabled: e.target.value === "connected" })} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="connected">Connected</option><option value="paused">Standby</option><option value="reconnect_required">Reconnect required</option><option value="disabled">Disabled</option></select></div></td>
-                        <td className="px-4 py-4 align-top"><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={working} onClick={() => account.oauth_connection_id ? refreshAccount(account.id) : connectConnection(account.label, account.oauth_connection_id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Connect / Refresh</Button><Button size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>{account.web_view_link ? <Button size="sm" variant="ghost" onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="h-3.5 w-3.5" /></Button> : null}</div><p className="mt-2 max-w-xs text-[10px] text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p></td>
+                        <td className="px-4 py-4 align-top"><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={working || !account.oauth_connection_id} onClick={() => refreshAccount(account.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Refresh quota</Button><Button size="sm" variant="outline" disabled={working || !isOwner} onClick={() => connectConnection(account.label, account.oauth_connection_id)}><KeyRound className="mr-1 h-3.5 w-3.5" />{account.oauth_connection_id ? "Reconnect same account" : "Authorize account"}</Button><Button size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>{account.web_view_link ? <Button size="sm" variant="ghost" onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="h-3.5 w-3.5" /></Button> : null}</div><p className="mt-2 max-w-xs text-[10px] text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p></td>
                       </tr>
                     );
                   })}
@@ -341,11 +361,33 @@ export function GoogleDriveManagerModule() {
             </div>
           ) : (
             <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <h3 className="mb-3 text-sm font-bold">Connect a new Google Drive account</h3>
-              <p className="mb-4 text-xs text-muted-foreground">Enter a label for this Drive account (e.g. "Main Drive", "Backup Drive"). You'll be redirected to Google's permission screen. After you approve, the refresh token is stored in the database — the Drive stays connected until you disconnect it.</p>
+              <h3 className="mb-3 text-sm font-bold">Connect one Google Drive account</h3>
+              <div className="mb-4 rounded-lg border border-primary/25 bg-primary/[0.05] p-3">
+                <p className="text-xs font-bold text-foreground">One Drive slot = one Google account authorization</p>
+                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Finish Google consent for one account before adding the next. Repeat this flow for every additional Google account. If the same Google identity is authorized again, Urban Castle reuses its existing server connection instead of creating a duplicate slot.</p>
+              </div>
+              {accounts.length ? (
+                <div className="mb-4 grid gap-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Already connected in this workspace</p>
+                  {accounts.map((account) => (
+                    <div key={account.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs">
+                      <span className="font-semibold">{account.label}</span>
+                      <span className="text-muted-foreground">{account.email || "Google identity pending"} · {account.status.replaceAll("_", " ")}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {orphanConnections.length ? (
+                <div className="mb-4 rounded-lg border border-warning/35 bg-warning/[0.08] p-3 text-xs">
+                  <p className="font-bold text-warning">{orphanConnections.length} server authorization{orphanConnections.length === 1 ? "" : "s"} need workspace recovery</p>
+                  <p className="mt-1 text-muted-foreground">Reconnect the same Google account shown below. Its existing secure connection will be reused and restored to the workspace; it will not create another Drive identity.</p>
+                  <ul className="mt-2 space-y-1">{orphanConnections.map((connection) => <li key={connection.id} className="font-mono text-[11px]">{connection.email || connection.id}</li>)}</ul>
+                </div>
+              ) : null}
+              <p className="mb-4 text-xs text-muted-foreground">Choose a unique workspace label, then select the Google account that belongs to this Drive slot on Google’s consent screen.</p>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="grid w-full max-w-sm gap-1.5"><Label className="text-xs font-medium">Drive label</Label><Input value={driveLabel} onChange={(e) => setDriveLabel(e.target.value)} placeholder={`Urban Drive ${accounts.length + 1}`} className="h-9" /></div>
-                <Button onClick={() => connectConnection(driveLabel || `Urban Drive ${accounts.length + 1}`)} disabled={!isOwner}><Plus className="mr-1.5 h-3.5 w-3.5" /> Connect Google Drive</Button>
+                <Button onClick={() => connectConnection(driveLabel || `Urban Drive ${accounts.length + 1}`)} disabled={!isOwner || working}><Plus className="mr-1.5 h-3.5 w-3.5" /> Connect One Google Account</Button>
               </div>
               {!isOwner && <p className="mt-2 text-xs text-destructive">Only the Owner can connect Google Drive accounts.</p>}
             </div>
@@ -357,8 +399,9 @@ export function GoogleDriveManagerModule() {
               <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">1</span><span>Owner saves Google OAuth Client ID + Client Secret in the <b>OAuth Settings</b> tab (stored in Supabase).</span></li>
               <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">2</span><span>Owner clicks "Connect Google Drive" → redirected to Google's consent screen.</span></li>
               <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">3</span><span>Google returns a <b>refresh token</b> → stored in Supabase <code className="rounded bg-muted px-1">GenericRecord</code> table.</span></li>
-              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">4</span><span>A <code className="rounded bg-muted px-1">StorageAccount</code> is created in the workspace → Drive stays connected across all sessions and server restarts.</span></li>
-              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">5</span><span>The app uses the refresh token to get fresh access tokens (1-hour validity) on demand — no repeated logins needed.</span></li>
+              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">4</span><span>Urban Castle records Google’s stable account identity and refuses to replace an existing Drive slot with a different Google account.</span></li>
+              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">5</span><span>A dedicated <code className="rounded bg-muted px-1">StorageAccount</code> links that identity, token, root folder, quota and files. Repeat steps 2–5 separately for each additional Drive.</span></li>
+              <li className="flex gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-bold text-primary">6</span><span>The app refreshes each Drive’s access token independently; tokens and files never move between Drive slots.</span></li>
             </ol>
           </div>
         </div>
@@ -379,11 +422,11 @@ export function GoogleDriveManagerModule() {
                 </div>
               )}
               <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">Google OAuth Credentials</h3><p className="text-xs text-muted-foreground">{config?.hasClientSecret ? "Client Secret is set. Enter a new value only to replace it." : "Enter your Google OAuth Client ID and Client Secret."}</p></div>{config?.updatedAt && <span className="text-[10px] text-muted-foreground">Updated {new Date(config.updatedAt).toLocaleDateString("en-IN")}</span>}</div>
+                <div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold">Google OAuth Credentials</h3><p className="text-xs text-muted-foreground">{config?.hasClientSecret ? "Client Secret is set. Enter a new value only to replace it." : "Enter your Google OAuth Client ID and Client Secret."}</p><p className="mt-1 text-[11px] text-muted-foreground">This is one app-level credential set shared by the connection flow. Individual Drive accounts are authorized separately in Connect Drive.</p></div>{config?.updatedAt && <span className="text-[10px] text-muted-foreground">Updated {new Date(config.updatedAt).toLocaleDateString("en-IN")}</span>}</div>
                 <div className="space-y-4">
                   <div className="grid gap-1.5"><Label className="text-xs font-medium">Client ID</Label><Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="123456789-abcdef.apps.googleusercontent.com" className="h-9 font-mono text-xs" /></div>
                   <div className="grid gap-1.5"><Label className="text-xs font-medium">Client Secret {config?.hasClientSecret && <span className="text-success">(configured)</span>}</Label><div className="relative"><Input type={showSecret ? "text" : "password"} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} placeholder={config?.hasClientSecret ? "•••••••• (enter new to replace)" : "GOCSPX-xxxxxxxxxxxxxxxx"} className="h-9 pr-10 font-mono text-xs" /><button type="button" onClick={() => setShowSecret(!showSecret)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">{showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button></div></div>
-                  <div className="flex flex-wrap gap-2"><Button onClick={() => saveConfig(false)} disabled={saving}><Save className="mr-1.5 h-3.5 w-3.5" /> {saving ? "Saving..." : "Save Credentials"}</Button><Button variant="outline" onClick={() => saveConfig(true)} disabled={saving}><ArrowRight className="mr-1.5 h-3.5 w-3.5" /> Save & Connect Drive</Button></div>
+                  <div className="flex flex-wrap gap-2"><Button onClick={saveConfig} disabled={saving}><Save className="mr-1.5 h-3.5 w-3.5" /> {saving ? "Saving..." : "Save Credentials"}</Button><Button variant="outline" onClick={() => setTab("connect")} disabled={saving || !config?.configured}><ArrowRight className="mr-1.5 h-3.5 w-3.5" /> Next: Connect Drive</Button></div>
                 </div>
               </div>
             </>
@@ -402,7 +445,8 @@ export function GoogleDriveManagerModule() {
               { t: "Configure OAuth Consent Screen", d: "Go to APIs & Services → OAuth consent screen. User type: External. Fill in app name, support email. Add scope: https://www.googleapis.com/auth/drive. Add your email as a Test User." },
               { t: "Create OAuth 2.0 Client ID", d: "Go to APIs & Services → Credentials → Create Credentials → OAuth client ID. Application type: Web application. Add the Redirect URI from the OAuth Settings tab. Copy the Client ID and Client Secret." },
               { t: "Save credentials in Urban Castle", d: "Go to the OAuth Settings tab → paste Client ID + Client Secret → click Save Credentials. These are stored in Supabase." },
-              { t: "Connect your Google Drive", d: "Go to the Connect Drive tab → enter a label → click Connect Google Drive. You'll be redirected to Google → approve → the refresh token is stored in the database. The Drive stays connected permanently until you disconnect it." },
+              { t: "Connect the first Google Drive", d: "Go to Connect Drive → enter a unique label → authorize exactly one Google account. Its identity, token, root folder and quota stay bound to that Drive slot." },
+              { t: "Add more Drives individually", d: "Repeat Connect Drive once for every additional Google account. Select the correct account each time. Reauthorizing the same Google identity restores or refreshes its existing slot instead of creating a duplicate." },
             ].map((step, i) => (
               <div key={i} className="flex gap-4">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary">{i + 1}</div>
