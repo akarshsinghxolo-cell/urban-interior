@@ -340,7 +340,10 @@ export async function completeGoogleDriveConnect(user: AuthenticatedUser, input:
     createdAt: target?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
-  vault.connections = [...vault.connections.filter((item) => item.id !== id), connection];
+  vault.connections = [
+    ...vault.connections.filter((item) => item.id !== id && !sameGoogleIdentity(item, identity)),
+    connection,
+  ];
   vault.pending = vault.pending.filter((item) => item.state !== input.state && item.expiresAt > Date.now());
   await writeVault(vault);
   return { connection, label: pending.label, returnTo: pending.returnTo };
