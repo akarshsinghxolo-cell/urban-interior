@@ -18,6 +18,7 @@ export interface WorkRequiredCreateDialogProps {
 }
 export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaIds, onOpenChange, onCreated, }: WorkRequiredCreateDialogProps) {
     const db = useRDashStore((state) => state.db);
+    const addArea = useRDashStore((state) => state.addArea);
     const addWorkRequired = useRDashStore((state) => state.addWorkRequired);
     const siteAreas = React.useMemo(() => db.areas.filter((area) => area.site_id === site.id && !area.is_archived), [db.areas, site.id]);
     const [title, setTitle] = React.useState("");
@@ -28,6 +29,10 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
     const [priority, setPriority] = React.useState<Priority>("medium");
     const [areaIds, setAreaIds] = React.useState<string[]>([]);
     const [prefilledFromCustomer, setPrefilledFromCustomer] = React.useState(false);
+    const [newAreaOpen, setNewAreaOpen] = React.useState(false);
+    const [newAreaName, setNewAreaName] = React.useState("");
+    const [newAreaType, setNewAreaType] = React.useState("other");
+    const initializedDialogKey = React.useRef("");
     const subcategories = React.useMemo(() => db.master.workSubcategories.filter((row) => row.category_id === categoryId), [categoryId, db.master.workSubcategories]);
 
     // Look up the customer's interest categories/subcategories (captured during
@@ -45,8 +50,14 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
 
     const initialAreaIdsKey = (initialAreaIds || []).join("|");
     React.useEffect(() => {
-        if (!open)
+        if (!open) {
+            initializedDialogKey.current = "";
             return;
+        }
+        const dialogKey = `${site.id}|${initialAreaIdsKey}`;
+        if (initializedDialogKey.current === dialogKey)
+            return;
+        initializedDialogKey.current = dialogKey;
         const permittedInitialIds = (initialAreaIdsKey ? initialAreaIdsKey.split("|") : []).filter((id) => siteAreas.some((area) => area.id === id));
 
         // Pre-fill from customer interests (preference): pick the first interest
@@ -81,11 +92,36 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
         setPriority("medium");
         setAreaIds(permittedInitialIds);
         setPrefilledFromCustomer(didPrefill);
+        setNewAreaOpen(false);
+        setNewAreaName("");
+        setNewAreaType("other");
     }, [initialAreaIdsKey, open, siteAreas, customerInterests, db.master.workCategories, db.master.workSubcategories]);
     const toggleArea = (areaId: string) => {
         setAreaIds((current) => current.includes(areaId)
             ? current.filter((id) => id !== areaId)
             : [...current, areaId]);
+    };
+    const createArea = () => {
+        if (!newAreaName.trim()) {
+            toast.error("Area name is required.");
+            return;
+        }
+        try {
+            const areaId = addArea({
+                site_id: site.id,
+                name: newAreaName.trim(),
+                area_type: newAreaType as never,
+                stage: "unmeasured",
+            });
+            setAreaIds((current) => Array.from(new Set([...current, areaId])));
+            setNewAreaName("");
+            setNewAreaType("other");
+            setNewAreaOpen(false);
+            toast.success(`Area added and selected for ${site.name}`);
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Area could not be added.");
+        }
     };
     const save = () => {
         if (!title.trim()) {
@@ -176,7 +212,23 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
             <Input value={systemName} onChange={(event) => setSystemName(event.target.value)} placeholder="e.g. 12.5 mm gypsum board with GI framework" className="mt-1"/>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas *</label>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas *</label>
+              <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
+                <Plus className="mr-1 h-3 w-3"/> {newAreaOpen ? "Close" : "Add Area"}
+              </Button>
+            </div>
+            {newAreaOpen && (<div className="mt-2 rounded-md border border-primary/20 bg-primary/[0.03] p-3">
+                <p className="text-xs font-semibold">Add an Area to {site.name}</p>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">The new Area stays linked to this Site and is selected for the current Work Required.</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
+                  <Input value={newAreaName} onChange={(event) => setNewAreaName(event.target.value)} placeholder="e.g. Dining room" className="h-9"/>
+                  <select value={newAreaType} onChange={(event) => setNewAreaType(event.target.value)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
+                    {["bedroom", "guest_room", "living_room", "kitchen", "bathroom", "balcony", "staircase", "rooftop", "office_cabin", "reception", "meeting_room", "pantry", "facade", "common_area", "other"].map((type) => <option key={type} value={type}>{type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}</option>)}
+                  </select>
+                  <Button type="button" size="sm" onClick={createArea} disabled={!newAreaName.trim()}><Plus className="mr-1 h-3.5 w-3.5"/>Add</Button>
+                </div>
+              </div>)}
             {siteAreas.length ? (<div className="mt-1 grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2">
                 {siteAreas.map((area) => (<label key={area.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-accent/50">
                     <input type="checkbox" checked={areaIds.includes(area.id)} onChange={() => toggleArea(area.id)}/>
@@ -202,3 +254,4 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
       </DialogContent>
     </Dialog>);
 }
+

@@ -53,8 +53,11 @@ export function SiteMeasurementModule() {
     const addArea = useRDashStore((s) => s.addArea);
     const updateArea = useRDashStore((s) => s.updateArea);
     const updateWorkRequired = useRDashStore((s) => s.updateWorkRequired);
+    const startContractorVisit = useRDashStore((s) => s.startContractorVisit);
+    const completeContractorVisit = useRDashStore((s) => s.completeContractorVisit);
     const addMeasurementRevision = useRDashStore((s) => s.addMeasurementRevision);
     const currentUser = useRDashStore((s) => s.currentUser);
+    const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const [openDialog, setOpenDialog] = React.useState(false);
     const [activeVisitId, setActiveVisitId] = React.useState<string | null>(null);
     const measurementVisits = db.visits.filter((v) => v.visit_type === "measurement");
@@ -99,6 +102,10 @@ export function SiteMeasurementModule() {
     const completed = records.filter((r) => r.reportFiled && r.areas.length > 0).length;
     const pending = records.filter((r) => !r.reportFiled).length;
     const totalArea = records.reduce((n, r) => n + r.totalArea, 0);
+    const openCaptureDialog = (visitId: string) => {
+        setActiveVisitId(visitId);
+        setOpenDialog(true);
+    };
     const openCapture = (visitId: string) => {
         const visit = db.visits.find((row) => row.id === visitId);
         if (!visit) {
@@ -110,12 +117,69 @@ export function SiteMeasurementModule() {
             return;
         }
         const contractorVisit = visit.assignee_type === "contractor" || Boolean(visit.contractor_id);
-        if (visit.status !== "report_pending" || (!contractorVisit && !visit.check_out_verified)) {
-            toast.error(contractorVisit ? "Record contractor completion before capturing measurements." : "Complete the assigned Measurement Visit with verified field check-out before capturing measurements.");
+        if (contractorVisit && (visit.status === "scheduled" || visit.status === "en_route")) {
+            try {
+                startContractorVisit(visit.id);
+                toast.success("Contractor visit started. Use Complete & capture when the site measurement is finished.");
+            }
+            catch (error) {
+                toast.error(error instanceof Error ? error.message : "Contractor visit could not be started.");
+            }
             return;
         }
-        setActiveVisitId(visitId);
-        setOpenDialog(true);
+        if (contractorVisit && visit.status === "checked_in") {
+            try {
+                completeContractorVisit(visit.id);
+                openCaptureDialog(visit.id);
+                toast.success("Contractor visit completed. Capture the measured Areas now.");
+            }
+            catch (error) {
+                toast.error(error instanceof Error ? error.message : "Contractor visit could not be completed.");
+            }
+            return;
+        }
+        if (!contractorVisit && (visit.status !== "report_pending" || !visit.check_out_verified)) {
+            toast.info("Complete the assigned field check-in and check-out before capturing measurements.");
+            setActiveModule("fieldOperations");
+            return;
+        }
+        if (visit.status !== "report_pending") {
+            toast.error("This Visit is not ready for measurement capture.");
+            return;
+        }
+        openCaptureDialog(visitId);
+    };
+    const captureActionLabel = (visitId: string) => {
+        const visit = db.visits.find((row) => row.id === visitId);
+        if (!visit)
+            return "Visit unavailable";
+        if (visit.report_filed)
+            return "Filed — new Visit required";
+        const contractorVisit = visit.assignee_type === "contractor" || Boolean(visit.contractor_id);
+        if (contractorVisit && (visit.status === "scheduled" || visit.status === "en_route"))
+            return "Start contractor visit";
+        if (contractorVisit && visit.status === "checked_in")
+            return "Complete & capture";
+        if (!contractorVisit && visit.status !== "report_pending")
+            return "Open Field Visits";
+        return "Capture measurement";
+    };
+    const captureActionHint = (visitId: string) => {
+        const visit = db.visits.find((row) => row.id === visitId);
+        if (!visit || visit.report_filed)
+            return "No measurement captured for this visit yet";
+        const contractorVisit = visit.assignee_type === "contractor" || Boolean(visit.contractor_id);
+        if (contractorVisit && (visit.status === "scheduled" || visit.status === "en_route"))
+            return "Start the contractor visit before recording field completion";
+        if (contractorVisit && visit.status === "checked_in")
+            return "Record completion, then capture the measured Areas";
+        if (!contractorVisit && visit.status !== "report_pending")
+            return "Field check-in and check-out are required before capture";
+        return "Visit complete — capture Area dimensions and file the report";
+    };
+    const captureActionDisabled = (visitId: string) => {
+        const visit = db.visits.find((row) => row.id === visitId);
+        return !visit || Boolean(visit.report_filed) || ["cancelled", "missed", "completed"].includes(visit.status);
     };
     const handleSave = async (visitId: string, areas: AreaMeasurement[], notes: string, media: Array<{
         id: string;
@@ -255,13 +319,13 @@ export function SiteMeasurementModule() {
                     </div>))}
                   {r.areas.length > 3 && <p className="text-[10px] text-muted-foreground">+{r.areas.length - 3} more areas</p>}
                 </div>
-                <Button size="sm" variant="outline" className="mt-2 w-full" onClick={() => openCapture(r.visitId)} disabled={r.reportFiled}>
-                  <Ruler className="mr-1.5 h-3.5 w-3.5"/> {r.reportFiled ? "Filed — new Visit required" : "Edit measurement"}
+                <Button size="sm" variant="outline" className="mt-2 w-full" onClick={() => openCapture(r.visitId)} disabled={captureActionDisabled(r.visitId)}>
+                  <Ruler className="mr-1.5 h-3.5 w-3.5"/> {captureActionLabel(r.visitId)}
                 </Button>
               </div>) : (<div className="mt-3 flex flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 py-4">
-                <p className="text-xs text-muted-foreground">{r.reportFiled ? "Filed report has no visit-linked measurement revisions" : "No measurement captured for this visit yet"}</p>
-                {!r.reportFiled && <Button size="sm" onClick={() => openCapture(r.visitId)}>
-                  <Ruler className="mr-1.5 h-3.5 w-3.5"/> Capture measurement
+                <p className="text-xs text-muted-foreground">{r.reportFiled ? "Filed report has no visit-linked measurement revisions" : captureActionHint(r.visitId)}</p>
+                {!r.reportFiled && <Button size="sm" onClick={() => openCapture(r.visitId)} disabled={captureActionDisabled(r.visitId)}>
+                  <Ruler className="mr-1.5 h-3.5 w-3.5"/> {captureActionLabel(r.visitId)}
                 </Button>}
               </div>)}
             <div className="mt-3 border-t border-border pt-3">
@@ -414,3 +478,4 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
       </DialogContent>
     </Dialog>);
 }
+

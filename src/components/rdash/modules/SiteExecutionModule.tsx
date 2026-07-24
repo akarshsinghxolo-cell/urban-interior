@@ -139,6 +139,13 @@ export function SiteExecutionModule({ initialTab }: {
         quotation.status !== "cancelled" &&
         quotation.coverage.some((coverage) => coverage.work_required_id === workId)
     );
+    const activeMeasurementVisitForWork = (workId: string) => db.visits.find((visit) =>
+        visit.visit_type === "measurement" &&
+        visit.site_id === selectedSiteId &&
+        visit.work_required_id === workId &&
+        !visit.report_filed &&
+        !["cancelled", "completed", "missed"].includes(visit.status)
+    );
     const hasVerifiedMeasurement = (workId: string, areaId?: string) => db.measurementRevisions.some((revision) =>
         revision.site_id === selectedSiteId &&
         revision.work_required_id === workId &&
@@ -162,6 +169,12 @@ export function SiteExecutionModule({ initialTab }: {
         const work = workRequired.find((row) => row.id === workId);
         if (!work) {
             toast.error("Select an Area and define its Work Required before scheduling measurement.");
+            return;
+        }
+        const existingVisit = activeMeasurementVisitForWork(work.id);
+        if (existingVisit) {
+            toast.info(`A Measurement Visit is already ${existingVisit.status.replaceAll("_", " ")} for this Work Required.`);
+            setActiveModule("siteMeasurement");
             return;
         }
         openCreateDialog({
@@ -446,7 +459,8 @@ export function SiteExecutionModule({ initialTab }: {
                 <div className="mt-4 space-y-2">
                   {workRequired.length === 0 ? <EmptyState title={areas.length ? "Define work inside an Area" : "Start by defining the Site Areas"} description={areas.length ? "Open Areas & Scope and add the exact category and subcategory for an Area." : "Create the rooms or operational Areas before defining work, visits, measurements, or quotations."} action={<Button size="sm" onClick={() => setTab("areas")}><Plus className="mr-1 h-3.5 w-3.5"/>{areas.length ? "Open Areas & Scope" : "Add first Area"}</Button>}/> : workRequired.slice(0, 4).map((work) => {
                     const existingQuotation = activeQuotationForWork(work.id);
-                    return <div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"><div><p className="text-sm font-semibold">{scopeMeta(work).label}</p><p className="text-xs text-muted-foreground">{work.area_ids.map((id) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "Area not selected"}</p></div><div className="flex items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => existingQuotation ? openDetail("quotation", existingQuotation.id) : hasVerifiedMeasurement(work.id) ? createQuotationForWork(work.id) : scheduleMeasurement(work.id)}>{existingQuotation ? "Open quotation" : hasVerifiedMeasurement(work.id) ? "Prepare quotation" : "Schedule measurement"}</Button></div></div>;
+                    const existingVisit = activeMeasurementVisitForWork(work.id);
+                    return <div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"><div><p className="text-sm font-semibold">{scopeMeta(work).label}</p><p className="text-xs text-muted-foreground">{work.area_ids.map((id) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "Area not selected"}</p></div><div className="flex items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => existingQuotation ? openDetail("quotation", existingQuotation.id) : hasVerifiedMeasurement(work.id) ? createQuotationForWork(work.id) : existingVisit ? setActiveModule("siteMeasurement") : scheduleMeasurement(work.id)}>{existingQuotation ? "Open quotation" : hasVerifiedMeasurement(work.id) ? "Prepare quotation" : existingVisit ? "Open measurement visit" : "Schedule measurement"}</Button></div></div>;
                   })}
                 </div>
               </div>
@@ -456,7 +470,7 @@ export function SiteExecutionModule({ initialTab }: {
                   <Button variant="outline" className="justify-start" onClick={() => setNewAreaOpen(true)}><Ruler className="mr-2 h-4 w-4"/>Add area</Button>
                   <Button variant="outline" className="justify-start" onClick={() => setTab("areas")}><Wrench className="mr-2 h-4 w-4"/>Open areas & scope</Button>
                   <Button variant="outline" className="justify-start" onClick={() => setTab("quotations")}><FileText className="mr-2 h-4 w-4"/>Review quotations</Button>
-                  <Button variant="outline" className="justify-start" onClick={() => setActiveModule("fieldOperations")}><Users className="mr-2 h-4 w-4"/>Schedule measurement visit</Button>
+                  <Button variant="outline" className="justify-start" onClick={() => openCreateDialog({ kind: "visit", customerId: selectedSite.customer_id, siteId: selectedSite.id, visitType: "measurement" })}><Users className="mr-2 h-4 w-4"/>Schedule measurement visit</Button>
                 </div>
               </div>
             </div>)}
@@ -473,7 +487,8 @@ export function SiteExecutionModule({ initialTab }: {
                       {areaWork.length ? <div className="mt-2 space-y-2">{areaWork.map((work) => {
                         const quote = activeQuotationForWork(work.id);
                         const measured = hasVerifiedMeasurement(work.id, area.id);
-                        return <div key={work.id} className="rounded-md border border-border bg-background p-2.5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">{scopeMeta(work).label}</p>{work.system_name && <p className="text-[11px] text-muted-foreground">{work.system_name}</p>}<p className="mt-1 text-[10px] text-muted-foreground">{measured ? "Verified measurement linked" : "Measurement visit required"}{work.area_ids.length > 1 ? ` · shared across ${work.area_ids.length} Areas` : ""}</p></div><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/></div><div className="mt-2 flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={() => quote ? openDetail("quotation", quote.id) : measured ? createQuotationForWork(work.id) : scheduleMeasurement(work.id)}>{quote ? "Open quotation" : measured ? "Prepare quotation" : "Schedule measurement"}</Button></div></div>;
+                        const existingVisit = activeMeasurementVisitForWork(work.id);
+                        return <div key={work.id} className="rounded-md border border-border bg-background p-2.5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">{scopeMeta(work).label}</p>{work.system_name && <p className="text-[11px] text-muted-foreground">{work.system_name}</p>}<p className="mt-1 text-[10px] text-muted-foreground">{measured ? "Verified measurement linked" : existingVisit ? `Measurement visit ${existingVisit.status.replaceAll("_", " ")}` : "Measurement visit required"}{work.area_ids.length > 1 ? ` · shared across ${work.area_ids.length} Areas` : ""}</p></div><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/></div><div className="mt-2 flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={() => quote ? openDetail("quotation", quote.id) : measured ? createQuotationForWork(work.id) : existingVisit ? setActiveModule("siteMeasurement") : scheduleMeasurement(work.id)}>{quote ? "Open quotation" : measured ? "Prepare quotation" : existingVisit ? "Open measurement visit" : "Schedule measurement"}</Button></div></div>;
                       })}</div> : <p className="mt-2 rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">No work has been defined for this Area.</p>}
                     </div>
                   </div>;
@@ -491,7 +506,8 @@ export function SiteExecutionModule({ initialTab }: {
                   return <div key={area.id} className="rounded-lg border border-border p-3"><div className="mb-2 flex items-center justify-between"><div><p className="font-semibold">{area.name}</p><p className="text-xs text-muted-foreground">{titleFromType(area.area_type)}</p></div><Button size="sm" variant="outline" onClick={() => openWorkForArea(area.id)}><Plus className="mr-1 h-3 w-3"/>Add work</Button></div><div className="space-y-2">{areaWork.map((work) => {
                     const quote = activeQuotationForWork(work.id);
                     const measured = hasVerifiedMeasurement(work.id, area.id);
-                    return <div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-2.5"><div><p className="text-sm font-semibold">{scopeMeta(work).label}</p><p className="text-[11px] text-muted-foreground">{work.system_name || work.specification || "Specification pending"}{work.area_ids.length > 1 ? ` · ${work.area_ids.length} Areas` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => quote ? openDetail("quotation", quote.id) : measured ? createQuotationForWork(work.id) : scheduleMeasurement(work.id)}>{quote ? "Open quotation" : measured ? "Prepare quotation" : "Schedule measurement"}</Button></div></div>;
+                    const existingVisit = activeMeasurementVisitForWork(work.id);
+                    return <div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-2.5"><div><p className="text-sm font-semibold">{scopeMeta(work).label}</p><p className="text-[11px] text-muted-foreground">{work.system_name || work.specification || "Specification pending"}{work.area_ids.length > 1 ? ` · ${work.area_ids.length} Areas` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => quote ? openDetail("quotation", quote.id) : measured ? createQuotationForWork(work.id) : existingVisit ? setActiveModule("siteMeasurement") : scheduleMeasurement(work.id)}>{quote ? "Open quotation" : measured ? "Prepare quotation" : existingVisit ? "Open measurement visit" : "Schedule measurement"}</Button></div></div>;
                   })}</div></div>;
                 })}
                 {!areas.length && <EmptyState title="No Areas defined" description="Add an Area before defining scope."/>}

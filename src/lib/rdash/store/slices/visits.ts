@@ -251,6 +251,19 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 if (!work || work.customer_id !== customerId || work.site_id !== siteId)
                     throw new Error("The selected Work Required must belong to the same Customer and Site as the Visit.");
             }
+            // A Work Required can have one active measurement lifecycle at a time.
+            if (v.visit_type === "measurement" && v.work_required_id) {
+                const activeMeasurementVisit = state.db.visits.find((visit: any) =>
+                    visit.visit_type === "measurement" &&
+                    visit.site_id === siteId &&
+                    visit.work_required_id === v.work_required_id &&
+                    !visit.report_filed &&
+                    !["cancelled", "completed", "missed"].includes(visit.status)
+                );
+                if (activeMeasurementVisit) {
+                    throw new Error(`An active Measurement Visit already exists for this Work Required (${activeMeasurementVisit.status.replaceAll("_", " ")}). Open Measurements instead of scheduling a duplicate.`);
+                }
+            }
             if (v.work_order_id) {
                 const workOrder = state.db.workOrders.find((row: any) => row.id === v.work_order_id);
                 if (!workOrder || workOrder.customer_id !== customerId || workOrder.site_id !== siteId)
