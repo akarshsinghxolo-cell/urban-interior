@@ -12,6 +12,7 @@ import { WorkspaceTabs } from "./WorkspaceTabs";
 import { EnhancedSearch } from "./EnhancedSearch";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, } from "@/components/ui/dropdown-menu";
+import { UploadStatusIndicator } from "@/components/uploads/UploadStatusIndicator";
 import { toast } from "sonner";
 export function WorkspaceHeader() {
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
@@ -68,6 +69,7 @@ export function WorkspaceHeader() {
           <RefreshCw className="h-4 w-4"/>
         </Button>
 
+        <UploadStatusIndicator />
         <NotificationCenter />
 
         <ThemeToggle />
