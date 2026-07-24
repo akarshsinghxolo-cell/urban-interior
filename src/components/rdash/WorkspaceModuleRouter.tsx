@@ -64,6 +64,8 @@ const CustomerDeskExtrasModule = React.lazy(() => import("./modules/RemainingMod
 const BlockedRisksCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.BlockedRisksCombined })));
 const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.CalendarRecurringCombined })));
 
+const MOBILE_RETAINED_MODULE_LIMIT = 3;
+
 export function ModuleLoadingFallback() {
     return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 text-sm text-muted-foreground shadow-card">Loading workspace module...</div>;
 }
@@ -194,10 +196,47 @@ function renderUnreachableModule(_renderer: never) {
     return <DailyWork />;
 }
 
+function useConstrainedModuleMounting() {
+    const [constrained, setConstrained] = React.useState(true);
+    React.useEffect(() => {
+        const query = window.matchMedia("(max-width: 1023px), (pointer: coarse)");
+        const sync = () => setConstrained(query.matches);
+        sync();
+        if (typeof query.addEventListener === "function") {
+            query.addEventListener("change", sync);
+            return () => query.removeEventListener("change", sync);
+        }
+        query.addListener(sync);
+        return () => query.removeListener(sync);
+    }, []);
+    return constrained;
+}
+
 export function WorkspaceModulePanels() {
     const tabs = useRDashStore((state) => state.tabs);
     const activeModuleId = useRDashStore((state) => state.activeModuleId);
-    const moduleIds = React.useMemo(() => Array.from(new Set([...tabs.map((tab) => tab.moduleId), activeModuleId])), [tabs, activeModuleId]);
+    const constrained = useConstrainedModuleMounting();
+    const [recentModuleIds, setRecentModuleIds] = React.useState<string[]>(() => [activeModuleId]);
+
+    React.useEffect(() => {
+        setRecentModuleIds((current) => {
+            const next = [...current.filter((moduleId) => moduleId !== activeModuleId), activeModuleId];
+            return next.slice(-MOBILE_RETAINED_MODULE_LIMIT);
+        });
+    }, [activeModuleId]);
+
+    const allModuleIds = React.useMemo(
+        () => Array.from(new Set([...tabs.map((tab) => tab.moduleId), activeModuleId])),
+        [tabs, activeModuleId],
+    );
+    const moduleIds = React.useMemo(() => {
+        if (!constrained) return allModuleIds;
+        const available = new Set(allModuleIds);
+        const retained = recentModuleIds.filter((moduleId) => available.has(moduleId));
+        if (!retained.includes(activeModuleId)) retained.push(activeModuleId);
+        return retained.slice(-MOBILE_RETAINED_MODULE_LIMIT);
+    }, [activeModuleId, allModuleIds, constrained, recentModuleIds]);
+
     return <>
       {moduleIds.map((moduleId) => {
         const active = moduleId === activeModuleId;
