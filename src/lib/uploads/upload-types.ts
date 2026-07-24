@@ -1,3 +1,11 @@
+import type {
+  EntityFileAttachment,
+  FileAttachmentEntityType,
+  FileAttachmentRole,
+  FileAsset,
+  FileAssetKind,
+} from "@/lib/rdash/types";
+
 export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 
 export type UploadBatchId = Brand<string, "UploadBatchId">;
@@ -43,7 +51,8 @@ export type UploadItemStatus =
   | "failed_retryable"
   | "failed_permanent"
   | "cancel_requested"
-  | "cleanup_pending";
+  | "cleanup_pending"
+  | "cancelled";
 
 export type UploadBatchStatus =
   | "open"
@@ -59,7 +68,7 @@ export interface UploadBatchRecord {
   workspaceId: string;
   sourceFlow: string;
   sourceLabel: string;
-  targetEntityType: string;
+  targetEntityType: FileAttachmentEntityType;
   targetEntityId: string;
   targetLabel?: string;
   purpose: UploadPurpose;
@@ -74,21 +83,41 @@ export interface UploadItemRecord {
   id: UploadItemId;
   batchId: UploadBatchId;
   workspaceId: string;
+  fileAssetId: FileAssetId;
+  attachmentId: AttachmentId;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
   lastModified: number;
-  fingerprint?: string;
+  fingerprint: string;
+  sourceFlow: string;
+  purpose: UploadPurpose;
+  targetEntityType: FileAttachmentEntityType;
+  targetEntityId: string;
+  desiredTargetEntityType?: FileAttachmentEntityType;
+  kind: FileAssetKind;
+  role: FileAttachmentRole;
+  caption?: string;
+  visibility: EntityFileAttachment["visibility"];
+  customerShareable: boolean;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
+  requiredEvidence: boolean;
   status: UploadItemStatus;
   confirmedBytes: number;
+  progress: number;
   retryCount: number;
   retryAt?: string;
   lastErrorCode?: string;
   lastErrorMessage?: string;
   sessionUri?: string;
+  sessionExpiresAt?: string;
+  storageAccountId?: string;
+  stagingFolderId?: string;
+  finalFolderId?: string;
   googleFileId?: GoogleFileId;
-  fileAssetId?: FileAssetId;
-  attachmentId?: AttachmentId;
+  webViewLink?: string;
+  thumbnailLink?: string;
   createdAt: string;
   updatedAt: string;
   verifiedAt?: string;
@@ -119,11 +148,19 @@ export interface EnqueueUploadBatchInput {
   workspaceId?: string;
   sourceFlow: string;
   sourceLabel: string;
-  targetEntityType: string;
+  targetEntityType: FileAttachmentEntityType;
   targetEntityId: string;
   targetLabel?: string;
   purpose: UploadPurpose;
   requiredEvidence?: boolean;
+  desiredTargetEntityType?: FileAttachmentEntityType;
+  kind?: FileAssetKind;
+  role?: FileAttachmentRole;
+  caption?: string;
+  visibility?: EntityFileAttachment["visibility"];
+  customerShareable?: boolean;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
   files: File[];
 }
 
@@ -136,17 +173,76 @@ export interface FinalizedUploadResult {
   storageAccountId: string;
   storageFolderId: string;
   webViewLink: string;
+  thumbnailLink?: string;
   fileName: string;
   mimeType: string;
   sizeBytes: number;
   verifiedAt: string;
+  fileAsset: FileAsset;
+  attachment: EntityFileAttachment;
 }
 
 export interface UploadQueueSnapshot {
   ready: boolean;
   online: boolean;
+  processing: boolean;
   batches: UploadBatchRecord[];
   items: UploadItemRecord[];
+}
+
+export interface InitiateUploadRequest {
+  uploadBatchId: UploadBatchId;
+  uploadItemId: UploadItemId;
+  fileAssetId: FileAssetId;
+  attachmentId: AttachmentId;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  batchSizeBytes: number;
+  lastModified: number;
+  fingerprint: string;
+  sourceFlow: string;
+  sourceLabel: string;
+  purpose: UploadPurpose;
+  targetEntityType: FileAttachmentEntityType;
+  targetEntityId: string;
+  desiredTargetEntityType?: FileAttachmentEntityType;
+  kind: FileAssetKind;
+  role: FileAttachmentRole;
+  caption?: string;
+  visibility: EntityFileAttachment["visibility"];
+  customerShareable: boolean;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
+  requiredEvidence: boolean;
+}
+
+export interface InitiateUploadResponse {
+  sessionUri: string;
+  sessionExpiresAt: string;
+  storageAccountId: string;
+  stagingFolderId: string;
+  confirmedBytes: number;
+}
+
+export interface FinalizeUploadRequest {
+  uploadItemId: UploadItemId;
+  googleFileId: GoogleFileId;
+  targetEntityType: FileAttachmentEntityType;
+  targetEntityId: string;
+  purpose: UploadPurpose;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
+}
+
+export interface BindUploadRequest {
+  uploadBatchId: UploadBatchId;
+  uploadItemId: UploadItemId;
+  targetEntityType: FileAttachmentEntityType;
+  targetEntityId: string;
+  purpose: UploadPurpose;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
 }
 
 export const ACTIVE_UPLOAD_STATUSES = new Set<UploadItemStatus>([
@@ -165,6 +261,14 @@ export function makeUploadBatchId(): UploadBatchId {
 
 export function makeUploadItemId(): UploadItemId {
   return makeUploadId("upload-item") as UploadItemId;
+}
+
+export function makeFileAssetId(uploadItemId: UploadItemId): FileAssetId {
+  return `drivefile-${uploadItemId}` as FileAssetId;
+}
+
+export function makeAttachmentId(uploadItemId: UploadItemId): AttachmentId {
+  return `attach-${uploadItemId}` as AttachmentId;
 }
 
 export function reserveEntityId(entityType: string): string {
