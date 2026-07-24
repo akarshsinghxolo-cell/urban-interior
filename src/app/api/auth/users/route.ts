@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { approveRoleAssignment, listRoleAssignments, rejectRoleAssignment } from "@/lib/rdash/server/auth-users";
+import {
+  approveRoleAssignment,
+  listRoleAssignments,
+  listStaffIdentityDrift,
+  rejectRoleAssignment,
+} from "@/lib/rdash/server/auth-users";
 
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
     const user = await requireSession(request);
-    const users = await listRoleAssignments(user);
-    return NextResponse.json({ users }, { headers: { "Cache-Control": "no-store" } });
+    const [users, staffDrift] = await Promise.all([
+      listRoleAssignments(user),
+      listStaffIdentityDrift(user),
+    ]);
+    return NextResponse.json({ users, staffDrift }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not load user approvals.";
     return NextResponse.json({ error: message }, { status: message.startsWith("Only the Owner") ? 403 : 500 });
