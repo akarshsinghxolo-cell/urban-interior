@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { ArrowRight, Building2, CheckCircle2, ClipboardList, FileText, Gavel, MapPin, PackageCheck, Plus, ReceiptText, Ruler, ShoppingCart, Users, Wrench, Zap, } from "lucide-react";
+import { Building2, CheckCircle2, ClipboardList, FileText, Gavel, MapPin, PackageCheck, Plus, ReceiptText, Ruler, ShoppingCart, Users, Wrench, Zap, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,11 +14,11 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 const TABS = [
     { id: "overview", label: "Overview", icon: Building2 },
-    { id: "areas", label: "Areas", icon: Ruler },
-    { id: "work", label: "Work Required", icon: Wrench },
-    { id: "quotations", label: "Quotations", icon: FileText },
-    { id: "bids", label: "Contractor Bids", icon: Gavel },
-    { id: "orders", label: "Work Orders", icon: ClipboardList },
+    { id: "areas", label: "Areas & Scope", icon: Ruler },
+    { id: "work", label: "Scope Register", icon: Wrench },
+    { id: "quotations", label: "Commercial", icon: FileText },
+    { id: "bids", label: "Bidding", icon: Gavel },
+    { id: "orders", label: "Execution", icon: ClipboardList },
     { id: "boq", label: "BOQ", icon: PackageCheck },
     { id: "procurement", label: "Procurement", icon: ShoppingCart },
     { id: "finance", label: "Finance", icon: ReceiptText },
@@ -58,7 +58,6 @@ export function SiteExecutionModule({ initialTab }: {
 }) {
     const db = useRDashStore((state) => state.db);
     const addArea = useRDashStore((state) => state.addArea);
-    const addMeasurementRevision = useRDashStore((state) => state.addMeasurementRevision);
     const addQuotation = useRDashStore((state) => state.addQuotation);
     const updateQuotation = useRDashStore((state) => state.updateQuotation);
     const openQuotationAcceptanceDialog = useRDashStore((state) => state.openQuotationAcceptanceDialog);
@@ -72,18 +71,16 @@ export function SiteExecutionModule({ initialTab }: {
     const selectVendorBid = useRDashStore((state) => state.selectVendorBid);
     const createPOFromVendorBid = useRDashStore((state) => state.createPOFromVendorBid);
     const setActiveModule = useRDashStore((state) => state.setActiveModule);
+    const openCreateDialog = useRDashStore((state) => state.openCreateDialog);
+    const openDetail = useRDashStore((state) => state.openDetail);
     const activeSites = db.sites.filter((site) => !site.is_archived);
     const [selectedSiteId, setSelectedSiteId] = React.useState<string>(() => activeSites[0]?.id || "");
     const [tab, setTab] = React.useState<TabId>(() => isTabId(initialTab) ? initialTab : "overview");
     const [newSiteOpen, setNewSiteOpen] = React.useState(false);
+    const [editSiteOpen, setEditSiteOpen] = React.useState(false);
     const [newAreaOpen, setNewAreaOpen] = React.useState(false);
     const [newWorkOpen, setNewWorkOpen] = React.useState(false);
-    const [measurementAreaId, setMeasurementAreaId] = React.useState<string | null>(null);
-    const [measurementWorkRequiredId, setMeasurementWorkRequiredId] = React.useState("");
-    const [measurementLength, setMeasurementLength] = React.useState("");
-    const [measurementWidth, setMeasurementWidth] = React.useState("");
-    const [measurementHeight, setMeasurementHeight] = React.useState("");
-    const [measurementNotes, setMeasurementNotes] = React.useState("");
+    const [newWorkAreaId, setNewWorkAreaId] = React.useState<string | null>(null);
     const [vendorBidRfqId, setVendorBidRfqId] = React.useState<string | null>(null);
     const [vendorBidVendorId, setVendorBidVendorId] = React.useState("");
     const [vendorBidRates, setVendorBidRates] = React.useState<Record<string, string>>({});
@@ -129,6 +126,25 @@ export function SiteExecutionModule({ initialTab }: {
     const customerInvoices = db.invoices.filter((invoice) => invoice.site_id === selectedSiteId && invoice.status !== "cancelled");
     const contractorBills = db.contractorBills.filter((bill) => workOrders.some((workOrder) => workOrder.id === bill.work_order_id));
     const bids = db.contractorBids.filter((bid) => bid.site_id === selectedSiteId);
+    const scopeMeta = (work: (typeof workRequired)[number]) => {
+        const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
+        const subcategory = db.master.workSubcategories.find((row) => row.id === work.work_subcategory_id);
+        return {
+            categoryName: category?.name || work.title,
+            subcategoryName: subcategory?.name,
+            label: [category?.name || work.title, subcategory?.name].filter(Boolean).join(" · "),
+        };
+    };
+    const activeQuotationForWork = (workId: string) => quotations.find((quotation) =>
+        quotation.status !== "cancelled" &&
+        quotation.coverage.some((coverage) => coverage.work_required_id === workId)
+    );
+    const hasVerifiedMeasurement = (workId: string, areaId?: string) => db.measurementRevisions.some((revision) =>
+        revision.site_id === selectedSiteId &&
+        revision.work_required_id === workId &&
+        (!areaId || revision.area_id === areaId) &&
+        revision.status === "verified"
+    );
     const createArea = () => {
         if (!selectedSite || !areaName.trim())
             return;
@@ -136,77 +152,64 @@ export function SiteExecutionModule({ initialTab }: {
         setAreaName("");
         setNewAreaOpen(false);
     };
-    const openMeasurement = (areaId: string, workRequiredId?: string) => {
-        const area = areas.find((entry) => entry.id === areaId);
-        if (!area)
-            return;
-        setMeasurementAreaId(area.id);
-        setMeasurementWorkRequiredId(workRequiredId || workRequired.find((work) => work.area_ids.includes(area.id))?.id || "");
-        setMeasurementLength(area.length != null ? String(area.length) : "");
-        setMeasurementWidth(area.width != null ? String(area.width) : "");
-        setMeasurementHeight(area.height != null ? String(area.height) : "");
-        setMeasurementNotes(area.notes || "");
+    const openWorkForArea = (areaId: string) => {
+        setNewWorkAreaId(areaId);
+        setNewWorkOpen(true);
     };
-    const saveMeasurement = () => {
-        if (!selectedSite || !measurementAreaId)
+    const scheduleMeasurement = (workId: string) => {
+        if (!selectedSite)
             return;
-        const parse = (value: string) => {
-            if (!value.trim())
-                return undefined;
-            const parsed = Number(value);
-            return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-        };
-        const length = parse(measurementLength);
-        const width = parse(measurementWidth);
-        if (length == null || width == null) {
-            toast.error("Length and width are required to save an area measurement");
+        const work = workRequired.find((row) => row.id === workId);
+        if (!work) {
+            toast.error("Select an Area and define its Work Required before scheduling measurement.");
             return;
         }
-        const id = addMeasurementRevision({
-            site_id: selectedSite.id,
-            area_id: measurementAreaId,
-            work_required_id: measurementWorkRequiredId || undefined,
-            length,
-            width,
-            height: parse(measurementHeight),
-            unit: "ft",
-            notes: measurementNotes.trim() || undefined,
-            photo_count: 0,
-            status: "verified",
+        openCreateDialog({
+            kind: "visit",
+            customerId: selectedSite.customer_id,
+            siteId: selectedSite.id,
+            workRequiredId: work.id,
+            visitType: "measurement",
         });
-        if (!id) {
-            toast.error("Measurement could not be saved for this site area");
-            return;
-        }
-        toast.success("Measurement revision saved and linked to the selected site area");
-        setMeasurementAreaId(null);
     };
     const createQuotationForWork = (workId: string) => {
         const work = db.workRequired.find((row) => row.id === workId);
         if (!selectedSite || !work)
             return;
-        const measuredAreaIds = new Set(db.measurementRevisions.filter((revision) => revision.site_id === selectedSite.id && revision.status === "verified").map((revision) => revision.area_id));
+        const existingQuotation = activeQuotationForWork(work.id);
+        if (existingQuotation) {
+            toast.info(`${existingQuotation.quotation_no} already covers this scope.`);
+            openDetail("quotation", existingQuotation.id);
+            return existingQuotation.id;
+        }
+        const verifiedRevisions = db.measurementRevisions.filter((revision) =>
+            revision.site_id === selectedSite.id &&
+            revision.work_required_id === work.id &&
+            work.area_ids.includes(revision.area_id) &&
+            revision.status === "verified"
+        );
+        const measuredAreaIds = new Set(verifiedRevisions.map((revision) => revision.area_id));
         const missingArea = work.area_ids.find((areaId) => !measuredAreaIds.has(areaId));
         if (missingArea) {
-            toast.error("Capture and verify measurements for every covered area before preparing a quotation");
-            openMeasurement(missingArea, work.id);
+            toast.error("Complete a verified Measurement Visit for every covered Area before preparing a quotation.");
+            scheduleMeasurement(work.id);
             return;
         }
         const id = addQuotation({
             customer_id: selectedSite.customer_id,
             site_id: selectedSite.id,
-            title: `${selectedSite.name} · ${work.title}`,
+            title: `${selectedSite.name} · ${scopeMeta(work).label}`,
             status: "draft",
             coverage: [{
                     id: `coverage-${Date.now().toString(36)}`,
                     work_required_id: work.id,
                     area_ids: work.area_ids,
-                    measurement_revision_ids: db.measurementRevisions.filter((revision) => revision.site_id === selectedSite.id && work.area_ids.includes(revision.area_id)).map((revision) => revision.id),
-                    coverage_label: work.title,
+                    measurement_revision_ids: verifiedRevisions.map((revision) => revision.id),
+                    coverage_label: scopeMeta(work).label,
                     status: "proposed",
                 }],
         });
-        setActiveModule("quotationDesk");
+        openDetail("quotation", id);
         return id;
     };
     // CV-1: Open a real bid-entry dialog instead of silently creating a quote_amount: 0 placeholder.
@@ -411,7 +414,7 @@ export function SiteExecutionModule({ initialTab }: {
                 <h1 className="mt-1 text-xl font-bold">{selectedSite.name}</h1>
                 <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{selectedSite.address || selectedSite.notes || "Add site address, areas and measurements before quoting."}</p>
               </div>
-              <StatusBadge label={selectedSite.stage} className={siteStageStyle[selectedSite.stage]}/>
+              <div className="flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => setEditSiteOpen(true)}>Edit site profile</Button><StatusBadge label={selectedSite.stage} className={siteStageStyle[selectedSite.stage]}/></div>
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <MetricCard label="Areas" value={areas.length} tone="primary"/>
@@ -431,22 +434,27 @@ export function SiteExecutionModule({ initialTab }: {
 
           {tab === "overview" && (<div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(260px,.75fr)]">
               <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-                <SectionHeader title="Site operating chain"/>
-                <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-                  {["Customer", "Site", "Area", "Work Required", "Quotation", "Contractor Bid", "Work Order", "BOQ", "Vendor RFQ", "PO", "GRN", "Vendor Payment"].map((label, index) => <React.Fragment key={label}><span className={cn("rounded-full border px-2.5 py-1", index <= 3 ? "border-primary/30 bg-primary/5 text-primary" : "border-border bg-muted/40 text-muted-foreground")}>{label}</span>{index < 11 && <ArrowRight className="h-3 w-3 text-muted-foreground"/>}</React.Fragment>)}
+                <SectionHeader title="Site progression"/>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "1 · Site setup", detail: `${areas.length} Area${areas.length === 1 ? "" : "s"} defined`, ready: areas.length > 0 },
+                    { label: "2 · Survey & scope", detail: `${workRequired.length} scoped item${workRequired.length === 1 ? "" : "s"}`, ready: workRequired.length > 0 && workRequired.every((work) => work.area_ids.every((areaId) => hasVerifiedMeasurement(work.id, areaId))) },
+                    { label: "3 · Commercial", detail: `${quotations.length} quotation${quotations.length === 1 ? "" : "s"}`, ready: quotations.some((quotation) => quotation.status === "accepted") },
+                    { label: "4 · Delivery", detail: `${workOrders.length} work order${workOrders.length === 1 ? "" : "s"}`, ready: workOrders.length > 0 },
+                  ].map((phase) => <div key={phase.label} className={cn("rounded-lg border p-3", phase.ready ? "border-success/30 bg-success/[0.05]" : "border-border bg-muted/20")}><p className="text-xs font-bold">{phase.label}</p><p className="mt-1 text-[11px] text-muted-foreground">{phase.detail}</p></div>)}
                 </div>
-                <div className="mt-5 space-y-2">
-                  {workRequired.length === 0 ? <EmptyState title="No work is defined for this site" description="Start from an area, then add what the customer needs there." action={<Button size="sm" onClick={() => setNewWorkOpen(true)}><Plus className="mr-1 h-3.5 w-3.5"/>Add Work Required</Button>}/> : workRequired.map((work) => (<div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3">
-                      <div><p className="text-sm font-semibold">{work.title}</p><p className="text-xs text-muted-foreground">{work.area_ids.map((id) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "All site areas"}{work.system_name ? ` · ${work.system_name}` : ""}</p></div>
-                      <div className="flex items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => createQuotationForWork(work.id)}>Quote</Button></div>
-                    </div>))}
+                <div className="mt-4 space-y-2">
+                  {workRequired.length === 0 ? <EmptyState title={areas.length ? "Define work inside an Area" : "Start by defining the Site Areas"} description={areas.length ? "Open Areas & Scope and add the exact category and subcategory for an Area." : "Create the rooms or operational Areas before defining work, visits, measurements, or quotations."} action={<Button size="sm" onClick={() => setTab("areas")}><Plus className="mr-1 h-3.5 w-3.5"/>{areas.length ? "Open Areas & Scope" : "Add first Area"}</Button>}/> : workRequired.slice(0, 4).map((work) => {
+                    const existingQuotation = activeQuotationForWork(work.id);
+                    return <div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"><div><p className="text-sm font-semibold">{scopeMeta(work).label}</p><p className="text-xs text-muted-foreground">{work.area_ids.map((id) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "Area not selected"}</p></div><div className="flex items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => existingQuotation ? openDetail("quotation", existingQuotation.id) : hasVerifiedMeasurement(work.id) ? createQuotationForWork(work.id) : scheduleMeasurement(work.id)}>{existingQuotation ? "Open quotation" : hasVerifiedMeasurement(work.id) ? "Prepare quotation" : "Schedule measurement"}</Button></div></div>;
+                  })}
                 </div>
               </div>
               <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
                 <SectionHeader title="Immediate actions"/>
                 <div className="mt-3 grid gap-2">
                   <Button variant="outline" className="justify-start" onClick={() => setNewAreaOpen(true)}><Ruler className="mr-2 h-4 w-4"/>Add area</Button>
-                  <Button variant="outline" className="justify-start" onClick={() => setNewWorkOpen(true)}><Wrench className="mr-2 h-4 w-4"/>Add work required</Button>
+                  <Button variant="outline" className="justify-start" onClick={() => setTab("areas")}><Wrench className="mr-2 h-4 w-4"/>Open areas & scope</Button>
                   <Button variant="outline" className="justify-start" onClick={() => setTab("quotations")}><FileText className="mr-2 h-4 w-4"/>Review quotations</Button>
                   <Button variant="outline" className="justify-start" onClick={() => setActiveModule("fieldOperations")}><Users className="mr-2 h-4 w-4"/>Schedule measurement visit</Button>
                 </div>
@@ -454,17 +462,40 @@ export function SiteExecutionModule({ initialTab }: {
             </div>)}
 
           {tab === "areas" && (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-              <SectionHeader title="Areas" count={areas.length} action={<Button size="sm" onClick={() => setNewAreaOpen(true)}><Plus className="mr-1 h-3.5 w-3.5"/>Add Area</Button>}/>
-              <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {areas.map((area) => <div key={area.id} className="rounded-lg border border-border p-3"><div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{area.name}</p><p className="text-xs text-muted-foreground">{titleFromType(area.area_type)}</p></div><StatusBadge label={area.stage} className={area.stage === "measured" ? "bg-success/10 text-success border-success/20" : "bg-muted text-muted-foreground border-border"}/></div><p className="mt-3 text-xs text-muted-foreground">{area.length && area.width ? `${area.length} × ${area.width} ${area.unit || "ft"} · ${area.floor_area || area.length * area.width} sq ${area.unit || "ft"}` : "Measurement pending"}</p><p className="mt-2 text-[11px] text-muted-foreground">{workRequired.filter((work) => work.area_ids.includes(area.id)).length} linked work requirement(s)</p><Button size="sm" variant="outline" className="mt-3 w-full" onClick={() => openMeasurement(area.id)}><Ruler className="mr-1.5 h-3.5 w-3.5"/>{area.stage === "measured" ? "Add revision" : "Capture measurement"}</Button></div>)}
-              </div>
+              <SectionHeader title="Areas & Scope" count={areas.length} action={<Button size="sm" onClick={() => setNewAreaOpen(true)}><Plus className="mr-1 h-3.5 w-3.5"/>Add Area</Button>}/>
+              {areas.length === 0 ? <div className="mt-3"><EmptyState title="No Areas defined" description="Create the first room or operational Area before adding work, scheduling measurement, or preparing a quotation." action={<Button size="sm" onClick={() => setNewAreaOpen(true)}><Plus className="mr-1 h-3.5 w-3.5"/>Add first Area</Button>}/></div> : <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                {areas.map((area) => {
+                  const areaWork = workRequired.filter((work) => work.area_ids.includes(area.id));
+                  return <div key={area.id} className="rounded-xl border border-border bg-muted/10 p-3">
+                    <div className="flex items-start justify-between gap-2"><div><p className="font-semibold">{area.name}</p><p className="text-xs text-muted-foreground">{titleFromType(area.area_type)} · {area.length && area.width ? `${area.length} × ${area.width} ${area.unit || "ft"}` : "Measurement pending"}</p></div><StatusBadge label={area.stage} className={area.stage === "measured" ? "bg-success/10 text-success border-success/20" : "bg-muted text-muted-foreground border-border"}/></div>
+                    <div className="mt-3 rounded-lg border border-border bg-card p-2.5">
+                      <div className="flex items-center justify-between gap-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Work required · {areaWork.length}</p><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openWorkForArea(area.id)}><Plus className="mr-1 h-3 w-3"/>Add work</Button></div>
+                      {areaWork.length ? <div className="mt-2 space-y-2">{areaWork.map((work) => {
+                        const quote = activeQuotationForWork(work.id);
+                        const measured = hasVerifiedMeasurement(work.id, area.id);
+                        return <div key={work.id} className="rounded-md border border-border bg-background p-2.5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">{scopeMeta(work).label}</p>{work.system_name && <p className="text-[11px] text-muted-foreground">{work.system_name}</p>}<p className="mt-1 text-[10px] text-muted-foreground">{measured ? "Verified measurement linked" : "Measurement visit required"}{work.area_ids.length > 1 ? ` · shared across ${work.area_ids.length} Areas` : ""}</p></div><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/></div><div className="mt-2 flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={() => quote ? openDetail("quotation", quote.id) : measured ? createQuotationForWork(work.id) : scheduleMeasurement(work.id)}>{quote ? "Open quotation" : measured ? "Prepare quotation" : "Schedule measurement"}</Button></div></div>;
+                      })}</div> : <p className="mt-2 rounded-md border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">No work has been defined for this Area.</p>}
+                    </div>
+                  </div>;
+                })}
+              </div>}
             </div>)}
 
           {tab === "work" && (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-              <SectionHeader title="Area-wise work required" count={workRequired.length} action={<Button size="sm" onClick={() => setNewWorkOpen(true)}><Plus className="mr-1 h-3.5 w-3.5"/>Add Work Required</Button>}/>
-              <div className="mt-3 space-y-2">
-                {workRequired.map((work) => <div key={work.id} className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-semibold">{work.title}</p><p className="mt-1 text-xs text-muted-foreground">{work.area_ids.map((id) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "Whole site"}{work.system_name ? ` · ${work.system_name}` : ""}</p>{work.specification && <p className="mt-1 text-xs text-muted-foreground">{work.specification}</p>}</div><div className="flex items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/>{["new", "contacted", "visit_scheduled"].includes(work.status) && <Button size="sm" variant="outline" onClick={() => openMeasurement(work.area_ids[0], work.id)}><Ruler className="mr-1.5 h-3.5 w-3.5"/>Capture measurement</Button>}<Button size="sm" onClick={() => createQuotationForWork(work.id)}>Create quotation</Button></div></div></div>)}
-                {!workRequired.length && <EmptyState title="No work required yet" description="Add painting, gypsum ceiling, furniture, flooring, electrical or any other scope against the correct area."/>}
+              <SectionHeader title="Scope Register" count={workRequired.length} action={<Button size="sm" onClick={() => setNewAreaOpen(true)}><Plus className="mr-1 h-3.5 w-3.5"/>Add Area</Button>}/>
+              <p className="mt-2 text-xs text-muted-foreground">Scope is Area-first. Add work from its Area in Areas & Scope so category, subcategory, measurement and quotation remain unambiguous.</p>
+              <div className="mt-3 space-y-3">
+                {areas.map((area) => {
+                  const areaWork = workRequired.filter((work) => work.area_ids.includes(area.id));
+                  if (!areaWork.length) return null;
+                  return <div key={area.id} className="rounded-lg border border-border p-3"><div className="mb-2 flex items-center justify-between"><div><p className="font-semibold">{area.name}</p><p className="text-xs text-muted-foreground">{titleFromType(area.area_type)}</p></div><Button size="sm" variant="outline" onClick={() => openWorkForArea(area.id)}><Plus className="mr-1 h-3 w-3"/>Add work</Button></div><div className="space-y-2">{areaWork.map((work) => {
+                    const quote = activeQuotationForWork(work.id);
+                    const measured = hasVerifiedMeasurement(work.id, area.id);
+                    return <div key={work.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/20 p-2.5"><div><p className="text-sm font-semibold">{scopeMeta(work).label}</p><p className="text-[11px] text-muted-foreground">{work.system_name || work.specification || "Specification pending"}{work.area_ids.length > 1 ? ` · ${work.area_ids.length} Areas` : ""}</p></div><div className="flex flex-wrap items-center gap-2"><StatusBadge label={work.status} className={workStatusStyle[work.status] || ""}/><Button size="sm" variant="outline" onClick={() => quote ? openDetail("quotation", quote.id) : measured ? createQuotationForWork(work.id) : scheduleMeasurement(work.id)}>{quote ? "Open quotation" : measured ? "Prepare quotation" : "Schedule measurement"}</Button></div></div>;
+                  })}</div></div>;
+                })}
+                {!areas.length && <EmptyState title="No Areas defined" description="Add an Area before defining scope."/>}
+                {areas.length > 0 && !workRequired.length && <EmptyState title="No work required yet" description="Open an Area and add its exact category and subcategory." action={<Button size="sm" onClick={() => setTab("areas")}>Open Areas & Scope</Button>}/>} 
               </div>
             </div>)}
 
@@ -518,11 +549,13 @@ export function SiteExecutionModule({ initialTab }: {
       </div>
 
       <SiteFormDialog open={newSiteOpen} onClose={() => setNewSiteOpen(false)} onSaved={(id) => { setSelectedSiteId(id); setNewSiteOpen(false); }}/>
+      <SiteFormDialog open={editSiteOpen} customerId={selectedSite.customer_id} siteId={selectedSite.id} onClose={() => setEditSiteOpen(false)} onSaved={() => setEditSiteOpen(false)}/>
       {newAreaOpen && <Modal title={`Add Area · ${selectedSite.name}`} onClose={() => setNewAreaOpen(false)}><div className="space-y-3"><Field label="Area name"><Input value={areaName} onChange={(event) => setAreaName(event.target.value)} placeholder="Master Bedroom"/></Field><Field label="Area type"><select value={areaType} onChange={(event) => setAreaType(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{["bedroom", "guest_room", "living_room", "kitchen", "bathroom", "balcony", "staircase", "rooftop", "office_cabin", "reception", "meeting_room", "pantry", "facade", "common_area", "other"].map((type) => <option key={type} value={type}>{titleFromType(type)}</option>)}</select></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setNewAreaOpen(false)}>Cancel</Button><Button onClick={createArea}>Add Area</Button></div></div></Modal>}
-      {measurementAreaId && <Modal title={`Capture Measurement · ${areas.find((area) => area.id === measurementAreaId)?.name || "Area"}`} onClose={() => setMeasurementAreaId(null)}><div className="space-y-3"><Field label="Linked work required (optional)"><select value={measurementWorkRequiredId} onChange={(event) => setMeasurementWorkRequiredId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Area-level measurement</option>{workRequired.filter((work) => work.area_ids.includes(measurementAreaId)).map((work) => <option key={work.id} value={work.id}>{work.title}</option>)}</select></Field><div className="grid grid-cols-3 gap-3"><Field label="Length (ft) *"><Input inputMode="decimal" value={measurementLength} onChange={(event) => setMeasurementLength(event.target.value)}/></Field><Field label="Width (ft) *"><Input inputMode="decimal" value={measurementWidth} onChange={(event) => setMeasurementWidth(event.target.value)}/></Field><Field label="Height (ft)"><Input inputMode="decimal" value={measurementHeight} onChange={(event) => setMeasurementHeight(event.target.value)}/></Field></div><Field label="Measurement notes"><Input value={measurementNotes} onChange={(event) => setMeasurementNotes(event.target.value)} placeholder="Verified dimensions, photos/drawing reference…"/></Field><p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">Saving creates a numbered measurement revision. Earlier verified measurements are retained as superseded snapshots for quotation history.</p><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setMeasurementAreaId(null)}>Cancel</Button><Button onClick={saveMeasurement}>Save measurement</Button></div></div></Modal>}
       {vendorBidRfqId && (() => { const rfq = db.vendorRfqs.find((entry) => entry.id === vendorBidRfqId); const boq = rfq ? db.boqs.find((entry) => entry.id === rfq.boq_id) : undefined; const bidItems = (boq?.items || []).filter((item) => rfq?.item_ids.includes(item.id)); const total = bidItems.reduce((sum, item) => sum + item.quantity * (Number(vendorBidRates[item.id]) || 0), 0); return <Modal title="Record Article-wise Vendor Bid" onClose={() => setVendorBidRfqId(null)}><div className="space-y-3"><Field label="Vendor"><select value={vendorBidVendorId} onChange={(event) => setVendorBidVendorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select vendor</option>{rfq?.vendor_ids.map((id) => db.master.vendors.find((vendor) => vendor.id === id)).filter(Boolean).map((vendor) => <option key={vendor!.id} value={vendor!.id}>{vendor!.name}</option>)}</select></Field><div className="rounded-md border border-border"><div className="grid grid-cols-[1fr_72px_92px_92px] gap-2 border-b border-border bg-muted/40 px-3 py-2 text-[10px] font-semibold uppercase text-muted-foreground"><span>BOQ article</span><span className="text-right">Qty</span><span className="text-right">Bid rate</span><span className="text-right">Amount</span></div>{bidItems.map((item) => <div key={item.id} className="grid grid-cols-[1fr_72px_92px_92px] items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-0"><span className="truncate font-medium">{item.title}</span><span className="text-right font-mono">{item.quantity} {item.unit_name || ""}</span><Input inputMode="decimal" value={vendorBidRates[item.id] || ""} onChange={(event) => setVendorBidRates((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="0" className="h-8 text-right font-mono"/><span className="text-right font-mono">{formatINRShort(item.quantity * (Number(vendorBidRates[item.id]) || 0))}</span></div>)}</div><div className="grid grid-cols-2 gap-3"><Field label="Delivery days"><Input inputMode="numeric" value={vendorBidDeliveryDays} onChange={(event) => setVendorBidDeliveryDays(event.target.value)} placeholder="e.g. 3"/></Field><div className="rounded-md bg-muted/40 px-3 py-2"><p className="text-[10px] font-semibold uppercase text-muted-foreground">Bid total</p><p className="font-mono text-sm font-bold">{formatINRShort(total)}</p></div></div><p className="text-[11px] text-muted-foreground">Each requested BOQ article needs the vendor's actual rate. No reference or fallback rate can create a project PO.</p><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setVendorBidRfqId(null)}>Cancel</Button><Button onClick={saveVendorBid}>Record bid</Button></div></div></Modal>; })()}
-      {newWorkOpen && selectedSite && <WorkRequiredCreateDialog open customerId={selectedSite.customer_id} site={selectedSite} initialAreaIds={areas.map((area) => area.id)} onOpenChange={(next) => { if (!next)
-            setNewWorkOpen(false); }}/>}
+      {newWorkOpen && selectedSite && <WorkRequiredCreateDialog open customerId={selectedSite.customer_id} site={selectedSite} initialAreaIds={newWorkAreaId ? [newWorkAreaId] : []} onOpenChange={(next) => { if (!next) {
+            setNewWorkOpen(false);
+            setNewWorkAreaId(null);
+        } }}/>} 
       {bidScopeId && (() => { const scope = acceptedScopes.find((s) => s.id === bidScopeId); return <Modal title={`Invite contractor bid · ${scope?.label || "Scope"}`} onClose={cancelBidDialog}><div className="space-y-3"><Field label="Contractor *"><select value={bidContractorId} onChange={(event) => setBidContractorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select contractor</option>{db.master.contractors.map((c) => <option key={c.id} value={c.id}>{c.name}{c.trade ? ` · ${c.trade}` : ""}</option>)}</select></Field><Field label="Quote amount (INR) *"><Input inputMode="decimal" value={bidQuoteAmount} onChange={(event) => setBidQuoteAmount(event.target.value)} placeholder="e.g. 45000"/></Field><p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">The contractor's actual quote is required to award the bid and create RA bills later. A zero/blank quote will permanently block the contractor payment chain.</p><div className="grid grid-cols-2 gap-3"><Field label="Estimated days"><Input inputMode="numeric" value={bidEstimatedDays} onChange={(event) => setBidEstimatedDays(event.target.value)} placeholder="e.g. 7"/></Field><label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={bidWithMaterial} onChange={(event) => setBidWithMaterial(event.target.checked)} className="h-4 w-4 rounded border-input"/>With material</label></div><Field label="Scope notes (optional)"><Input value={bidScopeNotes} onChange={(event) => setBidScopeNotes(event.target.value)} placeholder="Inclusions, exclusions, reference images…"/></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={cancelBidDialog}>Cancel</Button><Button onClick={saveBid}>Record bid</Button></div></div></Modal>; })()}
 
       {/* Direct Award Contractor Dialog — audited exception path that skips formal bidding */}
