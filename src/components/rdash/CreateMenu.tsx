@@ -359,7 +359,7 @@ function CreateDialog({ request, onClose }: {
                 });
                 addRecentCreated({ id, kind: "visit", label: `${visitType.replace("_", " ")} · ${site.name}` });
                 notifyCreated("visit", id, `${visitType.replace("_", " ")} visit`, `Scheduled for ${cust?.name || "customer"} · ${site.name} · ${visitScheduledAt}`);
-                setActiveModule("fieldOperations");
+                setActiveModule(visitType === "measurement" ? "siteMeasurement" : "fieldOperations");
             }
             else if (kind === "followup") {
                 if (!title.trim()) {
@@ -625,3 +625,4 @@ function Field({ label, children }: {
       {children}
     </div>);
 }
+
