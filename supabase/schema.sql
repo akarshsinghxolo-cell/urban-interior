@@ -1,19 +1,13 @@
 -- ============================================================================
--- Urban Castle — canonical Supabase schema. Run this ONCE in Supabase
--- Dashboard -> SQL Editor. This is now the ONLY place the app's database
--- structure is defined — Prisma has been removed entirely.
+-- Urban Castle — bootstrap schema for authentication, settings, staff profiles,
+-- and normalized GPS telemetry. Workspace business data is stored in the
+-- revisioned entity_* tables and committed through commit_workspace_operations().
 --
--- Tables (5 total, everything the app actually uses):
+-- Tables (4 total):
 --   rdash_user_roles    - maps Supabase Auth users to app roles/approval status
---   "GenericRecord"     - JSON key/value store (the workspace snapshot + misc
---                          settings such as Google Drive config live here)
---   "WorkspaceMeta"     - one row per workspace, tracks the snapshot revision
---   "StaffProfile"      - real staff records used for login/attendance/GPS
---   "StaffLocationPing" - GPS pings, references StaffProfile
---
--- Plus one RPC function, write_workspace_snapshot(), used to atomically
--- persist a new workspace snapshot + bump the revision counter in one
--- transaction (this replaces Prisma's $transaction()).
+--   "GenericRecord"     - JSON key/value store for settings such as Google Drive
+--   "StaffProfile"      - normalized staff identity/profile records
+--   "StaffLocationPing" - normalized append-oriented GPS telemetry
 --
 -- Safe to re-run: every statement is idempotent (if not exists / or replace).
 -- ============================================================================
@@ -78,14 +72,6 @@ create table if not exists public."GenericRecord" (
 );
 create index if not exists "GenericRecord_collection_idx" on public."GenericRecord" (collection);
 
--- ----------------------------------------------------------------------------
--- WorkspaceMeta — one row per workspace, tracks the snapshot revision
--- ----------------------------------------------------------------------------
-create table if not exists public."WorkspaceMeta" (
-  id text primary key,
-  revision integer not null default 0,
-  "updatedAt" timestamptz not null default now()
-);
 
 -- ----------------------------------------------------------------------------
 -- StaffProfile — real staff records. (roleId / attendancePolicyId are kept as
@@ -136,43 +122,12 @@ create index if not exists "StaffLocationPing_staffId_capturedAt_idx"
   on public."StaffLocationPing" ("staffId", "capturedAt");
 
 -- ----------------------------------------------------------------------------
--- Row Level Security — these 4 tables are only ever touched by the app's
+-- Row Level Security — these 3 tables are only ever touched by the app's
 -- server-side Supabase admin (service-role) client, never directly by a
 -- browser. RLS is enabled with NO policies for anon/authenticated on purpose,
 -- which denies them all access by default; service_role bypasses RLS.
 -- ----------------------------------------------------------------------------
 alter table public."GenericRecord" enable row level security;
-alter table public."WorkspaceMeta" enable row level security;
 alter table public."StaffProfile" enable row level security;
 alter table public."StaffLocationPing" enable row level security;
 
--- ----------------------------------------------------------------------------
--- write_workspace_snapshot — atomically writes a new workspace snapshot and
--- bumps the revision counter. Called via admin.rpc(...) from the app; this is
--- what replaces Prisma's $transaction() for the one place the app needed
--- multi-statement atomicity.
--- ----------------------------------------------------------------------------
-create or replace function public.write_workspace_snapshot(
-  p_workspace_id text,
-  p_data_json text,
-  p_revision integer
-) returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_collection text := 'workspace.snapshot';
-begin
-  insert into public."GenericRecord" (collection, id, "dataJson")
-    values (v_collection, p_workspace_id, p_data_json)
-    on conflict (collection, id) do update set "dataJson" = excluded."dataJson";
-
-  insert into public."WorkspaceMeta" (id, revision, "updatedAt")
-    values (p_workspace_id, p_revision, now())
-    on conflict (id) do update set revision = excluded.revision, "updatedAt" = now();
-end;
-$$;
-
-revoke all on function public.write_workspace_snapshot(text, text, integer) from public;
-grant execute on function public.write_workspace_snapshot(text, text, integer) to service_role;
