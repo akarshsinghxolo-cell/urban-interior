@@ -28,8 +28,14 @@ function openDatabase(): Promise<IDBDatabase> {
 
   databasePromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(request.error || new Error("Could not open the upload database."));
-    request.onblocked = () => reject(new Error("Upload storage is blocked by another Urban Castle tab."));
+    request.onerror = () => {
+      databasePromise = null;
+      reject(request.error || new Error("Could not open the upload database."));
+    };
+    request.onblocked = () => {
+      databasePromise = null;
+      reject(new Error("Upload storage is blocked by another Urban Castle tab. Close older tabs and retry."));
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORES.batches)) {
@@ -54,7 +60,13 @@ function openDatabase(): Promise<IDBDatabase> {
     };
     request.onsuccess = () => {
       const db = request.result;
-      db.onversionchange = () => db.close();
+      db.onversionchange = () => {
+        db.close();
+        databasePromise = null;
+      };
+      db.onclose = () => {
+        databasePromise = null;
+      };
       resolve(db);
     };
   });
@@ -68,35 +80,49 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
+function transactionDone(transaction: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("Upload storage transaction failed."));
+    transaction.onabort = () => reject(transaction.error || new Error("Upload storage transaction was aborted."));
+  });
+}
+
 async function readAll<T>(storeName: StoreName): Promise<T[]> {
   const db = await openDatabase();
   const transaction = db.transaction(storeName, "readonly");
-  return await requestResult(transaction.objectStore(storeName).getAll()) as T[];
+  const result = await requestResult(transaction.objectStore(storeName).getAll()) as T[];
+  await transactionDone(transaction);
+  return result;
 }
 
 async function get<T>(storeName: StoreName, key: IDBValidKey): Promise<T | null> {
   const db = await openDatabase();
   const transaction = db.transaction(storeName, "readonly");
   const result = await requestResult(transaction.objectStore(storeName).get(key));
+  await transactionDone(transaction);
   return (result as T | undefined) || null;
 }
 
 async function put<T>(storeName: StoreName, value: T): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction(storeName, "readwrite");
-  await requestResult(transaction.objectStore(storeName).put(value));
+  transaction.objectStore(storeName).put(value);
+  await transactionDone(transaction);
 }
 
 async function remove(storeName: StoreName, key: IDBValidKey): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction(storeName, "readwrite");
-  await requestResult(transaction.objectStore(storeName).delete(key));
+  transaction.objectStore(storeName).delete(key);
+  await transactionDone(transaction);
 }
 
 async function clear(storeName: StoreName): Promise<void> {
   const db = await openDatabase();
   const transaction = db.transaction(storeName, "readwrite");
-  await requestResult(transaction.objectStore(storeName).clear());
+  transaction.objectStore(storeName).clear();
+  await transactionDone(transaction);
 }
 
 export const uploadIndexedDb = {
