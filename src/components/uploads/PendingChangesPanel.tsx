@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, CloudOff, Database, RefreshCw, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceOutbox } from "@/lib/uploads/use-workspace-outbox";
 import { discardWorkspaceOutbox, retryWorkspaceOutbox } from "@/lib/uploads/workspace-outbox";
@@ -42,13 +43,27 @@ function PendingChangeRow({ item }: { item: WorkspaceCommitOutboxRecord }) {
   const conflict = item.status === "conflict";
   const waiting = item.status === "waiting_for_network";
   const failed = item.status === "failed_retryable" || item.status === "failed_permanent";
+  const syncing = item.status === "syncing";
   const Icon = conflict || failed ? AlertTriangle : waiting ? CloudOff : Database;
   const changedRecords = item.summary.reduce((sum, row) => sum + row.upsertIds.length + row.deleteIds.length, 0);
 
+  const retry = async () => {
+    if (conflict && !window.confirm("Apply your locally saved version over the latest server records? Review the affected records afterward because this can replace fields changed on another device.")) return;
+    try {
+      await retryWorkspaceOutbox(item.operationId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The locally saved change could not be retried.");
+    }
+  };
+
   const discard = async () => {
-    if (!window.confirm("Discard all locally pending workspace changes and reload the server version?")) return;
-    await discardWorkspaceOutbox();
-    window.location.reload();
+    if (!window.confirm("Discard every locally pending workspace change and reload the authoritative server version? This cannot be undone.")) return;
+    try {
+      await discardWorkspaceOutbox();
+      window.location.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The locally saved changes could not be discarded.");
+    }
   };
 
   return (
@@ -67,11 +82,11 @@ function PendingChangeRow({ item }: { item: WorkspaceCommitOutboxRecord }) {
           </div>
           {item.lastErrorMessage ? <p className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{item.lastErrorMessage}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => void retryWorkspaceOutbox(item.operationId)}>
-              <RefreshCw className="mr-1 h-3.5 w-3.5" />{conflict ? "Retry against latest" : "Retry now"}
+            <Button size="sm" variant="outline" onClick={() => void retry()} disabled={syncing}>
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />{conflict ? "Apply my version to latest" : syncing ? "Synchronizing" : "Retry now"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => void discard()}>
-              <Trash2 className="mr-1 h-3.5 w-3.5" />Discard local change
+            <Button size="sm" variant="ghost" onClick={() => void discard()} disabled={syncing}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" />Discard all local changes
             </Button>
           </div>
         </div>
