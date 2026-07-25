@@ -51,6 +51,7 @@ export function initAuthFetch(): void {
 
   window.fetch = (async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
+    const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
     const isApi = url.startsWith("/api/") || url.includes("/api/");
     const isAuthEndpoint = AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
@@ -59,15 +60,19 @@ export function initAuthFetch(): void {
       headers.set("Authorization", `Bearer ${token}`);
     }
 
-    const isWorkspaceCommit = url.includes("/api/operations/commit") && (init?.method || "GET").toUpperCase() === "POST";
+    const isWorkspaceCommit = url.includes("/api/operations/commit") && method === "POST";
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
     let body = init?.body;
 
     if (isWorkspaceCommit && !isReplay) {
-      const captured = await captureWorkspaceCommit(body);
-      body = captured.body;
-      operationId = captured.operationId;
+      try {
+        const captured = await captureWorkspaceCommit(body);
+        body = captured.body;
+        operationId = captured.operationId;
+      } catch (error) {
+        console.error("[WorkspaceOutbox] Could not durably capture this commit; continuing with the online save.", error);
+      }
     }
 
     let responseReceived = false;
@@ -75,7 +80,11 @@ export function initAuthFetch(): void {
       const response = await originalFetch(input, { ...init, headers, body });
       responseReceived = true;
       if (operationId) {
-        await markWorkspaceCommitResponse(operationId, response.clone());
+        try {
+          await markWorkspaceCommitResponse(operationId, response.clone());
+        } catch (error) {
+          console.error("[WorkspaceOutbox] Could not update the local commit status.", error);
+        }
         if (response.status === 409 || response.status === 429 || response.status >= 500) {
           const payload = await response.clone().json().catch(() => ({})) as { error?: string };
           throw new TypeError(payload.error || "Workspace synchronization will retry in the background.");
@@ -83,7 +92,13 @@ export function initAuthFetch(): void {
       }
       return response;
     } catch (error) {
-      if (operationId && !responseReceived) await markWorkspaceCommitNetworkFailure(operationId, error);
+      if (operationId && !responseReceived) {
+        try {
+          await markWorkspaceCommitNetworkFailure(operationId, error);
+        } catch (outboxError) {
+          console.error("[WorkspaceOutbox] Could not record the network failure.", outboxError);
+        }
+      }
       throw error;
     }
   }) as typeof window.fetch;
