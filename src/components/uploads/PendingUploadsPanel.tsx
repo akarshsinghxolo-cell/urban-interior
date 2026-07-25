@@ -5,14 +5,16 @@ import { AlertCircle, CheckCircle2, CloudOff, File, RefreshCw, Trash2, UploadClo
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRDashStore } from "@/lib/rdash/store";
 import { uploadQueueStore } from "@/lib/uploads/upload-store";
 import { useUploadQueue } from "@/lib/uploads/use-upload-queue";
 import { reserveEntityId, type UploadItemRecord } from "@/lib/uploads/upload-types";
 
 export function PendingUploadsPanel() {
   const queue = useUploadQueue();
+  const role = useRDashStore((state) => state.authUser?.role || "Unauthenticated");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const pendingItems = queue.items.filter((item) => item.status !== "completed");
+  const pendingItems = queue.items.filter((item) => item.status !== "completed" && item.status !== "cancelled");
   const batchMap = new Map(queue.batches.map((batch) => [batch.id, batch]));
 
   const queueDiagnosticUpload = async (files: FileList | null) => {
@@ -39,6 +41,14 @@ export function PendingUploadsPanel() {
     }
   };
 
+  const retryAll = async () => {
+    try {
+      await uploadQueueStore.retryAll();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Pending uploads could not be retried.");
+    }
+  };
+
   return (
     <div className="grid gap-4">
       <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -49,9 +59,13 @@ export function PendingUploadsPanel() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", queue.online ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>{queue.online ? "Online" : "Waiting for network"}</span>
-            <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => void queueDiagnosticUpload(event.target.files)} />
-            <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-1 h-3.5 w-3.5" />Test direct upload</Button>
-            <Button size="sm" variant="outline" onClick={() => void uploadQueueStore.retryAll()}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry all</Button>
+            {role === "Owner" ? (
+              <>
+                <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => void queueDiagnosticUpload(event.target.files)} />
+                <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}><UploadCloud className="mr-1 h-3.5 w-3.5" />Test direct upload</Button>
+              </>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={() => void retryAll()} disabled={!pendingItems.length}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry all</Button>
           </div>
         </div>
       </section>
@@ -62,7 +76,7 @@ export function PendingUploadsPanel() {
         <section className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
           <CheckCircle2 className="mx-auto h-8 w-8 text-success" />
           <p className="mt-2 text-sm font-semibold">No pending uploads</p>
-          <p className="mt-1 text-xs text-muted-foreground">Use Test direct upload to validate the Phase 2 resumable engine.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Files selected in migrated workflows will appear here until finalization is verified.</p>
         </section>
       ) : (
         <div className="grid gap-3">
@@ -78,7 +92,31 @@ export function PendingUploadsPanel() {
 
 function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: UploadItemRecord; sourceLabel: string; targetLabel: string; online: boolean }) {
   const percentage = Math.min(100, Math.max(item.progress || 0, item.sizeBytes > 0 ? Math.round((item.confirmedBytes / item.sizeBytes) * 100) : 0));
-  const retryable = item.status === "failed_retryable" || item.status === "waiting_for_network" || item.status === "paused";
+  const retryable = ["failed_retryable", "failed_permanent", "waiting_for_network", "waiting_for_entity", "paused"].includes(item.status);
+  const cleanupPending = item.status === "cleanup_pending";
+
+  const retry = async () => {
+    try {
+      await uploadQueueStore.retryItem(item.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The upload could not be retried.");
+    }
+  };
+  const retryCleanup = async () => {
+    try {
+      await uploadQueueStore.cancelItem(item.id);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Drive cleanup could not be retried.");
+    }
+  };
+  const cancelBatch = async () => {
+    if (!window.confirm("Cancel this upload batch and remove any staged Drive files?")) return;
+    try {
+      await uploadQueueStore.cancelBatch(item.batchId);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The upload batch could not be cancelled.");
+    }
+  };
 
   return (
     <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -99,8 +137,9 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
           </div>
           {item.lastErrorMessage ? <p className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{item.lastErrorMessage}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            {retryable ? <Button size="sm" variant="outline" onClick={() => void uploadQueueStore.retryItem(item.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry now</Button> : null}
-            {item.status !== "cancel_requested" && item.status !== "cleanup_pending" && item.status !== "failed_permanent" ? <Button size="sm" variant="ghost" onClick={() => void uploadQueueStore.cancelBatch(item.batchId)}><Trash2 className="mr-1 h-3.5 w-3.5" />Cancel batch</Button> : null}
+            {retryable ? <Button size="sm" variant="outline" onClick={() => void retry()}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry now</Button> : null}
+            {cleanupPending ? <Button size="sm" variant="outline" onClick={() => void retryCleanup()}><RefreshCw className="mr-1 h-3.5 w-3.5" />Retry cleanup</Button> : null}
+            {item.status !== "cancel_requested" && !cleanupPending ? <Button size="sm" variant="ghost" onClick={() => void cancelBatch()}><Trash2 className="mr-1 h-3.5 w-3.5" />Cancel batch</Button> : null}
           </div>
         </div>
       </div>
@@ -109,8 +148,8 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
 }
 
 function StatusBadge({ item, online }: { item: UploadItemRecord; online: boolean }) {
-  const failed = item.status === "failed_retryable" || item.status === "failed_permanent";
-  const waiting = item.status === "waiting_for_network" || !online;
+  const failed = item.status === "failed_retryable" || item.status === "failed_permanent" || item.status === "cleanup_pending";
+  const waiting = item.status === "waiting_for_network" || item.status === "waiting_for_entity" || !online;
   const Icon = failed ? AlertCircle : waiting ? CloudOff : UploadCloud;
   const label = item.status.replaceAll("_", " ");
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold capitalize", failed ? "bg-destructive/10 text-destructive" : waiting ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary")}><Icon className="h-3 w-3" />{label}</span>;
