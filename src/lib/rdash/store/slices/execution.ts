@@ -38,7 +38,6 @@ import type { ExecutionState } from "../types";
 import type { StoreContext } from "../context";
 import {
     assertRole, genId, nowIso, today, userForRole,
-    googleFileIdFromUrl, isStoredMediaUrl,
 } from "../helpers";
 import { formatINR } from "../../format";
 import { assertWorkOrderRelations, assertAreaBelongsToSite } from "../../business-rules";
@@ -168,7 +167,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
             const parent = get().db.drawings.find((d: any) => d.id === parentDrawingId);
             if (!parent)
                 return "";
-            const newId = genId("drw");
+            const newId = file.id || genId("drw");
             const now = nowIso();
             const drawingNo = `${parent.drawing_no}-v${parent.version + 1}`;
             const threadId = get().openThreadFor("drawing", newId, `${drawingNo} · ${parent.title} (revision)`, [parent.uploaded_by || designer.name]);
@@ -271,9 +270,9 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 !log.extra_work_notes?.trim()) {
                 throw new Error("Describe the extra work before requesting customer approval.");
             }
-            const uploadedPhotos = (log.uploaded_photos || []).filter((photo: any) => photo.url && isStoredMediaUrl(photo.url));
+            const uploadedPhotos = (log.uploaded_photos || []).filter((photo: any) => Boolean(photo.attachment_id));
             if ((log.uploaded_photos || []).length !== uploadedPhotos.length) {
-                throw new Error("Execution photos must be uploaded to managed Google Drive before filing the log.");
+                throw new Error("Execution photos must be queued before filing the log.");
             }
             const logNo = nextExecutionNo("LOG", get().db.executionLogs);  // STAGE-5-FIX: dynamic year + max-suffix
             const threadId = get().openThreadFor("execution_log", id, `${logNo} · ${workOrder.work_order_no} · ${log.date || today()}`, [log.filed_by || fieldUser.name, "Operations Manager"]);
@@ -300,7 +299,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 extra_work_amount: log.extra_work_amount,
                 completion_notes: log.completion_notes,
                 site_condition: log.site_condition,
-                photo_attachment_ids: [],
+                photo_attachment_ids: uploadedPhotos.map((photo: any) => photo.attachment_id),
                 filed_by: actor.name === "Unauthenticated" ? (log.filed_by || fieldUser.name) : actor.name,
                 filed_by_staff_id: actor.staffId || log.filed_by_staff_id || fieldUser.staffId,
                 contractor_material_confirmed: log.contractor_material_confirmed ?? false,
@@ -315,20 +314,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                     executionLogs: [entry, ...snapshot.db.executionLogs],
                 },
             }));
-            const photoAttachmentIds = uploadedPhotos.map((photo: any) => get().createFileAssetAndAttach({
-                file_name: photo.file_name,
-                web_view_link: photo.url,
-                google_file_id: photo.file_asset_id || googleFileIdFromUrl(photo.url),
-                mime_type: photo.mime_type,
-                kind: "media",
-                storage_provider: "google_drive",
-                storage_mode: "managed",
-                sync_status: "uploaded",
-                tags: ["execution", "photo"],
-            }, { entity_type: "execution_log", entity_id: id, role: "photo", caption: photo.caption, visibility: "internal", customer_shareable: false, created_by: entry.filed_by }));
-            if (photoAttachmentIds.length) {
-                get().updateExecutionLog(id, { photo_attachment_ids: photoAttachmentIds });
-            }
+            const photoAttachmentIds = uploadedPhotos.map((photo: any) => photo.attachment_id);
             if (needsProgressReview) {
                 get().addTask({
                     title: `Verify progress · ${workOrder.work_order_no} · ${requestedProgress}%`,
@@ -625,42 +611,15 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 ],
             });
         },
-        confirmMaterialReceipt: (logId, photoUrl, photoAttachmentId) => {
-            if (photoUrl && !isStoredMediaUrl(photoUrl))
-                throw new Error("Material confirmation proof must be uploaded to managed Google Drive before filing.");
+        confirmMaterialReceipt: (logId, photoAttachmentId) => {
             const log = get().db.executionLogs.find((row: any) => row.id === logId);
-            if (!log)
-                throw new Error("Execution log not found.");
-            // FIX-CONTRACTOR-BATCH1 / F.1: Accept an optional `photoAttachmentId`
-            // (a pre-uploaded EntityFileAttachment id) so the UI can pass an
-            // already-uploaded proof photo directly. When `photoUrl` is supplied
-            // we upload + attach it (legacy behaviour). When neither is supplied
-            // we log a warning (console + thread reply) so the user knows the
-            // payment proof gate will still require a photo — but we no longer
-            // silently leave `contractor_confirmation_attachment_id` unset when
-            // the caller has a pre-uploaded attachment id available.
-            let confirmationAttachmentId: string | undefined;
-            let proofSource: "uploaded_url" | "pre_uploaded_id" | "none" = "none";
-            if (photoAttachmentId) {
-                confirmationAttachmentId = photoAttachmentId;
-                proofSource = "pre_uploaded_id";
-            } else if (photoUrl) {
-                confirmationAttachmentId = get().createFileAssetAndAttach({ file_name: `${log.log_no}-material-confirmation.jpg`, web_view_link: photoUrl, google_file_id: googleFileIdFromUrl(photoUrl), kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["execution", "material-confirmation"] }, { entity_type: "execution_log", entity_id: logId, role: "proof", caption: "Contractor material receipt confirmation", visibility: "internal", customer_shareable: false, created_by: "Contractor" });
-                proofSource = "uploaded_url";
-            } else {
-                // FIX-CONTRACTOR-BATCH1 / F.1: Warn (don't throw) so the
-                // business can still mark material receipt confirmed. The
-                // downstream `contractorPaymentProofStatus` helper will keep
-                // blocking payment release until a photo is uploaded — but the
-                // user is no longer dead-locked with no path forward.
-                console.warn(`[confirmMaterialReceipt] No proof photo supplied for log ${log.log_no}. contractor_confirmation_attachment_id will not be set — payment release will remain blocked until a photo is uploaded.`);
-            }
+            if (!log) throw new Error("Execution log not found.");
             const now = nowIso();
             commitState((snapshot: any) => ({
                 db: {
                     ...snapshot.db,
                     executionLogs: snapshot.db.executionLogs.map((row: any) => row.id === logId
-                        ? { ...row, contractor_material_confirmed: true, contractor_confirmation_attachment_id: confirmationAttachmentId || row.contractor_confirmation_attachment_id, updated_at: now }
+                        ? { ...row, contractor_material_confirmed: true, contractor_confirmation_attachment_id: photoAttachmentId || row.contractor_confirmation_attachment_id, updated_at: now }
                         : row),
                 },
             }));
@@ -668,20 +627,17 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 get().addThreadReply(log.thread_id, {
                     author: log.filed_by || "Contractor",
                     role: "Contractor",
-                    body: proofSource === "none"
-                        ? `Material receipt confirmed on ${log.date} — WARNING: no proof photo attached. Payment release will remain blocked until a contractor confirmation photo is uploaded.`
-                        : `Material receipt confirmed on ${log.date} — proof photo attached.`,
+                    body: photoAttachmentId
+                        ? `Material receipt confirmed on ${log.date} — proof photo queued.`
+                        : `Material receipt confirmed on ${log.date} — WARNING: no proof photo attached. Payment release will remain blocked until a contractor confirmation photo is uploaded.`,
                     kind: "comment",
-                    proof_attachment_id: confirmationAttachmentId,
+                    proof_attachment_id: photoAttachmentId,
                 });
             }
-            get()
-                .db.payments.filter((payment: any) => payment.work_order_id === log.work_order_id &&
+            get().db.payments.filter((payment: any) => payment.work_order_id === log.work_order_id &&
                 payment.schedule_state === "awaiting_event" &&
                 eventMatchesPaymentTrigger(payment.due_event, "after_material_issue"))
-                .forEach((payment: any) => get().triggerPaymentMilestone(payment.id, {
-                reason: `Material receipt confirmed in ${log.log_no}`,
-            }));
+                .forEach((payment: any) => get().triggerPaymentMilestone(payment.id, { reason: `Material receipt confirmed in ${log.log_no}` }));
             get().logAudit({
                 actor: "Contractor",
                 actor_role: "Contractor",

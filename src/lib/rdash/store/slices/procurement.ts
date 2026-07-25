@@ -16,10 +16,9 @@ function nextProcurementNo(prefix: string, collection: { rfq_no?: string; po_no?
  * orders (create/approve/send), goods received notes (GRN, including field-staff
  * receipt verification), inventory receipt/issue, and site dispatch.
  *
- * Phase 3i moved the 16 procurement actions out of store.ts. The shared helper
- * `isStoredMediaUrl` was moved to `../helpers` (used by fileGRN and by inline
- * store.ts execution/variation code), and `assertProcurementContext` was moved
- * here as a module-scope helper (used only by `createPO`).
+ * Phase 3i moved the 16 procurement actions out of store.ts.
+ * `assertProcurementContext` was moved here as a module-scope helper and is
+ * used only by `createPO`.
  */
 import type {
     RDashDatabase, Vendor, Staff, VendorRFQ, VendorBid, VendorBidLine,
@@ -29,7 +28,6 @@ import type { ProcurementState } from "../types";
 import type { StoreContext } from "../context";
 import {
     assertRole, genId, nowIso, today, userForRole, userForAnyRole, addDays,
-    googleFileIdFromUrl, isStoredMediaUrl,
 } from "../helpers";
 import { formatINR } from "../../format";
 import { assertWorkOrderRelations, assertAreaBelongsToSite } from "../../business-rules";
@@ -791,13 +789,13 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 throw new Error(`${po.po_no} must be approved and sent to the vendor before goods can be received.`);
             if (!grn.items?.length)
                 throw new Error("Goods Received Note requires received article lines.");
-            const receivingFiles = (grn.receiving_files || []).filter((proof: any) => proof.url && isStoredMediaUrl(proof.url));
+            const receivingFiles = (grn.receiving_files || []).filter((proof: any) => Boolean(proof.attachment_id));
             if (!receivingFiles.length)
-                throw new Error("At least one actual receiving photo/proof is required before stock can be updated.");
+                throw new Error("At least one receiving photo/proof must be queued before stock can be updated.");
             if (!grn.delivery_challan_no?.trim())
                 throw new Error("Delivery challan number is required for a GRN.");
-            if (!grn.delivery_challan_file?.url || !isStoredMediaUrl(grn.delivery_challan_file.url))
-                throw new Error("A Google Drive delivery challan proof is required for a GRN.");
+            if (!grn.delivery_challan_file?.attachment_id)
+                throw new Error("A delivery challan proof must be queued for the GRN.");
             if (!grn.inspection_status)
                 throw new Error("Record the receiving inspection outcome before filing the GRN.");
             if (grn.inspection_status !== "accepted" &&
@@ -831,7 +829,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                     source_item_id: ordered.id,
                 };
             });
-            const id = genId("grn");
+            const id = grn.id || genId("grn");
             const grnNo = nextProcurementNo("GRN", state.db.grns);
             const threadId = state.openThreadFor("grn", id, `${grnNo} · ${po.vendor_name}`, [actor.name, po.vendor_name]);
             const isPhysicalException = grn.inspection_status !== "accepted" ||
@@ -859,9 +857,9 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 received_by_staff_id: actor.staffId,
                 receipt_verified_by: actor.role === "Field Staff" ? undefined : actor.name,
                 receipt_verified_at: actor.role === "Field Staff" ? undefined : now,
-                receiving_proof_attachment_ids: [],
+                receiving_proof_attachment_ids: receivingFiles.map((proof: any) => proof.attachment_id),
                 delivery_challan_no: grn.delivery_challan_no.trim(),
-                delivery_challan_attachment_id: undefined,
+                delivery_challan_attachment_id: grn.delivery_challan_file.attachment_id,
                 inspection_status: grn.inspection_status,
                 inspection_notes: grn.inspection_notes?.trim() || undefined,
                 damage_shortage_notes: grn.damage_shortage_notes?.trim() || undefined,
@@ -878,18 +876,8 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                         grns: [newGRN, ...snapshot.db.grns],
                     },
                 }));
-                const receivingProofAttachmentIds = receivingFiles.map((proof: any) => get().createFileAssetAndAttach({ file_name: proof.file_name, web_view_link: proof.url, google_file_id: proof.file_asset_id || googleFileIdFromUrl(proof.url), mime_type: proof.mime_type, kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["grn", "receiving-proof"] }, { entity_type: "grn", entity_id: id, role: "proof", visibility: "internal", customer_shareable: false, caption: proof.caption || "Receiving proof", created_by: actor.name }));
-                const deliveryChallanAttachmentId = grn.delivery_challan_file
-                    ? get().createFileAssetAndAttach({ file_name: grn.delivery_challan_file.file_name, web_view_link: grn.delivery_challan_file.url, google_file_id: grn.delivery_challan_file.file_asset_id || googleFileIdFromUrl(grn.delivery_challan_file.url), mime_type: grn.delivery_challan_file.mime_type, kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["grn", "delivery-challan"] }, { entity_type: "grn", entity_id: id, role: "delivery", visibility: "internal", customer_shareable: false, caption: `Challan ${newGRN.delivery_challan_no}`, created_by: actor.name })
-                    : undefined;
-                commitState((snapshot: any) => ({
-                    db: {
-                        ...snapshot.db,
-                        grns: snapshot.db.grns.map((row: any) => row.id === id
-                            ? { ...row, receiving_proof_attachment_ids: receivingProofAttachmentIds, delivery_challan_attachment_id: deliveryChallanAttachmentId }
-                            : row),
-                    },
-                }));
+                const receivingProofAttachmentIds = receivingFiles.map((proof: any) => proof.attachment_id);
+                const deliveryChallanAttachmentId = grn.delivery_challan_file.attachment_id;
                 get().addThreadReply(threadId, {
                     author: actor.name,
                     role: actor.role,
@@ -977,16 +965,8 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                         : row),
                 },
             }));
-            const receivingProofAttachmentIds = receivingFiles.map((proof: any) => get().createFileAssetAndAttach({ file_name: proof.file_name, web_view_link: proof.url, google_file_id: proof.file_asset_id || googleFileIdFromUrl(proof.url), mime_type: proof.mime_type, kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["grn", "receiving-proof"] }, { entity_type: "grn", entity_id: id, role: "proof", visibility: "internal", customer_shareable: false, caption: proof.caption || "Receiving proof", created_by: actor.name }));
-            const deliveryChallanAttachmentId = grn.delivery_challan_file
-                ? get().createFileAssetAndAttach({ file_name: grn.delivery_challan_file.file_name, web_view_link: grn.delivery_challan_file.url, google_file_id: grn.delivery_challan_file.file_asset_id || googleFileIdFromUrl(grn.delivery_challan_file.url), mime_type: grn.delivery_challan_file.mime_type, kind: "site_proof", storage_provider: "google_drive", storage_mode: "managed", sync_status: "uploaded", tags: ["grn", "delivery-challan"] }, { entity_type: "grn", entity_id: id, role: "delivery", visibility: "internal", customer_shareable: false, caption: `Challan ${newGRN.delivery_challan_no}`, created_by: actor.name })
-                : undefined;
-            commitState((snapshot: any) => ({
-                db: {
-                    ...snapshot.db,
-                    grns: snapshot.db.grns.map((row: any) => row.id === id ? { ...row, receiving_proof_attachment_ids: receivingProofAttachmentIds, delivery_challan_attachment_id: deliveryChallanAttachmentId } : row),
-                },
-            }));
+            const receivingProofAttachmentIds = receivingFiles.map((proof: any) => proof.attachment_id);
+            const deliveryChallanAttachmentId = grn.delivery_challan_file.attachment_id;
             if (newGRN.status === "mismatched") {
                 get().createBlocked({
                     title: `${grnNo} delivery exception — ${po.vendor_name}`,

@@ -142,7 +142,8 @@ export const uploadQueueStore = {
 
     let queuedCount = 0;
     try {
-      for (const file of input.files) {
+      for (const [fileIndex, file] of input.files.entries()) {
+        const itemOptions = input.fileOptions?.[fileIndex];
         const fingerprint = await fingerprintUploadBlob(file, file.name);
         const duplicate = snapshot.items.find((entry) =>
           entry.fingerprint === fingerprint && entry.fileName === file.name && entry.sizeBytes === file.size &&
@@ -167,13 +168,13 @@ export const uploadQueueStore = {
           targetEntityType: batch.targetEntityType,
           targetEntityId: batch.targetEntityId,
           desiredTargetEntityType: input.desiredTargetEntityType,
-          kind: input.kind || "document",
-          role: input.role || "document",
-          caption: input.caption,
-          visibility: input.visibility || "internal",
-          customerShareable: Boolean(input.customerShareable),
-          attachmentField: input.attachmentField,
-          attachmentFieldMode: input.attachmentFieldMode,
+          kind: itemOptions?.kind || input.kind || "document",
+          role: itemOptions?.role || input.role || "document",
+          caption: itemOptions?.caption ?? input.caption,
+          visibility: itemOptions?.visibility || input.visibility || "internal",
+          customerShareable: itemOptions?.customerShareable ?? Boolean(input.customerShareable),
+          attachmentField: itemOptions?.attachmentField ?? input.attachmentField,
+          attachmentFieldMode: itemOptions?.attachmentFieldMode ?? input.attachmentFieldMode,
           requiredEvidence: batch.requiredEvidence,
           status: online ? "queued" : "waiting_for_network",
           confirmedBytes: 0,

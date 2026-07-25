@@ -2,7 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
-import { asManagedFileAsset, uploadManagedFile } from "@/lib/rdash/file-assets";
+import { enqueueWorkflowFiles } from "@/lib/uploads/workflow-upload";
 import type { Customer, Site } from "@/lib/rdash/types";
 import { findCustomerIdentityMatches, findSameNameCustomers, normalizeCustomerName, } from "@/lib/rdash/customer-identity";
 import { notifyCreated } from "@/lib/rdash/notify";
@@ -115,7 +115,6 @@ export function DataImportModule() {
     const db = useRDashStore((state) => state.db);
     const createCustomerWithFirstSite = useRDashStore((state) => state.createCustomerWithFirstSite);
     const addSite = useRDashStore((state) => state.addSite);
-    const createFileAssetAndAttach = useRDashStore((state) => state.createFileAssetAndAttach);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [csvText, setCsvText] = React.useState("");
     const [parsedRows, setParsedRows] = React.useState<ParsedRow[]>([]);
@@ -209,16 +208,26 @@ export function DataImportModule() {
             return;
         try {
             setUploadingCsv(true);
-            const uploaded = await uploadManagedFile({ file, fileName: file.name, entityType: "general", entityId: "customer-import", kind: "document", role: "document", caption: "Customer CSV import source", visibility: "internal" });
-            const driveFileId = createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind: "document" }), { entity_type: "general", entity_id: "customer-import", role: "document", caption: "Customer CSV import source", visibility: "internal", customer_shareable: false });
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "customer_csv_import",
+                sourceLabel: "Customer CSV import",
+                targetEntityType: "general",
+                targetEntityId: "customer-import",
+                targetLabel: "Customer import source",
+                purpose: "import_source",
+                kind: "document",
+                role: "document",
+                caption: "Customer CSV import source",
+                files: [file],
+            });
             const text = await file.text();
-            setSourceCsvFileAssetId(driveFileId);
+            setSourceCsvFileAssetId(queued.files[0].attachmentId);
             setCsvText(text);
             setHasParsed(false);
-            toast.success(`Loaded and saved ${file.name} to managed Google Drive`);
+            toast.success(`Loaded ${file.name}; Drive upload continues in Background Activity`);
         }
         catch (error) {
-            toast.error(error instanceof Error ? error.message : "CSV upload failed. The import file was not retained.");
+            toast.error(error instanceof Error ? error.message : "CSV could not be queued. The import file was not retained.");
         }
         finally {
             setUploadingCsv(false);
@@ -346,7 +355,7 @@ export function DataImportModule() {
           <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => fileInputRef.current?.click()} disabled={uploadingCsv}><Upload className="h-3.5 w-3.5"/> {uploadingCsv ? "Saving to Drive…" : "Upload CSV"}</Button>
         </div>
         <Textarea value={csvText} onChange={(event) => { setCsvText(event.target.value); setHasParsed(false); }} placeholder="Paste CSV text here, or upload a CSV file…" className="mb-2 min-h-[160px] font-mono text-xs"/>
-        {sourceCsvFileAssetId && <p className="mb-3 text-[10px] text-success">✓ Source CSV retained in managed Google Drive</p>}
+        {sourceCsvFileAssetId && <p className="mb-3 text-[10px] text-success">✓ Source CSV queued for managed Google Drive retention</p>}
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={handleParse} disabled={!csvText.trim()}><FileText className="mr-1.5 h-3.5 w-3.5"/> Parse & Preview</Button>
           {hasParsed && readyCount > 0 && <Button size="sm" onClick={handleImport} className="bg-success text-success-foreground hover:bg-success/90"><UserPlus className="mr-1.5 h-3.5 w-3.5"/> Apply {readyCount} ready row{readyCount === 1 ? "" : "s"}</Button>}

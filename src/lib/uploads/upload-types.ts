@@ -130,6 +130,16 @@ export interface UploadBlobRecord {
   createdAt: string;
 }
 
+export interface EnqueueUploadFileOptions {
+  kind?: FileAssetKind;
+  role?: FileAttachmentRole;
+  caption?: string;
+  visibility?: EntityFileAttachment["visibility"];
+  customerShareable?: boolean;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
+}
+
 export interface EnqueueUploadBatchInput {
   workspaceId?: string;
   sourceFlow: string;
@@ -148,6 +158,7 @@ export interface EnqueueUploadBatchInput {
   attachmentField?: string;
   attachmentFieldMode?: "set" | "append";
   files: File[];
+  fileOptions?: EnqueueUploadFileOptions[];
 }
 
 export interface FinalizedUploadResult {

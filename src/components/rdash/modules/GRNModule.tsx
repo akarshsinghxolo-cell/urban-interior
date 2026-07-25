@@ -10,11 +10,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, } from 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { compressImage } from "@/lib/rdash/image-compress";
-import { MANAGED_FILE_ACCEPT, readFileAsDataUrl, uploadManagedFile } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { FilePreview } from "../FilePreview";
 import { attachedFileById, assetPreview } from "@/lib/rdash/file-attachments";
-type PendingProof = {
+type PendingProof = QueuedWorkflowFile & {
     id: string;
     file_name: string;
     url: string;
@@ -194,9 +196,12 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
     const [receivingProofs, setReceivingProofs] = React.useState<PendingProof[]>([]);
     const [challanProof, setChallanProof] = React.useState<PendingProof | undefined>();
     const [filing, setFiling] = React.useState(false);
+    const [reservedGrnId, setReservedGrnId] = React.useState("");
+    const { registerBatch, commitBatches } = useUploadDraft(open);
     React.useEffect(() => {
         if (open) {
             setPoId(preselectPOId || "");
+            setReservedGrnId(reserveEntityId("grn"));
             setReceivedQtys({});
             setMismatchNotes("");
             setChallanNo("");
@@ -216,21 +221,42 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
     const mismatched = items.some((it) => (receivedMap[it.id] ?? it.quantity) !== it.quantity);
     const captureProofs = async (event: React.ChangeEvent<HTMLInputElement>, target: "receiving" | "challan") => {
         const files = Array.from(event.target.files || []);
-        const captures: PendingProof[] = [];
-        for (const file of files) {
-            try {
-                const url = file.type.startsWith("image/") ? await compressImage(file, 1600, 0.82) : await readFileAsDataUrl(file);
-                captures.push({ id: `grn-proof-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, file_name: file.name, mime_type: file.type || "application/octet-stream", url, captured_at: new Date().toISOString() });
-            }
-            catch {
-                toast.error(`Could not process ${file.name}`);
-            }
+        event.currentTarget.value = "";
+        if (!files.length || !reservedGrnId) return;
+        try {
+            if (target === "challan" && challanProof) await cancelQueuedWorkflowFile(challanProof);
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "grn_form",
+                sourceLabel: target === "receiving" ? "GRN receiving proof" : "GRN delivery challan",
+                targetEntityType: "grn",
+                targetEntityId: reservedGrnId,
+                targetLabel: selectedPO ? `GRN · ${selectedPO.po_no}` : "New GRN",
+                purpose: "grn_evidence",
+                requiredEvidence: true,
+                attachmentField: target === "receiving" ? "receiving_proof_attachment_ids" : "delivery_challan_attachment_id",
+                attachmentFieldMode: target === "receiving" ? "append" : "set",
+                files: files.map((file) => ({ file, ...classifyWorkflowFile(file), role: target === "receiving" ? "proof" : "delivery", caption: target === "receiving" ? "GRN receiving proof" : `Delivery challan ${challanNo.trim() || "proof"}` })),
+            });
+            registerBatch(queued.batchId);
+            const captures = queued.files.map((item, index) => {
+                const preview = withLocalPreview(item, files[index]);
+                return { ...preview, id: item.uploadItemId, file_name: item.fileName, mime_type: item.mimeType, url: preview.previewUrl, captured_at: new Date().toISOString() };
+            });
+            if (target === "receiving") setReceivingProofs((current) => [...current, ...captures]);
+            else setChallanProof(captures.at(-1));
+            toast.success(`${captures.length} ${target === "receiving" ? "receiving" : "challan"} file${captures.length === 1 ? "" : "s"} queued`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "GRN proof could not be queued");
         }
-        if (target === "receiving")
-            setReceivingProofs((current) => [...current, ...captures]);
-        else
-            setChallanProof(captures.at(-1));
-        event.target.value = "";
+    };
+    const removeReceivingProof = async (proof: PendingProof) => {
+        await cancelQueuedWorkflowFile(proof);
+        setReceivingProofs((current) => current.filter((row) => row.id !== proof.id));
+    };
+    const removeChallanProof = async () => {
+        if (!challanProof) return;
+        await cancelQueuedWorkflowFile(challanProof);
+        setChallanProof(undefined);
     };
     const onFile = async () => {
         if (filing)
@@ -274,21 +300,8 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
         });
         try {
             setFiling(true);
-            const uploadProof = async (proof: PendingProof, caption: string) => {
-                if (/^https:\/\/drive\.google\.com\//.test(proof.url))
-                    return proof;
-                const uploaded = await uploadManagedFile({ dataUrl: proof.url, fileName: proof.file_name, entityType: "purchase_order", entityId: selectedPO.id, kind: "site_proof", role: "delivery", caption, visibility: "internal" });
-                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
-                // shows in app preview and survives page reloads. Without this,
-                // the file exists in Drive but is untracked — preview returns 403.
-                if (uploaded.fileAsset && uploaded.attachment) {
-                    useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
-                }
-                return { ...proof, file_name: uploaded.name, url: uploaded.webViewLink, file_asset_id: uploaded.id };
-            };
-            const uploadedReceiving = await Promise.all(receivingProofs.map((proof) => uploadProof(proof, "GRN receiving proof")));
-            const uploadedChallan = challanProof ? await uploadProof(challanProof, `Delivery challan ${challanNo.trim()}`) : undefined;
             const id = fileGRN({
+                id: reservedGrnId,
                 po_id: selectedPO.id,
                 mismatch_notes: mismatched ? mismatchNotes.trim() || undefined : undefined,
                 damage_shortage_notes: inspectionStatus !== "accepted" ? (inspectionNotes.trim() || mismatchNotes.trim() || undefined) : undefined,
@@ -296,22 +309,23 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 inspection_notes: inspectionNotes.trim() || undefined,
                 batch_serial_details: batchSerialDetails.trim() || undefined,
                 delivery_challan_no: challanNo.trim(),
-                delivery_challan_file: uploadedChallan,
-                receiving_files: uploadedReceiving,
+                delivery_challan_file: challanProof ? { file_name: challanProof.fileName, attachment_id: challanProof.attachmentId, mime_type: challanProof.mimeType, caption: `Delivery challan ${challanNo.trim()}` } : undefined,
+                receiving_files: receivingProofs.map((proof) => ({ file_name: proof.fileName, attachment_id: proof.attachmentId, mime_type: proof.mimeType, caption: "GRN receiving proof" })),
                 items: grnItems,
                 // CV-11: Pass the actual signed-in user's name (procurement.ts ignores this field
                 // and uses actor.name anyway, but we set it for consistency / future-proofing).
                 received_by: receiverName,
             });
+            commitBatches();
             onOpenChange(false);
             openDetail("grn", id);
             const submittedForVerification = authUser?.role === "Field Staff";
             toast.success(submittedForVerification
-                ? `GRN submitted with ${uploadedReceiving.length + (uploadedChallan ? 1 : 0)} Google Drive file${uploadedReceiving.length + (uploadedChallan ? 1 : 0) === 1 ? "" : "s"} — awaiting Operations/Owner verification before stock is posted.`
-                : `GRN filed with ${uploadedReceiving.length + (uploadedChallan ? 1 : 0)} Google Drive file${uploadedReceiving.length + (uploadedChallan ? 1 : 0) === 1 ? "" : "s"} — stock updated.`);
+                ? `GRN submitted with ${receivingProofs.length + (challanProof ? 1 : 0)} Google Drive file${receivingProofs.length + (challanProof ? 1 : 0) === 1 ? "" : "s"} — awaiting Operations/Owner verification before stock is posted.`
+                : `GRN filed with ${receivingProofs.length + (challanProof ? 1 : 0)} Google Drive file${receivingProofs.length + (challanProof ? 1 : 0) === 1 ? "" : "s"} — stock updated.`);
         }
         catch (error) {
-            toast.error(error instanceof Error ? error.message : "Google Drive upload failed; GRN was not filed.");
+            toast.error(error instanceof Error ? error.message : "GRN could not be filed.");
         }
         finally {
             setFiling(false);
@@ -389,15 +403,15 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 <div className="space-y-2">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Receiving photos / proof <span className="text-destructive">*</span></label>
                   <Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={(event) => captureProofs(event, "receiving")} className="h-8 text-xs"/>
-                  <p className="text-[10px] text-muted-foreground">At least one receiving file is required. Images, videos, and PDFs upload to Google Drive before this GRN can be filed.</p>
-                  {receivingProofs.length > 0 && <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">{receivingProofs.map((proof) => <div key={proof.id} className="relative"><FilePreview file={{ fileName: proof.file_name, mimeType: proof.mime_type, url: proof.url }} compact controls/><button type="button" onClick={() => setReceivingProofs((current) => current.filter((row) => row.id !== proof.id))} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>)}</div>}
+                  <p className="text-[10px] text-muted-foreground">At least one receiving file is required. Uploads start immediately and continue after the GRN dialog closes.</p>
+                  {receivingProofs.length > 0 && <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">{receivingProofs.map((proof) => <div key={proof.id} className="relative"><FilePreview file={{ fileName: proof.file_name, mimeType: proof.mime_type, url: proof.url }} compact controls/><button type="button" onClick={() => void removeReceivingProof(proof)} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>)}</div>}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Delivery challan no. & proof <span className="text-destructive">*</span></label>
                   <Input value={challanNo} onChange={(event) => setChallanNo(event.target.value)} placeholder="e.g. DC-8745" className="h-8 text-xs"/>
                   <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(event) => captureProofs(event, "challan")} className="h-8 text-xs"/>
-                  <p className="text-[10px] text-muted-foreground">A challan image, video, or PDF is required and saved with the GRN.</p>
-                  {challanProof && <FilePreview file={{ fileName: challanProof.file_name, mimeType: challanProof.mime_type, url: challanProof.url }} compact controls className="max-w-40"/>}
+                  <p className="text-[10px] text-muted-foreground">A challan image, video, or PDF is queued immediately and linked to the GRN.</p>
+                  {challanProof && <div className="relative max-w-40"><FilePreview file={{ fileName: challanProof.file_name, mimeType: challanProof.mime_type, url: challanProof.url }} compact controls/><button type="button" onClick={() => void removeChallanProof()} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>}
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Inspection outcome <span className="text-destructive">*</span></label>

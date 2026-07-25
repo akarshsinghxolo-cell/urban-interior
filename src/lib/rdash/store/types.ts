@@ -240,7 +240,7 @@ export interface VisitsState {
   runVisitReconciliation: (at?: string) => number;
   checkInVisit: (id: string, capture: GpsCapture) => void;
   checkOutVisit: (id: string, capture: GpsCapture) => void;
-  fileVisitReport: (id: string, notes: string, proofs?: { type: string; file_name: string; url?: string }[]) => void;
+  fileVisitReport: (id: string, notes: string, proofs?: { type: string; file_name: string; attachment_id: string }[]) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -290,17 +290,17 @@ export interface ExecutionState {
   updateDrawing: (id: string, patch: Partial<import("../types").Drawing>) => void;
   removeDrawing: (id: string) => void;
   approveDrawing: (id: string, approver?: string) => void;
-  uploadDrawingVersion: (parentDrawingId: string, file: { primary_file_attachment_id?: string; notes?: string }) => string;
+  uploadDrawingVersion: (parentDrawingId: string, file: { id?: string; primary_file_attachment_id?: string; notes?: string }) => string;
   linkBOQItemToDrawing: (boqId: string, itemId: string, drawingId: string) => void;
   addExecutionLog: (log: Partial<import("../types").DailyExecutionLog> & {
-    uploaded_photos?: Array<{ file_name: string; url: string; mime_type?: string; file_asset_id?: string; caption?: string; captured_at?: string }>;
+    uploaded_photos?: Array<{ file_name: string; attachment_id: string; mime_type?: string; caption?: string; captured_at?: string }>;
   }) => string;
   updateExecutionLog: (id: string, patch: Partial<import("../types").DailyExecutionLog>) => void;
   removeExecutionLog: (id: string) => void;
   verifyExecutionProgress: (logId: string, decision: "verified" | "returned", note?: string) => void;
   createVariationRequest: (input: { work_order_id: string; execution_log_id?: string; title?: string; description: string; requested_amount: number }) => string;
   decideVariationRequest: (id: string, decision: "approved" | "rejected", note?: string) => void;
-  confirmMaterialReceipt: (logId: string, photoUrl?: string, photoAttachmentId?: string) => void;
+  confirmMaterialReceipt: (logId: string, photoAttachmentId?: string) => void;
   addJobCostLine: (c: Partial<WorkOrderCostLine>) => void;
 }
 
@@ -340,8 +340,8 @@ export interface ProcurementState {
   approvePO: (id: string) => void;
   sendPO: (id: string) => void;
   fileGRN: (grn: Partial<GRN> & {
-    receiving_files?: Array<{ file_name: string; url: string; file_asset_id?: string; mime_type?: string; caption?: string }>;
-    delivery_challan_file?: { file_name: string; url: string; file_asset_id?: string; mime_type?: string; caption?: string };
+    receiving_files?: Array<{ file_name: string; attachment_id: string; mime_type?: string; caption?: string }>;
+    delivery_challan_file?: { file_name: string; attachment_id: string; mime_type?: string; caption?: string };
   }) => string;
   verifyGRNReceipt: (id: string) => void;
   issueDispatch: (d: Partial<SiteDispatch>) => string;

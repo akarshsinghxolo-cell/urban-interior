@@ -2,7 +2,9 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
-import { asManagedFileAsset, MANAGED_FILE_ACCEPT, uploadManagedFile } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
 import { assetPreview, attachedFilesForIds } from "@/lib/rdash/file-attachments";
 import type { CommChannel, CommSend } from "@/lib/rdash/types";
@@ -169,8 +171,8 @@ function ComposeDialog({ channel, onClose, onSend }: {
     const [scheduleNext, setScheduleNext] = React.useState(false);
     const [nextDate, setNextDate] = React.useState("");
     const [nextPurpose, setNextPurpose] = React.useState("");
-    const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
-    const [files, setFiles] = React.useState<File[]>([]);
+    const [files, setFiles] = React.useState<QueuedWorkflowFile[]>([]);
+    const { registerBatch, commitBatches, cancelBatches } = useUploadDraft(true);
     const [sending, setSending] = React.useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const meta = CHANNEL_META[channel];
@@ -189,11 +191,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
             return;
         try {
             setSending(true);
-            const sourceAttachmentIds = await Promise.all(files.map(async (file) => {
-                const kind = file.type.startsWith("image/") || file.type.startsWith("video/") ? "media" : "document";
-                const uploaded = await uploadManagedFile({ file, fileName: file.name, entityType: "customer", entityId: customerId, kind, role: "document", caption: `Communication attachment · ${subject}`, visibility: "customer", customerShareable: true });
-                return createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind }), { entity_type: "customer", entity_id: customerId, role: "document", caption: `Communication attachment · ${subject}`, visibility: "customer", customer_shareable: true });
-            }));
+            const sourceAttachmentIds = files.map((file) => file.attachmentId);
             const payload: {
                 customer_id: string; staff_name: string; subject: string; body?: string;
                 source_attachment_ids?: string[]; followup_id?: string; task_id?: string;
@@ -214,13 +212,56 @@ function ComposeDialog({ channel, onClose, onSend }: {
                 };
             }
             onSend(payload);
+            commitBatches();
         }
         catch (error) {
-            toast.error(error instanceof Error ? error.message : "Attachment upload failed. The message was not sent.");
+            toast.error(error instanceof Error ? error.message : "The message could not be saved.");
         }
         finally {
             setSending(false);
         }
+    };
+    const queueFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selected = Array.from(event.target.files || []);
+        event.currentTarget.value = "";
+        if (!selected.length) return;
+        if (!customerId) {
+            toast.error("Select a customer before adding attachments");
+            return;
+        }
+        try {
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "communication_compose",
+                sourceLabel: `Communication · ${meta.label}`,
+                targetEntityType: "customer",
+                targetEntityId: customerId,
+                targetLabel: customer?.name || "Customer",
+                purpose: "communication_attachment",
+                visibility: "customer",
+                customerShareable: true,
+                files: selected.map((file) => ({ file, ...classifyWorkflowFile(file), role: "document", caption: `Communication attachment · ${subject || meta.label}` })),
+            });
+            registerBatch(queued.batchId);
+            setFiles((current) => [...current, ...queued.files.map((file, index) => withLocalPreview(file, selected[index]))]);
+            toast.success(`${queued.files.length} attachment${queued.files.length === 1 ? "" : "s"} queued`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Attachments could not be queued");
+        }
+    };
+    const removeQueuedFile = async (file: QueuedWorkflowFile) => {
+        await cancelQueuedWorkflowFile(file);
+        setFiles((items) => items.filter((item) => item.uploadItemId !== file.uploadItemId));
+    };
+    const changeCustomer = async (nextCustomerId: string) => {
+        if (files.length) {
+            await cancelBatches();
+            files.forEach((file) => { if (file.previewUrl.startsWith("blob:")) URL.revokeObjectURL(file.previewUrl); });
+            setFiles([]);
+            toast.info("Attachments cleared because the customer changed");
+        }
+        setCustomerId(nextCustomerId);
+        setFollowupId("");
+        setTaskId("");
     };
     return (<Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg gap-0 p-0">
@@ -234,7 +275,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
         <div className="max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4 rd-scroll">
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Customer</label>
-            <select value={customerId} onChange={(e) => { setCustomerId(e.target.value); setFollowupId(""); setTaskId(""); }} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+            <select value={customerId} onChange={(e) => void changeCustomer(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
               {db.customers.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.phone}</option>)}
             </select>
             {customer && <p className="mt-1 text-[10px] text-muted-foreground">To: {customer.whatsapp || customer.phone}</p>}
@@ -249,12 +290,12 @@ function ComposeDialog({ channel, onClose, onSend }: {
           </div>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Attachments</label>
-            <input ref={fileInputRef} type="file" accept={MANAGED_FILE_ACCEPT} multiple className="hidden" onChange={(event) => { setFiles(Array.from(event.target.files || [])); event.currentTarget.value = ""; }}/>
+            <input ref={fileInputRef} type="file" accept={MANAGED_FILE_ACCEPT} multiple className="hidden" onChange={(event) => void queueFiles(event)}/>
             <div className="mt-1 flex items-center gap-2">
               <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()}><Paperclip className="mr-1 h-3.5 w-3.5"/> Choose files</Button>
-              <span className="text-[10px] text-muted-foreground">Images, videos, and PDFs upload to this customer’s managed Google Drive folder before the message is sent. No file-count limit.</span>
+              <span className="text-[10px] text-muted-foreground">Uploads start immediately and continue after the message dialog closes.</span>
             </div>
-            {files.length > 0 && <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">{files.map((file) => <div key={`${file.name}-${file.size}`} className="relative"><FilePreview file={{ fileName: file.name, mimeType: file.type, url: URL.createObjectURL(file) }} compact controls/><button type="button" onClick={() => setFiles((items) => items.filter((item) => item !== file))} aria-label={`Remove ${file.name}`} className="absolute right-0 top-0 rounded bg-background/90 p-0.5 text-destructive"><X className="h-3 w-3"/></button></div>)}</div>}
+            {files.length > 0 && <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">{files.map((file) => <div key={file.uploadItemId} className="relative"><FilePreview file={{ fileName: file.fileName, mimeType: file.mimeType, url: file.previewUrl }} compact controls/><button type="button" onClick={() => void removeQueuedFile(file)} aria-label={`Remove ${file.fileName}`} className="absolute right-0 top-0 rounded bg-background/90 p-0.5 text-destructive"><X className="h-3 w-3"/></button></div>)}</div>}
           </div>
           {/* Operations linkage — wire this comm into a follow-up / task and optionally
               schedule the next follow-up so the loop closes automatically. */}
@@ -295,7 +336,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
           <Button size="sm" onClick={send} disabled={!customerId || !subject || sending}>
-            <Send className="mr-1 h-3.5 w-3.5"/> {sending ? "Uploading files…" : `Send ${meta.label}`}
+            <Send className="mr-1 h-3.5 w-3.5"/> {sending ? "Saving…" : `Send ${meta.label}`}
           </Button>
         </DialogFooter>
       </DialogContent>

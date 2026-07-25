@@ -774,9 +774,9 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
             const contractorVisit = visitAssigneeType(visit) === "contractor";
             if (visit.status !== "report_pending" || (!contractorVisit && !visit.check_out_verified))
                 throw new Error(contractorVisit ? "Record contractor completion before filing the Visit report." : "A verified field check-out is required before filing a Visit report.");
-            const invalidProof = (proofs || []).find((proof: any) => !proof.url || !/^https:\/\/drive\.google\.com\//.test(proof.url));
+            const invalidProof = (proofs || []).find((proof: any) => !proof.attachment_id);
             if (invalidProof)
-                throw new Error(`Proof ${invalidProof.file_name} must be uploaded to Google Drive before filing the Visit report.`);
+                throw new Error(`Proof ${invalidProof.file_name} must be queued before filing the Visit report.`);
             const threadId = visit.thread_id ||
                 get().openThreadFor("visit", id, `${visit.visit_type || "Visit"} · ${visit.location_name || id}`, [visit.staff_name || actor.name]);
             const reportMessageId = get().addThreadReply(threadId, {
@@ -786,7 +786,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 kind: "decision",
                 parent_message_id: visit.checkout_thread_message_id,
             });
-            const proofAttachmentIds = (proofs || []).map((proof: any) => get().createFileAssetAndAttach({ file_name: proof.file_name, web_view_link: proof.url!, kind: "site_proof", sync_status: "uploaded", tags: ["visit", proof.type] }, { entity_type: "visit", entity_id: id, role: "proof", visibility: "internal", customer_shareable: false, caption: proof.type, created_by: actor.name }));
+            const proofAttachmentIds = (proofs || []).map((proof: any) => proof.attachment_id);
             (proofs || []).forEach((proof: any, index: any) => {
                 get().addThreadReply(threadId, {
                     author: actor.name,
