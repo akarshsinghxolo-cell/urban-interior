@@ -47,3 +47,5 @@ jobs:
             -f message='chore: remove temporary upload branch cleanup workflow' \
             -f sha="$sha" \
             -f branch='main'
+
+# Second push intentionally triggers this one-time cleanup.
