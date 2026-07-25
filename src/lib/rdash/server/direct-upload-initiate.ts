@@ -1,6 +1,7 @@
 import type { AuthenticatedUser } from "./auth";
 import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { getGoogleDriveAccessToken } from "./google-drive";
 import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse } from "@/lib/uploads/upload-types";
 import {
   DRIVE_API,
@@ -114,6 +115,32 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
       Date.parse(String(existing.session_expires_at)) > Date.now() &&
       !["completed", "cancelled"].includes(String(existing.status || ""))
     ) {
+      const workspace = await getWorkspace();
+      const account = workspace.data.master.storageAccounts.find((row) => row.id === String(existing.storage_account_id));
+      if (account) {
+        const accessToken = await getGoogleDriveAccessToken(account);
+        const completed = await findCompletedDriveFile(accessToken, String(input.uploadItemId), input.sizeBytes);
+        if (completed?.id) {
+          const { error: recoveredError } = await admin.from("uc_upload_items").update({
+            status: "uploaded_unverified",
+            google_file_id: completed.id,
+            confirmed_bytes: input.sizeBytes,
+            progress: 100,
+            session_uri: null,
+            session_expires_at: null,
+            updated_at: nowIso(),
+          }).eq("id", input.uploadItemId);
+          if (recoveredError) throw new Error(recoveredError.message);
+          return {
+            storageAccountId: String(existing.storage_account_id),
+            stagingFolderId: String(existing.staging_folder_id || ""),
+            confirmedBytes: input.sizeBytes,
+            completedGoogleFileId: completed.id as GoogleFileId,
+            webViewLink: completed.webViewLink,
+            thumbnailLink: completed.thumbnailLink,
+          };
+        }
+      }
       return {
         sessionUri: String(existing.session_uri),
         sessionExpiresAt: String(existing.session_expires_at),
