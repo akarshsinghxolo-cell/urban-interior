@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   cleanup:
-    if: github.event.head_commit.message == 'chore: remove upload phase branches'
+    if: startsWith(github.event.head_commit.message, 'chore: remove upload phase branches')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -29,6 +29,7 @@ jobs:
             agent/direct-drive-upload-phase4
             agent/direct-drive-upload-phase5
             agent/trigger-upload-branch-cleanup
+            agent/trigger-upload-branch-cleanup-2
           )
           for branch in "${branches[@]}"; do
             if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
@@ -49,4 +50,4 @@ jobs:
             -f sha="$sha" \
             -f branch='main'
 
-# This revision is merged solely to trigger the one-time cleanup.
+# This revision fixes the one-time cleanup trigger condition.
