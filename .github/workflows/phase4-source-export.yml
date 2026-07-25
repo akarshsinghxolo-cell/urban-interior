@@ -7,6 +7,7 @@ on:
     paths:
       - ".phase4-patch/**"
       - ".phase4-cutover.patch"
+      - ".phase4-fieldmode-fix.patch"
       - ".github/workflows/phase4-source-export.yml"
   pull_request:
     branches:
@@ -14,6 +15,7 @@ on:
     paths:
       - ".phase4-patch/**"
       - ".phase4-cutover.patch"
+      - ".phase4-fieldmode-fix.patch"
       - ".github/workflows/phase4-source-export.yml"
   workflow_dispatch:
 
@@ -44,6 +46,7 @@ jobs:
           set -euo pipefail
           cat .phase4-patch/part-* | base64 --decode | gzip --decompress > /tmp/phase4-cutover.patch
           git apply --index /tmp/phase4-cutover.patch
+          git apply --index .phase4-fieldmode-fix.patch
           git rm -f src/app/api/google-drive/upload/route.ts
 
       - name: Verify the legacy upload path is gone
@@ -78,6 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           git rm -f .phase4-cutover.patch
+          git rm -f .phase4-fieldmode-fix.patch
           git rm -r -f .phase4-patch
           git rm -f .github/workflows/phase4-source-export.yml
           git config user.name 'github-actions[bot]'
