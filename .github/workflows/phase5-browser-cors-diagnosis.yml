@@ -1,0 +1,62 @@
+name: Phase 5 Browser CORS Diagnosis
+
+on:
+  push:
+    branches:
+      - agent/phase5-browser-cors-diagnosis
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Test resumable status query from Chromium
+        env:
+          SESSION_URI: 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink,parents,appProperties&upload_id=AKhXX7KipammrQsRQQRu4rtrnJj0_MrAivvI2YFMN9tBtFf19PmPCR3AIhdpv6LM1AQAIlvJhCdlJbEo6vybY6lZCNIn6YZXPrr97gCbTa2LqJ0&session_crd=AHSoBRV-RiA3b2TnS-mlmv00r-fm94_VKEeRAsThr4kImhB7ZxjFYs4abR207FEq2OXdgDUQM-bWbnP9kg'
+          FILE_SIZE: '16309'
+        run: |
+          node <<'NODE'
+          const { chromium } = require('playwright');
+          (async () => {
+            const browser = await chromium.launch({ headless: true });
+            const page = await browser.newPage();
+            const consoleMessages = [];
+            page.on('console', (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
+            page.on('pageerror', (error) => consoleMessages.push(`pageerror: ${error.message}`));
+            await page.goto('https://urban-castle.vercel.app/signin', { waitUntil: 'domcontentloaded' });
+            const result = await page.evaluate(async ({ sessionUri, fileSize }) => {
+              async function query(headers) {
+                try {
+                  const response = await fetch(sessionUri, { method: 'PUT', headers });
+                  return {
+                    reached: true,
+                    status: response.status,
+                    range: response.headers.get('range'),
+                    allowOrigin: response.headers.get('access-control-allow-origin'),
+                    exposedHeaders: response.headers.get('access-control-expose-headers'),
+                  };
+                } catch (error) {
+                  return { reached: false, error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) };
+                }
+              }
+              return {
+                withContentLength: await query({ 'Content-Range': `bytes */${fileSize}`, 'Content-Length': '0' }),
+                withoutContentLength: await query({ 'Content-Range': `bytes */${fileSize}` }),
+              };
+            }, { sessionUri: process.env.SESSION_URI, fileSize: Number(process.env.FILE_SIZE) });
+            console.log(JSON.stringify({ result, consoleMessages }, null, 2));
+            await browser.close();
+            if (!result.withoutContentLength.reached) process.exitCode = 1;
+          })().catch((error) => { console.error(error); process.exit(1); });
+          NODE
