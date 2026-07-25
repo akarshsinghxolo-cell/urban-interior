@@ -158,6 +158,12 @@ type RDashSupabaseSchema = {
           workspaceRevision: number;
         };
       };
+      uc_bump_workspace_revision: {
+        Args: {
+          p_workspace_id: string;
+        };
+        Returns: number;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
