@@ -25,4 +25,25 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - run: bun run build
+      - name: Build application
+        id: build
+        shell: bash
+        run: |
+          set +e
+          bun run build > build.log 2>&1
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Preserve build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upload-audit-build-log
+          path: build.log
+          if-no-files-found: error
+          retention-days: 7
+      - name: Fail when build failed
+        if: steps.build.outputs.exit_code != '0'
+        run: |
+          tail -200 build.log
+          exit "${{ steps.build.outputs.exit_code }}"
