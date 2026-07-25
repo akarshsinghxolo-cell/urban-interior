@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - agent/phase5-browser-cors-diagnosis
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
