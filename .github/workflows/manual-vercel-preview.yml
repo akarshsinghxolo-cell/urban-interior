@@ -27,12 +27,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          missing=0
           for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
             if [ -z "${!name:-}" ]; then
               echo "Missing required GitHub Actions secret: ${name}" >&2
-              exit 1
+              echo "- ${name}" >> "$GITHUB_STEP_SUMMARY"
+              missing=1
             fi
           done
+          if [ "$missing" -ne 0 ]; then
+            echo "Add the listed repository secrets before running this workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
       - name: Pull preview environment
