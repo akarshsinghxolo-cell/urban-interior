@@ -84,7 +84,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
 
   const admin = getSupabaseAdminClient();
   const { data: existing, error: existingError } = await admin.from("uc_upload_items")
-    .select("session_uri,session_expires_at,storage_account_id,staging_folder_id,confirmed_bytes,status,google_file_id,file_asset_id,attachment_id,target_entity_type,target_entity_id,upload_purpose,created_at")
+    .select("session_uri,session_expires_at,storage_account_id,staging_folder_id,confirmed_bytes,status,google_file_id,file_asset_id,attachment_id,target_entity_type,target_entity_id,upload_purpose,created_at,retry_count")
     .eq("id", input.uploadItemId)
     .maybeSingle();
   if (existingError) throw new Error(existingError.message);
@@ -94,9 +94,9 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
       throw new Error("The pending upload identity does not match its existing server record.");
     }
     if (
-      existing.target_entity_type && String(existing.target_entity_type) !== input.targetEntityType ||
-      existing.target_entity_id && String(existing.target_entity_id) !== input.targetEntityId ||
-      existing.upload_purpose && String(existing.upload_purpose) !== input.purpose
+      (existing.target_entity_type && String(existing.target_entity_type) !== input.targetEntityType) ||
+      (existing.target_entity_id && String(existing.target_entity_id) !== input.targetEntityId) ||
+      (existing.upload_purpose && String(existing.upload_purpose) !== input.purpose)
     ) {
       throw new Error("The pending upload routing changed. Bind it before requesting another Drive session.");
     }
@@ -191,6 +191,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
       progress: 100,
       session_uri: null,
       session_expires_at: null,
+      retry_count: Number(existing?.retry_count || 0),
     }, { onConflict: "id" });
     if (itemError) throw new Error(itemError.message);
     return {
@@ -244,7 +245,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
     session_expires_at: sessionExpiresAt,
     confirmed_bytes: 0,
     progress: 0,
-    retry_count: Number(existing ? 1 : 0),
+    retry_count: Number(existing?.retry_count || 0) + (existing ? 1 : 0),
     google_file_id: null,
   }, { onConflict: "id" });
   if (itemError) throw new Error(itemError.message);
