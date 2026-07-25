@@ -8,7 +8,18 @@ on:
       - ".phase4-patch/**"
       - ".phase4-cutover.patch"
       - ".github/workflows/phase4-source-export.yml"
+  pull_request:
+    branches:
+      - agent/audit-upload-phases-1-3
+    paths:
+      - ".phase4-patch/**"
+      - ".phase4-cutover.patch"
+      - ".github/workflows/phase4-source-export.yml"
   workflow_dispatch:
+
+concurrency:
+  group: phase4-upload-cutover
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -20,6 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: agent/direct-drive-upload-phase4
           fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
