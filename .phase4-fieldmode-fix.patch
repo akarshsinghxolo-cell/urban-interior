@@ -76,3 +76,14 @@ index 8442cbc..b0584c9 100755
      return (<div className="mx-auto flex max-w-2xl flex-col gap-4">
        <div className="flex items-center gap-2.5">
          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+diff --git a/src/components/rdash/modules/SiteMeasurementModule.tsx b/src/components/rdash/modules/SiteMeasurementModule.tsx
+--- a/src/components/rdash/modules/SiteMeasurementModule.tsx
++++ b/src/components/rdash/modules/SiteMeasurementModule.tsx
+@@ -293,7 +293,7 @@ export function SiteMeasurementModule() {
+                 </div>
+                 <div className="space-y-1">
+-                  {r.areas.slice(0, 3).map((room, i) => (<div key={room.uploadItemId || `r-${i}`} className="flex items-center justify-between rounded-md border border-border bg-background px-2 py-1 text-xs">
++                  {r.areas.slice(0, 3).map((room, i) => (<div key={room.id || `r-${i}`} className="flex items-center justify-between rounded-md border border-border bg-background px-2 py-1 text-xs">
+                       <span className="font-medium">{room.name}</span>
+                       <span className="font-mono text-muted-foreground">{room.length}×{room.width} {room.unit} = {(room.length * room.width).toFixed(0)} sq.{room.unit}</span>
+                     </div>))}
