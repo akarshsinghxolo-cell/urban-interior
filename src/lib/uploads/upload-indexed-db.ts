@@ -4,8 +4,8 @@ import type {
   UploadBlobRecord,
   UploadItemId,
   UploadItemRecord,
-  WorkspaceOutboxRecord,
 } from "./upload-types";
+import type { WorkspaceCommitOutboxRecord } from "./workspace-outbox-types";
 
 const DB_NAME = "urban-castle-uploads";
 const DB_VERSION = 1;
@@ -93,16 +93,23 @@ async function remove(storeName: StoreName, key: IDBValidKey): Promise<void> {
   await requestResult(transaction.objectStore(storeName).delete(key));
 }
 
+async function clear(storeName: StoreName): Promise<void> {
+  const db = await openDatabase();
+  const transaction = db.transaction(storeName, "readwrite");
+  await requestResult(transaction.objectStore(storeName).clear());
+}
+
 export const uploadIndexedDb = {
   readBatches: () => readAll<UploadBatchRecord>(STORES.batches),
   readItems: () => readAll<UploadItemRecord>(STORES.items),
-  readOutbox: () => readAll<WorkspaceOutboxRecord>(STORES.outbox),
+  readWorkspaceOutbox: () => readAll<WorkspaceCommitOutboxRecord>(STORES.outbox),
   getBatch: (id: UploadBatchId) => get<UploadBatchRecord>(STORES.batches, id),
   getItem: (id: UploadItemId) => get<UploadItemRecord>(STORES.items, id),
+  getWorkspaceOutbox: (operationId: string) => get<WorkspaceCommitOutboxRecord>(STORES.outbox, operationId),
   putBatch: (batch: UploadBatchRecord) => put(STORES.batches, batch),
   putItem: (item: UploadItemRecord) => put(STORES.items, item),
   putBlob: (record: UploadBlobRecord) => put(STORES.blobs, record),
-  putOutbox: (record: WorkspaceOutboxRecord) => put(STORES.outbox, record),
+  putWorkspaceOutbox: (record: WorkspaceCommitOutboxRecord) => put(STORES.outbox, record),
   getBlob: async (uploadItemId: UploadItemId): Promise<Blob | null> => {
     const record = await get<UploadBlobRecord>(STORES.blobs, uploadItemId);
     return record?.blob || null;
@@ -110,4 +117,6 @@ export const uploadIndexedDb = {
   deleteBlob: (uploadItemId: UploadItemId) => remove(STORES.blobs, uploadItemId),
   deleteItem: (uploadItemId: UploadItemId) => remove(STORES.items, uploadItemId),
   deleteBatch: (uploadBatchId: UploadBatchId) => remove(STORES.batches, uploadBatchId),
+  deleteWorkspaceOutbox: (operationId: string) => remove(STORES.outbox, operationId),
+  clearWorkspaceOutbox: () => clear(STORES.outbox),
 };
