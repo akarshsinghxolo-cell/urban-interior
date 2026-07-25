@@ -37,7 +37,7 @@ function makeOperationId(): string {
 }
 
 function retryAt(retryCount: number): string {
-  const delay = RETRY_DELAYS[Math.min(retryCount, RETRY_DELAYS.length - 1)];
+  const delay = RETRY_DELAYS[Math.min(Math.max(0, retryCount - 1), RETRY_DELAYS.length - 1)];
   return new Date(Date.now() + delay).toISOString();
 }
 
@@ -77,6 +77,37 @@ async function patchRecord(
   return next;
 }
 
+async function rebaseRemainingItems(base: RDashDatabase, revision: number): Promise<void> {
+  const remaining = (await uploadIndexedDb.readWorkspaceOutbox())
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  if (!remaining.length) return;
+
+  for (const item of remaining) {
+    if (item.status === "conflict" || item.status === "failed_permanent") continue;
+    const desired = applyWorkspaceOperations(base, item.operations);
+    const operations = diffWorkspaceOperations(base, desired);
+    if (!operations.length) {
+      await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
+      continue;
+    }
+    await uploadIndexedDb.putWorkspaceOutbox({
+      ...item,
+      revision,
+      operations,
+      expectedRevisions: undefined,
+      expectedRowVersions: undefined,
+      status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
+      retryCount: 0,
+      retryAt: undefined,
+      lastErrorCode: undefined,
+      lastErrorMessage: undefined,
+      summary: summarizeOperations(operations),
+      updatedAt: nowIso(),
+    });
+  }
+  await refresh();
+}
+
 export const workspaceOutboxStore = {
   getSnapshot(): WorkspaceOutboxSnapshot {
     return snapshot;
@@ -91,6 +122,7 @@ export const workspaceOutboxStore = {
       try {
         await refresh();
       } catch (error) {
+        hydratePromise = null;
         console.error("[WorkspaceOutbox] Could not restore pending changes", error);
         emit([], true);
       }
@@ -121,6 +153,9 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
 
   const timestamp = nowIso();
   const operationId = parsed.operationId || makeOperationId();
+  const existingItems = await uploadIndexedDb.readWorkspaceOutbox();
+  const syncingItems = existingItems.filter((item) => item.status === "syncing");
+  const previousSame = existingItems.find((item) => item.operationId === operationId);
   const record: WorkspaceCommitOutboxRecord = {
     operationId,
     workspaceId: "default",
@@ -132,11 +167,17 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
     status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
     retryCount: 0,
     summary: summarizeOperations(parsed.operations),
-    createdAt: timestamp,
+    createdAt: previousSame?.createdAt || timestamp,
     updatedAt: timestamp,
   };
 
-  await uploadIndexedDb.clearWorkspaceOutbox();
+  if (!syncingItems.length) {
+    await uploadIndexedDb.clearWorkspaceOutbox();
+  } else {
+    for (const item of existingItems) {
+      if (item.status !== "syncing") await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
+    }
+  }
   await uploadIndexedDb.putWorkspaceOutbox(record);
   await refresh();
   return { body: JSON.stringify({ ...parsed, operationId }), operationId };
@@ -159,8 +200,13 @@ export async function markWorkspaceCommitResponse(operationId: string, response:
   const current = await uploadIndexedDb.getWorkspaceOutbox(operationId);
   if (!current) return;
   if (response.ok) {
+    const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
     await uploadIndexedDb.deleteWorkspaceOutbox(operationId);
-    await refresh();
+    if (payload.data && typeof payload.revision === "number") {
+      await rebaseRemainingItems(payload.data, payload.revision);
+    } else {
+      await refresh();
+    }
     return;
   }
   const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
@@ -184,14 +230,13 @@ export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promis
 }> {
   await workspaceOutboxStore.hydrate();
   const items = (await uploadIndexedDb.readWorkspaceOutbox())
-    .filter((item) => item.status !== "failed_permanent")
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   let db = structuredClone(base) as RDashDatabase;
   for (const item of items) db = applyWorkspaceOperations(db, item.operations);
   return {
     db,
     pendingCount: items.length,
-    hasConflict: items.some((item) => item.status === "conflict"),
+    hasConflict: items.some((item) => item.status === "conflict" || item.status === "failed_permanent"),
   };
 }
 
@@ -220,7 +265,7 @@ async function rebaseConflict(item: WorkspaceCommitOutboxRecord): Promise<void> 
     createdAt: timestamp,
     updatedAt: timestamp,
   };
-  await uploadIndexedDb.clearWorkspaceOutbox();
+  await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
   if (operations.length) await uploadIndexedDb.putWorkspaceOutbox(replacement);
   await refresh();
 }
@@ -284,7 +329,11 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
     const payload = await response.json().catch(() => ({})) as WorkspaceCommitResponsePayload;
     if (response.ok) {
       await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
-      await refresh();
+      if (payload.data && typeof payload.revision === "number") {
+        await rebaseRemainingItems(payload.data, payload.revision);
+      } else {
+        await refresh();
+      }
       return { replayed: true, conflict: false, payload };
     }
     await markWorkspaceCommitResponse(item.operationId, responseForStatus);
