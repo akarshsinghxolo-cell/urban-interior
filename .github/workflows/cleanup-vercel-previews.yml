@@ -1,0 +1,134 @@
+name: Delete Vercel Preview Deployments
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DELETE_NON_PRODUCTION to continue
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_TEAM_ID: team_ruGxpkMnpHt7EwtHJrj8VRIz
+    steps:
+      - name: Verify confirmation and token
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.confirm }}" != "DELETE_NON_PRODUCTION" ]; then
+            echo "Confirmation phrase did not match." >&2
+            exit 1
+          fi
+          if [ -z "${VERCEL_TOKEN:-}" ]; then
+            echo "Missing GitHub Actions secret: VERCEL_TOKEN" >&2
+            exit 1
+          fi
+
+      - name: Delete all non-production deployments
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          projects=(
+            "urban-interior:prj_6V7M6NtDETnu1VCkYVJfyyHyAa9I"
+            "urban-castle:prj_5j1k1qwBvnsRdOsLQVSBmGgRWwEG"
+          )
+          protected_ids=(
+            "dpl_CZX37pkMuDUac1GVYoD6qwCLu8TN"
+            "dpl_HzegSeKvDB47Q97fXuPeFWkSSuqG"
+          )
+
+          is_protected() {
+            local candidate="$1"
+            local protected
+            for protected in "${protected_ids[@]}"; do
+              if [ "$candidate" = "$protected" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          deleted=0
+          skipped=0
+          failed=0
+
+          for project in "${projects[@]}"; do
+            name="${project%%:*}"
+            project_id="${project#*:}"
+            ids_file="$(mktemp)"
+            until_cursor=""
+
+            echo "Collecting non-production deployments for ${name}..."
+            while true; do
+              args=(
+                --silent --show-error --fail-with-body
+                --get "https://api.vercel.com/v6/deployments"
+                --header "Authorization: Bearer ${VERCEL_TOKEN}"
+                --data-urlencode "teamId=${VERCEL_TEAM_ID}"
+                --data-urlencode "projectId=${project_id}"
+                --data-urlencode "limit=100"
+              )
+              if [ -n "$until_cursor" ]; then
+                args+=(--data-urlencode "until=${until_cursor}")
+              fi
+
+              response="$(curl "${args[@]}")"
+              jq -r '.deployments[] | select(.target != "production") | (.uid // .id)' <<<"$response" >> "$ids_file"
+              next_cursor="$(jq -r '.pagination.next // empty' <<<"$response")"
+              if [ -z "$next_cursor" ] || [ "$next_cursor" = "$until_cursor" ]; then
+                break
+              fi
+              until_cursor="$next_cursor"
+            done
+
+            sort -u -o "$ids_file" "$ids_file"
+            count="$(wc -l < "$ids_file" | tr -d ' ')"
+            echo "Found ${count} non-production deployments for ${name}."
+
+            while IFS= read -r deployment_id; do
+              [ -n "$deployment_id" ] || continue
+              if is_protected "$deployment_id"; then
+                echo "Protected production deployment skipped: ${deployment_id}"
+                skipped=$((skipped + 1))
+                continue
+              fi
+
+              status="$(curl --silent --show-error \
+                --output /tmp/vercel-delete-response.json \
+                --write-out '%{http_code}' \
+                --request DELETE \
+                "https://api.vercel.com/v13/deployments/${deployment_id}?teamId=${VERCEL_TEAM_ID}" \
+                --header "Authorization: Bearer ${VERCEL_TOKEN}")"
+
+              if [ "$status" -ge 200 ] && [ "$status" -lt 300 ]; then
+                echo "Deleted ${deployment_id}"
+                deleted=$((deleted + 1))
+              else
+                echo "Failed to delete ${deployment_id} (HTTP ${status})" >&2
+                cat /tmp/vercel-delete-response.json >&2 || true
+                failed=$((failed + 1))
+              fi
+            done < "$ids_file"
+
+            rm -f "$ids_file"
+          done
+
+          {
+            echo "### Vercel deployment cleanup"
+            echo "- Deleted: ${deleted}"
+            echo "- Protected/skipped: ${skipped}"
+            echo "- Failed: ${failed}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
