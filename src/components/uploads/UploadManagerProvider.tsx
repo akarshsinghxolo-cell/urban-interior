@@ -17,7 +17,9 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
   const restoredSessionRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
-    void Promise.all([uploadQueueStore.hydrate(), workspaceOutboxStore.hydrate()]);
+    void Promise.all([uploadQueueStore.hydrate(), workspaceOutboxStore.hydrate()]).catch((error) => {
+      console.error("[BackgroundActivity] Could not restore local background work", error);
+    });
     const openPending = () => setOpen(true);
     window.addEventListener("uc-open-pending-uploads", openPending);
     return () => window.removeEventListener("uc-open-pending-uploads", openPending);
@@ -27,6 +29,16 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
     if (!authUser) return;
     const sessionKey = `${authUser.email}:${authUser.expiresAt}`;
     let active = true;
+
+    const reportBackgroundError = (error: unknown, fallback: string) => {
+      if (!active) return;
+      const message = error instanceof Error ? error.message : fallback;
+      console.error("[BackgroundActivity]", error);
+      useRDashStore.setState({
+        workspaceSyncStatus: "error",
+        workspaceSyncError: message,
+      });
+    };
 
     const applyPendingOverlay = async () => {
       if (restoredSessionRef.current === sessionKey) return;
@@ -39,7 +51,7 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
           db: overlay.db,
           workspaceSyncStatus: "error",
           workspaceSyncError: overlay.hasConflict
-            ? "Locally saved changes need conflict review."
+            ? "Locally saved changes need review."
             : "Locally saved changes are waiting to synchronize.",
         });
       }
@@ -58,7 +70,6 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
         });
         restoredSessionRef.current = null;
         await applyPendingOverlay();
-        window.dispatchEvent(new CustomEvent("uc-upload-queue-kick"));
       } else if (result.conflict) {
         useRDashStore.setState({
           workspaceSyncStatus: "error",
@@ -68,10 +79,17 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
       await kickUploadManager();
     };
 
+    const safeResume = () => {
+      void resume().catch((error) => reportBackgroundError(error, "Background synchronization could not continue."));
+    };
+    const safeUploadKick = () => {
+      void kickUploadManager().catch((error) => reportBackgroundError(error, "Pending uploads could not continue."));
+    };
+
     const handleOnline = () => {
       uploadQueueStore.setOnline(true);
       workspaceOutboxStore.setOnline(true);
-      void resume();
+      safeResume();
     };
     const handleOffline = () => {
       uploadQueueStore.setOnline(false);
@@ -81,28 +99,28 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
       if (document.visibilityState === "visible") {
         uploadQueueStore.setOnline(navigator.onLine);
         workspaceOutboxStore.setOnline(navigator.onLine);
-        void resume();
+        safeResume();
       }
     };
-    const handleOutboxKick = () => void resume();
-    const uploadUnsubscribe = uploadQueueStore.subscribe(() => void kickUploadManager());
-    const interval = window.setInterval(() => void resume(), 10_000);
 
-    void applyPendingOverlay().then(resume);
+    const interval = window.setInterval(safeResume, 10_000);
+    void applyPendingOverlay()
+      .then(() => safeResume())
+      .catch((error) => reportBackgroundError(error, "Locally saved changes could not be restored."));
+
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-    window.addEventListener("uc-upload-queue-kick", handleOutboxKick);
-    window.addEventListener("uc-workspace-outbox-kick", handleOutboxKick);
+    window.addEventListener("uc-upload-queue-kick", safeUploadKick);
+    window.addEventListener("uc-workspace-outbox-kick", safeResume);
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       active = false;
-      uploadUnsubscribe();
       window.clearInterval(interval);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
-      window.removeEventListener("uc-upload-queue-kick", handleOutboxKick);
-      window.removeEventListener("uc-workspace-outbox-kick", handleOutboxKick);
+      window.removeEventListener("uc-upload-queue-kick", safeUploadKick);
+      window.removeEventListener("uc-workspace-outbox-kick", safeResume);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [authUser]);
