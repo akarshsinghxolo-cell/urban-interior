@@ -12,6 +12,7 @@ import {
 import type {
   BindUploadRequest,
   FinalizeUploadRequest,
+  GoogleFileId,
   InitiateUploadRequest,
 } from "@/lib/uploads/upload-types";
 
@@ -21,8 +22,10 @@ export const maxDuration = 30;
 type Context = { params: Promise<{ action: string }> };
 
 function errorResponse(error: unknown, fallback: string) {
-  const message = error instanceof Error ? error.message.replace(/^FORBIDDEN:/, "") : fallback;
-  return NextResponse.json({ error: message }, { status: message === "UNAUTHORIZED" ? 401 : 422 });
+  const raw = error instanceof Error ? error.message : fallback;
+  const message = raw.replace(/^FORBIDDEN:/, "").replace(/^TARGET_NOT_READY:/, "");
+  const status = raw === "UNAUTHORIZED" ? 401 : raw.startsWith("TARGET_NOT_READY:") ? 409 : 422;
+  return NextResponse.json({ error: message, code: raw.startsWith("TARGET_NOT_READY:") ? "TARGET_NOT_READY" : undefined }, { status });
 }
 
 export async function GET(request: NextRequest, context: Context) {
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest, context: Context) {
     }
     if (action === "cancel") {
       if (!body.uploadItemId) return NextResponse.json({ error: "uploadItemId is required." }, { status: 422 });
-      await cancelDirectUpload(user, String(body.uploadItemId));
+      await cancelDirectUpload(user, String(body.uploadItemId), body.googleFileId ? String(body.googleFileId) as GoogleFileId : undefined);
       return NextResponse.json({ ok: true });
     }
     if (action === "retry") {
@@ -69,6 +72,7 @@ export async function POST(request: NextRequest, context: Context) {
         confirmedBytes: Number(body.confirmedBytes || 0),
         progress: Number(body.progress || 0),
         status: String(body.status || "uploading"),
+        googleFileId: body.googleFileId ? String(body.googleFileId) as GoogleFileId : undefined,
       });
       return NextResponse.json({ ok: true });
     }
