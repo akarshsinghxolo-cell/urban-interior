@@ -1,8 +1,9 @@
 import type { AuthenticatedUser } from "./auth";
 import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
-import type { BindUploadRequest, InitiateUploadRequest, InitiateUploadResponse } from "@/lib/uploads/upload-types";
+import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse } from "@/lib/uploads/upload-types";
 import {
+  DRIVE_API,
   DRIVE_UPLOAD_API,
   MAX_UPLOAD_BYTES,
   WORKSPACE_ID,
@@ -17,13 +18,13 @@ export async function bindDirectUpload(user: AuthenticatedUser, input: BindUploa
   if (!input.uploadBatchId || !input.uploadItemId) throw new Error("Upload batch and item identities are required.");
   const admin = getSupabaseAdminClient();
   const timestamp = nowIso();
-  const [{ error: batchError }, { error: itemError }] = await Promise.all([
+  const [{ data: batch, error: batchError }, { data: item, error: itemError }] = await Promise.all([
     admin.from("uc_upload_batches").update({
       target_entity_type: input.targetEntityType,
       target_entity_id: input.targetEntityId,
       upload_purpose: input.purpose,
       updated_at: timestamp,
-    }).eq("id", input.uploadBatchId),
+    }).eq("id", input.uploadBatchId).select("id").maybeSingle(),
     admin.from("uc_upload_items").update({
       target_entity_type: input.targetEntityType,
       target_entity_id: input.targetEntityId,
@@ -31,44 +32,96 @@ export async function bindDirectUpload(user: AuthenticatedUser, input: BindUploa
       attachment_field: input.attachmentField,
       attachment_field_mode: input.attachmentFieldMode,
       updated_at: timestamp,
-    }).eq("id", input.uploadItemId),
+    }).eq("id", input.uploadItemId).select("id").maybeSingle(),
   ]);
   if (batchError) throw new Error(batchError.message);
   if (itemError) throw new Error(itemError.message);
-  await admin.from("uc_upload_events").insert({
+  if (!batch || !item) throw new Error("The upload batch or item could not be bound because it does not exist.");
+  const { error: eventError } = await admin.from("uc_upload_events").insert({
     upload_item_id: input.uploadItemId,
     event_type: "bound",
     detail: { by: user.userId, targetEntityType: input.targetEntityType, targetEntityId: input.targetEntityId, purpose: input.purpose },
     created_at: timestamp,
   });
+  if (eventError) throw new Error(eventError.message);
+}
+
+async function findCompletedDriveFile(accessToken: string, uploadItemId: string, sizeBytes: number) {
+  const escaped = uploadItemId.replace(/'/g, "\\'");
+  const query = `appProperties has { key='ucUploadItemId' and value='${escaped}' } and trashed=false`;
+  const response = await driveFetch(
+    accessToken,
+    `${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,size,webViewLink,thumbnailLink,parents,appProperties,createdTime)&pageSize=100`,
+  );
+  const payload = await response.json().catch(() => ({})) as {
+    files?: Array<{
+      id?: string;
+      size?: string;
+      webViewLink?: string;
+      thumbnailLink?: string;
+      parents?: string[];
+      createdTime?: string;
+      appProperties?: Record<string, string>;
+    }>;
+    error?: { message?: string };
+  };
+  if (!response.ok) throw new Error(payload.error?.message || "Could not reconcile existing Google Drive uploads.");
+  return (payload.files || [])
+    .filter((file) => file.id && Number(file.size || -1) === sizeBytes && file.appProperties?.ucUploadItemId === uploadItemId)
+    .sort((a, b) => String(a.createdTime || "").localeCompare(String(b.createdTime || "")))[0];
 }
 
 export async function initiateDirectUpload(user: AuthenticatedUser, input: InitiateUploadRequest): Promise<InitiateUploadResponse> {
-  if (!input.uploadBatchId || !input.uploadItemId || !input.fileName || !input.sizeBytes) {
-    throw new Error("Upload identity, file name, and file size are required.");
+  if (!input.uploadBatchId || !input.uploadItemId || !input.fileName) {
+    throw new Error("Upload identity and file name are required.");
   }
-  if (input.sizeBytes <= 0 || input.sizeBytes > MAX_UPLOAD_BYTES) {
+  if (!Number.isFinite(input.sizeBytes) || input.sizeBytes <= 0) {
+    throw new Error("Empty files cannot be uploaded.");
+  }
+  if (input.sizeBytes > MAX_UPLOAD_BYTES) {
     throw new Error(`File exceeds the ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)} MB upload limit.`);
   }
 
   const admin = getSupabaseAdminClient();
-  const { data: existing } = await admin.from("uc_upload_items")
-    .select("session_uri,session_expires_at,storage_account_id,staging_folder_id,confirmed_bytes,status")
+  const { data: existing, error: existingError } = await admin.from("uc_upload_items")
+    .select("session_uri,session_expires_at,storage_account_id,staging_folder_id,confirmed_bytes,status,google_file_id,file_asset_id,attachment_id,target_entity_type,target_entity_id,upload_purpose,created_at")
     .eq("id", input.uploadItemId)
     .maybeSingle();
-  if (
-    existing?.session_uri &&
-    existing.session_expires_at &&
-    Date.parse(String(existing.session_expires_at)) > Date.now() &&
-    existing.status !== "completed"
-  ) {
-    return {
-      sessionUri: String(existing.session_uri),
-      sessionExpiresAt: String(existing.session_expires_at),
-      storageAccountId: String(existing.storage_account_id),
-      stagingFolderId: String(existing.staging_folder_id),
-      confirmedBytes: Number(existing.confirmed_bytes || 0),
-    };
+  if (existingError) throw new Error(existingError.message);
+
+  if (existing) {
+    if (String(existing.file_asset_id || input.fileAssetId) !== String(input.fileAssetId) || String(existing.attachment_id || input.attachmentId) !== String(input.attachmentId)) {
+      throw new Error("The pending upload identity does not match its existing server record.");
+    }
+    if (
+      existing.target_entity_type && String(existing.target_entity_type) !== input.targetEntityType ||
+      existing.target_entity_id && String(existing.target_entity_id) !== input.targetEntityId ||
+      existing.upload_purpose && String(existing.upload_purpose) !== input.purpose
+    ) {
+      throw new Error("The pending upload routing changed. Bind it before requesting another Drive session.");
+    }
+    if (existing.google_file_id && ["uploaded_unverified", "verifying", "finalizing", "completed"].includes(String(existing.status || ""))) {
+      return {
+        storageAccountId: String(existing.storage_account_id),
+        stagingFolderId: String(existing.staging_folder_id || ""),
+        confirmedBytes: input.sizeBytes,
+        completedGoogleFileId: String(existing.google_file_id) as GoogleFileId,
+      };
+    }
+    if (
+      existing.session_uri &&
+      existing.session_expires_at &&
+      Date.parse(String(existing.session_expires_at)) > Date.now() &&
+      !["completed", "cancelled"].includes(String(existing.status || ""))
+    ) {
+      return {
+        sessionUri: String(existing.session_uri),
+        sessionExpiresAt: String(existing.session_expires_at),
+        storageAccountId: String(existing.storage_account_id),
+        stagingFolderId: String(existing.staging_folder_id),
+        confirmedBytes: Number(existing.confirmed_bytes || 0),
+      };
+    }
   }
 
   const workspace = await getWorkspace();
@@ -77,6 +130,79 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
     { name: "_System", key: "root:system" },
     { name: "Staging", key: "system:staging" },
   ]);
+  const timestamp = nowIso();
+  const createdAt = String(existing?.created_at || timestamp);
+
+  const { error: batchError } = await admin.from("uc_upload_batches").upsert({
+    id: input.uploadBatchId,
+    workspace_id: WORKSPACE_ID,
+    source_flow: input.sourceFlow,
+    source_label: input.sourceLabel,
+    target_entity_type: input.targetEntityType,
+    target_entity_id: input.targetEntityId,
+    target_label: input.targetEntityId,
+    upload_purpose: input.purpose,
+    status: "uploading",
+    storage_account_id: access.account.id,
+    required_evidence: input.requiredEvidence,
+    created_by_user_id: user.userId,
+    created_at: createdAt,
+    updated_at: timestamp,
+  }, { onConflict: "id" });
+  if (batchError) throw new Error(batchError.message);
+
+  const baseItem = {
+    id: input.uploadItemId,
+    batch_id: input.uploadBatchId,
+    workspace_id: WORKSPACE_ID,
+    file_name: input.fileName,
+    mime_type: input.mimeType,
+    size_bytes: input.sizeBytes,
+    last_modified: input.lastModified,
+    fingerprint_sha256: input.fingerprint,
+    source_flow: input.sourceFlow,
+    upload_purpose: input.purpose,
+    target_entity_type: input.targetEntityType,
+    target_entity_id: input.targetEntityId,
+    desired_target_entity_type: input.desiredTargetEntityType,
+    kind: input.kind,
+    role: input.role,
+    caption: input.caption,
+    visibility: input.visibility,
+    customer_shareable: input.customerShareable,
+    attachment_field: input.attachmentField,
+    attachment_field_mode: input.attachmentFieldMode,
+    required_evidence: input.requiredEvidence,
+    storage_account_id: access.account.id,
+    staging_folder_id: staging.id,
+    file_asset_id: input.fileAssetId,
+    attachment_id: input.attachmentId,
+    created_at: createdAt,
+    updated_at: timestamp,
+  };
+
+  const completed = await findCompletedDriveFile(access.accessToken, String(input.uploadItemId), input.sizeBytes);
+  if (completed?.id) {
+    const { error: itemError } = await admin.from("uc_upload_items").upsert({
+      ...baseItem,
+      status: "uploaded_unverified",
+      google_file_id: completed.id,
+      confirmed_bytes: input.sizeBytes,
+      progress: 100,
+      session_uri: null,
+      session_expires_at: null,
+    }, { onConflict: "id" });
+    if (itemError) throw new Error(itemError.message);
+    return {
+      storageAccountId: access.account.id,
+      stagingFolderId: staging.id,
+      confirmedBytes: input.sizeBytes,
+      completedGoogleFileId: completed.id as GoogleFileId,
+      webViewLink: completed.webViewLink,
+      thumbnailLink: completed.thumbnailLink,
+    };
+  }
+
   const initiated = await driveFetch(
     access.accessToken,
     `${DRIVE_UPLOAD_API}?uploadType=resumable&fields=id,name,mimeType,size,webViewLink,thumbnailLink,parents,appProperties`,
@@ -110,69 +236,26 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
     throw new Error(payload.error?.message || "Google Drive did not create a resumable upload session.");
   }
 
-  const timestamp = nowIso();
   const sessionExpiresAt = new Date(Date.now() + 6.5 * 24 * 60 * 60 * 1000).toISOString();
-  const { error: batchError } = await admin.from("uc_upload_batches").upsert({
-    id: input.uploadBatchId,
-    workspace_id: WORKSPACE_ID,
-    source_flow: input.sourceFlow,
-    source_label: input.sourceLabel,
-    target_entity_type: input.targetEntityType,
-    target_entity_id: input.targetEntityId,
-    target_label: input.targetEntityId,
-    upload_purpose: input.purpose,
-    status: "uploading",
-    storage_account_id: access.account.id,
-    required_evidence: input.requiredEvidence,
-    created_by_user_id: user.userId,
-    created_at: timestamp,
-    updated_at: timestamp,
-  }, { onConflict: "id" });
-  if (batchError) throw new Error(batchError.message);
-
   const { error: itemError } = await admin.from("uc_upload_items").upsert({
-    id: input.uploadItemId,
-    batch_id: input.uploadBatchId,
-    workspace_id: WORKSPACE_ID,
-    file_name: input.fileName,
-    mime_type: input.mimeType,
-    size_bytes: input.sizeBytes,
-    last_modified: input.lastModified,
-    fingerprint_sha256: input.fingerprint,
-    source_flow: input.sourceFlow,
-    upload_purpose: input.purpose,
-    target_entity_type: input.targetEntityType,
-    target_entity_id: input.targetEntityId,
-    desired_target_entity_type: input.desiredTargetEntityType,
-    kind: input.kind,
-    role: input.role,
-    caption: input.caption,
-    visibility: input.visibility,
-    customer_shareable: input.customerShareable,
-    attachment_field: input.attachmentField,
-    attachment_field_mode: input.attachmentFieldMode,
-    required_evidence: input.requiredEvidence,
+    ...baseItem,
     status: "uploading",
     session_uri: sessionUri,
     session_expires_at: sessionExpiresAt,
-    storage_account_id: access.account.id,
-    staging_folder_id: staging.id,
     confirmed_bytes: 0,
     progress: 0,
-    retry_count: 0,
-    file_asset_id: input.fileAssetId,
-    attachment_id: input.attachmentId,
-    created_at: timestamp,
-    updated_at: timestamp,
+    retry_count: Number(existing ? 1 : 0),
+    google_file_id: null,
   }, { onConflict: "id" });
   if (itemError) throw new Error(itemError.message);
 
-  await admin.from("uc_upload_events").insert({
+  const { error: eventError } = await admin.from("uc_upload_events").insert({
     upload_item_id: input.uploadItemId,
     event_type: "session_started",
     detail: { storageAccountId: access.account.id, stagingFolderId: staging.id },
     created_at: timestamp,
   });
+  if (eventError) throw new Error(eventError.message);
 
   return {
     sessionUri,
