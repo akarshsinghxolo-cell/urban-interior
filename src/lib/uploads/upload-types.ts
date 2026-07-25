@@ -130,20 +130,6 @@ export interface UploadBlobRecord {
   createdAt: string;
 }
 
-export interface WorkspaceOutboxRecord {
-  operationId: string;
-  workspaceId: string;
-  entityType: string;
-  entityId: string;
-  operationType: "create" | "update" | "action";
-  payload: unknown;
-  uploadBatchIds: UploadBatchId[];
-  status: "pending" | "syncing" | "synced" | "conflict" | "failed";
-  retryAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface EnqueueUploadBatchInput {
   workspaceId?: string;
   sourceFlow: string;
@@ -218,11 +204,14 @@ export interface InitiateUploadRequest {
 }
 
 export interface InitiateUploadResponse {
-  sessionUri: string;
-  sessionExpiresAt: string;
+  sessionUri?: string;
+  sessionExpiresAt?: string;
   storageAccountId: string;
   stagingFolderId: string;
   confirmedBytes: number;
+  completedGoogleFileId?: GoogleFileId;
+  webViewLink?: string;
+  thumbnailLink?: string;
 }
 
 export interface FinalizeUploadRequest {
