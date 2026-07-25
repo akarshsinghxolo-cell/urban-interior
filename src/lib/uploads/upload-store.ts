@@ -13,6 +13,7 @@ import {
   type UploadQueueSnapshot,
 } from "./upload-types";
 
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
 const EMPTY_SNAPSHOT: UploadQueueSnapshot = {
   ready: false,
   online: true,
@@ -50,14 +51,14 @@ function updateBatchInMemory(batch: UploadBatchRecord): void {
 }
 
 async function persistItem(item: UploadItemRecord): Promise<UploadItemRecord> {
-  updateItemInMemory(item);
   await uploadIndexedDb.putItem(item);
+  updateItemInMemory(item);
   return item;
 }
 
 async function persistBatch(batch: UploadBatchRecord): Promise<UploadBatchRecord> {
-  updateBatchInMemory(batch);
   await uploadIndexedDb.putBatch(batch);
+  updateBatchInMemory(batch);
   return batch;
 }
 
@@ -65,6 +66,14 @@ function itemIsProcessable(item: UploadItemRecord): boolean {
   if (["completed", "cancelled", "failed_permanent", "cleanup_pending"].includes(item.status)) return false;
   if (item.retryAt && Date.parse(item.retryAt) > Date.now()) return false;
   return true;
+}
+
+function validateFiles(files: File[]): void {
+  if (!files.length) throw new Error("Choose at least one file to upload.");
+  const empty = files.find((file) => file.size <= 0);
+  if (empty) throw new Error(`${empty.name || "The selected file"} is empty and cannot be uploaded.`);
+  const tooLarge = files.find((file) => file.size > MAX_UPLOAD_BYTES);
+  if (tooLarge) throw new Error(`${tooLarge.name} exceeds the 100 MB upload limit.`);
 }
 
 export const uploadQueueStore = {
@@ -91,8 +100,10 @@ export const uploadQueueStore = {
           items: items.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
         });
       } catch (error) {
+        hydratePromise = null;
         console.error("[UploadQueue] Could not restore the durable upload queue", error);
         emit({ ...snapshot, ready: true });
+        throw error;
       }
     })();
     return hydratePromise;
@@ -104,11 +115,11 @@ export const uploadQueueStore = {
   setOnline(online: boolean): void {
     if (snapshot.online === online) return;
     emit({ ...snapshot, online });
-    if (online) void this.markWaitingItemsQueued();
-    else void this.markTransferItemsWaiting();
+    const transition = online ? this.markWaitingItemsQueued() : this.markTransferItemsWaiting();
+    void transition.catch((error) => console.error("[UploadQueue] Connectivity transition failed", error));
   },
   async enqueueBatch(input: EnqueueUploadBatchInput): Promise<UploadBatchId> {
-    if (!input.files.length) throw new Error("Choose at least one file to upload.");
+    validateFiles(input.files);
     await this.hydrate();
     const createdAt = new Date().toISOString();
     const batchId = makeUploadBatchId();
@@ -129,47 +140,70 @@ export const uploadQueueStore = {
     };
     await persistBatch(batch);
 
-    for (const file of input.files) {
-      const itemId = makeUploadItemId();
-      const fingerprint = await fingerprintUploadBlob(file, file.name);
-      const duplicate = snapshot.items.find((entry) =>
-        entry.fingerprint === fingerprint && entry.fileName === file.name && entry.sizeBytes === file.size &&
-        !["completed", "cancelled", "failed_permanent"].includes(entry.status),
-      );
-      if (duplicate) continue;
-      const item: UploadItemRecord = {
-        id: itemId,
-        batchId,
-        workspaceId: batch.workspaceId,
-        fileAssetId: makeFileAssetId(itemId),
-        attachmentId: makeAttachmentId(itemId),
-        fileName: file.name,
-        mimeType: file.type || "application/octet-stream",
-        sizeBytes: file.size,
-        lastModified: file.lastModified,
-        fingerprint,
-        sourceFlow: batch.sourceFlow,
-        purpose: batch.purpose,
-        targetEntityType: batch.targetEntityType,
-        targetEntityId: batch.targetEntityId,
-        desiredTargetEntityType: input.desiredTargetEntityType,
-        kind: input.kind || "document",
-        role: input.role || "document",
-        caption: input.caption,
-        visibility: input.visibility || "internal",
-        customerShareable: Boolean(input.customerShareable),
-        attachmentField: input.attachmentField,
-        attachmentFieldMode: input.attachmentFieldMode,
-        requiredEvidence: batch.requiredEvidence,
-        status: online ? "queued" : "waiting_for_network",
-        confirmedBytes: 0,
-        progress: 0,
-        retryCount: 0,
-        createdAt,
-        updatedAt: createdAt,
-      };
-      await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt });
-      await persistItem(item);
+    let queuedCount = 0;
+    try {
+      for (const file of input.files) {
+        const fingerprint = await fingerprintUploadBlob(file, file.name);
+        const duplicate = snapshot.items.find((entry) =>
+          entry.fingerprint === fingerprint && entry.fileName === file.name && entry.sizeBytes === file.size &&
+          !["completed", "cancelled", "failed_permanent"].includes(entry.status),
+        );
+        if (duplicate) continue;
+
+        const itemId = makeUploadItemId();
+        const item: UploadItemRecord = {
+          id: itemId,
+          batchId,
+          workspaceId: batch.workspaceId,
+          fileAssetId: makeFileAssetId(itemId),
+          attachmentId: makeAttachmentId(itemId),
+          fileName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          lastModified: file.lastModified,
+          fingerprint,
+          sourceFlow: batch.sourceFlow,
+          purpose: batch.purpose,
+          targetEntityType: batch.targetEntityType,
+          targetEntityId: batch.targetEntityId,
+          desiredTargetEntityType: input.desiredTargetEntityType,
+          kind: input.kind || "document",
+          role: input.role || "document",
+          caption: input.caption,
+          visibility: input.visibility || "internal",
+          customerShareable: Boolean(input.customerShareable),
+          attachmentField: input.attachmentField,
+          attachmentFieldMode: input.attachmentFieldMode,
+          requiredEvidence: batch.requiredEvidence,
+          status: online ? "queued" : "waiting_for_network",
+          confirmedBytes: 0,
+          progress: 0,
+          retryCount: 0,
+          createdAt,
+          updatedAt: createdAt,
+        };
+
+        await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt });
+        try {
+          await persistItem(item);
+          queuedCount += 1;
+        } catch (error) {
+          await uploadIndexedDb.deleteBlob(itemId).catch(() => undefined);
+          throw error;
+        }
+      }
+    } catch (error) {
+      if (queuedCount === 0) {
+        await uploadIndexedDb.deleteBatch(batchId).catch(() => undefined);
+        emit({ ...snapshot, batches: snapshot.batches.filter((entry) => entry.id !== batchId) });
+      }
+      throw error;
+    }
+
+    if (queuedCount === 0) {
+      await uploadIndexedDb.deleteBatch(batchId);
+      emit({ ...snapshot, batches: snapshot.batches.filter((entry) => entry.id !== batchId) });
+      throw new Error("Every selected file is already pending on this device.");
     }
     return batchId;
   },
@@ -207,9 +241,10 @@ export const uploadQueueStore = {
     return uploadIndexedDb.getBlob(uploadItemId);
   },
   async completeItem(uploadItemId: UploadItemId): Promise<void> {
-    const item = this.getItem(uploadItemId);
+    const item = this.getItem(uploadItemId) || await uploadIndexedDb.getItem(uploadItemId);
     if (!item) return;
-    await Promise.all([uploadIndexedDb.deleteBlob(uploadItemId), uploadIndexedDb.deleteItem(uploadItemId)]);
+    await uploadIndexedDb.deleteBlob(uploadItemId);
+    await uploadIndexedDb.deleteItem(uploadItemId);
     const remainingItems = snapshot.items.filter((entry) => entry.id !== uploadItemId);
     let remainingBatches = snapshot.batches;
     if (!remainingItems.some((entry) => entry.batchId === item.batchId)) {
@@ -231,18 +266,18 @@ export const uploadQueueStore = {
   },
   async retryAll(): Promise<void> {
     const retryable = snapshot.items.filter((item) =>
-      item.status === "failed_retryable" || item.status === "waiting_for_network" || item.status === "paused",
+      item.status === "failed_retryable" || item.status === "failed_permanent" || item.status === "waiting_for_network" || item.status === "paused",
     );
     for (const item of retryable) await this.retryItem(item.id);
   },
   async cancelItem(uploadItemId: UploadItemId): Promise<void> {
     const item = this.getItem(uploadItemId);
     if (!item || item.status === "completed") return;
-    await this.patchItem(uploadItemId, { status: "cancel_requested" });
+    await this.patchItem(uploadItemId, { status: "cancel_requested", retryAt: undefined });
   },
   async cancelBatch(uploadBatchId: UploadBatchId): Promise<void> {
     const items = snapshot.items.filter((item) => item.batchId === uploadBatchId && item.status !== "completed");
-    for (const item of items) await this.patchItem(item.id, { status: "cancel_requested" });
+    for (const item of items) await this.patchItem(item.id, { status: "cancel_requested", retryAt: undefined });
     const batch = this.getBatch(uploadBatchId);
     if (batch) await this.patchBatch(uploadBatchId, { status: "cancelled" });
   },
