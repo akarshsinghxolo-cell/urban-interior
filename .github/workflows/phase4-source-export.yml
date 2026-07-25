@@ -47,7 +47,17 @@ jobs:
           cat .phase4-patch/part-* | base64 --decode | gzip --decompress > /tmp/phase4-cutover.patch
           git apply --index /tmp/phase4-cutover.patch
           git apply --index .phase4-fieldmode-fix.patch
-          sed -i 's/room\.uploadItemId/room.id/g' src/components/rdash/modules/SiteMeasurementModule.tsx
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/components/rdash/modules/SiteMeasurementModule.tsx')
+          source = path.read_text()
+          source = source.replace('room.uploadItemId', 'room.id')
+          source = source.replace(
+              'onClick={() => setUploadedMedia((arr) => arr.filter((x) => x.id !== m.uploadItemId))}',
+              'onClick={() => void cancelQueuedWorkflowFile(m).then(() => setUploadedMedia((arr) => arr.filter((x) => x.uploadItemId !== m.uploadItemId)))}',
+          )
+          path.write_text(source)
+          PY
           git add src/components/rdash/modules/SiteMeasurementModule.tsx
           git rm -f src/app/api/google-drive/upload/route.ts
 
