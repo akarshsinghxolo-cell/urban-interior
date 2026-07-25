@@ -1,0 +1,59 @@
+name: Manual Vercel Preview
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: manual-vercel-preview
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Verify Vercel secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub Actions secret: ${name}" >&2
+              echo "- ${name}" >> "$GITHUB_STEP_SUMMARY"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "Add the listed repository secrets before running this workflow." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+      - name: Pull preview environment
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
+      - name: Build preview in GitHub Actions
+        run: vercel build --token="$VERCEL_TOKEN"
+      - name: Deploy prebuilt preview
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### Vercel preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "$url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Print preview URL
+        run: echo "Preview URL: ${{ steps.deploy.outputs.url }}"

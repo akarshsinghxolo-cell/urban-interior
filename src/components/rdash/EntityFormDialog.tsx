@@ -9,8 +9,10 @@ import { useRDashStore } from "@/lib/rdash/store";
 import type { CustomerSegment } from "@/lib/rdash/types";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
-import { compressImage } from "@/lib/rdash/image-compress";
-import { asManagedFileAsset, looksLikeEmbeddedBinary, MANAGED_FILE_ACCEPT, readFileAsDataUrl, uploadManagedFile } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "sonner";
 import { MapPin, Camera, X, Plus, Search, Navigation, Image as ImageIcon, Wrench, Pencil, } from "lucide-react";
 export type EntityType = "customer" | "vendor" | "contractor";
-type PendingMediaFile = {
+type PendingMediaFile = QueuedWorkflowFile & {
     url: string;
     file_name: string;
     mime_type: string;
@@ -27,7 +29,7 @@ type ExistingMediaFile = {
     attachment_id: string;
 };
 type MediaFieldValue = string | PendingMediaFile | ExistingMediaFile;
-const isPendingMediaFile = (value: MediaFieldValue): value is PendingMediaFile => typeof value === "object" && "url" in value;
+const isPendingMediaFile = (value: MediaFieldValue): value is PendingMediaFile => typeof value === "object" && "uploadItemId" in value;
 const isExistingMediaFile = (value: MediaFieldValue): value is ExistingMediaFile => typeof value === "object" && "attachment_id" in value;
 const mediaPreview = (value: MediaFieldValue, db: Parameters<typeof attachedPreview>[0]) => {
     if (isExistingMediaFile(value))
@@ -50,12 +52,11 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     const updateVendor = useRDashStore((s) => s.updateVendor);
     const updateContractor = useRDashStore((s) => s.updateContractor);
     const updateSite = useRDashStore((s) => s.updateSite);
-    const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
-    const addServerFileAsset = useRDashStore((s) => s.addServerFileAsset);
     const isEditMode = !!editId;
+    const [reservedEntityId, setReservedEntityId] = React.useState("");
+    const [reservedFirstSiteId, setReservedFirstSiteId] = React.useState("");
+    const { registerBatch, commitBatches } = useUploadDraft(open);
     const [saving, setSaving] = React.useState(false);
-    // UPLOAD-030: Upload progress state
-    const [uploadProgress, setUploadProgress] = React.useState<{ current: number; total: number; label: string } | null>(null);
     const [name, setName] = React.useState("");
     const [phone, setPhone] = React.useState("");
     const [whatsapp, setWhatsapp] = React.useState("");
@@ -92,13 +93,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         name: string;
     } | null>(null);
     const [showReferralDropdown, setShowReferralDropdown] = React.useState(false);
-    const [firstSitePhotos, setFirstSitePhotos] = React.useState<Array<{
-        id: string;
-        file_name: string;
-        mime_type?: string;
-        url: string;
-        caption?: string;
-    }>>([]);
+    const [firstSitePhotos, setFirstSitePhotos] = React.useState<Array<PendingMediaFile & { id: string; caption?: string }>>([]);
     const [customerInterestSubcategories, setCustomerInterestSubcategories] = React.useState<string[]>([]);
     const [customerSegments, setCustomerSegments] = React.useState<CustomerSegment[]>(["service_customer"]);
     const [businessCardPhoto, setBusinessCardPhoto] = React.useState<MediaFieldValue>("");
@@ -136,6 +131,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     React.useEffect(() => {
         if (!open)
             return;
+        setReservedEntityId(editId || reserveEntityId(type));
+        setReservedFirstSiteId(reserveEntityId("site"));
         if (editId) {
             if (type === "customer") {
                 const customer = db.customers.find((customer) => customer.id === editId);
@@ -410,31 +407,68 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             toast.error(hints);
         }, { enableHighAccuracy: true, timeout: 10000 });
     };
-    const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, cb: (value: MediaFieldValue) => void) => {
-        const f = e.target.files?.[0];
-        if (!f)
-            return;
+    const handlePhotoUpload = async (
+        event: React.ChangeEvent<HTMLInputElement>,
+        callback: (value: MediaFieldValue) => void,
+        attachmentField: string,
+        caption: string,
+    ) => {
+        const file = event.target.files?.[0];
+        event.currentTarget.value = "";
+        if (!file || !reservedEntityId) return;
         try {
-            const url = f.type.startsWith("image/") ? await compressImage(f) : await readFileAsDataUrl(f);
-            cb({ url, file_name: f.name, mime_type: f.type || "application/octet-stream" });
-            e.currentTarget.value = "";
-        }
-        catch {
-            toast.error("Failed to prepare the selected file");
+            const classification = classifyWorkflowFile(file);
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: `${type}_form`,
+                sourceLabel: `${type === "vendor" ? "Vendor" : "Contractor"} form`,
+                targetEntityType: type === "vendor" ? "vendor" : "contractor",
+                targetEntityId: reservedEntityId,
+                targetLabel: name.trim() || `New ${type}`,
+                purpose: type === "vendor" ? "vendor_document" : "contractor_document",
+                files: [{ file, ...classification, caption, attachmentField, attachmentFieldMode: "set" }],
+            });
+            registerBatch(queued.batchId);
+            const preview = withLocalPreview(queued.files[0], file);
+            callback({ ...preview, url: preview.previewUrl, file_name: file.name, mime_type: file.type || "application/octet-stream" });
+            toast.success(`${file.name} queued for upload`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not queue the selected file");
         }
     };
-    const handleFirstSitePhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        for (const f of files) {
-            try {
-                const url = f.type.startsWith("image/") ? await compressImage(f) : await readFileAsDataUrl(f);
-                setFirstSitePhotos((arr) => [...arr, { id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, file_name: f.name, mime_type: f.type || "application/octet-stream", url }]);
-            }
-            catch {
-                toast.error(`Could not prepare ${f.name}`);
-            }
+    const handleFirstSitePhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(event.target.files || []);
+        event.currentTarget.value = "";
+        if (!files.length || !reservedFirstSiteId) return;
+        try {
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "customer_first_site",
+                sourceLabel: "Customer first Site",
+                targetEntityType: "site",
+                targetEntityId: reservedFirstSiteId,
+                targetLabel: firstSiteName.trim() || "New Site",
+                purpose: "site_evidence",
+                attachmentField: "photo_attachment_ids",
+                attachmentFieldMode: "append",
+                files: files.map((file) => ({ file, ...classifyWorkflowFile(file), caption: "Site photo" })),
+            });
+            registerBatch(queued.batchId);
+            const next = queued.files.map((item, index) => {
+                const preview = withLocalPreview(item, files[index]);
+                return { ...preview, id: item.uploadItemId, file_name: item.fileName, mime_type: item.mimeType, url: preview.previewUrl, caption: "Site photo" };
+            });
+            setFirstSitePhotos((current) => [...current, ...next]);
+            toast.success(`${next.length} file${next.length === 1 ? "" : "s"} queued for upload`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not queue Site files");
         }
-        e.currentTarget.value = "";
+    };
+    const removePendingMedia = async (value: PendingMediaFile, callback: (value: MediaFieldValue) => void) => {
+        await cancelQueuedWorkflowFile(value);
+        callback("");
+    };
+    const removeFirstSitePhoto = async (photo: PendingMediaFile & { id: string }) => {
+        await cancelQueuedWorkflowFile(photo);
+        setFirstSitePhotos((items) => items.filter((item) => item.id !== photo.id));
     };
     const customerIdentityMatches = React.useMemo(() => type === "customer"
         ? findCustomerIdentityMatches(db.customers, {
@@ -478,34 +512,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
     const updateCapability = (subId: string, patch: Partial<typeof conCapabilities[number]>) => {
         setConCapabilities((arr) => arr.map((c) => c.subcategory_id === subId ? { ...c, ...patch } : c));
     };
-    // UPLOAD-029: Pass through visibility and customerShareable flags
-    // UPLOAD-030: Support progress callback for upload progress display
-    const uploadAndAttach = async (input: {
-        dataUrl: string;
-        fileName: string;
-        entityType: "site" | "vendor" | "contractor";
-        entityId: string;
-        kind: "media" | "site_proof";
-        role: "photo" | "proof" | "video" | "document";
-        caption: string;
-        visibility?: "internal" | "customer" | "vendor" | "contractor";
-        customerShareable?: boolean;
-        onProgress?: (pct: number) => void;
-    }) => {
-        const uploaded = await uploadManagedFile({
-            dataUrl: input.dataUrl, fileName: input.fileName, entityType: input.entityType, entityId: input.entityId,
-            kind: input.kind, role: input.role, caption: input.caption,
-            visibility: input.visibility || "internal",
-            customerShareable: input.customerShareable || false,
-            onProgress: input.onProgress,
-        });
-        // Add the FileAsset + Attachment to local state so the file is VISIBLE in the app immediately.
-        // Uses addServerFileAsset (no server save — server already has them from the upload route).
-        if (uploaded.fileAsset && uploaded.attachment) {
-            addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
-        }
-        return uploaded.id;
-    };
     const handleSave = async () => {
         if (saving)
             return;
@@ -524,6 +530,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         const referralId = referralSelected?.id;
         if (type === "customer") {
             const customerPayload = {
+                ...(!isEditMode ? { id: reservedEntityId } : {}),
                 name: name.trim(),
                 phone: phone.trim(),
                 whatsapp: whatsapp.trim() || phone.trim(),
@@ -563,6 +570,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                     }
                     setSaving(true);
                     const result = createCustomerWithFirstSite(customerPayload, addFirstSite ? {
+                        id: reservedFirstSiteId,
                         name: firstSiteName.trim(),
                         building_name: firstSiteBuildingName.trim() || undefined,
                         site_type: firstSiteType,
@@ -574,57 +582,17 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         longitude: firstSiteLng,
                         map_url: firstSiteMapUrl.trim() || undefined,
                         notes: firstSiteNotes.trim() || undefined,
-                        photo_attachment_ids: [],
+                        photo_attachment_ids: firstSitePhotos.map((photo) => photo.attachmentId),
                         source_partner_id: referralId,
                         source_partner_name: referralName,
                     } : undefined);
-                    if (result.siteId && firstSitePhotos.length) {
-                        // FIX-E2E-001: Await the server commit before starting
-                        // uploads. Without this, the upload route reads the
-                        // workspace from Supabase before the newly-created site
-                        // has been persisted, and returns 422 "Site does not exist".
-                        setUploadProgress({ current: 0, total: firstSitePhotos.length, label: "Saving customer…" });
-                        await useRDashStore.getState().awaitServerSync();
-                        // UPLOAD-028: Use allSettled so partial failures don't discard successful uploads
-                        // UPLOAD-030: Show upload progress
-                        setUploadProgress({ current: 0, total: firstSitePhotos.length, label: "Uploading photos…" });
-                        let completed = 0;
-                        const photoAttachmentIds: string[] = [];
-                        let failedCount = 0;
-                        // FIX-E2E-002: Sequential uploads (not parallel) to prevent
-                        // duplicate Drive folders. Parallel uploads hit different
-                        // serverless instances, each creating its own folder because
-                        // the in-memory mutex and persisted cache don't propagate
-                        // across instances. Sequential uploads ensure each one finds
-                        // the folder created by the previous one.
-                        for (const photo of firstSitePhotos) {
-                            try {
-                                const id = await uploadAndAttach({
-                                    dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: result.siteId!,
-                                    kind: "media", role: "photo", caption: "Site photo",
-                                    onProgress: (pct) => {
-                                        setUploadProgress({ current: completed + pct / 100, total: firstSitePhotos.length, label: `Uploading photo ${completed + 1} of ${firstSitePhotos.length}…` });
-                                    },
-                                });
-                                photoAttachmentIds.push(id);
-                            } catch {
-                                failedCount++;
-                            }
-                            completed++;
-                            setUploadProgress({ current: completed, total: firstSitePhotos.length, label: `Uploaded ${completed} of ${firstSitePhotos.length} photos` });
-                        }
-                        if (failedCount > 0) {
-                            toast.warning(`${failedCount} photo(s) failed to upload. ${photoAttachmentIds.length} succeeded. You can retry from the site detail panel.`);
-                        }
-                        if (photoAttachmentIds.length > 0) updateSite(result.siteId, { photo_attachment_ids: photoAttachmentIds });
-                        setUploadProgress(null);
-                    }
                     toast.success(addFirstSite ? `Customer "${name.trim()}" and first Site created` : `Customer "${name.trim()}" created`);
                     onSaved?.(result.customerId);
                 }
             }
             catch (error) {
                 toast.error(error instanceof Error ? error.message : "Customer could not be saved.");
+                return;
             }
             finally {
                 setSaving(false);
@@ -642,8 +610,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                     address: address.trim() || undefined,
                     latitude: lat,
                     longitude: lng,
-                    business_card_attachment_id: isExistingMediaFile(businessCardPhoto) ? businessCardPhoto.attachment_id : undefined,
-                    shop_attachment_id: isExistingMediaFile(shopPhoto) ? shopPhoto.attachment_id : undefined,
+                    business_card_attachment_id: isExistingMediaFile(businessCardPhoto) ? businessCardPhoto.attachment_id : isPendingMediaFile(businessCardPhoto) ? businessCardPhoto.attachmentId : undefined,
+                    shop_attachment_id: isExistingMediaFile(shopPhoto) ? shopPhoto.attachment_id : isPendingMediaFile(shopPhoto) ? shopPhoto.attachmentId : undefined,
                     reliability_rating: vendorReliability,
                     delivery_time_rating: vendorDelivery,
                     return_policy: vendorReturnPolicy,
@@ -652,16 +620,9 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                     source_partner_name: referralName,
                 };
                 setSaving(true);
-                const id = isEditMode && editId ? editId : addVendor(payload);
+                const id = isEditMode && editId ? editId : addVendor({ ...payload, id: reservedEntityId });
                 if (isEditMode && editId)
                     updateVendor(id, payload);
-                const patches: Record<string, string> = {};
-                if (isPendingMediaFile(businessCardPhoto))
-                    patches.business_card_attachment_id = await uploadAndAttach({ dataUrl: businessCardPhoto.url, fileName: businessCardPhoto.file_name, entityType: "vendor", entityId: id, kind: "media", role: businessCardPhoto.mime_type.startsWith("video/") ? "video" : businessCardPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Vendor business card" });
-                if (isPendingMediaFile(shopPhoto))
-                    patches.shop_attachment_id = await uploadAndAttach({ dataUrl: shopPhoto.url, fileName: shopPhoto.file_name, entityType: "vendor", entityId: id, kind: "media", role: shopPhoto.mime_type.startsWith("video/") ? "video" : shopPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Vendor shop file" });
-                if (Object.keys(patches).length)
-                    updateVendor(id, patches);
                 toast.success(`Vendor "${name.trim()}" ${isEditMode ? "updated" : "created"}`);
                 onSaved?.(id);
             }
@@ -683,8 +644,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                     address: address.trim() || undefined,
                     latitude: lat,
                     longitude: lng,
-                    photo_attachment_id: isExistingMediaFile(contractorPhoto) ? contractorPhoto.attachment_id : undefined,
-                    business_card_attachment_id: isExistingMediaFile(contractorCardPhoto) ? contractorCardPhoto.attachment_id : undefined,
+                    photo_attachment_id: isExistingMediaFile(contractorPhoto) ? contractorPhoto.attachment_id : isPendingMediaFile(contractorPhoto) ? contractorPhoto.attachmentId : undefined,
+                    business_card_attachment_id: isExistingMediaFile(contractorCardPhoto) ? contractorCardPhoto.attachment_id : isPendingMediaFile(contractorCardPhoto) ? contractorCardPhoto.attachmentId : undefined,
                     reliability_rating: conReliability,
                     politeness_rating: conPoliteness,
                     worker_count_range: conWorkerCount,
@@ -708,16 +669,9 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                     categories: conCategories,
                 };
                 setSaving(true);
-                const id = isEditMode && editId ? editId : addContractor(payload);
+                const id = isEditMode && editId ? editId : addContractor({ ...payload, id: reservedEntityId });
                 if (isEditMode && editId)
                     updateContractor(id, payload);
-                const patches: Record<string, string> = {};
-                if (isPendingMediaFile(contractorPhoto))
-                    patches.photo_attachment_id = await uploadAndAttach({ dataUrl: contractorPhoto.url, fileName: contractorPhoto.file_name, entityType: "contractor", entityId: id, kind: "media", role: contractorPhoto.mime_type.startsWith("video/") ? "video" : contractorPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Contractor photo file" });
-                if (isPendingMediaFile(contractorCardPhoto))
-                    patches.business_card_attachment_id = await uploadAndAttach({ dataUrl: contractorCardPhoto.url, fileName: contractorCardPhoto.file_name, entityType: "contractor", entityId: id, kind: "media", role: contractorCardPhoto.mime_type.startsWith("video/") ? "video" : contractorCardPhoto.mime_type === "application/pdf" ? "document" : "photo", caption: "Contractor business card" });
-                if (Object.keys(patches).length)
-                    updateContractor(id, patches);
                 toast.success(`Contractor "${name.trim()}" ${isEditMode ? "updated" : "created"}`);
                 onSaved?.(id);
             }
@@ -729,6 +683,8 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 setSaving(false);
             }
         }
+        commitBatches();
+        toast.info("Saved. Pending files continue in Background Activity.");
         onClose();
     };
     const titleLabel = isEditMode
@@ -846,7 +802,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                       <div className="grid gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site name *</label><Input ref={firstSiteNameRef} aria-invalid={firstSiteNameError ? true : undefined} value={firstSiteName} onChange={(e) => { setFirstSiteName(e.target.value); if (firstSiteNameError) setFirstSiteNameError(null); }} placeholder="Das Residence — 3BHK Apartment" className="h-11 text-sm"/>{firstSiteNameError && <p className="mt-1 text-[11px] font-medium text-destructive">{firstSiteNameError}</p>}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Property type</label><select value={firstSiteType} onChange={(e) => setFirstSiteType(e.target.value as typeof firstSiteType)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="apartment">Apartment</option><option value="office">Office</option><option value="villa">Villa</option><option value="shop">Shop</option><option value="showroom">Showroom</option><option value="other">Other</option></select></div></div>
                       <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Building / project name</label><Input value={firstSiteBuildingName} onChange={(e) => setFirstSiteBuildingName(e.target.value)} placeholder="Legio Apartment, Tower B / project name" className="h-11 text-sm"/></div>
                       <div className="rounded-md border border-border bg-card p-2.5"><div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">Site location</span><Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={handleCaptureFirstSiteGps} disabled={firstSiteGpsLoading}><Navigation className={cn("mr-1 h-3.5 w-3.5", firstSiteGpsLoading && "animate-spin")}/>{firstSiteGpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><Input value={firstSiteCoordinateInput} onChange={(e) => updateFirstSiteCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-11 text-sm"/>{coordinateInputError(firstSiteCoordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(firstSiteCoordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}<div className="grid gap-2"><Input value={firstSiteAddress} onChange={(e) => setFirstSiteAddress(e.target.value)} placeholder="Full Site address" className="h-11 text-sm"/><div className="grid grid-cols-2 gap-2"><Input value={firstSiteLocality} onChange={(e) => setFirstSiteLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/><Input value={firstSiteCity} onChange={(e) => setFirstSiteCity(e.target.value)} placeholder="City" className="h-11 text-sm"/></div><Input value={firstSiteMapUrl} onChange={(e) => setFirstSiteMapUrl(e.target.value)} placeholder="Google Maps link (optional)" className="h-11 text-sm"/></div></div>
-                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label><Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={handleFirstSitePhotos} className="h-11 text-sm"/>{firstSitePhotos.length > 0 && <div className="mt-2 grid grid-cols-4 gap-2">{firstSitePhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => setFirstSitePhotos((items) => items.filter((item) => item.id !== photo.id))} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}</div>}</div>
+                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label><Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={handleFirstSitePhotos} className="h-11 text-sm"/>{firstSitePhotos.length > 0 && <div className="mt-2 grid grid-cols-4 gap-2">{firstSitePhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => void removeFirstSitePhoto(photo)} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}</div>}</div>
                       <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site notes</label><Textarea value={firstSiteNotes} onChange={(e) => setFirstSiteNotes(e.target.value)} placeholder="Landmark, access conditions, site contact or property notes" rows={2} className="text-sm"/></div>
                     </div>}
                   </div>) : <p className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">Customer edit changes contact, account and broad interests only. Edit address, GPS, property type and photos from Context → Sites → Edit Site.</p>}
@@ -855,20 +811,20 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Business card photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setBusinessCardPhoto)} className="h-11 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => void handlePhotoUpload(e, setBusinessCardPhoto, "business_card_attachment_id", "Vendor business card")} className="h-11 text-sm"/>
                     {businessCardPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(businessCardPhoto, db)!} compact controls/>
-                        <button type="button" onClick={() => setBusinessCardPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+                        <button type="button" onClick={() => isPendingMediaFile(businessCardPhoto) ? void removePendingMedia(businessCardPhoto, setBusinessCardPhoto) : setBusinessCardPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
                       </div>)}
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Shop photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setShopPhoto)} className="h-11 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => void handlePhotoUpload(e, setShopPhoto, "shop_attachment_id", "Vendor shop file")} className="h-11 text-sm"/>
                     {shopPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(shopPhoto, db)!} compact controls/>
-                        <button type="button" onClick={() => setShopPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+                        <button type="button" onClick={() => isPendingMediaFile(shopPhoto) ? void removePendingMedia(shopPhoto, setShopPhoto) : setShopPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
                       </div>)}
                   </div>
                 </div>
@@ -940,20 +896,20 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contractor photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorPhoto)} className="h-11 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => void handlePhotoUpload(e, setContractorPhoto, "photo_attachment_id", "Contractor photo file")} className="h-11 text-sm"/>
                     {contractorPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(contractorPhoto, db)!} compact controls/>
-                        <button type="button" onClick={() => setContractorPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+                        <button type="button" onClick={() => isPendingMediaFile(contractorPhoto) ? void removePendingMedia(contractorPhoto, setContractorPhoto) : setContractorPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
                       </div>)}
                   </div>
                   <div>
                     <label className="text-[10px] font-semibold uppercase text-muted-foreground">Business card photo</label>
-                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handlePhotoUpload(e, setContractorCardPhoto)} className="h-11 text-sm"/>
+                    <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => void handlePhotoUpload(e, setContractorCardPhoto, "business_card_attachment_id", "Contractor business card")} className="h-11 text-sm"/>
                     {contractorCardPhoto && (<div className="mt-1 relative">
                         
                         <FilePreview file={mediaPreview(contractorCardPhoto, db)!} compact controls/>
-                        <button type="button" onClick={() => setContractorCardPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
+                        <button type="button" onClick={() => isPendingMediaFile(contractorCardPhoto) ? void removePendingMedia(contractorCardPhoto, setContractorCardPhoto) : setContractorCardPhoto("")} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button>
                       </div>)}
                   </div>
                 </div>
@@ -1064,7 +1020,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" className="min-h-[40px]" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
           <Button size="sm" className="min-h-[40px]" onClick={handleSave} disabled={!name.trim() || saving}>
-            {saving ? (uploadProgress ? uploadProgress.label : "Saving…") : isEditMode ? <><Pencil className="mr-1 h-3.5 w-3.5"/> Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5"/> Create {type}</>}
+            {saving ? "Saving…" : isEditMode ? <><Pencil className="mr-1 h-3.5 w-3.5"/> Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5"/> Create {type}</>}
           </Button>
         </DialogFooter>
       </DialogContent>

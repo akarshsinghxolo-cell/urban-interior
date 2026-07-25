@@ -12,7 +12,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { MANAGED_FILE_ACCEPT, readFileAsDataUrl } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { classifyWorkflowFile, enqueueWorkflowFiles, uploadPurposeForEntity } from "@/lib/uploads/workflow-upload";
 import { FilePreview, fileKind, managedPreviewUrl, managedOpenUrl } from "./FilePreview";
 import type { FilePreviewSource } from "./FilePreview";
 import { attachedPreview, attachedFileById, assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
@@ -24,8 +25,6 @@ export function ThreadView({ threadId }: {
     const db = useRDashStore((s) => s.db);
     const addReply = useRDashStore((s) => s.addThreadReply);
     const currentUser = useRDashStore((s) => s.currentUser);
-    const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
-    const addServerFileAsset = useRDashStore((s) => s.addServerFileAsset);
     const disposedRef = React.useRef(true);
     React.useEffect(() => { disposedRef.current = true; return () => { disposedRef.current = false; }; }, []);  // STAGE-4-FIX: unmount guard
     const [reply, setReply] = React.useState("");
@@ -103,44 +102,33 @@ export function ThreadView({ threadId }: {
     };
     const attachProof = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files || []);
-        if (!files.length)
-            return;
+        event.currentTarget.value = "";
+        if (!files.length) return;
         setUploadingProof(true);
         try {
-            const { compressImage } = await import("@/lib/rdash/image-compress");
-            const { uploadCapturedMediaToGoogleDrive } = await import("@/lib/rdash/google-drive-upload");
-            for (const file of files) {
-                const dataUrl = file.type.startsWith("image/") ? await compressImage(file) : await readFileAsDataUrl(file);
-                const role = file.type.startsWith("video/") ? "video" as const : file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf") ? "document" as const : "proof" as const;
-                const uploaded = await uploadCapturedMediaToGoogleDrive({ dataUrl, fileName: file.name, entityType, entityId: thread.record_id, kind: "site_proof", role, caption: "Thread attachment" });
-                // Use addServerFileAsset (no server save — server already has them from upload route)
-                let attachmentId: string;
-                if (uploaded.fileAsset && uploaded.attachment) {
-                    addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
-                    attachmentId = uploaded.attachment.id;
-                } else {
-                    // Fallback: create client-side (for backward compat with local uploads)
-                    attachmentId = createFileAssetAndAttach({ google_file_id: uploaded.id, file_name: uploaded.name, web_view_link: uploaded.webViewLink, mime_type: uploaded.mimeType, file_size_bytes: uploaded.size, kind: "site_proof", storage_account_id: uploaded.storageAccountId, storage_folder_instance: uploaded.storageFolderInstance, storage_provider: uploaded.storageAccountId === "local" ? "local" : "google_drive", storage_mode: "managed", sync_status: "uploaded", thumbnail_url: uploaded.thumbnailLink }, { entity_type: entityType, entity_id: thread.record_id, role, visibility: "internal", customer_shareable: false, caption: "Thread attachment", created_by: user.name });
-                }
-                if (disposedRef.current) addReply(thread.id, {
-                    author: user.name,
-                    role: user.role,
-                    body: `Attachment: ${uploaded.name}`,
-                    kind: "proof",
-                    proof_attachment_id: attachmentId,
-                    parent_message_id: replyParentId,
-                });
-            }
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "thread_attachment",
+                sourceLabel: thread.title || "Thread attachment",
+                targetEntityType: entityType,
+                targetEntityId: thread.record_id,
+                targetLabel: thread.title,
+                purpose: uploadPurposeForEntity(entityType),
+                files: files.map((file) => ({ file, ...classifyWorkflowFile(file), role: classifyWorkflowFile(file).role === "photo" ? "proof" : classifyWorkflowFile(file).role, caption: "Thread attachment" })),
+            });
+            queued.files.forEach((item) => addReply(thread.id, {
+                author: user.name,
+                role: user.role,
+                body: `Attachment queued: ${item.fileName}`,
+                kind: "proof",
+                proof_attachment_id: item.attachmentId,
+                parent_message_id: replyParentId,
+            }));
             setReplyParentId(undefined);
-            toast.success(`${files.length} file${files.length === 1 ? "" : "s"} uploaded to Google Drive and attached`);
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Attachment upload failed");
-        }
-        finally {
-            if (!disposedRef.current) return;  // STAGE-4-FIX: unmount guard
-            setUploadingProof(false);
-            event.target.value = "";
+            toast.success(`${queued.files.length} file${queued.files.length === 1 ? "" : "s"} queued; uploads continue in Background Activity`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Attachment could not be queued");
+        } finally {
+            if (disposedRef.current) setUploadingProof(false);
         }
     };
     const togglePicked = (id: string) => {

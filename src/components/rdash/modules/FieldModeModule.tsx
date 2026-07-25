@@ -10,9 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { MapView, openStreetMapPointUrl, openStreetMapSearchUrl, type MapPoint, } from "../MapView";
 import { visitPrimaryCoordinates, visitToMapPoints } from "../visitMap";
-import { compressImage } from "@/lib/rdash/image-compress";
-import { uploadCapturedMediaToGoogleDrive } from "@/lib/rdash/google-drive-upload";
-import { MANAGED_FILE_ACCEPT, readFileAsDataUrl } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
 export function FieldModeModule() {
     const db = useRDashStore((s) => s.db);
@@ -23,6 +23,7 @@ export function FieldModeModule() {
     const completeContractorVisit = useRDashStore((s) => s.completeContractorVisit);
     const recordTrackingPoint = useRDashStore((s) => s.recordVisitTrackingPoint);
     const fileReport = useRDashStore((s) => s.fileVisitReport);
+    const addVisit = useRDashStore((s) => s.addVisit);
     const openDetail = useRDashStore((s) => s.openDetail);
     const runVisitReconciliation = useRDashStore((s) => s.runVisitReconciliation);
     const currentUser = useRDashStore((s) => s.currentUser);
@@ -53,12 +54,8 @@ export function FieldModeModule() {
     const [reportNotes, setReportNotes] = React.useState("");
     const [gpsStatus, setGpsStatus] = React.useState<"idle" | "capturing" | "captured">("idle");
     const [capturingVisitId, setCapturingVisitId] = React.useState<string | null>(null);
-    const [photos, setPhotos] = React.useState<{
-        name: string;
-        url: string;
-        mimeType: string;
-    }[]>([]);
-    const [uploadingReport, setUploadingReport] = React.useState(false);
+    const [photos, setPhotos] = React.useState<Array<QueuedWorkflowFile & { type: string }>>([]);
+    const { registerBatch, commitBatches } = useUploadDraft(Boolean(reportingVisit));
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const lastTrackingPointAt = React.useRef(0);
     const disposedRef = React.useRef(false);
@@ -109,26 +106,47 @@ export function FieldModeModule() {
     })), [sorted, openDetail]);
     const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
-        const stored: {
-            name: string;
-            url: string;
-            mimeType: string;
-        }[] = [];
-        for (const file of files) {
-            try {
-                const url = file.type.startsWith("image/") ? await compressImage(file, 1600, 0.82) : await readFileAsDataUrl(file);
-                stored.push({ name: file.name, url, mimeType: file.type || "application/octet-stream" });
-            }
-            catch {
-                toast.error(`Could not prepare ${file.name}`);
-            }
+        if (!files.length || !reportingVisit) return;
+        try {
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "field_visit_report",
+                sourceLabel: "Field Visit report",
+                targetEntityType: "visit",
+                targetEntityId: reportingVisit,
+                targetLabel: db.visits.find((visit) => visit.id === reportingVisit)?.location_name || "Visit",
+                purpose: "visit_evidence",
+                kind: "site_proof",
+                role: "proof",
+                visibility: "internal",
+                files: files.map((file) => {
+                    const classified = classifyWorkflowFile(file);
+                    return {
+                        file,
+                        kind: "site_proof" as const,
+                        role: classified.role === "photo" ? "proof" as const : classified.role,
+                        caption: `Field visit ${classified.role}`,
+                    };
+                }),
+            });
+            registerBatch(queued.batchId);
+            setPhotos((current) => [
+                ...current,
+                ...queued.files.map((item, index) => ({
+                    ...withLocalPreview(item, files[index]),
+                    type: files[index].type.startsWith("video/") ? "site_video" : files[index].type === "application/pdf" ? "site_document" : "site_photo",
+                })),
+            ]);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not queue Visit evidence.");
+        } finally {
+            if (fileInputRef.current) fileInputRef.current.value = "";
         }
-        if (stored.length)
-            setPhotos((current) => [...current, ...stored]);
-        if (fileInputRef.current)
-            fileInputRef.current.value = "";
     };
-    const removePhoto = (idx: number) => setPhotos((photos) => photos.filter((_, i) => i !== idx));
+    const removePhoto = async (idx: number) => {
+        const item = photos[idx];
+        if (item) await cancelQueuedWorkflowFile(item);
+        setPhotos((current) => current.filter((_, index) => index !== idx));
+    };
     const handleCheckIn = (v: (typeof sorted)[number]) => {
         if (v.planned_latitude == null || v.planned_longitude == null) {
             toast.error("This Visit has no verified Site GPS. Add Site coordinates before check-in.");
@@ -203,63 +221,30 @@ export function FieldModeModule() {
         }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
     };
     const handleFileReport = async () => {
-        if (!reportingVisit)
-            return;
+        if (!reportingVisit) return;
         if (!reportNotes.trim()) {
             toast.error("Enter the visit briefing before filing the report.");
             return;
         }
-        setUploadingReport(true);
         try {
-            const uploaded = await Promise.all(photos.map(async (photo, index) => {
-                const result = await uploadCapturedMediaToGoogleDrive({
-                    dataUrl: photo.url,
-                    fileName: photo.name || `field-file-${index + 1}`,
-                    entityType: "visit",
-                    entityId: reportingVisit,
-                    kind: "site_proof",
-                    role: photo.mimeType.startsWith("video/") ? "video" : photo.mimeType === "application/pdf" ? "document" : "proof",
-                    caption: `Field visit ${photo.mimeType.startsWith("video/") ? "video" : photo.mimeType === "application/pdf" ? "document" : "photo"}`,
-                });
-                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
-                // shows in app preview and survives page reloads.
-                if (result.fileAsset && result.attachment) {
-                    useRDashStore.getState().addServerFileAsset(result.fileAsset, result.attachment);
-                }
-                return {
-                    type: photo.mimeType.startsWith("video/") ? "site_video" : photo.mimeType === "application/pdf" ? "site_document" : "site_photo",
-                    file_name: result.name,
-                    mime_type: result.mimeType,
-                    url: result.webViewLink,
-                    file_asset_id: result.id,
-                };
-            }));
-            fileReport(reportingVisit, reportNotes.trim(), uploaded);
-            toast.success(uploaded.length ? `Report filed with ${uploaded.length} Google Drive file${uploaded.length > 1 ? "s" : ""}` : "Report filed without photos; photo reminder recorded.");
+            fileReport(reportingVisit, reportNotes.trim(), photos.map((photo) => ({
+                type: photo.type,
+                file_name: photo.fileName,
+                attachment_id: photo.attachmentId,
+            })));
+            commitBatches();
+            toast.success(photos.length ? `Report saved with ${photos.length} queued file${photos.length > 1 ? "s" : ""}` : "Report filed without photos; photo reminder recorded.");
             setReportingVisit(null);
             setReportNotes("");
             setPhotos([]);
-        }
-        catch (error) {
-            toast.error(error instanceof Error
-                ? error.message
-                : "Google Drive upload failed. The report has not been filed.");
-        }
-        finally {
-            setUploadingReport(false);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "The Visit report could not be saved.");
         }
     };
-    const activeVisit = db.visits.find((v) => v.id === reportingVisit);
-    const pendingReports = db.visits.filter((v) => canOperateVisit(v) && v.status === "report_pending" && !v.report_filed);
-    const addVisit = useRDashStore((s) => s.addVisit);
+    const activeVisit = db.visits.find((visit) => visit.id === reportingVisit);
+    const pendingReports = db.visits.filter((visit) => canOperateVisit(visit) && visit.status === "report_pending" && !visit.report_filed);
     const [quickCheckInProgress, setQuickCheckInProgress] = React.useState(false);
-    /**
-     * H1: Quick check-in at current location — when a field staff arrives at a
-     * site without a pre-scheduled visit, this finds the nearest site within
-     * ~500m of the current GPS, auto-creates a visit, and immediately checks
-     * it in with the captured GPS coords. The auto-created visit carries
-     * check_in_at + gps coords so it shows up in Visit Proofs right away.
-     */
+    /** Finds the nearest registered Site within 500m, creates a Visit, and checks it in with the captured GPS. */
     const handleQuickCheckIn = () => {
         if (!navigator.geolocation) {
             toast.error("Device GPS is required for quick check-in.");
@@ -271,22 +256,21 @@ export function FieldModeModule() {
         }
         setQuickCheckInProgress(true);
         navigator.geolocation.getCurrentPosition((position) => {
-            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            if (disposedRef.current) return;
             const { latitude, longitude, accuracy } = position.coords;
-            // Find the nearest site within 500m of the current location.
             const candidates = db.sites
-                .filter((s) => Number.isFinite(s.latitude) && Number.isFinite(s.longitude))
-                .map((s) => {
-                    const R = 6371000;
-                    const toRad = (d: number) => (d * Math.PI) / 180;
-                    const dLat = toRad(s.latitude! - latitude);
-                    const dLon = toRad(s.longitude! - longitude);
-                    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(latitude)) * Math.cos(toRad(s.latitude!)) * Math.sin(dLon / 2) ** 2;
-                    return { site: s, distanceM: 2 * R * Math.asin(Math.sqrt(a)) };
+                .filter((site) => Number.isFinite(site.latitude) && Number.isFinite(site.longitude))
+                .map((site) => {
+                    const radiusM = 6371000;
+                    const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+                    const deltaLat = toRad(site.latitude! - latitude);
+                    const deltaLon = toRad(site.longitude! - longitude);
+                    const haversine = Math.sin(deltaLat / 2) ** 2 + Math.cos(toRad(latitude)) * Math.cos(toRad(site.latitude!)) * Math.sin(deltaLon / 2) ** 2;
+                    return { site, distanceM: 2 * radiusM * Math.asin(Math.sqrt(haversine)) };
                 })
-                .filter((row) => row.distanceM <= 500)
+                .filter((candidate) => candidate.distanceM <= 500)
                 .sort((a, b) => a.distanceM - b.distanceM);
-            if (candidates.length === 0) {
+            if (!candidates.length) {
                 toast.error("No site within 500m of your GPS. Schedule a visit first or move closer to a registered site.");
                 setQuickCheckInProgress(false);
                 return;
@@ -304,14 +288,11 @@ export function FieldModeModule() {
                     scheduled_duration_minutes: 60,
                     notes: `Quick check-in auto-created at ${new Date().toLocaleString("en-IN")} · ${Math.round(nearest.distanceM)}m from registered site.`,
                 });
-                // Immediately check the new visit in with the captured GPS.
                 checkIn(visitId, { latitude, longitude, accuracy_m: accuracy, captured_at: new Date().toISOString() });
                 toast.success(`Quick check-in at ${nearest.site.name}`, { description: `Auto-created visit · ${Math.round(nearest.distanceM)}m from registered GPS` });
-            }
-            catch (error) {
+            } catch (error) {
                 toast.error(error instanceof Error ? error.message : "Quick check-in failed.");
-            }
-            finally {
+            } finally {
                 setQuickCheckInProgress(false);
             }
         }, (error) => {
@@ -505,12 +486,12 @@ export function FieldModeModule() {
               <input ref={fileInputRef} type="file" accept={MANAGED_FILE_ACCEPT} capture="environment" multiple onChange={handlePhotoSelect} className="hidden"/>
               {photos.length > 0 && (<div className="mb-2 grid grid-cols-3 gap-2">
                   {photos.map((p, i) => (<div key={i} className="group relative overflow-hidden rounded-lg border border-border">
-                      <FilePreview file={{ fileName: p.name, mimeType: p.mimeType, url: p.url }} compact controls/>
-                      <button type="button" onClick={() => removePhoto(i)} className="absolute right-1 top-1 rounded-md bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${p.name}`}>
+                      <FilePreview file={{ fileName: p.fileName, mimeType: p.mimeType, url: p.previewUrl }} compact controls/>
+                      <button type="button" onClick={() => void removePhoto(i)} className="absolute right-1 top-1 rounded-md bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${p.fileName}`}>
                         <X className="h-3 w-3"/>
                       </button>
                       <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 py-0.5 text-[8px] text-white">
-                        {p.name.slice(0, 12)}
+                        {p.fileName.slice(0, 12)}
                       </span>
                     </div>))}
                 </div>)}
@@ -528,11 +509,9 @@ export function FieldModeModule() {
             </div>
           </div>
           <div className="border-t border-border bg-card px-4 py-3">
-            <Button className="w-full" onClick={handleFileReport} disabled={!reportNotes.trim() || uploadingReport}>
+            <Button className="w-full" onClick={handleFileReport} disabled={!reportNotes.trim()}>
               <CheckCircle2 className="mr-1.5 h-4 w-4"/>{" "}
-              {uploadingReport
-                ? "Uploading to Google Drive…"
-                : photos.length ? "Upload proof & submit report" : "Submit report without photos"}
+              {photos.length ? "Save report with queued proof" : "Submit report without photos"}
             </Button>
           </div>
         </div>)}

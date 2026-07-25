@@ -1,5 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+const configuredWorkspaceId = String(process.env.UC_WORKSPACE_ID || "").trim();
+if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(configuredWorkspaceId)) {
+  process.env.UC_WORKSPACE_ID = "default";
+}
+
 type RDashUserRoleRow = {
   id: string;
   user_id: string;
@@ -157,6 +162,12 @@ type RDashSupabaseSchema = {
           staffId: string;
           workspaceRevision: number;
         };
+      };
+      uc_bump_workspace_revision: {
+        Args: {
+          p_workspace_id: string;
+        };
+        Returns: number;
       };
     };
     Enums: Record<string, never>;

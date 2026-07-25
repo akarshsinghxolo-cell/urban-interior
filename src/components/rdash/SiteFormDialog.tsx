@@ -4,8 +4,10 @@ import { Building2, MapPin, Navigation, Pencil, Plus, Search, X } from "lucide-r
 import { toast } from "sonner";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { Site } from "@/lib/rdash/types";
-import { compressImage } from "@/lib/rdash/image-compress";
-import { asManagedFileAsset, MANAGED_FILE_ACCEPT, readFileAsDataUrl, uploadManagedFile } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
 import { FilePreview } from "./FilePreview";
 import { Button } from "@/components/ui/button";
@@ -27,7 +29,7 @@ const SITE_TYPES: Array<{
     { value: "showroom", label: "Showroom" },
     { value: "other", label: "Other" },
 ];
-type PendingSiteFile = {
+type PendingSiteFile = QueuedWorkflowFile & {
     id: string;
     file_name: string;
     mime_type?: string;
@@ -70,8 +72,9 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
     const db = useRDashStore((state) => state.db);
     const addSite = useRDashStore((state) => state.addSite);
     const updateSite = useRDashStore((state) => state.updateSite);
-    const createFileAssetAndAttach = useRDashStore((state) => state.createFileAssetAndAttach);
     const [saving, setSaving] = React.useState(false);
+    const [reservedSiteId, setReservedSiteId] = React.useState("");
+    const { registerBatch, commitBatches } = useUploadDraft(open);
     const [draft, setDraft] = React.useState<SiteDraft>(() => emptyDraft(customerId));
     const [pendingPhotos, setPendingPhotos] = React.useState<PendingSiteFile[]>([]);
     const existingFiles = React.useMemo(() => siteId ? entityFiles(db, "site", siteId) : [], [db, siteId]);
@@ -91,6 +94,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         if (!open)
             return;
         const existing = siteId ? db.sites.find((site) => site.id === siteId) : undefined;
+        setReservedSiteId(siteId || reserveEntityId("site"));
         if (existing) {
             setDraft({
                 customerId: existing.customer_id,
@@ -198,18 +202,34 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
     };
     const addPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files || []);
-        const photos: PendingSiteFile[] = [];
-        for (const file of files) {
-            try {
-                const url = file.type.startsWith("image/") ? await compressImage(file) : await readFileAsDataUrl(file);
-                photos.push({ id: `site-photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, file_name: file.name, mime_type: file.type || "application/octet-stream", url });
-            }
-            catch {
-                toast.error(`Could not process ${file.name}`);
-            }
-        }
-        if (photos.length)
+        event.currentTarget.value = "";
+        if (!files.length || !reservedSiteId) return;
+        try {
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "site_form",
+                sourceLabel: siteId ? "Edit Site" : "Add Site",
+                targetEntityType: "site",
+                targetEntityId: reservedSiteId,
+                targetLabel: draft.name.trim() || "New Site",
+                purpose: "site_evidence",
+                attachmentField: "photo_attachment_ids",
+                attachmentFieldMode: "append",
+                files: files.map((file) => ({ file, ...classifyWorkflowFile(file), caption: "Site file" })),
+            });
+            registerBatch(queued.batchId);
+            const photos = queued.files.map((item, index) => {
+                const preview = withLocalPreview(item, files[index]);
+                return { ...preview, id: item.uploadItemId, file_name: item.fileName, mime_type: item.mimeType, url: preview.previewUrl, caption: "Site file" };
+            });
             setPendingPhotos((current) => [...current, ...photos]);
+            toast.success(`${photos.length} Site file${photos.length === 1 ? "" : "s"} queued`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not queue Site files");
+        }
+    };
+    const removePendingPhoto = async (photo: PendingSiteFile) => {
+        await cancelQueuedWorkflowFile(photo);
+        setPendingPhotos((items) => items.filter((item) => item.id !== photo.id));
     };
     const save = async () => {
         if (saving)
@@ -242,23 +262,12 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         };
         try {
             setSaving(true);
-            const id = siteId || addSite(payload);
-            if (siteId)
-                updateSite(siteId, payload);
-            // FIX-E2E-001: Await the server commit before starting uploads.
-            if (pendingPhotos.length) {
-                await useRDashStore.getState().awaitServerSync();
-            }
-            const uploadedAttachmentIds = await Promise.all(pendingPhotos.map(async (photo) => {
-                const role = photo.mime_type?.startsWith("video/") ? "video" as const : photo.mime_type === "application/pdf" ? "document" as const : "photo" as const;
-                const file = await uploadManagedFile({ dataUrl: photo.url, fileName: photo.file_name, entityType: "site", entityId: id, kind: "media", role, caption: photo.caption || "Site file", visibility: "internal" });
-                return createFileAssetAndAttach(asManagedFileAsset(file, { kind: "media" }), { entity_type: "site", entity_id: id, role, caption: photo.caption || "Site file", visibility: "internal", customer_shareable: false });
-            }));
-            if (uploadedAttachmentIds.length) {
-                const existing = db.sites.find((site) => site.id === id)?.photo_attachment_ids || [];
-                updateSite(id, { photo_attachment_ids: [...new Set([...existing, ...uploadedAttachmentIds])] });
-            }
-            toast.success(`Site "${payload.name}" ${siteId ? "updated" : "added"}`);
+            const existingAttachmentIds = siteId ? (db.sites.find((site) => site.id === siteId)?.photo_attachment_ids || []) : [];
+            const photoAttachmentIds = [...new Set([...existingAttachmentIds, ...pendingPhotos.map((photo) => photo.attachmentId)])];
+            const id = siteId || addSite({ ...payload, id: reservedSiteId, photo_attachment_ids: photoAttachmentIds });
+            if (siteId) updateSite(siteId, { ...payload, photo_attachment_ids: photoAttachmentIds });
+            commitBatches();
+            toast.success(`Site "${payload.name}" ${siteId ? "updated" : "added"}. Pending files continue in Background Activity.`);
             onSaved?.(id);
             onClose();
         }
@@ -314,7 +323,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
             <Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={addPhotos} className="mt-1 h-9 text-sm"/>
             {(existingFiles.length > 0 || pendingPhotos.length > 0) && <div className="mt-2 grid grid-cols-4 gap-2">
               {existingFiles.map(({ attachment, asset }) => <div key={attachment.id}><FilePreview file={assetPreview(asset)} compact controls/></div>)}
-              {pendingPhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => setPendingPhotos((items) => items.filter((item) => item.id !== photo.id))} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}
+              {pendingPhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => void removePendingPhoto(photo)} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}
             </div>}
           </div>
           <Field label="Site notes"><Textarea value={draft.notes} onChange={(event) => set("notes", event.target.value)} rows={3} placeholder="Access notes, site constraints, landmark, contact-at-site or project context…"/></Field>

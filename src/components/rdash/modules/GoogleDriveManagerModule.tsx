@@ -327,7 +327,7 @@ export function GoogleDriveManagerModule() {
                       <Button size="icon" variant="ghost" aria-label={`Archive ${item.file_name}`} onClick={() => archiveFile(item.id)}><Archive className="h-4 w-4 text-muted-foreground" /></Button>
                     </div>
                   ); })}
-                  {!files.length ? <p className="p-6 text-center text-xs text-muted-foreground">No files added yet. Add an existing file from a connected Drive using the form on the right.</p> : null}
+                  {!files.length ? <p className="p-6 text-center text-xs text-muted-foreground">No files registered yet. Register a link to a file that already exists in a connected Drive using the form on the right.</p> : null}
                 </div>
               </section>
             </div>
@@ -335,7 +335,7 @@ export function GoogleDriveManagerModule() {
             {/* Register existing file form */}
             <aside className="grid content-start gap-4">
               <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
-                <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold"><UploadCloud className="h-3.5 w-3.5" /> Add Existing File</h3>
+                <h3 className="mb-3 flex items-center gap-1.5 text-sm font-bold"><UploadCloud className="h-3.5 w-3.5" /> Register Existing Drive Link</h3>
                 <form onSubmit={createFile} className="grid gap-2">
                   <p className="text-[10px] text-muted-foreground">Add a file that already exists in a connected Drive. Urban Castle links to the original without copying or moving it.</p>
                   <Field label="Original Drive account"><select value={fileDraft.accountId} onChange={(e) => setFileDraft({ ...fileDraft, accountId: e.target.value })} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="">Select connected account</option>{accounts.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}</select></Field>
@@ -344,7 +344,7 @@ export function GoogleDriveManagerModule() {
                   <Field label="Google Drive share link"><Input required value={fileDraft.url} onChange={(e) => setFileDraft({ ...fileDraft, url: e.target.value })} placeholder="https://drive.google.com/..." /></Field>
                   <Field label="Google file ID (optional)"><Input value={fileDraft.googleFileId} onChange={(e) => setFileDraft({ ...fileDraft, googleFileId: e.target.value })} /></Field>
                   <Field label="Tags"><Input value={fileDraft.tags} onChange={(e) => setFileDraft({ ...fileDraft, tags: e.target.value })} placeholder="catalogue, zebra blind" /></Field>
-                  <Button size="sm" type="submit"><UploadCloud className="mr-1 h-3.5 w-3.5" />Add Existing File</Button>
+                  <Button size="sm" type="submit"><UploadCloud className="mr-1 h-3.5 w-3.5" />Register Existing Drive Link</Button>
                 </form>
               </section>
             </aside>

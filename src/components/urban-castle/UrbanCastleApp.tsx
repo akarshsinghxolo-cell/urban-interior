@@ -4,40 +4,16 @@ import * as React from "react";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { RDashApp } from "../rdash/RDashApp";
+import { UploadManagerProvider } from "@/components/uploads/UploadManagerProvider";
 import { useRDashStore } from "@/lib/rdash/store";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 
-/**
- * Urban Castle application shell.
- *
- * The underlying workspace engine (`RDashApp`) is the historical internal
- * name for the Urban Castle workspace. All user-visible branding has been
- * migrated to "Urban Castle" at the source level — this wrapper renders the
- * app, keeps the document title in sync, and adds two workspace-wide
- * concerns that the spec assigns to UrbanCastleApp:
- *
- *  1. Reconciliation-on-load: when the secure workspace hydrates (authUser
- *     transitions from null → user), automatically run `reconcileWorkspace()`
- *     so auto-absent / missed-visit / overdue-followup / recurring-task
- *     reconciliation fires even if no manager ever opens the corresponding
- *     module. This makes the daily workspace state match reality on login.
- *
- *  2. A "Reconcile workspace" floating button that a manager can use to
- *     retry reconciliation on demand, with a toast summary.
- *
- * The cross-module deep-link wiring, global search index expansion, and
- * dashboard KPI enhancements live in their respective modules
- * (CommandPalette, WorkdeskDashboard) — this wrapper only adds the
- * reconciliation hook + refresh button.
- */
+/** Urban Castle application shell. */
 export function UrbanCastleApp() {
   React.useEffect(() => {
     document.title = "Urban Castle";
   }, []);
 
-  // Mirror in-app navigation onto the browser history so the mobile back
-  // gesture (iOS edge-swipe / Android back) walks back through the app
-  // instead of exiting on the first swipe. See use-browser-history-sync.ts.
   useBrowserHistorySync();
 
   const authUser = useRDashStore((s) => s.authUser);
@@ -85,18 +61,13 @@ export function UrbanCastleApp() {
   }, [authSessionKey, reconcileWorkspace]);
 
   return (
-    <>
+    <UploadManagerProvider>
       <RDashApp />
       <ReconcileWorkspaceButton />
-    </>
+    </UploadManagerProvider>
   );
 }
 
-/**
- * Floating "Reconcile workspace" button — only visible to Owner/Operations
- * Manager (reconciliation is a no-op for other roles). Positioned top-right
- * so it doesn't overlap the mobile bottom nav or the quick-add FAB.
- */
 function ReconcileWorkspaceButton() {
   const role = useRDashStore((s) => s.authUser?.role || "Unauthenticated");
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
@@ -115,14 +86,11 @@ function ReconcileWorkspaceButton() {
         description: parts.length ? parts.join(" · ") : "No pending items to reconcile.",
         duration: 4000,
       });
-    }
-    catch (error) {
+    } catch (error) {
       toast.error("Reconciliation failed", {
         description: error instanceof Error ? error.message : undefined,
       });
-    }
-    finally {
-      // Brief spin animation even on no-op for visual feedback.
+    } finally {
       window.setTimeout(() => setRunning(false), 400);
     }
   };

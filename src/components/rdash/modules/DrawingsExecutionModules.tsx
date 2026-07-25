@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { compressImage } from "@/lib/rdash/image-compress";
-import { asManagedFileAsset, MANAGED_FILE_ACCEPT, uploadManagedFile } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { FilePreview } from "../FilePreview";
@@ -22,7 +24,6 @@ export function DrawingsModule() {
     const removeDrawing = useRDashStore((s) => s.removeDrawing);
     const approveDrawing = useRDashStore((s) => s.approveDrawing);
     const uploadDrawingVersion = useRDashStore((s) => s.uploadDrawingVersion);
-    const createFileAssetAndAttach = useRDashStore((s) => s.createFileAssetAndAttach);
     const linkBOQItemToDrawing = useRDashStore((s) => s.linkBOQItemToDrawing);
     const [filter, setFilter] = React.useState<string>("all");
     const [uploadOpen, setUploadOpen] = React.useState(false);
@@ -53,13 +54,24 @@ export function DrawingsModule() {
         try {
             const drawing = drawings.find((d) => d.id === drawingId);
             if (!drawing) throw new Error("Drawing not found.");
-            const uploaded = await uploadManagedFile({ file, fileName: file.name, entityType: "drawing", entityId: drawingId, kind: "drawing", role: "drawing", caption: drawing.title, visibility: "internal" });
-            const attachmentId = createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind: "drawing" }), { entity_type: "drawing", entity_id: drawingId, role: "drawing", visibility: "internal", customer_shareable: false, caption: drawing.title });
-            updateDrawing(drawingId, { primary_file_attachment_id: attachmentId });
-            toast.success(`File "${file.name}" attached to "${drawing.title}"`);
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "File upload failed.");
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "drawing_missing_file",
+                sourceLabel: "Drawing file",
+                targetEntityType: "drawing",
+                targetEntityId: drawingId,
+                targetLabel: drawing.title,
+                purpose: "drawing",
+                kind: "drawing",
+                role: "drawing",
+                visibility: "internal",
+                attachmentField: "primary_file_attachment_id",
+                attachmentFieldMode: "set",
+                files: [{ file, kind: "drawing", role: "drawing", caption: drawing.title, attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set" }],
+            });
+            updateDrawing(drawingId, { primary_file_attachment_id: queued.attachmentIds[0] });
+            toast.success(`File "${file.name}" queued for "${drawing.title}"`);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "File could not be queued.");
         }
     };
     return (<div className="flex flex-col gap-5">
@@ -149,183 +161,112 @@ export function DrawingsModule() {
         e.currentTarget.value = "";
       }}/>
 
-      {uploadOpen && (<DrawingUploadDialog onClose={() => setUploadOpen(false)} onSave={async (payload) => {
+      {uploadOpen && (<DrawingUploadDialog onClose={() => setUploadOpen(false)} onSave={(payload) => {
                 try {
-                    const id = addDrawing({ ...payload });
-                    const uploaded = await uploadManagedFile({ file: payload.file, fileName: payload.file.name, entityType: "drawing", entityId: id, kind: "drawing", role: "drawing", caption: payload.title, visibility: "internal" });
-                    const attachmentId = createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind: "drawing" }), { entity_type: "drawing", entity_id: id, role: "drawing", visibility: "internal", customer_shareable: false, caption: payload.title });
-                    updateDrawing(id, { primary_file_attachment_id: attachmentId });
-                    toast.success(`Drawing "${payload.title}" uploaded to Google Drive`);
+                    addDrawing(payload);
+                    toast.success(`Drawing "${payload.title}" saved; its file continues in Background Activity`);
                     setUploadOpen(false);
+                } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Drawing could not be saved.");
                 }
-                catch (error) {
-                    toast.error(error instanceof Error ? error.message : "Drawing upload failed.");
-                }
-            }}/>)}
+            }}/>) }
 
-      {versionUploadFor && (<DrawingVersionDialog parent={drawings.find((d) => d.id === versionUploadFor)!} onClose={() => setVersionUploadFor(null)} onSave={async (file) => {
+      {versionUploadFor && (<DrawingVersionDialog parent={drawings.find((d) => d.id === versionUploadFor)!} onClose={() => setVersionUploadFor(null)} onSave={(payload) => {
                 try {
-                    const newId = uploadDrawingVersion(versionUploadFor, { notes: file.notes });
-                    if (!newId)
-                        throw new Error("Could not create drawing revision.");
-                    const uploaded = await uploadManagedFile({ file: file.file, fileName: file.file.name, entityType: "drawing", entityId: newId, kind: "drawing", role: "drawing", caption: "Drawing revision", visibility: "internal" });
-                    const attachmentId = createFileAssetAndAttach(asManagedFileAsset(uploaded, { kind: "drawing" }), { entity_type: "drawing", entity_id: newId, role: "drawing", visibility: "internal", customer_shareable: false, caption: "Drawing revision" });
-                    updateDrawing(newId, { primary_file_attachment_id: attachmentId });
-                    toast.success(`New Google Drive version uploaded — parent marked superseded`);
+                    const newId = uploadDrawingVersion(versionUploadFor, payload);
+                    if (!newId) throw new Error("Could not create drawing revision.");
+                    toast.success("New drawing version saved; its file continues in Background Activity");
                     setVersionUploadFor(null);
+                } catch (error) {
+                    toast.error(error instanceof Error ? error.message : "Drawing revision could not be saved.");
                 }
-                catch (error) {
-                    toast.error(error instanceof Error ? error.message : "Drawing revision upload failed.");
-                }
-            }}/>)}
+            }}/>) }
     </div>);
 }
 function DrawingUploadDialog({ onClose, onSave }: {
     onClose: () => void;
-    onSave: (payload: {
-        title: string;
-        kind: "2D" | "3D" | "sketch" | "render" | "blueprint";
-        site_id?: string;
-        area_id?: string;
-        work_order_id?: string;
-        file: File;
-        notes?: string;
-        uploaded_by?: string;
-    }) => void | Promise<void>;
+    onSave: (payload: Partial<import("@/lib/rdash/types").Drawing> & { id: string; title: string; primary_file_attachment_id: string }) => void | Promise<void>;
 }) {
-    const db = useRDashStore((s) => s.db);
+    const db = useRDashStore((state) => state.db);
+    const [drawingId] = React.useState(() => reserveEntityId("drawing"));
     const [title, setTitle] = React.useState("");
     const [kind, setKind] = React.useState<"2D" | "3D" | "sketch" | "render" | "blueprint">("2D");
     const [siteId, setSiteId] = React.useState("");
-    const [roomId, setAreaId] = React.useState("");
-    const [workOrderId, setJobId] = React.useState("");
-    const [fileUrl, setFileUrl] = React.useState("");
-    const [fileName, setFileName] = React.useState("");
+    const [areaId, setAreaId] = React.useState("");
+    const [workOrderId, setWorkOrderId] = React.useState("");
     const [notes, setNotes] = React.useState("");
-    const [file, setFile] = React.useState<File | null>(null);
-    const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const f = e.target.files?.[0];
-        if (!f)
-            return;
-        setFile(f);
-        setFileName(f.name);
-        setFileType(f.type);
-        setFileUrl(URL.createObjectURL(f));
+    const [queuedFile, setQueuedFile] = React.useState<QueuedWorkflowFile | null>(null);
+    const { registerBatch, commitBatches } = useUploadDraft(true);
+    const areas = db.areas.filter((area) => !siteId || area.site_id === siteId);
+    const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            if (queuedFile) await cancelQueuedWorkflowFile(queuedFile);
+            const queued = await enqueueWorkflowFiles({
+                sourceFlow: "drawing_create",
+                sourceLabel: "New drawing",
+                targetEntityType: "drawing",
+                targetEntityId: drawingId,
+                targetLabel: title.trim() || file.name,
+                purpose: "drawing",
+                kind: "drawing",
+                role: "drawing",
+                visibility: "internal",
+                attachmentField: "primary_file_attachment_id",
+                attachmentFieldMode: "set",
+                files: [{ file, kind: "drawing", role: "drawing", caption: title.trim() || file.name, attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set" }],
+            });
+            registerBatch(queued.batchId);
+            setQueuedFile(withLocalPreview(queued.files[0], file));
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Drawing file could not be queued.");
+        } finally {
+            event.currentTarget.value = "";
+        }
     };
-    const [fileType, setFileType] = React.useState("");
-    const areas = db.areas.filter((r) => !siteId || r.site_id === siteId);
-    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
+    const save = async () => {
+        if (!queuedFile || !title.trim()) return;
+        await onSave({ id: drawingId, title: title.trim(), kind, site_id: siteId || undefined, area_id: areaId || undefined, work_order_id: workOrderId || undefined, primary_file_attachment_id: queuedFile.attachmentId, notes: notes.trim() || undefined, uploaded_by: "Anita Rao" });
+        commitBatches();
+    };
+    return (<Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-lg gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-3">
-          <DialogTitle className="flex items-center gap-2 text-base"><Pencil className="h-4 w-4 text-primary"/> Upload drawing</DialogTitle>
-          <DialogDescription className="text-xs">2D / 3D / sketch / render / blueprint — uploaded to managed Google Drive</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll">
-          <div className="grid gap-3">
-            <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Title</label>
-              <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Legio Apt · Area 304 — 2D floor plan" className="h-9 text-sm" autoFocus/>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Kind</label>
-                <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                  <option value="2D">2D — floor plan / elevation</option>
-                  <option value="3D">3D — render / model</option>
-                  <option value="sketch">Sketch</option>
-                  <option value="render">Render</option>
-                  <option value="blueprint">Blueprint / detail</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site</label>
-                <select value={siteId} onChange={(e) => { setSiteId(e.target.value); setAreaId(""); }} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                  <option value="">— none —</option>
-                  {db.sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Area (optional)</label>
-                <select value={roomId} onChange={(e) => setAreaId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm" disabled={!siteId}>
-                  <option value="">— none —</option>
-                  {areas.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">WorkOrder (optional)</label>
-                <select value={workOrderId} onChange={(e) => setJobId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                  <option value="">— none —</option>
-                  {db.workOrders.map((j) => <option key={j.id} value={j.id}>{j.work_order_no} · {j.title}</option>)}
-                </select>
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">File (image / PDF)</label>
-              <Input type="file" onChange={handleFile} className="h-9 text-sm" accept={MANAGED_FILE_ACCEPT}/>
-              {fileUrl && <FilePreview file={{ fileName, mimeType: fileType, url: fileUrl }} className="mt-2" controls/>}
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What this drawing covers, what it drives (BOQ take-off, client approval, etc.)" rows={2} className="text-sm"/>
-            </div>
-          </div>
-        </div>
-        <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" disabled={!title.trim() || !file} onClick={() => file && onSave({ title: title.trim(), kind, site_id: siteId || undefined, area_id: roomId || undefined, work_order_id: workOrderId || undefined, file, notes: notes.trim() || undefined, uploaded_by: "Anita Rao" })}>
-            <Upload className="mr-1 h-3.5 w-3.5"/> Upload
-          </Button>
-        </DialogFooter>
+        <DialogHeader className="border-b border-border px-5 py-3"><DialogTitle className="flex items-center gap-2 text-base"><Pencil className="h-4 w-4 text-primary"/> Upload drawing</DialogTitle><DialogDescription className="text-xs">The selected file is queued immediately and continues after this dialog closes.</DialogDescription></DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><div className="grid gap-3">
+          <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Title</label><Input value={title} onChange={(event) => setTitle(event.target.value)} className="h-9 text-sm" autoFocus/></div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Kind</label><select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="2D">2D</option><option value="3D">3D</option><option value="sketch">Sketch</option><option value="render">Render</option><option value="blueprint">Blueprint</option></select></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site</label><select value={siteId} onChange={(event) => { setSiteId(event.target.value); setAreaId(""); }} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="">— none —</option>{db.sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}</select></div></div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Area</label><select value={areaId} onChange={(event) => setAreaId(event.target.value)} disabled={!siteId} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="">— none —</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}</select></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Work Order</label><select value={workOrderId} onChange={(event) => setWorkOrderId(event.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="">— none —</option>{db.workOrders.map((order) => <option key={order.id} value={order.id}>{order.work_order_no} · {order.title}</option>)}</select></div></div>
+          <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Upload from device</label><Input type="file" onChange={handleFile} accept={MANAGED_FILE_ACCEPT} className="h-9 text-sm"/>{queuedFile && <FilePreview file={{ fileName: queuedFile.fileName, mimeType: queuedFile.mimeType, url: queuedFile.previewUrl }} className="mt-2" controls/>}</div>
+          <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="text-sm"/></div>
+        </div></div>
+        <DialogFooter className="border-t border-border px-5 py-3"><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!title.trim() || !queuedFile} onClick={() => void save()}><Upload className="mr-1 h-3.5 w-3.5"/> Save drawing</Button></DialogFooter>
       </DialogContent>
     </Dialog>);
 }
+
 function DrawingVersionDialog({ parent, onClose, onSave }: {
     parent: import("@/lib/rdash/types").Drawing;
     onClose: () => void;
-    onSave: (file: {
-        file: File;
-        notes?: string;
-    }) => void | Promise<void>;
+    onSave: (payload: { id: string; primary_file_attachment_id: string; notes?: string }) => void | Promise<void>;
 }) {
-    const [fileUrl, setFileUrl] = React.useState("");
-    const [fileName, setFileName] = React.useState("");
-    const [fileType, setFileType] = React.useState("");
+    const [drawingId] = React.useState(() => reserveEntityId("drawing"));
     const [notes, setNotes] = React.useState("");
-    const [file, setFile] = React.useState<File | null>(null);
-    const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const f = e.target.files?.[0];
-        if (!f)
-            return;
-        setFile(f);
-        setFileName(f.name);
-        setFileType(f.type);
-        setFileUrl(URL.createObjectURL(f));
+    const [queuedFile, setQueuedFile] = React.useState<QueuedWorkflowFile | null>(null);
+    const { registerBatch, commitBatches } = useUploadDraft(true);
+    const handleFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        try {
+            if (queuedFile) await cancelQueuedWorkflowFile(queuedFile);
+            const queued = await enqueueWorkflowFiles({ sourceFlow: "drawing_revision", sourceLabel: "Drawing revision", targetEntityType: "drawing", targetEntityId: drawingId, targetLabel: `${parent.drawing_no} v${parent.version + 1}`, purpose: "drawing", kind: "drawing", role: "drawing", visibility: "internal", attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set", files: [{ file, kind: "drawing", role: "drawing", caption: "Drawing revision", attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set" }] });
+            registerBatch(queued.batchId);
+            setQueuedFile(withLocalPreview(queued.files[0], file));
+        } catch (error) { toast.error(error instanceof Error ? error.message : "Revision file could not be queued."); }
+        finally { event.currentTarget.value = ""; }
     };
-    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-3">
-          <DialogTitle className="flex items-center gap-2 text-base"><Upload className="h-4 w-4 text-primary"/> New version of {parent.drawing_no}</DialogTitle>
-          <DialogDescription className="text-xs">Current v{parent.version} will be marked superseded; new version becomes draft.</DialogDescription>
-        </DialogHeader>
-        <div className="px-5 py-4">
-          <label className="text-[10px] font-semibold uppercase text-muted-foreground">New version file</label>
-          <Input type="file" onChange={handleFile} className="h-9 text-sm" accept={MANAGED_FILE_ACCEPT} autoFocus/>
-          {fileUrl && <FilePreview file={{ fileName, mimeType: fileType, url: fileUrl }} className="mt-2" controls/>}
-          <div className="mt-3">
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Revision notes</label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What changed in this version" rows={2} className="text-sm"/>
-          </div>
-        </div>
-        <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" disabled={!file} onClick={() => file && onSave({ file, notes: notes.trim() || undefined })}>
-            <Upload className="mr-1 h-3.5 w-3.5"/> Upload v{parent.version + 1}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>);
+    const save = async () => { if (!queuedFile) return; await onSave({ id: drawingId, primary_file_attachment_id: queuedFile.attachmentId, notes: notes.trim() || undefined }); commitBatches(); };
+    return (<Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-md gap-0 p-0"><DialogHeader className="border-b border-border px-5 py-3"><DialogTitle className="flex items-center gap-2 text-base"><Upload className="h-4 w-4 text-primary"/> New version of {parent.drawing_no}</DialogTitle><DialogDescription className="text-xs">The file queues immediately; the current version is superseded only after Save.</DialogDescription></DialogHeader><div className="px-5 py-4"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Upload from device</label><Input type="file" onChange={handleFile} accept={MANAGED_FILE_ACCEPT} className="h-9 text-sm" autoFocus/>{queuedFile && <FilePreview file={{ fileName: queuedFile.fileName, mimeType: queuedFile.mimeType, url: queuedFile.previewUrl }} className="mt-2" controls/>}<div className="mt-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Revision notes</label><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} className="text-sm"/></div></div><DialogFooter className="border-t border-border px-5 py-3"><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!queuedFile} onClick={() => void save()}><Upload className="mr-1 h-3.5 w-3.5"/> Save v{parent.version + 1}</Button></DialogFooter></DialogContent></Dialog>);
 }
 export function ExecutionLogsModule() {
     const db = useRDashStore((s) => s.db);
@@ -510,135 +451,62 @@ export function ExecutionLogsModule() {
                 toast.success(`Daily log filed for ${payload.date || "today"}`);
                 setLogOpen(false);
             }}/>)}
-      {confirmLogId && (<ConfirmMaterialReceiptDialog logId={confirmLogId} onClose={() => setConfirmLogId(null)} onConfirm={async (photoUrl, photoAttachmentId) => {
+      {confirmLogId && (<ConfirmMaterialReceiptDialog logId={confirmLogId} onClose={() => setConfirmLogId(null)} onConfirm={async (photoAttachmentId) => {
                 try {
-                    confirmMaterialReceipt(confirmLogId, photoUrl, photoAttachmentId);
-                    if (photoUrl || photoAttachmentId) {
-                        toast.success("Material receipt confirmed with proof photo");
-                    } else {
-                        toast.warning("Material receipt confirmed without proof — payment release will remain blocked until a photo is uploaded.");
-                    }
+                    confirmMaterialReceipt(confirmLogId, photoAttachmentId);
+                    if (photoAttachmentId) toast.success("Material receipt confirmed with queued proof photo");
+                    else toast.warning("Material receipt confirmed without proof — payment release remains blocked.");
                     setConfirmLogId(null);
-                }
-                catch (error) {
+                } catch (error) {
                     toast.error(error instanceof Error ? error.message : "Could not confirm material receipt");
                 }
-            }}/>)}
+            }}/>) }
     </div>);
 }
-// FIX-CONTRACTOR-BATCH1 / F.1: Dialog that lets the user upload a contractor
-// material-receipt confirmation photo BEFORE calling confirmMaterialReceipt.
-// The user can also skip the photo (calls confirmMaterialReceipt with no
-// photo, which logs a warning). The photo is uploaded via the standard
-// uploadManagedFile flow + addServerFileAsset persistence so the resulting
-// FileAsset/EntityFileAttachment is tracked properly, then the attachment id
-// is passed directly to confirmMaterialReceipt via the new third parameter.
 function ConfirmMaterialReceiptDialog({ logId, onClose, onConfirm }: {
     logId: string;
     onClose: () => void;
-    onConfirm: (photoUrl?: string, photoAttachmentId?: string) => void | Promise<void>;
+    onConfirm: (photoAttachmentId?: string) => void | Promise<void>;
 }) {
-    const db = useRDashStore((s) => s.db);
-    const [file, setFile] = React.useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = React.useState<string>("");
-    const [uploading, setUploading] = React.useState(false);
-    const log = db.executionLogs.find((l) => l.id === logId);
-    const handleFile = (f: File | null) => {
-        if (!f) return;
-        setFile(f);
-        setPreviewUrl(URL.createObjectURL(f));
-    };
-    const handleConfirmWithPhoto = async () => {
+    const db = useRDashStore((state) => state.db);
+    const log = db.executionLogs.find((entry) => entry.id === logId);
+    const [queuedFile, setQueuedFile] = React.useState<QueuedWorkflowFile | null>(null);
+    const { registerBatch, commitBatches } = useUploadDraft(true);
+    const queueFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
         if (!file) return;
         try {
-            setUploading(true);
-            const dataUrl = file.type.startsWith("image/") ? await compressImage(file) : await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("Could not prepare file")); reader.onload = () => resolve(String(reader.result || "")); reader.readAsDataURL(file); });
-            const uploaded = await uploadManagedFile({ dataUrl, fileName: file.name, entityType: "execution_log", entityId: logId, kind: "site_proof", role: "proof", caption: "Contractor material receipt confirmation", visibility: "internal" });
-            // FIX-E2E-004: persist FileAsset + EntityFileAttachment so the
-            // uploaded proof survives page reloads and preview works.
-            if (uploaded.fileAsset && uploaded.attachment) {
-                useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
-            }
-            // Pass the Drive URL to confirmMaterialReceipt — it will create
-            // its own FileAsset + EntityFileAttachment (legacy behaviour),
-            // which dedupes against the one we just persisted via
-            // addServerFileAsset (same google_file_id).
-            await onConfirm(uploaded.webViewLink);
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Photo upload failed; material receipt was not confirmed.");
-        }
-        finally {
-            setUploading(false);
-        }
+            if (queuedFile) await cancelQueuedWorkflowFile(queuedFile);
+            const queued = await enqueueWorkflowFiles({ sourceFlow: "contractor_material_receipt", sourceLabel: "Contractor material confirmation", targetEntityType: "execution_log", targetEntityId: logId, targetLabel: log?.log_no || "Execution log", purpose: "execution_evidence", kind: "site_proof", role: "proof", visibility: "internal", attachmentField: "contractor_confirmation_attachment_id", attachmentFieldMode: "set", requiredEvidence: true, files: [{ file, kind: "site_proof", role: "proof", caption: "Contractor material receipt confirmation", attachmentField: "contractor_confirmation_attachment_id", attachmentFieldMode: "set" }] });
+            registerBatch(queued.batchId);
+            setQueuedFile(withLocalPreview(queued.files[0], file));
+        } catch (error) { toast.error(error instanceof Error ? error.message : "Confirmation photo could not be queued."); }
+        finally { event.currentTarget.value = ""; }
     };
-    const handleSkipPhoto = async () => {
-        await onConfirm();
-    };
-    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-3">
-          <DialogTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-primary"/> Confirm material receipt</DialogTitle>
-          <DialogDescription className="text-xs">{log ? `${log.log_no} · ${log.work_order_no}` : ""}</DialogDescription>
-        </DialogHeader>
-        <div className="px-5 py-4 space-y-3">
-          <div className="rounded-md border border-warning/30 bg-warning/[0.06] p-2.5 text-[11px] text-warning">
-            <div className="flex gap-1.5"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0"/>
-              <div className="flex-1">
-                <p className="font-semibold">A contractor confirmation photo is required to release payment.</p>
-                <p className="mt-0.5 text-warning/90">Upload a photo of the material received at site. Without it, the payment proof gate will keep blocking RA-bill payment release.</p>
-              </div>
-            </div>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contractor confirmation photo</label>
-            <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(e) => handleFile(e.target.files?.[0] || null)} className="h-9 text-sm" autoFocus/>
-            {previewUrl && (<div className="mt-2"><FilePreview file={{ fileName: file?.name || "preview", mimeType: file?.type || "image/*", url: previewUrl }} compact controls className="w-40"/></div>)}
-          </div>
-        </div>
-        <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button variant="ghost" size="sm" onClick={handleSkipPhoto} disabled={uploading} className="text-muted-foreground">
-            Skip photo (warn)
-          </Button>
-          <Button size="sm" onClick={handleConfirmWithPhoto} disabled={!file || uploading}>
-            <Upload className="mr-1 h-3.5 w-3.5"/> {uploading ? "Uploading…" : "Upload & confirm"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>);
+    const confirm = async () => { await onConfirm(queuedFile?.attachmentId); if (queuedFile) commitBatches(); };
+    return (<Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-md gap-0 p-0"><DialogHeader className="border-b border-border px-5 py-3"><DialogTitle className="flex items-center gap-2 text-base"><CheckCircle2 className="h-4 w-4 text-primary"/> Confirm material receipt</DialogTitle><DialogDescription className="text-xs">{log ? `${log.log_no} · ${log.work_order_no}` : ""}</DialogDescription></DialogHeader><div className="space-y-3 px-5 py-4"><div className="rounded-md border border-warning/30 bg-warning/[0.06] p-2.5 text-[11px] text-warning">A contractor confirmation photo is required before payment release.</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Upload from device</label><Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={queueFile} className="h-9 text-sm" autoFocus/>{queuedFile && <FilePreview file={{ fileName: queuedFile.fileName, mimeType: queuedFile.mimeType, url: queuedFile.previewUrl }} compact controls className="mt-2 w-40"/>}</div></div><DialogFooter className="border-t border-border px-5 py-3"><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button variant="ghost" size="sm" onClick={() => void onConfirm()}>Skip photo</Button><Button size="sm" onClick={() => void confirm()} disabled={!queuedFile}><Upload className="mr-1 h-3.5 w-3.5"/> Confirm with proof</Button></DialogFooter></DialogContent></Dialog>);
 }
+
 function ExecutionLogDialog({ onClose, onSave }: {
     onClose: () => void;
     onSave: (payload: {
+        id: string;
         work_order_id: string;
         date: string;
         progress_pct: number;
         progress_delta?: number;
-        materials_used: Array<{
-            description: string;
-            qty?: number;
-            unit?: string;
-            amount?: number;
-        }>;
+        materials_used: Array<{ description: string; qty?: number; unit?: string; amount?: number }>;
         extra_work_notes?: string;
         extra_work_amount?: number;
         completion_notes?: string;
         site_condition?: string;
-        uploaded_photos: Array<{
-            id: string;
-            file_name: string;
-            url: string;
-            mime_type?: string;
-            file_asset_id?: string;
-            caption?: string;
-            captured_at: string;
-        }>;
+        uploaded_photos: Array<{ file_name: string; attachment_id: string; mime_type?: string; caption?: string; captured_at?: string }>;
         filed_by?: string;
     }) => void | Promise<void>;
 }) {
-    const db = useRDashStore((s) => s.db);
-    const [workOrderId, setJobId] = React.useState("");
+    const db = useRDashStore((state) => state.db);
+    const [logId] = React.useState(() => reserveEntityId("execution_log"));
+    const [workOrderId, setWorkOrderId] = React.useState("");
     const [date, setDate] = React.useState(new Date().toISOString().slice(0, 10));
     const [progressPct, setProgressPct] = React.useState("");
     const [progressDelta, setProgressDelta] = React.useState("");
@@ -646,155 +514,26 @@ function ExecutionLogDialog({ onClose, onSave }: {
     const [siteCondition, setSiteCondition] = React.useState("");
     const [extraWorkNotes, setExtraWorkNotes] = React.useState("");
     const [extraWorkAmount, setExtraWorkAmount] = React.useState("");
-    const [materials, setMaterials] = React.useState<Array<{
-        description: string;
-        qty?: string;
-        unit?: string;
-        amount?: string;
-    }>>([{ description: "", qty: "", unit: "", amount: "" }]);
-    const [photos, setPhotos] = React.useState<Array<{
-        id: string;
-        file_name: string;
-        url: string;
-        mime_type?: string;
-        file_asset_id?: string;
-        caption?: string;
-        captured_at: string;
-    }>>([]);
-    const [filing, setFiling] = React.useState(false);
-    const workOrder = db.workOrders.find((j) => j.id === workOrderId);
-    const handlePhotos = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(e.target.files || []);
-        for (const f of files) {
-            try {
-                const url = f.type.startsWith("image/") ? await compressImage(f) : await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("Could not prepare file")); reader.onload = () => resolve(String(reader.result || "")); reader.readAsDataURL(f); });
-                setPhotos((p) => [...p, { id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, file_name: f.name, url, mime_type: f.type || "application/octet-stream", captured_at: new Date().toISOString() }]);
-            }
-            catch {
-                toast.error(`Could not prepare ${f.name}`);
-            }
-        }
-        e.currentTarget.value = "";
-    };
-    const handleSave = async () => {
-        if (!workOrderId) {
-            toast.error("Pick a workOrder");
-            return;
-        }
+    const [materials, setMaterials] = React.useState<Array<{ description: string; qty?: string; unit?: string; amount?: string }>>([{ description: "", qty: "", unit: "", amount: "" }]);
+    const [photos, setPhotos] = React.useState<QueuedWorkflowFile[]>([]);
+    const { registerBatch, commitBatches } = useUploadDraft(true);
+    const workOrder = db.workOrders.find((order) => order.id === workOrderId);
+    const queuePhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(event.target.files || []);
+        if (!files.length) return;
+        if (!workOrderId) { toast.error("Select a Work Order before choosing progress files."); event.currentTarget.value = ""; return; }
         try {
-            setFiling(true);
-            const uploadedPhotos = await Promise.all(photos.map(async (photo) => {
-                if (/^https:\/\/drive\.google\.com\//.test(photo.url))
-                    return photo;
-                const uploaded = await uploadManagedFile({ dataUrl: photo.url, fileName: photo.file_name, entityType: "workOrder", entityId: workOrderId, kind: "media", role: "photo", caption: "Daily execution progress photo", visibility: "internal" });
-                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
-                // shows in app preview and survives page reloads. Without this,
-                // the file exists in Drive but is untracked — preview returns 403.
-                if (uploaded.fileAsset && uploaded.attachment) {
-                    useRDashStore.getState().addServerFileAsset(uploaded.fileAsset, uploaded.attachment);
-                }
-                return { ...photo, file_name: uploaded.name, url: uploaded.webViewLink, file_asset_id: uploaded.id };
-            }));
-            await onSave({
-                work_order_id: workOrderId,
-                date,
-                progress_pct: parseInt(progressPct) || workOrder?.progress || 0,
-                progress_delta: progressDelta ? parseInt(progressDelta) : undefined,
-                materials_used: materials.filter((m) => m.description).map((m) => ({ description: m.description, qty: m.qty ? parseFloat(m.qty) : undefined, unit: m.unit, amount: m.amount ? parseFloat(m.amount) : undefined })),
-                extra_work_notes: extraWorkNotes.trim() || undefined,
-                extra_work_amount: extraWorkAmount ? parseFloat(extraWorkAmount) : undefined,
-                completion_notes: completionNotes.trim() || undefined,
-                site_condition: siteCondition.trim() || undefined,
-                uploaded_photos: uploadedPhotos,
-                filed_by: "Ravi Kumar",
-            });
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Google Drive upload failed; the daily log was not filed.");
-        }
-        finally {
-            setFiling(false);
-        }
+            const queued = await enqueueWorkflowFiles({ sourceFlow: "daily_execution_log", sourceLabel: "Daily execution progress", targetEntityType: "execution_log", targetEntityId: logId, targetLabel: workOrder?.work_order_no || "Execution log", purpose: "execution_evidence", kind: "media", role: "photo", visibility: "internal", attachmentField: "photo_attachment_ids", attachmentFieldMode: "append", files: files.map((file) => ({ file, kind: "media", role: "photo", caption: "Daily execution progress file", attachmentField: "photo_attachment_ids", attachmentFieldMode: "append" })) });
+            registerBatch(queued.batchId);
+            setPhotos((current) => [...current, ...queued.files.map((item, index) => withLocalPreview(item, files[index]))]);
+        } catch (error) { toast.error(error instanceof Error ? error.message : "Progress files could not be queued."); }
+        finally { event.currentTarget.value = ""; }
     };
-    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl gap-0 p-0">
-        <DialogHeader className="border-b border-border px-5 py-3">
-          <DialogTitle className="flex items-center gap-2 text-base"><Camera className="h-4 w-4 text-primary"/> New daily execution log</DialogTitle>
-          <DialogDescription className="text-xs">Reported progress is reviewed before it updates the Work Order. Photos are optional but recommended. Extra work creates a customer-approval variation request.</DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll">
-          <div className="grid gap-3">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">WorkOrder</label>
-                <select value={workOrderId} onChange={(e) => setJobId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                  <option value="">Pick workOrder…</option>
-                  {db.workOrders.map((j) => <option key={j.id} value={j.id}>{j.work_order_no} · {j.title} · {(j.customer_name || "Customer")}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Date</label>
-                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-9 text-sm"/>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Reported overall progress %</label>
-                <Input type="number" min="0" max="100" value={progressPct} onChange={(e) => setProgressPct(e.target.value)} placeholder={`${workOrder?.progress ?? 0}`} className="h-9 text-sm"/>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Progress today (+%)</label>
-                <Input type="number" min="0" max="100" value={progressDelta} onChange={(e) => setProgressDelta(e.target.value)} placeholder="e.g. 10" className="h-9 text-sm"/>
-              </div>
-            </div>
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Materials used today</label>
-                <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => setMaterials((m) => [...m, { description: "", qty: "", unit: "", amount: "" }])}><Plus className="mr-1 h-3 w-3"/> Add line</Button>
-              </div>
-              <div className="space-y-1.5">
-                {materials.map((m, i) => (<div key={i} className="grid grid-cols-2 gap-1.5 sm:grid-cols-[1fr_80px_60px_100px_28px]">
-                    <Input value={m.description} onChange={(e) => setMaterials((arr) => arr.map((x, idx) => idx === i ? { ...x, description: e.target.value } : x))} placeholder="Description" className="h-8 text-xs col-span-2 sm:col-span-1"/>
-                    <Input type="number" value={m.qty} onChange={(e) => setMaterials((arr) => arr.map((x, idx) => idx === i ? { ...x, qty: e.target.value } : x))} placeholder="Qty" className="h-8 text-xs"/>
-                    <Input value={m.unit} onChange={(e) => setMaterials((arr) => arr.map((x, idx) => idx === i ? { ...x, unit: e.target.value } : x))} placeholder="Unit" className="h-8 text-xs"/>
-                    <Input type="number" value={m.amount} onChange={(e) => setMaterials((arr) => arr.map((x, idx) => idx === i ? { ...x, amount: e.target.value } : x))} placeholder="₹ Amount" className="h-8 text-xs col-span-2 sm:col-span-1"/>
-                    <button type="button" onClick={() => setMaterials((arr) => arr.filter((_, idx) => idx !== i))} className="rounded text-muted-foreground hover:text-destructive col-span-2 sm:col-span-1 flex justify-end"><X className="h-3.5 w-3.5"/></button>
-                  </div>))}
-              </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Progress files (optional)</label>
-              <Input type="file" multiple accept={MANAGED_FILE_ACCEPT} onChange={handlePhotos} className="h-9 text-sm"/>
-              {photos.length > 0 && (<div className="mt-2 flex gap-2">
-                  {photos.map((p) => (<FilePreview key={p.id} file={{ fileName: p.file_name, mimeType: p.mime_type, googleFileId: p.file_asset_id, url: p.url }} compact controls className="w-20"/>))}
-                </div>)}
-            </div>
-
-            <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Completion notes</label>
-              <Textarea value={completionNotes} onChange={(e) => setCompletionNotes(e.target.value)} placeholder="What got finished today" rows={2} className="text-sm"/>
-            </div>
-            <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site condition</label>
-              <Textarea value={siteCondition} onChange={(e) => setSiteCondition(e.target.value)} placeholder="Weather, dust, access, any safety/condition observations" rows={2} className="text-sm"/>
-            </div>
-            <p className="rounded-md border border-warning/25 bg-warning/5 px-3 py-2 text-[11px] text-warning">A photo is optional, but add one whenever available. It makes progress verification faster. Extra-work cost will not post until customer approval is recorded.</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_120px]">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Extra work (out-of-scope)</label>
-                <Textarea value={extraWorkNotes} onChange={(e) => setExtraWorkNotes(e.target.value)} placeholder="Site-directed change / client request not in original scope" rows={2} className="text-sm"/>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Extra-work ₹</label>
-                <Input type="number" value={extraWorkAmount} onChange={(e) => setExtraWorkAmount(e.target.value)} placeholder="0" className="h-9 text-sm"/>
-              </div>
-            </div>
-          </div>
-        </div>
-        <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={!workOrderId || filing}>
-            <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> {filing ? "Uploading proof…" : "File log"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>);
+    const removePhoto = async (photo: QueuedWorkflowFile) => { await cancelQueuedWorkflowFile(photo); setPhotos((current) => current.filter((item) => item.uploadItemId !== photo.uploadItemId)); };
+    const save = async () => {
+        if (!workOrderId) { toast.error("Select a Work Order."); return; }
+        await onSave({ id: logId, work_order_id: workOrderId, date, progress_pct: parseInt(progressPct) || workOrder?.progress || 0, progress_delta: progressDelta ? parseInt(progressDelta) : undefined, materials_used: materials.filter((item) => item.description).map((item) => ({ description: item.description, qty: item.qty ? parseFloat(item.qty) : undefined, unit: item.unit, amount: item.amount ? parseFloat(item.amount) : undefined })), extra_work_notes: extraWorkNotes.trim() || undefined, extra_work_amount: extraWorkAmount ? parseFloat(extraWorkAmount) : undefined, completion_notes: completionNotes.trim() || undefined, site_condition: siteCondition.trim() || undefined, uploaded_photos: photos.map((photo) => ({ file_name: photo.fileName, attachment_id: photo.attachmentId, mime_type: photo.mimeType, caption: "Daily execution progress file", captured_at: new Date().toISOString() })), filed_by: "Ravi Kumar" });
+        commitBatches();
+    };
+    return (<Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-2xl gap-0 p-0"><DialogHeader className="border-b border-border px-5 py-3"><DialogTitle className="flex items-center gap-2 text-base"><Camera className="h-4 w-4 text-primary"/> New daily execution log</DialogTitle><DialogDescription className="text-xs">Files queue immediately; Save closes the dialog while transfer continues.</DialogDescription></DialogHeader><div className="max-h-[65vh] overflow-y-auto px-5 py-4 rd-scroll"><div className="grid gap-3"><div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Work Order</label><select value={workOrderId} onChange={(event) => setWorkOrderId(event.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="">Select Work Order…</option>{db.workOrders.map((order) => <option key={order.id} value={order.id}>{order.work_order_no} · {order.title}</option>)}</select></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Date</label><Input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="h-9 text-sm"/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Overall progress %</label><Input type="number" min="0" max="100" value={progressPct} onChange={(event) => setProgressPct(event.target.value)} className="h-9 text-sm"/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Progress today</label><Input type="number" min="0" max="100" value={progressDelta} onChange={(event) => setProgressDelta(event.target.value)} className="h-9 text-sm"/></div></div><div><div className="mb-1 flex items-center justify-between"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Materials used</label><Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => setMaterials((current) => [...current, { description: "", qty: "", unit: "", amount: "" }])}>Add line</Button></div>{materials.map((item, index) => <div key={index} className="mb-1 grid grid-cols-2 gap-1.5 sm:grid-cols-4"><Input value={item.description} onChange={(event) => setMaterials((current) => current.map((entry, i) => i === index ? { ...entry, description: event.target.value } : entry))} placeholder="Description" className="h-8 text-xs"/><Input value={item.qty} onChange={(event) => setMaterials((current) => current.map((entry, i) => i === index ? { ...entry, qty: event.target.value } : entry))} placeholder="Qty" className="h-8 text-xs"/><Input value={item.unit} onChange={(event) => setMaterials((current) => current.map((entry, i) => i === index ? { ...entry, unit: event.target.value } : entry))} placeholder="Unit" className="h-8 text-xs"/><Input value={item.amount} onChange={(event) => setMaterials((current) => current.map((entry, i) => i === index ? { ...entry, amount: event.target.value } : entry))} placeholder="Amount" className="h-8 text-xs"/></div>)}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Upload progress files</label><Input type="file" multiple accept={MANAGED_FILE_ACCEPT} onChange={queuePhotos} className="h-9 text-sm"/>{photos.length > 0 && <div className="mt-2 flex flex-wrap gap-2">{photos.map((photo) => <div key={photo.uploadItemId} className="relative"><FilePreview file={{ fileName: photo.fileName, mimeType: photo.mimeType, url: photo.previewUrl }} compact controls className="w-20"/><button type="button" onClick={() => void removePhoto(photo)} className="absolute right-0 top-0 rounded bg-background/80 p-0.5 text-destructive"><X className="h-3 w-3"/></button></div>)}</div>}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Completion notes</label><Textarea value={completionNotes} onChange={(event) => setCompletionNotes(event.target.value)} rows={2}/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site condition</label><Textarea value={siteCondition} onChange={(event) => setSiteCondition(event.target.value)} rows={2}/></div><div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]"><Textarea value={extraWorkNotes} onChange={(event) => setExtraWorkNotes(event.target.value)} placeholder="Extra work notes" rows={2}/><Input type="number" value={extraWorkAmount} onChange={(event) => setExtraWorkAmount(event.target.value)} placeholder="Extra amount"/></div></div></div><DialogFooter className="border-t border-border px-5 py-3"><Button variant="outline" size="sm" onClick={onClose}>Cancel</Button><Button size="sm" onClick={() => void save()} disabled={!workOrderId}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> File log</Button></DialogFooter></DialogContent></Dialog>);
 }

@@ -179,8 +179,8 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
         },
         createCustomerWithFirstSite: (customer, firstSite) => {
             assertUniqueCustomerIdentity(get().db.customers, customer);
-            const customerId = genId("cust");
-            const siteId = firstSite?.name?.trim() ? genId("site") : undefined;
+            const customerId = customer.id || genId("cust");
+            const siteId = firstSite?.name?.trim() ? (firstSite.id || genId("site")) : undefined;
             const now = nowIso();
             const customerRecord: Customer = {
                 id: customerId,

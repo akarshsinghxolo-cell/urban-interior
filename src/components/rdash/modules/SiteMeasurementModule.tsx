@@ -10,9 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { compressImage } from "@/lib/rdash/image-compress";
-import { uploadCapturedMediaToGoogleDrive } from "@/lib/rdash/google-drive-upload";
-import { MANAGED_FILE_ACCEPT, readFileAsDataUrl } from "@/lib/rdash/file-assets";
+import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
 import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
@@ -181,14 +181,7 @@ export function SiteMeasurementModule() {
         const visit = db.visits.find((row) => row.id === visitId);
         return !visit || Boolean(visit.report_filed) || ["cancelled", "missed", "completed"].includes(visit.status);
     };
-    const handleSave = async (visitId: string, areas: AreaMeasurement[], notes: string, media: Array<{
-        id: string;
-        file_name: string;
-        url: string;
-        type: "photo" | "video" | "pdf";
-        mime_type?: string;
-        captured_at: string;
-    }>) => {
+    const handleSave = async (visitId: string, areas: AreaMeasurement[], notes: string, media: Array<QueuedWorkflowFile & { type: "photo" | "video" | "pdf" }>) => {
         const visit = db.visits.find((v) => v.id === visitId);
         if (!visit) {
             toast.error("Measurement Visit was not found.");
@@ -204,23 +197,10 @@ export function SiteMeasurementModule() {
             return;
         }
         try {
-            const proofs = await Promise.all(media.map(async (item) => {
-                const isDriveUrl = /^https:\/\/drive\.google\.com\//.test(item.url);
-                const uploaded = isDriveUrl
-                    ? { id: undefined, name: item.file_name, webViewLink: item.url, mimeType: item.mime_type || "application/octet-stream" }
-                    : await uploadCapturedMediaToGoogleDrive({ dataUrl: item.url, fileName: item.file_name, entityType: "visit", entityId: visitId, kind: "site_proof", role: "measurement", caption: `Measurement ${item.type}` });
-                // FIX-E2E-004: Persist FileAsset + EntityFileAttachment so the file
-                // shows in app preview and survives page reloads.
-                if (!isDriveUrl && (uploaded as any).fileAsset && (uploaded as any).attachment) {  // STAGE-6-FIX: union type cast
-                    useRDashStore.getState().addServerFileAsset((uploaded as any).fileAsset, (uploaded as any).attachment);
-                }
-                return {
-                    type: `measurement_${item.type}`,
-                    file_name: uploaded.name,
-                    mime_type: uploaded.mimeType,
-                    url: uploaded.webViewLink,
-                    file_asset_id: uploaded.id,
-                };
+            const proofs = media.map((item) => ({
+                type: `measurement_${item.type}`,
+                file_name: item.fileName,
+                attachment_id: item.attachmentId,
             }));
             const site = visit.site_id ? db.sites.find((entry) => entry.id === visit.site_id) : undefined;
             if (!site)
@@ -344,14 +324,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
     record: MeasurementRecord;
     initialAreas: AreaMeasurement[];
     onClose: () => void;
-    onSave: (visitId: string, areas: AreaMeasurement[], notes: string, media: Array<{
-        id: string;
-        file_name: string;
-        url: string;
-        type: "photo" | "video" | "pdf";
-        mime_type?: string;
-        captured_at: string;
-    }>) => Promise<void>;
+    onSave: (visitId: string, areas: AreaMeasurement[], notes: string, media: Array<QueuedWorkflowFile & { type: "photo" | "video" | "pdf" }>) => Promise<void>;
 }) {
     const withIds = (rs: AreaMeasurement[]): Array<AreaMeasurement & {
         id: string;
@@ -362,14 +335,8 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
         ? withIds(initialAreas)
         : [{ id: `room-${Date.now()}`, name: "", length: 0, width: 0, height: 0, unit: "ft" }]);
     const [notes, setNotes] = React.useState(record.notes || "");
-    const [uploadedMedia, setUploadedMedia] = React.useState<Array<{
-        id: string;
-        file_name: string;
-        url: string;
-        type: "photo" | "video" | "pdf";
-        mime_type?: string;
-        captured_at: string;
-    }>>([]);
+    const [uploadedMedia, setUploadedMedia] = React.useState<Array<QueuedWorkflowFile & { type: "photo" | "video" | "pdf" }>>([]);
+    const { registerBatch, commitBatches } = useUploadDraft(true);
     const [saving, setSaving] = React.useState(false);
     const totalArea = areas.reduce((n, r) => n + (r.length * r.width), 0);
     const existingAreaIds = React.useMemo(() => new Set(initialAreas.map((area) => area.id).filter((id): id is string => Boolean(id))), [initialAreas]);
@@ -437,28 +404,49 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos & videos</label>
             <input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={async (e) => {
             const files = Array.from(e.target.files || []);
-            for (const f of files) {
-                try {
-                    const type = f.type.startsWith("video/") ? "video" as const : f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf") ? "pdf" as const : "photo" as const;
-                    const url = type === "photo" ? await compressImage(f) : await readFileAsDataUrl(f);
-                    setUploadedMedia((arr) => [...arr, { id: `media-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, file_name: f.name, url, type, mime_type: f.type || (type === "pdf" ? "application/pdf" : "application/octet-stream"), captured_at: new Date().toISOString() }]);
-                }
-                catch {
-                    toast.error(`Could not prepare ${f.name}`);
-                }
+            if (!files.length) return;
+            try {
+                const queued = await enqueueWorkflowFiles({
+                    sourceFlow: "site_measurement",
+                    sourceLabel: "Site Measurement",
+                    targetEntityType: "visit",
+                    targetEntityId: visitId,
+                    targetLabel: record.location,
+                    purpose: "measurement",
+                    kind: "site_proof",
+                    role: "measurement",
+                    visibility: "internal",
+                    files: files.map((file) => ({
+                        file,
+                        kind: "site_proof" as const,
+                        role: "measurement" as const,
+                        caption: `Measurement ${classifyWorkflowFile(file).role}`,
+                    })),
+                });
+                registerBatch(queued.batchId);
+                setUploadedMedia((current) => [
+                    ...current,
+                    ...queued.files.map((item, index) => ({
+                        ...withLocalPreview(item, files[index]),
+                        type: files[index].type.startsWith("video/") ? "video" as const : files[index].type === "application/pdf" || files[index].name.toLowerCase().endsWith(".pdf") ? "pdf" as const : "photo" as const,
+                    })),
+                ]);
+            } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Could not queue measurement evidence.");
+            } finally {
+                e.currentTarget.value = "";
             }
-            e.currentTarget.value = "";
         }} className="block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"/>
             {uploadedMedia.length > 0 && (<div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
-                {uploadedMedia.map((m) => (<div key={m.id} className="group relative overflow-hidden rounded-md border border-border bg-muted/30">
-                    <FilePreview file={{ fileName: m.file_name, mimeType: m.mime_type || (m.type === "pdf" ? "application/pdf" : m.type === "video" ? "video/*" : "image/*"), url: m.url }} compact controls/>
-                    <button type="button" onClick={() => setUploadedMedia((arr) => arr.filter((x) => x.id !== m.id))} className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${m.file_name}`}>
+                {uploadedMedia.map((m) => (<div key={m.uploadItemId} className="group relative overflow-hidden rounded-md border border-border bg-muted/30">
+                    <FilePreview file={{ fileName: m.fileName, mimeType: m.mimeType, url: m.previewUrl }} compact controls/>
+                    <button type="button" onClick={() => void cancelQueuedWorkflowFile(m).then(() => setUploadedMedia((arr) => arr.filter((x) => x.uploadItemId !== m.uploadItemId)))} className="absolute right-1 top-1 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${m.fileName}`}>
                       <X className="h-3 w-3"/>
                     </button>
-                    <p className="truncate px-1 py-0.5 text-[10px] text-muted-foreground">{m.file_name}</p>
+                    <p className="truncate px-1 py-0.5 text-[10px] text-muted-foreground">{m.fileName}</p>
                   </div>))}
               </div>)}
-            <p className="mt-1 text-[10px] text-muted-foreground">Images, videos, and PDFs are optional. Every selected file uploads to Google Drive before the measurement report is filed; there is no file-count limit.</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">Images, videos, and PDFs are optional. Every selected file is queued immediately and continues after this dialog closes; there is no file-count limit.</p>
           </div>
         </div>
         <DialogFooter className="border-t border-border px-5 py-3">
@@ -467,6 +455,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
             setSaving(true);
             try {
                 await onSave(visitId, areas.filter((r) => r.name && r.length && r.width), notes, uploadedMedia);
+                commitBatches();
             }
             finally {
                 setSaving(false);
