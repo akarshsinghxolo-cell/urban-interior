@@ -15,6 +15,7 @@ grant all on table public.uc_upload_batches to service_role;
 grant all on table public.uc_upload_items to service_role;
 grant all on table public.uc_drive_folders to service_role;
 grant all on table public.uc_upload_events to service_role;
+grant usage, select on sequence public.uc_upload_events_id_seq to service_role;
 
 do $$
 begin
@@ -91,6 +92,29 @@ create unique index if not exists uc_upload_items_attachment_unique
 create index if not exists uc_upload_items_waiting_entity_idx
   on public.uc_upload_items(workspace_id, status, updated_at)
   where status = 'waiting_for_entity';
+
+create or replace function public.uc_prepare_drive_folder_claim_timestamp()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  if new.status in ('stale', 'error') then
+    new.updated_at := now() - interval '2 minutes';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists uc_drive_folders_prepare_claim_timestamp on public.uc_drive_folders;
+create trigger uc_drive_folders_prepare_claim_timestamp
+before insert or update of status on public.uc_drive_folders
+for each row
+execute function public.uc_prepare_drive_folder_claim_timestamp();
+
+revoke all on function public.uc_prepare_drive_folder_claim_timestamp() from public, anon, authenticated;
+grant execute on function public.uc_prepare_drive_folder_claim_timestamp() to service_role;
 
 create or replace function public.uc_bump_workspace_revision(p_workspace_id text)
 returns bigint
