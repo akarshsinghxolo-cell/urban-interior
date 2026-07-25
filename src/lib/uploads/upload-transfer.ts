@@ -20,6 +20,15 @@ class UploadCancelledError extends Error {
   }
 }
 
+class UploadApiError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = "UploadApiError";
+    this.code = code;
+  }
+}
+
 const jsonPost = async <T>(action: string, body: unknown): Promise<T> => {
   const response = await fetch(`/api/uploads/${action}`, {
     method: "POST",
@@ -27,8 +36,8 @@ const jsonPost = async <T>(action: string, body: unknown): Promise<T> => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const payload = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `Upload ${action} failed.`);
+  const payload = await response.json().catch(() => ({})) as T & { error?: string; code?: string };
+  if (!response.ok) throw new UploadApiError(payload.error || `Upload ${action} failed.`, payload.code);
   return payload;
 };
 
@@ -81,7 +90,27 @@ async function initiate(item: UploadItemRecord): Promise<UploadItemRecord> {
     requiredEvidence: item.requiredEvidence,
   });
   assertNotCancelled(item.id);
-  await uploadQueueStore.patchBatch(item.batchId, { status: "uploading", storageAccountId: session.storageAccountId });
+  await uploadQueueStore.patchBatch(item.batchId, {
+    status: session.completedGoogleFileId ? "finalizing" : "uploading",
+    storageAccountId: session.storageAccountId,
+  });
+  if (session.completedGoogleFileId) {
+    return uploadQueueStore.patchItem(item.id, {
+      status: "uploaded_unverified",
+      sessionUri: undefined,
+      sessionExpiresAt: undefined,
+      storageAccountId: session.storageAccountId,
+      stagingFolderId: session.stagingFolderId,
+      googleFileId: session.completedGoogleFileId,
+      webViewLink: session.webViewLink,
+      thumbnailLink: session.thumbnailLink,
+      confirmedBytes: item.sizeBytes,
+      progress: 100,
+    });
+  }
+  if (!session.sessionUri || !session.sessionExpiresAt) {
+    throw new Error("Google Drive did not return a resumable session URI.");
+  }
   return uploadQueueStore.patchItem(item.id, {
     status: "uploading",
     sessionUri: session.sessionUri,
@@ -93,16 +122,16 @@ async function initiate(item: UploadItemRecord): Promise<UploadItemRecord> {
 }
 
 async function querySession(item: UploadItemRecord) {
-  if (!item.sessionUri) return { confirmed: 0, completed: undefined as Record<string, unknown> | undefined, expired: false };
+  if (!item.sessionUri) throw new Error("The resumable Drive session is missing.");
   const response = await fetch(item.sessionUri, {
     method: "PUT",
     headers: { "Content-Range": `bytes */${item.sizeBytes}`, "Content-Length": "0" },
   });
-  if (response.status === 404) return { confirmed: 0, completed: undefined, expired: true };
+  if (response.status === 404) return { confirmed: 0, completed: undefined as Record<string, unknown> | undefined, expired: true };
   if (response.status === 200 || response.status === 201) {
     return { confirmed: item.sizeBytes, completed: await response.json().catch(() => ({})), expired: false };
   }
-  if (response.status === 308) return { confirmed: rangeEnd(response, -1) + 1, completed: undefined, expired: false };
+  if (response.status === 308) return { confirmed: rangeEnd(response, -1) + 1, completed: undefined as Record<string, unknown> | undefined, expired: false };
   if (response.status === 429 || response.status >= 500) throw new TypeError(`Drive session query temporarily failed (${response.status}).`);
   throw new Error(`Drive session query returned ${response.status}.`);
 }
@@ -123,11 +152,17 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
   if (blob.size <= 0) throw new Error("Empty files cannot be uploaded.");
 
   assertNotCancelled(item.id);
-  let current = item.sessionUri ? item : await initiate(item);
+  let current = item.sessionUri || item.googleFileId ? item : await initiate(item);
+  if (current.googleFileId) return current;
   const resumed = await querySession(current);
   if (resumed.expired) {
     if (sessionRestarts >= MAX_SESSION_RESTARTS) throw new Error("The Drive upload session repeatedly expired. Retry the file later.");
-    const reset = await uploadQueueStore.patchItem(current.id, { sessionUri: undefined, sessionExpiresAt: undefined, confirmedBytes: 0, progress: 0 });
+    const reset = await uploadQueueStore.patchItem(current.id, {
+      sessionUri: undefined,
+      sessionExpiresAt: undefined,
+      confirmedBytes: 0,
+      progress: 0,
+    });
     return uploadBytes(reset, sessionRestarts + 1);
   }
   if (resumed.completed) {
@@ -291,13 +326,14 @@ async function processItem(initial: UploadItemRecord) {
       return;
     }
     const message = error instanceof Error ? error.message : String(error);
+    const waitingForEntity = error instanceof UploadApiError && error.code === "TARGET_NOT_READY";
     const network = error instanceof TypeError || /network|fetch|offline|temporarily/i.test(message);
     const retryCount = latest.retryCount + 1;
     await uploadQueueStore.patchItem(latest.id, {
-      status: network ? "waiting_for_network" : "failed_retryable",
+      status: waitingForEntity ? "waiting_for_entity" : network ? "waiting_for_network" : "failed_retryable",
       retryCount,
       retryAt: new Date(Date.now() + RETRY_MS[Math.min(retryCount - 1, RETRY_MS.length - 1)]).toISOString(),
-      lastErrorCode: network ? "NETWORK" : "UPLOAD_ERROR",
+      lastErrorCode: waitingForEntity ? "TARGET_NOT_READY" : network ? "NETWORK" : "UPLOAD_ERROR",
       lastErrorMessage: message,
     });
   }
@@ -356,8 +392,11 @@ async function withLocalStorageLease(work: () => Promise<void>) {
 }
 
 async function withLease(work: () => Promise<void>) {
-  if (typeof navigator !== "undefined" && navigator.locks?.request) {
-    await navigator.locks.request("uc-upload-manager", { ifAvailable: true }, async (lock) => {
+  const lockManager = typeof navigator !== "undefined"
+    ? (navigator as Navigator & { locks?: LockManager }).locks
+    : undefined;
+  if (lockManager?.request) {
+    await lockManager.request("uc-upload-manager", { ifAvailable: true }, async (lock) => {
       if (lock) await work();
     });
     return;
