@@ -1,0 +1,78 @@
+diff --git a/src/components/rdash/modules/FieldModeModule.tsx b/src/components/rdash/modules/FieldModeModule.tsx
+index 8442cbc..b0584c9 100755
+--- a/src/components/rdash/modules/FieldModeModule.tsx
++++ b/src/components/rdash/modules/FieldModeModule.tsx
+@@ -23,6 +23,7 @@ export function FieldModeModule() {
+     const completeContractorVisit = useRDashStore((s) => s.completeContractorVisit);
+     const recordTrackingPoint = useRDashStore((s) => s.recordVisitTrackingPoint);
+     const fileReport = useRDashStore((s) => s.fileVisitReport);
++    const addVisit = useRDashStore((s) => s.addVisit);
+     const openDetail = useRDashStore((s) => s.openDetail);
+     const runVisitReconciliation = useRDashStore((s) => s.runVisitReconciliation);
+     const currentUser = useRDashStore((s) => s.currentUser);
+@@ -240,6 +241,65 @@ export function FieldModeModule() {
+             toast.error(error instanceof Error ? error.message : "The Visit report could not be saved.");
+         }
+     };
++    const activeVisit = db.visits.find((visit) => visit.id === reportingVisit);
++    const pendingReports = db.visits.filter((visit) => canOperateVisit(visit) && visit.status === "report_pending" && !visit.report_filed);
++    const [quickCheckInProgress, setQuickCheckInProgress] = React.useState(false);
++    /** Finds the nearest registered Site within 500m, creates a Visit, and checks it in with the captured GPS. */
++    const handleQuickCheckIn = () => {
++        if (!navigator.geolocation) {
++            toast.error("Device GPS is required for quick check-in.");
++            return;
++        }
++        if (!user.staffId) {
++            toast.error("Quick check-in requires a linked staff profile.");
++            return;
++        }
++        setQuickCheckInProgress(true);
++        navigator.geolocation.getCurrentPosition((position) => {
++            if (disposedRef.current) return;
++            const { latitude, longitude, accuracy } = position.coords;
++            const candidates = db.sites
++                .filter((site) => Number.isFinite(site.latitude) && Number.isFinite(site.longitude))
++                .map((site) => {
++                    const radiusM = 6371000;
++                    const toRad = (degrees: number) => (degrees * Math.PI) / 180;
++                    const deltaLat = toRad(site.latitude! - latitude);
++                    const deltaLon = toRad(site.longitude! - longitude);
++                    const haversine = Math.sin(deltaLat / 2) ** 2 + Math.cos(toRad(latitude)) * Math.cos(toRad(site.latitude!)) * Math.sin(deltaLon / 2) ** 2;
++                    return { site, distanceM: 2 * radiusM * Math.asin(Math.sqrt(haversine)) };
++                })
++                .filter((candidate) => candidate.distanceM <= 500)
++                .sort((a, b) => a.distanceM - b.distanceM);
++            if (!candidates.length) {
++                toast.error("No site within 500m of your GPS. Schedule a visit first or move closer to a registered site.");
++                setQuickCheckInProgress(false);
++                return;
++            }
++            const nearest = candidates[0];
++            try {
++                const visitId = addVisit({
++                    customer_id: nearest.site.customer_id,
++                    site_id: nearest.site.id,
++                    staff_id: user.staffId,
++                    staff_name: user.name,
++                    assignee_type: "staff",
++                    visit_type: "site_visit",
++                    scheduled_at: new Date().toISOString(),
++                    scheduled_duration_minutes: 60,
++                    notes: `Quick check-in auto-created at ${new Date().toLocaleString("en-IN")} · ${Math.round(nearest.distanceM)}m from registered site.`,
++                });
++                checkIn(visitId, { latitude, longitude, accuracy_m: accuracy, captured_at: new Date().toISOString() });
++                toast.success(`Quick check-in at ${nearest.site.name}`, { description: `Auto-created visit · ${Math.round(nearest.distanceM)}m from registered GPS` });
++            } catch (error) {
++                toast.error(error instanceof Error ? error.message : "Quick check-in failed.");
++            } finally {
++                setQuickCheckInProgress(false);
++            }
++        }, (error) => {
++            toast.error(`GPS required for quick check-in: ${error.message}`);
++            setQuickCheckInProgress(false);
++        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
++    };
+     return (<div className="mx-auto flex max-w-2xl flex-col gap-4">
+       <div className="flex items-center gap-2.5">
+         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
