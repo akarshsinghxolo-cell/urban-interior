@@ -1,0 +1,28 @@
+name: Upload architecture audit build
+
+on:
+  pull_request:
+    paths:
+      - "src/app/api/operations/commit/route.ts"
+      - "src/app/api/uploads/**"
+      - "src/components/uploads/**"
+      - "src/lib/uploads/**"
+      - "src/lib/rdash/server/direct-upload*"
+      - "supabase/migrations/*upload*"
+      - ".github/workflows/upload-audit-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
