@@ -19,10 +19,6 @@ on:
       - ".github/workflows/phase4-source-export.yml"
   workflow_dispatch:
 
-concurrency:
-  group: phase4-upload-cutover
-  cancel-in-progress: true
-
 permissions:
   contents: write
 
