@@ -47,6 +47,8 @@ jobs:
           cat .phase4-patch/part-* | base64 --decode | gzip --decompress > /tmp/phase4-cutover.patch
           git apply --index /tmp/phase4-cutover.patch
           git apply --index .phase4-fieldmode-fix.patch
+          sed -i 's/room\.uploadItemId/room.id/g' src/components/rdash/modules/SiteMeasurementModule.tsx
+          git add src/components/rdash/modules/SiteMeasurementModule.tsx
           git rm -f src/app/api/google-drive/upload/route.ts
 
       - name: Verify the legacy upload path is gone
