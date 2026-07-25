@@ -5,7 +5,8 @@ import { nowIso, WORKSPACE_ID } from "./direct-upload-storage";
 
 export async function upsertEntityRow(table: string, id: string, data: unknown, user: AuthenticatedUser): Promise<void> {
   const admin = getSupabaseAdminClient();
-  const { data: existing } = await admin.from(table).select("revision").eq("id", id).maybeSingle();
+  const { data: existing, error: readError } = await admin.from(table).select("revision").eq("id", id).maybeSingle();
+  if (readError) throw new Error(`Could not inspect ${table}: ${readError.message}`);
   const revision = Number(existing?.revision || 0) + (existing ? 1 : 0);
   const { error } = await admin.from(table).upsert({
     id,
@@ -56,10 +57,13 @@ export async function updateAttachmentField(
 ): Promise<void> {
   if (!field) return;
   const table = ENTITY_TABLES[entityType];
-  if (!table) return;
+  if (!table) throw new Error(`Attachment field updates are not configured for ${entityType}.`);
+
   const admin = getSupabaseAdminClient();
   const { data: row, error } = await admin.from(table).select("revision,data").eq("id", entityId).maybeSingle();
-  if (error || !row?.data) return;
+  if (error) throw new Error(`Could not read ${entityType} before attaching the file: ${error.message}`);
+  if (!row?.data) throw new Error(`TARGET_NOT_READY:The related ${entityType} record is not synchronized yet.`);
+
   const current = row.data as Record<string, unknown>;
   const next = { ...current };
   if (mode === "append") {
@@ -68,21 +72,25 @@ export async function updateAttachmentField(
   } else {
     next[field] = attachmentId;
   }
-  await admin.from(table).update({
+
+  const { error: updateError } = await admin.from(table).update({
     data: next,
     revision: Number(row.revision || 0) + 1,
     updated_at: nowIso(),
     updated_by: user.name,
   }).eq("id", entityId);
+  if (updateError) throw new Error(`Could not attach the file to ${entityType}: ${updateError.message}`);
 }
 
 export async function bumpWorkspaceRevision(): Promise<void> {
   const admin = getSupabaseAdminClient();
-  const { data } = await admin.from("entity_workspace_revision").select("revision").eq("id", WORKSPACE_ID).maybeSingle();
-  await admin.from("entity_workspace_revision").upsert({
+  const { data, error: readError } = await admin.from("entity_workspace_revision").select("revision").eq("id", WORKSPACE_ID).maybeSingle();
+  if (readError) throw new Error(`Could not read the workspace revision: ${readError.message}`);
+  const { error } = await admin.from("entity_workspace_revision").upsert({
     id: WORKSPACE_ID,
     workspace_id: WORKSPACE_ID,
     revision: Number(data?.revision || 0) + 1,
     updated_at: nowIso(),
   }, { onConflict: "id" });
+  if (error) throw new Error(`Could not update the workspace revision: ${error.message}`);
 }
