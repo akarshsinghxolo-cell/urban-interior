@@ -36,6 +36,47 @@ function operationEffectsAlreadyPresent(
   return diffWorkspaceOperations(workspace.data, candidate).length === 0;
 }
 
+function hasManagedFileWithoutFolder(operations: WorkspaceOperation[]): boolean {
+  return operations.some((operation) =>
+    operation.collection === "master.fileAssets"
+    && (operation.upsert || []).some((row) =>
+      row.storage_mode === "managed"
+      && !row.storage_folder_instance_id,
+    ),
+  );
+}
+
+function restoreManagedFileFolderIdentity(
+  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  operations: WorkspaceOperation[],
+): WorkspaceOperation[] {
+  const existingFiles = new Map(
+    (workspace.data.master.fileAssets || []).map((file) => [file.id, file]),
+  );
+
+  return operations.map((operation) => {
+    if (operation.collection !== "master.fileAssets") return operation;
+
+    const upsert = (operation.upsert || []).map((row) => {
+      if (row.storage_mode !== "managed" || row.storage_folder_instance_id) return row;
+      const existing = existingFiles.get(String(row.id || ""));
+      const sameManagedFile = existing
+        && existing.storage_mode === "managed"
+        && existing.google_file_id === row.google_file_id
+        && existing.storage_account_id === row.storage_account_id
+        && existing.storage_folder_instance_id;
+      if (!sameManagedFile) return row;
+
+      return {
+        ...row,
+        storage_folder_instance_id: existing.storage_folder_instance_id,
+      };
+    });
+
+    return { ...operation, upsert };
+  });
+}
+
 async function saveAppliedReceipt(operationId: string, result: Record<string, unknown>, revision: number): Promise<void> {
   const timestamp = new Date().toISOString();
   const { data, error } = await getSupabaseAdminClient().from("uc_workspace_operations").update({
@@ -135,11 +176,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "revision and operations are required." }, { status: 400 });
     }
 
+    let operations = body.operations;
+    if (hasManagedFileWithoutFolder(operations)) {
+      const current = await getWorkspace(true);
+      operations = restoreManagedFileFolderIdentity(current, operations);
+    }
+
     if (operationId) {
       const claim = await claimOperation({
         operationId,
         revision: body.revision,
-        operations: body.operations,
+        operations,
         userId: user.userId,
       });
       if (!claim.claimed) {
@@ -153,7 +200,7 @@ export async function POST(request: NextRequest) {
         }
 
         const current = await getWorkspace(true);
-        if (operationEffectsAlreadyPresent(current, body.operations)) {
+        if (operationEffectsAlreadyPresent(current, operations)) {
           const result = payload(current);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
@@ -167,7 +214,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (!body.operations.length) {
+    if (!operations.length) {
       const current = await getWorkspace(true);
       const result = payload(current);
       if (operationId) await saveAppliedReceipt(operationId, result, current.revision);
@@ -179,14 +226,14 @@ export async function POST(request: NextRequest) {
       saved = await commitAuthorizedPostgresOperations(
         user,
         body.revision,
-        body.operations,
+        operations,
         body.expectedRevisions,
         body.expectedRowVersions,
       );
     } catch (error) {
       if (operationId && error instanceof Error && error.message === "CONFLICT") {
         const current = await getWorkspace(true);
-        if (operationEffectsAlreadyPresent(current, body.operations)) {
+        if (operationEffectsAlreadyPresent(current, operations)) {
           const result = payload(current);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
