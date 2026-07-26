@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     const device = await authenticateTrackingDevice(request.headers.get("authorization"));
     const body = await request.json().catch(() => ({})) as {
-      points?: Array<{ latitude?: unknown; longitude?: unknown; accuracy_m?: unknown; captured_at?: unknown }>;
+      points?: Array<{ latitude: unknown; longitude: unknown; accuracy_m: unknown; captured_at?: unknown }>;
     };
     if (!Array.isArray(body.points) || body.points.length === 0 || body.points.length > 200) {
       return NextResponse.json({ error: "Send between 1 and 200 location points." }, { status: 422 });
