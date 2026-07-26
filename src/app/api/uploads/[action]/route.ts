@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
+import { resolvePublicOrigin } from "@/lib/rdash/server/public-origin";
 import {
   bindDirectUpload,
   cancelDirectUpload,
@@ -28,6 +29,20 @@ function errorResponse(error: unknown, fallback: string) {
   return NextResponse.json({ error: message, code: raw.startsWith("TARGET_NOT_READY:") ? "TARGET_NOT_READY" : undefined }, { status });
 }
 
+function resolveBrowserUploadOrigin(request: NextRequest): string {
+  const candidate = request.headers.get("origin") || resolvePublicOrigin(request);
+  let parsed: URL;
+  try {
+    parsed = new URL(candidate);
+  } catch {
+    throw new Error("The browser origin is invalid for direct Google Drive uploads.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Direct Google Drive uploads require an HTTP or HTTPS browser origin.");
+  }
+  return parsed.origin;
+}
+
 export async function GET(request: NextRequest, context: Context) {
   try {
     await requireSession(request);
@@ -46,7 +61,10 @@ export async function POST(request: NextRequest, context: Context) {
     const body = await request.json().catch(() => ({})) as Record<string, unknown>;
 
     if (action === "initiate") {
-      return NextResponse.json(await initiateDirectUpload(user, body as unknown as InitiateUploadRequest), { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json(
+        await initiateDirectUpload(user, body as unknown as InitiateUploadRequest, resolveBrowserUploadOrigin(request)),
+        { headers: { "Cache-Control": "no-store" } },
+      );
     }
     if (action === "finalize") {
       return NextResponse.json(await finalizeDirectUpload(user, body as unknown as FinalizeUploadRequest), { headers: { "Cache-Control": "no-store" } });

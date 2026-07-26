@@ -72,7 +72,24 @@ async function findCompletedDriveFile(accessToken: string, uploadItemId: string,
     .sort((a, b) => String(a.createdTime || "").localeCompare(String(b.createdTime || "")))[0];
 }
 
-export async function initiateDirectUpload(user: AuthenticatedUser, input: InitiateUploadRequest): Promise<InitiateUploadResponse> {
+function normalizeBrowserOrigin(browserOrigin: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(browserOrigin);
+  } catch {
+    throw new Error("The browser origin is invalid for direct Google Drive uploads.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Direct Google Drive uploads require an HTTP or HTTPS browser origin.");
+  }
+  return parsed.origin;
+}
+
+export async function initiateDirectUpload(
+  user: AuthenticatedUser,
+  input: InitiateUploadRequest,
+  browserOrigin: string,
+): Promise<InitiateUploadResponse> {
   if (!input.uploadBatchId || !input.uploadItemId || !input.fileName) {
     throw new Error("Upload identity and file name are required.");
   }
@@ -82,10 +99,11 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
   if (input.sizeBytes > MAX_UPLOAD_BYTES) {
     throw new Error(`File exceeds the ${Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024)} MB upload limit.`);
   }
+  const sessionOrigin = normalizeBrowserOrigin(browserOrigin);
 
   const admin = getSupabaseAdminClient();
   const { data: existing, error: existingError } = await admin.from("uc_upload_items")
-    .select("session_uri,session_expires_at,storage_account_id,staging_folder_id,confirmed_bytes,status,google_file_id,file_asset_id,attachment_id,target_entity_type,target_entity_id,upload_purpose,created_at,retry_count")
+    .select("session_uri,session_expires_at,session_origin,storage_account_id,staging_folder_id,confirmed_bytes,status,google_file_id,file_asset_id,attachment_id,target_entity_type,target_entity_id,upload_purpose,created_at,retry_count")
     .eq("id", input.uploadItemId)
     .maybeSingle();
   if (existingError) throw new Error(existingError.message);
@@ -112,6 +130,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
     if (
       existing.session_uri &&
       existing.session_expires_at &&
+      String(existing.session_origin || "") === sessionOrigin &&
       Date.parse(String(existing.session_expires_at)) > Date.now() &&
       !["completed", "cancelled"].includes(String(existing.status || ""))
     ) {
@@ -128,6 +147,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
             progress: 100,
             session_uri: null,
             session_expires_at: null,
+            session_origin: null,
             updated_at: nowIso(),
           }).eq("id", input.uploadItemId);
           if (recoveredError) throw new Error(recoveredError.message);
@@ -218,6 +238,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
       progress: 100,
       session_uri: null,
       session_expires_at: null,
+      session_origin: null,
       retry_count: Number(existing?.retry_count || 0),
     }, { onConflict: "id" });
     if (itemError) throw new Error(itemError.message);
@@ -237,6 +258,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
     {
       method: "POST",
       headers: {
+        Origin: sessionOrigin,
         "Content-Type": "application/json; charset=UTF-8",
         "X-Upload-Content-Type": input.mimeType || "application/octet-stream",
         "X-Upload-Content-Length": String(input.sizeBytes),
@@ -270,6 +292,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
     status: "uploading",
     session_uri: sessionUri,
     session_expires_at: sessionExpiresAt,
+    session_origin: sessionOrigin,
     confirmed_bytes: 0,
     progress: 0,
     retry_count: Number(existing?.retry_count || 0) + (existing ? 1 : 0),
@@ -280,7 +303,7 @@ export async function initiateDirectUpload(user: AuthenticatedUser, input: Initi
   const { error: eventError } = await admin.from("uc_upload_events").insert({
     upload_item_id: input.uploadItemId,
     event_type: "session_started",
-    detail: { storageAccountId: access.account.id, stagingFolderId: staging.id },
+    detail: { storageAccountId: access.account.id, stagingFolderId: staging.id, sessionOrigin },
     created_at: timestamp,
   });
   if (eventError) throw new Error(eventError.message);
