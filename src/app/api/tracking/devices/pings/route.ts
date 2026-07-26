@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     if (!Array.isArray(body.points) || body.points.length === 0 || body.points.length > 200) {
       return NextResponse.json({ error: "Send between 1 and 200 location points." }, { status: 422 });
     }
-    const accepted = [];
+    const accepted: Array<Awaited<ReturnType<typeof recordStaffLocationPingForStaff>>> = [];
     for (const point of body.points) {
       accepted.push(await recordStaffLocationPingForStaff(device.staffId, {
         ...point,
