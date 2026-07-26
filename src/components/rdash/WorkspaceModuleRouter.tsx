@@ -18,15 +18,18 @@ const InventoryModule = React.lazy(() => import("./modules/InventoryModule").the
 const DispatchModule = React.lazy(() => import("./modules/DispatchModule").then((module) => ({ default: module.DispatchModule })));
 const JobPnLModule = React.lazy(() => import("./modules/JobPnLModule").then((module) => ({ default: module.JobPnLModule })));
 const SiteProfitabilityModule = React.lazy(() => import("./modules/SiteProfitabilityModule").then((module) => ({ default: module.SiteProfitabilityModule })));
+const ProfitabilityWorkspaceModule = React.lazy(() => import("./modules/ProfitabilityWorkspaceModule").then((module) => ({ default: module.ProfitabilityWorkspaceModule })));
 const StaffSalaryModule = React.lazy(() => import("./modules/StaffSalaryModule").then((module) => ({ default: module.StaffSalaryModule })));
 const VendorPerformanceModule = React.lazy(() => import("./modules/VendorPerformanceModule").then((module) => ({ default: module.VendorPerformanceModule })));
 const ContractorPerformanceModule = React.lazy(() => import("./modules/ContractorPerformanceModule").then((module) => ({ default: module.ContractorPerformanceModule })));
+const ContractorWorkspaceModule = React.lazy(() => import("./modules/ContractorWorkspaceModule").then((module) => ({ default: module.ContractorWorkspaceModule })));
 const WorkOrderTimelineModule = React.lazy(() => import("./modules/WorkOrderTimelineModule").then((module) => ({ default: module.WorkOrderTimelineModule })));
 const VendorBillsModule = React.lazy(() => import("./modules/VendorBillsModule").then((module) => ({ default: module.VendorBillsModule })));
 const ContractorPaymentsModule = React.lazy(() => import("./modules/ContractorPaymentsModule").then((module) => ({ default: module.ContractorPaymentsModule })));
 const FinanceOverviewModule = React.lazy(() => import("./modules/FinanceOverviewModule").then((module) => ({ default: module.FinanceOverviewModule })));
 const PaymentRecoveryModule = React.lazy(() => import("./modules/PaymentRecoveryModule").then((module) => ({ default: module.PaymentRecoveryModule })));
 const ReportsModule = React.lazy(() => import("./modules/ReportsModule").then((module) => ({ default: module.ReportsModule })));
+const ReportFamilyModule = React.lazy(() => import("./modules/ReportFamilyModule").then((module) => ({ default: module.ReportFamilyModule })));
 const CalendarModule = React.lazy(() => import("./modules/CalendarModule").then((module) => ({ default: module.CalendarModule })));
 const SiteMeasurementModule = React.lazy(() => import("./modules/SiteMeasurementModule").then((module) => ({ default: module.SiteMeasurementModule })));
 const ApprovalPoliciesModule = React.lazy(() => import("./modules/ApprovalPoliciesModule").then((module) => ({ default: module.ApprovalPoliciesModule })));
@@ -72,122 +75,66 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     const activeModuleId = moduleId;
     const route = resolveRenderer(activeModuleId);
     switch (route.renderer) {
-        case "daily-work":
-            return <DailyWork />;
-        case "customer-desk":
-            return <CustomerDesk view={route.filter?.view === "timeline" ? "timeline" : "default"}/>;
-        case "customer-extras":
-            return <CustomerDeskExtrasModule submodule={route.filter?.sub || "requests"} filterPresets={route.filterPresets} />;
-        case "site-execution":
-            return <SiteExecutionModule initialTab={route.filter?.tab}/>;
-        case "tasks":
-            return <TasksFollowups moduleId={activeModuleId} submoduleFilter={route.filter} filterPresets={route.filterPresets} dataSource={route.dataSource}/>;
-        case "quotations":
-            return <QuotationsModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;
-        case "boq":
-            return <BOQModule />;
-        case "drawings":
-            return <DrawingsModule />;
-        case "execution-logs":
-            return <ExecutionLogsModule />;
-        case "procurement":
-            return <ProcurementModule />;
-        case "grn":
-            return <GRNModule />;
-        case "inventory":
-            return <InventoryModule />;
-        case "dispatch":
-            return <DispatchModule view={route.filter?.view}/>;
-        case "workOrder-pnl":
-            return <JobPnLModule />;
-        case "site-profitability":
-            return <SiteProfitabilityModule />;
-        case "staff-salary":
-            return <StaffSalaryModule />;
-        case "vendor-performance":
-            return <VendorPerformanceModule />;
-        case "contractor-performance":
-            return <ContractorPerformanceModule />;
-        case "wo-timeline":
-            return <WorkOrderTimelineModule />;
-        case "vendor-bills":
-            return <VendorBillsModule />;
-        case "contractor-payments":
-            return <ContractorPaymentsModule />;
-        case "contractor-detail":
-            return <ContractorDetailModule />;
-        case "finance-overview":
-            return <FinanceOverviewModule />;
-        case "payment-recovery":
-            return <PaymentRecoveryModule />;
-        case "reports-v2":
-            return <ReportsModule reportId={activeModuleId}/>;
-        case "calendar":
-            return route.filter?.view === "recurring" ? <CalendarRecurringCombined /> : <CalendarModule />;
-        case "site-measurement":
-            return <SiteMeasurementModule />;
-        case "approval-policies":
-            return <ApprovalPoliciesModule />;
-        case "control-brain":
-            return <ControlBrainModule />;
-        case "audit-log":
-            return <AuditLogModule />;
-        case "data-import":
-            return <DataImportModule />;
-        case "data-export":
-            return <DataExportModule />;
-        case "rate-finder":
-            return <RateFinderModule />;
-        case "gps-tracking":
-            return <GpsTrackingModule moduleId={activeModuleId} viewFilter={route.filter?.view}/>;
-        case "visit-proofs":
-            return <VisitProofsModule />;
-        case "attendance-payroll":
-            return <AttendancePayrollModule />;
-        case "field-mode":
-            return <FieldModeModule />;
-        case "communication-centre":
-            return <CommunicationCentreModule channelFilter={route.filter?.channel}/>;
-        case "quotation-config":
-            return <QuotationConfigModule config={route.filter?.config}/>;
-        case "staff-board":
-            return <StaffBoardModule />;
-        case "gst-returns":
-            return <GstReturnsModule />;
-        case "sales-pipeline":
-            return <SalesPipelineModule />;
-        case "commissions":
-            return <CommissionsModule />;
-        case "threads":
-            return <ThreadsModule />;
-        case "unified-thread-inbox":
-            return <UnifiedThreadInboxModule />;
-        case "masters":
-            return <WorkCategoryMasterModule initialView="catalogue"/>;
-        case "masters-v2":
-            return activeModuleId === "vendorRates"
-                ? <VendorPriceMasterModule />
-                : <MastersModule submodule={route.filter?.sub || activeModuleId}/>;
-        case "sales-ops":
-            return <SalesOpsModule submodule={route.filter?.sub || activeModuleId} filterPresets={route.filterPresets} statusFilter={route.filter?.status} expiringFilter={route.filter?.expiring}/>;
-        case "obstacle-threads":
-            return route.filter?.view === "combined" ? <BlockedRisksCombined /> : <ObstacleThreadsModule />;
-        case "approvals-v2":
-            return <ApprovalsModule />;
-        case "site-visits":
-            return <SiteVisitsModule />;
-        case "media-library":
-            return <MediaLibraryModule initialView={route.filter?.view}/>;
-        case "drive-manager":
-            return <GoogleDriveManagerModule />;
-        case "auth-users":
-            return <UserApprovalsModule />;
-        case "integrity":
-            return <IntegrityModule />;
-        case "system":
-            return <GenericModule renderer="system" dataSource={route.dataSource} filter={route.filter} filterPresets={route.filterPresets} moduleId={route.moduleId} label={route.label} description={route.description}/>;
-        default:
-            return renderUnreachableModule(route.renderer);
+        case "daily-work": return <DailyWork />;
+        case "customer-desk": return <CustomerDesk view={route.filter?.view === "timeline" ? "timeline" : "default"}/>;
+        case "customer-extras": return <CustomerDeskExtrasModule submodule={route.filter?.sub || "requests"} filterPresets={route.filterPresets} />;
+        case "site-execution": return <SiteExecutionModule initialTab={route.filter?.tab}/>;
+        case "tasks": return <TasksFollowups moduleId={activeModuleId} submoduleFilter={route.filter} filterPresets={route.filterPresets} dataSource={route.dataSource}/>;
+        case "quotations": return <QuotationsModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;
+        case "boq": return <BOQModule />;
+        case "drawings": return <DrawingsModule />;
+        case "execution-logs": return <ExecutionLogsModule />;
+        case "procurement": return <ProcurementModule />;
+        case "grn": return <GRNModule />;
+        case "inventory": return <InventoryModule />;
+        case "dispatch": return <DispatchModule view={route.filter?.view}/>;
+        case "workOrder-pnl": return <JobPnLModule />;
+        case "site-profitability": return <SiteProfitabilityModule />;
+        case "profitability": return <ProfitabilityWorkspaceModule />;
+        case "staff-salary": return <StaffSalaryModule />;
+        case "vendor-performance": return <VendorPerformanceModule />;
+        case "contractor-performance": return <ContractorPerformanceModule />;
+        case "contractor-workspace": return <ContractorWorkspaceModule />;
+        case "wo-timeline": return <WorkOrderTimelineModule />;
+        case "vendor-bills": return <VendorBillsModule />;
+        case "contractor-payments": return <ContractorPaymentsModule />;
+        case "contractor-detail": return <ContractorDetailModule />;
+        case "finance-overview": return <FinanceOverviewModule />;
+        case "payment-recovery": return <PaymentRecoveryModule />;
+        case "reports-v2": return <ReportsModule reportId={activeModuleId}/>;
+        case "report-family": return <ReportFamilyModule family={(route.filter?.family || "sales") as "sales" | "collections" | "operations" | "financial"}/>;
+        case "calendar": return route.filter?.view === "recurring" ? <CalendarRecurringCombined /> : <CalendarModule />;
+        case "site-measurement": return <SiteMeasurementModule />;
+        case "approval-policies": return <ApprovalPoliciesModule />;
+        case "control-brain": return <ControlBrainModule />;
+        case "audit-log": return <AuditLogModule />;
+        case "data-import": return <DataImportModule />;
+        case "data-export": return <DataExportModule />;
+        case "rate-finder": return <RateFinderModule />;
+        case "gps-tracking": return <GpsTrackingModule moduleId={activeModuleId} viewFilter={route.filter?.view}/>;
+        case "visit-proofs": return <VisitProofsModule />;
+        case "attendance-payroll": return <AttendancePayrollModule />;
+        case "field-mode": return <FieldModeModule />;
+        case "communication-centre": return <CommunicationCentreModule channelFilter={route.filter?.channel}/>;
+        case "quotation-config": return <QuotationConfigModule config={route.filter?.config}/>;
+        case "staff-board": return <StaffBoardModule />;
+        case "gst-returns": return <GstReturnsModule />;
+        case "sales-pipeline": return <SalesPipelineModule />;
+        case "commissions": return <CommissionsModule />;
+        case "threads": return <ThreadsModule />;
+        case "unified-thread-inbox": return <UnifiedThreadInboxModule />;
+        case "masters": return <WorkCategoryMasterModule initialView="catalogue"/>;
+        case "masters-v2": return activeModuleId === "vendorRates" ? <VendorPriceMasterModule /> : <MastersModule submodule={route.filter?.sub || activeModuleId}/>;
+        case "sales-ops": return <SalesOpsModule submodule={route.filter?.sub || activeModuleId} filterPresets={route.filterPresets} statusFilter={route.filter?.status} expiringFilter={route.filter?.expiring}/>;
+        case "obstacle-threads": return route.filter?.view === "combined" ? <BlockedRisksCombined /> : <ObstacleThreadsModule />;
+        case "approvals-v2": return <ApprovalsModule />;
+        case "site-visits": return <SiteVisitsModule />;
+        case "media-library": return <MediaLibraryModule initialView={route.filter?.view}/>;
+        case "drive-manager": return <GoogleDriveManagerModule />;
+        case "auth-users": return <UserApprovalsModule />;
+        case "integrity": return <IntegrityModule />;
+        case "system": return <GenericModule renderer="system" dataSource={route.dataSource} filter={route.filter} filterPresets={route.filterPresets} moduleId={route.moduleId} label={route.label} description={route.description}/>;
+        default: return renderUnreachableModule(route.renderer);
     }
 }
 function renderUnreachableModule(_renderer: never) {

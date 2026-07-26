@@ -1,5 +1,6 @@
-export type ModuleRenderer = "daily-work" | "customer-desk" | "customer-extras" | "site-execution" | "tasks" | "quotations" | "boq" | "procurement" | "grn" | "inventory" | "dispatch" | "workOrder-pnl" | "vendor-bills" | "contractor-payments" | "contractor-detail" | "finance-overview" | "payment-recovery" | "reports-v2" | "calendar" | "site-measurement" | "approval-policies" | "control-brain" | "audit-log" | "data-import" | "data-export" | "rate-finder" | "gps-tracking" | "visit-proofs" | "field-mode" | "communication-centre" | "quotation-config" | "staff-board" | "attendance-payroll" | "gst-returns" | "masters" | "masters-v2" | "sales-ops" | "sales-pipeline" | "commissions" | "threads" | "obstacle-threads" | "approvals-v2" | "site-visits" | "media-library" | "auth-users" | "system" | "drawings" | "execution-logs" | "site-profitability" | "staff-salary" | "vendor-performance" | "contractor-performance" | "wo-timeline" | "unified-thread-inbox" | "integrity" | "drive-manager";
+export type ModuleRenderer = "daily-work" | "customer-desk" | "customer-extras" | "site-execution" | "tasks" | "quotations" | "boq" | "procurement" | "grn" | "inventory" | "dispatch" | "workOrder-pnl" | "vendor-bills" | "contractor-payments" | "contractor-detail" | "contractor-workspace" | "profitability" | "finance-overview" | "payment-recovery" | "reports-v2" | "report-family" | "calendar" | "site-measurement" | "approval-policies" | "control-brain" | "audit-log" | "data-import" | "data-export" | "rate-finder" | "gps-tracking" | "visit-proofs" | "field-mode" | "communication-centre" | "quotation-config" | "staff-board" | "attendance-payroll" | "gst-returns" | "masters" | "masters-v2" | "sales-ops" | "sales-pipeline" | "commissions" | "threads" | "obstacle-threads" | "approvals-v2" | "site-visits" | "media-library" | "auth-users" | "system" | "drawings" | "execution-logs" | "site-profitability" | "staff-salary" | "vendor-performance" | "contractor-performance" | "wo-timeline" | "unified-thread-inbox" | "integrity" | "drive-manager";
 export type DataSource = "tasks" | "followups" | "visits" | "quotations" | "payments" | "invoices" | "workOrders" | "customers" | "approvals" | "risks" | "blocked" | "vendors" | "contractors" | "staff" | "master-units" | "master-categories" | "master-subcategories" | "master-articles" | "boqs" | "purchaseOrders" | "grns" | "inventory" | "dispatches" | "vendorBills" | "commissions" | "drawings" | "executionLogs" | "threads" | "attendance" | "sites" | "none";
+
 export interface FilterPreset {
     id: string;
     label: string;
@@ -23,15 +24,6 @@ export interface ModuleDef {
     dataSource?: DataSource;
     filter?: Record<string, string>;
     submodules: Submodule[];
-    /**
-     * Optional predicate that returns true if this module has "active" items
-     * (used by `groupActiveCount` to show active badges in the sidebar).
-     * If omitted, the module is never counted as active.
-     *
-     * This replaces the old procedural `switch (m.id)` in `groupActiveCount`
-     * — adding a new module with an active badge is now declarative: just
-     * add an `activePredicate` to the module definition.
-     */
     activePredicate?: (db: import("./types").RDashDatabase) => boolean;
 }
 export interface ModuleGroup {
@@ -40,6 +32,7 @@ export interface ModuleGroup {
     icon?: string;
     modules: ModuleDef[];
 }
+
 export const MODULE_GROUPS: ModuleGroup[] = [
     {
         id: "workspace",
@@ -54,10 +47,10 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 renderer: "daily-work",
                 activePredicate: (db) => db.tasks.some((t) => t.status === "todo" || t.status === "in_progress" || t.status === "review") || db.actions.some((a) => a.status === "pending") || db.blocked.some((b) => !b.resolved) || db.visits.some((v) => v.status === "scheduled" || v.status === "en_route") || db.followups.some((f) => f.status === "pending" || f.status === "missed"),
                 submodules: [
-                    { id: "unifiedThreadInbox", label: "Thread Inbox", renderer: "unified-thread-inbox", dataSource: "threads", hint: "Unified feed of every conversation across all entities" },
+                    { id: "unifiedThreadInbox", label: "Conversation Inbox", renderer: "unified-thread-inbox", dataSource: "threads", hint: "Unified feed of every conversation across all entities" },
                     { id: "tasks", label: "Tasks & Follow-ups", renderer: "tasks", dataSource: "tasks" },
                     { id: "blockedRisks", label: "Obstacles & Risks", renderer: "obstacle-threads", dataSource: "blocked", filter: { view: "combined" } },
-                    { id: "approvals", label: "Approvals", renderer: "approvals-v2", dataSource: "approvals" },
+                    { id: "approvals", label: "Business Approvals", renderer: "approvals-v2", dataSource: "approvals" },
                     { id: "calendarRecurring", label: "Calendar", renderer: "calendar", dataSource: "tasks", filter: { view: "recurring" } },
                 ],
             },
@@ -92,10 +85,9 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 activePredicate: (db) => db.workOrders.some((j) => j.status === "in_progress" || j.status === "scheduled"),
                 dataSource: "workOrders",
                 submodules: [
-                    { id: "boq", label: "BOQ / Material Plan", renderer: "boq", dataSource: "boqs" },
                     { id: "drawings", label: "Drawings", renderer: "drawings", dataSource: "drawings" },
                     { id: "executionLogs", label: "Execution Logs", renderer: "execution-logs", dataSource: "executionLogs" },
-                    { id: "woTimeline", label: "WO Timeline", renderer: "wo-timeline", dataSource: "workOrders" },
+                    { id: "woTimeline", label: "Work Order Timeline", renderer: "wo-timeline", dataSource: "workOrders" },
                 ],
             },
             {
@@ -128,42 +120,54 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 submodules: [
                     { id: "siteMeasurement", label: "Measurements", renderer: "site-measurement", dataSource: "visits" },
                     { id: "visitProofs", label: "Visit Proofs", renderer: "visit-proofs", dataSource: "visits" },
-                    { id: "fieldMode", label: "Field Mode", renderer: "field-mode", dataSource: "visits" },
-                    { id: "gpsTracking", label: "GPS Tracking", renderer: "gps-tracking", dataSource: "attendance" },
+                    { id: "fieldMode", label: "Mobile Field Mode", renderer: "field-mode", dataSource: "visits", hint: "Operator check-in, check-out, evidence and field reporting" },
+                    { id: "gpsTracking", label: "Team GPS Monitor", renderer: "gps-tracking", dataSource: "attendance", hint: "Supervisor map, routes, stops, speed and tracking points" },
                 ],
             },
             {
                 id: "procurementInventory",
                 label: "Procurement & Inventory",
-                description: "Vendor RFQ, bidding, purchase orders, GRN, stock issue and inventory",
+                description: "Vendor RFQ, bidding, purchase orders, BOQ control, GRN, stock issue and inventory",
                 icon: "📦",
                 renderer: "procurement",
                 activePredicate: (db) => db.purchaseOrders.some((p) => p.status === "draft" || p.status === "pending_approval" || p.status === "sent") || db.grns.length > 0 || db.inventory.length > 0 || db.vendorBills.length > 0,
                 dataSource: "purchaseOrders",
                 submodules: [
+                    { id: "boqControlCentre", label: "BOQ Control Centre", renderer: "boq", dataSource: "boqs", hint: "Cross-work-order BOQ approval, rate control and RFQ generation" },
                     { id: "grn", label: "Goods Received Note", renderer: "grn", dataSource: "grns" },
                     { id: "inventory", label: "Inventory", renderer: "inventory", dataSource: "inventory" },
                     { id: "dispatch", label: "Stock Issue / Dispatch", renderer: "dispatch", dataSource: "dispatches" },
                 ],
             },
             {
+                id: "contractorDetail",
+                label: "Contractors",
+                description: "Contractor 360, governance, capabilities, operational actions, rates, assignments, RA bills and performance",
+                icon: "👷",
+                renderer: "contractor-workspace",
+                dataSource: "contractors",
+                activePredicate: (db) => db.master.contractors.length > 0,
+                submodules: [
+                    { id: "contractorRates", label: "Contractor Rates", renderer: "masters-v2", dataSource: "contractors", filter: { sub: "contractorRates" }, hint: "Trade and rate agreements without duplicating contractor profiles" },
+                ],
+            },
+            {
                 id: "vendors",
                 label: "Vendors",
-                description: "Supplier profiles, price intelligence, performance and procurement history",
+                description: "Vendor 360, governance, price intelligence, performance and procurement history",
                 icon: "🏢",
-                renderer: "masters-v2",
+                renderer: "vendor-performance",
                 dataSource: "vendors",
                 activePredicate: (db) => db.master.vendors.length > 0,
                 submodules: [
                     { id: "vendorRates", label: "Vendor Price Matrix", renderer: "masters-v2", dataSource: "vendors" },
                     { id: "rateFinder", label: "Rate Finder", renderer: "rate-finder", dataSource: "vendors" },
-                    { id: "vendorPerformance", label: "Vendor Performance", renderer: "vendor-performance", dataSource: "vendors" },
                 ],
             },
             {
                 id: "financeDesk",
                 label: "Finance",
-                description: "Customer collections, vendor bills, contractor bills, site profitability and commissions",
+                description: "Customer collections, partner payables, unified profitability, commissions and GST",
                 icon: "💳",
                 renderer: "finance-overview",
                 activePredicate: (db) => db.quotations.some((q) => q.status === "accepted") || db.commissions.some((c) => c.status === "accrued" || c.status === "payable") || db.payments.some((p) => p.status === "pending" || p.status === "overdue"),
@@ -173,8 +177,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                     { id: "invoices", label: "Customer Invoices", renderer: "sales-ops", dataSource: "invoices", filter: { sub: "invoices" } },
                     { id: "vendorBills", label: "Vendor Bills & Payments", renderer: "vendor-bills", dataSource: "vendorBills" },
                     { id: "contractorPayments", label: "Contractor Bills & Payments", renderer: "contractor-payments", dataSource: "workOrders" },
-                    { id: "siteProfitability", label: "Site Profitability", renderer: "site-profitability", dataSource: "sites" },
-                    { id: "workOrderPnl", label: "Work Order P&L", renderer: "workOrder-pnl", dataSource: "workOrders" },
+                    { id: "profitability", label: "Profitability", renderer: "profitability", dataSource: "sites", hint: "One workspace with Site and Work Order views" },
                     { id: "commissions", label: "Commissions", renderer: "commissions", dataSource: "commissions" },
                     { id: "gstReturns", label: "GST Returns", renderer: "gst-returns", dataSource: "none" },
                 ],
@@ -182,25 +185,13 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             {
                 id: "mediaCommunication",
                 label: "Media & Communication",
-                description: "Reference media, catalogues, communication history and contextual files",
+                description: "Reference media, catalogues, outbound communication and Drive administration",
                 icon: "🖼️",
                 renderer: "media-library",
                 dataSource: "none",
                 submodules: [
-                    { id: "driveManager", label: "Google Drive Manager", renderer: "drive-manager", dataSource: "none", hint: "Connect Google Drive via OAuth, manage credentials, view storage quota" },
-                    { id: "communicationCentre", label: "Communication Centre", renderer: "communication-centre", dataSource: "none" },
-                ],
-            },
-            {
-                id: "contractorDetail",
-                label: "Contractor Detail",
-                description: "Contractor profiles, categories, capabilities, work assignments, RA bills and performance",
-                icon: "👷",
-                renderer: "contractor-detail",
-                dataSource: "contractors",
-                submodules: [
-                    { id: "contractors", label: "Contractors", renderer: "masters-v2", dataSource: "contractors", hint: "Contractor master data: profiles, categories, capabilities and rate agreements" },
-                    { id: "contractorPerformance", label: "Contractor Performance", renderer: "contractor-performance", dataSource: "contractors" },
+                    { id: "driveManager", label: "Drive Administration", renderer: "drive-manager", dataSource: "none", hint: "OAuth, Drive accounts, quota, folder routing and connection health" },
+                    { id: "communicationCentre", label: "Outbound Communication", renderer: "communication-centre", dataSource: "none", hint: "Compose and track WhatsApp, email, catalogue and reference-media sends" },
                 ],
             },
             {
@@ -212,7 +203,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 dataSource: "staff",
                 activePredicate: (db) => db.master.staff.some((s) => s.status === "active"),
                 submodules: [
-                    { id: "staff", label: "Staff Board", renderer: "staff-board", dataSource: "staff" },
                     { id: "attendancePayroll", label: "Attendance & Payroll Rules", renderer: "attendance-payroll", dataSource: "attendance" },
                     { id: "staffSalary", label: "Staff Salary", renderer: "staff-salary", dataSource: "staff" },
                 ],
@@ -227,7 +217,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             {
                 id: "masterSetup",
                 label: "Master Setup",
-                description: "Work categories, articles, rates, units and configuration",
+                description: "Work categories, articles, rates, units and catalogue configuration",
                 icon: "🧱",
                 renderer: "masters",
                 activePredicate: (db) => db.master.articles.length > 0 || db.master.contractors.length > 0,
@@ -244,23 +234,16 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             {
                 id: "reportsDesk",
                 label: "Reports",
-                description: "Customer, site, area, quotation, work order, procurement and finance reporting",
+                description: "Grouped sales, collections, operations, profitability, exposure and tax reporting",
                 icon: "📊",
                 renderer: "reports-v2",
                 activePredicate: (db) => db.customers.length > 0 || db.workOrders.length > 0,
                 dataSource: "none",
                 submodules: [
-                    { id: "salesReport", label: "Quotation & Sales", renderer: "reports-v2", dataSource: "quotations" },
-                    { id: "collectionReport", label: "Collections", renderer: "reports-v2", dataSource: "payments" },
-                    { id: "jobPnlReport", label: "Site P&L Report", renderer: "reports-v2", dataSource: "workOrders" },
-                    { id: "vendorExposureReport", label: "Vendor Exposure", renderer: "reports-v2", dataSource: "vendors" },
-                    { id: "taxReport", label: "Tax / GST", renderer: "reports-v2", dataSource: "none" },
-                    { id: "staffProductivity", label: "Staff Productivity", renderer: "reports-v2", dataSource: "staff" },
-                    { id: "quotationConversion", label: "Quotation Conversion", renderer: "reports-v2", dataSource: "quotations" },
-                    { id: "leadSourceReport", label: "Lead Source", renderer: "reports-v2", dataSource: "customers" },
-                    { id: "agingReportRep", label: "Receivables Aging", renderer: "reports-v2", dataSource: "payments" },
-                    { id: "visitCompliance", label: "Visit Compliance", renderer: "reports-v2", dataSource: "visits" },
-                    { id: "taskThroughput", label: "Task Throughput", renderer: "reports-v2", dataSource: "tasks" },
+                    { id: "salesAnalytics", label: "Sales Analytics", renderer: "report-family", dataSource: "quotations", filter: { family: "sales" } },
+                    { id: "collectionAnalytics", label: "Collections Analytics", renderer: "report-family", dataSource: "payments", filter: { family: "collections" } },
+                    { id: "operationsAnalytics", label: "Operations & Staff Analytics", renderer: "report-family", dataSource: "staff", filter: { family: "operations" } },
+                    { id: "financialAnalytics", label: "Profitability, Exposure & Tax", renderer: "report-family", dataSource: "workOrders", filter: { family: "financial" } },
                 ],
             },
         ],
@@ -278,20 +261,19 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 renderer: "system",
                 dataSource: "none",
                 submodules: [
-                    { id: "userApprovals", label: "User Approvals", renderer: "auth-users", dataSource: "none" },
+                    { id: "userApprovals", label: "User Access Requests", renderer: "auth-users", dataSource: "none" },
                     { id: "controlBrainWorkflows", label: "Control Brain", renderer: "control-brain", dataSource: "none" },
-                    { id: "approvalPolicies", label: "Approval Policies", renderer: "approval-policies", dataSource: "none" },
+                    { id: "approvalPolicies", label: "Approval Rules", renderer: "approval-policies", dataSource: "none" },
                     { id: "auditLog", label: "Audit Log", renderer: "audit-log", dataSource: "none" },
                     { id: "dataImport", label: "Data Import", renderer: "data-import", dataSource: "none" },
                     { id: "dataExport", label: "Data Export", renderer: "data-export", dataSource: "none" },
-                    { id: "integrity", label: "Data Integrity", renderer: "integrity", dataSource: "none", hint: "Referential integrity, orphan detection, cascade-delete and repair" },
+                    { id: "integrity", label: "Workspace Data Integrity", renderer: "integrity", dataSource: "none", hint: "Referential integrity, orphan detection, cascade-delete and repair" },
                 ],
             },
         ],
     },
 ];
-// Keep route/permission group ownership stable while allowing the sidebar and
-// other module pickers to follow the business workflow across group boundaries.
+
 const MODULE_DISPLAY_ORDER = [
     "workdesk",
     "customerDesk",
@@ -309,15 +291,12 @@ const MODULE_DISPLAY_ORDER = [
     "reportsDesk",
     "systemSettings",
 ] as const;
-const MODULE_DISPLAY_RANK = new Map<string, number>(
-    MODULE_DISPLAY_ORDER.map((id, index) => [id, index]),
-);
+const MODULE_DISPLAY_RANK = new Map<string, number>(MODULE_DISPLAY_ORDER.map((id, index) => [id, index]));
 export const ALL_MODULES: ModuleDef[] = MODULE_GROUPS
     .flatMap((group) => group.modules)
-    .sort((left, right) =>
-        (MODULE_DISPLAY_RANK.get(left.id) ?? Number.MAX_SAFE_INTEGER)
-        - (MODULE_DISPLAY_RANK.get(right.id) ?? Number.MAX_SAFE_INTEGER));
+    .sort((left, right) => (MODULE_DISPLAY_RANK.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (MODULE_DISPLAY_RANK.get(right.id) ?? Number.MAX_SAFE_INTEGER));
 export const ALL_SUBMODULES: Submodule[] = ALL_MODULES.flatMap((module) => module.submodules);
+
 export interface ModuleRoute {
     id: string;
     groupId: string;
@@ -330,64 +309,58 @@ export interface ModuleRoute {
     filter?: Record<string, string>;
     filterPresets?: FilterPreset[];
     isSubmodule: boolean;
+    hidden?: boolean;
 }
+
+const HIDDEN_COMPATIBILITY_ROUTES: ModuleRoute[] = [
+    { id: "boq", groupId: "operations", moduleId: "procurementInventory", label: "BOQ Control Centre", icon: "📦", description: "Legacy BOQ route", renderer: "boq", dataSource: "boqs", isSubmodule: true, hidden: true },
+    { id: "vendorPerformance", groupId: "operations", moduleId: "vendors", label: "Vendors", icon: "🏢", description: "Legacy Vendor Performance route", renderer: "vendor-performance", dataSource: "vendors", isSubmodule: true, hidden: true },
+    { id: "contractorPerformance", groupId: "operations", moduleId: "contractorDetail", label: "Contractors", icon: "👷", description: "Legacy Contractor Performance route", renderer: "contractor-workspace", dataSource: "contractors", isSubmodule: true, hidden: true },
+    { id: "contractors", groupId: "operations", moduleId: "contractorDetail", label: "Contractors", icon: "👷", description: "Legacy contractor master route", renderer: "contractor-workspace", dataSource: "contractors", isSubmodule: true, hidden: true },
+    { id: "staff", groupId: "operations", moduleId: "hrStaff", label: "HR & Staff", icon: "🧑‍💼", description: "Legacy Staff Board route", renderer: "staff-board", dataSource: "staff", isSubmodule: true, hidden: true },
+    { id: "siteProfitability", groupId: "operations", moduleId: "financeDesk", label: "Profitability", icon: "💳", description: "Legacy site profitability route", renderer: "site-profitability", dataSource: "sites", isSubmodule: true, hidden: true },
+    { id: "workOrderPnl", groupId: "operations", moduleId: "financeDesk", label: "Profitability", icon: "💳", description: "Legacy work-order profitability route", renderer: "workOrder-pnl", dataSource: "workOrders", isSubmodule: true, hidden: true },
+    { id: "salesReport", groupId: "reports", moduleId: "reportsDesk", label: "Sales Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "quotations", isSubmodule: true, hidden: true },
+    { id: "collectionReport", groupId: "reports", moduleId: "reportsDesk", label: "Collection Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "payments", isSubmodule: true, hidden: true },
+    { id: "jobPnlReport", groupId: "reports", moduleId: "reportsDesk", label: "Work Order P&L Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "workOrders", isSubmodule: true, hidden: true },
+    { id: "vendorExposureReport", groupId: "reports", moduleId: "reportsDesk", label: "Vendor Exposure Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "vendors", isSubmodule: true, hidden: true },
+    { id: "taxReport", groupId: "reports", moduleId: "reportsDesk", label: "Tax / GST Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "none", isSubmodule: true, hidden: true },
+    { id: "staffProductivity", groupId: "reports", moduleId: "reportsDesk", label: "Staff Productivity Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "staff", isSubmodule: true, hidden: true },
+    { id: "quotationConversion", groupId: "reports", moduleId: "reportsDesk", label: "Quotation Conversion Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "quotations", isSubmodule: true, hidden: true },
+    { id: "leadSourceReport", groupId: "reports", moduleId: "reportsDesk", label: "Lead Source Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "customers", isSubmodule: true, hidden: true },
+    { id: "agingReportRep", groupId: "reports", moduleId: "reportsDesk", label: "Receivables Aging Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "payments", isSubmodule: true, hidden: true },
+    { id: "visitCompliance", groupId: "reports", moduleId: "reportsDesk", label: "Visit Compliance Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "visits", isSubmodule: true, hidden: true },
+    { id: "taskThroughput", groupId: "reports", moduleId: "reportsDesk", label: "Task Throughput Report", icon: "📊", description: "Legacy report deep link", renderer: "reports-v2", dataSource: "tasks", isSubmodule: true, hidden: true },
+];
+
 function buildModuleRouteRegistry(): ReadonlyMap<string, ModuleRoute> {
     const routes = new Map<string, ModuleRoute>();
     const register = (route: ModuleRoute) => {
-        if (routes.has(route.id)) {
-            throw new Error(`Duplicate module route id: ${route.id}`);
-        }
+        if (routes.has(route.id)) throw new Error(`Duplicate module route id: ${route.id}`);
         routes.set(route.id, Object.freeze({ ...route }));
     };
     for (const group of MODULE_GROUPS) {
         for (const moduleDef of group.modules) {
-            register({
-                id: moduleDef.id,
-                groupId: group.id,
-                moduleId: moduleDef.id,
-                label: moduleDef.label,
-                icon: moduleDef.icon,
-                description: moduleDef.description,
-                renderer: moduleDef.renderer,
-                dataSource: moduleDef.dataSource,
-                filter: moduleDef.filter,
-                isSubmodule: false,
-            });
+            register({ id: moduleDef.id, groupId: group.id, moduleId: moduleDef.id, label: moduleDef.label, icon: moduleDef.icon, description: moduleDef.description, renderer: moduleDef.renderer, dataSource: moduleDef.dataSource, filter: moduleDef.filter, isSubmodule: false });
             for (const submodule of moduleDef.submodules) {
-                register({
-                    id: submodule.id,
-                    groupId: group.id,
-                    moduleId: moduleDef.id,
-                    label: submodule.label,
-                    icon: moduleDef.icon,
-                    description: submodule.hint || moduleDef.description,
-                    renderer: submodule.renderer || moduleDef.renderer,
-                    dataSource: submodule.dataSource || moduleDef.dataSource,
-                    filter: submodule.filter,
-                    filterPresets: submodule.filterPresets,
-                    isSubmodule: true,
-                });
+                register({ id: submodule.id, groupId: group.id, moduleId: moduleDef.id, label: submodule.label, icon: moduleDef.icon, description: submodule.hint || moduleDef.description, renderer: submodule.renderer || moduleDef.renderer, dataSource: submodule.dataSource || moduleDef.dataSource, filter: submodule.filter, filterPresets: submodule.filterPresets, isSubmodule: true });
             }
         }
     }
-    if (!routes.has("workdesk")) {
-        throw new Error("The module route registry must include the Workdesk Dashboard fallback route.");
-    }
+    HIDDEN_COMPATIBILITY_ROUTES.forEach(register);
+    if (!routes.has("workdesk")) throw new Error("The module route registry must include the Workdesk Dashboard fallback route.");
     return routes;
 }
+
 export const MODULE_ROUTE_REGISTRY = buildModuleRouteRegistry();
 export const REGISTERED_MODULE_IDS = new Set<string>(MODULE_ROUTE_REGISTRY.keys());
 export const DEFAULT_MODULE_ID = "workdesk";
 export function findModule(id: string): ModuleDef | undefined {
     return ALL_MODULES.find((module) => module.id === id);
 }
-export function findSubmodule(id: string): {
-    module?: ModuleDef;
-    sub?: Submodule;
-} {
+export function findSubmodule(id: string): { module?: ModuleDef; sub?: Submodule } {
     const route = MODULE_ROUTE_REGISTRY.get(id);
-    if (!route?.isSubmodule)
-        return {};
+    if (!route?.isSubmodule || route.hidden) return {};
     const moduleDef = findModule(route.moduleId);
     const sub = moduleDef?.submodules.find((candidate) => candidate.id === id);
     return { module: moduleDef, sub };
@@ -404,36 +377,42 @@ export function isRegisteredModuleId(id: string): boolean {
 export function resolveRenderer(id: string): ModuleRoute {
     return MODULE_ROUTE_REGISTRY.get(canonicalModuleId(id))!;
 }
+
+function stableFilter(filter?: Record<string, string>) {
+    if (!filter) return "";
+    return Object.entries(filter).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}:${value}`).join("|");
+}
 export function validateModuleRegistry(): string[] {
     const issues: string[] = [];
+    const visibleRoutes = Array.from(MODULE_ROUTE_REGISTRY.values()).filter((route) => !route.hidden);
     for (const route of MODULE_ROUTE_REGISTRY.values()) {
-        if (!route.id.trim())
-            issues.push("A module route has an empty id.");
-        if (!route.label.trim())
-            issues.push(`Module route ${route.id} has an empty label.`);
-        if (!route.renderer)
-            issues.push(`Module route ${route.id} has no screen renderer.`);
-        if (route.isSubmodule && !MODULE_ROUTE_REGISTRY.has(route.moduleId)) {
-            issues.push(`Submodule ${route.id} points to missing module ${route.moduleId}.`);
+        if (!route.id.trim()) issues.push("A module route has an empty id.");
+        if (!route.label.trim()) issues.push(`Module route ${route.id} has an empty label.`);
+        if (!route.renderer) issues.push(`Module route ${route.id} has no screen renderer.`);
+        if (route.isSubmodule && !MODULE_ROUTE_REGISTRY.has(route.moduleId)) issues.push(`Submodule ${route.id} points to missing module ${route.moduleId}.`);
+    }
+    const signatures = new Map<string, ModuleRoute>();
+    for (const route of visibleRoutes) {
+        const signature = [route.renderer, route.dataSource || "", stableFilter(route.filter)].join("::");
+        const previous = signatures.get(signature);
+        if (previous && previous.moduleId === route.moduleId) {
+            issues.push(`Semantic duplicate routes ${previous.id} and ${route.id} use the same renderer, data source and filter inside ${route.moduleId}.`);
+        } else {
+            signatures.set(signature, route);
         }
     }
     return issues;
 }
 export function groupSubmoduleCount(groupId: string): number {
-    const g = MODULE_GROUPS.find((x) => x.id === groupId);
-    return g ? g.modules.reduce((n, m) => n + m.submodules.length, 0) : 0;
+    const group = MODULE_GROUPS.find((entry) => entry.id === groupId);
+    return group ? group.modules.reduce((count, moduleDef) => count + moduleDef.submodules.length, 0) : 0;
 }
 export function moduleSubmoduleCount(moduleId: string): number {
-    const m = findModule(moduleId);
-    return m ? m.submodules.length : 0;
+    const moduleDef = findModule(moduleId);
+    return moduleDef ? moduleDef.submodules.length : 0;
 }
 export function groupActiveCount(groupId: string, db: import("./types").RDashDatabase): number {
-    const g = MODULE_GROUPS.find((x) => x.id === groupId);
-    if (!g)
-        return 0;
-    // Declarative: each module's `activePredicate` (if present) determines
-    // whether it counts as "active". No procedural switch needed — adding a
-    // new module with an active badge is just adding an `activePredicate` to
-    // the module definition in MODULE_GROUPS.
-    return g.modules.reduce((count, m) => count + (m.activePredicate?.(db) ? 1 : 0), 0);
+    const group = MODULE_GROUPS.find((entry) => entry.id === groupId);
+    if (!group) return 0;
+    return group.modules.reduce((count, moduleDef) => count + (moduleDef.activePredicate?.(db) ? 1 : 0), 0);
 }
