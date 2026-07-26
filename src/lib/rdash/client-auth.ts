@@ -36,6 +36,32 @@ export function clearSessionToken(): void {
   }
 }
 
+let nativeFetch: typeof window.fetch | null = null;
+let refreshPromise: Promise<boolean> | null = null;
+
+/** Renew the short-lived browser session without prompting for credentials. */
+export function refreshClientSession(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if (refreshPromise) return refreshPromise;
+  const request = nativeFetch || window.fetch.bind(window);
+  const token = getSessionToken();
+  refreshPromise = request("/api/auth/refresh", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    cache: "no-store",
+  }).then(async (response) => {
+    if (!response.ok) return false;
+    const payload = await response.json().catch(() => ({})) as { token?: string };
+    if (!payload.token) return false;
+    setSessionToken(payload.token);
+    return true;
+  }).catch(() => false).finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
+}
+
 let fetchPatched = false;
 
 /**
@@ -47,6 +73,7 @@ export function initAuthFetch(): void {
   if (fetchPatched || typeof window === "undefined") return;
   fetchPatched = true;
   const originalFetch = window.fetch.bind(window);
+  nativeFetch = originalFetch;
   const AUTH_ENDPOINTS = ["/api/auth/login", "/api/auth/logout"];
 
   window.fetch = (async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

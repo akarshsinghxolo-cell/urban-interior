@@ -154,7 +154,7 @@ export async function authenticateCredentials(emailInput: string, password: stri
             email: SUPER_OWNER.email,
             name: SUPER_OWNER.name,
             role: "Owner" as RDashRole,
-            staffId: undefined,
+            staffId: process.env.UC_SUPER_OWNER_STAFF_ID || "staff-owner",
         };
     }
 

@@ -196,7 +196,7 @@ const visitFks: ForeignKeyRule[] = [
     { collection: "visits", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Visit → Site" },
     { collection: "visits", field: "work_required_id", targetCollection: "workRequired", onDelete: "nullify", nullable: true, label: "Visit → Work Required" },
     { collection: "visits", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Visit → Work Order" },
-    { collection: "visits", field: "staff_id", targetCollection: "master.staff", onDelete: "restrict", nullable: false, label: "Visit → Staff" },
+    { collection: "visits", field: "staff_id", targetCollection: "master.staff", onDelete: "nullify", nullable: true, label: "Visit → Staff (when assigned to staff)" },
     { collection: "visits", field: "contractor_id", targetCollection: "master.contractors", onDelete: "nullify", nullable: true, label: "Visit → Contractor" },
     { collection: "visits", field: "vendor_id", targetCollection: "master.vendors", onDelete: "nullify", nullable: true, label: "Visit → Vendor" },
 ];
