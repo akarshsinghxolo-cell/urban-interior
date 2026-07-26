@@ -30,6 +30,17 @@ export function safeSegment(value: string | undefined, fallback: string): string
   return cleaned || fallback;
 }
 
+export function practicalFolderName(
+  value: string | undefined,
+  detail: string | undefined,
+  fallback: string,
+): string {
+  const primary = safeSegment(value, fallback);
+  const context = safeSegment(detail, "");
+  if (!context || primary.toLocaleLowerCase().includes(context.toLocaleLowerCase())) return primary;
+  return safeSegment(`${primary} - ${context}`, primary);
+}
+
 function shortId(value: string | undefined): string {
   return safeSegment((value || "unknown").replace(/[^a-zA-Z0-9]/g, "").slice(-8), "unknown");
 }
@@ -106,6 +117,7 @@ export type FolderSegment = { name: string; key: string };
 type FolderRegistryRow = {
   folder_key: string;
   google_folder_id: string;
+  display_name?: string;
   web_view_link?: string;
   status: string;
   updated_at?: string;
@@ -118,22 +130,28 @@ function registryKey(storageAccountId: string, folderKey: string): string {
 async function folderRegistryRow(storageAccountId: string, folderKey: string): Promise<FolderRegistryRow | null> {
   const { data, error } = await getSupabaseAdminClient()
     .from("uc_drive_folders")
-    .select("folder_key,google_folder_id,web_view_link,status,updated_at")
+    .select("folder_key,google_folder_id,display_name,web_view_link,status,updated_at")
     .eq("folder_key", registryKey(storageAccountId, folderKey))
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data as FolderRegistryRow | null;
 }
 
-async function verifyFolder(accessToken: string, googleFolderId: string, parentId: string): Promise<{ id: string; webViewLink: string } | null> {
+async function verifyFolder(
+  accessToken: string,
+  googleFolderId: string,
+  parentId: string,
+  desiredName: string,
+): Promise<{ id: string; webViewLink: string } | null> {
   if (!googleFolderId || googleFolderId.startsWith("pending:")) return null;
   const response = await driveFetch(
     accessToken,
-    `${DRIVE_API}/files/${encodeURIComponent(googleFolderId)}?fields=id,mimeType,parents,trashed,webViewLink`,
+    `${DRIVE_API}/files/${encodeURIComponent(googleFolderId)}?fields=id,name,mimeType,parents,trashed,webViewLink`,
   );
   if (response.status === 404) return null;
   const payload = await response.json().catch(() => ({})) as {
     id?: string;
+    name?: string;
     mimeType?: string;
     parents?: string[];
     trashed?: boolean;
@@ -142,10 +160,28 @@ async function verifyFolder(accessToken: string, googleFolderId: string, parentI
   };
   if (!response.ok) throw new Error(payload.error?.message || "Could not verify the registered Google Drive folder.");
   if (!payload.id || payload.trashed || payload.mimeType !== "application/vnd.google-apps.folder" || !payload.parents?.includes(parentId)) return null;
-  return {
-    id: payload.id,
-    webViewLink: payload.webViewLink || `https://drive.google.com/drive/folders/${payload.id}`,
-  };
+
+  let webViewLink = payload.webViewLink || `https://drive.google.com/drive/folders/${payload.id}`;
+  if (payload.name !== desiredName) {
+    const renamed = await driveFetch(
+      accessToken,
+      `${DRIVE_API}/files/${encodeURIComponent(payload.id)}?fields=id,name,webViewLink`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: desiredName }),
+      },
+    );
+    const renamedPayload = await renamed.json().catch(() => ({})) as {
+      id?: string;
+      webViewLink?: string;
+      error?: { message?: string };
+    };
+    if (!renamed.ok) throw new Error(renamedPayload.error?.message || `Could not rename the Drive folder to ${desiredName}.`);
+    webViewLink = renamedPayload.webViewLink || webViewLink;
+  }
+
+  return { id: payload.id, webViewLink };
 }
 
 async function findFolderByProperty(accessToken: string, parentId: string, segment: FolderSegment) {
@@ -268,8 +304,16 @@ async function ensureFolder(
 ): Promise<{ id: string; webViewLink: string }> {
   const existing = await folderRegistryRow(storageAccountId, segment.key);
   if (existing?.status === "active") {
-    const verified = await verifyFolder(accessToken, existing.google_folder_id, parentId);
-    if (verified) return verified;
+    const verified = await verifyFolder(accessToken, existing.google_folder_id, parentId, segment.name);
+    if (verified) {
+      if (existing.display_name !== segment.name) {
+        await getSupabaseAdminClient().from("uc_drive_folders")
+          .update({ display_name: segment.name, updated_at: nowIso() })
+          .eq("folder_key", existing.folder_key)
+          .eq("google_folder_id", existing.google_folder_id);
+      }
+      return verified;
+    }
     await getSupabaseAdminClient().from("uc_drive_folders")
       .update({ status: "stale", updated_at: nowIso() })
       .eq("folder_key", existing.folder_key)
@@ -278,10 +322,8 @@ async function ensureFolder(
 
   const discovered = await findFolderByProperty(accessToken, parentId, segment);
   if (discovered?.id) {
-    const folder = {
-      id: String(discovered.id),
-      webViewLink: discovered.webViewLink || `https://drive.google.com/drive/folders/${discovered.id}`,
-    };
+    const folder = await verifyFolder(accessToken, String(discovered.id), parentId, segment.name);
+    if (!folder) throw new Error(`The discovered ${segment.name} Drive folder is not available.`);
     await persistFolderRegistry({
       storageAccountId,
       segment,
@@ -295,7 +337,7 @@ async function ensureFolder(
 
   const ownership = await acquireFolderClaim(storageAccountId, segment, parentFolderKey);
   if (!ownership.owner) {
-    const verified = await verifyFolder(accessToken, ownership.folder.google_folder_id, parentId);
+    const verified = await verifyFolder(accessToken, ownership.folder.google_folder_id, parentId, segment.name);
     if (verified) return verified;
     throw new Error(`The registered ${segment.name} Drive folder is not available.`);
   }
@@ -304,10 +346,9 @@ async function ensureFolder(
     const discoveredAfterClaim = await findFolderByProperty(accessToken, parentId, segment);
     let folder: { id: string; webViewLink: string };
     if (discoveredAfterClaim?.id) {
-      folder = {
-        id: String(discoveredAfterClaim.id),
-        webViewLink: discoveredAfterClaim.webViewLink || `https://drive.google.com/drive/folders/${discoveredAfterClaim.id}`,
-      };
+      const verified = await verifyFolder(accessToken, String(discoveredAfterClaim.id), parentId, segment.name);
+      if (!verified) throw new Error(`The discovered ${segment.name} Drive folder is not available.`);
+      folder = verified;
     } else {
       const created = await driveFetch(accessToken, `${DRIVE_API}/files?fields=id,name,webViewLink,parents`, {
         method: "POST",
@@ -400,13 +441,13 @@ export function destinationSegments(
     if (!customer) targetNotReady("The related Customer is not synchronized yet.");
     return [
       { name: "Customers", key: "root:customers" },
-      { name: `C-${shortId(customer.id)} ${safeSegment(customer.name, "Customer")}`, key: `customer:${customer.id}` },
+      { name: practicalFolderName(customer.name, undefined, "Customer"), key: `customer:${customer.id}` },
     ];
   };
 
   if (["site_evidence", "visit_evidence", "measurement", "drawing"].includes(purpose)) {
     if (!site) targetNotReady("The related Site is not synchronized yet.");
-    return [...customerRoot(), { name: `S-${shortId(site.id)} ${safeSegment(site.name, "Site")}`, key: `site:${site.id}` }];
+    return [...customerRoot(), { name: practicalFolderName(site.name, site.locality || site.city, "Site"), key: `site:${site.id}` }];
   }
   if (["work_order_document", "execution_evidence"].includes(purpose)) {
     if (!workOrder) targetNotReady("The related Work Order is not synchronized yet.");
@@ -432,16 +473,16 @@ export function destinationSegments(
   }
   if (purpose === "vendor_document") {
     if (!vendor) targetNotReady("The related Vendor is not synchronized yet.");
-    return [{ name: "Vendors", key: "root:vendors" }, { name: `V-${shortId(vendor.id)} ${safeSegment(vendor.name, "Vendor")}`, key: `vendor:${vendor.id}` }];
+    return [{ name: "Vendors", key: "root:vendors" }, { name: practicalFolderName(vendor.name, vendor.locality || vendor.city, "Vendor"), key: `vendor:${vendor.id}` }];
   }
   if (purpose === "contractor_document") {
     if (!contractor) targetNotReady("The related Contractor is not synchronized yet.");
-    return [{ name: "Contractors", key: "root:contractors" }, { name: `CT-${shortId(contractor.id)} ${safeSegment(contractor.name, "Contractor")}`, key: `contractor:${contractor.id}` }];
+    return [{ name: "Contractors", key: "root:contractors" }, { name: practicalFolderName(contractor.name, contractor.categories?.[0] || contractor.locality || contractor.city, "Contractor"), key: `contractor:${contractor.id}` }];
   }
   if (purpose === "staff_document") {
     const staff = db.master.staff.find((row) => row.id === entityId);
     if (!staff) targetNotReady("The related Staff record is not synchronized yet.");
-    return [{ name: "Staff", key: "root:staff" }, { name: `ST-${shortId(staff.id)} ${safeSegment(staff.name, "Staff")}`, key: `staff:${staff.id}` }];
+    return [{ name: "Staff", key: "root:staff" }, { name: practicalFolderName(staff.name, undefined, "Staff"), key: `staff:${staff.id}` }];
   }
   throw new Error(`No Drive destination is configured for upload purpose ${purpose}.`);
 }
