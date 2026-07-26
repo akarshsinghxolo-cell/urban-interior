@@ -48,7 +48,7 @@ export async function registerTrackingDevice(input: {
   const token = `uct_${randomBytes(32).toString("base64url")}`;
   const tokenHash = sha256(token);
   const tokenPrefix = token.slice(0, 12);
-  const { data, error } = await getSupabaseAdminClient().rpc("uc_register_tracking_device", {
+  const { data, error } = await (getSupabaseAdminClient() as any).rpc("uc_register_tracking_device", {
     p_code_hash: sha256(input.code.trim()),
     p_token_hash: tokenHash,
     p_token_prefix: tokenPrefix,
