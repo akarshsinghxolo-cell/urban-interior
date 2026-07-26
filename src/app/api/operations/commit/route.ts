@@ -4,6 +4,7 @@ import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { commitAuthorizedPostgresOperations, type CommitResult } from "@/lib/rdash/server/authorized-commit";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { applyWorkspaceOperations, diffWorkspaceOperations, type WorkspaceOperation } from "@/lib/rdash/workspace-operations";
+import { isEntityContextType } from "@/lib/rdash/entity-context";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -44,6 +45,46 @@ function hasManagedFileWithoutFolder(operations: WorkspaceOperation[]): boolean 
       && !row.storage_folder_instance_id,
     ),
   );
+}
+
+function hasAttachmentWithUnsupportedEntityType(operations: WorkspaceOperation[]): boolean {
+  return operations.some((operation) =>
+    operation.collection === "entityFileAttachments"
+    && (operation.upsert || []).some((row) =>
+      typeof row.entity_type === "string"
+      && !isEntityContextType(row.entity_type),
+    ),
+  );
+}
+
+function restoreExistingAttachmentEntityIdentity(
+  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  operations: WorkspaceOperation[],
+): WorkspaceOperation[] {
+  const existingAttachments = new Map(
+    (workspace.data.entityFileAttachments || []).map((attachment) => [attachment.id, attachment]),
+  );
+
+  return operations.map((operation) => {
+    if (operation.collection !== "entityFileAttachments") return operation;
+
+    const upsert = (operation.upsert || []).map((row) => {
+      if (isEntityContextType(row.entity_type)) return row;
+      const existing = existingAttachments.get(String(row.id || ""));
+      const sameAttachment = existing
+        && existing.file_asset_id === row.file_asset_id
+        && isEntityContextType(existing.entity_type);
+      if (!sameAttachment) return row;
+
+      return {
+        ...row,
+        entity_type: existing.entity_type,
+        entity_id: existing.entity_id,
+      };
+    });
+
+    return { ...operation, upsert };
+  });
 }
 
 function restoreManagedFileFolderIdentity(
@@ -177,9 +218,16 @@ export async function POST(request: NextRequest) {
     }
 
     let operations = body.operations;
-    if (hasManagedFileWithoutFolder(operations)) {
+    const repairManagedFiles = hasManagedFileWithoutFolder(operations);
+    const repairAttachmentContext = hasAttachmentWithUnsupportedEntityType(operations);
+    if (repairManagedFiles || repairAttachmentContext) {
       const current = await getWorkspace(true);
-      operations = restoreManagedFileFolderIdentity(current, operations);
+      if (repairManagedFiles) {
+        operations = restoreManagedFileFolderIdentity(current, operations);
+      }
+      if (repairAttachmentContext) {
+        operations = restoreExistingAttachmentEntityIdentity(current, operations);
+      }
     }
 
     if (operationId) {
