@@ -70,36 +70,35 @@ export async function listStaffLocationPings(user: AuthenticatedUser) {
   return points.filter((point) => point.staff_id === staffId);
 }
 
-export async function recordStaffLocationPing(user: AuthenticatedUser, input: {
+type StaffLocationInput = {
   latitude: unknown;
   longitude: unknown;
   accuracy_m: unknown;
   captured_at?: unknown;
   source?: StaffLocationSource;
-}) {
-  const staffId = assertStaffDevice(user);
-  const admin = getSupabaseAdminClient();
-  // Real staff ids (including the bootstrap owner's "staff-owner" id and any
-  // "owner-device:<userId>" pseudo-id) MUST have a matching active StaffProfile
-  // row — both for the active-status check AND to satisfy the StaffLocationPing
-  // FK constraint (staffId → StaffProfile.id). The bootstrap-owner script
-  // provisions the owner's StaffProfile row; ad-hoc pseudo-devices must be
-  // provisioned separately before pings are accepted.
-  if (!staffId.startsWith("owner-device:")) {
-    const { data: staff } = await admin.from("StaffProfile").select("status").eq("id", staffId).maybeSingle();
-    if (!staff || staff.status !== "active") throw new Error("FORBIDDEN:Inactive staff cannot record GPS pings.");
-  } else {
-    // Pseudo-device ids (owner-device:<userId>) still need a StaffProfile row to
-    // satisfy the FK; verify it exists and is active.
-    const { data: staff } = await admin.from("StaffProfile").select("status").eq("id", staffId).maybeSingle();
-    if (!staff || staff.status !== "active") throw new Error("FORBIDDEN:This device is not registered for GPS tracking.");
+};
+
+async function assertActiveTrackedStaff(staffId: string) {
+  const { data: staff, error } = await getSupabaseAdminClient()
+    .from("StaffProfile")
+    .select("status,gpsTrackingEnabled")
+    .eq("id", staffId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not verify the GPS device owner: ${error.message}`);
+  if (!staff || staff.status !== "active" || staff.gpsTrackingEnabled === false) {
+    throw new Error("FORBIDDEN:This staff device is inactive or GPS tracking is disabled.");
   }
+}
+
+export async function recordStaffLocationPingForStaff(staffId: string, input: StaffLocationInput) {
+  await assertActiveTrackedStaff(staffId);
   const latitude = numberInput(input.latitude, "Latitude");
   const longitude = numberInput(input.longitude, "Longitude");
   const accuracyM = numberInput(input.accuracy_m, "GPS accuracy");
   if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
     throw new Error("INVALID:GPS coordinates are outside valid latitude/longitude range.");
   }
+
   const point: StaffLocationPing = {
     id: `staff-location-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
     staff_id: staffId,
@@ -111,6 +110,8 @@ export async function recordStaffLocationPing(user: AuthenticatedUser, input: {
   };
   if (!isValidStaffLocationPing(point)) throw new Error("INVALID:A valid device GPS point is required.");
   if (point.accuracy_m > 250) throw new Error("INVALID:GPS accuracy is too low to record a staff location.");
+
+  const admin = getSupabaseAdminClient();
   const { error: upsertError } = await admin.from("StaffLocationPing").upsert({
     id: point.id,
     staffId,
@@ -122,6 +123,7 @@ export async function recordStaffLocationPing(user: AuthenticatedUser, input: {
     dataJson: JSON.stringify(point),
   } as any, { onConflict: "id" });
   if (upsertError) throw new Error(`Could not record GPS ping: ${upsertError.message}`);
+
   const retained = prune(await allPoints());
   const retainedIds = [...new Set(retained.map((row) => row.id))];
   if (retainedIds.length) {
@@ -130,4 +132,8 @@ export async function recordStaffLocationPing(user: AuthenticatedUser, input: {
     await admin.from("StaffLocationPing").delete().gt("id", "");
   }
   return point;
+}
+
+export async function recordStaffLocationPing(user: AuthenticatedUser, input: StaffLocationInput) {
+  return recordStaffLocationPingForStaff(assertStaffDevice(user), input);
 }

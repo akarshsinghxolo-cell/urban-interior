@@ -7,7 +7,8 @@ import { SavedViewsBar } from "../SavedViewsBar";
 import { formatDateTime, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
 import type { Visit } from "@/lib/rdash/types";
 import { isLocationFresh, latestStaffLocations, type StaffLocationPing } from "@/lib/rdash/staff-location";
-import { MapPin, Navigation, Clock, Route, Map as MapIcon, CheckCircle2, AlertTriangle, Square, Gauge, ListOrdered, Copy, Timer, TrendingUp, Layers, Radio, RefreshCw, } from "lucide-react";
+import { useLocationTrackingState } from "@/lib/rdash/location-tracking-status";
+import { MapPin, Navigation, Clock, Route, Map as MapIcon, CheckCircle2, AlertTriangle, Square, Gauge, ListOrdered, Copy, Timer, TrendingUp, Layers, Radio, RefreshCw, Smartphone, KeyRound, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { MapView, type MapRoadRoute, type MapPoint } from "../MapView";
@@ -154,6 +155,68 @@ function useRoadRoute(points: Array<{
     }, [JSON.stringify(points)]);
     return route;
 }
+function TrackingDeviceEnrollmentPanel({
+    staff,
+    selectedStaff,
+}: {
+    staff: Array<{ id: string; name: string }>;
+    selectedStaff: string;
+}) {
+    const [deviceName, setDeviceName] = React.useState("");
+    const [code, setCode] = React.useState<string | null>(null);
+    const [expiresAt, setExpiresAt] = React.useState<string | null>(null);
+    const [working, setWorking] = React.useState(false);
+    const chosen = staff.find((entry) => entry.id === selectedStaff);
+
+    const generate = async () => {
+        if (!chosen) {
+            toast.error("Select one staff member first.");
+            return;
+        }
+        setWorking(true);
+        setCode(null);
+        try {
+            const response = await fetch("/api/tracking/devices/enroll", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    staffId: chosen.id,
+                    deviceName: deviceName.trim() || `${chosen.name} phone`,
+                }),
+            });
+            const payload = await response.json().catch(() => ({})) as { code?: string; expiresAt?: string; error?: string };
+            if (!response.ok || !payload.code) throw new Error(payload.error || "Could not create enrollment code.");
+            setCode(payload.code);
+            setExpiresAt(payload.expiresAt || null);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not create enrollment code.");
+        } finally {
+            setWorking(false);
+        }
+    };
+
+    return (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Smartphone className="h-4 w-4 text-primary"/> Register background-tracking phone</h3>
+          <p className="mt-1 text-[11px] text-muted-foreground">Select one staff member above. Each phone receives its own revocable, GPS-only token; accounts and location queues never mix.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input value={deviceName} onChange={(event) => setDeviceName(event.target.value)} placeholder={chosen ? `${chosen.name} phone` : "Device label"} className="h-8 w-48 rounded-md border border-input bg-background px-2 text-xs"/>
+          <Button size="sm" onClick={() => { void generate(); }} disabled={working || !chosen}>
+            <KeyRound className="mr-1 h-3.5 w-3.5"/>{working ? "Generating…" : "Generate 15-minute code"}
+          </Button>
+        </div>
+      </div>
+      {code && (<div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3">
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">One-time enrollment code</p>
+        <code className="mt-1 block break-all font-mono text-sm font-semibold text-foreground">{code}</code>
+        <p className="mt-1 text-[10px] text-muted-foreground">Enter it once in the Urban Castle Android tracker{expiresAt ? ` before ${formatDateTime(expiresAt)}` : ""}. It cannot be reused.</p>
+      </div>)}
+    </div>);
+}
+
 export function GpsTrackingModule({ moduleId, viewFilter }: {
     moduleId: string;
     viewFilter?: string;
@@ -164,6 +227,7 @@ export function GpsTrackingModule({ moduleId, viewFilter }: {
     const replaceStaffLocationPings = useRDashStore((s) => s.replaceStaffLocationPings);
     const currentUser = useRDashStore((s) => s.currentUser);
     const user = currentUser();
+    const trackingState = useLocationTrackingState();
     const canViewAllTracking = user.role === "Owner" || user.role === "Operations Manager";
     const accessibleVisits = React.useMemo(() => canViewAllTracking ? db.visits : db.visits.filter((visit) => visit.assignee_type !== "contractor" && !visit.contractor_id && visit.staff_id === user.staffId), [canViewAllTracking, db.visits, user.staffId]);
     const accessibleLocationPings = React.useMemo(() => canViewAllTracking ? staffLocationPings : staffLocationPings.filter((point) => point.staff_id === user.staffId), [canViewAllTracking, staffLocationPings, user.staffId]);
@@ -387,6 +451,21 @@ export function GpsTrackingModule({ moduleId, viewFilter }: {
         <MetricCard label="Completed today" value={completedToday} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
         <MetricCard label="Total dwell (hrs)" value={Math.round((totalDwell / 60) * 10) / 10} tone="default" icon={<Clock className="h-4 w-4"/>}/>
       </div>
+      <div className={cn("rounded-[var(--panel-radius)] border p-3 shadow-card", trackingState.status === "active" ? "border-success/30 bg-success/[0.05]" : trackingState.status === "permission_denied" || trackingState.status === "auth_required" || trackingState.status === "error" ? "border-destructive/30 bg-destructive/[0.05]" : "border-border bg-card")}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">This device · {trackingState.mode === "foreground_only" ? "Foreground only" : "Native background"}</h3>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{trackingState.message}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+            <StatusBadge label={trackingState.status.replace(/_/g, " ")} className={trackingState.status === "active" ? "bg-success/10 text-success border-success/20" : trackingState.status === "permission_denied" || trackingState.status === "auth_required" || trackingState.status === "error" ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-warning/10 text-warning border-warning/20"}/>
+            <span>Permission: {trackingState.permission}</span>
+            <span>Queued: {trackingState.pendingCount}</span>
+            <span>Last sent: {trackingState.lastSentAt ? formatDateTime(trackingState.lastSentAt) : "never"}</span>
+          </div>
+        </div>
+      </div>
+      {canViewAllTracking && <TrackingDeviceEnrollmentPanel staff={staffList.map(({ id, name }) => ({ id, name }))} selectedStaff={selectedStaff}/>} 
       <div className="flex flex-wrap items-center gap-1.5" role="tablist" aria-label="GPS view">
         {VIEWS.map((v) => {
             const active = v.key === view;
