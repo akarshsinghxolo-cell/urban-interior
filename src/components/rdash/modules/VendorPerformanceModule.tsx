@@ -1,7 +1,7 @@
 "use client";
 
-import { Partner360Module } from "./Partner360Module";
+import { Partner360Phase2Workspace } from "./PartnerGovernanceModule";
 
 export function VendorPerformanceModule() {
-  return <Partner360Module mode="vendor" />;
+  return <Partner360Phase2Workspace mode="vendor" />;
 }
