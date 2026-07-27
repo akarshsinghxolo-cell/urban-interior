@@ -5,6 +5,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { distanceMeters, type GpsCapture } from "@/lib/rdash/gps";
 import { updateGeofenceDwell, type GeofenceDwellState } from "@/lib/rdash/auto-geofence";
 import { indiaDate } from "@/lib/rdash/date";
+import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 import type { Visit } from "@/lib/rdash/types";
 function isStaffVisit(visit: Visit) {
     return visit.assignee_type !== "contractor" && !visit.contractor_id;
@@ -41,7 +42,7 @@ export function AutoGeofenceMonitor() {
             const staff = state.db.master.staff.find((row) => row.id === staffId && row.status === "active");
             if (!staff)
                 return;
-            const policy = staff.attendance_policy;
+            const policy = normalizeAttendancePolicy(staff.attendance_policy);
             if (!policy.auto_geofence_enabled)
                 return;
             if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy <= 0 || position.coords.accuracy > policy.max_gps_accuracy_m)
