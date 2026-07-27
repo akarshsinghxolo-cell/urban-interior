@@ -21,8 +21,18 @@ describe("workspace route adapter", () => {
     expect(selection?.canonicalPath).toBe("/workspace/procurement/boq");
   });
 
-  test("does not activate future entity deep links before that migration stage", () => {
-    expect(selectWorkspaceRoute("/workspace/customers/cust-123", "customerDesk")).toBeUndefined();
+  test("selects a core entity without inventing a separate page component", () => {
+    expect(selectWorkspaceRoute("/workspace/customers/cust-123", "workdesk")).toEqual({
+      moduleId: "customerDesk",
+      canonicalPath: "/workspace/customers/cust-123",
+      title: "Customer Desk · Urban Castle",
+      shouldActivate: true,
+      entity: { kind: "customer", id: "cust-123" },
+    });
+    expect(selectWorkspaceRoute("/workspace/sites/site-123", "siteExecution")?.entity).toEqual({
+      kind: "site",
+      id: "site-123",
+    });
   });
 
   test("does not treat unrelated application paths as workspace modules", () => {
