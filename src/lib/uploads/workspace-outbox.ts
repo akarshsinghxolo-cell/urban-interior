@@ -17,6 +17,8 @@ const EMPTY_SNAPSHOT: WorkspaceOutboxSnapshot = { ready: false, online: true, it
 let snapshot = EMPTY_SNAPSHOT;
 let hydratePromise: Promise<void> | null = null;
 let flushPromise: Promise<WorkspaceOutboxFlushResult> | null = null;
+let acceptedWorkspace: RDashDatabase | null = null;
+let acceptedRevision = 0;
 const listeners = new Set<() => void>();
 
 export interface WorkspaceOutboxFlushResult {
@@ -41,6 +43,11 @@ function retryAt(retryCount: number): string {
   return new Date(Date.now() + delay).toISOString();
 }
 
+function retryAtSeconds(seconds: number | undefined): string {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(1, Number(seconds)) : 10;
+  return new Date(Date.now() + safeSeconds * 1_000).toISOString();
+}
+
 function emit(items: WorkspaceCommitOutboxRecord[], ready = true): void {
   snapshot = {
     ready,
@@ -63,6 +70,51 @@ function summarizeOperations(operations: NonNullable<WorkspaceCommitPayload["ope
     upsertIds: (operation.upsert || []).map((row) => String(row.id || "")).filter(Boolean),
     deleteIds: [...(operation.deleteIds || [])],
   }));
+}
+
+function responseWithPayload(response: Response, payload: WorkspaceCommitResponsePayload): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Content-Type", "application/json");
+  return new Response(JSON.stringify(payload), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function rememberAcceptedWorkspace(payload: WorkspaceCommitResponsePayload): void {
+  if (!payload.data || typeof payload.revision !== "number") return;
+  acceptedWorkspace = structuredClone(payload.data) as RDashDatabase;
+  acceptedRevision = payload.revision;
+}
+
+function acceptCompactCommit(
+  item: WorkspaceCommitOutboxRecord,
+  payload: WorkspaceCommitResponsePayload,
+): WorkspaceCommitResponsePayload {
+  const patches = Array.isArray(payload.patches) ? payload.patches : item.operations;
+  if (payload.data && typeof payload.revision === "number") {
+    rememberAcceptedWorkspace(payload);
+  } else if (acceptedWorkspace && typeof payload.revision === "number") {
+    acceptedWorkspace = applyWorkspaceOperations(acceptedWorkspace, patches);
+    acceptedRevision = payload.revision;
+  }
+
+  return {
+    ...payload,
+    status: payload.status || "applied",
+    operationId: payload.operationId || item.operationId,
+    patches,
+    data: acceptedWorkspace && typeof payload.revision === "number"
+      ? structuredClone(acceptedWorkspace) as RDashDatabase
+      : payload.data,
+  };
+}
+
+export async function rememberWorkspaceResponse(response: Response): Promise<void> {
+  if (!response.ok) return;
+  const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
+  rememberAcceptedWorkspace(payload);
 }
 
 async function patchRecord(
@@ -196,20 +248,32 @@ export async function markWorkspaceCommitNetworkFailure(operationId: string, err
   });
 }
 
-export async function markWorkspaceCommitResponse(operationId: string, response: Response): Promise<void> {
+export async function markWorkspaceCommitResponse(operationId: string, response: Response): Promise<Response> {
   const current = await uploadIndexedDb.getWorkspaceOutbox(operationId);
-  if (!current) return;
+  if (!current) return response;
+  const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
+
+  if (response.status === 202 || payload.status === "processing") {
+    await patchRecord(operationId, {
+      status: "syncing",
+      retryAt: retryAtSeconds(payload.retryAfterSeconds),
+      lastErrorCode: "PROCESSING",
+      lastErrorMessage: "The server is still applying this change.",
+    });
+    return responseWithPayload(response, payload);
+  }
+
   if (response.ok) {
-    const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
+    const adaptedPayload = acceptCompactCommit(current, payload);
     await uploadIndexedDb.deleteWorkspaceOutbox(operationId);
-    if (payload.data && typeof payload.revision === "number") {
-      await rebaseRemainingItems(payload.data, payload.revision);
+    if (adaptedPayload.data && typeof adaptedPayload.revision === "number") {
+      await rebaseRemainingItems(adaptedPayload.data, adaptedPayload.revision);
     } else {
       await refresh();
     }
-    return;
+    return responseWithPayload(response, adaptedPayload);
   }
-  const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
+
   const retryCount = current.retryCount + 1;
   let status: WorkspaceOutboxStatus = "failed_permanent";
   if (response.status === 409) status = "conflict";
@@ -221,6 +285,7 @@ export async function markWorkspaceCommitResponse(operationId: string, response:
     lastErrorCode: response.status === 409 ? "CONFLICT" : `HTTP_${response.status}`,
     lastErrorMessage: payload.error || `Workspace synchronization failed (${response.status}).`,
   });
+  return responseWithPayload(response, payload);
 }
 
 export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promise<{
@@ -228,6 +293,7 @@ export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promis
   pendingCount: number;
   hasConflict: boolean;
 }> {
+  acceptedWorkspace = structuredClone(base) as RDashDatabase;
   await workspaceOutboxStore.hydrate();
   const items = (await uploadIndexedDb.readWorkspaceOutbox())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -246,6 +312,7 @@ async function rebaseConflict(item: WorkspaceCommitOutboxRecord): Promise<void> 
   if (!response.ok || !payload.data || typeof payload.revision !== "number") {
     throw new Error(payload.error || "Could not load the latest workspace for conflict resolution.");
   }
+  rememberAcceptedWorkspace(payload);
   const desired = applyWorkspaceOperations(payload.data, item.operations);
   const operations = diffWorkspaceOperations(payload.data, desired);
   const timestamp = nowIso();
@@ -325,23 +392,24 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
       await markWorkspaceCommitNetworkFailure(item.operationId, error);
       return { replayed: false, conflict: false };
     }
-    const responseForStatus = response.clone();
-    const payload = await response.json().catch(() => ({})) as WorkspaceCommitResponsePayload;
-    if (response.ok) {
-      await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
-      if (payload.data && typeof payload.revision === "number") {
-        await rebaseRemainingItems(payload.data, payload.revision);
-      } else {
-        await refresh();
-      }
+
+    const adaptedResponse = await markWorkspaceCommitResponse(item.operationId, response);
+    const payload = await adaptedResponse.json().catch(() => ({})) as WorkspaceCommitResponsePayload;
+    if (adaptedResponse.status === 202 || payload.status === "processing") {
+      return { replayed: false, conflict: false, payload };
+    }
+    if (adaptedResponse.ok) {
       return { replayed: true, conflict: false, payload };
     }
-    await markWorkspaceCommitResponse(item.operationId, responseForStatus);
-    return { replayed: false, conflict: response.status === 409, payload };
+    return { replayed: false, conflict: adaptedResponse.status === 409, payload };
   })();
   try {
     return await flushPromise;
   } finally {
     flushPromise = null;
   }
+}
+
+export function getAcceptedWorkspaceRevision(): number {
+  return acceptedRevision;
 }
