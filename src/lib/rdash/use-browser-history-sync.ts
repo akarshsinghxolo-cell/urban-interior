@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRDashStore } from "./store";
 import type { WorkspaceNavigationSnapshot, WorkspaceOverlaySnapshot } from "./store/ui-types";
+import { workspaceHistoryUrl } from "./workspace-history-url";
 import {
   ROOT_LAYER,
   browserNavigationState,
@@ -22,9 +23,18 @@ function mergedHistoryState(state: BrowserNavigationState): Record<string, unkno
   return { ...base, ...state };
 }
 
+function managedHistoryUrl(state: BrowserNavigationState): string | undefined {
+  return workspaceHistoryUrl(state.snapshot.moduleId, window.location.pathname);
+}
+
 function pushBrowserState(state: BrowserNavigationState): void {
   try {
-    window.history.pushState(mergedHistoryState(state), "");
+    const url = managedHistoryUrl(state);
+    if (url) {
+      window.history.pushState(mergedHistoryState(state), "", url);
+    } else {
+      window.history.pushState(mergedHistoryState(state), "");
+    }
   } catch {
     // Browser history is best-effort in embedded/private browsing contexts.
   }
@@ -32,7 +42,12 @@ function pushBrowserState(state: BrowserNavigationState): void {
 
 function replaceBrowserState(state: BrowserNavigationState): void {
   try {
-    window.history.replaceState(mergedHistoryState(state), "");
+    const url = managedHistoryUrl(state);
+    if (url) {
+      window.history.replaceState(mergedHistoryState(state), "", url);
+    } else {
+      window.history.replaceState(mergedHistoryState(state), "");
+    }
   } catch {
     // Browser history is best-effort in embedded/private browsing contexts.
   }
