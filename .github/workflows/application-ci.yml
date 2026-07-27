@@ -37,5 +37,7 @@ jobs:
         run: bun run test:auth-return
       - name: Test workspace route access
         run: bun run test:route-access
+      - name: Test authentication source security
+        run: bun run test:auth-security
       - name: Build application
         run: bun run build
