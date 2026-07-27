@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { navigationLayers } from "../src/lib/rdash/navigation-history";
-import type { ContextDetailTab, DetailPanelKind, WorkspaceNavigationSnapshot } from "../src/lib/rdash/store/ui-types";
+import type {
+  ContextCustomerTab,
+  ContextDetailTab,
+  DetailPanelKind,
+  WorkspaceNavigationSnapshot,
+} from "../src/lib/rdash/store/ui-types";
 import { workspaceHistoryUrl } from "../src/lib/rdash/workspace-history-url";
 
 function snapshot(
@@ -10,7 +15,18 @@ function snapshot(
     recordId: string | null;
     panelTab?: ContextDetailTab;
   } = { kind: null, recordId: null },
+  customerTab: ContextCustomerTab = "overview",
 ): WorkspaceNavigationSnapshot {
+  const customerContext = detailPanel.kind === "customer" && detailPanel.recordId
+    ? [{
+        kind: "customer" as const,
+        recordId: detailPanel.recordId,
+        customerId: detailPanel.recordId,
+        sourceModule: moduleId,
+        customerTab,
+        detailTab: "overview" as const,
+      }]
+    : [];
   return {
     moduleId,
     activeTabId: `tab-${moduleId}`,
@@ -18,8 +34,8 @@ function snapshot(
     moduleHistoryLength: 1,
     selectedCustomerId: detailPanel.kind === "customer" ? detailPanel.recordId : null,
     detailPanel: { ...detailPanel },
-    contextHistory: [],
-    contextHistoryIndex: -1,
+    contextHistory: customerContext,
+    contextHistoryIndex: customerContext.length ? 0 : -1,
     overlays: [],
   };
 }
@@ -125,7 +141,22 @@ describe("workspace history URLs", () => {
     )).toBe("/workspace/invoices/invoice-1?tab=history");
   });
 
-  test("keeps overview clean and excludes customer workspace tabs", () => {
+  test("adds durable customer workspace tabs from the active context entry", () => {
+    expect(workspaceHistoryUrl(
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "activity"),
+      "/workspace/customers/cust-1",
+      true,
+      "?source=notification",
+    )).toBe("/workspace/customers/cust-1?source=notification&tab=activity");
+    expect(workspaceHistoryUrl(
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "payments"),
+      "/workspace/customers/cust-1",
+      true,
+      "?tab=sites",
+    )).toBe("/workspace/customers/cust-1?tab=payments");
+  });
+
+  test("keeps overview clean for both detail and customer workspaces", () => {
     expect(workspaceHistoryUrl(
       snapshot("tasks", { kind: "task", recordId: "task-1", panelTab: "overview" }),
       "/workspace/tasks/task-1",
@@ -133,20 +164,26 @@ describe("workspace history URLs", () => {
       "?tab=history",
     )).toBe("/workspace/tasks/task-1");
     expect(workspaceHistoryUrl(
-      snapshot("customerDesk", { kind: "customer", recordId: "cust-1", panelTab: "thread" }),
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "overview"),
       "/workspace/customers/cust-1",
       true,
-      "?tab=thread&source=share",
+      "?tab=activity&source=share",
     )).toBe("/workspace/customers/cust-1?source=share");
   });
 
-  test("does not carry detail query state across a different destination", () => {
+  test("does not carry tab query state across a different destination", () => {
     expect(workspaceHistoryUrl(
       snapshot("siteExecution", { kind: "site", recordId: "site-1", panelTab: "thread" }),
       "/workspace/tasks/task-1",
       true,
       "?source=notification&tab=history",
     )).toBe("/workspace/sites/site-1?tab=thread");
+    expect(workspaceHistoryUrl(
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "sites"),
+      "/workspace/tasks/task-1",
+      true,
+      "?source=notification&tab=history",
+    )).toBe("/workspace/customers/cust-1?tab=sites");
     expect(workspaceHistoryUrl(
       snapshot("workdesk"),
       "/workspace/tasks/task-1",
