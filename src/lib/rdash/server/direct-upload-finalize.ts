@@ -1,13 +1,15 @@
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { FinalizeUploadRequest, FinalizedUploadResult } from "@/lib/uploads/upload-types";
 import type { AuthenticatedUser } from "./auth";
-import {
-  cancelDirectUpload,
-  finalizeDirectUpload as finalizeDirectUploadCore,
-} from "./direct-upload-finalize-core";
+import { finalizeDirectUpload as finalizeDirectUploadCore } from "./direct-upload-finalize-core";
 import { withDriveFolderRouting } from "./drive-folder-routing-context";
 
-export { cancelDirectUpload };
+export {
+  cancelDirectUpload,
+  listPendingDirectUploads,
+  reportDirectUploadProgress,
+  retryDirectUpload,
+} from "./direct-upload-finalize-core";
 
 export async function finalizeDirectUpload(
   user: AuthenticatedUser,
