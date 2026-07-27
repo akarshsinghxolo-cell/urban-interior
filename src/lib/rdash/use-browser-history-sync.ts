@@ -5,14 +5,12 @@ import { useRDashStore } from "./store";
 import type { WorkspaceNavigationSnapshot, WorkspaceOverlaySnapshot } from "./store/ui-types";
 import { workspaceHistoryUrl } from "./workspace-history-url";
 import {
-  ROOT_LAYER,
   browserNavigationState,
   commonPrefixLength,
   isBrowserNavigationState,
   navigationLayerListsEqual,
   navigationLayers,
   type BrowserNavigationState,
-  type NavigationLayer,
 } from "./navigation-history";
 
 function mergedHistoryState(state: BrowserNavigationState): Record<string, unknown> {
@@ -136,12 +134,14 @@ export function useBrowserHistorySync(): void {
   React.useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
-    const rootLayers: NavigationLayer[] = [ROOT_LAYER];
-    const initial = browserNavigationState(rootLayers, desiredSnapshot, nextEntryId());
+    // Seed the first entry with the complete URL-selected layer list. A direct
+    // /workspace/customers load therefore starts at Customer Desk instead of
+    // creating a root Workdesk entry followed by an unnecessary second entry.
+    const initial = browserNavigationState(desiredLayers, desiredSnapshot, nextEntryId());
     entriesRef.current = [initial];
     positionRef.current = 0;
     replaceBrowserState(initial);
-  }, [desiredSnapshot, nextEntryId]);
+  }, [desiredLayers, desiredSnapshot, nextEntryId]);
 
   React.useEffect(() => {
     if (!mountedRef.current || pendingPopEntryIdRef.current) return;
