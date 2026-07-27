@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { navigationLayers } from "../src/lib/rdash/navigation-history";
-import type { DetailPanelKind, WorkspaceNavigationSnapshot } from "../src/lib/rdash/store/ui-types";
+import type { ContextDetailTab, DetailPanelKind, WorkspaceNavigationSnapshot } from "../src/lib/rdash/store/ui-types";
 import { workspaceHistoryUrl } from "../src/lib/rdash/workspace-history-url";
 
 function snapshot(
   moduleId: string,
-  detailPanel: { kind: DetailPanelKind; recordId: string | null } = { kind: null, recordId: null },
+  detailPanel: {
+    kind: DetailPanelKind;
+    recordId: string | null;
+    panelTab?: ContextDetailTab;
+  } = { kind: null, recordId: null },
 ): WorkspaceNavigationSnapshot {
   return {
     moduleId,
@@ -104,6 +108,51 @@ describe("workspace history URLs", () => {
       "/workspace/finance/contractor-bills",
       true,
     )).toBe("/workspace/contractor-bills/contractor-bill-1");
+  });
+
+  test("adds durable thread and history tabs to the same entity history entry", () => {
+    expect(workspaceHistoryUrl(
+      snapshot("tasks", { kind: "task", recordId: "task-1", panelTab: "thread" }),
+      "/workspace/tasks/task-1",
+      true,
+      "?source=notification",
+    )).toBe("/workspace/tasks/task-1?source=notification&tab=thread");
+    expect(workspaceHistoryUrl(
+      snapshot("invoices", { kind: "invoice", recordId: "invoice-1", panelTab: "history" }),
+      "/workspace/invoices/invoice-1",
+      true,
+      "?tab=thread",
+    )).toBe("/workspace/invoices/invoice-1?tab=history");
+  });
+
+  test("keeps overview clean and excludes customer workspace tabs", () => {
+    expect(workspaceHistoryUrl(
+      snapshot("tasks", { kind: "task", recordId: "task-1", panelTab: "overview" }),
+      "/workspace/tasks/task-1",
+      true,
+      "?tab=history",
+    )).toBe("/workspace/tasks/task-1");
+    expect(workspaceHistoryUrl(
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1", panelTab: "thread" }),
+      "/workspace/customers/cust-1",
+      true,
+      "?tab=thread&source=share",
+    )).toBe("/workspace/customers/cust-1?source=share");
+  });
+
+  test("does not carry detail query state across a different destination", () => {
+    expect(workspaceHistoryUrl(
+      snapshot("siteExecution", { kind: "site", recordId: "site-1", panelTab: "thread" }),
+      "/workspace/tasks/task-1",
+      true,
+      "?source=notification&tab=history",
+    )).toBe("/workspace/sites/site-1?tab=thread");
+    expect(workspaceHistoryUrl(
+      snapshot("workdesk"),
+      "/workspace/tasks/task-1",
+      true,
+      "?tab=history",
+    )).toBe("/workspace");
   });
 
   test("keeps unsupported detail kinds on their parent module URL", () => {
