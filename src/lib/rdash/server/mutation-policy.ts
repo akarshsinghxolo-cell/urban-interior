@@ -3,8 +3,8 @@ import { buildSeedDatabase } from "../seed";
 import {
   assertStaffOperationAllowed,
   canRole,
-  createDefaultStaffPermissions,
   moduleForCollection,
+  normalizeStaffPermissions,
   normalizeRoleKey,
   type StaffPermissionRecord,
 } from "../staff-operations";
@@ -92,9 +92,8 @@ export function assertWorkspaceMutationAllowed(
 ) {
   if (user.role === "Owner") return;
 
-  const permissions = (
-    (current as unknown as { staffRolePermissions?: StaffPermissionRecord[] })?.staffRolePermissions
-    || createDefaultStaffPermissions()
+  const permissions = normalizeStaffPermissions(
+    (current as unknown as { staffRolePermissions?: StaffPermissionRecord[] })?.staffRolePermissions,
   );
   const roleKey = normalizeRoleKey(user.role);
   const isFieldStaff = roleKey === "FIELD_STAFF";
