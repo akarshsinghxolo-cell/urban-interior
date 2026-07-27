@@ -50,7 +50,30 @@ describe("workspace history URLs", () => {
     )).toBe("/workspace/vendors/vendor-1");
   });
 
-  test("keeps non-core detail kinds on their parent module URL", () => {
+  test("attaches stable URLs to transaction detail snapshots", () => {
+    expect(workspaceHistoryUrl(
+      snapshot("woTimeline", { kind: "workOrder", recordId: "wo-1" }),
+      "/workspace/sites/work-order-timeline",
+      true,
+    )).toBe("/workspace/work-orders/wo-1");
+    expect(workspaceHistoryUrl(
+      snapshot("quotationDesk", { kind: "quotation", recordId: "q-1" }),
+      "/workspace/quotations",
+      true,
+    )).toBe("/workspace/quotations/q-1");
+    expect(workspaceHistoryUrl(
+      snapshot("procurementInventory", { kind: "po", recordId: "po-1" }),
+      "/workspace/procurement",
+      true,
+    )).toBe("/workspace/purchase-orders/po-1");
+    expect(workspaceHistoryUrl(
+      snapshot("fieldOperations", { kind: "visit", recordId: "visit-1" }),
+      "/workspace/field",
+      true,
+    )).toBe("/workspace/visits/visit-1");
+  });
+
+  test("keeps later detail kinds on their parent module URL", () => {
     expect(workspaceHistoryUrl(
       snapshot("tasks", { kind: "task", recordId: "task-1" }),
       "/workspace/tasks",
@@ -72,11 +95,11 @@ describe("workspace history URLs", () => {
     expect(workspaceHistoryUrl(snapshot("staff"), "/workspace", true)).toBe("/workspace/staff");
   });
 
-  test("a direct entity starts with its complete module and detail layers", () => {
-    expect(navigationLayers(snapshot("customerDesk", { kind: "customer", recordId: "cust-123" }))).toEqual([
+  test("a direct transaction starts with complete module and detail layers", () => {
+    expect(navigationLayers(snapshot("woTimeline", { kind: "workOrder", recordId: "wo-1" }))).toEqual([
       { type: "root" },
-      { type: "module", moduleId: "customerDesk" },
-      { type: "detail", kind: "customer", recordId: "cust-123" },
+      { type: "module", moduleId: "woTimeline" },
+      { type: "detail", kind: "workOrder", recordId: "wo-1" },
     ]);
     expect(navigationLayers(snapshot("workdesk"))).toEqual([{ type: "root" }]);
   });
