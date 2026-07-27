@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const PROCESSING_STALE_MS = 120_000;
+const PROCESSING_RETRY_SECONDS = 10;
 
 type OperationReceipt = {
   status?: string;
@@ -19,14 +20,85 @@ type OperationReceipt = {
   attempt_count?: number | null;
 };
 
-function payload(workspace: CommitResult | Awaited<ReturnType<typeof getWorkspace>>) {
-  const result: Record<string, unknown> = { revision: workspace.revision, data: workspace.data };
-  if ("bumpedRowVersions" in workspace && workspace.bumpedRowVersions) {
-    result.rowVersions = workspace.bumpedRowVersions;
-  } else if ("rowVersions" in workspace && workspace.rowVersions) {
-    result.rowVersions = workspace.rowVersions;
+type CompactCommitPayload = {
+  status: "applied";
+  operationId?: string;
+  revision: number;
+  patches: WorkspaceOperation[];
+  rowVersions?: Record<string, number>;
+};
+
+function touchedRowVersions(
+  rowVersions: Record<string, number> | undefined,
+  operations: WorkspaceOperation[],
+): Record<string, number> | undefined {
+  if (!rowVersions) return undefined;
+  const touched = new Set<string>();
+  for (const operation of operations) {
+    for (const row of operation.upsert || []) {
+      const id = String(row.id || "");
+      if (!id) continue;
+      touched.add(id);
+      touched.add(`${operation.collection}:${id}`);
+    }
+    for (const id of operation.deleteIds || []) {
+      touched.add(id);
+      touched.add(`${operation.collection}:${id}`);
+    }
   }
-  return result;
+  const compact: Record<string, number> = {};
+  for (const key of touched) {
+    const value = rowVersions[key];
+    if (typeof value === "number") compact[key] = value;
+  }
+  return Object.keys(compact).length ? compact : undefined;
+}
+
+function compactPayload(workspace: CommitResult, operationId?: string): CompactCommitPayload {
+  return {
+    status: "applied",
+    operationId,
+    revision: workspace.revision,
+    patches: workspace.patches,
+    rowVersions: workspace.bumpedRowVersions,
+  };
+}
+
+function recoveredPayload(
+  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  operations: WorkspaceOperation[],
+  operationId?: string,
+): CompactCommitPayload {
+  return {
+    status: "applied",
+    operationId,
+    revision: workspace.revision,
+    patches: operations,
+    rowVersions: touchedRowVersions(workspace.rowVersions, operations),
+  };
+}
+
+function compactStoredResult(
+  result: Record<string, unknown>,
+  operationId: string,
+  fallbackOperations: WorkspaceOperation[],
+): Record<string, unknown> {
+  const revision = typeof result.revision === "number" ? result.revision : undefined;
+  const patches = Array.isArray(result.patches) ? result.patches as WorkspaceOperation[] : fallbackOperations;
+  const rowVersions = result.rowVersions && typeof result.rowVersions === "object"
+    ? result.rowVersions as Record<string, number>
+    : undefined;
+  if (revision !== undefined) {
+    return {
+      status: "applied",
+      operationId,
+      revision,
+      patches,
+      rowVersions: touchedRowVersions(rowVersions, patches) || rowVersions,
+    };
+  }
+  const { data: _discardedWorkspace, ...compact } = result;
+  return { ...compact, operationId };
 }
 
 function operationEffectsAlreadyPresent(
@@ -167,8 +239,8 @@ async function claimOperation(input: {
   if (!receipt) throw new Error("The workspace operation receipt disappeared while it was being claimed.");
   if (receipt.status === "applied" || receipt.status === "conflict") return { claimed: false, receipt };
 
-  const isFreshProcessing = receipt.status === "processing" && receipt.updated_at &&
-    Date.now() - Date.parse(receipt.updated_at) < PROCESSING_STALE_MS;
+  const isFreshProcessing = receipt.status === "processing" && receipt.updated_at
+    && Date.now() - Date.parse(receipt.updated_at) < PROCESSING_STALE_MS;
   if (isFreshProcessing) return { claimed: false, receipt };
 
   const previousAttemptCount = Number(receipt.attempt_count || 0);
@@ -239,9 +311,10 @@ export async function POST(request: NextRequest) {
       });
       if (!claim.claimed) {
         if (claim.receipt.status === "applied" && claim.receipt.result) {
-          return NextResponse.json(claim.receipt.result, {
-            headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Replay": "1" },
-          });
+          return NextResponse.json(
+            compactStoredResult(claim.receipt.result, operationId, operations),
+            { headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Replay": "1" } },
+          );
         }
         if (claim.receipt.status === "conflict") {
           return NextResponse.json({ error: claim.receipt.last_error || "The workspace changed on another device." }, { status: 409 });
@@ -249,22 +322,32 @@ export async function POST(request: NextRequest) {
 
         const current = await getWorkspace(true);
         if (operationEffectsAlreadyPresent(current, operations)) {
-          const result = payload(current);
+          const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
             headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Recovered": "1" },
           });
         }
         return NextResponse.json(
-          { error: "This workspace operation is already processing. It will retry automatically." },
-          { status: 503, headers: { "Retry-After": "10", "Cache-Control": "no-store" } },
+          {
+            status: "processing",
+            operationId,
+            retryAfterSeconds: PROCESSING_RETRY_SECONDS,
+          },
+          {
+            status: 202,
+            headers: {
+              "Retry-After": String(PROCESSING_RETRY_SECONDS),
+              "Cache-Control": "no-store",
+            },
+          },
         );
       }
     }
 
     if (!operations.length) {
       const current = await getWorkspace(true);
-      const result = payload(current);
+      const result = recoveredPayload(current, [], operationId);
       if (operationId) await saveAppliedReceipt(operationId, result, current.revision);
       return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
     }
@@ -282,7 +365,7 @@ export async function POST(request: NextRequest) {
       if (operationId && error instanceof Error && error.message === "CONFLICT") {
         const current = await getWorkspace(true);
         if (operationEffectsAlreadyPresent(current, operations)) {
-          const result = payload(current);
+          const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
             headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Recovered": "1" },
@@ -292,7 +375,7 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    const result = payload(saved);
+    const result = compactPayload(saved, operationId);
     if (operationId) await saveAppliedReceipt(operationId, result, saved.revision);
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
