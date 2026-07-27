@@ -16,17 +16,18 @@ export interface WorkspaceRouteAccessDecision {
 }
 
 /**
- * Uses the same normalized role-permission matrix as the Sidebar. This keeps a
- * manually entered URL, keyboard shortcut and visible navigation in agreement.
- * A missing role means the secure workspace has not hydrated yet.
+ * Uses the same normalized role-permission matrix as the Sidebar. Entity routes
+ * may provide a narrower permission key than their parent module—for example a
+ * Purchase Order detail requires `purchaseOrders`, not merely `procurement`.
  */
 export function workspaceRouteAccessDecision(
   moduleId: string,
   role: string | null | undefined,
   rawPermissions: unknown[] | undefined,
+  permissionModuleOverride?: string,
 ): WorkspaceRouteAccessDecision {
   const route = resolveRenderer(moduleId);
-  const permissionModule = permissionModuleForRoute(route);
+  const permissionModule = permissionModuleOverride || permissionModuleForRoute(route);
   if (!role) {
     return {
       status: "pending",
