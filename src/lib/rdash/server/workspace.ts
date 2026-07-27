@@ -75,6 +75,15 @@ export interface WorkspaceOperationCommitResult {
   bumpedRowVersions?: Record<string, number>;
 }
 
+export type WorkspaceReadPlan = {
+  fullCollections?: string[];
+  rowsByCollection?: Record<string, string[]>;
+};
+
+export interface WorkspaceSubset extends WorkspaceWithRevisions {
+  queryCount: number;
+}
+
 export async function getWorkspace(includeRevisions = false): Promise<WorkspaceWithRevisions> {
   if (await checkSupabaseSchema()) {
     const { getRestWorkspace } = await getRestModule();
@@ -84,6 +93,20 @@ export async function getWorkspace(includeRevisions = false): Promise<WorkspaceW
   }
   const ws = await getInMemoryWorkspace();
   return includeRevisions ? { ...ws, rowVersions: {} } : ws;
+}
+
+/**
+ * Reads only the collections and row IDs requested by a targeted commit.
+ * The in-memory development fallback returns its complete local snapshot because
+ * it has no network/database query cost and is not used in production.
+ */
+export async function getWorkspaceSubset(plan: WorkspaceReadPlan): Promise<WorkspaceSubset> {
+  if (await checkSupabaseSchema()) {
+    const { getRestWorkspaceSubset } = await getRestModule();
+    return getRestWorkspaceSubset(plan);
+  }
+  const ws = await getInMemoryWorkspace();
+  return { ...ws, rowVersions: {}, queryCount: 0 };
 }
 
 function secureMutationAudit(user: AuthenticatedUser, operations: ReturnType<typeof diffWorkspaceOperations>): AuditLogEntry {
