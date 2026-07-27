@@ -35,5 +35,7 @@ jobs:
         run: bun run test:history-urls
       - name: Test workspace auth return paths
         run: bun run test:auth-return
+      - name: Test workspace route access
+        run: bun run test:route-access
       - name: Build application
         run: bun run build
