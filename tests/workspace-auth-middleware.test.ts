@@ -16,7 +16,7 @@ describe("workspace auth middleware", () => {
     const cookie = response.headers.get("set-cookie") || "";
     expect(cookie).toContain(`${WORKSPACE_RETURN_COOKIE}=`);
     expect(cookie).toContain("HttpOnly");
-    expect(cookie).toContain("SameSite=lax");
+    expect(cookie.toLowerCase()).toContain("samesite=lax");
     expect(cookie).toContain("Max-Age=600");
   });
 
@@ -27,7 +27,7 @@ describe("workspace auth middleware", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
-  test("restores and consumes a validated destination after authentication", () => {
+  test("restores and consumes a validated destination before the default entry", () => {
     const returnTo = encodeWorkspaceReturnTo("/workspace/field/gps?staff=staff-1");
     const request = new NextRequest(`${origin}/`, {
       headers: {
@@ -42,14 +42,32 @@ describe("workspace auth middleware", () => {
     expect(cookie).toContain("Max-Age=0");
   });
 
-  test("never redirects an authenticated root request to an external cookie value", () => {
+  test("sends an authenticated root request to routed Workdesk", () => {
+    const request = new NextRequest(`${origin}/`, {
+      headers: { cookie: "uc_session=session-token" },
+    });
+    const response = middleware(request);
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(`${origin}/workspace`);
+  });
+
+  test("ignores an external cookie value and uses the safe default entry", () => {
     const request = new NextRequest(`${origin}/`, {
       headers: {
         cookie: `uc_session=session-token; ${WORKSPACE_RETURN_COOKIE}=${encodeURIComponent("https://example.com")}`,
       },
     });
     const response = middleware(request);
-    expect(response.status).toBe(200);
-    expect(response.headers.get("location")).toBeNull();
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(`${origin}/workspace`);
+    const cookie = response.headers.get("set-cookie") || "";
+    expect(cookie).toContain("Max-Age=0");
+  });
+
+  test("keeps signed-out root behavior at sign-in without storing a return path", () => {
+    const response = middleware(new NextRequest(`${origin}/`));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(`${origin}/signin`);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 });

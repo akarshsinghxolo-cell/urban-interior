@@ -3,6 +3,7 @@ import {
   decodeWorkspaceReturnTo,
   encodeWorkspaceReturnTo,
   safeWorkspaceReturnTo,
+  workspaceDefaultEntry,
 } from "../src/lib/rdash/workspace-auth-return";
 
 describe("workspace authentication return paths", () => {
@@ -32,5 +33,10 @@ describe("workspace authentication return paths", () => {
 
   test("rejects malformed cookie encoding", () => {
     expect(decodeWorkspaceReturnTo("%E0%A4%A")).toBeUndefined();
+  });
+
+  test("uses routed Workdesk as the default with a rollback switch", () => {
+    expect(workspaceDefaultEntry(true)).toBe("/workspace");
+    expect(workspaceDefaultEntry(false)).toBeUndefined();
   });
 });

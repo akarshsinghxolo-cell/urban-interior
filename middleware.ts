@@ -3,6 +3,7 @@ import {
   decodeWorkspaceReturnTo,
   encodeWorkspaceReturnTo,
   safeWorkspaceReturnTo,
+  workspaceDefaultEntry,
   WORKSPACE_RETURN_COOKIE,
   WORKSPACE_RETURN_MAX_AGE_SECONDS,
 } from "@/lib/rdash/workspace-auth-return";
@@ -66,6 +67,16 @@ function applyCors(response: NextResponse, cors: Record<string, string>): NextRe
   return response;
 }
 
+function clearWorkspaceReturnCookie(response: NextResponse, request: NextRequest): void {
+  response.cookies.set(WORKSPACE_RETURN_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: request.nextUrl.protocol === "https:",
+    path: "/",
+    maxAge: 0,
+  });
+}
+
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const origin = request.headers.get("origin");
@@ -110,20 +121,16 @@ export function middleware(request: NextRequest) {
     return applyCors(response, cors);
   }
 
-  // The existing sign-in page navigates to `/` after authentication. Convert
-  // that one request into the original validated workspace destination and
-  // consume the short-lived return cookie so future root visits remain normal.
+  // The existing sign-in page navigates to `/` after authentication. Prefer a
+  // saved deep link, otherwise enter the canonical routed Workdesk.
   if (path === "/") {
     const returnTo = decodeWorkspaceReturnTo(request.cookies.get(WORKSPACE_RETURN_COOKIE)?.value);
-    if (returnTo) {
-      const response = NextResponse.redirect(new URL(returnTo, request.url));
-      response.cookies.set(WORKSPACE_RETURN_COOKIE, "", {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: request.nextUrl.protocol === "https:",
-        path: "/",
-        maxAge: 0,
-      });
+    const destination = returnTo || workspaceDefaultEntry();
+    if (destination) {
+      const response = NextResponse.redirect(new URL(destination, request.url));
+      if (request.cookies.has(WORKSPACE_RETURN_COOKIE)) {
+        clearWorkspaceReturnCookie(response, request);
+      }
       return applyCors(response, cors);
     }
   }
