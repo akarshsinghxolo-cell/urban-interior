@@ -11,11 +11,19 @@ export const maxDuration = 60;
 
 const PROCESSING_STALE_MS = 120_000;
 const PROCESSING_RETRY_SECONDS = 10;
-const COMMIT_MODE = "phase2-single-read";
 
 const noStoreHeaders = (extra?: Record<string, string>) => ({
   "Cache-Control": "no-store",
-  "X-UC-Commit-Mode": COMMIT_MODE,
+  ...(extra || {}),
+});
+
+const commitHeaders = (
+  mode: string,
+  queryCount?: number,
+  extra?: Record<string, string>,
+) => noStoreHeaders({
+  "X-UC-Commit-Mode": mode,
+  ...(typeof queryCount === "number" ? { "X-UC-Commit-Queries": String(queryCount) } : {}),
   ...(extra || {}),
 });
 
@@ -125,7 +133,9 @@ function processingResponse(operationId: string) {
     },
     {
       status: 202,
-      headers: noStoreHeaders({ "Retry-After": String(PROCESSING_RETRY_SECONDS) }),
+      headers: commitHeaders("processing", undefined, {
+        "Retry-After": String(PROCESSING_RETRY_SECONDS),
+      }),
     },
   );
 }
@@ -321,7 +331,10 @@ export async function POST(request: NextRequest) {
     };
     operationId = body.operationId;
     if (typeof body.revision !== "number" || !Array.isArray(body.operations)) {
-      return NextResponse.json({ error: "revision and operations are required." }, { status: 400, headers: noStoreHeaders() });
+      return NextResponse.json(
+        { error: "revision and operations are required." },
+        { status: 400, headers: commitHeaders("rejected") },
+      );
     }
 
     let operations = body.operations;
@@ -351,13 +364,15 @@ export async function POST(request: NextRequest) {
             await rewriteAppliedReceiptResult(operationId, compacted);
           }
           return NextResponse.json(compacted, {
-            headers: noStoreHeaders({ "X-UC-Idempotent-Replay": "1" }),
+            headers: commitHeaders("idempotent-replay", undefined, {
+              "X-UC-Idempotent-Replay": "1",
+            }),
           });
         }
         if (claim.receipt.status === "conflict") {
           return NextResponse.json(
             { error: claim.receipt.last_error || "The workspace changed on another device." },
-            { status: 409, headers: noStoreHeaders() },
+            { status: 409, headers: commitHeaders("conflict") },
           );
         }
         if (isFreshProcessingReceipt(claim.receipt)) {
@@ -369,7 +384,9 @@ export async function POST(request: NextRequest) {
           const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
-            headers: noStoreHeaders({ "X-UC-Idempotent-Recovered": "1" }),
+            headers: commitHeaders("idempotent-recovered", undefined, {
+              "X-UC-Idempotent-Recovered": "1",
+            }),
           });
         }
         return processingResponse(operationId);
@@ -380,7 +397,7 @@ export async function POST(request: NextRequest) {
       const current = await getWorkspace(true);
       const result = recoveredPayload(current, [], operationId);
       if (operationId) await saveAppliedReceipt(operationId, result, current.revision);
-      return NextResponse.json(result, { headers: noStoreHeaders() });
+      return NextResponse.json(result, { headers: commitHeaders("no-op-full-read") });
     }
 
     let saved: CommitResult;
@@ -399,7 +416,9 @@ export async function POST(request: NextRequest) {
           const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
-            headers: noStoreHeaders({ "X-UC-Idempotent-Recovered": "1" }),
+            headers: commitHeaders("idempotent-recovered", undefined, {
+              "X-UC-Idempotent-Recovered": "1",
+            }),
           });
         }
       }
@@ -409,7 +428,7 @@ export async function POST(request: NextRequest) {
     const result = compactPayload(saved, operationId);
     if (operationId) await saveAppliedReceipt(operationId, result, saved.revision);
     return NextResponse.json(result, {
-      headers: noStoreHeaders({
+      headers: commitHeaders(saved.mode, saved.queryCount, {
         "Server-Timing": `workspace;dur=${saved.timing.totalMs}, load;dur=${saved.timing.loadMs}, validate;dur=${saved.timing.authorizeAndValidateMs}, commit;dur=${saved.timing.commitMs}`,
       }),
     });
@@ -430,6 +449,9 @@ export async function POST(request: NextRequest) {
     if (operationId) {
       await markFailedReceipt(operationId, status === 409 ? "conflict" : status >= 500 ? "retryable" : "failed", publicMessage);
     }
-    return NextResponse.json({ error: publicMessage }, { status, headers: noStoreHeaders() });
+    return NextResponse.json(
+      { error: publicMessage },
+      { status, headers: commitHeaders(status === 409 ? "conflict" : "rejected") },
+    );
   }
 }
