@@ -13,7 +13,8 @@
     "test:phase2b": "bun test tests/phase2b-targeted-commit.test.ts",
     "test:routing": "bun test tests/workspace-route-registry.test.ts",
     "test:route-adapter": "bun test tests/workspace-route-adapter.test.ts",
-    "test:history-urls": "bun test tests/workspace-history-url.test.ts"
+    "test:history-urls": "bun test tests/workspace-history-url.test.ts",
+    "test:auth-return": "bun test tests/workspace-auth-return.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
