@@ -2,8 +2,10 @@
 
 import {
   captureWorkspaceCommit,
+  createDeferredWorkspaceCommitResponse,
   markWorkspaceCommitNetworkFailure,
   markWorkspaceCommitResponse,
+  rememberWorkspaceResponse,
 } from "@/lib/uploads/workspace-outbox";
 
 /** Client-side session token manager for Urban Castle. */
@@ -77,19 +79,28 @@ export function initAuthFetch(): void {
   const AUTH_ENDPOINTS = ["/api/auth/login", "/api/auth/logout"];
 
   window.fetch = (async function patchedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
     const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
-    const isApi = url.startsWith("/api/") || url.includes("/api/");
-    const isAuthEndpoint = AUTH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
+    const pathname = (() => {
+      try {
+        return new URL(url, window.location.origin).pathname;
+      } catch {
+        return url.split("?")[0];
+      }
+    })();
+    const isApi = pathname.startsWith("/api/");
+    const isAuthEndpoint = AUTH_ENDPOINTS.some((endpoint) => pathname === endpoint);
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     const token = getSessionToken();
     if (isApi && !isAuthEndpoint && token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);
     }
 
-    const isWorkspaceCommit = url.includes("/api/operations/commit") && method === "POST";
+    const isWorkspaceCommit = pathname === "/api/operations/commit" && method === "POST";
+    const isWorkspaceRead = pathname === "/api/workspace" && method === "GET";
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
+    let deferredResponse: Response | undefined;
     let body = init?.body;
 
     if (isWorkspaceCommit && !isReplay) {
@@ -97,18 +108,41 @@ export function initAuthFetch(): void {
         const captured = await captureWorkspaceCommit(body);
         body = captured.body;
         operationId = captured.operationId;
+        if (captured.defer && operationId) {
+          let revision = 0;
+          if (typeof body === "string") {
+            try {
+              const parsed = JSON.parse(body) as { revision?: number };
+              revision = typeof parsed.revision === "number" ? parsed.revision : 0;
+            } catch {
+              // The captured request was already validated; keep the fallback revision.
+            }
+          }
+          deferredResponse = createDeferredWorkspaceCommitResponse(operationId, revision);
+        }
       } catch (error) {
         console.error("[WorkspaceOutbox] Could not durably capture this commit; continuing with the online save.", error);
       }
     }
 
+    if (deferredResponse) return deferredResponse;
+
     let responseReceived = false;
     try {
-      const response = await originalFetch(input, { ...init, headers, body });
+      let response = await originalFetch(input, { ...init, headers, body });
       responseReceived = true;
+
+      if (isWorkspaceRead) {
+        try {
+          await rememberWorkspaceResponse(response.clone());
+        } catch (error) {
+          console.error("[WorkspaceOutbox] Could not cache the accepted workspace baseline.", error);
+        }
+      }
+
       if (operationId) {
         try {
-          await markWorkspaceCommitResponse(operationId, response.clone());
+          response = await markWorkspaceCommitResponse(operationId, response);
         } catch (error) {
           console.error("[WorkspaceOutbox] Could not update the local commit status.", error);
         }

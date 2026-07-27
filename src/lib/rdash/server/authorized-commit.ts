@@ -35,6 +35,7 @@ function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): Audit
 export interface CommitResult extends WorkspaceSnapshot {
   bumpedRowVersions?: Record<string, number>;
   newRevision?: number;
+  patches: WorkspaceOperation[];
 }
 
 /**
@@ -72,5 +73,6 @@ export async function commitAuthorizedPostgresOperations(
     updatedAt: result.updatedAt,
     bumpedRowVersions: result.bumpedRowVersions,
     newRevision: result.revision,
+    patches: operationsWithAudit,
   };
 }

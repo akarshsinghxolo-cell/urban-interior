@@ -48,9 +48,13 @@ export interface WorkspaceCommitPayload {
 }
 
 export interface WorkspaceCommitResponsePayload {
+  status?: "applied" | "processing";
+  operationId?: string;
   revision?: number;
+  patches?: WorkspaceOperation[];
   data?: RDashDatabase;
   rowVersions?: Record<string, number>;
   bumpedAggregateRevisions?: Record<string, number>;
+  retryAfterSeconds?: number;
   error?: string;
 }
