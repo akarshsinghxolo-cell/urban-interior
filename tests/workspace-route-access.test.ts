@@ -28,6 +28,32 @@ describe("workspace route access", () => {
     expect(finance.permissionModule).toBe("finance");
   });
 
+  test("uses narrower transaction permission keys than the parent module", () => {
+    const fieldProcurement = workspaceRouteAccessDecision(
+      "procurementInventory",
+      "Field Staff",
+      [],
+      "procurement",
+    );
+    const fieldPurchaseOrder = workspaceRouteAccessDecision(
+      "procurementInventory",
+      "Field Staff",
+      [],
+      "purchaseOrders",
+    );
+    expect(fieldProcurement.status).toBe("allowed");
+    expect(fieldPurchaseOrder.status).toBe("denied");
+    expect(fieldPurchaseOrder.permissionModule).toBe("purchaseOrders");
+
+    const operationsWorkOrder = workspaceRouteAccessDecision(
+      "woTimeline",
+      "Operations Manager",
+      [],
+      "workOrders",
+    );
+    expect(operationsWorkOrder.status).toBe("allowed");
+  });
+
   test("applies customized permission rows instead of only built-in defaults", () => {
     const permissions = createDefaultStaffPermissions().map((row) =>
       row.role_key === "SALES_TELECALLER" && row.module_key === "customers"

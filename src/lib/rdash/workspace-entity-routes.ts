@@ -1,31 +1,82 @@
 import type { DetailPanelKind } from "./store/ui-types";
 import { resolveWorkspacePath, workspacePathForModule, type WorkspaceRouteMatch } from "./workspace-routes";
 
-export type CoreWorkspaceEntityKind = Extract<
+export type WorkspaceEntityKind = Extract<
   Exclude<DetailPanelKind, null>,
-  "customer" | "site" | "contractor" | "vendor"
+  | "customer"
+  | "site"
+  | "contractor"
+  | "vendor"
+  | "workOrder"
+  | "quotation"
+  | "po"
+  | "visit"
 >;
 
+// Compatibility name retained for the Stage 6 imports.
+export type CoreWorkspaceEntityKind = WorkspaceEntityKind;
+
 export interface WorkspaceEntityRouteDefinition {
-  kind: CoreWorkspaceEntityKind;
+  kind: WorkspaceEntityKind;
   moduleId: string;
-  collection: "customers" | "sites" | "contractors" | "vendors";
+  collection:
+    | "customers"
+    | "sites"
+    | "contractors"
+    | "vendors"
+    | "workOrders"
+    | "quotations"
+    | "purchaseOrders"
+    | "visits";
+  /** Public entity namespace. Defaults to the parent module's canonical path. */
+  basePath?: string;
+  /** Permission key when record access is narrower than the parent module. */
+  permissionModule: string;
 }
 
 export interface WorkspaceEntityLocation extends WorkspaceRouteMatch {
   entity: {
-    kind: CoreWorkspaceEntityKind;
+    kind: WorkspaceEntityKind;
     id: string;
+    permissionModule: string;
   };
 }
 
 export type WorkspaceLocation = WorkspaceRouteMatch | WorkspaceEntityLocation;
 
 const ENTITY_ROUTE_DEFINITIONS: readonly WorkspaceEntityRouteDefinition[] = [
-  { kind: "customer", moduleId: "customerDesk", collection: "customers" },
-  { kind: "site", moduleId: "siteExecution", collection: "sites" },
-  { kind: "contractor", moduleId: "contractorDetail", collection: "contractors" },
-  { kind: "vendor", moduleId: "vendors", collection: "vendors" },
+  { kind: "customer", moduleId: "customerDesk", collection: "customers", permissionModule: "customers" },
+  { kind: "site", moduleId: "siteExecution", collection: "sites", permissionModule: "sites" },
+  { kind: "contractor", moduleId: "contractorDetail", collection: "contractors", permissionModule: "contractors" },
+  { kind: "vendor", moduleId: "vendors", collection: "vendors", permissionModule: "vendors" },
+  {
+    kind: "workOrder",
+    moduleId: "woTimeline",
+    collection: "workOrders",
+    basePath: "/workspace/work-orders",
+    permissionModule: "workOrders",
+  },
+  {
+    kind: "quotation",
+    moduleId: "quotationDesk",
+    collection: "quotations",
+    basePath: "/workspace/quotations",
+    permissionModule: "quotations",
+  },
+  {
+    kind: "po",
+    moduleId: "procurementInventory",
+    collection: "purchaseOrders",
+    basePath: "/workspace/purchase-orders",
+    permissionModule: "purchaseOrders",
+  },
+  {
+    kind: "visit",
+    moduleId: "fieldOperations",
+    collection: "visits",
+    basePath: "/workspace/visits",
+    permissionModule: "visits",
+  },
 ] as const;
 
 const ENTITY_ROUTE_BY_KIND = new Map(
@@ -38,6 +89,10 @@ function pathnameOnly(input: string): string {
   path = path.replace(/\/{2,}/g, "/");
   if (path.length > 1) path = path.replace(/\/+$/, "");
   return path;
+}
+
+function entityBasePath(definition: WorkspaceEntityRouteDefinition): string {
+  return definition.basePath || workspacePathForModule(definition.moduleId);
 }
 
 function decodeEntityId(segment: string): string | undefined {
@@ -53,13 +108,13 @@ function decodeEntityId(segment: string): string | undefined {
   }
 }
 
-export function workspaceEntityPath(kind: CoreWorkspaceEntityKind, id: string): string | undefined {
+export function workspaceEntityPath(kind: WorkspaceEntityKind, id: string): string | undefined {
   const definition = ENTITY_ROUTE_BY_KIND.get(kind);
   const normalizedId = String(id || "").trim();
   if (!definition || !normalizedId || normalizedId.includes("/") || normalizedId.includes("\\")) {
     return undefined;
   }
-  return `${workspacePathForModule(definition.moduleId)}/${encodeURIComponent(normalizedId)}`;
+  return `${entityBasePath(definition)}/${encodeURIComponent(normalizedId)}`;
 }
 
 export function resolveWorkspaceLocation(input: string): WorkspaceLocation | undefined {
@@ -68,21 +123,28 @@ export function resolveWorkspaceLocation(input: string): WorkspaceLocation | und
   if (moduleMatch) return moduleMatch;
 
   for (const definition of ENTITY_ROUTE_DEFINITIONS) {
-    const modulePath = workspacePathForModule(definition.moduleId);
-    if (!pathname.startsWith(`${modulePath}/`)) continue;
-    const remainder = pathname.slice(modulePath.length + 1);
+    const basePath = entityBasePath(definition);
+    if (!pathname.startsWith(`${basePath}/`)) continue;
+    const remainder = pathname.slice(basePath.length + 1);
     if (!remainder || remainder.includes("/")) continue;
     const id = decodeEntityId(remainder);
     if (!id) continue;
-    const route = resolveWorkspacePath(modulePath);
+
+    const parentModulePath = workspacePathForModule(definition.moduleId);
+    const route = resolveWorkspacePath(parentModulePath);
     const canonicalPath = workspaceEntityPath(definition.kind, id);
     if (!route || !canonicalPath) continue;
+
     return {
       ...route,
       canonicalPath,
       matchedPath: pathname,
       isAlias: pathname !== canonicalPath,
-      entity: { kind: definition.kind, id },
+      entity: {
+        kind: definition.kind,
+        id,
+        permissionModule: definition.permissionModule,
+      },
     };
   }
 
@@ -96,3 +158,4 @@ export function isWorkspaceEntityLocation(
 }
 
 export const CORE_WORKSPACE_ENTITY_ROUTES = Object.freeze([...ENTITY_ROUTE_DEFINITIONS]);
+export const WORKSPACE_ENTITY_ROUTES = CORE_WORKSPACE_ENTITY_ROUTES;
