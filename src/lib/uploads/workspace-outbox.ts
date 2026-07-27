@@ -421,3 +421,25 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
 export function getAcceptedWorkspaceRevision(): number {
   return acceptedRevision;
 }
+
+export function createDeferredWorkspaceCommitResponse(
+  operationId: string,
+  fallbackRevision: number,
+): Response {
+  const payload: WorkspaceCommitResponsePayload = {
+    status: "processing",
+    operationId,
+    retryAfterSeconds: 10,
+    revision: acceptedRevision || fallbackRevision,
+    data: acceptedWorkspace ? structuredClone(acceptedWorkspace) as RDashDatabase : undefined,
+  };
+  return new Response(JSON.stringify(payload), {
+    status: 202,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "Retry-After": "10",
+      "X-UC-Outbox-Deferred": "1",
+    },
+  });
+}
