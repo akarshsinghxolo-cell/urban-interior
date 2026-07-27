@@ -14,7 +14,14 @@ import {
 } from "./workspace";
 
 const TARGETED_COLLECTIONS = new Set(["tasks", "followups", "visits", "threads", "auditLog"]);
-const TARGETED_THREAD_KINDS = new Set<ThreadKind>(["task", "followup", "visit"]);
+const TARGETED_THREAD_KINDS = new Set<ThreadKind>([
+  "task",
+  "followup",
+  "visit",
+  "generic",
+  "site",
+  "quotation",
+]);
 const MAX_TARGETED_ROWS = 50;
 const MAX_DEPENDENCY_ROUNDS = 5;
 
@@ -29,6 +36,11 @@ type TargetedPreparation = {
   loadMs: number;
   authorizeAndValidateMs: number;
   queryCount: number;
+};
+
+type ThreadParentTarget = {
+  collection: string;
+  id: string;
 };
 
 function rowId(row: Record<string, unknown>): string {
@@ -67,10 +79,28 @@ function addFullCollection(plan: MutableReadPlan, collection: string): void {
   plan.rowsByCollection.delete(collection);
 }
 
-function threadParentCollection(kind: unknown): string | undefined {
-  if (kind === "task") return "tasks";
-  if (kind === "followup") return "followups";
-  if (kind === "visit") return "visits";
+function genericCustomerId(recordId: string): string | undefined {
+  if (recordId.startsWith("customer-conversation:")) {
+    return recordId.slice("customer-conversation:".length).trim() || undefined;
+  }
+  // Current and legacy Customer IDs both use the cust- prefix. Other generic
+  // entity threads remain on the Phase 2A fallback rather than being guessed.
+  return recordId.startsWith("cust-") ? recordId : undefined;
+}
+
+function threadParentTarget(row: Record<string, unknown>): ThreadParentTarget | undefined {
+  const kind = String(row.kind || row.record_type || "") as ThreadKind;
+  const recordId = String(row.record_id || "").trim();
+  if (!recordId) return undefined;
+  if (kind === "task") return { collection: "tasks", id: recordId };
+  if (kind === "followup") return { collection: "followups", id: recordId };
+  if (kind === "visit") return { collection: "visits", id: recordId };
+  if (kind === "site") return { collection: "sites", id: recordId };
+  if (kind === "quotation") return { collection: "quotations", id: recordId };
+  if (kind === "generic") {
+    const customerId = genericCustomerId(recordId);
+    return customerId ? { collection: "customers", id: customerId } : undefined;
+  }
   return undefined;
 }
 
@@ -105,8 +135,8 @@ function collectDirectDependencies(
   }
 
   if (collection === "threads") {
-    const parentCollection = threadParentCollection(row.kind || row.record_type);
-    if (parentCollection) addId(plan, parentCollection, row.record_id);
+    const parent = threadParentTarget(row);
+    if (parent) addId(plan, parent.collection, parent.id);
   }
 
   if (collection === "sites") {
@@ -141,7 +171,7 @@ function collectDirectDependencies(
 
 function isTargetedThreadRow(row: Record<string, unknown>): boolean {
   const kind = String(row.kind || row.record_type || "") as ThreadKind;
-  return TARGETED_THREAD_KINDS.has(kind);
+  return TARGETED_THREAD_KINDS.has(kind) && Boolean(threadParentTarget(row));
 }
 
 export function canUseTargetedCommit(operations: WorkspaceOperation[]): boolean {
