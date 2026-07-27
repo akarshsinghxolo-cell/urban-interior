@@ -140,6 +140,15 @@ function buildWorkspaceRouteRegistry() {
     if (existing && existing.definition.moduleId !== definition.moduleId) {
       throw new Error(`Duplicate workspace path ${normalized}: ${existing.definition.moduleId} and ${definition.moduleId}`);
     }
+    if (existing) {
+      byPath.set(normalized, {
+        definition,
+        // A canonical registration must never be downgraded when a legacy ID
+        // happens to produce the same URL segment (for example contractors).
+        isAlias: existing.isAlias && isAlias,
+      });
+      return;
+    }
     byPath.set(normalized, { definition, isAlias });
   };
 
