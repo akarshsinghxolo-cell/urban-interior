@@ -2,6 +2,7 @@
 
 import {
   captureWorkspaceCommit,
+  createDeferredWorkspaceCommitResponse,
   markWorkspaceCommitNetworkFailure,
   markWorkspaceCommitResponse,
   rememberWorkspaceResponse,
@@ -99,6 +100,7 @@ export function initAuthFetch(): void {
     const isWorkspaceRead = pathname === "/api/workspace" && method === "GET";
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
+    let deferredResponse: Response | undefined;
     let body = init?.body;
 
     if (isWorkspaceCommit && !isReplay) {
@@ -106,10 +108,24 @@ export function initAuthFetch(): void {
         const captured = await captureWorkspaceCommit(body);
         body = captured.body;
         operationId = captured.operationId;
+        if (captured.defer && operationId) {
+          let revision = 0;
+          if (typeof body === "string") {
+            try {
+              const parsed = JSON.parse(body) as { revision?: number };
+              revision = typeof parsed.revision === "number" ? parsed.revision : 0;
+            } catch {
+              // The captured request was already validated; keep the fallback revision.
+            }
+          }
+          deferredResponse = createDeferredWorkspaceCommitResponse(operationId, revision);
+        }
       } catch (error) {
         console.error("[WorkspaceOutbox] Could not durably capture this commit; continuing with the online save.", error);
       }
     }
+
+    if (deferredResponse) return deferredResponse;
 
     let responseReceived = false;
     try {
