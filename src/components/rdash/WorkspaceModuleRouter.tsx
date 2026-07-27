@@ -2,7 +2,9 @@
 import * as React from "react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer } from "@/lib/rdash/modules";
+import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
 import { PortalActivityProvider } from "@/components/ui/portal-activity";
+import { WorkspaceAccessDenied } from "./WorkspaceAccessDenied";
 
 const DailyWork = React.lazy(() => import("./modules/DailyWork").then((module) => ({ default: module.DailyWork })));
 const CustomerDesk = React.lazy(() => import("./modules/CustomerDesk").then((module) => ({ default: module.CustomerDesk })));
@@ -67,6 +69,8 @@ const CustomerDeskExtrasModule = React.lazy(() => import("./modules/RemainingMod
 const BlockedRisksCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.BlockedRisksCombined })));
 const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.CalendarRecurringCombined })));
 
+const EMPTY_PERMISSIONS: unknown[] = [];
+
 export function ModuleLoadingFallback() {
     return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 text-sm text-muted-foreground shadow-card">Loading workspace module...</div>;
 }
@@ -74,6 +78,18 @@ export function ModuleLoadingFallback() {
 export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     const activeModuleId = moduleId;
     const route = resolveRenderer(activeModuleId);
+    const role = useRDashStore((state) => state.authUser?.role);
+    const rawPermissions = useRDashStore((state) => (state.db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions || EMPTY_PERMISSIONS);
+    const access = React.useMemo(
+        () => workspaceRouteAccessDecision(activeModuleId, role, rawPermissions),
+        [activeModuleId, role, rawPermissions],
+    );
+
+    if (access.status === "pending") return <ModuleLoadingFallback />;
+    if (access.status === "denied") {
+        return <WorkspaceAccessDenied moduleLabel={access.moduleLabel} permissionModule={access.permissionModule} />;
+    }
+
     switch (route.renderer) {
         case "daily-work": return <DailyWork />;
         case "customer-desk": return <CustomerDesk view={route.filter?.view === "timeline" ? "timeline" : "default"}/>;
