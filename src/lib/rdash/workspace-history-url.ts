@@ -14,6 +14,12 @@ const URL_ENTITY_KINDS = new Set<WorkspaceEntityKind>([
   "quotation",
   "po",
   "visit",
+  "task",
+  "followup",
+  "payment",
+  "invoice",
+  "vendorBill",
+  "contractorBill",
 ]);
 
 /**
