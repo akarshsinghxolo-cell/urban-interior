@@ -21,17 +21,28 @@ describe("workspace route adapter", () => {
     expect(selection?.canonicalPath).toBe("/workspace/procurement/boq");
   });
 
-  test("selects a core entity without inventing a separate page component", () => {
+  test("selects entities without inventing separate page components", () => {
     expect(selectWorkspaceRoute("/workspace/customers/cust-123", "workdesk")).toEqual({
       moduleId: "customerDesk",
       canonicalPath: "/workspace/customers/cust-123",
       title: "Customer Desk · Urban Castle",
       shouldActivate: true,
-      entity: { kind: "customer", id: "cust-123" },
+      entity: { kind: "customer", id: "cust-123", permissionModule: "customers" },
     });
     expect(selectWorkspaceRoute("/workspace/sites/site-123", "siteExecution")?.entity).toEqual({
       kind: "site",
       id: "site-123",
+      permissionModule: "sites",
+    });
+    expect(selectWorkspaceRoute("/workspace/work-orders/wo-123", "siteExecution")).toMatchObject({
+      moduleId: "woTimeline",
+      canonicalPath: "/workspace/work-orders/wo-123",
+      entity: { kind: "workOrder", id: "wo-123", permissionModule: "workOrders" },
+    });
+    expect(selectWorkspaceRoute("/workspace/purchase-orders/po-123", "procurementInventory")?.entity).toEqual({
+      kind: "po",
+      id: "po-123",
+      permissionModule: "purchaseOrders",
     });
   });
 
