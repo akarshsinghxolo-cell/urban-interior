@@ -12,10 +12,23 @@ import type { StaffLocationPing } from "@/lib/rdash/staff-location";
 const PENDING_KEY = "rdash:pending-staff-location-pings:v2";
 const LEGACY_PENDING_KEY = "rdash:pending-staff-location-pings:v1";
 const MINIMUM_PING_INTERVAL_MS = 30_000;
+const FOREGROUND_HEARTBEAT_INTERVAL_MS = 60_000;
 const MAX_PENDING_POINTS = 5_760; // 48 hours at one point every 30 seconds.
 const MAX_CAPTURE_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
 const MAX_CAPTURE_FUTURE_SKEW_MS = 2 * 60_000;
 const SESSION_RENEW_INTERVAL_MS = 30 * 60_000;
+
+const LIVE_POSITION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 0,
+  timeout: 25_000,
+};
+
+const WATCH_POSITION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 15_000,
+  timeout: 25_000,
+};
 
 type PendingPoint = Omit<StaffLocationPing, "id" | "staff_id">;
 
@@ -270,29 +283,53 @@ export function StaffLocationTracker() {
       });
     };
 
+    const requestCurrentPosition = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      navigator.geolocation.getCurrentPosition(
+        (position) => { void capture(position); },
+        onError,
+        LIVE_POSITION_OPTIONS,
+      );
+    };
+
     const watchId = navigator.geolocation.watchPosition(
       (position) => { void capture(position); },
       onError,
-      { enableHighAccuracy: true, maximumAge: 15_000, timeout: 25_000 },
+      WATCH_POSITION_OPTIONS,
     );
-    navigator.geolocation.getCurrentPosition(
-      (position) => { void capture(position); },
-      onError,
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 25_000 },
-    );
+    requestCurrentPosition();
 
-    const onOnline = () => { void flushPending(); };
+    const heartbeatTimer = window.setInterval(() => {
+      requestCurrentPosition();
+    }, FOREGROUND_HEARTBEAT_INTERVAL_MS);
+
+    const resumeTracking = () => {
+      if (document.visibilityState !== "visible") return;
+      publishLocationTrackingState({ message: "Foreground tracking is active." });
+      requestCurrentPosition();
+      void flushPending();
+    };
+    const onOnline = () => {
+      requestCurrentPosition();
+      void flushPending();
+    };
     const onOffline = () => publishLocationTrackingState({
       status: "queued",
       message: "Offline: captured locations will be queued on this device.",
     });
-    const onVisibility = () => publishLocationTrackingState({
-      message: document.visibilityState === "visible"
-        ? "Foreground tracking is active."
-        : "Foreground only: tracking may pause while this page is hidden or the phone is locked.",
-    });
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        resumeTracking();
+      } else {
+        publishLocationTrackingState({
+          message: "Foreground only: tracking may pause while this page is hidden or the phone is locked.",
+        });
+      }
+    };
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    window.addEventListener("focus", resumeTracking);
+    window.addEventListener("pageshow", resumeTracking);
     document.addEventListener("visibilitychange", onVisibility);
     const renewTimer = window.setInterval(() => { void refreshClientSession(); }, SESSION_RENEW_INTERVAL_MS);
     void refreshClientSession().then(() => flushPending());
@@ -302,7 +339,10 @@ export function StaffLocationTracker() {
       navigator.geolocation.clearWatch(watchId);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener("focus", resumeTracking);
+      window.removeEventListener("pageshow", resumeTracking);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(heartbeatTimer);
       window.clearInterval(renewTimer);
     };
   }, [enabled, flushPending, send]);
