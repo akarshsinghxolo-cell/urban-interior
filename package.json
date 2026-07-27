@@ -10,7 +10,8 @@
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
     "lint": "eslint .",
-    "test:phase2b": "bun test tests/phase2b-targeted-commit.test.ts"
+    "test:phase2b": "bun test tests/phase2b-targeted-commit.test.ts",
+    "test:routing": "bun test tests/workspace-route-registry.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
