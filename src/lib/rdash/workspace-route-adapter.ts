@@ -1,4 +1,4 @@
-import type { CoreWorkspaceEntityKind } from "./workspace-entity-routes";
+import type { WorkspaceEntityKind } from "./workspace-entity-routes";
 import { isWorkspaceEntityLocation, resolveWorkspaceLocation } from "./workspace-entity-routes";
 
 export interface WorkspaceRouteSelection {
@@ -7,8 +7,9 @@ export interface WorkspaceRouteSelection {
   title: string;
   shouldActivate: boolean;
   entity?: {
-    kind: CoreWorkspaceEntityKind;
+    kind: WorkspaceEntityKind;
     id: string;
+    permissionModule: string;
   };
 }
 
