@@ -11,7 +11,11 @@ import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 /** Urban Castle application shell. */
 export function UrbanCastleApp() {
   React.useEffect(() => {
-    document.title = "Urban Castle";
+    // /workspace routes set a module-specific title in WorkspaceRouteShell.
+    // Keep the generic title only for the legacy root route during migration.
+    if (!window.location.pathname.startsWith("/workspace")) {
+      document.title = "Urban Castle";
+    }
   }, []);
 
   useBrowserHistorySync();
