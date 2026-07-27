@@ -15,7 +15,8 @@
     "test:route-adapter": "bun test tests/workspace-route-adapter.test.ts",
     "test:history-urls": "bun test tests/workspace-history-url.test.ts",
     "test:auth-return": "bun test tests/workspace-auth-return.test.ts tests/workspace-auth-middleware.test.ts",
-    "test:route-access": "bun test tests/workspace-route-access.test.ts"
+    "test:route-access": "bun test tests/workspace-route-access.test.ts",
+    "test:auth-security": "bun test tests/auth-source-security.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
