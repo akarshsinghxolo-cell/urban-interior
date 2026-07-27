@@ -11,6 +11,13 @@ export const maxDuration = 60;
 
 const PROCESSING_STALE_MS = 120_000;
 const PROCESSING_RETRY_SECONDS = 10;
+const COMMIT_MODE = "phase2-single-read";
+
+const noStoreHeaders = (extra?: Record<string, string>) => ({
+  "Cache-Control": "no-store",
+  "X-UC-Commit-Mode": COMMIT_MODE,
+  ...(extra || {}),
+});
 
 type OperationReceipt = {
   status?: string;
@@ -94,11 +101,33 @@ function compactStoredResult(
       operationId,
       revision,
       patches,
-      rowVersions: touchedRowVersions(rowVersions, patches) || rowVersions,
+      rowVersions: touchedRowVersions(rowVersions, patches),
     };
   }
   const { data: _discardedWorkspace, ...compact } = result;
-  return { ...compact, operationId };
+  return { ...compact, operationId, patches };
+}
+
+function isFreshProcessingReceipt(receipt: OperationReceipt): boolean {
+  return Boolean(
+    receipt.status === "processing"
+      && receipt.updated_at
+      && Date.now() - Date.parse(receipt.updated_at) < PROCESSING_STALE_MS,
+  );
+}
+
+function processingResponse(operationId: string) {
+  return NextResponse.json(
+    {
+      status: "processing",
+      operationId,
+      retryAfterSeconds: PROCESSING_RETRY_SECONDS,
+    },
+    {
+      status: 202,
+      headers: noStoreHeaders({ "Retry-After": String(PROCESSING_RETRY_SECONDS) }),
+    },
+  );
 }
 
 function operationEffectsAlreadyPresent(
@@ -204,6 +233,14 @@ async function saveAppliedReceipt(operationId: string, result: Record<string, un
   if (!data) throw new Error("Could not persist the workspace operation receipt.");
 }
 
+async function rewriteAppliedReceiptResult(operationId: string, result: Record<string, unknown>): Promise<void> {
+  const { error } = await getSupabaseAdminClient().from("uc_workspace_operations").update({
+    result,
+    updated_at: new Date().toISOString(),
+  }).eq("id", operationId).eq("status", "applied");
+  if (error) console.error("[operations/commit] Could not compact legacy operation receipt", error);
+}
+
 async function loadReceipt(operationId: string): Promise<OperationReceipt | null> {
   const { data, error } = await getSupabaseAdminClient().from("uc_workspace_operations")
     .select("status,result,last_error,updated_at,attempt_count")
@@ -239,9 +276,7 @@ async function claimOperation(input: {
   if (!receipt) throw new Error("The workspace operation receipt disappeared while it was being claimed.");
   if (receipt.status === "applied" || receipt.status === "conflict") return { claimed: false, receipt };
 
-  const isFreshProcessing = receipt.status === "processing" && receipt.updated_at
-    && Date.now() - Date.parse(receipt.updated_at) < PROCESSING_STALE_MS;
-  if (isFreshProcessing) return { claimed: false, receipt };
+  if (isFreshProcessingReceipt(receipt)) return { claimed: false, receipt };
 
   const previousAttemptCount = Number(receipt.attempt_count || 0);
   const previousUpdatedAt = receipt.updated_at || "";
@@ -286,7 +321,7 @@ export async function POST(request: NextRequest) {
     };
     operationId = body.operationId;
     if (typeof body.revision !== "number" || !Array.isArray(body.operations)) {
-      return NextResponse.json({ error: "revision and operations are required." }, { status: 400 });
+      return NextResponse.json({ error: "revision and operations are required." }, { status: 400, headers: noStoreHeaders() });
     }
 
     let operations = body.operations;
@@ -311,13 +346,22 @@ export async function POST(request: NextRequest) {
       });
       if (!claim.claimed) {
         if (claim.receipt.status === "applied" && claim.receipt.result) {
-          return NextResponse.json(
-            compactStoredResult(claim.receipt.result, operationId, operations),
-            { headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Replay": "1" } },
-          );
+          const compacted = compactStoredResult(claim.receipt.result, operationId, operations);
+          if (Object.prototype.hasOwnProperty.call(claim.receipt.result, "data")) {
+            await rewriteAppliedReceiptResult(operationId, compacted);
+          }
+          return NextResponse.json(compacted, {
+            headers: noStoreHeaders({ "X-UC-Idempotent-Replay": "1" }),
+          });
         }
         if (claim.receipt.status === "conflict") {
-          return NextResponse.json({ error: claim.receipt.last_error || "The workspace changed on another device." }, { status: 409 });
+          return NextResponse.json(
+            { error: claim.receipt.last_error || "The workspace changed on another device." },
+            { status: 409, headers: noStoreHeaders() },
+          );
+        }
+        if (isFreshProcessingReceipt(claim.receipt)) {
+          return processingResponse(operationId);
         }
 
         const current = await getWorkspace(true);
@@ -325,23 +369,10 @@ export async function POST(request: NextRequest) {
           const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
-            headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Recovered": "1" },
+            headers: noStoreHeaders({ "X-UC-Idempotent-Recovered": "1" }),
           });
         }
-        return NextResponse.json(
-          {
-            status: "processing",
-            operationId,
-            retryAfterSeconds: PROCESSING_RETRY_SECONDS,
-          },
-          {
-            status: 202,
-            headers: {
-              "Retry-After": String(PROCESSING_RETRY_SECONDS),
-              "Cache-Control": "no-store",
-            },
-          },
-        );
+        return processingResponse(operationId);
       }
     }
 
@@ -349,7 +380,7 @@ export async function POST(request: NextRequest) {
       const current = await getWorkspace(true);
       const result = recoveredPayload(current, [], operationId);
       if (operationId) await saveAppliedReceipt(operationId, result, current.revision);
-      return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json(result, { headers: noStoreHeaders() });
     }
 
     let saved: CommitResult;
@@ -368,7 +399,7 @@ export async function POST(request: NextRequest) {
           const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
-            headers: { "Cache-Control": "no-store", "X-UC-Idempotent-Recovered": "1" },
+            headers: noStoreHeaders({ "X-UC-Idempotent-Recovered": "1" }),
           });
         }
       }
@@ -377,7 +408,11 @@ export async function POST(request: NextRequest) {
 
     const result = compactPayload(saved, operationId);
     if (operationId) await saveAppliedReceipt(operationId, result, saved.revision);
-    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(result, {
+      headers: noStoreHeaders({
+        "Server-Timing": `workspace;dur=${saved.timing.totalMs}, load;dur=${saved.timing.loadMs}, validate;dur=${saved.timing.authorizeAndValidateMs}, commit;dur=${saved.timing.commitMs}`,
+      }),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Operation commit was rejected.";
     const status = message === "UNAUTHORIZED"
@@ -395,6 +430,6 @@ export async function POST(request: NextRequest) {
     if (operationId) {
       await markFailedReceipt(operationId, status === 409 ? "conflict" : status >= 500 ? "retryable" : "failed", publicMessage);
     }
-    return NextResponse.json({ error: publicMessage }, { status, headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ error: publicMessage }, { status, headers: noStoreHeaders() });
   }
 }
