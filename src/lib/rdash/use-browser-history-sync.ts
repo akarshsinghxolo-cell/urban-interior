@@ -22,7 +22,7 @@ function mergedHistoryState(state: BrowserNavigationState): Record<string, unkno
 }
 
 function managedHistoryUrl(state: BrowserNavigationState): string | undefined {
-  return workspaceHistoryUrl(state.snapshot.moduleId, window.location.pathname);
+  return workspaceHistoryUrl(state.snapshot, window.location.pathname);
 }
 
 function pushBrowserState(state: BrowserNavigationState): void {
@@ -51,7 +51,7 @@ function replaceBrowserState(state: BrowserNavigationState): void {
   }
 }
 
-export function useBrowserHistorySync(): void {
+export function useBrowserHistorySync(enabled = true): void {
   const moduleId = useRDashStore((state) => state.activeModuleId);
   const activeTabId = useRDashStore((state) => state.activeTabId);
   const moduleHistoryIndex = useRDashStore((state) => state.moduleHistoryIndex);
@@ -132,19 +132,19 @@ export function useBrowserHistorySync(): void {
   }, []);
 
   React.useEffect(() => {
-    if (mountedRef.current) return;
+    if (!enabled || mountedRef.current) return;
     mountedRef.current = true;
-    // Seed the first entry with the complete URL-selected layer list. A direct
-    // /workspace/customers load therefore starts at Customer Desk instead of
-    // creating a root Workdesk entry followed by an unnecessary second entry.
+    // Seed the first entry with the complete URL-selected layer list. Entity
+    // deep links delay this effect until their detail snapshot is restored, so
+    // Back does not reveal a synthetic module-only entry first.
     const initial = browserNavigationState(desiredLayers, desiredSnapshot, nextEntryId());
     entriesRef.current = [initial];
     positionRef.current = 0;
     replaceBrowserState(initial);
-  }, [desiredLayers, desiredSnapshot, nextEntryId]);
+  }, [desiredLayers, desiredSnapshot, enabled, nextEntryId]);
 
   React.useEffect(() => {
-    if (!mountedRef.current || pendingPopEntryIdRef.current) return;
+    if (!enabled || !mountedRef.current || pendingPopEntryIdRef.current) return;
     if (applyingPopRef.current) {
       applyingPopRef.current = false;
       return;
@@ -243,9 +243,10 @@ export function useBrowserHistorySync(): void {
       positionRef.current = entriesRef.current.length - 1;
       pushBrowserState(entry);
     }
-  }, [desiredLayers, desiredSnapshot, nextEntryId]);
+  }, [desiredLayers, desiredSnapshot, enabled, nextEntryId]);
 
   React.useEffect(() => {
+    if (!enabled) return;
     const onPopState = (event: PopStateEvent) => {
       // Ignore route-level history entries owned by Next.js or another page.
       if (!isBrowserNavigationState(event.state)) {
@@ -273,5 +274,5 @@ export function useBrowserHistorySync(): void {
 
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [enabled]);
 }
