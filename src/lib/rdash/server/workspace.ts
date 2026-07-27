@@ -1,6 +1,6 @@
 import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
-import { diffWorkspaceOperations, operationSummary } from "../workspace-operations";
+import { applyWorkspaceOperations, diffWorkspaceOperations, operationSummary, type WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
 import {
   assertNotImplicitSeedReset,
@@ -69,6 +69,12 @@ export interface WorkspaceWithRevisions extends WorkspaceSnapshot {
   rowVersions?: Record<string, number>;
 }
 
+export interface WorkspaceOperationCommitResult {
+  revision: number;
+  updatedAt: string;
+  bumpedRowVersions?: Record<string, number>;
+}
+
 export async function getWorkspace(includeRevisions = false): Promise<WorkspaceWithRevisions> {
   if (await checkSupabaseSchema()) {
     const { getRestWorkspace } = await getRestModule();
@@ -118,6 +124,43 @@ export function enforceMutation(user: AuthenticatedUser, current: RDashDatabase,
   return trustedCandidate;
 }
 
+/**
+ * Commits already-authorized row operations without reconstructing the whole
+ * workspace again. PostgreSQL performs workspace and row CAS atomically.
+ */
+export async function commitWorkspaceOperations(
+  revision: number,
+  operations: WorkspaceOperation[],
+  expectedRowVersions?: Record<string, number>,
+): Promise<WorkspaceOperationCommitResult> {
+  if (!operations.length) {
+    return { revision, updatedAt: new Date().toISOString(), bumpedRowVersions: {} };
+  }
+
+  if (await checkSupabaseSchema()) {
+    const { commitRestOperations } = await getRestModule();
+    const result = await commitRestOperations(operations, revision, expectedRowVersions);
+    return {
+      revision: result.newRevision,
+      updatedAt: new Date().toISOString(),
+      bumpedRowVersions: result.bumpedRowVersions,
+    };
+  }
+
+  const current = await getInMemoryWorkspace();
+  if (current.revision !== revision) throw new Error("CONFLICT");
+  inMemoryWorkspace = {
+    revision: current.revision + 1,
+    data: applyWorkspaceOperations(current.data, operations),
+    updatedAt: new Date().toISOString(),
+  };
+  return {
+    revision: inMemoryWorkspace.revision,
+    updatedAt: inMemoryWorkspace.updatedAt,
+    bumpedRowVersions: {},
+  };
+}
+
 export async function saveWorkspace(
   revision: number,
   data: RDashDatabase,
@@ -130,23 +173,22 @@ export async function saveWorkspace(
   if (!operations.length) return current;
 
   if (await checkSupabaseSchema()) {
-    const { commitRestOperations } = await getRestModule();
-    const result = await commitRestOperations(operations, revision, expectedRowVersions);
+    const result = await commitWorkspaceOperations(revision, operations, expectedRowVersions);
     const saved = await getWorkspace();
     return {
       ...saved,
-      revision: result.newRevision,
+      revision: result.revision,
       bumpedRowVersions: result.bumpedRowVersions,
     };
   }
 
-  const { applyWorkspaceOperations } = await import("../workspace-operations");
-  inMemoryWorkspace = {
-    revision: current.revision + 1,
-    data: applyWorkspaceOperations(current.data, operations),
-    updatedAt: new Date().toISOString(),
+  const result = await commitWorkspaceOperations(revision, operations, expectedRowVersions);
+  const saved = await getInMemoryWorkspace();
+  return {
+    ...saved,
+    revision: result.revision,
+    bumpedRowVersions: result.bumpedRowVersions,
   };
-  return inMemoryWorkspace;
 }
 
 export function assertWorkspaceResetRequest(user: AuthenticatedUser, confirmation: string) {
