@@ -46,6 +46,33 @@ describe("workspace route adapter", () => {
     });
   });
 
+  test("selects remaining operational and finance entities through existing modules", () => {
+    expect(selectWorkspaceRoute("/workspace/tasks/task-1", "workdesk")).toMatchObject({
+      moduleId: "tasks",
+      canonicalPath: "/workspace/tasks/task-1",
+      entity: { kind: "task", id: "task-1", permissionModule: "tasks" },
+    });
+    expect(selectWorkspaceRoute("/workspace/followups/followup-1", "tasks")).toMatchObject({
+      moduleId: "tasks",
+      shouldActivate: false,
+      entity: { kind: "followup", id: "followup-1", permissionModule: "tasks" },
+    });
+    expect(selectWorkspaceRoute("/workspace/invoices/invoice-1", "financeDesk")).toMatchObject({
+      moduleId: "invoices",
+      canonicalPath: "/workspace/invoices/invoice-1",
+      entity: { kind: "invoice", id: "invoice-1", permissionModule: "finance" },
+    });
+    expect(selectWorkspaceRoute("/workspace/vendor-bills/vendor-bill-1", "vendorBills")).toMatchObject({
+      moduleId: "vendorBills",
+      shouldActivate: false,
+      entity: { kind: "vendorBill", id: "vendor-bill-1", permissionModule: "finance" },
+    });
+    expect(selectWorkspaceRoute("/workspace/contractor-bills/contractor-bill-1", "contractorPayments")).toMatchObject({
+      moduleId: "contractorPayments",
+      entity: { kind: "contractorBill", id: "contractor-bill-1", permissionModule: "finance" },
+    });
+  });
+
   test("does not treat unrelated application paths as workspace modules", () => {
     expect(selectWorkspaceRoute("/signin", "workdesk")).toBeUndefined();
     expect(selectWorkspaceRoute("/api/workspace", "workdesk")).toBeUndefined();
