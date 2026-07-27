@@ -85,6 +85,55 @@ function assertFieldExecutionLog(row: Record<string, unknown>, staffId: string |
   }
 }
 
+function auditSideEffectIsAuthorized(
+  row: Record<string, unknown>,
+  user: AuthenticatedUser,
+  authorizedEntityIds: Set<string>,
+) {
+  return Boolean(
+    rowId(row)
+      && String(row.actor || "") === user.name
+      && String(row.actor_role || "") === user.role
+      && authorizedEntityIds.has(String(row.entity_id || "")),
+  );
+}
+
+function threadSideEffectIsAuthorized(
+  row: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+  authorizedAuditIds: Set<string>,
+) {
+  const messages = Array.isArray(row.messages) ? row.messages as Array<Record<string, unknown>> : [];
+  const existingMessages = Array.isArray(existing?.messages)
+    ? existing.messages as Array<Record<string, unknown>>
+    : [];
+  const existingById = new Map(existingMessages.map((message) => [rowId(message), message]));
+
+  if (existing) {
+    const unchangedExistingMessages = existingMessages.every((message) => {
+      const candidate = messages.find((entry) => rowId(entry) === rowId(message));
+      return candidate && JSON.stringify(candidate) === JSON.stringify(message);
+    });
+    if (!unchangedExistingMessages) return false;
+
+    const existingShell = { ...existing, messages: undefined, updated_at: undefined };
+    const candidateShell = { ...row, messages: undefined, updated_at: undefined };
+    if (JSON.stringify(candidateShell) !== JSON.stringify(existingShell)) return false;
+  }
+
+  const added = messages.filter((message) => !existingById.has(rowId(message)));
+  if (!added.some((message) => authorizedAuditIds.has(String(message.related_audit_id || "")))) return false;
+
+  return added.every((message) => {
+    const auditId = String(message.related_audit_id || "");
+    if (auditId) return authorizedAuditIds.has(auditId);
+    return !existing
+      && message.author_name === "System"
+      && message.kind === "system"
+      && String(message.body || "").startsWith("Thread opened for ");
+  });
+}
+
 export function assertWorkspaceMutationAllowed(
   user: AuthenticatedUser,
   operations: WorkspaceOperation[],
@@ -98,8 +147,9 @@ export function assertWorkspaceMutationAllowed(
   const roleKey = normalizeRoleKey(user.role);
   const isFieldStaff = roleKey === "FIELD_STAFF";
   const authorizedUpserts = new Set<string>();
+  const authorizedEntityIds = new Set<string>();
 
-  for (const operation of operations.filter((entry) => entry.collection !== "threads")) {
+  for (const operation of operations.filter((entry) => !["threads", "auditLog"].includes(entry.collection))) {
     const existingIds = new Set(rowsFor(current, operation.collection).map(rowId));
 
     if (operation.deleteIds?.length) {
@@ -118,6 +168,7 @@ export function assertWorkspaceMutationAllowed(
       if (isFieldStaff && operation.collection === "executionLogs") {
         assertFieldExecutionLog(row, user.staffId);
         authorizedUpserts.add(parentReference(operation.collection, rowId(row)));
+        authorizedEntityIds.add(rowId(row));
         continue;
       }
 
@@ -138,6 +189,19 @@ export function assertWorkspaceMutationAllowed(
       }
 
       authorizedUpserts.add(parentReference(operation.collection, rowId(row)));
+      authorizedEntityIds.add(rowId(row));
+    }
+  }
+
+  const authorizedAuditIds = new Set<string>();
+  for (const operation of operations.filter((entry) => entry.collection === "auditLog")) {
+    if (operation.deleteIds?.length) throw new Error("FORBIDDEN:auditLog");
+    const existingIds = new Set(rowsFor(current, operation.collection).map(rowId));
+    for (const row of operation.upsert || []) {
+      if (existingIds.has(rowId(row)) || !auditSideEffectIsAuthorized(row, user, authorizedEntityIds)) {
+        throw new Error("FORBIDDEN:auditLog");
+      }
+      authorizedAuditIds.add(rowId(row));
     }
   }
 
@@ -146,8 +210,12 @@ export function assertWorkspaceMutationAllowed(
       throw new Error("FORBIDDEN:threads");
     }
 
-    const existingIds = new Set(rowsFor(current, operation.collection).map(rowId));
+    const existingRows = rowsFor(current, operation.collection);
+    const existingIds = new Set(existingRows.map(rowId));
     for (const row of operation.upsert || []) {
+      const existing = existingRows.find((candidate) => rowId(candidate) === rowId(row));
+      if (threadSideEffectIsAuthorized(row, existing, authorizedAuditIds)) continue;
+
       const action = existingIds.has(rowId(row)) ? "update" : "create";
       if (isFieldStaff) {
         if (!linkedThreadIsAuthorized(row, authorizedUpserts, current, user.staffId)) {

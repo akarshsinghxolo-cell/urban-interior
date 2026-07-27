@@ -1,4 +1,4 @@
-import type { AttendancePolicy, RDashDatabase, Staff, Task, Visit, AttendanceRecord } from "./types";
+import type { RDashDatabase, Staff, Task, Visit, AttendanceRecord } from "./types";
 import { createDefaultAttendancePolicy } from "./attendance-policy";
 
 export const STAFF_ROLE_KEYS = [
@@ -117,6 +117,7 @@ export const STAFF_MODULES = [
   ["attendance", "Attendance"],
   ["gps", "GPS Tracking"],
   ["vendors", "Vendors & Vendor Rates"],
+  ["contractors", "Contractors"],
   ["procurement", "Procurement"],
   ["purchaseOrders", "Purchase Orders"],
   ["grns", "GRN / Receipts"],
@@ -176,6 +177,7 @@ export function createDefaultStaffPermissions(): StaffPermissionRecord[] {
       attendance: { view: true, update: true, approve: true },
       gps: { view: true },
       vendors: { view: true, create: true, update: true, approve: true },
+      contractors: { view: true, create: true, update: true, approve: true },
       procurement: { view: true, create: true, update: true, approve: true },
       purchaseOrders: { view: true, create: true, update: true, approve: true },
       grns: { view: true, create: true, update: true, approve: true },
@@ -265,7 +267,9 @@ export function canRole(permissions: StaffPermissionRecord[], role: string, modu
 export function normalizeStaffPermissions(input: unknown[] | undefined): StaffPermissionRecord[] {
   if (!Array.isArray(input) || !input.length) return createDefaultStaffPermissions();
   const labels = new Map(STAFF_MODULES.map(([module, label]) => [module, label]));
-  const rows = new Map<string, StaffPermissionRecord>();
+  const rows = new Map(
+    createDefaultStaffPermissions().map((row) => [`${row.role_key}:${row.module_key}`, row]),
+  );
   for (const raw of input as Array<Partial<StaffPermissionRecord> & Record<string, unknown>>) {
     const role_key = normalizeRoleKey(String(raw.role_key || raw.roleId || raw.role || ""));
     const module_key = String(raw.module_key || raw.moduleKey || "").trim();
@@ -297,13 +301,13 @@ const ROUTE_PERMISSION_BY_ID: Record<string, string> = {
   procurementInventory: "procurement", procurement: "procurement", grn: "grns", inventory: "inventory", dispatch: "inventory", vendorBills: "finance",
   financeDesk: "finance", payments: "finance", invoices: "finance", contractorPayments: "finance", workOrderPnl: "finance", gstReturns: "finance",
   mediaCommunication: "media", mediaCatalogues: "media", communicationCentre: "media",
-  masterSetup: "masters", workCategoryMaster: "masters", vendorRates: "vendors", rateFinder: "vendors", vendors: "vendors", contractors: "masters",
+  masterSetup: "masters", workCategoryMaster: "masters", vendorRates: "vendors", rateFinder: "vendors", vendors: "vendors", contractors: "contractors",
   reportsDesk: "reports", salesReport: "reports", collectionReport: "reports", jobPnlReport: "reports", vendorExposureReport: "reports", taxReport: "reports", staffProductivity: "reports", quotationConversion: "reports", leadSourceReport: "reports", agingReportRep: "reports", visitCompliance: "reports", taskThroughput: "reports",
   systemSettings: "system", usersRoles: "staff", staff: "staff", attendancePayroll: "payroll", staffSalary: "payroll", hrStaff: "staff", controlBrainWorkflows: "approvals", approvalPolicies: "approvals", auditLog: "system", dataImport: "system", dataExport: "system",
 };
 
 const DATA_SOURCE_PERMISSION: Record<string, string> = {
-  tasks: "tasks", followups: "tasks", visits: "visits", quotations: "quotations", payments: "finance", invoices: "finance", workOrders: "workOrders", customers: "customers", approvals: "approvals", risks: "approvals", blocked: "approvals", vendors: "vendors", contractors: "masters", staff: "staff", boqs: "boqs", purchaseOrders: "purchaseOrders", grns: "grns", inventory: "inventory", dispatches: "inventory", vendorBills: "finance", commissions: "finance", drawings: "sites", executionLogs: "sites", threads: "media", attendance: "attendance",
+  tasks: "tasks", followups: "tasks", visits: "visits", quotations: "quotations", payments: "finance", invoices: "finance", workOrders: "workOrders", customers: "customers", approvals: "approvals", risks: "approvals", blocked: "approvals", vendors: "vendors", contractors: "contractors", staff: "staff", boqs: "boqs", purchaseOrders: "purchaseOrders", grns: "grns", inventory: "inventory", dispatches: "inventory", vendorBills: "finance", commissions: "finance", drawings: "sites", executionLogs: "sites", threads: "media", attendance: "attendance",
 };
 
 export function permissionModuleForRoute(route: { id?: string; dataSource?: string; renderer?: string } | undefined): string {
@@ -330,6 +334,7 @@ export function moduleForCollection(collection: string): string {
     const key = collection.slice("master.".length);
     if (["staff"].includes(key)) return "staff";
     if (["vendors", "vendorRates", "vendorRateHistories"].includes(key)) return "vendors";
+    if (key === "contractors") return "contractors";
     if (["fileAssets", "catalogues", "catalogueArticleVendorLinks", "pinterestBoards", "referenceMedia", "storageAccounts", "storageFolderTemplates", "storageFolderInstances"].includes(key)) return "media";
     return "masters";
   }
