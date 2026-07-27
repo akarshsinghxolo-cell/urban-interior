@@ -1,37 +1,106 @@
 "use client";
 
 import * as React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { detailRecordExists } from "@/lib/rdash/detail-navigation";
 import { useRDashStore } from "@/lib/rdash/store";
+import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
 import { selectWorkspaceRoute } from "@/lib/rdash/workspace-route-adapter";
+import { workspacePathForModule } from "@/lib/rdash/workspace-routes";
 import { UrbanCastleApp } from "./UrbanCastleApp";
 
 /**
  * Persistent application shell for every /workspace URL.
  *
- * The URL-selected module is applied in a layout effect before UrbanCastleApp
- * mounts. This lets the existing browser-history hook take its first snapshot
- * at the correct module instead of creating an extra same-URL history entry.
- * The shell stays mounted while the catch-all page changes, preserving uploads,
- * GPS tracking, the workspace outbox and global dialogs.
+ * Module routes bootstrap before UrbanCastleApp mounts. Direct entity routes
+ * keep the same shell mounted but delay managed browser-history initialization
+ * until the secure workspace has hydrated and the existing detail panel has
+ * been restored. This prevents a synthetic module-only Back entry.
  */
 export function WorkspaceRouteShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const initialSelectionRef = React.useRef(
+    selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
+  );
+  const historyStartedRef = React.useRef(!initialSelectionRef.current?.entity);
+  const handledEntityRef = React.useRef<string | null>(null);
   const [bootstrapped, setBootstrapped] = React.useState(false);
+  const [historyEnabled, setHistoryEnabled] = React.useState(historyStartedRef.current);
+
+  const authUser = useRDashStore((state) => state.authUser);
+  const db = useRDashStore((state) => state.db);
+  const detailPanel = useRDashStore((state) => state.detailPanel);
+  const selection = React.useMemo(
+    () => selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
+    [pathname],
+  );
+
+  const startHistory = React.useCallback(() => {
+    if (historyStartedRef.current) return;
+    historyStartedRef.current = true;
+    setHistoryEnabled(true);
+  }, []);
 
   React.useLayoutEffect(() => {
     const current = useRDashStore.getState();
-    const selection = selectWorkspaceRoute(pathname, current.activeModuleId);
-    if (selection?.shouldActivate) current.setActiveModule(selection.moduleId);
-    if (selection) document.title = selection.title;
+    const nextSelection = selectWorkspaceRoute(pathname, current.activeModuleId);
+    if (nextSelection?.shouldActivate) current.setActiveModule(nextSelection.moduleId);
+    if (nextSelection) document.title = nextSelection.title;
+    if (!nextSelection?.entity) startHistory();
     setBootstrapped(true);
-  }, [pathname]);
+  }, [pathname, startHistory]);
+
+  React.useEffect(() => {
+    const entity = selection?.entity;
+    if (!entity || !authUser) return;
+
+    const access = workspaceRouteAccessDecision(
+      selection.moduleId,
+      authUser.role,
+      (db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions,
+    );
+    const entityKey = `${entity.kind}:${entity.id}`;
+    const parentPath = workspacePathForModule(selection.moduleId);
+
+    if (access.status === "denied") {
+      if (handledEntityRef.current !== `denied:${entityKey}`) {
+        handledEntityRef.current = `denied:${entityKey}`;
+        toast.error("Access denied", {
+          description: `Your role cannot open ${access.moduleLabel}.`,
+        });
+      }
+      startHistory();
+      router.replace(parentPath);
+      return;
+    }
+    if (access.status !== "allowed") return;
+
+    if (!detailRecordExists(db, entity.kind, entity.id)) {
+      if (handledEntityRef.current !== `missing:${entityKey}`) {
+        handledEntityRef.current = `missing:${entityKey}`;
+        toast.error("Record not found", {
+          description: "This link may be outdated, deleted, or unavailable in your workspace.",
+        });
+      }
+      startHistory();
+      router.replace(parentPath);
+      return;
+    }
+
+    if (detailPanel.kind !== entity.kind || detailPanel.recordId !== entity.id) {
+      useRDashStore.getState().openDetail(entity.kind, entity.id, selection.moduleId);
+    }
+    handledEntityRef.current = `opened:${entityKey}`;
+    startHistory();
+  }, [authUser, db, detailPanel.kind, detailPanel.recordId, router, selection, startHistory]);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem={true} disableTransitionOnChange>
-      {bootstrapped ? <UrbanCastleApp /> : <WorkspaceRouteLoading />}
+      {bootstrapped ? <UrbanCastleApp historyEnabled={historyEnabled} /> : <WorkspaceRouteLoading />}
       <Toaster richColors position="top-right" />
       {children}
     </ThemeProvider>
