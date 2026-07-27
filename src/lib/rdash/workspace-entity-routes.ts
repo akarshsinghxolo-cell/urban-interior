@@ -11,6 +11,12 @@ export type WorkspaceEntityKind = Extract<
   | "quotation"
   | "po"
   | "visit"
+  | "task"
+  | "followup"
+  | "payment"
+  | "invoice"
+  | "vendorBill"
+  | "contractorBill"
 >;
 
 // Compatibility name retained for the Stage 6 imports.
@@ -27,7 +33,13 @@ export interface WorkspaceEntityRouteDefinition {
     | "workOrders"
     | "quotations"
     | "purchaseOrders"
-    | "visits";
+    | "visits"
+    | "tasks"
+    | "followups"
+    | "payments"
+    | "invoices"
+    | "vendorBills"
+    | "contractorBills";
   /** Public entity namespace. Defaults to the parent module's canonical path. */
   basePath?: string;
   /** Permission key when record access is narrower than the parent module. */
@@ -76,6 +88,48 @@ const ENTITY_ROUTE_DEFINITIONS: readonly WorkspaceEntityRouteDefinition[] = [
     collection: "visits",
     basePath: "/workspace/visits",
     permissionModule: "visits",
+  },
+  {
+    kind: "task",
+    moduleId: "tasks",
+    collection: "tasks",
+    basePath: "/workspace/tasks",
+    permissionModule: "tasks",
+  },
+  {
+    kind: "followup",
+    moduleId: "tasks",
+    collection: "followups",
+    basePath: "/workspace/followups",
+    permissionModule: "tasks",
+  },
+  {
+    kind: "payment",
+    moduleId: "payments",
+    collection: "payments",
+    basePath: "/workspace/payments",
+    permissionModule: "finance",
+  },
+  {
+    kind: "invoice",
+    moduleId: "invoices",
+    collection: "invoices",
+    basePath: "/workspace/invoices",
+    permissionModule: "finance",
+  },
+  {
+    kind: "vendorBill",
+    moduleId: "vendorBills",
+    collection: "vendorBills",
+    basePath: "/workspace/vendor-bills",
+    permissionModule: "finance",
+  },
+  {
+    kind: "contractorBill",
+    moduleId: "contractorPayments",
+    collection: "contractorBills",
+    basePath: "/workspace/contractor-bills",
+    permissionModule: "finance",
   },
 ] as const;
 

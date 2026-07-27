@@ -54,6 +54,21 @@ describe("workspace route access", () => {
     expect(operationsWorkOrder.status).toBe("allowed");
   });
 
+  test("enforces task and finance permissions for remaining entity links", () => {
+    const salesTask = workspaceRouteAccessDecision("tasks", "Sales / Telecaller", [], "tasks");
+    const financeTask = workspaceRouteAccessDecision("tasks", "Finance", [], "tasks");
+    expect(salesTask.status).toBe("allowed");
+    expect(financeTask.status).toBe("denied");
+
+    const financeInvoice = workspaceRouteAccessDecision("invoices", "Finance", [], "finance");
+    const salesInvoice = workspaceRouteAccessDecision("invoices", "Sales / Telecaller", [], "finance");
+    const fieldVendorBill = workspaceRouteAccessDecision("vendorBills", "Field Staff", [], "finance");
+    expect(financeInvoice.status).toBe("allowed");
+    expect(financeInvoice.permissionModule).toBe("finance");
+    expect(salesInvoice.status).toBe("denied");
+    expect(fieldVendorBill.status).toBe("denied");
+  });
+
   test("applies customized permission rows instead of only built-in defaults", () => {
     const permissions = createDefaultStaffPermissions().map((row) =>
       row.role_key === "SALES_TELECALLER" && row.module_key === "customers"

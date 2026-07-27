@@ -6,7 +6,7 @@ import {
 } from "../src/lib/rdash/workspace-entity-routes";
 
 describe("workspace entity routes", () => {
-  test("generates canonical paths for core and transaction entities", () => {
+  test("generates canonical paths for supported entity families", () => {
     expect(workspaceEntityPath("customer", "cust-123")).toBe("/workspace/customers/cust-123");
     expect(workspaceEntityPath("site", "site-123")).toBe("/workspace/sites/site-123");
     expect(workspaceEntityPath("contractor", "cont-123")).toBe("/workspace/contractors/cont-123");
@@ -15,6 +15,12 @@ describe("workspace entity routes", () => {
     expect(workspaceEntityPath("quotation", "quote-123")).toBe("/workspace/quotations/quote-123");
     expect(workspaceEntityPath("po", "po-123")).toBe("/workspace/purchase-orders/po-123");
     expect(workspaceEntityPath("visit", "visit-123")).toBe("/workspace/visits/visit-123");
+    expect(workspaceEntityPath("task", "task-123")).toBe("/workspace/tasks/task-123");
+    expect(workspaceEntityPath("followup", "followup-123")).toBe("/workspace/followups/followup-123");
+    expect(workspaceEntityPath("payment", "payment-123")).toBe("/workspace/payments/payment-123");
+    expect(workspaceEntityPath("invoice", "invoice-123")).toBe("/workspace/invoices/invoice-123");
+    expect(workspaceEntityPath("vendorBill", "vendor-bill-123")).toBe("/workspace/vendor-bills/vendor-bill-123");
+    expect(workspaceEntityPath("contractorBill", "contractor-bill-123")).toBe("/workspace/contractor-bills/contractor-bill-123");
   });
 
   test("encodes IDs and returns entity-specific permission context", () => {
@@ -37,13 +43,27 @@ describe("workspace entity routes", () => {
       expect(purchaseOrder.moduleId).toBe("procurementInventory");
       expect(purchaseOrder.entity.permissionModule).toBe("purchaseOrders");
     }
+
+    const task = resolveWorkspaceLocation("/workspace/tasks/task-1");
+    expect(isWorkspaceEntityLocation(task)).toBe(true);
+    if (isWorkspaceEntityLocation(task)) expect(task.entity.permissionModule).toBe("tasks");
+
+    const vendorBill = resolveWorkspaceLocation("/workspace/vendor-bills/vb-1");
+    expect(isWorkspaceEntityLocation(vendorBill)).toBe(true);
+    if (isWorkspaceEntityLocation(vendorBill)) expect(vendorBill.entity.permissionModule).toBe("finance");
   });
 
-  test("maps transaction URLs onto their existing parent modules", () => {
+  test("maps entity URLs onto their existing parent modules", () => {
     expect(resolveWorkspaceLocation("/workspace/work-orders/wo-1")?.moduleId).toBe("woTimeline");
     expect(resolveWorkspaceLocation("/workspace/quotations/q-1")?.moduleId).toBe("quotationDesk");
     expect(resolveWorkspaceLocation("/workspace/purchase-orders/po-1")?.moduleId).toBe("procurementInventory");
     expect(resolveWorkspaceLocation("/workspace/visits/visit-1")?.moduleId).toBe("fieldOperations");
+    expect(resolveWorkspaceLocation("/workspace/tasks/task-1")?.moduleId).toBe("tasks");
+    expect(resolveWorkspaceLocation("/workspace/followups/followup-1")?.moduleId).toBe("tasks");
+    expect(resolveWorkspaceLocation("/workspace/payments/payment-1")?.moduleId).toBe("payments");
+    expect(resolveWorkspaceLocation("/workspace/invoices/invoice-1")?.moduleId).toBe("invoices");
+    expect(resolveWorkspaceLocation("/workspace/vendor-bills/vb-1")?.moduleId).toBe("vendorBills");
+    expect(resolveWorkspaceLocation("/workspace/contractor-bills/cb-1")?.moduleId).toBe("contractorPayments");
   });
 
   test("gives exact module and submodule routes precedence", () => {
@@ -58,6 +78,10 @@ describe("workspace entity routes", () => {
     const visitsRoot = resolveWorkspaceLocation("/workspace/visits");
     expect(isWorkspaceEntityLocation(visitsRoot)).toBe(false);
     expect(visitsRoot?.moduleId).toBe("fieldOperations");
+
+    const tasksRoot = resolveWorkspaceLocation("/workspace/tasks");
+    expect(isWorkspaceEntityLocation(tasksRoot)).toBe(false);
+    expect(tasksRoot?.moduleId).toBe("tasks");
   });
 
   test("rejects malformed, nested and unsafe IDs", () => {
@@ -67,11 +91,12 @@ describe("workspace entity routes", () => {
     expect(resolveWorkspaceLocation("/workspace/customers/%2Fetc")).toBeUndefined();
     expect(resolveWorkspaceLocation("/workspace/customers/%E0%A4%A")).toBeUndefined();
     expect(resolveWorkspaceLocation("/workspace/customers/..")).toBeUndefined();
+    expect(resolveWorkspaceLocation("/workspace/vendor-bills/a/b")).toBeUndefined();
   });
 
-  test("does not claim later entity families", () => {
-    expect(resolveWorkspaceLocation("/workspace/tasks/task-1")).toBeUndefined();
-    expect(resolveWorkspaceLocation("/workspace/followups/followup-1")).toBeUndefined();
-    expect(resolveWorkspaceLocation("/workspace/invoices/invoice-1")).toBeUndefined();
+  test("does not claim entity families outside this rollout", () => {
+    expect(resolveWorkspaceLocation("/workspace/grns/grn-1")).toBeUndefined();
+    expect(resolveWorkspaceLocation("/workspace/contractor-payments/payment-1")).toBeUndefined();
+    expect(resolveWorkspaceLocation("/workspace/commissions/commission-1")).toBeUndefined();
   });
 });
