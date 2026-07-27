@@ -62,6 +62,7 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
       selection.moduleId,
       authUser.role,
       (db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions,
+      entity.permissionModule,
     );
     const entityKey = `${entity.kind}:${entity.id}`;
     const parentPath = workspacePathForModule(selection.moduleId);
