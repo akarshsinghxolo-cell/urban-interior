@@ -1,12 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { detailRecordExists } from "@/lib/rdash/detail-navigation";
 import { useRDashStore } from "@/lib/rdash/store";
+import {
+  supportsWorkspaceDetailTabs,
+  workspaceDetailTabRequest,
+  workspaceUrlWithDetailTab,
+} from "@/lib/rdash/workspace-detail-tabs";
 import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
 import { selectWorkspaceRoute } from "@/lib/rdash/workspace-route-adapter";
 import { workspacePathForModule } from "@/lib/rdash/workspace-routes";
@@ -17,16 +22,23 @@ import { UrbanCastleApp } from "./UrbanCastleApp";
  *
  * Module routes bootstrap before UrbanCastleApp mounts. Direct entity routes
  * keep the same shell mounted but delay managed browser-history initialization
- * until the secure workspace has hydrated and the existing detail panel has
- * been restored. This prevents a synthetic module-only Back entry.
+ * until the secure workspace, requested record and durable detail tab have been
+ * restored. This prevents synthetic module-only or default-tab Back entries.
  */
 export function WorkspaceRouteShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
   const initialSelectionRef = React.useRef(
     selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
   );
-  const historyStartedRef = React.useRef(!initialSelectionRef.current?.entity);
+  const initialTabRequestRef = React.useRef(
+    workspaceDetailTabRequest(search, initialSelectionRef.current?.entity?.kind),
+  );
+  const historyStartedRef = React.useRef(
+    !initialSelectionRef.current?.entity && !initialTabRequestRef.current.explicit,
+  );
   const handledEntityRef = React.useRef<string | null>(null);
   const [bootstrapped, setBootstrapped] = React.useState(false);
   const [historyEnabled, setHistoryEnabled] = React.useState(historyStartedRef.current);
@@ -50,9 +62,18 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
     const nextSelection = selectWorkspaceRoute(pathname, current.activeModuleId);
     if (nextSelection?.shouldActivate) current.setActiveModule(nextSelection.moduleId);
     if (nextSelection) document.title = nextSelection.title;
-    if (!nextSelection?.entity) startHistory();
+
+    if (!nextSelection?.entity) {
+      const tabRequest = workspaceDetailTabRequest(search, undefined);
+      if (tabRequest.explicit) {
+        const canonicalUrl = workspaceUrlWithDetailTab(pathname, search, undefined, undefined);
+        router.replace(canonicalUrl);
+      } else {
+        startHistory();
+      }
+    }
     setBootstrapped(true);
-  }, [pathname, startHistory]);
+  }, [pathname, router, search, startHistory]);
 
   React.useEffect(() => {
     const entity = selection?.entity;
@@ -92,12 +113,35 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
       return;
     }
 
-    if (detailPanel.kind !== entity.kind || detailPanel.recordId !== entity.id) {
-      useRDashStore.getState().openDetail(entity.kind, entity.id, selection.moduleId);
+    const tabRequest = workspaceDetailTabRequest(search, entity.kind);
+    const currentUrl = search ? `${pathname}?${search}` : pathname;
+    const canonicalUrl = workspaceUrlWithDetailTab(
+      pathname,
+      search,
+      entity.kind,
+      tabRequest.tab,
+    );
+
+    let current = useRDashStore.getState();
+    if (current.detailPanel.kind !== entity.kind || current.detailPanel.recordId !== entity.id) {
+      current.openDetail(entity.kind, entity.id, selection.moduleId);
+      current = useRDashStore.getState();
     }
+    if (
+      supportsWorkspaceDetailTabs(entity.kind) &&
+      current.detailPanel.fromModule === "context" &&
+      current.detailPanel.panelTab !== tabRequest.tab
+    ) {
+      current.setContextDetailTab(tabRequest.tab);
+    }
+
     handledEntityRef.current = `opened:${entityKey}`;
+    if (canonicalUrl !== currentUrl) {
+      router.replace(canonicalUrl);
+      return;
+    }
     startHistory();
-  }, [authUser, db, detailPanel.kind, detailPanel.recordId, router, selection, startHistory]);
+  }, [authUser, db, pathname, router, search, selection, startHistory]);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem={true} disableTransitionOnChange>
