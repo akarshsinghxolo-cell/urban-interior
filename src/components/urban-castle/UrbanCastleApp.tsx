@@ -9,7 +9,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 
 /** Urban Castle application shell. */
-export function UrbanCastleApp() {
+export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boolean }) {
   React.useEffect(() => {
     // /workspace routes set a module-specific title in WorkspaceRouteShell.
     // Keep the generic title only for the legacy root route during migration.
@@ -18,7 +18,7 @@ export function UrbanCastleApp() {
     }
   }, []);
 
-  useBrowserHistorySync();
+  useBrowserHistorySync(historyEnabled);
 
   const authUser = useRDashStore((s) => s.authUser);
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
