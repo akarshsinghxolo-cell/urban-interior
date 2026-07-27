@@ -3,15 +3,14 @@
 import * as React from "react";
 import { useRDashStore } from "./store";
 import type { WorkspaceNavigationSnapshot, WorkspaceOverlaySnapshot } from "./store/ui-types";
+import { workspaceHistoryUrl } from "./workspace-history-url";
 import {
-  ROOT_LAYER,
   browserNavigationState,
   commonPrefixLength,
   isBrowserNavigationState,
   navigationLayerListsEqual,
   navigationLayers,
   type BrowserNavigationState,
-  type NavigationLayer,
 } from "./navigation-history";
 
 function mergedHistoryState(state: BrowserNavigationState): Record<string, unknown> {
@@ -22,9 +21,18 @@ function mergedHistoryState(state: BrowserNavigationState): Record<string, unkno
   return { ...base, ...state };
 }
 
+function managedHistoryUrl(state: BrowserNavigationState): string | undefined {
+  return workspaceHistoryUrl(state.snapshot.moduleId, window.location.pathname);
+}
+
 function pushBrowserState(state: BrowserNavigationState): void {
   try {
-    window.history.pushState(mergedHistoryState(state), "");
+    const url = managedHistoryUrl(state);
+    if (url) {
+      window.history.pushState(mergedHistoryState(state), "", url);
+    } else {
+      window.history.pushState(mergedHistoryState(state), "");
+    }
   } catch {
     // Browser history is best-effort in embedded/private browsing contexts.
   }
@@ -32,7 +40,12 @@ function pushBrowserState(state: BrowserNavigationState): void {
 
 function replaceBrowserState(state: BrowserNavigationState): void {
   try {
-    window.history.replaceState(mergedHistoryState(state), "");
+    const url = managedHistoryUrl(state);
+    if (url) {
+      window.history.replaceState(mergedHistoryState(state), "", url);
+    } else {
+      window.history.replaceState(mergedHistoryState(state), "");
+    }
   } catch {
     // Browser history is best-effort in embedded/private browsing contexts.
   }
@@ -121,12 +134,14 @@ export function useBrowserHistorySync(): void {
   React.useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
-    const rootLayers: NavigationLayer[] = [ROOT_LAYER];
-    const initial = browserNavigationState(rootLayers, desiredSnapshot, nextEntryId());
+    // Seed the first entry with the complete URL-selected layer list. A direct
+    // /workspace/customers load therefore starts at Customer Desk instead of
+    // creating a root Workdesk entry followed by an unnecessary second entry.
+    const initial = browserNavigationState(desiredLayers, desiredSnapshot, nextEntryId());
     entriesRef.current = [initial];
     positionRef.current = 0;
     replaceBrowserState(initial);
-  }, [desiredSnapshot, nextEntryId]);
+  }, [desiredLayers, desiredSnapshot, nextEntryId]);
 
   React.useEffect(() => {
     if (!mountedRef.current || pendingPopEntryIdRef.current) return;
