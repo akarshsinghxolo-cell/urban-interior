@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, X } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { ALL_MODULES, type ModuleDef, type Submodule } from "@/lib/rdash/modules";
-import { canRole, permissionModuleForRoute, type StaffPermissionRecord } from "@/lib/rdash/staff-operations";
+import { canRole, normalizeStaffPermissions, permissionModuleForRoute, type StaffPermissionRecord } from "@/lib/rdash/staff-operations";
 
 // STAGE-4-FIX: stable ref for empty permissions (avoids recreating [] every render)
 const EMPTY_PERMISSIONS: StaffPermissionRecord[] = [];
@@ -171,7 +171,11 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
     const authUser = useRDashStore((s) => s.authUser);
     const db = useRDashStore((s) => s.db);
     const role = authUser?.role || "Owner";
-    const permissions = ((db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || EMPTY_PERMISSIONS);  // STAGE-4-FIX: stable ref
+    const rawPermissions = (db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || EMPTY_PERMISSIONS;
+    const permissions = React.useMemo(
+        () => normalizeStaffPermissions(rawPermissions),
+        [rawPermissions],
+    );
     const canSeeRoute = React.useCallback((route: ModuleDef | Submodule) => canRole(permissions, role, permissionModuleForRoute(route), "view"), [permissions, role]);
     const modules = React.useMemo(() => ALL_MODULES
         .map((module) => ({ ...module, submodules: module.submodules.filter((submodule) => canSeeRoute(submodule)) }))
