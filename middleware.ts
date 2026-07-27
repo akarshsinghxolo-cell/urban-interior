@@ -1,4 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  decodeWorkspaceReturnTo,
+  encodeWorkspaceReturnTo,
+  safeWorkspaceReturnTo,
+  WORKSPACE_RETURN_COOKIE,
+  WORKSPACE_RETURN_MAX_AGE_SECONDS,
+} from "@/lib/rdash/workspace-auth-return";
 
 const PUBLIC = new Set([
   "/signin",
@@ -54,6 +61,11 @@ function corsHeadersFor(origin: string | null): Record<string, string> {
   };
 }
 
+function applyCors(response: NextResponse, cors: Record<string, string>): NextResponse {
+  for (const [key, value] of Object.entries(cors)) response.headers.set(key, value);
+  return response;
+}
+
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const origin = request.headers.get("origin");
@@ -64,33 +76,59 @@ export function middleware(request: NextRequest) {
     if (origin && !isAllowedOrigin(origin)) {
       return new NextResponse(null, { status: 403 });
     }
-    const res = NextResponse.next();
-    for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
-    return res;
+    return applyCors(NextResponse.next(), cors);
   }
 
   if (PUBLIC.has(path) || path.startsWith("/_next/")) {
-    const res = NextResponse.next();
-    for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
-    return res;
+    return applyCors(NextResponse.next(), cors);
   }
 
   const authHeader = request.headers.get("authorization");
-  const hasBearer = authHeader && authHeader.toLowerCase().startsWith("bearer ");
-  if (!request.cookies.get("uc_session")?.value && !hasBearer) {
+  const hasBearer = Boolean(authHeader && authHeader.toLowerCase().startsWith("bearer "));
+  const hasSession = Boolean(request.cookies.get("uc_session")?.value || hasBearer);
+
+  if (!hasSession) {
     if (path.startsWith("/api/")) {
-      const res = NextResponse.json({ error: "Authentication is required." }, { status: 401 });
-      for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
-      return res;
+      return applyCors(
+        NextResponse.json({ error: "Authentication is required." }, { status: 401 }),
+        cors,
+      );
     }
-    const res = NextResponse.redirect(new URL("/signin", request.url));
-    for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
-    return res;
+
+    const signInUrl = new URL("/signin", request.url);
+    const response = NextResponse.redirect(signInUrl);
+    const returnTo = safeWorkspaceReturnTo(`${path}${request.nextUrl.search}`);
+    if (returnTo) {
+      response.cookies.set(WORKSPACE_RETURN_COOKIE, encodeWorkspaceReturnTo(returnTo), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: WORKSPACE_RETURN_MAX_AGE_SECONDS,
+      });
+    }
+    return applyCors(response, cors);
   }
 
-  const res = NextResponse.next();
-  for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
-  return res;
+  // The existing sign-in page navigates to `/` after authentication. Convert
+  // that one request into the original validated workspace destination and
+  // consume the short-lived return cookie so future root visits remain normal.
+  if (path === "/") {
+    const returnTo = decodeWorkspaceReturnTo(request.cookies.get(WORKSPACE_RETURN_COOKIE)?.value);
+    if (returnTo) {
+      const response = NextResponse.redirect(new URL(returnTo, request.url));
+      response.cookies.set(WORKSPACE_RETURN_COOKIE, "", {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: 0,
+      });
+      return applyCors(response, cors);
+    }
+  }
+
+  return applyCors(NextResponse.next(), cors);
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"] };
