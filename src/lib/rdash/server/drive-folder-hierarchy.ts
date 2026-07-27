@@ -6,6 +6,7 @@ import {
   safeSegment,
   type FolderSegment as CoreFolderSegment,
 } from "./direct-upload-storage-core";
+import { currentDriveFolderRouting } from "./drive-folder-routing-context";
 
 export type CanonicalFolderSegment = CoreFolderSegment & {
   legacyKeys?: string[];
@@ -36,6 +37,23 @@ function entityFolder(
 
 function leaf(name: string, key: string, legacyKeys?: string[]): CanonicalFolderSegment {
   return { name, key, ...(legacyKeys?.length ? { legacyKeys } : {}) };
+}
+
+function routingText(): string {
+  const routing = currentDriveFolderRouting();
+  return [
+    routing?.sourceFlow,
+    routing?.attachmentField,
+    routing?.attachmentFieldMode,
+    routing?.role,
+    routing?.kind,
+    routing?.caption,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function routingContains(...tokens: string[]): boolean {
+  const text = routingText();
+  return tokens.some((token) => text.includes(token.toLowerCase()));
 }
 
 export function destinationSegments(
@@ -115,12 +133,26 @@ export function destinationSegments(
     ];
   };
 
+  const siteCommercialRoot = (): CanonicalFolderSegment[] => {
+    if (!site || !customer) targetNotReady("The related Site is not synchronized yet.");
+    return [
+      ...siteRoot(),
+      leaf("Commercial", `site:${site.id}:commercial`, [`customer:${customer.id}:commercial`]),
+    ];
+  };
+
   if (purpose === "customer_document") {
+    if (routingContains("approval") && site) {
+      return [...siteCommercialRoot(), leaf("Approvals", `site:${site.id}:commercial:approvals`)];
+    }
     if (!customer) targetNotReady("The related Customer is not synchronized yet.");
+    const category = routingContains("kyc", "aadhaar", "aadhar", "pan", "gst", "identity")
+      ? leaf("KYC", `customer:${customer.id}:documents:kyc`)
+      : leaf("General", `customer:${customer.id}:documents:general`);
     return [
       ...customerRoot(),
       leaf("Customer Documents", `customer:${customer.id}:documents`),
-      leaf("General", `customer:${customer.id}:documents:general`),
+      category,
     ];
   }
   if (purpose === "communication_attachment") {
@@ -141,35 +173,38 @@ export function destinationSegments(
   }
   if (purpose === "drawing") {
     if (!site) targetNotReady("The related Site is not synchronized yet.");
-    return [
-      ...siteRoot(),
-      leaf("Drawings", `site:${site.id}:drawings`),
-      leaf("Current", `site:${site.id}:drawings:current`),
-    ];
+    const drawingState = routingContains("superseded", "archive")
+      ? leaf("Superseded", `site:${site.id}:drawings:superseded`)
+      : leaf("Current", `site:${site.id}:drawings:current`);
+    return [...siteRoot(), leaf("Drawings", `site:${site.id}:drawings`), drawingState];
   }
   if (purpose === "quotation_document") {
-    if (!site || !customer) targetNotReady("The related Site is not synchronized yet.");
-    return [
-      ...siteRoot(),
-      leaf("Commercial", `site:${site.id}:commercial`, [`customer:${customer.id}:commercial`]),
-      leaf("Quotations", `site:${site.id}:commercial:quotations`),
-    ];
+    if (!site) targetNotReady("The related Site is not synchronized yet.");
+    return [...siteCommercialRoot(), leaf("Quotations", `site:${site.id}:commercial:quotations`)];
   }
   if (purpose === "customer_invoice") {
-    if (!site || !customer) targetNotReady("The related Site is not synchronized yet.");
-    return [
-      ...siteRoot(),
-      leaf("Commercial", `site:${site.id}:commercial`, [`customer:${customer.id}:commercial`]),
-      leaf("Customer Invoices", `site:${site.id}:commercial:customer-invoices`),
-    ];
+    if (!site) targetNotReady("The related Site is not synchronized yet.");
+    return [...siteCommercialRoot(), leaf("Customer Invoices", `site:${site.id}:commercial:customer-invoices`)];
   }
   if (purpose === "work_order_document") {
     if (!workOrder) targetNotReady("The related Work Order is not synchronized yet.");
-    return [...workOrderRoot(), leaf("Documents", `work_order:${workOrder.id}:documents`)];
+    const category = routingContains("variation", "change order", "extra work")
+      ? leaf("Variations", `work_order:${workOrder.id}:variations`)
+      : routingContains("completion", "handover", "closeout")
+        ? leaf("Completion", `work_order:${workOrder.id}:completion`)
+        : leaf("Documents", `work_order:${workOrder.id}:documents`);
+    return [...workOrderRoot(), category];
   }
   if (purpose === "execution_evidence") {
     if (!workOrder) targetNotReady("The related Work Order is not synchronized yet.");
-    return [...workOrderRoot(), leaf("Execution", `work_order:${workOrder.id}:execution`)];
+    const category = routingContains("contractor_material_receipt", "contractor_confirmation_attachment_id", "material receipt")
+      ? leaf("Material Receipts", `work_order:${workOrder.id}:material-receipts`)
+      : routingContains("variation", "change order", "extra work")
+        ? leaf("Variations", `work_order:${workOrder.id}:variations`)
+        : routingContains("completion", "handover", "closeout")
+          ? leaf("Completion", `work_order:${workOrder.id}:completion`)
+          : leaf("Execution", `work_order:${workOrder.id}:execution`);
+    return [...workOrderRoot(), category];
   }
   if (purpose === "purchase_order") {
     if (!purchaseOrder) targetNotReady("The related Purchase Order is not synchronized yet.");
@@ -177,7 +212,12 @@ export function destinationSegments(
   }
   if (purpose === "grn_evidence") {
     if (!purchaseOrder) targetNotReady("The GRN's related Purchase Order is not synchronized yet.");
-    return [...purchaseOrderRoot(), leaf("GRNs", `purchase_order:${purchaseOrder.id}:grns`)];
+    const category = routingContains("delivery_challan_attachment_id", "delivery challan", "challan")
+      ? leaf("Delivery Challans", `purchase_order:${purchaseOrder.id}:delivery-challans`)
+      : routingContains("receiving_proof_attachment_ids", "receiving proof", "receiving evidence")
+        ? leaf("Receiving Evidence", `purchase_order:${purchaseOrder.id}:receiving-evidence`)
+        : leaf("GRNs", `purchase_order:${purchaseOrder.id}:grns`);
+    return [...purchaseOrderRoot(), category];
   }
   if (purpose === "vendor_bill") {
     if (!purchaseOrder) targetNotReady("The Vendor Bill's related Purchase Order is not synchronized yet.");
@@ -185,14 +225,25 @@ export function destinationSegments(
   }
   if (purpose === "vendor_document") {
     if (!vendor) targetNotReady("The related Vendor is not synchronized yet.");
+    const category = routingContains("catalogue", "catalog")
+      ? leaf("Catalogues", `vendor:${vendor.id}:catalogues`)
+      : routingContains("bill", "invoice", "payment", "receipt")
+        ? leaf("Bills", `vendor:${vendor.id}:bills`)
+        : leaf("Business Documents", `vendor:${vendor.id}:business-documents`);
     return [
       leaf("Vendors", "root:vendors"),
       entityFolder("VEND", vendor.id, vendor.name, vendor.locality || vendor.city, "Vendor", `vendor:${vendor.id}`),
-      leaf("Business Documents", `vendor:${vendor.id}:business-documents`),
+      category,
     ];
   }
   if (purpose === "contractor_document") {
     if (!contractor) targetNotReady("The related Contractor is not synchronized yet.");
+    const category = routingContains("photo_attachment_id", "contractor photo", "profile") &&
+      !routingContains("business_card_attachment_id", "business card")
+      ? leaf("Profile", `contractor:${contractor.id}:profile`)
+      : routingContains("payment", "settlement", "bill", "receipt")
+        ? leaf("Payment Documents", `contractor:${contractor.id}:payment-documents`)
+        : leaf("Business Documents", `contractor:${contractor.id}:business-documents`);
     return [
       leaf("Contractors", "root:contractors"),
       entityFolder(
@@ -203,7 +254,7 @@ export function destinationSegments(
         "Contractor",
         `contractor:${contractor.id}`,
       ),
-      leaf("Business Documents", `contractor:${contractor.id}:business-documents`),
+      category,
     ];
   }
   if (purpose === "staff_document") {
