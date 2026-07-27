@@ -28,6 +28,14 @@ jobs:
       - name: Test Phase 2B commit policy
         run: bun run test:phase2b
       - name: Test workspace route registry
-        run: bun run test:routing
+        run: bun test tests/workspace-route-registry.test.ts --reporter=junit --reporter-outfile=route-test.xml
+      - name: Upload route test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-test-diagnostics
+          path: route-test.xml
+          if-no-files-found: ignore
+          retention-days: 1
       - name: Build application
         run: bun run build
