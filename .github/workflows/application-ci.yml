@@ -31,6 +31,8 @@ jobs:
         run: bun run test:routing
       - name: Test workspace route adapter
         run: bun run test:route-adapter
+      - name: Test core entity routes
+        run: bun run test:entity-routes
       - name: Test workspace history URLs
         run: bun run test:history-urls
       - name: Test workspace auth return paths
