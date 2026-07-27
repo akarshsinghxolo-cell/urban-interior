@@ -74,6 +74,8 @@ function summarizeOperations(operations: NonNullable<WorkspaceCommitPayload["ope
 
 function responseWithPayload(response: Response, payload: WorkspaceCommitResponsePayload): Response {
   const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  headers.delete("Content-Encoding");
   headers.set("Content-Type", "application/json");
   return new Response(JSON.stringify(payload), {
     status: response.status,
@@ -191,6 +193,7 @@ export const workspaceOutboxStore = {
 export async function captureWorkspaceCommit(body: BodyInit | null | undefined): Promise<{
   body: BodyInit | null | undefined;
   operationId?: string;
+  defer?: boolean;
 }> {
   if (typeof body !== "string" || !body.trim()) return { body };
   let parsed: WorkspaceCommitPayload;
@@ -218,6 +221,7 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
     uploadBatchIds: [],
     status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
     retryCount: 0,
+    retryAt: syncingItems.length ? (syncingItems[0].retryAt || retryAtSeconds(10)) : undefined,
     summary: summarizeOperations(parsed.operations),
     createdAt: previousSame?.createdAt || timestamp,
     updatedAt: timestamp,
@@ -232,7 +236,11 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
   }
   await uploadIndexedDb.putWorkspaceOutbox(record);
   await refresh();
-  return { body: JSON.stringify({ ...parsed, operationId }), operationId };
+  return {
+    body: JSON.stringify({ ...parsed, operationId }),
+    operationId,
+    defer: syncingItems.length > 0,
+  };
 }
 
 export async function markWorkspaceCommitNetworkFailure(operationId: string, error: unknown): Promise<void> {
