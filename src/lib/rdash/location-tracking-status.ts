@@ -23,23 +23,41 @@ const DEFAULT_STATE: LocationTrackingState = {
 };
 
 let memoryState = DEFAULT_STATE;
+let cachedStorageValue: string | null | undefined;
 
+/**
+ * useSyncExternalStore requires getSnapshot to return the exact same object
+ * while the underlying store has not changed. Cache the serialized value so
+ * ordinary React snapshot checks do not rebuild a new object on every read.
+ */
 export function readLocationTrackingState(): LocationTrackingState {
   if (typeof window === "undefined") return memoryState;
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(KEY) || "null") as Partial<LocationTrackingState> | null;
-    if (parsed?.status && parsed?.mode) memoryState = { ...DEFAULT_STATE, ...parsed };
+    const stored = window.localStorage.getItem(KEY);
+    if (stored === cachedStorageValue) return memoryState;
+    cachedStorageValue = stored;
+    if (!stored) {
+      memoryState = DEFAULT_STATE;
+      return memoryState;
+    }
+    const parsed = JSON.parse(stored) as Partial<LocationTrackingState> | null;
+    memoryState = parsed?.status && parsed?.mode
+      ? { ...DEFAULT_STATE, ...parsed }
+      : DEFAULT_STATE;
   } catch {
-    // Keep the last in-memory state when storage is unavailable.
+    // Keep the last stable in-memory snapshot when storage is unavailable.
   }
   return memoryState;
 }
 
 export function publishLocationTrackingState(patch: Partial<LocationTrackingState>): LocationTrackingState {
-  memoryState = { ...readLocationTrackingState(), ...patch };
+  const nextState = { ...readLocationTrackingState(), ...patch };
+  const serialized = JSON.stringify(nextState);
+  memoryState = nextState;
+  cachedStorageValue = serialized;
   if (typeof window !== "undefined") {
     try {
-      window.localStorage.setItem(KEY, JSON.stringify(memoryState));
+      window.localStorage.setItem(KEY, serialized);
     } catch {
       // Private browsing may block localStorage; the event still updates the UI.
     }
