@@ -73,12 +73,45 @@ describe("workspace history URLs", () => {
     )).toBe("/workspace/visits/visit-1");
   });
 
-  test("keeps later detail kinds on their parent module URL", () => {
+  test("attaches stable URLs to operational and finance detail snapshots", () => {
     expect(workspaceHistoryUrl(
       snapshot("tasks", { kind: "task", recordId: "task-1" }),
       "/workspace/tasks",
       true,
-    )).toBe("/workspace/tasks");
+    )).toBe("/workspace/tasks/task-1");
+    expect(workspaceHistoryUrl(
+      snapshot("tasks", { kind: "followup", recordId: "followup-1" }),
+      "/workspace/tasks",
+      true,
+    )).toBe("/workspace/followups/followup-1");
+    expect(workspaceHistoryUrl(
+      snapshot("payments", { kind: "payment", recordId: "payment-1" }),
+      "/workspace/finance/collections",
+      true,
+    )).toBe("/workspace/payments/payment-1");
+    expect(workspaceHistoryUrl(
+      snapshot("invoices", { kind: "invoice", recordId: "invoice-1" }),
+      "/workspace/finance/invoices",
+      true,
+    )).toBe("/workspace/invoices/invoice-1");
+    expect(workspaceHistoryUrl(
+      snapshot("vendorBills", { kind: "vendorBill", recordId: "vendor-bill-1" }),
+      "/workspace/finance/vendor-bills",
+      true,
+    )).toBe("/workspace/vendor-bills/vendor-bill-1");
+    expect(workspaceHistoryUrl(
+      snapshot("contractorPayments", { kind: "contractorBill", recordId: "contractor-bill-1" }),
+      "/workspace/finance/contractor-bills",
+      true,
+    )).toBe("/workspace/contractor-bills/contractor-bill-1");
+  });
+
+  test("keeps unsupported detail kinds on their parent module URL", () => {
+    expect(workspaceHistoryUrl(
+      snapshot("procurementInventory", { kind: "grn", recordId: "grn-1" }),
+      "/workspace/procurement",
+      true,
+    )).toBe("/workspace/procurement");
   });
 
   test("keeps legacy root navigation state-only during migration", () => {
@@ -95,11 +128,16 @@ describe("workspace history URLs", () => {
     expect(workspaceHistoryUrl(snapshot("staff"), "/workspace", true)).toBe("/workspace/staff");
   });
 
-  test("a direct transaction starts with complete module and detail layers", () => {
+  test("a direct entity starts with complete module and detail layers", () => {
     expect(navigationLayers(snapshot("woTimeline", { kind: "workOrder", recordId: "wo-1" }))).toEqual([
       { type: "root" },
       { type: "module", moduleId: "woTimeline" },
       { type: "detail", kind: "workOrder", recordId: "wo-1" },
+    ]);
+    expect(navigationLayers(snapshot("tasks", { kind: "followup", recordId: "followup-1" }))).toEqual([
+      { type: "root" },
+      { type: "module", moduleId: "tasks" },
+      { type: "detail", kind: "followup", recordId: "followup-1" },
     ]);
     expect(navigationLayers(snapshot("workdesk"))).toEqual([{ type: "root" }]);
   });
