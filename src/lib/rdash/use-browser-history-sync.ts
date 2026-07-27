@@ -22,7 +22,12 @@ function mergedHistoryState(state: BrowserNavigationState): Record<string, unkno
 }
 
 function managedHistoryUrl(state: BrowserNavigationState): string | undefined {
-  return workspaceHistoryUrl(state.snapshot, window.location.pathname);
+  return workspaceHistoryUrl(
+    state.snapshot,
+    window.location.pathname,
+    undefined,
+    window.location.search,
+  );
 }
 
 function pushBrowserState(state: BrowserNavigationState): void {
