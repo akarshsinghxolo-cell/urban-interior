@@ -1,4 +1,5 @@
-import type { WorkspaceNavigationSnapshot } from "./store/ui-types";
+import type { ContextCustomerTab, WorkspaceNavigationSnapshot } from "./store/ui-types";
+import { workspaceUrlWithCustomerTab } from "./workspace-customer-tabs";
 import { workspaceUrlWithDetailTab } from "./workspace-detail-tabs";
 import { workspaceEntityPath, type WorkspaceEntityKind } from "./workspace-entity-routes";
 import { isWorkspacePath, workspacePathForModule } from "./workspace-routes";
@@ -23,16 +24,34 @@ const URL_ENTITY_KINDS = new Set<WorkspaceEntityKind>([
   "contractorBill",
 ]);
 
+type HistoryUrlSnapshot = Pick<
+  WorkspaceNavigationSnapshot,
+  "moduleId" | "detailPanel" | "contextHistory" | "contextHistoryIndex"
+>;
+
+function activeCustomerTab(snapshot: HistoryUrlSnapshot): ContextCustomerTab {
+  const index = snapshot.contextHistoryIndex;
+  const entry = index >= 0 ? snapshot.contextHistory[index] : undefined;
+  if (
+    entry?.kind === "customer" &&
+    entry.recordId === snapshot.detailPanel.recordId
+  ) {
+    return entry.customerTab || "overview";
+  }
+  return "overview";
+}
+
 /**
  * Returns the canonical URL attached to an existing managed history entry.
  * Supported entity inspectors receive stable URLs; temporary overlays keep the
  * current entity URL because they do not replace the detail snapshot.
  *
- * Detail-tab changes update the current entry rather than creating a new Back
- * step. Query parameters are retained only when the target path is unchanged.
+ * Customer and detail-tab changes update the current entry rather than creating
+ * a new Back step. Query parameters are retained only when the target path is
+ * unchanged.
  */
 export function workspaceHistoryUrl(
-  snapshot: Pick<WorkspaceNavigationSnapshot, "moduleId" | "detailPanel">,
+  snapshot: HistoryUrlSnapshot,
   currentPathname: string,
   enabled = WORKSPACE_URL_NAVIGATION_ENABLED,
   currentSearch = "",
@@ -44,9 +63,17 @@ export function workspaceHistoryUrl(
   if (kind && recordId && URL_ENTITY_KINDS.has(kind as WorkspaceEntityKind)) {
     const entityPath = workspaceEntityPath(kind as WorkspaceEntityKind, recordId);
     if (entityPath) {
+      const search = entityPath === currentPathname ? currentSearch : "";
+      if (kind === "customer") {
+        return workspaceUrlWithCustomerTab(
+          entityPath,
+          search,
+          activeCustomerTab(snapshot),
+        );
+      }
       return workspaceUrlWithDetailTab(
         entityPath,
-        entityPath === currentPathname ? currentSearch : "",
+        search,
         kind,
         snapshot.detailPanel.panelTab,
       );

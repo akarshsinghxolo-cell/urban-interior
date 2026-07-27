@@ -8,6 +8,10 @@ import { Toaster } from "@/components/ui/sonner";
 import { detailRecordExists } from "@/lib/rdash/detail-navigation";
 import { useRDashStore } from "@/lib/rdash/store";
 import {
+  workspaceCustomerTabRequest,
+  workspaceUrlWithCustomerTab,
+} from "@/lib/rdash/workspace-customer-tabs";
+import {
   supportsWorkspaceDetailTabs,
   workspaceDetailTabRequest,
   workspaceUrlWithDetailTab,
@@ -22,7 +26,7 @@ import { UrbanCastleApp } from "./UrbanCastleApp";
  *
  * Module routes bootstrap before UrbanCastleApp mounts. Direct entity routes
  * keep the same shell mounted but delay managed browser-history initialization
- * until the secure workspace, requested record and durable detail tab have been
+ * until the secure workspace, requested record and durable tab have been
  * restored. This prevents synthetic module-only or default-tab Back entries.
  */
 export function WorkspaceRouteShell({ children }: { children: React.ReactNode }) {
@@ -33,11 +37,12 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
   const initialSelectionRef = React.useRef(
     selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
   );
-  const initialTabRequestRef = React.useRef(
-    workspaceDetailTabRequest(search, initialSelectionRef.current?.entity?.kind),
-  );
+  const initialEntityKind = initialSelectionRef.current?.entity?.kind;
+  const initialTabExplicit = initialEntityKind === "customer"
+    ? workspaceCustomerTabRequest(search).explicit
+    : workspaceDetailTabRequest(search, initialEntityKind).explicit;
   const historyStartedRef = React.useRef(
-    !initialSelectionRef.current?.entity && !initialTabRequestRef.current.explicit,
+    !initialSelectionRef.current?.entity && !initialTabExplicit,
   );
   const handledEntityRef = React.useRef<string | null>(null);
   const [bootstrapped, setBootstrapped] = React.useState(false);
@@ -45,7 +50,6 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
 
   const authUser = useRDashStore((state) => state.authUser);
   const db = useRDashStore((state) => state.db);
-  const detailPanel = useRDashStore((state) => state.detailPanel);
   const selection = React.useMemo(
     () => selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
     [pathname],
@@ -113,26 +117,42 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
       return;
     }
 
-    const tabRequest = workspaceDetailTabRequest(search, entity.kind);
     const currentUrl = search ? `${pathname}?${search}` : pathname;
-    const canonicalUrl = workspaceUrlWithDetailTab(
-      pathname,
-      search,
-      entity.kind,
-      tabRequest.tab,
-    );
-
     let current = useRDashStore.getState();
     if (current.detailPanel.kind !== entity.kind || current.detailPanel.recordId !== entity.id) {
       current.openDetail(entity.kind, entity.id, selection.moduleId);
       current = useRDashStore.getState();
     }
-    if (
-      supportsWorkspaceDetailTabs(entity.kind) &&
-      current.detailPanel.fromModule === "context" &&
-      current.detailPanel.panelTab !== tabRequest.tab
-    ) {
-      current.setContextDetailTab(tabRequest.tab);
+
+    let canonicalUrl: string;
+    if (entity.kind === "customer") {
+      const tabRequest = workspaceCustomerTabRequest(search);
+      canonicalUrl = workspaceUrlWithCustomerTab(pathname, search, tabRequest.tab);
+      const contextEntry = current.contextHistoryIndex >= 0
+        ? current.contextHistory[current.contextHistoryIndex]
+        : undefined;
+      if (
+        current.detailPanel.fromModule === "context" &&
+        contextEntry?.kind === "customer" &&
+        (contextEntry.customerTab || "overview") !== tabRequest.tab
+      ) {
+        current.setContextCustomerTab(tabRequest.tab);
+      }
+    } else {
+      const tabRequest = workspaceDetailTabRequest(search, entity.kind);
+      canonicalUrl = workspaceUrlWithDetailTab(
+        pathname,
+        search,
+        entity.kind,
+        tabRequest.tab,
+      );
+      if (
+        supportsWorkspaceDetailTabs(entity.kind) &&
+        current.detailPanel.fromModule === "context" &&
+        current.detailPanel.panelTab !== tabRequest.tab
+      ) {
+        current.setContextDetailTab(tabRequest.tab);
+      }
     }
 
     handledEntityRef.current = `opened:${entityKey}`;
