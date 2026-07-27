@@ -4,7 +4,6 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  ArrowRight,
   ArrowUpRight,
   Building2,
   Database,
@@ -16,7 +15,6 @@ import {
   type LucideIcon,
   Lock,
   ShieldCheck,
-  Sparkles,
   TrendingUp,
   UserPlus,
   Users,
@@ -395,18 +393,6 @@ export default function SignInPage() {
                   )}
                 </Button>
 
-                {/* Demo owner credentials — always visible in dev/preview */}
-                <button
-                  type="button"
-                  onClick={() => { setEmail("akarshsingh4@gmail.com"); setPassword("Akarsh@123."); setError(""); }}
-                  className="group flex w-full items-center justify-between gap-2 rounded-lg border border-dashed border-primary/30 bg-primary/[0.03] px-3 py-2 text-left text-xs transition-colors hover:border-primary/50 hover:bg-primary/[0.06]"
-                >
-                  <span className="flex items-center gap-2">
-                    <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    <span className="text-muted-foreground">Use <span className="font-semibold text-foreground">demo owner</span> credentials</span>
-                  </span>
-                  <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-                </button>
               </form>
             ) : (
               <form onSubmit={submitAccessRequest} className="space-y-4">
