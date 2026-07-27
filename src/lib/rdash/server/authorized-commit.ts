@@ -10,6 +10,7 @@ import {
 } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
+import { prepareTargetedCommit } from "./targeted-commit";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -32,12 +33,16 @@ function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): Audit
   };
 }
 
+export type CommitMode = "phase2b-targeted" | "phase2-single-read";
+
 export interface CommitResult {
   revision: number;
   updatedAt: string;
   bumpedRowVersions?: Record<string, number>;
   newRevision?: number;
   patches: WorkspaceOperation[];
+  mode: CommitMode;
+  queryCount?: number;
   timing: {
     loadMs: number;
     authorizeAndValidateMs: number;
@@ -47,10 +52,9 @@ export interface CommitResult {
 }
 
 /**
- * Loads the workspace once for authorization and business validation, then
- * commits the already-authorized operations directly through the atomic RPC.
- * Phase 2A intentionally keeps full validation while removing the second
- * pre-commit read and the post-commit full workspace reconstruction.
+ * Phase 2B uses targeted row reads for common Task, Follow-up, Visit, and
+ * related Thread/Audit mutations. Any unsupported or high-risk operation falls
+ * back to the Phase 2A single-full-read path without changing its behavior.
  */
 export async function commitAuthorizedPostgresOperations(
   user: AuthenticatedUser,
@@ -60,38 +64,58 @@ export async function commitAuthorizedPostgresOperations(
   expectedRowVersions?: Record<string, number>,
 ): Promise<CommitResult> {
   const startedAt = Date.now();
-  const current = await getWorkspace();
-  const loadedAt = Date.now();
-  if (current.revision !== revision) throw new Error("CONFLICT");
+  let commitOperations = operations;
+  let mode: CommitMode = "phase2-single-read";
+  let queryCount: number | undefined;
+  let loadMs = 0;
+  let authorizeAndValidateMs = 0;
 
-  assertWorkspaceMutationAllowed(user, operations, current.data);
+  const targeted = await prepareTargetedCommit(user, revision, commitOperations);
+  if (targeted) {
+    commitOperations = targeted.operations;
+    mode = "phase2b-targeted";
+    queryCount = targeted.queryCount;
+    loadMs = targeted.loadMs;
+    authorizeAndValidateMs = targeted.authorizeAndValidateMs;
+  } else {
+    const loadStartedAt = Date.now();
+    const current = await getWorkspace();
+    const loadedAt = Date.now();
+    if (current.revision !== revision) throw new Error("CONFLICT");
 
-  const candidate = normalizeWorkspace(applyWorkspaceOperations(current.data, operations));
-  const issues = validateBusinessData(candidate);
-  if (issues.length) throw new Error(`INVALID:${issues[0]}`);
+    assertWorkspaceMutationAllowed(user, commitOperations, current.data);
+    const candidate = normalizeWorkspace(applyWorkspaceOperations(current.data, commitOperations));
+    const issues = validateBusinessData(candidate);
+    if (issues.length) throw new Error(`INVALID:${issues[0]}`);
+    const validatedAt = Date.now();
 
-  const auditEntry = audit(user, operations);
+    loadMs = loadedAt - loadStartedAt;
+    authorizeAndValidateMs = validatedAt - loadedAt;
+  }
+
+  const auditEntry = audit(user, commitOperations);
   const operationsWithAudit: WorkspaceOperation[] = [
-    ...operations,
+    ...commitOperations,
     { collection: "auditLog", upsert: [auditEntry as unknown as Record<string, unknown>] },
   ];
-  const validatedAt = Date.now();
 
+  const commitStartedAt = Date.now();
   const result = await commitWorkspaceOperations(revision, operationsWithAudit, expectedRowVersions);
   const committedAt = Date.now();
   const timing = {
-    loadMs: loadedAt - startedAt,
-    authorizeAndValidateMs: validatedAt - loadedAt,
-    commitMs: committedAt - validatedAt,
+    loadMs,
+    authorizeAndValidateMs,
+    commitMs: committedAt - commitStartedAt,
     totalMs: committedAt - startedAt,
   };
 
   console.info("[workspace-commit]", JSON.stringify({
-    mode: "phase2-single-read",
+    mode,
     revision,
     newRevision: result.revision,
     operationCount: operationsWithAudit.length,
     collections: operationsWithAudit.map((operation) => operation.collection),
+    queryCount,
     timing,
   }));
 
@@ -101,6 +125,8 @@ export async function commitAuthorizedPostgresOperations(
     bumpedRowVersions: result.bumpedRowVersions,
     newRevision: result.revision,
     patches: operationsWithAudit,
+    mode,
+    queryCount,
     timing,
   };
 }

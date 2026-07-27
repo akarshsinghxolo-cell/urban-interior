@@ -1,9 +1,13 @@
 /**
  * Supabase REST workspace data layer.
  *
- * Reads remain collection-based. Writes are delegated to the
- * commit_workspace_operations PostgreSQL function so one logical workspace
- * save is atomic and workspace/row CAS checks occur in the same transaction.
+ * Full reads remain available for bootstrap and compatibility paths. Phase 2B
+ * adds row-scoped reads for high-frequency commits so authorization and
+ * validation no longer require reconstructing every collection.
+ *
+ * Writes are delegated to the commit_workspace_operations PostgreSQL function
+ * so one logical workspace save is atomic and workspace/row CAS checks occur
+ * in the same transaction.
  */
 import { getSupabaseAdminClient } from "../../supabase/server";
 import type { WorkspaceOperation } from "../workspace-operations";
@@ -11,7 +15,7 @@ import type { RDashDatabase, Master } from "../types";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 
-const COLLECTION_TO_TABLE: Record<string, string> = {
+export const COLLECTION_TO_TABLE: Record<string, string> = {
   customers: "entity_customers",
   sites: "entity_sites",
   areas: "entity_areas",
@@ -98,6 +102,132 @@ function tableFor(collection: string): string | null {
   return COLLECTION_TO_TABLE[collection] || null;
 }
 
+type RestEntityRow = {
+  id: string;
+  revision?: number;
+  data: unknown;
+};
+
+export type RestWorkspaceReadPlan = {
+  fullCollections?: string[];
+  rowsByCollection?: Record<string, string[]>;
+};
+
+export type RestWorkspaceSubset = {
+  revision: number;
+  data: RDashDatabase;
+  updatedAt: string;
+  rowVersions: Record<string, number>;
+  queryCount: number;
+};
+
+function emptyWorkspaceData(): RDashDatabase {
+  const data: Record<string, unknown> = { master: {} };
+  const master = data.master as Record<string, unknown>;
+  for (const collection of Object.keys(COLLECTION_TO_TABLE)) {
+    if (collection.startsWith("master.")) {
+      master[collection.slice("master.".length)] = [];
+    } else {
+      data[collection] = [];
+    }
+  }
+  data._workspace_mode = "rest";
+  data._data_source = "supabase-rest";
+  return data as unknown as RDashDatabase;
+}
+
+function decodeRow(row: RestEntityRow): Record<string, unknown> | null {
+  try {
+    const value = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
+    return value && typeof value === "object" ? value as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function putCollectionRows(
+  data: RDashDatabase,
+  rowVersions: Record<string, number>,
+  collection: string,
+  rows: RestEntityRow[],
+): void {
+  const decoded = rows.map((row) => {
+    if (typeof row.revision === "number") {
+      rowVersions[row.id] = row.revision;
+      rowVersions[`${collection}:${row.id}`] = row.revision;
+    }
+    return decodeRow(row);
+  }).filter(Boolean) as Array<Record<string, unknown>>;
+
+  if (collection.startsWith("master.")) {
+    const key = collection.slice("master.".length);
+    (data.master as unknown as Record<string, unknown>)[key] = decoded;
+  } else {
+    (data as unknown as Record<string, unknown>)[collection] = decoded;
+  }
+}
+
+async function readRevision(): Promise<{ revision: number; updatedAt: string }> {
+  const admin = getSupabaseAdminClient();
+  const { data: wsRevRow, error } = await admin
+    .from("entity_workspace_revision")
+    .select("revision,updated_at")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not read workspace revision: ${error.message}`);
+  return {
+    revision: typeof wsRevRow?.revision === "number" ? wsRevRow.revision : 0,
+    updatedAt: (wsRevRow?.updated_at as string) || new Date().toISOString(),
+  };
+}
+
+export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promise<RestWorkspaceSubset> {
+  const admin = getSupabaseAdminClient();
+  const revisionState = await readRevision();
+  const fullCollections = new Set((plan.fullCollections || []).filter(Boolean));
+  const rowsByCollection = new Map<string, string[]>();
+
+  for (const [collection, rawIds] of Object.entries(plan.rowsByCollection || {})) {
+    if (fullCollections.has(collection)) continue;
+    const ids = Array.from(new Set((rawIds || []).map((id) => String(id || "").trim()).filter(Boolean)));
+    if (ids.length) rowsByCollection.set(collection, ids);
+  }
+
+  const requestedCollections = Array.from(new Set([
+    ...fullCollections,
+    ...rowsByCollection.keys(),
+  ]));
+
+  const results = await Promise.all(requestedCollections.map(async (collection) => {
+    const table = tableFor(collection);
+    if (!table) throw new Error(`INVALID:Unknown workspace collection ${collection}.`);
+
+    let query = admin.from(table)
+      .select("id,revision,data")
+      .eq("workspace_id", workspaceId);
+    if (!fullCollections.has(collection)) {
+      query = query.in("id", rowsByCollection.get(collection) || []);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`Could not read targeted collection ${collection}: ${error.message}`);
+    return { collection, rows: (data || []) as RestEntityRow[] };
+  }));
+
+  const data = emptyWorkspaceData();
+  const rowVersions: Record<string, number> = {};
+  for (const result of results) {
+    putCollectionRows(data, rowVersions, result.collection, result.rows);
+  }
+
+  return {
+    revision: revisionState.revision,
+    updatedAt: revisionState.updatedAt,
+    data,
+    rowVersions,
+    queryCount: 1 + requestedCollections.length,
+  };
+}
+
 export async function getRestWorkspace(): Promise<{
   revision: number;
   data: RDashDatabase;
@@ -105,16 +235,9 @@ export async function getRestWorkspace(): Promise<{
   rowVersions: Record<string, number>;
 }> {
   const admin = getSupabaseAdminClient();
-  const { data: wsRevRow } = await admin
-    .from("entity_workspace_revision")
-    .select("revision,updated_at")
-    .eq("id", workspaceId)
-    .maybeSingle();
+  const revisionState = await readRevision();
 
-  const revision = typeof wsRevRow?.revision === "number" ? wsRevRow.revision : 0;
-  const updatedAt = (wsRevRow?.updated_at as string) || new Date().toISOString();
-
-  const readCollection = async (collection: string): Promise<{ collection: string; rows: any[] }> => {
+  const readCollection = async (collection: string): Promise<{ collection: string; rows: RestEntityRow[] }> => {
     const table = tableFor(collection);
     if (!table) return { collection, rows: [] };
     const { data, error } = await admin
@@ -122,40 +245,15 @@ export async function getRestWorkspace(): Promise<{
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
     if (error || !data) return { collection, rows: [] };
-    return { collection, rows: data as any[] };
+    return { collection, rows: data as RestEntityRow[] };
   };
 
   const results = await Promise.all(Object.keys(COLLECTION_TO_TABLE).map(readCollection));
-  const data: any = { master: {} };
+  const data = emptyWorkspaceData();
   const rowVersions: Record<string, number> = {};
-
-  for (const { collection, rows } of results) {
-    const decoded = rows
-      .map((row) => {
-        if (typeof row.revision === "number") {
-          // Keep the legacy id key for the current client and also expose the
-          // collision-safe collection-qualified key for newer clients.
-          rowVersions[row.id] = row.revision;
-          rowVersions[`${collection}:${row.id}`] = row.revision;
-        }
-        try {
-          return typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean);
-
-    if (collection.startsWith("master.")) {
-      const key = collection.slice("master.".length) as keyof Master;
-      data.master[key] = decoded;
-    } else {
-      data[collection] = decoded;
-    }
+  for (const result of results) {
+    putCollectionRows(data, rowVersions, result.collection, result.rows);
   }
-
-  data._workspace_mode = "rest";
-  data._data_source = "supabase-rest";
 
   let normalizedData: RDashDatabase;
   try {
@@ -164,10 +262,15 @@ export async function getRestWorkspace(): Promise<{
     normalizedData = attachCustomerLabels(prepareWorkspaceData(data as Partial<RDashDatabase>));
   } catch (error) {
     console.error("[getRestWorkspace] prepareWorkspaceData failed, returning raw data:", error);
-    normalizedData = data as RDashDatabase;
+    normalizedData = data;
   }
 
-  return { revision, data: normalizedData, updatedAt, rowVersions };
+  return {
+    revision: revisionState.revision,
+    data: normalizedData,
+    updatedAt: revisionState.updatedAt,
+    rowVersions,
+  };
 }
 
 export interface AtomicCommitResult {
@@ -275,11 +378,5 @@ export async function resetRestWorkspace(): Promise<{
 }
 
 export async function getRestWorkspaceRevision(): Promise<number> {
-  const admin = getSupabaseAdminClient();
-  const { data } = await admin
-    .from("entity_workspace_revision")
-    .select("revision")
-    .eq("id", workspaceId)
-    .maybeSingle();
-  return typeof data?.revision === "number" ? data.revision : 0;
+  return (await readRevision()).revision;
 }
