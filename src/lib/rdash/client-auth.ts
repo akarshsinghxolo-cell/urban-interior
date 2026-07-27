@@ -2,7 +2,6 @@
 
 import {
   captureWorkspaceCommit,
-  createDeferredWorkspaceCommitResponse,
   markWorkspaceCommitNetworkFailure,
   markWorkspaceCommitResponse,
   rememberWorkspaceResponse,
@@ -64,6 +63,22 @@ export function refreshClientSession(): Promise<boolean> {
   return refreshPromise;
 }
 
+function deferredWorkspaceCommitResponse(operationId: string): Response {
+  return new Response(JSON.stringify({
+    status: "processing",
+    operationId,
+    retryAfterSeconds: 10,
+  }), {
+    status: 202,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "Retry-After": "10",
+      "X-UC-Outbox-Deferred": "1",
+    },
+  });
+}
+
 let fetchPatched = false;
 
 /**
@@ -109,16 +124,7 @@ export function initAuthFetch(): void {
         body = captured.body;
         operationId = captured.operationId;
         if (captured.defer && operationId) {
-          let revision = 0;
-          if (typeof body === "string") {
-            try {
-              const parsed = JSON.parse(body) as { revision?: number };
-              revision = typeof parsed.revision === "number" ? parsed.revision : 0;
-            } catch {
-              // The captured request was already validated; keep the fallback revision.
-            }
-          }
-          deferredResponse = createDeferredWorkspaceCommitResponse(operationId, revision);
+          deferredResponse = deferredWorkspaceCommitResponse(operationId);
         }
       } catch (error) {
         console.error("[WorkspaceOutbox] Could not durably capture this commit; continuing with the online save.", error);
