@@ -40,6 +40,26 @@ describe("runtime efficiency hardening", () => {
     expect(source).not.toContain("scoped-health-deferred");
   });
 
+  test("session refresh keeps the same shared health cache", async () => {
+    const source = await read("src/lib/rdash/client-auth.ts");
+    expect(source).toContain("decodeSessionIdentity");
+    expect(source).toContain("payload.sub || payload.user_id || payload.email");
+    expect(source).toContain("decodeSessionIdentity(previous) !== decodeSessionIdentity(token)");
+    expect(source).not.toContain("function tokenFingerprint");
+  });
+
+  test("workspace deduplication follows the canonical URL rather than a lagging module", async () => {
+    const client = await read("src/lib/rdash/client-auth.ts");
+    expect(client).toContain("WORKSPACE_READ_DEDUPE_TTL_MS = 10_000");
+    expect(client).toContain('headers.get("X-UC-Workspace-Path") || window.location.pathname');
+    expect(client).not.toContain('headers.get("X-UC-Workspace-Module") || ""');
+
+    const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
+    expect(boundary).toContain("workspaceReadTargetForPath(pathname)");
+    expect(boundary).toContain('"X-UC-Workspace-Module": requestedTarget.moduleId');
+    expect(boundary).not.toContain("workspaceReadTargetForModule");
+  });
+
   test("hidden tabs reuse bounded stale health rather than polling the server", async () => {
     const source = await read("src/lib/rdash/client-auth.ts");
     expect(source).toContain("HEALTH_HIDDEN_STALE_MS = 24 * 60 * 60_000");
