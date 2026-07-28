@@ -140,6 +140,12 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain("selectedButtonValues");
     expect(source).toContain("saveTimeoutMs: 4_000");
     expect(source).toContain("entry.config.saveTimeoutMs");
+    expect(source).toContain("onClickCapture");
+    expect(source).toContain("onKeyDownCapture");
+    expect(source).toContain("onPointerDownCapture");
+    expect(source).toContain("closeBypass");
+    expect(source).toContain("requestDialogClose");
+    expect(source).toContain("event.stopImmediatePropagation()");
     expect(source).toContain("legacyDialogFingerprint");
     expect(source).toContain("MutationObserver");
     expect(source).toContain("dirtyFormRegistry.register");
