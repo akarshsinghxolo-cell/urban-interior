@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { buildSeedDatabase } from "@/lib/rdash/seed";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import {
@@ -10,6 +10,10 @@ import {
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
 import { workspaceDeltaSyncIsSafe } from "@/lib/rdash/workspace-delta-sync-policy";
+import {
+  mergeWorkspaceRowVersions,
+  workspaceRowVersionState,
+} from "@/lib/rdash/workspace-row-version-state";
 import { aggregateWorkspaceChangeBatches } from "@/lib/rdash/server/workspace-changes";
 
 function delta(overrides: Partial<WorkspaceDeltaPayload> = {}): WorkspaceDeltaPayload {
@@ -56,6 +60,8 @@ function scopedDatabase(): RDashDatabase {
   metadata._workspace_read_collections = ["tasks", "followups", "master.staff"];
   return database;
 }
+
+afterEach(() => workspaceRowVersionState.resetForTests());
 
 describe("client delta application", () => {
   test("applies only collections represented by the current scoped snapshot", () => {
@@ -106,6 +112,29 @@ describe("client delta application", () => {
       "task-1": 7,
     });
     expect(deletedDeltaVersionKeys(payload)).toEqual(["tasks:task-2", "task-2"]);
+  });
+
+  test("preserves unchanged CAS versions while replacing changed and deleted rows", () => {
+    workspaceRowVersionState.replace({
+      "tasks:task-1": 2,
+      "task-1": 2,
+      "tasks:task-2": 5,
+      "task-2": 5,
+      "visits:visit-1": 3,
+      "visit-1": 3,
+    });
+    const merged = mergeWorkspaceRowVersions(
+      workspaceRowVersionState.getSnapshot(),
+      { "tasks:task-1": 3, "task-1": 3 },
+      ["tasks:task-2", "task-2"],
+    );
+
+    expect(merged).toEqual({
+      "tasks:task-1": 3,
+      "task-1": 3,
+      "visits:visit-1": 3,
+      "visit-1": 3,
+    });
   });
 });
 
@@ -173,7 +202,7 @@ describe("delta synchronization safety policy", () => {
     }
   });
 
-  test("browser orchestrator rechecks safety before every remote application", async () => {
+  test("browser orchestrator rechecks safety and uses the low-egress schedule", async () => {
     const source = await Bun.file("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
     expect(source).toContain("awaitServerSync()");
     expect(source).toContain("currentRunIsSafe(pathname, activeModuleId)");
@@ -184,9 +213,26 @@ describe("delta synchronization safety policy", () => {
     expect(source).toContain("workspaceCollectionFilterParam");
     expect(source).toContain("hydrateSecureWorkspace");
     expect(source).toContain("restoreWorkspaceOutboxOverlay");
+    expect(source).toContain("overlay.db");
+    expect(source).toContain("mergeWorkspaceRowVersions");
+    expect(source).toContain("deletedDeltaVersionKeys");
     expect(source).toContain("visibilitychange");
     expect(source).toContain('window.addEventListener("online"');
-    expect(source).toContain("DELTA_POLL_INTERVAL_MS = 30_000");
+    expect(source).toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"');
+    expect(source).toContain("DELTA_POLL_INTERVAL_MS = 5 * 60_000");
+    expect(source).toContain("DELTA_EVENT_DEBOUNCE_MS = 750");
+    expect(source).not.toContain("DELTA_POLL_INTERVAL_MS = 30_000");
+  });
+
+  test("row-version bridge installs before passive workspace hydration", async () => {
+    const source = await Bun.file("src/lib/rdash/use-workspace-row-version-bridge.ts").text();
+    const app = await Bun.file("src/components/urban-castle/UrbanCastleApp.tsx").text();
+    expect(source).toContain("React.useLayoutEffect");
+    expect(source).toContain("workspaceRowVersionState.replace(input.rowVersions)");
+    expect(source).toContain("hydrateSecureWorkspace: wrapped");
+    expect(app).toContain("useInstallWorkspaceRowVersionBridge()");
+    expect(app.indexOf("useInstallWorkspaceRowVersionBridge()"))
+      .toBeLessThan(app.indexOf("useInstallDirtyFormNavigationGuards()"));
   });
 
   test("changes API validates collection filters", async () => {
