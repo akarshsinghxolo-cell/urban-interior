@@ -13,6 +13,7 @@ import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
 import type { WorkspaceReadScope } from "@/lib/rdash/workspace-read-scope";
 import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
 import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
+import { WorkspaceDeltaSync } from "./WorkspaceDeltaSync";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
 function scopeSupportsReconciliation(scope: WorkspaceReadScope): boolean {
@@ -88,6 +89,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
       <LegacyDirtyFormAdapter />
       <DirtyFormNavigationGuard />
       <WorkspaceScopedReadBoundary />
+      <WorkspaceDeltaSync />
       <ReconcileWorkspaceButton />
     </UploadManagerProvider>
   );
