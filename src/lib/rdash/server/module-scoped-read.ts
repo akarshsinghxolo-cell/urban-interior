@@ -1,6 +1,9 @@
 import type { RDashDatabase } from "../types";
 import { workspaceRouteAccessDecision } from "../workspace-route-access";
-import type { WorkspaceReadScope, WorkspaceReadTarget } from "../workspace-read-scope";
+import type {
+  ModuleWorkspaceReadScope,
+  WorkspaceReadTarget,
+} from "../workspace-read-scope";
 import type { AuthenticatedUser } from "./auth";
 import {
   getWorkspaceSubset,
@@ -124,8 +127,184 @@ export const SITE_SCOPE_COLLECTIONS = Object.freeze([
   "master.fileAssets",
 ] as const);
 
+export const WORKDESK_SCOPE_COLLECTIONS = Object.freeze([
+  "customers",
+  "sites",
+  "workRequired",
+  "quotations",
+  "workOrders",
+  "purchaseOrders",
+  "vendorBills",
+  "contractorBills",
+  "visits",
+  "tasks",
+  "followups",
+  "actions",
+  "payments",
+  "invoices",
+  "blocked",
+  "risks",
+  "threads",
+  "recurringTasks",
+  "approvalPolicies",
+  "commSends",
+  "entityFileAttachments",
+  "auditLog",
+  "master.vendors",
+  "master.contractors",
+  "master.staff",
+  "master.fileAssets",
+] as const);
+
+export const QUOTATION_SCOPE_COLLECTIONS = Object.freeze([
+  "customers",
+  "sites",
+  "areas",
+  "workRequired",
+  "measurementRevisions",
+  "quotations",
+  "acceptedScopes",
+  "workOrders",
+  "tasks",
+  "followups",
+  "actions",
+  "payments",
+  "invoices",
+  "threads",
+  "commSends",
+  "entityFileAttachments",
+  "entityReferenceAssignments",
+  "commercialTerms",
+  "paymentTermTemplates",
+  "taxConfigs",
+  "validityConfigs",
+  "auditLog",
+  "master.units",
+  "master.workCategories",
+  "master.workSubcategories",
+  "master.articles",
+  "master.articleVariants",
+  "master.subcategoryArticleMap",
+  "master.workOptionGroups",
+  "master.workOptionValues",
+  "master.staff",
+  "master.sourcePartners",
+  "master.customerRateSuggestions",
+  "master.fileAssets",
+] as const);
+
+export const FIELD_SCOPE_COLLECTIONS = Object.freeze([
+  "customers",
+  "sites",
+  "areas",
+  "workRequired",
+  "measurementRevisions",
+  "workOrders",
+  "drawings",
+  "executionLogs",
+  "variationRequests",
+  "visits",
+  "tasks",
+  "followups",
+  "actions",
+  "blocked",
+  "risks",
+  "threads",
+  "attendance",
+  "entityFileAttachments",
+  "auditLog",
+  "master.vendors",
+  "master.contractors",
+  "master.staff",
+  "master.fileAssets",
+] as const);
+
+export const PROCUREMENT_SCOPE_COLLECTIONS = Object.freeze([
+  "customers",
+  "sites",
+  "areas",
+  "workRequired",
+  "workOrders",
+  "boqs",
+  "vendorRfqs",
+  "vendorBids",
+  "purchaseOrders",
+  "grns",
+  "inventory",
+  "stockMovements",
+  "dispatches",
+  "vendorBills",
+  "vendorPayments",
+  "tasks",
+  "actions",
+  "threads",
+  "entityFileAttachments",
+  "auditLog",
+  "master.units",
+  "master.workCategories",
+  "master.workSubcategories",
+  "master.articles",
+  "master.articleVariants",
+  "master.subcategoryArticleMap",
+  "master.vendors",
+  "master.staff",
+  "master.vendorRates",
+  "master.vendorRateHistories",
+  "master.fileAssets",
+] as const);
+
+export const FINANCE_SCOPE_COLLECTIONS = Object.freeze([
+  "customers",
+  "sites",
+  "areas",
+  "workRequired",
+  "quotations",
+  "acceptedScopes",
+  "workOrders",
+  "boqs",
+  "purchaseOrders",
+  "grns",
+  "inventory",
+  "stockMovements",
+  "dispatches",
+  "vendorBills",
+  "vendorPayments",
+  "contractorBills",
+  "contractorPayments",
+  "commissions",
+  "workOrderCostLines",
+  "contractorSettlements",
+  "payments",
+  "invoices",
+  "customerReceipts",
+  "tasks",
+  "followups",
+  "actions",
+  "threads",
+  "commercialTerms",
+  "paymentTermTemplates",
+  "taxConfigs",
+  "auditLog",
+  "master.vendors",
+  "master.contractors",
+  "master.staff",
+  "master.sourcePartners",
+  "master.commissionRules",
+  "master.fileAssets",
+] as const);
+
+const COLLECTIONS_BY_SCOPE: Record<ModuleWorkspaceReadScope, readonly string[]> = {
+  customer: CUSTOMER_SCOPE_COLLECTIONS,
+  site: SITE_SCOPE_COLLECTIONS,
+  workdesk: WORKDESK_SCOPE_COLLECTIONS,
+  quotation: QUOTATION_SCOPE_COLLECTIONS,
+  field: FIELD_SCOPE_COLLECTIONS,
+  procurement: PROCUREMENT_SCOPE_COLLECTIONS,
+  finance: FINANCE_SCOPE_COLLECTIONS,
+};
+
 export interface ModuleScopedWorkspace extends WorkspaceSubset {
-  scope: Exclude<WorkspaceReadScope, "full">;
+  scope: ModuleWorkspaceReadScope;
   collectionCount: number;
   loadMs: number;
 }
@@ -188,9 +367,9 @@ export function mergeWorkspaceSubsets(target: WorkspaceSubset, source: Workspace
 }
 
 export function collectionsForWorkspaceReadScope(
-  scope: Exclude<WorkspaceReadScope, "full">,
+  scope: ModuleWorkspaceReadScope,
 ): readonly string[] {
-  return scope === "customer" ? CUSTOMER_SCOPE_COLLECTIONS : SITE_SCOPE_COLLECTIONS;
+  return COLLECTIONS_BY_SCOPE[scope];
 }
 
 export async function getWorkspaceBootstrap(user: AuthenticatedUser): Promise<WorkspaceSubset> {
@@ -222,6 +401,7 @@ async function readAuthorizedScope(
   const scoped = await getWorkspaceSubset({ fullCollections: [...collections] });
   const merged = mergeWorkspaceSubsets(bootstrap, scoped);
   (merged.data as unknown as Record<string, unknown>)._workspace_read_scope = target.scope;
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_mode = target.scope;
   (merged.data as unknown as Record<string, unknown>)._workspace_read_collections = [...new Set([
     ...WORKSPACE_BOOTSTRAP_COLLECTIONS,
     ...(user.staffId ? ["master.staff"] : []),
@@ -241,10 +421,9 @@ async function readAuthorizedScope(
 }
 
 /**
- * Reads a permission bootstrap first, then the Customer/Site module collection
- * set at the same workspace revision. A concurrent write causes one clean retry;
- * callers may fall back to the compatibility full read if the workspace remains
- * too active to produce a coherent scoped snapshot.
+ * Reads a permission bootstrap first, then the route's bounded collection set at
+ * the same workspace revision. A concurrent write causes one clean retry;
+ * callers retain the full-workspace compatibility fallback.
  */
 export async function getModuleScopedWorkspace(
   user: AuthenticatedUser,
