@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRDashStore } from "./store";
 import type { WorkspaceNavigationSnapshot, WorkspaceOverlaySnapshot } from "./store/ui-types";
 import { workspaceHistoryUrl } from "./workspace-history-url";
+import { dirtyFormRegistry } from "./dirty-form-registry";
 import {
   browserNavigationState,
   commonPrefixLength,
@@ -55,6 +56,13 @@ function replaceBrowserState(state: BrowserNavigationState): void {
     // Browser history is best-effort in embedded/private browsing contexts.
   }
 }
+
+type DirtyPopTransition = {
+  phase: "reverting" | "waiting" | "proceeding";
+  previousIndex: number;
+  targetIndex: number;
+  targetState: BrowserNavigationState;
+};
 
 export function useBrowserHistorySync(enabled = true): void {
   const moduleId = useRDashStore((state) => state.activeModuleId);
@@ -129,6 +137,7 @@ export function useBrowserHistorySync(enabled = true): void {
   const sequenceRef = React.useRef(0);
   const applyingPopRef = React.useRef(false);
   const pendingPopEntryIdRef = React.useRef<string | null>(null);
+  const dirtyPopRef = React.useRef<DirtyPopTransition | null>(null);
   const mountedRef = React.useRef(false);
 
   const nextEntryId = React.useCallback(() => {
@@ -252,16 +261,8 @@ export function useBrowserHistorySync(enabled = true): void {
 
   React.useEffect(() => {
     if (!enabled) return;
-    const onPopState = (event: PopStateEvent) => {
-      // Ignore route-level history entries owned by Next.js or another page.
-      if (!isBrowserNavigationState(event.state)) {
-        pendingPopEntryIdRef.current = null;
-        applyingPopRef.current = false;
-        return;
-      }
 
-      const state = event.state;
-      const knownIndex = entriesRef.current.findIndex((entry) => entry.entryId === state.entryId);
+    const applyManagedPop = (state: BrowserNavigationState, knownIndex: number) => {
       if (knownIndex >= 0) {
         positionRef.current = knownIndex;
         entriesRef.current[knownIndex] = state;
@@ -275,6 +276,88 @@ export function useBrowserHistorySync(enabled = true): void {
       pendingPopEntryIdRef.current = null;
       applyingPopRef.current = true;
       useRDashStore.getState().restoreNavigationSnapshot(state.snapshot);
+    };
+
+    const onPopState = (event: PopStateEvent) => {
+      const transition = dirtyPopRef.current;
+      if (transition?.phase === "reverting") {
+        if (isBrowserNavigationState(event.state)) {
+          const restoredIndex = entriesRef.current.findIndex((entry) => entry.entryId === event.state.entryId);
+          if (restoredIndex >= 0) positionRef.current = restoredIndex;
+        }
+        pendingPopEntryIdRef.current = null;
+        applyingPopRef.current = false;
+        transition.phase = "waiting";
+        dirtyPopRef.current = transition;
+
+        if (dirtyFormRegistry.getSnapshot().pendingNavigation) {
+          dirtyPopRef.current = null;
+          return;
+        }
+
+        dirtyFormRegistry.requestNavigation(() => {
+          transition.phase = "proceeding";
+          dirtyPopRef.current = transition;
+          try {
+            window.history.go(transition.targetIndex - transition.previousIndex);
+          } catch {
+            dirtyPopRef.current = null;
+            replaceBrowserState(transition.targetState);
+            applyManagedPop(transition.targetState, transition.targetIndex);
+          }
+        }, {
+          reason: "go Back or Forward",
+          onStay: () => { dirtyPopRef.current = null; },
+        });
+        return;
+      }
+
+      if (transition?.phase === "proceeding") {
+        dirtyPopRef.current = null;
+      }
+
+      // Ignore route-level history entries owned by Next.js or another page.
+      if (!isBrowserNavigationState(event.state)) {
+        pendingPopEntryIdRef.current = null;
+        applyingPopRef.current = false;
+        return;
+      }
+
+      const state = event.state;
+      const knownIndex = entriesRef.current.findIndex((entry) => entry.entryId === state.entryId);
+
+      if (dirtyFormRegistry.hasDirtyForms()) {
+        const previousIndex = positionRef.current;
+        if (knownIndex >= 0 && knownIndex !== previousIndex) {
+          dirtyPopRef.current = {
+            phase: "reverting",
+            previousIndex,
+            targetIndex: knownIndex,
+            targetState: state,
+          };
+          pendingPopEntryIdRef.current = null;
+          applyingPopRef.current = false;
+          try {
+            window.history.go(previousIndex - knownIndex);
+            return;
+          } catch {
+            dirtyPopRef.current = null;
+          }
+        }
+
+        const current = entriesRef.current[previousIndex];
+        if (current) replaceBrowserState(current);
+        dirtyFormRegistry.requestNavigation(() => {
+          replaceBrowserState(state);
+          applyManagedPop(state, knownIndex);
+        }, {
+          reason: "go Back or Forward",
+          onStay: () => { if (current) replaceBrowserState(current); },
+        });
+        return;
+      }
+
+      applyManagedPop(state, knownIndex);
     };
 
     window.addEventListener("popstate", onPopState);
