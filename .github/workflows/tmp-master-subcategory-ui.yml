@@ -1,0 +1,80 @@
+name: Apply annotated Master Setup UI changes
+
+on:
+  push:
+    branches:
+      - feature/master-subcategory-rename-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/master-subcategory-rename-ui
+          fetch-depth: 0
+
+      - name: Patch Master Setup category UI
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("src/components/rdash/modules/WorkCategoryMasterModule.tsx")
+          text = path.read_text(encoding="utf-8")
+
+          # Standardize only the user-facing term. Internal IDs and data types stay unchanged.
+          text = (
+              text.replace("Submodules", "Sub categories")
+                  .replace("Submodule", "Sub category")
+                  .replace("submodules", "sub categories")
+                  .replace("submodule", "sub category")
+          )
+
+          replacements = [
+              (
+                  '<Button size="sm" variant="outline" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Add sub category</Button>',
+                  '<Button size="sm" variant="outline" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Sub category</Button>',
+              ),
+              (
+                  '    const [materialsOpen, setMaterialsOpen] = React.useState(false);\n',
+                  '    const [materialsOpen, setMaterialsOpen] = React.useState(false);\n    const [editingName, setEditingName] = React.useState(false);\n',
+              ),
+              (
+                  '          <span className="block truncate text-sm font-semibold">{work.name}</span>',
+                  '''          {editingName ? (<Input autoFocus defaultValue={work.name} onClick={(event) => event.stopPropagation()} onBlur={(event) => {\n            if (event.target.value !== work.name)\n                updateWorkItem(work.id, { name: event.target.value });\n            setEditingName(false);\n        }} onKeyDown={(event) => {\n            if (event.key === "Enter") {\n                event.preventDefault();\n                if (event.currentTarget.value !== work.name)\n                    updateWorkItem(work.id, { name: event.currentTarget.value });\n                setEditingName(false);\n            }\n            if (event.key === "Escape")\n                setEditingName(false);\n        }} className="h-8 max-w-md text-sm font-semibold"/>) : (<span className="block truncate text-sm font-semibold">{work.name}</span>)}''',
+              ),
+              (
+                  '      <div className="flex items-center gap-1.5">\n        <StatusBadge label={`${total.toLocaleString("en-IN")} / ${workUnit}`} className="border-primary/20 bg-primary/10 text-primary"/>',
+                  '      <div className="flex items-center gap-1.5">\n        <Button size="icon" variant="ghost" aria-label={`Rename ${work.name}`} onClick={() => setEditingName(true)}><Pencil className="h-4 w-4"/></Button>\n        <StatusBadge label={`${total.toLocaleString("en-IN")} / ${workUnit}`} className="border-primary/20 bg-primary/10 text-primary"/>',
+              ),
+              (
+                  '      <div className="mt-3"><Input defaultValue={work.name} onBlur={(event) => event.target.value !== work.name && updateWorkItem(work.id, { name: event.target.value })} className="h-8 max-w-md text-sm font-semibold"/></div>\n',
+                  '',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match, found {count}: {old[:120]}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text, encoding="utf-8")
+
+          test_path = Path("tests/work-category-master-ui.test.ts")
+          test_path.write_text('''import { describe, expect, test } from "bun:test";\n\nconst source = await Bun.file("src/components/rdash/modules/WorkCategoryMasterModule.tsx").text();\n\ndescribe("Work & Rate Master category controls", () => {\n  test("uses the Sub category label consistently", () => {\n    expect(source).toContain('> Sub category</Button>');\n    expect(source).toContain('label="Sub categories"');\n    expect(source).not.toContain("Add submodule");\n    expect(source).not.toContain("Submodules");\n  });\n\n  test("renames sub categories from a pencil action instead of an always-visible input", () => {\n    expect(source).toContain("const [editingName, setEditingName] = React.useState(false)");\n    expect(source).toContain('aria-label={`Rename ${work.name}`}');\n    expect(source).toContain("editingName ? (<Input autoFocus");\n    expect(source).not.toContain('<div className="mt-3"><Input defaultValue={work.name}');\n  });\n});\n''', encoding="utf-8")
+
+          Path(".github/workflows/tmp-master-subcategory-ui.yml").unlink()
+
+      - name: Commit patched UI
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/rdash/modules/WorkCategoryMasterModule.tsx tests/work-category-master-ui.test.ts .github/workflows/tmp-master-subcategory-ui.yml
+          git commit -m "Refine Master Setup sub-category rename controls"
+          git push origin HEAD:feature/master-subcategory-rename-ui
