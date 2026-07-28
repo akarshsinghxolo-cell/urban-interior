@@ -178,6 +178,10 @@ export function LegacyDirtyFormAdapter(): null {
       });
     };
 
+    const syncAllManagedDialogs = () => {
+      for (const entry of managed.values()) syncManagedDialog(entry);
+    };
+
     const closeManagedDialog = (entry: ManagedLegacyDialog): boolean => {
       if (!entry.dialog.isConnected) return true;
       const button = closeButtonFor(entry);
@@ -287,14 +291,25 @@ export function LegacyDirtyFormAdapter(): null {
     };
 
     const topDirtyEntry = (): ManagedLegacyDialog | undefined => {
+      syncAllManagedDialogs();
       const visible = [...managed.values()].filter((entry) => entry.dialog.isConnected && isDirty(entry));
       return visible[visible.length - 1];
     };
 
+    const onFormValueCapture = () => {
+      // Native input/select values have changed before the capture listener runs,
+      // so update the registry synchronously before a same-interaction navigation.
+      syncAllManagedDialogs();
+      scheduleScan();
+    };
+
     const onClickCapture = (event: MouseEvent) => {
+      syncAllManagedDialogs();
       const target = event.target;
       if (!(target instanceof Node)) return;
-      const button = target instanceof Element ? target.closest<HTMLButtonElement>("button") : null;
+      const button = target instanceof Element
+        ? target.closest("button") as HTMLButtonElement | null
+        : null;
       if (!button) return;
       const entry = entryContaining(button);
       if (!entry || !isDirty(entry)) return;
@@ -322,6 +337,7 @@ export function LegacyDirtyFormAdapter(): null {
     };
 
     const onPointerDownCapture = (event: PointerEvent) => {
+      syncAllManagedDialogs();
       const target = event.target;
       if (!(target instanceof Element) || !target.closest('[data-slot="dialog-overlay"]')) return;
       const entry = topDirtyEntry();
@@ -337,8 +353,8 @@ export function LegacyDirtyFormAdapter(): null {
       subtree: true,
       characterData: true,
     });
-    document.addEventListener("input", scheduleScan, true);
-    document.addEventListener("change", scheduleScan, true);
+    document.addEventListener("input", onFormValueCapture, true);
+    document.addEventListener("change", onFormValueCapture, true);
     document.addEventListener("click", scheduleScan, true);
     document.addEventListener("click", onClickCapture, true);
     document.addEventListener("keydown", onKeyDownCapture, true);
@@ -347,8 +363,8 @@ export function LegacyDirtyFormAdapter(): null {
 
     return () => {
       observer.disconnect();
-      document.removeEventListener("input", scheduleScan, true);
-      document.removeEventListener("change", scheduleScan, true);
+      document.removeEventListener("input", onFormValueCapture, true);
+      document.removeEventListener("change", onFormValueCapture, true);
       document.removeEventListener("click", scheduleScan, true);
       document.removeEventListener("click", onClickCapture, true);
       document.removeEventListener("keydown", onKeyDownCapture, true);
