@@ -45,6 +45,8 @@ jobs:
         run: bun run test:location-presentation
       - name: Test workspace share links
         run: bun run test:share-links
+      - name: Test workspace exit guard
+        run: bun run test:exit-guard
       - name: Test workspace auth return paths
         run: bun run test:auth-return
       - name: Test workspace route access
