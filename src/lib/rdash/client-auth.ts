@@ -130,6 +130,7 @@ export function initAuthFetch(): void {
       });
     }
 
+    const deferReadState = headers.get("X-UC-Read-State-Deferred") === "1";
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
     let deferredResponse: Response | undefined;
@@ -156,7 +157,7 @@ export function initAuthFetch(): void {
       responseReceived = true;
 
       if (isWorkspaceRead) {
-        if (response.ok) workspaceReadState.recordResponse(response);
+        if (response.ok && !deferReadState) workspaceReadState.recordResponse(response);
         try {
           await rememberWorkspaceResponse(response.clone());
         } catch (error) {
