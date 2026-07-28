@@ -47,6 +47,8 @@ jobs:
         run: bun run test:share-links
       - name: Test workspace exit guard
         run: bun run test:exit-guard
+      - name: Test dirty form navigation guard
+        run: bun run test:dirty-form-guard
       - name: Test module-scoped workspace reads
         run: bun run test:module-scoped-reads
       - name: Test entity-scoped workspace reads
