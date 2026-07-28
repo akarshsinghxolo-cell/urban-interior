@@ -1,15 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Database, LoaderCircle } from "lucide-react";
-import { toast } from "sonner";
+import { AlertTriangle, Database, LoaderCircle, RotateCw } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import {
   workspaceReadScopeForModule,
   workspaceReadScopeIsCompatible,
 } from "@/lib/rdash/workspace-read-scope";
-import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
+import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
+import { Button } from "@/components/ui/button";
 
 interface WorkspaceReadPayload {
   error?: string;
@@ -37,8 +37,10 @@ export function WorkspaceScopedReadBoundary() {
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
   const requestedScope = workspaceReadScopeForModule(activeModuleId);
+  const needsExpansion = Boolean(authUser) && !workspaceReadScopeIsCompatible(readState.scope, requestedScope);
   const [loading, setLoading] = React.useState(false);
-  const attemptedRef = React.useRef<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = React.useState(0);
   const inFlightRef = React.useRef(false);
   const mountedRef = React.useRef(true);
 
@@ -47,15 +49,7 @@ export function WorkspaceScopedReadBoundary() {
   }, []);
 
   React.useEffect(() => {
-    if (!authUser || inFlightRef.current) return;
-    if (workspaceReadScopeIsCompatible(readState.scope, requestedScope)) {
-      attemptedRef.current = null;
-      return;
-    }
-
-    const attemptKey = `${readState.scope}->${requestedScope}:${activeModuleId}`;
-    if (attemptedRef.current === attemptKey) return;
-    attemptedRef.current = attemptKey;
+    if (!needsExpansion || !authUser || inFlightRef.current || error) return;
     inFlightRef.current = true;
     setLoading(true);
 
@@ -64,6 +58,7 @@ export function WorkspaceScopedReadBoundary() {
       cache: "no-store",
       headers: {
         "X-UC-Workspace-Module": activeModuleId,
+        "X-UC-Read-State-Deferred": "1",
       },
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
@@ -92,31 +87,47 @@ export function WorkspaceScopedReadBoundary() {
             : "Locally saved changes are waiting to synchronize.",
         });
       }
-      attemptedRef.current = null;
-    }).catch((error) => {
+      workspaceReadState.recordResponse(response);
+      setError(null);
+    }).catch((caught) => {
       if (!mountedRef.current) return;
-      toast.error("Module data could not be loaded", {
-        description: error instanceof Error ? error.message : undefined,
-        duration: 7000,
-      });
+      setError(caught instanceof Error ? caught.message : "The requested workspace module could not be loaded.");
     }).finally(() => {
       inFlightRef.current = false;
       if (mountedRef.current) setLoading(false);
     });
-  }, [activeModuleId, authUser, hydrateSecureWorkspace, readState.scope, requestedScope]);
+  }, [activeModuleId, authUser, error, hydrateSecureWorkspace, needsExpansion, retryNonce]);
 
-  if (!loading) return null;
+  if (!needsExpansion) return null;
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/75 p-4 backdrop-blur-sm">
-      <div className="flex w-full max-w-sm items-center gap-3 rounded-xl border border-border bg-card p-4 shadow-xl">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Database className="h-5 w-5" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold">Loading module data</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">Expanding the secure workspace without interrupting pending changes.</p>
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl">
+        <div className="flex items-start gap-3">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${error ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>
+            {error ? <AlertTriangle className="h-5 w-5" /> : <Database className="h-5 w-5" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold">{error ? "Module data unavailable" : "Loading module data"}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {error || "Expanding the secure workspace without interrupting pending changes."}
+            </p>
+          </div>
+          {!error ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
         </div>
-        <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" />
+        {error ? (
+          <Button
+            type="button"
+            size="sm"
+            className="mt-4 w-full"
+            onClick={() => {
+              setError(null);
+              setRetryNonce((value) => value + 1);
+            }}
+            disabled={loading}
+          >
+            <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry module data
+          </Button>
+        ) : null}
       </div>
     </div>
   );
