@@ -133,9 +133,7 @@ async function sharedHealthRead(
   const force = init?.cache === "reload" || headers.get("X-UC-Health-Refresh") === "1";
   const now = Date.now();
   if (!force && healthResponseCache && healthResponseCache.expiresAt > now) {
-    const response = healthResponseCache.response.clone();
-    response.headers.set("X-UC-Health-Client-Cache", "hit");
-    return response;
+    return healthResponseCache.response.clone();
   }
   if (healthRequest) return (await healthRequest).clone();
 
