@@ -10,6 +10,7 @@ import { NotificationCenter } from "./NotificationCenter";
 import { CreateMenu } from "./CreateMenu";
 import { DemoModeBadge } from "./DemoModeBadge";
 import { WorkspaceTabs } from "./WorkspaceTabs";
+import { WorkspaceLocationBreadcrumbs } from "./WorkspaceLocationBreadcrumbs";
 import { EnhancedSearch } from "./EnhancedSearch";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -118,6 +119,7 @@ export function WorkspaceHeader() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <WorkspaceLocationBreadcrumbs />
       <WorkspaceTabs />
     </header>
   );

@@ -126,7 +126,7 @@ describe("workspace history URLs", () => {
     )).toBe("/workspace/contractor-bills/contractor-bill-1");
   });
 
-  test("adds durable thread and history tabs to the same entity history entry", () => {
+  test("adds only rendered record tabs to the same entity history entry", () => {
     expect(workspaceHistoryUrl(
       snapshot("tasks", { kind: "task", recordId: "task-1", panelTab: "thread" }),
       "/workspace/tasks/task-1",
@@ -137,8 +137,8 @@ describe("workspace history URLs", () => {
       snapshot("invoices", { kind: "invoice", recordId: "invoice-1", panelTab: "history" }),
       "/workspace/invoices/invoice-1",
       true,
-      "?tab=thread",
-    )).toBe("/workspace/invoices/invoice-1?tab=history");
+      "?tab=thread&source=search",
+    )).toBe("/workspace/invoices/invoice-1?source=search");
   });
 
   test("adds durable customer workspace tabs from the active context entry", () => {

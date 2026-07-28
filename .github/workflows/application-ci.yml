@@ -41,6 +41,8 @@ jobs:
         run: bun run test:customer-tabs
       - name: Test workspace task scope
         run: bun run test:task-scope
+      - name: Test workspace location presentation
+        run: bun run test:location-presentation
       - name: Test workspace auth return paths
         run: bun run test:auth-return
       - name: Test workspace route access

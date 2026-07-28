@@ -16,6 +16,7 @@ import {
   workspaceDetailTabRequest,
   workspaceUrlWithDetailTab,
 } from "@/lib/rdash/workspace-detail-tabs";
+import { workspaceLocationPresentation } from "@/lib/rdash/workspace-location-presentation";
 import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
 import { selectWorkspaceRoute } from "@/lib/rdash/workspace-route-adapter";
 import { workspacePathForModule } from "@/lib/rdash/workspace-routes";
@@ -50,6 +51,10 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
 
   const authUser = useRDashStore((state) => state.authUser);
   const db = useRDashStore((state) => state.db);
+  const activeModuleId = useRDashStore((state) => state.activeModuleId);
+  const detailPanel = useRDashStore((state) => state.detailPanel);
+  const contextHistory = useRDashStore((state) => state.contextHistory);
+  const contextHistoryIndex = useRDashStore((state) => state.contextHistoryIndex);
   const selection = React.useMemo(
     () => selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
     [pathname],
@@ -78,6 +83,17 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
     }
     setBootstrapped(true);
   }, [pathname, router, search, startHistory]);
+
+  React.useEffect(() => {
+    const moduleId = selection?.moduleId || activeModuleId;
+    document.title = workspaceLocationPresentation({
+      db,
+      moduleId,
+      detail: detailPanel,
+      contextHistory,
+      contextHistoryIndex,
+    }).documentTitle;
+  }, [activeModuleId, contextHistory, contextHistoryIndex, db, detailPanel, selection]);
 
   React.useEffect(() => {
     const entity = selection?.entity;
