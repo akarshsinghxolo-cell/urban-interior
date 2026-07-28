@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceOutbox } from "@/lib/uploads/use-workspace-outbox";
 import { discardWorkspaceOutbox, retryWorkspaceOutbox } from "@/lib/uploads/workspace-outbox";
+import { allowNextWorkspaceExit } from "@/lib/uploads/workspace-exit-guard";
 import type { WorkspaceCommitOutboxRecord } from "@/lib/uploads/workspace-outbox-types";
 
 export function PendingChangesPanel() {
@@ -60,6 +61,7 @@ function PendingChangeRow({ item }: { item: WorkspaceCommitOutboxRecord }) {
     if (!window.confirm("Discard every locally pending workspace change and reload the authoritative server version? This cannot be undone.")) return;
     try {
       await discardWorkspaceOutbox();
+      allowNextWorkspaceExit();
       window.location.reload();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The locally saved changes could not be discarded.");
