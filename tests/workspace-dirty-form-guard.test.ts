@@ -95,6 +95,7 @@ describe("dirty form integration boundaries", () => {
 
     expect(app).toContain("useInstallDirtyFormNavigationGuards");
     expect(app).toContain("DirtyFormNavigationGuard");
+    expect(app).toContain("LegacyDirtyFormAdapter");
     expect(history).toContain("dirtyFormRegistry.hasDirtyForms()");
     expect(history).toContain('phase: "reverting"');
     expect(exitGuard).toContain("dirtyForms.dirtyForms.length > 0");
@@ -108,5 +109,22 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain("save: persistChanges");
     expect(source).toContain("discard: () =>");
     expect(source).toContain("dirtyFormRegistry.markClean(formId)");
+  });
+
+  test("legacy high-risk dialogs use the compatibility registry adapter", async () => {
+    const source = await Bun.file("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").text();
+
+    expect(source).toContain("New quotation");
+    expect(source).toContain("Edit BOQ rate");
+    expect(source).toContain("Create Purchase Order");
+    expect(source).toContain("Direct Award PO");
+    expect(source).toContain("Record vendor bid");
+    expect(source).toContain("Invite contractor bid");
+    expect(source).toContain("Direct Award Contractor");
+    expect(source).toContain("legacyDialogFingerprint");
+    expect(source).toContain("MutationObserver");
+    expect(source).toContain("dirtyFormRegistry.register");
+    expect(source).toContain("dirtyFormRegistry.markClean(entry.id)");
+    expect(source).toContain("waitForDialogClose");
   });
 });
