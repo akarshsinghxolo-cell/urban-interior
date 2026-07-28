@@ -1,6 +1,7 @@
 "use client";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
 import * as React from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ListTodo, CheckCircle2, CalendarDays, Users, Repeat, PhoneCall, RefreshCw, Plus, CheckSquare, XCircle, MessageSquare, Send, } from "lucide-react";
 import { useRDashStore, type SavedView } from "@/lib/rdash/store";
@@ -20,9 +21,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-type Scope = "all" | "today" | "daily" | "weekly" | "client" | "site" | "staff" | "completed" | "calls" | "quotation" | "payment";
+import { WORKSPACE_URL_NAVIGATION_ENABLED } from "@/lib/rdash/workspace-history-url";
+import {
+    isWorkspaceTaskScope,
+    workspaceTaskScopeRequest,
+    workspaceUrlWithTaskScope,
+    type WorkspaceTaskScope,
+} from "@/lib/rdash/workspace-task-scope";
+type Scope = WorkspaceTaskScope | "calls" | "quotation" | "payment";
 const SCOPES: {
-    key: Scope;
+    key: WorkspaceTaskScope;
     label: string;
 }[] = [
     { key: "all", label: "All" },
@@ -40,6 +48,9 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
     filterPresets?: FilterPreset[];
     dataSource?: DataSource;
 }) {
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+    const search = searchParams.toString();
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const updateTask = useRDashStore((s) => s.updateTask);
@@ -49,6 +60,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
     const addFollowup = useRDashStore((s) => s.addFollowup);
     const runFollowupReconciliation = useRDashStore((s) => s.runFollowupReconciliation);
     const currentUser = useRDashStore((s) => s.currentUser);
+    const activeWorkspaceModuleId = useRDashStore((state) => state.activeModuleId);
     const user = currentUser();
     // I: "+ New follow-up" dialog state.
     const [createFollowupOpen, setCreateFollowupOpen] = React.useState(false);
@@ -61,10 +73,57 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
         catch { }
     }, [runFollowupReconciliation, user.role]);
     const presets = filterPresets && filterPresets.length > 0 ? filterPresets : null;
+    const urlScopeEnabled = WORKSPACE_URL_NAVIGATION_ENABLED && moduleId === "tasks" && !presets && pathname === "/workspace/tasks";
+    const initialScope = urlScopeEnabled ? workspaceTaskScopeRequest(search).scope : "all";
     const [activePresetId, setActivePresetId] = React.useState<string>(presets?.[0]?.id ?? "all");
-    const [scope, setScope] = React.useState<Scope>("all");
+    const [scope, setScope] = React.useState<Scope>(initialScope);
     const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
-    const activeWorkspaceModuleId = useRDashStore((state) => state.activeModuleId);
+    const currentSearchRef = React.useRef(search);
+    const replaceScopeUrl = React.useCallback((nextScope: WorkspaceTaskScope, sourceSearch = currentSearchRef.current) => {
+        if (!urlScopeEnabled || typeof window === "undefined")
+            return;
+        const nextUrl = workspaceUrlWithTaskScope(pathname, sourceSearch, nextScope);
+        const currentUrl = `${window.location.pathname}${window.location.search}`;
+        if (nextUrl !== currentUrl) {
+            try {
+                window.history.replaceState(window.history.state, "", nextUrl);
+            }
+            catch { }
+        }
+        const queryIndex = nextUrl.indexOf("?");
+        currentSearchRef.current = queryIndex >= 0 ? nextUrl.slice(queryIndex + 1) : "";
+    }, [pathname, urlScopeEnabled]);
+    React.useEffect(() => {
+        currentSearchRef.current = search;
+        if (!urlScopeEnabled)
+            return;
+        const request = workspaceTaskScopeRequest(search);
+        setScope(request.scope);
+        replaceScopeUrl(request.scope, search);
+    }, [replaceScopeUrl, search, urlScopeEnabled]);
+    React.useEffect(() => {
+        if (!urlScopeEnabled)
+            return;
+        const syncFromLocation = () => {
+            const locationSearch = window.location.search.slice(1);
+            currentSearchRef.current = locationSearch;
+            const request = workspaceTaskScopeRequest(locationSearch);
+            setScope(request.scope);
+            replaceScopeUrl(request.scope, locationSearch);
+        };
+        window.addEventListener("popstate", syncFromLocation);
+        return () => window.removeEventListener("popstate", syncFromLocation);
+    }, [replaceScopeUrl, urlScopeEnabled]);
+    const handlePresetChange = (id: string) => {
+        setActivePresetId(id);
+        setActiveSavedViewId(null);
+    };
+    const handleScopeChange = React.useCallback((nextScope: WorkspaceTaskScope, clearSavedView = true) => {
+        setScope(nextScope);
+        replaceScopeUrl(nextScope);
+        if (clearSavedView)
+            setActiveSavedViewId(null);
+    }, [replaceScopeUrl]);
     React.useEffect(() => {
         if (activeWorkspaceModuleId !== moduleId || (moduleId !== "tasks" && moduleId !== "followups" && moduleId !== "history"))
             return;
@@ -87,23 +146,14 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
             }
             else if (!presets && idx < SCOPES.length) {
                 e.preventDefault();
-                const s = SCOPES[idx];
-                setScope(s.key);
-                setActiveSavedViewId(null);
-                toast.info(`Scope: ${s.label}`, { duration: 1500 });
+                const nextScope = SCOPES[idx];
+                handleScopeChange(nextScope.key);
+                toast.info(`Scope: ${nextScope.label}`, { duration: 1500 });
             }
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [presets, moduleId, activeWorkspaceModuleId]);
-    const handlePresetChange = (id: string) => {
-        setActivePresetId(id);
-        setActiveSavedViewId(null);
-    };
-    const handleScopeChange = (s: Scope) => {
-        setScope(s);
-        setActiveSavedViewId(null);
-    };
+    }, [presets, moduleId, activeWorkspaceModuleId, handleScopeChange]);
     const handleApplySavedView = (view: SavedView) => {
         if (presets) {
             if (view.presetId && presets.some((p) => p.id === view.presetId)) {
@@ -114,7 +164,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
             }
         }
         else if (view.extra?.scope) {
-            setScope(view.extra.scope as Scope);
+            handleScopeChange(isWorkspaceTaskScope(view.extra.scope) ? view.extra.scope : "all", false);
         }
         setActiveSavedViewId(view.id);
     };
