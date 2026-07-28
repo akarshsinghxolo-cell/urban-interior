@@ -14,51 +14,33 @@ export type WorkspaceReadScope =
   | "quotation"
   | "field"
   | "procurement"
-  | "finance";
+  | "finance"
+  | "media"
+  | "hr"
+  | "master"
+  | "reports"
+  | "system";
 export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "full">;
 export type RowScopedWorkspaceEntityKind = Extract<WorkspaceEntityKind, "customer" | "site">;
 
-const MODULE_SCOPE_BY_ID = new Map<string, ModuleWorkspaceReadScope>([
-  ["customerDesk", "customer"],
-  ["customerTimeline", "customer"],
-  ["customerRequests", "customer"],
+function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
+  const map = new Map<string, ModuleWorkspaceReadScope>();
+  ["customerDesk", "customerTimeline", "customerRequests", "salesPipeline"].forEach((id) => map.set(id, "customer"));
+  ["siteExecution", "drawings", "executionLogs", "woTimeline", "contractorDetail", "contractorRates", "contractorPerformance", "contractors"].forEach((id) => map.set(id, "site"));
+  ["workdesk", "unifiedThreadInbox", "tasks", "blockedRisks", "approvals", "calendarRecurring"].forEach((id) => map.set(id, "workdesk"));
+  ["quotationDesk", "quotationConfig"].forEach((id) => map.set(id, "quotation"));
+  ["fieldOperations", "siteMeasurement", "visitProofs", "fieldMode", "gpsTracking"].forEach((id) => map.set(id, "field"));
+  ["procurementInventory", "boqControlCentre", "grn", "inventory", "dispatch", "boq", "vendors", "vendorRates", "rateFinder", "vendorPerformance"].forEach((id) => map.set(id, "procurement"));
+  ["financeDesk", "payments", "invoices", "vendorBills", "contractorPayments", "profitability", "commissions", "gstReturns", "siteProfitability", "workOrderPnl"].forEach((id) => map.set(id, "finance"));
+  ["mediaCommunication", "driveManager", "communicationCentre"].forEach((id) => map.set(id, "media"));
+  ["hrStaff", "attendancePayroll", "staffSalary", "staff"].forEach((id) => map.set(id, "hr"));
+  ["masterSetup"].forEach((id) => map.set(id, "master"));
+  ["reportsDesk", "salesAnalytics", "collectionAnalytics", "operationsAnalytics", "financialAnalytics", "salesReport", "collectionReport", "jobPnlReport", "vendorExposureReport", "taxReport", "staffProductivity", "quotationConversion", "leadSourceReport", "agingReportRep", "visitCompliance", "taskThroughput"].forEach((id) => map.set(id, "reports"));
+  ["systemSettings", "userApprovals", "controlBrainWorkflows", "approvalPolicies", "auditLog", "dataImport", "dataExport", "integrity"].forEach((id) => map.set(id, "system"));
+  return map;
+}
 
-  ["siteExecution", "site"],
-  ["drawings", "site"],
-  ["executionLogs", "site"],
-  ["woTimeline", "site"],
-
-  ["workdesk", "workdesk"],
-  ["unifiedThreadInbox", "workdesk"],
-  ["tasks", "workdesk"],
-  ["blockedRisks", "workdesk"],
-  ["approvals", "workdesk"],
-  ["calendarRecurring", "workdesk"],
-
-  ["quotationDesk", "quotation"],
-  ["quotationConfig", "quotation"],
-
-  ["fieldOperations", "field"],
-  ["siteMeasurement", "field"],
-  ["visitProofs", "field"],
-  ["fieldMode", "field"],
-  ["gpsTracking", "field"],
-
-  ["procurementInventory", "procurement"],
-  ["boqControlCentre", "procurement"],
-  ["grn", "procurement"],
-  ["inventory", "procurement"],
-  ["dispatch", "procurement"],
-
-  ["financeDesk", "finance"],
-  ["payments", "finance"],
-  ["invoices", "finance"],
-  ["vendorBills", "finance"],
-  ["contractorPayments", "finance"],
-  ["profitability", "finance"],
-  ["commissions", "finance"],
-  ["gstReturns", "finance"],
-]);
+const MODULE_SCOPE_BY_ID = buildModuleScopeMap();
 
 const KNOWN_SCOPES = new Set<WorkspaceReadScope>([
   "full",
@@ -69,6 +51,11 @@ const KNOWN_SCOPES = new Set<WorkspaceReadScope>([
   "field",
   "procurement",
   "finance",
+  "media",
+  "hr",
+  "master",
+  "reports",
+  "system",
 ]);
 
 export interface WorkspaceReadTarget {
