@@ -97,19 +97,22 @@ describe("entity-scoped collection policy", () => {
     expect(SITE_RELATION_COLLECTIONS.length).toBeLessThan(35);
   });
 
-  test("REST selector validates JSON fields and filters JSONB paths", async () => {
+  test("REST selector validates fields and combines one table's JSONB paths", async () => {
     const source = await Bun.file("src/lib/rdash/server/entity-scoped-rest.ts").text();
     expect(source).toContain("SAFE_JSON_FIELD");
     expect(source).toContain("data->>");
     expect(source).toContain("slice(0, 500)");
-    expect(source).toContain("query.in(`data->>${spec.field}`");
+    expect(source).toContain("query.or(filters.join");
+    expect(source).toContain("quotePostgrestValue");
+    expect(source).toContain("queryCount: 1 + queries.length");
   });
 
-  test("entity reader has revision restart and bounded fallback switches", async () => {
+  test("entity reader has revision restart, rollback, and plural proof coverage", async () => {
     const source = await Bun.file("src/lib/rdash/server/entity-scoped-read.ts").text();
     expect(source).toContain('UC_ENTITY_SCOPED_READS !== "0"');
     expect(source).toContain('error.message !== "READ_CONFLICT"');
     expect(source).toContain("getWorkspaceBootstrap(user)");
     expect(source).toContain("workspaceRouteAccessDecision");
+    expect(source).toContain('"proof_attachment_ids"');
   });
 });
