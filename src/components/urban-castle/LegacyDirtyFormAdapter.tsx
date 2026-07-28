@@ -81,6 +81,26 @@ const LEGACY_DIALOG_CONFIGS: readonly LegacyDialogConfig[] = [
     label: "Contractor RA bill form",
     saveButton: /^Submit bill$/i,
   },
+  {
+    title: /^Add Staff Operations Profile$/i,
+    label: "Staff Operations profile",
+    saveButton: /^Create staff$/i,
+  },
+  {
+    title: /^Edit Staff Operations Profile$/i,
+    label: "Staff Operations profile",
+    saveButton: /^Save changes$/i,
+  },
+  {
+    title: /^New Approval Policy$/i,
+    label: "Approval Policy form",
+    saveButton: /^Create Policy$/i,
+  },
+  {
+    title: /^Edit Policy$/i,
+    label: "Approval Policy form",
+    saveButton: /^Save Changes$/i,
+  },
 ] as const;
 
 const DEFAULT_CANCEL_BUTTON = /^(?:Cancel|Close)$/i;
@@ -89,6 +109,8 @@ const CONTROL_SELECTOR = [
   "textarea",
   "select",
   '[role="combobox"]',
+  '[role="switch"]',
+  'button[aria-pressed]',
   'button[title^="Preview "]',
 ].join(",");
 
@@ -135,15 +157,40 @@ function controlValue(control: Element): unknown {
   }
   return [
     control.tagName,
+    control.getAttribute("role") || "",
     control.getAttribute("aria-label") || control.getAttribute("name") || "",
+    control.getAttribute("aria-checked") || "",
+    control.getAttribute("aria-pressed") || "",
+    control.getAttribute("data-state") || "",
     control.getAttribute("title") || "",
     normalizedText(control.textContent),
   ];
 }
 
+function selectedButtonValues(dialog: HTMLElement): unknown[] {
+  return Array.from(dialog.querySelectorAll<HTMLButtonElement>('button[type="button"]'))
+    .filter((button) => {
+      if (button.getAttribute("aria-pressed") === "true") return true;
+      if (button.getAttribute("aria-checked") === "true") return true;
+      if (button.getAttribute("data-state") === "checked") return true;
+      const classes = button.className;
+      return typeof classes === "string" &&
+        classes.includes("bg-primary") &&
+        classes.includes("text-primary-foreground");
+    })
+    .map((button) => [
+      button.getAttribute("aria-label") || "",
+      button.getAttribute("data-state") || "",
+      normalizedText(button.textContent),
+    ]);
+}
+
 export function legacyDialogFingerprint(dialog: HTMLElement): string {
   const controls = Array.from(dialog.querySelectorAll(CONTROL_SELECTOR));
-  return JSON.stringify(controls.map(controlValue));
+  return JSON.stringify({
+    controls: controls.map(controlValue),
+    selectedButtons: selectedButtonValues(dialog),
+  });
 }
 
 function buttonWithText(dialog: HTMLElement, pattern: RegExp): HTMLButtonElement | undefined {
