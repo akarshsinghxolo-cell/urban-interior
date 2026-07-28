@@ -68,7 +68,6 @@ function pointFromRow(row: StaffLocationRow): StaffLocationPing {
     accuracy_m: row.accuracyM,
     captured_at: row.capturedAt,
     source: row.source === "native_background" ? "native_background" : "browser_foreground",
-    created_at: row.capturedAt,
   };
 }
 
