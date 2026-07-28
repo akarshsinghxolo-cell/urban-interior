@@ -32,7 +32,19 @@ describe("runtime efficiency hardening", () => {
     expect(source).toContain("singleFlightWorkspaceRead");
     expect(source).toContain("sharedHealthRead");
     expect(source).toContain("HEALTH_CACHE_TTL_MS = 5 * 60_000");
+    expect(source).toContain("HEALTH_CACHE_PREFIX");
+    expect(source).toContain("navigator as Navigator & { locks?: BrowserLocks }");
+    expect(source).toContain("Re-check after entering the cross-tab lock");
+    expect(source).toContain("readStoredHealthResponse");
+    expect(source).toContain("persistHealthResponse");
     expect(source).not.toContain("scoped-health-deferred");
+  });
+
+  test("hidden tabs reuse bounded stale health rather than polling the server", async () => {
+    const source = await read("src/lib/rdash/client-auth.ts");
+    expect(source).toContain("HEALTH_HIDDEN_STALE_MS = 24 * 60 * 60_000");
+    expect(source).toContain('document.visibilityState !== "visible"');
+    expect(source).toContain("clearStoredHealthResponses");
   });
 
   test("GPS writes do not reload and prune the whole history table", async () => {
