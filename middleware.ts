@@ -17,7 +17,6 @@ const PUBLIC = new Set([
   "/api/health/config",
   "/api/changelog",
   "/api/qa/cron",
-  "/api/staging/bootstrap-initial-owner",
   "/logo.svg",
   "/sw.js",
   "/manifest.json",
