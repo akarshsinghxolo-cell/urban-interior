@@ -11,6 +11,7 @@ import { useInstallDirtyFormNavigationGuards } from "@/lib/rdash/use-dirty-form-
 import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
 import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
+import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
 /** Urban Castle application shell. */
@@ -78,6 +79,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
   return (
     <UploadManagerProvider>
       <RDashApp />
+      <LegacyDirtyFormAdapter />
       <DirtyFormNavigationGuard />
       <WorkspaceScopedReadBoundary />
       <ReconcileWorkspaceButton />
