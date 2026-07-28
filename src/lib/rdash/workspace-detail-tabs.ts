@@ -1,6 +1,11 @@
 import type { ContextDetailTab, DetailPanelKind } from "./store/ui-types";
 
-const DETAIL_TABS = new Set<ContextDetailTab>(["overview", "thread", "history"]);
+/**
+ * Public record tabs must map to a real DetailPanel renderer. `history` remains
+ * in the internal navigation type for future use but is deliberately excluded
+ * here until a dedicated history body exists.
+ */
+const DETAIL_TABS = new Set<ContextDetailTab>(["overview", "thread"]);
 
 export interface WorkspaceDetailTabRequest {
   tab: ContextDetailTab;
@@ -15,8 +20,8 @@ function searchParamsFrom(input: string | URLSearchParams): URLSearchParams {
 }
 
 /**
- * Customer workspaces have their own broader tab model. Stage 8 initially owns
- * only the shared record-detail tabs used by non-customer entity inspectors.
+ * Customer workspaces have their own broader tab model. Shared record-detail
+ * tabs apply only to non-customer entity inspectors.
  */
 export function supportsWorkspaceDetailTabs(kind: DetailPanelKind | undefined): boolean {
   return Boolean(kind && kind !== "customer");
@@ -41,8 +46,7 @@ export function workspaceDetailTabRequest(
 
 /**
  * Produces the canonical URL for a detail-tab state. `overview` is represented
- * by the clean entity URL. Other query parameters are preserved only when the
- * caller is updating the same route.
+ * by the clean entity URL. Unsupported/stale tab values are never emitted.
  */
 export function workspaceUrlWithDetailTab(
   pathname: string,
@@ -52,7 +56,12 @@ export function workspaceUrlWithDetailTab(
 ): string {
   const params = searchParamsFrom(currentSearch);
   params.delete("tab");
-  if (supportsWorkspaceDetailTabs(kind) && tab && tab !== "overview") {
+  if (
+    supportsWorkspaceDetailTabs(kind) &&
+    tab &&
+    tab !== "overview" &&
+    DETAIL_TABS.has(tab)
+  ) {
     params.set("tab", tab);
   }
   const query = params.toString();
