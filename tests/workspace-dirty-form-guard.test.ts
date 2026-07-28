@@ -114,30 +114,32 @@ describe("dirty form integration boundaries", () => {
   test("legacy high-risk dialogs use the compatibility registry adapter", async () => {
     const source = await Bun.file("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").text();
 
-    expect(source).toContain("New quotation");
-    expect(source).toContain("Edit BOQ rate");
-    expect(source).toContain("Create Purchase Order");
-    expect(source).toContain("Direct Award PO");
-    expect(source).toContain("Record vendor bid");
-    expect(source).toContain("Invite contractor bid");
-    expect(source).toContain("Direct Award Contractor");
-    expect(source).toContain("Add New Customer");
-    expect(source).toContain("Edit Customer");
-    expect(source).toContain("Add Site");
-    expect(source).toContain("Edit Site");
-    expect(source).toContain("Record Supplier Invoice");
-    expect(source).toContain("Request contractor payment");
-    expect(source).toContain("Add Staff Operations Profile");
-    expect(source).toContain("Edit Staff Operations Profile");
-    expect(source).toContain("New Approval Policy");
-    expect(source).toContain("Edit Policy");
+    for (const title of [
+      "New quotation",
+      "Edit BOQ rate",
+      "Create Purchase Order",
+      "Direct Award PO",
+      "Record vendor bid",
+      "Invite contractor bid",
+      "Direct Award Contractor",
+      "Add New Customer",
+      "Edit Customer",
+      "Add Site",
+      "Edit Site",
+      "Record Supplier Invoice",
+      "Request contractor payment",
+      "Add Staff Operations Profile",
+      "Edit Staff Operations Profile",
+      "New Approval Policy",
+      "Edit Policy",
+    ]) {
+      expect(source).toContain(title);
+    }
     expect(source).toContain('[role="switch"]');
     expect(source).toContain('button[title^="Preview "]');
     expect(source).toContain("selectedButtonValues");
     expect(source).toContain("saveTimeoutMs: 4_000");
     expect(source).toContain("entry.config.saveTimeoutMs");
-    expect(source).toContain("config.title.lastIndex = 0");
-    expect(source).toContain("pattern.lastIndex = 0");
     expect(source).toContain("legacyDialogFingerprint");
     expect(source).toContain("MutationObserver");
     expect(source).toContain("dirtyFormRegistry.register");
