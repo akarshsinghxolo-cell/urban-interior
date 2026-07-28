@@ -67,12 +67,13 @@ jobs:
           test.write_text('''import { describe, expect, test } from "bun:test";\n\nconst source = await Bun.file("src/lib/uploads/workspace-outbox.ts").text();\n\ndescribe("workspace outbox acknowledgement", () => {\n  test("clears a server-accepted item before compact response adaptation", () => {\n    const successBlock = source.slice(\n      source.indexOf("  if (response.ok) {"),\n      source.indexOf("  const retryCount", source.indexOf("  if (response.ok) {")),\n    );\n    const deleteIndex = successBlock.indexOf("deleteWorkspaceOutbox(operationId)");\n    const adaptIndex = successBlock.indexOf("acceptCompactCommit(current, payload)");\n    expect(deleteIndex).toBeGreaterThanOrEqual(0);\n    expect(adaptIndex).toBeGreaterThan(deleteIndex);\n    expect(successBlock).toContain("await refresh()");\n    expect(successBlock).toContain("local response adaptation failed");\n  });\n});\n''', encoding="utf-8")
 
           Path(".github/workflows/tmp-outbox-ack-fix.yml").unlink()
+          Path(".outbox-ack-trigger").unlink(missing_ok=True)
 
       - name: Commit fix
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib/uploads/workspace-outbox.ts tests/workspace-outbox-acknowledgement.test.ts .github/workflows/tmp-outbox-ack-fix.yml
+          git add src/lib/uploads/workspace-outbox.ts tests/workspace-outbox-acknowledgement.test.ts .github/workflows/tmp-outbox-ack-fix.yml .outbox-ack-trigger
           git commit -m "Clear accepted workspace commits before local adaptation"
           git push origin HEAD:fix/outbox-acknowledgement-order
