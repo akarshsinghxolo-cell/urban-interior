@@ -27,6 +27,7 @@ const KNOWN_COLLECTIONS = new Set<string>([
   ...topLevelCollections.map(String),
   ...masterCollections.map((key) => `master.${String(key)}`),
 ]);
+const SCOPED_BOOTSTRAP_COLLECTIONS = ["staffRolePermissions", "master.staff"] as const;
 
 export function knownWorkspaceCollection(collection: string): boolean {
   return KNOWN_COLLECTIONS.has(collection);
@@ -34,14 +35,18 @@ export function knownWorkspaceCollection(collection: string): boolean {
 
 /**
  * Returns the collections represented by the current scoped snapshot. Full and
- * legacy snapshots without explicit metadata are treated as complete.
+ * legacy snapshots without explicit metadata are treated as complete. Permission
+ * bootstrap rows are always part of every authenticated scoped snapshot.
  */
 export function loadedWorkspaceCollections(database: RDashDatabase): Set<string> | null {
   const metadata = database as unknown as Record<string, unknown>;
   const scope = String(metadata._workspace_read_scope || "full");
   const raw = metadata._workspace_read_collections;
   if (scope === "full" || !Array.isArray(raw)) return null;
-  return new Set(raw.map((value) => String(value || "").trim()).filter(knownWorkspaceCollection));
+  return new Set([
+    ...SCOPED_BOOTSTRAP_COLLECTIONS,
+    ...raw.map((value) => String(value || "").trim()).filter(knownWorkspaceCollection),
+  ]);
 }
 
 export function workspaceCollectionFilterParam(database: RDashDatabase): string | undefined {
