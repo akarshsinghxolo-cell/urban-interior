@@ -96,7 +96,8 @@ function normalizedRowVersions(value: unknown): Record<string, number> {
 
 /**
  * Collapses a contiguous revision journal into the latest row state per ID.
- * A later delete removes an earlier upsert; a later upsert revives a deleted ID.
+ * Each atomic commit deletes first and then upserts, so a recreated row wins
+ * over a delete recorded in the same revision.
  */
 export function aggregateWorkspaceChangeBatches(input: {
   afterRevision: number;
@@ -164,10 +165,24 @@ export function aggregateWorkspaceChangeBatches(input: {
     }
     const batchVersions = normalizedRowVersions(batch.row_versions);
 
+    // PostgreSQL deletes every collection in reverse dependency order first.
     for (const operation of operations) {
       const rows = changed.get(operation.collection) || new Map<string, Record<string, unknown>>();
       const deletedIds = deleted.get(operation.collection) || new Set<string>();
+      for (const id of operation.deleteIds) {
+        rows.delete(id);
+        deletedIds.add(id);
+        delete rowVersions[`${operation.collection}:${id}`];
+      }
+      changed.set(operation.collection, rows);
+      deleted.set(operation.collection, deletedIds);
+      collectionRevisions[operation.collection] = batch.revision;
+    }
 
+    // Then every upsert is applied, including rows recreated in this revision.
+    for (const operation of operations) {
+      const rows = changed.get(operation.collection) || new Map<string, Record<string, unknown>>();
+      const deletedIds = deleted.get(operation.collection) || new Set<string>();
       for (const row of operation.upsert) {
         const id = String(row.id).trim();
         rows.set(id, row);
@@ -177,12 +192,6 @@ export function aggregateWorkspaceChangeBatches(input: {
           rowVersions[versionKey] = batchVersions[versionKey];
         }
       }
-      for (const id of operation.deleteIds) {
-        rows.delete(id);
-        deletedIds.add(id);
-        delete rowVersions[`${operation.collection}:${id}`];
-      }
-
       changed.set(operation.collection, rows);
       deleted.set(operation.collection, deletedIds);
       collectionRevisions[operation.collection] = batch.revision;
