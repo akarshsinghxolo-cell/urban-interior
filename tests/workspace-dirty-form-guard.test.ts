@@ -121,6 +121,13 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain("Record vendor bid");
     expect(source).toContain("Invite contractor bid");
     expect(source).toContain("Direct Award Contractor");
+    expect(source).toContain("Add New Customer");
+    expect(source).toContain("Edit Customer");
+    expect(source).toContain("Add Site");
+    expect(source).toContain("Edit Site");
+    expect(source).toContain("Record Supplier Invoice");
+    expect(source).toContain("Request contractor payment");
+    expect(source).toContain('button[title^="Preview "]');
     expect(source).toContain("legacyDialogFingerprint");
     expect(source).toContain("MutationObserver");
     expect(source).toContain("dirtyFormRegistry.register");
