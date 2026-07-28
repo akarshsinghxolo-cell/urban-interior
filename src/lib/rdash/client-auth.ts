@@ -113,6 +113,10 @@ export function initAuthFetch(): void {
 
     const isWorkspaceCommit = pathname === "/api/operations/commit" && method === "POST";
     const isWorkspaceRead = pathname === "/api/workspace" && method === "GET";
+    const isWorkspaceHealthRead = pathname === "/api/health/summary" && method === "GET";
+    if ((isWorkspaceRead || isWorkspaceHealthRead) && !headers.has("X-UC-Workspace-Path")) {
+      headers.set("X-UC-Workspace-Path", `${window.location.pathname}${window.location.search}`);
+    }
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
     let deferredResponse: Response | undefined;
