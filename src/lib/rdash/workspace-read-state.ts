@@ -4,8 +4,8 @@ import * as React from "react";
 import type {
   RowScopedWorkspaceEntityKind,
   WorkspaceReadCoverage,
-  WorkspaceReadScope,
 } from "./workspace-read-scope";
+import { workspaceReadScopeFromMode } from "./workspace-read-scope";
 
 export interface WorkspaceReadStateSnapshot extends WorkspaceReadCoverage {
   queryCount?: number;
@@ -14,12 +14,6 @@ export interface WorkspaceReadStateSnapshot extends WorkspaceReadCoverage {
 
 let snapshot: WorkspaceReadStateSnapshot = { scope: "full", mode: "unknown" };
 const listeners = new Set<() => void>();
-
-function scopeFromMode(mode: string): WorkspaceReadScope {
-  if (mode === "customer" || mode === "customer-row") return "customer";
-  if (mode === "site" || mode === "site-row") return "site";
-  return "full";
-}
 
 function rowEntityKind(value: string | null): RowScopedWorkspaceEntityKind | undefined {
   return value === "customer" || value === "site" ? value : undefined;
@@ -51,7 +45,7 @@ export const workspaceReadState = {
     const rawQueryCount = Number(response.headers.get("X-UC-Read-Queries"));
     const rawRowCount = Number(response.headers.get("X-UC-Read-Rows"));
     emit({
-      scope: scopeFromMode(mode),
+      scope: workspaceReadScopeFromMode(mode),
       mode,
       queryCount: Number.isFinite(rawQueryCount) ? rawQueryCount : undefined,
       rowCount: Number.isFinite(rawRowCount) ? rawRowCount : undefined,
