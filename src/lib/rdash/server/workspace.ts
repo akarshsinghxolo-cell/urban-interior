@@ -223,7 +223,9 @@ export async function resetWorkspace(user: AuthenticatedUser, confirmation: stri
   assertWorkspaceResetRequest(user, confirmation);
 
   if (await checkSupabaseSchema()) {
+    const { resetWorkspaceChangeJournal } = await import("./workspace-change-reset");
     const { resetRestWorkspace } = await getRestModule();
+    await resetWorkspaceChangeJournal();
     return resetRestWorkspace();
   }
 
