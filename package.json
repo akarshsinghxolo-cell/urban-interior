@@ -17,6 +17,7 @@
     "test:history-urls": "bun test tests/workspace-history-url.test.ts",
     "test:detail-tabs": "bun test tests/workspace-detail-tabs.test.ts",
     "test:customer-tabs": "bun test tests/workspace-customer-tabs.test.ts",
+    "test:task-scope": "bun test tests/workspace-task-scope.test.ts",
     "test:auth-return": "bun test tests/workspace-auth-return.test.ts tests/workspace-auth-middleware.test.ts",
     "test:route-access": "bun test tests/workspace-route-access.test.ts",
     "test:auth-security": "bun test tests/auth-source-security.test.ts"
@@ -79,7 +80,7 @@
     "sharp": "^0.34.3",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
-    "vaul": "^1.1.2",
+    "vaul": "^1.2.2",
     "z-ai-web-dev-sdk": "^0.0.18",
     "zod": "^4.0.2",
     "zustand": "^5.0.6"
