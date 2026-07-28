@@ -134,7 +134,10 @@ function dialogTitle(dialog: HTMLElement): string {
 }
 
 function dialogConfig(title: string): LegacyDialogConfig | undefined {
-  return LEGACY_DIALOG_CONFIGS.find((config) => config.title.test(title));
+  return LEGACY_DIALOG_CONFIGS.find((config) => {
+    config.title.lastIndex = 0;
+    return config.title.test(title);
+  });
 }
 
 function controlValue(control: Element): unknown {
@@ -195,7 +198,10 @@ export function legacyDialogFingerprint(dialog: HTMLElement): string {
 
 function buttonWithText(dialog: HTMLElement, pattern: RegExp): HTMLButtonElement | undefined {
   return Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
-    .find((button) => pattern.test(normalizedText(button.textContent)));
+    .find((button) => {
+      pattern.lastIndex = 0;
+      return pattern.test(normalizedText(button.textContent));
+    });
 }
 
 function wait(milliseconds: number): Promise<void> {
