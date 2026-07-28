@@ -1,210 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { getWorkspace } from "@/lib/rdash/server/workspace";
-import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
-import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
-import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
+import { getWorkspaceHealthSummary } from "@/lib/rdash/server/workspace-health";
 
 export const runtime = "nodejs";
+export const maxDuration = 15;
 
 /**
- * GET /api/health/summary
- * Authenticated. Returns a lightweight workspace health summary:
- *   - integrity healthScore + issue counts
- *   - pending approvals, overdue tasks, due-today actions
- *   - pipeline value, active work orders, live visits
- *   - last 5 audit-log entries (compact "recent activity")
- *   - exception counts (direct-award POs, variations)
+ * Lightweight authenticated dashboard health aggregate.
  *
- * This is a READ-ONLY aggregate. It does NOT mutate state. Used by the
- * dashboard's WorkspaceHealthWidget and by the recurring QA cron for a
- * fast at-a-glance health check.
+ * Operational metrics read only the collections they need. The expensive full
+ * referential-integrity scan is produced by the daily QA cron (or a manual
+ * Integrity action) and read here as a stored snapshot.
  */
 export async function GET(request: NextRequest) {
+  const startedAt = performance.now();
   try {
     const user = await requireSession(request);
-    const workspace = await getWorkspace(false);
-    const db = workspace.data;
-
-    // Integrity (read-only check, no repair)
-    const report = checkWorkspaceIntegrity(db);
-
-    // Tasks
-    const openTasks = db.tasks.filter(
-      (t) => t.status === "todo" || t.status === "in_progress" || t.status === "review",
-    );
-    const overdueTasks = openTasks.filter((t) => isDateOnlyOverdue(t.due_date));
-    const dueTodayTasks = openTasks.filter((t) => t.due_date === indiaDate());
-
-    // Followups
-    const activeFollowups = db.followups.filter(
-      (f) => f.status === "pending" || f.status === "scheduled" || f.status === "missed",
-    );
-
-    // Approvals + blocked + risks
-    const pendingApprovals = (db.actions || []).filter((a) => a.status === "pending");
-    const unresolvedBlocked = (db.blocked || []).filter((b) => !b.resolved);
-    const openRisks = db.risks || [];
-
-    // Work orders + visits + quotations
-    const activeWorkOrders = (db.workOrders || []).filter(
-      (w) => w.status === "in_progress" || w.status === "scheduled",
-    );
-    const activeVisits = (db.visits || []).filter(
-      (v) => v.status === "scheduled" || v.status === "en_route" || v.status === "checked_in",
-    );
-    const quotationMetrics = calculateQuotationMetrics(db.quotations || []);
-    const pipelineValue = quotationMetrics.pipelineValue;
-
-    // Exceptions (direct-award POs + variations)
-    const directAwardPOs = (db.purchaseOrders || []).filter(
-      (po: any) => po.direct_award || po.award_basis === "direct",
-    );
-    const variations = (db.quotations || []).filter(
-      (q: any) => q.revision_kind === "variation" || q.revision_kind === "renegotiation",
-    );
-
-    // Recent activity (last 5 audit entries, compact)
-    const recentActivity = [...(db.auditLog || [])]
-      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-      .slice(0, 5)
-      .map((e) => ({
-        id: e.id,
-        action: e.action,
-        kind: e.kind,
-        entityType: e.entity_type,
-        entityLabel: e.entity_label || e.entity_type,
-        actor: e.actor || "system",
-        actorRole: e.actor_role,
-        sourceModule: e.source_module,
-        reason: e.reason,
-        timestamp: e.timestamp,
-      }));
-
-    // ── Financial metrics ──────────────────────────────────────────────
-    // Cash position = received customer receipts − vendor payments made.
-    const now = Date.now();
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    const monthStartMs = monthStart.getTime();
-
-    const customerReceipts = db.customerReceipts || [];
-    const vendorPayments = db.vendorPayments || [];
-    const invoices = db.invoices || [];
-    const vendorBills = db.vendorBills || [];
-
-    const totalReceived = customerReceipts.reduce((s, r) => s + (r.amount || 0), 0);
-    const totalPaidOut = vendorPayments.reduce((s, p: any) => s + (p.amount || 0), 0);
-    const cashPosition = totalReceived - totalPaidOut;
-
-    // Overdue invoice value (issued/partial + past due_date)
-    const overdueInvoices = invoices.filter(
-      (inv) =>
-        (inv.status === "issued" || inv.status === "partial" || inv.status === "overdue") &&
-        inv.due_date &&
-        isDateOnlyOverdue(inv.due_date),
-    );
-    const overdueInvoiceValue = overdueInvoices.reduce((s, inv) => s + (inv.balance_amount || 0), 0);
-
-    // Pending vendor bills (awaiting payment)
-    const pendingVendorBills = vendorBills.filter(
-      (b) => b.status === "pending" || b.status === "approved" || b.status === "partly_paid",
-    );
-    const pendingVendorBillValue = pendingVendorBills.reduce(
-      (s, b) => s + (b.balance_amount || 0),
-      0,
-    );
-
-    // Revenue this month (receipts received this month)
-    const monthRevenue = customerReceipts
-      .filter((r) => {
-        const t = new Date(r.received_at).getTime();
-        return !isNaN(t) && t >= monthStartMs && t <= now;
-      })
-      .reduce((s, r) => s + (r.amount || 0), 0);
-
-    // 7-day revenue series for the sparkline on the health widget.
-    // Returns [{date: 'YYYY-MM-DD', value: number}, ...] for the last 7 days
-    // (oldest first). Days with no receipts show 0.
-    const revenueSeries: Array<{ date: string; value: number }> = [];
-    const indiaToday = indiaDate();
-    for (let i = 6; i >= 0; i--) {
-      const day = new Date(`${indiaToday}T12:00:00+05:30`);
-      day.setDate(day.getDate() - i);
-      const dayKey = indiaDate(day);
-      const dayTotal = customerReceipts
-        .filter((receipt) => receipt.received_at && indiaDate(receipt.received_at) === dayKey)
-        .reduce((sum, receipt) => sum + (receipt.amount || 0), 0);
-      revenueSeries.push({ date: dayKey, value: dayTotal });
-    }
-
-    // Overall workspace health badge
-    const attentionCount =
-      pendingApprovals.length + unresolvedBlocked.length + overdueTasks.length + openRisks.length;
-    const healthBadge: "healthy" | "watch" | "attention" =
-      attentionCount === 0 && report.healthScore >= 95
-        ? "healthy"
-        : attentionCount <= 3 && report.healthScore >= 80
-          ? "watch"
-          : "attention";
-
+    const summary = await getWorkspaceHealthSummary();
+    console.info("[workspace-health]", {
+      revision: summary.revision,
+      queryCount: summary.queryCount,
+      collectionCount: summary.collectionCount,
+      loadMs: summary.loadMs,
+      integritySnapshot: summary.integrity.snapshotAvailable,
+      totalMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    });
     return NextResponse.json(
       {
         status: "ok",
         timestamp: new Date().toISOString(),
         user: { name: user.name, email: user.email, role: user.role },
-        healthBadge,
-        attentionCount,
-        integrity: {
-          healthScore: report.healthScore,
-          totalIssues: report.issues.length,
-          critical: report.bySeverity.critical,
-          warning: report.bySeverity.warning,
-          info: report.bySeverity.info,
-          totalRecords: report.totalRecords,
-          totalReferences: report.totalReferences,
-        },
-        operations: {
-          openTasks: openTasks.length,
-          overdueTasks: overdueTasks.length,
-          dueTodayTasks: dueTodayTasks.length,
-          activeFollowups: activeFollowups.length,
-          pendingApprovals: pendingApprovals.length,
-          unresolvedBlocked: unresolvedBlocked.length,
-          openRisks: openRisks.length,
-          activeWorkOrders: activeWorkOrders.length,
-          activeVisits: activeVisits.length,
-        },
-        commercial: {
-          pipelineValue,
-          pipelineQuotations: quotationMetrics.openCount,
-          customers: (db.customers || []).length,
-        },
-        exceptions: {
-          directAwardPOs: directAwardPOs.length,
-          variations: variations.length,
-          total: directAwardPOs.length + variations.length,
-        },
-        finance: {
-          cashPosition,
-          monthRevenue,
-          overdueInvoiceValue,
-          overdueInvoiceCount: overdueInvoices.length,
-          pendingVendorBillValue,
-          pendingVendorBillCount: pendingVendorBills.length,
-          totalReceived,
-          totalPaidOut,
-          revenueSeries,
-        },
-        recentActivity,
+        ...summary,
       },
-      { headers: { "Cache-Control": "no-store" } },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+          "Vary": "Authorization, Cookie",
+          "X-UC-Health-Collections": String(summary.collectionCount),
+          "X-UC-Health-Queries": String(summary.queryCount),
+          "X-UC-Health-Load-Ms": String(summary.loadMs),
+        },
+      },
     );
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Summary unavailable.";
+    const status = message === "UNAUTHORIZED" ? 401 : 503;
+    console.error("[workspace-health] failed", {
+      status,
+      totalMs: Math.round((performance.now() - startedAt) * 100) / 100,
+      error: message,
+    });
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Summary unavailable." },
-      { status: 401 },
+      { error: status === 401 ? "Authentication is required." : "Workspace health is temporarily unavailable." },
+      { status, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
