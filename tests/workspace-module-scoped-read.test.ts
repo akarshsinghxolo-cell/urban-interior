@@ -172,12 +172,26 @@ describe("module-scoped collection plans", () => {
     }
   });
 
-  test("Workdesk includes action queues but excludes payroll and system administration", () => {
-    expect(WORKDESK_SCOPE_COLLECTIONS).toContain("tasks");
-    expect(WORKDESK_SCOPE_COLLECTIONS).toContain("followups");
-    expect(WORKDESK_SCOPE_COLLECTIONS).toContain("actions");
-    expect(WORKDESK_SCOPE_COLLECTIONS).toContain("blocked");
-    expect(WORKDESK_SCOPE_COLLECTIONS).toContain("threads");
+  test("Workdesk covers action queues and every dashboard widget dependency", () => {
+    for (const collection of [
+      "tasks",
+      "followups",
+      "actions",
+      "blocked",
+      "risks",
+      "threads",
+      "customerReceipts",
+      "vendorPayments",
+      "contractorPayments",
+      "workOrderCostLines",
+      "inventory",
+      "stockMovements",
+      "attendance",
+      "master.vendorRates",
+      "master.vendorRateHistories",
+    ]) {
+      expect(WORKDESK_SCOPE_COLLECTIONS).toContain(collection);
+    }
     expect(WORKDESK_SCOPE_COLLECTIONS).not.toContain("payrollLines");
     expect(WORKDESK_SCOPE_COLLECTIONS).not.toContain("automationRules");
   });
