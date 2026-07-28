@@ -185,7 +185,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (!category) return;
         const ok = await confirmDialog({
             title: `Remove ${category.name}`,
-            description: `${works.length} submodules and their scoped material rows will be removed. Historical transaction labels remain, but stale master links are cleared.`,
+            description: `${works.length} sub categories and their scoped material rows will be removed. Historical transaction labels remain, but stale master links are cleared.`,
             confirmLabel: "Remove",
             danger: true,
         });
@@ -214,9 +214,9 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     function addWorkItem(draft: DraftWork) {
         const clean = draft.name.trim();
         if (!clean || !draft.categoryId)
-            return toast.error("Submodule name and category are required.");
+            return toast.error("Sub category name and category are required.");
         if (master.workSubcategories.some((item) => item.category_id === draft.categoryId && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
-            return toast.error("This category already has a submodule with this name.");
+            return toast.error("This category already has a sub category with this name.");
         }
         const now = iso();
         const item: WorkSubcategory = {
@@ -233,7 +233,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         };
         updateMaster((current) => ({ ...current, workSubcategories: [...current.workSubcategories, item] }));
         setExpanded((current) => ({ ...current, [draft.categoryId]: true }));
-        toast.success("Submodule added with its canonical execution unit.");
+        toast.success("Sub category added with its canonical execution unit.");
     }
     function updateWorkItem(workId: string, patch: Partial<WorkSubcategory>) {
         const existing = master.workSubcategories.find((entry) => entry.id === workId);
@@ -241,9 +241,9 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             return;
         const clean = patch.name === undefined ? undefined : patch.name.trim();
         if (clean !== undefined && !clean)
-            return toast.error("Submodule name is required.");
+            return toast.error("Sub category name is required.");
         if (clean && master.workSubcategories.some((item) => item.id !== workId && item.category_id === existing.category_id && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
-            return toast.error("Duplicate submodule in the same category.");
+            return toast.error("Duplicate sub category in the same category.");
         }
         const oldMaterialRate = existing.material_rate;
         const oldLabourRate = existing.labour_rate;
@@ -300,7 +300,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                 articles: current.articles.filter((article) => !removedArticleIds.has(article.id)),
             };
         });
-        toast.success("Submodule and dependent scoped materials removed.");
+        toast.success("Sub category and dependent scoped materials removed.");
     }
     function addScopedMaterial(workId: string, draft: DraftMaterial) {
         const work = workFor(master, workId);
@@ -320,7 +320,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (!articleId && draft.mode === "new")
             articleId = id("article");
         if (master.subcategoryArticleMap.some((row) => row.work_required_id === workId && row.article_id === articleId))
-            return toast.error("This submodule already includes that material article.");
+            return toast.error("This sub category already includes that material article.");
         const scopedUnit = draft.unitId || work.unit_id || "pcs";
         const now = iso();
         const scope: WorkRequiredArticle = {
@@ -355,7 +355,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                 workSubcategories: current.workSubcategories.map((item) => item.id === workId ? { ...item, work_required_article_ids: [...(item.work_required_article_ids || []), scope.id], updated_at: now } : item),
             };
         });
-        toast.success("Material linked to the submodule with its own scoped unit and rate.");
+        toast.success("Material linked to the sub category with its own scoped unit and rate.");
     }
     function updateScope(scopeId: string, patch: Partial<WorkRequiredArticle>) {
         const existing = master.subcategoryArticleMap.find((row) => row.id === scopeId);
@@ -392,7 +392,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (!scope) return;
         const ok3 = await confirmDialog({
             title: `Remove ${article?.name || "this material"}`,
-            description: "This material will be removed from its submodule. Linked vendor prices for this exact context will also be removed.",
+            description: "This material will be removed from its sub category. Linked vendor prices for this exact context will also be removed.",
             confirmLabel: "Remove",
             danger: true,
         });
@@ -414,7 +414,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         const now = iso();
         const article: Article = { id: id("article"), name: clean, normalized_name: normalizeCatalogName(clean), default_unit_id: unitId || "pcs", unit_id: unitId || "pcs", base_rate: 0, variant_ids: [], created_at: now, updated_at: now };
         updateMaster((current) => ({ ...current, articles: [...current.articles, article] }));
-        toast.success("Canonical article created. Link it to one or more submodules next.");
+        toast.success("Canonical article created. Link it to one or more sub categories next.");
     }
     function updateArticle(articleId: string, patch: Partial<Article>) {
         const currentArticle = articleFor(master, articleId);
@@ -454,7 +454,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (!article)
             return;
         if (isScoped || usedByVendorRate)
-            return toast.error("Unlink this article from submodules and vendor rates before deleting its canonical record.");
+            return toast.error("Unlink this article from sub categories and vendor rates before deleting its canonical record.");
         const ok4 = await confirmDialog({
             title: `Delete ${article.name}`,
             description: "This canonical article will be permanently deleted. It can be re-created later if needed.",
@@ -518,7 +518,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (!variant) return;
         const ok5 = await confirmDialog({
             title: `Remove ${variant.name}`,
-            description: "Linked vendor rates will safely fall back to the submodule base unit.",
+            description: "Linked vendor rates will safely fall back to the sub category base unit.",
             confirmLabel: "Remove",
             danger: true,
         });
@@ -579,7 +579,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         toast.success("Unused unit removed.");
     }
     function exportCatalogue() {
-        const rows: Array<Array<string | number>> = [["Category", "Submodule", "Work unit", "Material rate", "Labour rate", "Article", "Article unit", "Scoped reference rate", "Variants", "Notes"]];
+        const rows: Array<Array<string | number>> = [["Category", "Sub category", "Work unit", "Material rate", "Labour rate", "Article", "Article unit", "Scoped reference rate", "Variants", "Notes"]];
         master.workSubcategories.forEach((work) => {
             const category = master.workCategories.find((entry) => entry.id === work.category_id);
             (scopesByWork.get(work.id) || []).forEach((scope) => {
@@ -633,7 +633,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Layers3 className="h-5 w-5"/></span>
           <div>
             <h2 className="text-lg font-bold tracking-tight">Work & Rate Master</h2>
-            <p className="text-xs text-muted-foreground">Category → submodule → scoped material → variant · all linked to the shared unit master</p>
+            <p className="text-xs text-muted-foreground">Category → sub category → scoped material → variant · all linked to the shared unit master</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -646,7 +646,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Categories" value={master.workCategories.length} hint={`Source: ${catalogCounts.categories}`} tone="primary" icon={<Layers3 className="h-4 w-4"/>} onClick={() => setView("catalogue")} active={view === "catalogue"}/>
-        <MetricCard label="Submodules" value={master.workSubcategories.length} hint={`Source: ${catalogCounts.scopeLines}`} tone="success" icon={<Wrench className="h-4 w-4"/>} onClick={() => setView("catalogue")}/>
+        <MetricCard label="Sub categories" value={master.workSubcategories.length} hint={`Source: ${catalogCounts.scopeLines}`} tone="success" icon={<Wrench className="h-4 w-4"/>} onClick={() => setView("catalogue")}/>
         <MetricCard label="Scoped materials" value={scopeCount} hint={`Source: ${catalogCounts.sourceMaterialRows}`} tone="warning" icon={<Link2 className="h-4 w-4"/>} onClick={() => setView("articles")}/>
         <MetricCard label="Integrity" value={issues.length ? `${issues.length} issue${issues.length === 1 ? "" : "s"}` : "Clean"} tone={issues.length ? "destructive" : "success"} icon={issues.length ? <AlertTriangle className="h-4 w-4"/> : <ClipboardCheck className="h-4 w-4"/>} onClick={() => setView("integrity")} active={view === "integrity"}/>
       </div>
@@ -699,13 +699,13 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full max-w-md">
         <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search category, submodule, material or note..." className="pl-8"/>
+        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search category, sub category, material or note..." className="pl-8"/>
       </div>
       <span className="text-xs text-muted-foreground">{filteredCategories.length} categories shown</span>
       <Button size="sm" onClick={onAddCategory}><Plus className="h-3.5 w-3.5"/> Add category</Button>
     </div>
 
-    {filteredCategories.length === 0 ? <EmptyState title="No category match" description="Search by category, submodule, material article or scope note." icon={<Search className="h-7 w-7"/>}/> : null}
+    {filteredCategories.length === 0 ? <EmptyState title="No category match" description="Search by category, sub category, material article or scope note." icon={<Search className="h-7 w-7"/>}/> : null}
     {filteredCategories.map((category) => {
             const isExpanded = expanded[category.id] || Boolean(needle);
             const works = (workByCategory.get(category.id) || []).filter((work) => !needle || normalizeCatalogName(category.name).includes(needle) || normalizeCatalogName(work.name).includes(needle) || normalizeCatalogName(work.notes).includes(needle) || (scopesByWork.get(work.id) || []).some((scope) => normalizeCatalogName(articleFor(master, scope.article_id)?.name).includes(needle)));
@@ -723,17 +723,17 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
                         if (event.key === "Escape")
                             setEditingCategoryId(null);
                     }} className="h-8 max-w-md font-semibold"/>) : (<span className="block truncate text-sm font-bold">{category.name}</span>)}
-              <span className="text-[10px] text-muted-foreground">{works.length} submodules - {materialCount} scoped materials</span>
+              <span className="text-[10px] text-muted-foreground">{works.length} sub categories - {materialCount} scoped materials</span>
             </span>
           </button>
           <Button size="icon" variant="ghost" aria-label={`Edit ${category.name}`} onClick={() => setEditingCategoryId(category.id)}><Pencil className="h-4 w-4"/></Button>
-          <Button size="sm" variant="outline" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Add submodule</Button>
+          <Button size="sm" variant="outline" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Sub category</Button>
           <Button size="icon" variant="ghost" aria-label={`Delete ${category.name}`} onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
         </div>
         {isExpanded ? <div className="p-3">
           <div className="grid gap-3">
             {works.map((work) => <WorkItemCard key={work.id} master={master} work={work} scopes={scopesByWork.get(work.id) || []} variantsByArticle={variantsByArticle} updateWorkItem={updateWorkItem} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} removeScope={removeScope} setVariantArticleId={setVariantArticleId}/>)}
-            {works.length === 0 ? <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No submodules match this category filter.</div> : null}
+            {works.length === 0 ? <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No sub categories match this category filter.</div> : null}
           </div>
         </div> : null}
       </section>;
@@ -755,24 +755,38 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
     const total = amount(work.material_rate) + amount(work.labour_rate);
     const [open, setOpen] = React.useState(false);
     const [materialsOpen, setMaterialsOpen] = React.useState(false);
+    const [editingName, setEditingName] = React.useState(false);
     const workUnit = master.units.find((unit) => unit.id === work.unit_id)?.symbol || work.unit_id || "unit";
     return <article className="rounded-xl border border-border bg-background/50 p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         {open ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
         <span className="min-w-0">
-          <span className="block truncate text-sm font-semibold">{work.name}</span>
+          {editingName ? (<Input autoFocus defaultValue={work.name} onClick={(event) => event.stopPropagation()} onBlur={(event) => {
+            if (event.target.value !== work.name)
+                updateWorkItem(work.id, { name: event.target.value });
+            setEditingName(false);
+        }} onKeyDown={(event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                if (event.currentTarget.value !== work.name)
+                    updateWorkItem(work.id, { name: event.currentTarget.value });
+                setEditingName(false);
+            }
+            if (event.key === "Escape")
+                setEditingName(false);
+        }} className="h-8 max-w-md text-sm font-semibold"/>) : (<span className="block truncate text-sm font-semibold">{work.name}</span>)}
           <span className="text-[10px] text-muted-foreground">{scopes.length} scoped materials - {workUnit}</span>
         </span>
       </button>
       <div className="flex items-center gap-1.5">
+        <Button size="icon" variant="ghost" aria-label={`Rename ${work.name}`} onClick={() => setEditingName(true)}><Pencil className="h-4 w-4"/></Button>
         <StatusBadge label={`${total.toLocaleString("en-IN")} / ${workUnit}`} className="border-primary/20 bg-primary/10 text-primary"/>
         <Button size="icon" variant="ghost" aria-label={`Delete ${work.name}`} onClick={() => removeWorkItem(work.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
       </div>
     </div>
 
     {open ? <>
-      <div className="mt-3"><Input defaultValue={work.name} onBlur={(event) => event.target.value !== work.name && updateWorkItem(work.id, { name: event.target.value })} className="h-8 max-w-md text-sm font-semibold"/></div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Execution unit"><NativeSelect value={work.unit_id || "pcs"} onChange={(event) => updateWorkItem(work.id, { unit_id: event.target.value })}>{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></Field>
         <Field label="Material rate"><Input type="number" min="0" defaultValue={work.material_rate || 0} onBlur={(event) => updateWorkItem(work.id, { material_rate: amount(event.target.value) })}/></Field>
@@ -785,7 +799,7 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-2.5 py-2">
           <button type="button" onClick={() => setMaterialsOpen((value) => !value)} className="flex min-w-0 items-center gap-2 text-left">
             {materialsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
-            <span><span className="block text-xs font-semibold">Scoped material articles</span><span className="text-[10px] text-muted-foreground">{scopes.length} materials linked to this submodule</span></span>
+            <span><span className="block text-xs font-semibold">Scoped material articles</span><span className="text-[10px] text-muted-foreground">{scopes.length} materials linked to this sub category</span></span>
           </button>
           <Button size="sm" variant="outline" onClick={() => setMaterialWorkId(work.id)}><PackagePlus className="h-3.5 w-3.5"/> Link material</Button>
         </div>
@@ -875,7 +889,7 @@ function IntegrityView({ master, issues, onRepair }: {
     issues: ReturnType<typeof getCatalogIssues>;
     onRepair: () => void;
 }) {
-    return <div className="flex flex-col gap-3"><section className={cn("rounded-[var(--panel-radius)] border p-4 shadow-card", issues.length ? "border-destructive/30 bg-destructive/[0.04]" : "border-success/30 bg-success/[0.04]")}><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-2.5">{issues.length ? <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive"/> : <ClipboardCheck className="mt-0.5 h-5 w-5 text-success"/>}<div><h3 className="text-sm font-bold">{issues.length ? `${issues.length} category integrity issue${issues.length === 1 ? "" : "s"}` : "Category integrity is clean"}</h3><p className="mt-0.5 text-xs text-muted-foreground">Checks category uniqueness, work scope, article identity, scoped units, variants, and vendor-rate references.</p></div></div><Button size="sm" variant="outline" onClick={onRepair}><Settings2 className="h-3.5 w-3.5"/> Run safe repair</Button></div></section><div className="grid gap-3 md:grid-cols-3"><MetricCard label="Category tree" value={`${master.workCategories.length} / ${master.workSubcategories.length}`} hint="categories / submodules" tone="primary" icon={<Layers3 className="h-4 w-4"/>}/><MetricCard label="Material graph" value={`${master.articles.length} / ${master.subcategoryArticleMap.length}`} hint="canonical articles / scoped links" tone="warning" icon={<Link2 className="h-4 w-4"/>}/><MetricCard label="Price specifications" value={`${master.articleVariants.length} / ${master.vendorRates.length}`} hint="variants / vendor rate rows" tone="success" icon={<Tags className="h-4 w-4"/>}/></div>{issues.length ? <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card"><div className="border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold">Detected issues</div><div className="divide-y divide-border">{issues.map((issue, index) => <div key={`${issue.message}-${index}`} className="flex gap-2 px-3 py-2.5 text-xs"><AlertTriangle className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", issue.severity === "error" ? "text-destructive" : "text-warning")}/><span>{issue.message}</span></div>)}</div></div> : <EmptyState title="No broken links found" description="The master has stable units, unique article identity, valid scoped materials and valid vendor-rate references." icon={<ClipboardCheck className="h-7 w-7"/>}/>}</div>;
+    return <div className="flex flex-col gap-3"><section className={cn("rounded-[var(--panel-radius)] border p-4 shadow-card", issues.length ? "border-destructive/30 bg-destructive/[0.04]" : "border-success/30 bg-success/[0.04]")}><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-2.5">{issues.length ? <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive"/> : <ClipboardCheck className="mt-0.5 h-5 w-5 text-success"/>}<div><h3 className="text-sm font-bold">{issues.length ? `${issues.length} category integrity issue${issues.length === 1 ? "" : "s"}` : "Category integrity is clean"}</h3><p className="mt-0.5 text-xs text-muted-foreground">Checks category uniqueness, work scope, article identity, scoped units, variants, and vendor-rate references.</p></div></div><Button size="sm" variant="outline" onClick={onRepair}><Settings2 className="h-3.5 w-3.5"/> Run safe repair</Button></div></section><div className="grid gap-3 md:grid-cols-3"><MetricCard label="Category tree" value={`${master.workCategories.length} / ${master.workSubcategories.length}`} hint="categories / sub categories" tone="primary" icon={<Layers3 className="h-4 w-4"/>}/><MetricCard label="Material graph" value={`${master.articles.length} / ${master.subcategoryArticleMap.length}`} hint="canonical articles / scoped links" tone="warning" icon={<Link2 className="h-4 w-4"/>}/><MetricCard label="Price specifications" value={`${master.articleVariants.length} / ${master.vendorRates.length}`} hint="variants / vendor rate rows" tone="success" icon={<Tags className="h-4 w-4"/>}/></div>{issues.length ? <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card"><div className="border-b border-border bg-muted/40 px-3 py-2 text-xs font-semibold">Detected issues</div><div className="divide-y divide-border">{issues.map((issue, index) => <div key={`${issue.message}-${index}`} className="flex gap-2 px-3 py-2.5 text-xs"><AlertTriangle className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", issue.severity === "error" ? "text-destructive" : "text-warning")}/><span>{issue.message}</span></div>)}</div></div> : <EmptyState title="No broken links found" description="The master has stable units, unique article identity, valid scoped materials and valid vendor-rate references." icon={<ClipboardCheck className="h-7 w-7"/>}/>}</div>;
 }
 function CategoryDialog({ open, onOpenChange, onSave }: {
     open: boolean;
@@ -884,7 +898,7 @@ function CategoryDialog({ open, onOpenChange, onSave }: {
 }) {
     const [name, setName] = React.useState("");
     return <Dialog open={open} onOpenChange={(next) => { onOpenChange(next); if (!next)
-        setName(""); }}><DialogContent><DialogHeader><DialogTitle>Add work category</DialogTitle><DialogDescription>Create the top-level group for related execution submodules.</DialogDescription></DialogHeader><Field label="Category name"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="For example: Modular Kitchen" onKeyDown={(event) => { if (event.key === "Enter") {
+        setName(""); }}><DialogContent><DialogHeader><DialogTitle>Add work category</DialogTitle><DialogDescription>Create the top-level group for related execution sub categories.</DialogDescription></DialogHeader><Field label="Category name"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="For example: Modular Kitchen" onKeyDown={(event) => { if (event.key === "Enter") {
         onSave(name);
         onOpenChange(false);
     } }}/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(name); onOpenChange(false); }}>Add category</Button></DialogFooter></DialogContent></Dialog>;
@@ -899,7 +913,7 @@ function WorkItemDialog({ open, onOpenChange, category, units, onSave }: {
     const [draft, setDraft] = React.useState<DraftWork>({ categoryId: "", name: "", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" });
     React.useEffect(() => { if (open)
         setDraft({ categoryId: category?.id || "", name: "", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" }); }, [open, category?.id]);
-    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Add submodule</DialogTitle><DialogDescription>{category ? `Create an execution submodule under ${category.name}.` : "Create an execution submodule."}</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Submodule name"><Input autoFocus value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Gypsum false ceiling"/></Field><Field label="Execution unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><Field label="Material rate"><Input type="number" min="0" value={draft.materialRate} onChange={(event) => setDraft((current) => ({ ...current, materialRate: event.target.value }))}/></Field><Field label="Labour rate"><Input type="number" min="0" value={draft.labourRate} onChange={(event) => setDraft((current) => ({ ...current, labourRate: event.target.value }))}/></Field></div><Field label="Scope note"><Textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Where this work is used, finish workRequired, exclusions…"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}><Plus className="h-3.5 w-3.5"/> Add submodule</Button></DialogFooter></DialogContent></Dialog>;
+    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Add sub category</DialogTitle><DialogDescription>{category ? `Create an execution sub category under ${category.name}.` : "Create an execution sub category."}</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Sub category name"><Input autoFocus value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Gypsum false ceiling"/></Field><Field label="Execution unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><Field label="Material rate"><Input type="number" min="0" value={draft.materialRate} onChange={(event) => setDraft((current) => ({ ...current, materialRate: event.target.value }))}/></Field><Field label="Labour rate"><Input type="number" min="0" value={draft.labourRate} onChange={(event) => setDraft((current) => ({ ...current, labourRate: event.target.value }))}/></Field></div><Field label="Scope note"><Textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Where this work is used, finish workRequired, exclusions…"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}><Plus className="h-3.5 w-3.5"/> Add sub category</Button></DialogFooter></DialogContent></Dialog>;
 }
 function MaterialDialog({ open, onOpenChange, master, work, onSave }: {
     open: boolean;
@@ -912,7 +926,7 @@ function MaterialDialog({ open, onOpenChange, master, work, onSave }: {
     React.useEffect(() => { if (open)
         setDraft({ mode: "existing", articleId: "", name: "", unitId: work?.unit_id || "pcs", referenceRate: "0", variationNote: "", productNote: "" }); }, [open, work?.id, work?.unit_id]);
     const linkedIds = new Set(master.subcategoryArticleMap.filter((scope) => scope.work_required_id === work?.id).map((scope) => scope.article_id));
-    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Link material article</DialogTitle><DialogDescription>{work ? `Add a material context to ${work.name}. Its unit and scoped reference rate stay linked to this submodule.` : "Select a submodule."}</DialogDescription></DialogHeader><div className="flex gap-1 rounded-lg border border-border bg-muted/40 p-1"><Button size="sm" variant={draft.mode === "existing" ? "default" : "ghost"} onClick={() => setDraft((current) => ({ ...current, mode: "existing" }))}>Use canonical article</Button><Button size="sm" variant={draft.mode === "new" ? "default" : "ghost"} onClick={() => setDraft((current) => ({ ...current, mode: "new" }))}>Create article</Button></div>{draft.mode === "existing" ? <Field label="Canonical material article"><NativeSelect value={draft.articleId} onChange={(event) => { const chosen = master.articles.find((article) => article.id === event.target.value); setDraft((current) => ({ ...current, articleId: event.target.value, unitId: chosen?.default_unit_id || current.unitId })); }}><option value="">Select article</option>{master.articles.filter((article) => !linkedIds.has(article.id)).slice().sort((a, b) => a.name.localeCompare(b.name)).map((article) => <option key={article.id} value={article.id}>{article.name} · {unitLabel(master, article.default_unit_id)}</option>)}</NativeSelect></Field> : <div className="grid gap-3 sm:grid-cols-2"><Field label="Material article name"><Input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Premium laminate sheet"/></Field><Field label="Default procurement unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></Field></div>}<div className="grid gap-3 sm:grid-cols-2"><Field label="Scoped material unit" hint="This can differ from the article default when the same material is used in a different scope."><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></Field><Field label="Scoped reference rate"><Input type="number" min="0" value={draft.referenceRate} onChange={(event) => setDraft((current) => ({ ...current, referenceRate: event.target.value }))}/></Field></div><Field label="Scope note"><Input value={draft.variationNote} onChange={(event) => setDraft((current) => ({ ...current, variationNote: event.target.value }))} placeholder="Use variants for grade, pack, brand, size, finish or SKU"/></Field><Field label="Material note"><Textarea value={draft.productNote} onChange={(event) => setDraft((current) => ({ ...current, productNote: event.target.value }))} placeholder="Specification, sourcing, or installation note"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { if (work) {
+    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Link material article</DialogTitle><DialogDescription>{work ? `Add a material context to ${work.name}. Its unit and scoped reference rate stay linked to this sub category.` : "Select a sub category."}</DialogDescription></DialogHeader><div className="flex gap-1 rounded-lg border border-border bg-muted/40 p-1"><Button size="sm" variant={draft.mode === "existing" ? "default" : "ghost"} onClick={() => setDraft((current) => ({ ...current, mode: "existing" }))}>Use canonical article</Button><Button size="sm" variant={draft.mode === "new" ? "default" : "ghost"} onClick={() => setDraft((current) => ({ ...current, mode: "new" }))}>Create article</Button></div>{draft.mode === "existing" ? <Field label="Canonical material article"><NativeSelect value={draft.articleId} onChange={(event) => { const chosen = master.articles.find((article) => article.id === event.target.value); setDraft((current) => ({ ...current, articleId: event.target.value, unitId: chosen?.default_unit_id || current.unitId })); }}><option value="">Select article</option>{master.articles.filter((article) => !linkedIds.has(article.id)).slice().sort((a, b) => a.name.localeCompare(b.name)).map((article) => <option key={article.id} value={article.id}>{article.name} · {unitLabel(master, article.default_unit_id)}</option>)}</NativeSelect></Field> : <div className="grid gap-3 sm:grid-cols-2"><Field label="Material article name"><Input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Premium laminate sheet"/></Field><Field label="Default procurement unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></Field></div>}<div className="grid gap-3 sm:grid-cols-2"><Field label="Scoped material unit" hint="This can differ from the article default when the same material is used in a different scope."><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></Field><Field label="Scoped reference rate"><Input type="number" min="0" value={draft.referenceRate} onChange={(event) => setDraft((current) => ({ ...current, referenceRate: event.target.value }))}/></Field></div><Field label="Scope note"><Input value={draft.variationNote} onChange={(event) => setDraft((current) => ({ ...current, variationNote: event.target.value }))} placeholder="Use variants for grade, pack, brand, size, finish or SKU"/></Field><Field label="Material note"><Textarea value={draft.productNote} onChange={(event) => setDraft((current) => ({ ...current, productNote: event.target.value }))} placeholder="Specification, sourcing, or installation note"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { if (work) {
         onSave(work.id, draft);
         onOpenChange(false);
     } }}><Link2 className="h-3.5 w-3.5"/> Link material</Button></DialogFooter></DialogContent></Dialog>;
@@ -969,7 +983,7 @@ function UnitDialog({ open, onOpenChange, onSave }: {
 }) {
     const [draft, setDraft] = React.useState<DraftUnit>({ symbol: "", name: "", family: "other" });
     return <Dialog open={open} onOpenChange={(next) => { onOpenChange(next); if (!next)
-        setDraft({ symbol: "", name: "", family: "other" }); }}><DialogContent><DialogHeader><DialogTitle>Add shared unit</DialogTitle><DialogDescription>Create a stable unit once and reuse it across submodules, material scopes, variants and vendor rates.</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Symbol"><Input autoFocus value={draft.symbol} onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))} placeholder="sqmt"/></Field><Field label="Name"><Input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Square metres"/></Field><Field label="Family"><NativeSelect value={draft.family} onChange={(event) => setDraft((current) => ({ ...current, family: event.target.value as DraftUnit["family"] }))}><option value="area">Area</option><option value="length">Length</option><option value="count">Count</option><option value="weight">Weight</option><option value="volume">Volume</option><option value="package">Package</option><option value="other">Other</option></NativeSelect></Field></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}>Add unit</Button></DialogFooter></DialogContent></Dialog>;
+        setDraft({ symbol: "", name: "", family: "other" }); }}><DialogContent><DialogHeader><DialogTitle>Add shared unit</DialogTitle><DialogDescription>Create a stable unit once and reuse it across sub categories, material scopes, variants and vendor rates.</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Symbol"><Input autoFocus value={draft.symbol} onChange={(event) => setDraft((current) => ({ ...current, symbol: event.target.value }))} placeholder="sqmt"/></Field><Field label="Name"><Input value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Square metres"/></Field><Field label="Family"><NativeSelect value={draft.family} onChange={(event) => setDraft((current) => ({ ...current, family: event.target.value as DraftUnit["family"] }))}><option value="area">Area</option><option value="length">Length</option><option value="count">Count</option><option value="weight">Weight</option><option value="volume">Volume</option><option value="package">Package</option><option value="other">Other</option></NativeSelect></Field></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}>Add unit</Button></DialogFooter></DialogContent></Dialog>;
 }
 function ArticleDialog({ open, onOpenChange, units, onSave }: {
     open: boolean;
@@ -982,5 +996,5 @@ function ArticleDialog({ open, onOpenChange, units, onSave }: {
     return <Dialog open={open} onOpenChange={(next) => { onOpenChange(next); if (!next) {
         setName("");
         setUnitId("pcs");
-    } }}><DialogContent><DialogHeader><DialogTitle>Create canonical article</DialogTitle><DialogDescription>The article is a reusable material identity. Link it to specific submodules afterwards to set scoped rate and unit context.</DialogDescription></DialogHeader><Field label="Material article name"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="For example: WPC fluted panel 8ft"/></Field><Field label="Default procurement unit"><NativeSelect value={unitId} onChange={(event) => setUnitId(event.target.value)}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(name, unitId); onOpenChange(false); }}><FilePlus2 className="h-3.5 w-3.5"/> Create article</Button></DialogFooter></DialogContent></Dialog>;
+    } }}><DialogContent><DialogHeader><DialogTitle>Create canonical article</DialogTitle><DialogDescription>The article is a reusable material identity. Link it to specific sub categories afterwards to set scoped rate and unit context.</DialogDescription></DialogHeader><Field label="Material article name"><Input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="For example: WPC fluted panel 8ft"/></Field><Field label="Default procurement unit"><NativeSelect value={unitId} onChange={(event) => setUnitId(event.target.value)}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(name, unitId); onOpenChange(false); }}><FilePlus2 className="h-3.5 w-3.5"/> Create article</Button></DialogFooter></DialogContent></Dialog>;
 }
