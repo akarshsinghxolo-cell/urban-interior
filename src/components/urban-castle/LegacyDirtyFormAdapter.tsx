@@ -12,100 +12,24 @@ interface LegacyDialogConfig {
 }
 
 const LEGACY_DIALOG_CONFIGS: readonly LegacyDialogConfig[] = [
-  {
-    title: /^New quotation$/i,
-    label: "Quotation draft",
-    saveButton: /^Create quotation$/i,
-  },
-  {
-    title: /^Edit BOQ rate$/i,
-    label: "BOQ rate edit",
-    saveButton: /^Save rate$/i,
-  },
-  {
-    title: /^Create Purchase Order$/i,
-    label: "Purchase Order form",
-    saveButton: /^Create PO(?:\s*&\s*update rates)?$/i,
-  },
-  {
-    title: /^Direct Award PO$/i,
-    label: "Direct Award Purchase Order",
-    saveButton: /^Create direct-award PO$/i,
-  },
-  {
-    title: /^Record vendor bid$/i,
-    label: "Vendor bid form",
-    saveButton: /^Record bid$/i,
-  },
-  {
-    title: /^Record Article-wise Vendor Bid$/i,
-    label: "Vendor bid form",
-    saveButton: /^Record bid$/i,
-  },
-  {
-    title: /^Invite contractor bid\b/i,
-    label: "Contractor bid form",
-    saveButton: /^Record bid$/i,
-  },
-  {
-    title: /^Direct Award Contractor\b/i,
-    label: "Direct Award Contractor form",
-    saveButton: /^Create direct-award Work Order$/i,
-  },
-  {
-    title: /^Add New Customer$/i,
-    label: "Customer form",
-    saveButton: /^Create customer$/i,
-    saveTimeoutMs: 4_000,
-  },
-  {
-    title: /^Edit Customer$/i,
-    label: "Customer form",
-    saveButton: /^Save changes$/i,
-    saveTimeoutMs: 4_000,
-  },
-  {
-    title: /^Add Site$/i,
-    label: "Site form",
-    saveButton: /^Add Site$/i,
-    saveTimeoutMs: 4_000,
-  },
-  {
-    title: /^Edit Site$/i,
-    label: "Site form",
-    saveButton: /^Save Site$/i,
-    saveTimeoutMs: 4_000,
-  },
-  {
-    title: /^Record Supplier Invoice$/i,
-    label: "Vendor bill form",
-    saveButton: /^Create draft invoice$/i,
-  },
-  {
-    title: /^Request contractor payment$/i,
-    label: "Contractor RA bill form",
-    saveButton: /^Submit bill$/i,
-  },
-  {
-    title: /^Add Staff Operations Profile$/i,
-    label: "Staff Operations profile",
-    saveButton: /^Create staff$/i,
-  },
-  {
-    title: /^Edit Staff Operations Profile$/i,
-    label: "Staff Operations profile",
-    saveButton: /^Save changes$/i,
-  },
-  {
-    title: /^New Approval Policy$/i,
-    label: "Approval Policy form",
-    saveButton: /^Create Policy$/i,
-  },
-  {
-    title: /^Edit Policy$/i,
-    label: "Approval Policy form",
-    saveButton: /^Save Changes$/i,
-  },
+  { title: /^New quotation$/i, label: "Quotation draft", saveButton: /^Create quotation$/i },
+  { title: /^Edit BOQ rate$/i, label: "BOQ rate edit", saveButton: /^Save rate$/i },
+  { title: /^Create Purchase Order$/i, label: "Purchase Order form", saveButton: /^Create PO(?:\s*&\s*update rates)?$/i },
+  { title: /^Direct Award PO$/i, label: "Direct Award Purchase Order", saveButton: /^Create direct-award PO$/i },
+  { title: /^Record vendor bid$/i, label: "Vendor bid form", saveButton: /^Record bid$/i },
+  { title: /^Record Article-wise Vendor Bid$/i, label: "Vendor bid form", saveButton: /^Record bid$/i },
+  { title: /^Invite contractor bid\b/i, label: "Contractor bid form", saveButton: /^Record bid$/i },
+  { title: /^Direct Award Contractor\b/i, label: "Direct Award Contractor form", saveButton: /^Create direct-award Work Order$/i },
+  { title: /^Add New Customer$/i, label: "Customer form", saveButton: /^Create customer$/i, saveTimeoutMs: 4_000 },
+  { title: /^Edit Customer$/i, label: "Customer form", saveButton: /^Save changes$/i, saveTimeoutMs: 4_000 },
+  { title: /^Add Site$/i, label: "Site form", saveButton: /^Add Site$/i, saveTimeoutMs: 4_000 },
+  { title: /^Edit Site$/i, label: "Site form", saveButton: /^Save Site$/i, saveTimeoutMs: 4_000 },
+  { title: /^Record Supplier Invoice$/i, label: "Vendor bill form", saveButton: /^Create draft invoice$/i },
+  { title: /^Request contractor payment$/i, label: "Contractor RA bill form", saveButton: /^Submit bill$/i },
+  { title: /^Add Staff Operations Profile$/i, label: "Staff Operations profile", saveButton: /^Create staff$/i },
+  { title: /^Edit Staff Operations Profile$/i, label: "Staff Operations profile", saveButton: /^Save changes$/i },
+  { title: /^New Approval Policy$/i, label: "Approval Policy form", saveButton: /^Create Policy$/i },
+  { title: /^Edit Policy$/i, label: "Approval Policy form", saveButton: /^Save Changes$/i },
 ] as const;
 
 const DEFAULT_CANCEL_BUTTON = /^(?:Cancel|Close)$/i;
@@ -131,6 +55,11 @@ function normalizedText(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function matchesPattern(pattern: RegExp, value: string): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(value);
+}
+
 function dialogTitle(dialog: HTMLElement): string {
   const title = dialog.querySelector<HTMLElement>(
     '[data-slot="dialog-title"], [role="heading"], h2',
@@ -139,10 +68,7 @@ function dialogTitle(dialog: HTMLElement): string {
 }
 
 function dialogConfig(title: string): LegacyDialogConfig | undefined {
-  return LEGACY_DIALOG_CONFIGS.find((config) => {
-    config.title.lastIndex = 0;
-    return config.title.test(title);
-  });
+  return LEGACY_DIALOG_CONFIGS.find((config) => matchesPattern(config.title, title));
 }
 
 function controlValue(control: Element): unknown {
@@ -203,10 +129,13 @@ export function legacyDialogFingerprint(dialog: HTMLElement): string {
 
 function buttonWithText(dialog: HTMLElement, pattern: RegExp): HTMLButtonElement | undefined {
   return Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"))
-    .find((button) => {
-      pattern.lastIndex = 0;
-      return pattern.test(normalizedText(button.textContent));
-    });
+    .find((button) => matchesPattern(pattern, normalizedText(button.textContent)));
+}
+
+function closeButtonFor(entry: ManagedLegacyDialog): HTMLButtonElement | undefined {
+  return buttonWithText(entry.dialog, entry.config.cancelButton || DEFAULT_CANCEL_BUTTON) ||
+    entry.dialog.querySelector<HTMLButtonElement>('[data-slot="dialog-close"]') ||
+    undefined;
 }
 
 function wait(milliseconds: number): Promise<void> {
@@ -233,14 +162,29 @@ export function LegacyDirtyFormAdapter(): null {
   React.useEffect(() => {
     const managed = new Map<HTMLElement, ManagedLegacyDialog>();
     const pending = new WeakSet<HTMLElement>();
+    const closeBypass = new WeakSet<HTMLElement>();
     let sequence = 0;
     let scanFrame: number | null = null;
+
+    const isDirty = (entry: ManagedLegacyDialog) => dirtyFormRegistry
+      .getSnapshot()
+      .dirtyForms
+      .some((form) => form.id === entry.id);
 
     const syncManagedDialog = (entry: ManagedLegacyDialog) => {
       if (!entry.dialog.isConnected) return;
       dirtyFormRegistry.update(entry.id, {
         dirty: legacyDialogFingerprint(entry.dialog) !== entry.baseline,
       });
+    };
+
+    const closeManagedDialog = (entry: ManagedLegacyDialog): boolean => {
+      if (!entry.dialog.isConnected) return true;
+      const button = closeButtonFor(entry);
+      if (!button || button.disabled) return false;
+      closeBypass.add(entry.dialog);
+      button.click();
+      return true;
     };
 
     const saveManagedDialog = async (entry: ManagedLegacyDialog): Promise<boolean> => {
@@ -259,21 +203,21 @@ export function LegacyDirtyFormAdapter(): null {
     };
 
     const discardManagedDialog = async (entry: ManagedLegacyDialog): Promise<boolean> => {
-      if (!entry.dialog.isConnected) return true;
-      const button = buttonWithText(
-        entry.dialog,
-        entry.config.cancelButton || DEFAULT_CANCEL_BUTTON,
-      );
-      if (!button || button.disabled) return false;
-
-      // Discard means abandon the local component state by closing the dialog.
-      // Mark it clean first so its existing close handler is not guarded again.
-      dirtyFormRegistry.markClean(entry.id);
-      button.click();
+      if (!closeManagedDialog(entry)) return false;
       if (await waitForDialogClose(entry.dialog, 500)) return true;
 
+      closeBypass.delete(entry.dialog);
       syncManagedDialog(entry);
       return false;
+    };
+
+    const requestDialogClose = (entry: ManagedLegacyDialog, reason: string) => {
+      dirtyFormRegistry.requestNavigation(
+        () => {
+          closeManagedDialog(entry);
+        },
+        { reason },
+      );
     };
 
     const registerDialog = (dialog: HTMLElement) => {
@@ -335,6 +279,58 @@ export function LegacyDirtyFormAdapter(): null {
       scanFrame = window.requestAnimationFrame(scan);
     };
 
+    const entryContaining = (node: Node): ManagedLegacyDialog | undefined => {
+      for (const entry of managed.values()) {
+        if (entry.dialog.contains(node)) return entry;
+      }
+      return undefined;
+    };
+
+    const topDirtyEntry = (): ManagedLegacyDialog | undefined => {
+      const visible = [...managed.values()].filter((entry) => entry.dialog.isConnected && isDirty(entry));
+      return visible[visible.length - 1];
+    };
+
+    const onClickCapture = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      const button = target instanceof Element ? target.closest<HTMLButtonElement>("button") : null;
+      if (!button) return;
+      const entry = entryContaining(button);
+      if (!entry || !isDirty(entry)) return;
+      const cancelPattern = entry.config.cancelButton || DEFAULT_CANCEL_BUTTON;
+      const isCloseTrigger = button.matches('[data-slot="dialog-close"]') ||
+        matchesPattern(cancelPattern, normalizedText(button.textContent));
+      if (!isCloseTrigger) return;
+      if (closeBypass.has(entry.dialog)) {
+        closeBypass.delete(entry.dialog);
+        return;
+      }
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestDialogClose(entry, `close ${entry.config.label}`);
+    };
+
+    const onKeyDownCapture = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const entry = topDirtyEntry();
+      if (!entry) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestDialogClose(entry, `close ${entry.config.label}`);
+    };
+
+    const onPointerDownCapture = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('[data-slot="dialog-overlay"]')) return;
+      const entry = topDirtyEntry();
+      if (!entry) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      requestDialogClose(entry, `close ${entry.config.label}`);
+    };
+
     const observer = new MutationObserver(scheduleScan);
     observer.observe(document.body, {
       childList: true,
@@ -344,6 +340,9 @@ export function LegacyDirtyFormAdapter(): null {
     document.addEventListener("input", scheduleScan, true);
     document.addEventListener("change", scheduleScan, true);
     document.addEventListener("click", scheduleScan, true);
+    document.addEventListener("click", onClickCapture, true);
+    document.addEventListener("keydown", onKeyDownCapture, true);
+    document.addEventListener("pointerdown", onPointerDownCapture, true);
     scheduleScan();
 
     return () => {
@@ -351,6 +350,9 @@ export function LegacyDirtyFormAdapter(): null {
       document.removeEventListener("input", scheduleScan, true);
       document.removeEventListener("change", scheduleScan, true);
       document.removeEventListener("click", scheduleScan, true);
+      document.removeEventListener("click", onClickCapture, true);
+      document.removeEventListener("keydown", onKeyDownCapture, true);
+      document.removeEventListener("pointerdown", onPointerDownCapture, true);
       if (scanFrame !== null) window.cancelAnimationFrame(scanFrame);
       for (const entry of managed.values()) entry.unregister();
       managed.clear();
