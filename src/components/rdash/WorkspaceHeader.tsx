@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, ChevronRight, ChevronLeft, Command, UserCircle2, Keyboard, PanelLeft, LogOut } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { clearSessionToken } from "@/lib/rdash/client-auth";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useWorkspaceOutbox } from "@/lib/uploads/use-workspace-outbox";
 import { confirmWorkspaceExit } from "@/lib/uploads/workspace-exit-guard";
 import { ThemeToggle } from "./ThemeToggle";
@@ -39,16 +40,20 @@ export function WorkspaceHeader() {
   const hasConflict = outbox.items.some((item) => item.status === "conflict" || item.status === "failed_permanent");
 
   const refresh = () => {
-    if (!confirmWorkspaceExit(outbox, "reload")) return;
-    window.location.reload();
+    dirtyFormRegistry.requestNavigation(() => {
+      if (!confirmWorkspaceExit(outbox, "reload")) return;
+      window.location.reload();
+    }, { reason: "reload the workspace" });
   };
 
   const signOut = () => {
     setMoreMenuOpen(false);
-    if (!confirmWorkspaceExit(outbox, "sign-out")) return;
-    clearSessionToken();
-    void fetch("/api/auth/logout", { method: "POST" })
-      .finally(() => window.location.assign("/signin"));
+    dirtyFormRegistry.requestNavigation(() => {
+      if (!confirmWorkspaceExit(outbox, "sign-out")) return;
+      clearSessionToken();
+      void fetch("/api/auth/logout", { method: "POST" })
+        .finally(() => window.location.assign("/signin"));
+    }, { reason: "sign out" });
   };
 
   return (
