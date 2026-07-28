@@ -33,7 +33,7 @@ describe("runtime efficiency hardening", () => {
     expect(source).toContain("sharedHealthRead");
     expect(source).toContain("HEALTH_CACHE_TTL_MS = 5 * 60_000");
     expect(source).toContain("HEALTH_CACHE_PREFIX");
-    expect(source).toContain("navigator as Navigator & { locks?: BrowserLocks }");
+    expect(source).toContain("navigator as unknown as { locks?: BrowserLocks }");
     expect(source).toContain("Re-check after entering the cross-tab lock");
     expect(source).toContain("readStoredHealthResponse");
     expect(source).toContain("persistHealthResponse");
