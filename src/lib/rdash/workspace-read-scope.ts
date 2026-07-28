@@ -6,20 +6,69 @@ import {
   type WorkspaceEntityKind,
 } from "./workspace-entity-routes";
 
-export type WorkspaceReadScope = "full" | "customer" | "site";
+export type WorkspaceReadScope =
+  | "full"
+  | "customer"
+  | "site"
+  | "workdesk"
+  | "quotation"
+  | "field"
+  | "procurement"
+  | "finance";
+export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "full">;
 export type RowScopedWorkspaceEntityKind = Extract<WorkspaceEntityKind, "customer" | "site">;
 
-const CUSTOMER_SCOPE_MODULES = new Set([
-  "customerDesk",
-  "customerTimeline",
-  "customerRequests",
+const MODULE_SCOPE_BY_ID = new Map<string, ModuleWorkspaceReadScope>([
+  ["customerDesk", "customer"],
+  ["customerTimeline", "customer"],
+  ["customerRequests", "customer"],
+
+  ["siteExecution", "site"],
+  ["drawings", "site"],
+  ["executionLogs", "site"],
+  ["woTimeline", "site"],
+
+  ["workdesk", "workdesk"],
+  ["unifiedThreadInbox", "workdesk"],
+  ["tasks", "workdesk"],
+  ["blockedRisks", "workdesk"],
+  ["approvals", "workdesk"],
+  ["calendarRecurring", "workdesk"],
+
+  ["quotationDesk", "quotation"],
+  ["quotationConfig", "quotation"],
+
+  ["fieldOperations", "field"],
+  ["siteMeasurement", "field"],
+  ["visitProofs", "field"],
+  ["fieldMode", "field"],
+  ["gpsTracking", "field"],
+
+  ["procurementInventory", "procurement"],
+  ["boqControlCentre", "procurement"],
+  ["grn", "procurement"],
+  ["inventory", "procurement"],
+  ["dispatch", "procurement"],
+
+  ["financeDesk", "finance"],
+  ["payments", "finance"],
+  ["invoices", "finance"],
+  ["vendorBills", "finance"],
+  ["contractorPayments", "finance"],
+  ["profitability", "finance"],
+  ["commissions", "finance"],
+  ["gstReturns", "finance"],
 ]);
 
-const SITE_SCOPE_MODULES = new Set([
-  "siteExecution",
-  "drawings",
-  "executionLogs",
-  "woTimeline",
+const KNOWN_SCOPES = new Set<WorkspaceReadScope>([
+  "full",
+  "customer",
+  "site",
+  "workdesk",
+  "quotation",
+  "field",
+  "procurement",
+  "finance",
 ]);
 
 export interface WorkspaceReadTarget {
@@ -41,16 +90,19 @@ export interface WorkspaceReadCoverage {
 
 export function workspaceReadScopeForModule(moduleId: string | null | undefined): WorkspaceReadScope {
   const id = String(moduleId || "").trim();
-  if (CUSTOMER_SCOPE_MODULES.has(id)) return "customer";
-  if (SITE_SCOPE_MODULES.has(id)) return "site";
-  return "full";
+  return MODULE_SCOPE_BY_ID.get(id) || "full";
+}
+
+export function workspaceReadScopeFromMode(mode: string | null | undefined): WorkspaceReadScope {
+  const normalized = String(mode || "").trim().replace(/-row$/, "") as WorkspaceReadScope;
+  return KNOWN_SCOPES.has(normalized) ? normalized : "full";
 }
 
 export function workspaceReadScopeFromDatabase(database: unknown): WorkspaceReadScope {
   const value = database && typeof database === "object"
     ? String((database as Record<string, unknown>)._workspace_read_scope || "")
     : "";
-  return value === "customer" || value === "site" ? value : "full";
+  return workspaceReadScopeFromMode(value);
 }
 
 export function workspaceReadTargetForModule(moduleId: string): WorkspaceReadTarget {
@@ -104,9 +156,9 @@ export function rowScopedEntityForTarget(
 }
 
 /**
- * Full and collection-scoped snapshots cover narrower entity routes. A row
- * snapshot covers only the same Customer/Site URL; closing it to the module list
- * or opening a different record requires an expansion before interaction.
+ * A full snapshot covers every destination. Collection-scoped snapshots cover
+ * every module and entity URL assigned to the same scope. Customer/Site row
+ * snapshots remain compatible only with the exact same canonical record.
  */
 export function workspaceReadCoverageIsCompatible(
   current: WorkspaceReadCoverage,
@@ -114,7 +166,7 @@ export function workspaceReadCoverageIsCompatible(
 ): boolean {
   if (current.scope === "full") return true;
   if (current.scope !== requested.scope) return false;
-  if (current.mode === "customer" || current.mode === "site") return true;
+  if (current.mode === current.scope) return true;
 
   const entity = rowScopedEntityForTarget(requested);
   return Boolean(
