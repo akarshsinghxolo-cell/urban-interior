@@ -7,8 +7,10 @@ import { RDashApp } from "../rdash/RDashApp";
 import { UploadManagerProvider } from "@/components/uploads/UploadManagerProvider";
 import { useRDashStore } from "@/lib/rdash/store";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
+import { useInstallDirtyFormNavigationGuards } from "@/lib/rdash/use-dirty-form-guard";
 import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
 import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
+import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
 /** Urban Castle application shell. */
@@ -21,6 +23,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
     }
   }, []);
 
+  useInstallDirtyFormNavigationGuards();
   useBrowserHistorySync(historyEnabled);
   useWorkspaceExitGuard();
 
@@ -75,6 +78,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
   return (
     <UploadManagerProvider>
       <RDashApp />
+      <DirtyFormNavigationGuard />
       <WorkspaceScopedReadBoundary />
       <ReconcileWorkspaceButton />
     </UploadManagerProvider>
