@@ -134,6 +134,8 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain('[role="switch"]');
     expect(source).toContain('button[title^="Preview "]');
     expect(source).toContain("selectedButtonValues");
+    expect(source).toContain("saveTimeoutMs: 4_000");
+    expect(source).toContain("entry.config.saveTimeoutMs");
     expect(source).toContain("config.title.lastIndex = 0");
     expect(source).toContain("pattern.lastIndex = 0");
     expect(source).toContain("legacyDialogFingerprint");
