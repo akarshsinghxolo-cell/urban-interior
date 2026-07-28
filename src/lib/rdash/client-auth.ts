@@ -265,7 +265,7 @@ async function sharedHealthRead(
     return response;
   };
 
-  const locks = (navigator as Navigator & { locks?: BrowserLocks }).locks;
+  const locks = (navigator as unknown as { locks?: BrowserLocks }).locks;
   healthRequest = (locks
     ? locks.request(`uc-workspace-health:${healthStorageKey()}`, fetchOrReuse)
     : fetchOrReuse()
