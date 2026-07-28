@@ -18,6 +18,7 @@
     "test:detail-tabs": "bun test tests/workspace-detail-tabs.test.ts",
     "test:customer-tabs": "bun test tests/workspace-customer-tabs.test.ts",
     "test:task-scope": "bun test tests/workspace-task-scope.test.ts",
+    "test:location-presentation": "bun test tests/workspace-location-presentation.test.ts",
     "test:auth-return": "bun test tests/workspace-auth-return.test.ts tests/workspace-auth-middleware.test.ts",
     "test:route-access": "bun test tests/workspace-route-access.test.ts",
     "test:auth-security": "bun test tests/auth-source-security.test.ts"
