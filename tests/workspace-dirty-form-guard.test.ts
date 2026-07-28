@@ -140,6 +140,8 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain("selectedButtonValues");
     expect(source).toContain("saveTimeoutMs: 4_000");
     expect(source).toContain("entry.config.saveTimeoutMs");
+    expect(source).toContain("syncAllManagedDialogs");
+    expect(source).toContain("onFormValueCapture");
     expect(source).toContain("onClickCapture");
     expect(source).toContain("onKeyDownCapture");
     expect(source).toContain("onPointerDownCapture");
