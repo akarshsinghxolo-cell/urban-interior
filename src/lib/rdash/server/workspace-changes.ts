@@ -1,4 +1,5 @@
 import { getSupabaseAdminClient } from "../../supabase/server";
+import type { WorkspaceDeltaPayload } from "../workspace-delta";
 import { COLLECTION_TO_TABLE } from "./commit-rest";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -9,23 +10,6 @@ export interface WorkspaceChangeBatch {
   operations: unknown;
   row_versions: unknown;
   is_baseline?: boolean;
-}
-
-export interface WorkspaceDeltaPayload {
-  fromRevision: number;
-  revision: number;
-  currentRevision: number;
-  baselineRevision: number;
-  changedRows: Record<string, Array<Record<string, unknown>>>;
-  deletedRowIds: Record<string, string[]>;
-  rowVersions: Record<string, number>;
-  collectionRevisions: Record<string, number>;
-  hasMore: boolean;
-  requiresFullReload: boolean;
-  reason?: "journal_gap" | "revision_too_old" | "client_ahead" | "invalid_journal";
-  batchCount: number;
-  queryCount?: number;
-  loadMs?: number;
 }
 
 type JournalOperation = {
@@ -97,7 +81,9 @@ function normalizedRowVersions(value: unknown): Record<string, number> {
 /**
  * Collapses a contiguous revision journal into the latest row state per ID.
  * Each atomic commit deletes first and then upserts, so a recreated row wins
- * over a delete recorded in the same revision.
+ * over a delete recorded in the same revision. When allowedCollections is set,
+ * unrelated operations are validated but omitted while the delivered revision
+ * still advances across every contiguous batch.
  */
 export function aggregateWorkspaceChangeBatches(input: {
   afterRevision: number;
@@ -105,6 +91,7 @@ export function aggregateWorkspaceChangeBatches(input: {
   baselineRevision: number;
   batches: WorkspaceChangeBatch[];
   maxBatches?: number;
+  allowedCollections?: ReadonlySet<string>;
 }): WorkspaceDeltaPayload {
   const {
     afterRevision,
@@ -112,6 +99,7 @@ export function aggregateWorkspaceChangeBatches(input: {
     baselineRevision,
     batches,
     maxBatches = MAX_WORKSPACE_DELTA_BATCHES,
+    allowedCollections,
   } = input;
 
   if (afterRevision > currentRevision) {
@@ -156,13 +144,16 @@ export function aggregateWorkspaceChangeBatches(input: {
   const collectionRevisions: Record<string, number> = {};
 
   for (const batch of available) {
-    const operations = normalizedOperations(batch.operations);
-    if (!operations) {
+    const parsedOperations = normalizedOperations(batch.operations);
+    if (!parsedOperations) {
       return emptyDelta(afterRevision, currentRevision, currentRevision, baselineRevision, {
         requiresFullReload: true,
         reason: "invalid_journal",
       });
     }
+    const operations = allowedCollections
+      ? parsedOperations.filter((operation) => allowedCollections.has(operation.collection))
+      : parsedOperations;
     const batchVersions = normalizedRowVersions(batch.row_versions);
 
     // PostgreSQL deletes every collection in reverse dependency order first.
@@ -223,7 +214,10 @@ export function aggregateWorkspaceChangeBatches(input: {
   };
 }
 
-export async function getWorkspaceChanges(afterRevision: number): Promise<WorkspaceDeltaPayload> {
+export async function getWorkspaceChanges(
+  afterRevision: number,
+  allowedCollections?: ReadonlySet<string>,
+): Promise<WorkspaceDeltaPayload> {
   const startedAt = performance.now();
   const admin = getSupabaseAdminClient();
 
@@ -257,6 +251,7 @@ export async function getWorkspaceChanges(afterRevision: number): Promise<Worksp
       currentRevision,
       baselineRevision,
       batches: [],
+      allowedCollections,
     });
     return {
       ...payload,
@@ -281,6 +276,7 @@ export async function getWorkspaceChanges(afterRevision: number): Promise<Worksp
     currentRevision,
     baselineRevision,
     batches: (data || []) as WorkspaceChangeBatch[],
+    allowedCollections,
   });
   return {
     ...payload,
