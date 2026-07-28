@@ -18,10 +18,12 @@ type RestEntityRow = {
   data: unknown;
 };
 
-type QuerySpec =
-  | { collection: string; kind: "full" }
-  | { collection: string; kind: "ids"; values: string[] }
-  | { collection: string; kind: "json-in"; field: string; values: string[] };
+type CollectionQuery = {
+  collection: string;
+  full: boolean;
+  ids: string[];
+  jsonFields: Record<string, string[]>;
+};
 
 function normalizeValues(values: unknown): string[] {
   if (!Array.isArray(values)) return [];
@@ -72,49 +74,72 @@ async function readRevision(): Promise<{ revision: number; updatedAt: string }> 
   };
 }
 
-function querySpecs(plan: EntityScopedReadPlan): QuerySpec[] {
-  const full = new Set((plan.fullCollections || []).map((value) => String(value || "").trim()).filter(Boolean));
-  const specs: QuerySpec[] = [...full].map((collection) => ({ collection, kind: "full" }));
+function collectionQueries(plan: EntityScopedReadPlan): CollectionQuery[] {
+  const queries = new Map<string, CollectionQuery>();
+  const ensure = (collection: string) => {
+    const normalized = String(collection || "").trim();
+    if (!normalized) throw new Error("INVALID:Workspace collection is required.");
+    const current = queries.get(normalized) || {
+      collection: normalized,
+      full: false,
+      ids: [],
+      jsonFields: {},
+    };
+    queries.set(normalized, current);
+    return current;
+  };
 
+  for (const collection of plan.fullCollections || []) ensure(collection).full = true;
   for (const [collection, rawValues] of Object.entries(plan.rowsByCollection || {})) {
-    if (full.has(collection)) continue;
-    const values = normalizeValues(rawValues);
-    if (values.length) specs.push({ collection, kind: "ids", values });
+    const query = ensure(collection);
+    query.ids = normalizeValues(rawValues);
   }
-
   for (const [collection, rawFields] of Object.entries(plan.jsonFieldValuesByCollection || {})) {
-    if (full.has(collection)) continue;
+    const query = ensure(collection);
     for (const [field, rawValues] of Object.entries(rawFields || {})) {
       if (!SAFE_JSON_FIELD.test(field)) throw new Error(`INVALID:Unsafe JSON relationship field ${field}.`);
       const values = normalizeValues(rawValues);
-      if (values.length) specs.push({ collection, kind: "json-in", field, values });
+      if (values.length) query.jsonFields[field] = values;
     }
   }
 
-  return specs;
+  return [...queries.values()].filter((query) =>
+    query.full || query.ids.length > 0 || Object.keys(query.jsonFields).length > 0
+  );
+}
+
+function quotePostgrestValue(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function inExpression(column: string, values: string[]): string {
+  return `${column}.in.(${values.map(quotePostgrestValue).join(",")})`;
 }
 
 /**
- * Reads entity rows by primary ID or by a top-level JSONB relationship field.
- * PostgREST supports JSON paths in filters, so `data->>site_id IN (...)` avoids
- * reconstructing a complete collection merely to select one Customer/Site graph.
+ * Reads entity rows by primary ID or top-level JSONB relationship fields.
+ * All selectors for one table are combined into a single PostgREST OR filter,
+ * so adding dependency fields does not multiply requests to the same collection.
  */
 export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): Promise<WorkspaceSubset> {
   const admin = getSupabaseAdminClient();
   const revisionState = await readRevision();
-  const specs = querySpecs(plan);
+  const queries = collectionQueries(plan);
 
-  const results = await Promise.all(specs.map(async (spec) => {
+  const results = await Promise.all(queries.map(async (spec) => {
     const table = tableFor(spec.collection);
     let query = admin
       .from(table)
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
 
-    if (spec.kind === "ids") {
-      query = query.in("id", spec.values);
-    } else if (spec.kind === "json-in") {
-      query = query.in(`data->>${spec.field}`, spec.values);
+    if (!spec.full) {
+      const filters: string[] = [];
+      if (spec.ids.length) filters.push(inExpression("id", spec.ids));
+      for (const [field, values] of Object.entries(spec.jsonFields)) {
+        filters.push(inExpression(`data->>${field}`, values));
+      }
+      query = query.or(filters.join(","));
     }
 
     const { data, error } = await query;
@@ -124,29 +149,22 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
     return { collection: spec.collection, rows: (data || []) as RestEntityRow[] };
   }));
 
-  const mergedByCollection = new Map<string, Map<string, RestEntityRow>>();
-  for (const result of results) {
-    const rows = mergedByCollection.get(result.collection) || new Map<string, RestEntityRow>();
-    for (const row of result.rows) rows.set(row.id, row);
-    mergedByCollection.set(result.collection, rows);
-  }
-
   const data = emptyWorkspaceData();
   const rowVersions: Record<string, number> = {};
-  for (const [collection, rows] of mergedByCollection) {
-    const decoded = [...rows.values()].map((row) => {
+  for (const result of results) {
+    const decoded = result.rows.map((row) => {
       if (typeof row.revision === "number") {
         rowVersions[row.id] = row.revision;
-        rowVersions[`${collection}:${row.id}`] = row.revision;
+        rowVersions[`${result.collection}:${row.id}`] = row.revision;
       }
       return decodeRow(row);
     }).filter(Boolean) as Array<Record<string, unknown>>;
 
-    if (collection.startsWith("master.")) {
-      const key = collection.slice("master.".length);
+    if (result.collection.startsWith("master.")) {
+      const key = result.collection.slice("master.".length);
       (data.master as unknown as Record<string, unknown>)[key] = decoded;
     } else {
-      (data as unknown as Record<string, unknown>)[collection] = decoded;
+      (data as unknown as Record<string, unknown>)[result.collection] = decoded;
     }
   }
 
@@ -155,6 +173,6 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
     updatedAt: revisionState.updatedAt,
     data,
     rowVersions,
-    queryCount: 1 + specs.length,
+    queryCount: 1 + queries.length,
   };
 }
