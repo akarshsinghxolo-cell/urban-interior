@@ -1,11 +1,13 @@
 "use client";
 
 import * as React from "react";
+import { usePathname } from "next/navigation";
 import { AlertTriangle, Database, LoaderCircle, RotateCw } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import {
-  workspaceReadScopeForModule,
-  workspaceReadScopeIsCompatible,
+  workspaceReadCoverageIsCompatible,
+  workspaceReadTargetForModule,
+  workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
@@ -27,17 +29,23 @@ interface WorkspaceReadPayload {
 }
 
 /**
- * A scoped initial snapshot is safe while the user remains inside that module
- * family. Moving to another family loads its server scope (or the full fallback)
- * before allowing interaction, then reapplies IndexedDB-backed pending changes.
+ * A scoped snapshot is interactive only while it covers the canonical route.
+ * Moving from one row graph to another, closing to a module list, or crossing a
+ * module family loads the destination scope before removing this blocking layer.
  */
 export function WorkspaceScopedReadBoundary() {
+  const pathname = usePathname();
   const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
-  const requestedScope = workspaceReadScopeForModule(activeModuleId);
-  const needsExpansion = Boolean(authUser) && !workspaceReadScopeIsCompatible(readState.scope, requestedScope);
+  const requestedTarget = React.useMemo(() => {
+    const pathTarget = workspaceReadTargetForPath(pathname);
+    return pathTarget.moduleId === activeModuleId
+      ? pathTarget
+      : workspaceReadTargetForModule(activeModuleId);
+  }, [activeModuleId, pathname]);
+  const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [retryNonce, setRetryNonce] = React.useState(0);
@@ -51,6 +59,8 @@ export function WorkspaceScopedReadBoundary() {
     };
   }, []);
 
+  const targetKey = `${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
+
   React.useEffect(() => {
     if (!needsExpansion || !authUser || inFlightRef.current || error) return;
     inFlightRef.current = true;
@@ -60,6 +70,7 @@ export function WorkspaceScopedReadBoundary() {
       credentials: "same-origin",
       cache: "no-store",
       headers: {
+        "X-UC-Workspace-Path": pathname,
         "X-UC-Workspace-Module": activeModuleId,
         "X-UC-Read-State-Deferred": "1",
       },
@@ -70,7 +81,7 @@ export function WorkspaceScopedReadBoundary() {
         return;
       }
       if (!response.ok || !payload.data || typeof payload.revision !== "number" || !payload.user) {
-        throw new Error(payload.error || "The requested workspace module could not be loaded.");
+        throw new Error(payload.error || "The requested workspace data could not be loaded.");
       }
 
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
@@ -94,12 +105,12 @@ export function WorkspaceScopedReadBoundary() {
       setError(null);
     }).catch((caught) => {
       if (!mountedRef.current) return;
-      setError(caught instanceof Error ? caught.message : "The requested workspace module could not be loaded.");
+      setError(caught instanceof Error ? caught.message : "The requested workspace data could not be loaded.");
     }).finally(() => {
       inFlightRef.current = false;
       if (mountedRef.current) setLoading(false);
     });
-  }, [activeModuleId, authUser, error, hydrateSecureWorkspace, needsExpansion, retryNonce]);
+  }, [activeModuleId, authUser, error, hydrateSecureWorkspace, needsExpansion, pathname, retryNonce, targetKey]);
 
   if (!needsExpansion) return null;
   return (
@@ -110,9 +121,9 @@ export function WorkspaceScopedReadBoundary() {
             {error ? <AlertTriangle className="h-5 w-5" /> : <Database className="h-5 w-5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold">{error ? "Module data unavailable" : "Loading module data"}</p>
+            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Loading record data"}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {error || "Expanding the secure workspace without interrupting pending changes."}
+              {error || "Loading the secure record graph without interrupting pending changes."}
             </p>
           </div>
           {!error ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
@@ -128,7 +139,7 @@ export function WorkspaceScopedReadBoundary() {
             }}
             disabled={loading}
           >
-            <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry module data
+            <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry workspace data
           </Button>
         ) : null}
       </div>
