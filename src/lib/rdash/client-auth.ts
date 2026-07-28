@@ -25,7 +25,7 @@ interface StoredHealthResponse {
 }
 
 type BrowserLocks = {
-  request<T>(name: string, callback: () => T | PromiseLike<T>): Promise<T>;
+  request(name: string, callback: () => Promise<Response>): Promise<Response>;
 };
 
 export function getSessionToken(): string | null {
