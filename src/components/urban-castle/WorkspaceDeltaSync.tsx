@@ -10,14 +10,17 @@ import {
   workspaceCollectionFilterParam,
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
+import { workspaceDeltaSyncIsSafe } from "@/lib/rdash/workspace-delta-sync-policy";
 import {
   workspaceReadCoverageIsCompatible,
   workspaceReadTargetForModule,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
-import { workspaceOutboxStore } from "@/lib/uploads/workspace-outbox";
-import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
+import {
+  restoreWorkspaceOutboxOverlay,
+  workspaceOutboxStore,
+} from "@/lib/uploads/workspace-outbox";
 
 const DELTA_POLL_INTERVAL_MS = 30_000;
 const MAX_DELTA_PAGES_PER_RUN = 5;
@@ -35,26 +38,6 @@ function requestedTarget(pathname: string, activeModuleId: string) {
   return pathTarget.moduleId === activeModuleId
     ? pathTarget
     : workspaceReadTargetForModule(activeModuleId);
-}
-
-export function workspaceDeltaSyncIsSafe(input: {
-  authenticated: boolean;
-  workspaceSyncStatus: string;
-  outboxReady: boolean;
-  outboxCount: number;
-  dirtyFormCount: number;
-  routeCovered: boolean;
-  visible: boolean;
-  online: boolean;
-}): boolean {
-  return input.authenticated &&
-    input.workspaceSyncStatus === "saved" &&
-    input.outboxReady &&
-    input.outboxCount === 0 &&
-    input.dirtyFormCount === 0 &&
-    input.routeCovered &&
-    input.visible &&
-    input.online;
 }
 
 function currentRunIsSafe(pathname: string, activeModuleId: string): boolean {
