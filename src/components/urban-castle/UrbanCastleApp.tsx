@@ -8,6 +8,8 @@ import { UploadManagerProvider } from "@/components/uploads/UploadManagerProvide
 import { useRDashStore } from "@/lib/rdash/store";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
+import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
+import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
 /** Urban Castle application shell. */
 export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boolean }) {
@@ -24,10 +26,14 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
 
   const authUser = useRDashStore((s) => s.authUser);
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
+  const readState = useWorkspaceReadState();
   const reconciledSessionRef = React.useRef<string | null>(null);
   const authSessionKey = authUser ? `${authUser.email}:${authUser.expiresAt}` : null;
 
   React.useEffect(() => {
+    // Automatic reconciliation requires the complete workspace. A Customer/Site
+    // scoped session expands to full only when the user enters a global module.
+    if (readState.scope !== "full") return;
     if (!authSessionKey || reconciledSessionRef.current === authSessionKey) return;
     let cancelled = false;
     let retryTimer: number | null = null;
@@ -64,11 +70,12 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
       cancelled = true;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [authSessionKey, reconcileWorkspace]);
+  }, [authSessionKey, readState.scope, reconcileWorkspace]);
 
   return (
     <UploadManagerProvider>
       <RDashApp />
+      <WorkspaceScopedReadBoundary />
       <ReconcileWorkspaceButton />
     </UploadManagerProvider>
   );
@@ -77,7 +84,9 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
 function ReconcileWorkspaceButton() {
   const role = useRDashStore((s) => s.authUser?.role || "Unauthenticated");
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
+  const readState = useWorkspaceReadState();
   const [running, setRunning] = React.useState(false);
+  if (readState.scope !== "full") return null;
   if (role !== "Owner" && role !== "Operations Manager") return null;
   const onClick = () => {
     setRunning(true);
