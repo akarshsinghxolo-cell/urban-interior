@@ -10,9 +10,14 @@ import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 import { useInstallDirtyFormNavigationGuards } from "@/lib/rdash/use-dirty-form-guard";
 import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
 import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
+import type { WorkspaceReadScope } from "@/lib/rdash/workspace-read-scope";
 import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
 import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
+
+function scopeSupportsReconciliation(scope: WorkspaceReadScope): boolean {
+  return scope === "full" || scope === "workdesk";
+}
 
 /** Urban Castle application shell. */
 export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boolean }) {
@@ -35,9 +40,10 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
   const authSessionKey = authUser ? `${authUser.email}:${authUser.expiresAt}` : null;
 
   React.useEffect(() => {
-    // Automatic reconciliation requires the complete workspace. A Customer/Site
-    // scoped session expands to full only when the user enters a global module.
-    if (readState.scope !== "full") return;
+    // The bounded Workdesk scope contains every attendance, follow-up, Visit and
+    // recurring-task dependency required by reconciliation. Other narrow scopes
+    // wait until Workdesk or a full compatibility module is opened.
+    if (!scopeSupportsReconciliation(readState.scope)) return;
     if (!authSessionKey || reconciledSessionRef.current === authSessionKey) return;
     let cancelled = false;
     let retryTimer: number | null = null;
@@ -92,7 +98,7 @@ function ReconcileWorkspaceButton() {
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);
   const readState = useWorkspaceReadState();
   const [running, setRunning] = React.useState(false);
-  if (readState.scope !== "full") return null;
+  if (!scopeSupportsReconciliation(readState.scope)) return null;
   if (role !== "Owner" && role !== "Operations Manager") return null;
   const onClick = () => {
     setRunning(true);
