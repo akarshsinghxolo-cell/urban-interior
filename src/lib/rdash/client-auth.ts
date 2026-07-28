@@ -13,7 +13,7 @@ const TOKEN_KEY = "uc_session_token";
 const HEALTH_CACHE_PREFIX = "uc_workspace_health_v1:";
 const HEALTH_CACHE_TTL_MS = 5 * 60_000;
 const HEALTH_HIDDEN_STALE_MS = 24 * 60 * 60_000;
-const WORKSPACE_READ_DEDUPE_TTL_MS = 2_500;
+const WORKSPACE_READ_DEDUPE_TTL_MS = 10_000;
 
 interface StoredHealthResponse {
   body: string;
@@ -37,18 +37,35 @@ export function getSessionToken(): string | null {
   }
 }
 
-function tokenFingerprint(token: string | null) {
-  if (!token) return "anonymous";
+function hashIdentity(value: string) {
   let hash = 2166136261;
-  for (let index = 0; index < token.length; index += 1) {
-    hash ^= token.charCodeAt(index);
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16);
 }
 
+function decodeSessionIdentity(token: string | null) {
+  if (!token) return "anonymous";
+  try {
+    const payloadPart = token.split(".")[1];
+    if (!payloadPart) return `token:${hashIdentity(token)}`;
+    const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const payload = JSON.parse(window.atob(padded)) as Record<string, unknown>;
+    const stableIdentity = payload.sub || payload.user_id || payload.email;
+    if (typeof stableIdentity === "string" && stableIdentity.trim()) {
+      return `user:${hashIdentity(stableIdentity.trim().toLowerCase())}`;
+    }
+  } catch {
+    // Fall back to a token fingerprint only for non-JWT legacy sessions.
+  }
+  return `token:${hashIdentity(token)}`;
+}
+
 function healthStorageKey() {
-  return `${HEALTH_CACHE_PREFIX}${tokenFingerprint(getSessionToken())}`;
+  return `${HEALTH_CACHE_PREFIX}${decodeSessionIdentity(getSessionToken())}`;
 }
 
 function clearStoredHealthResponses() {
@@ -67,7 +84,9 @@ export function setSessionToken(token: string): void {
   if (typeof window === "undefined") return;
   try {
     const previous = window.localStorage.getItem(TOKEN_KEY);
-    if (previous && previous !== token) clearStoredHealthResponses();
+    if (previous && decodeSessionIdentity(previous) !== decodeSessionIdentity(token)) {
+      clearStoredHealthResponses();
+    }
     window.localStorage.setItem(TOKEN_KEY, token);
   } catch {
     // localStorage may be unavailable in some privacy modes
@@ -197,10 +216,12 @@ function deferredWorkspaceCommitResponse(operationId: string): Response {
 }
 
 function workspaceReadKey(headers: Headers) {
-  return [
-    headers.get("X-UC-Workspace-Path") || `${window.location.pathname}${window.location.search}`,
-    headers.get("X-UC-Workspace-Module") || "",
-  ].join("|");
+  const rawPath = headers.get("X-UC-Workspace-Path") || window.location.pathname;
+  const normalizedPath = String(rawPath || "/workspace")
+    .split(/[?#]/, 1)[0]
+    .replace(/\/{2,}/g, "/")
+    .replace(/\/+$/, "") || "/workspace";
+  return normalizedPath;
 }
 
 async function singleFlightWorkspaceRead(
