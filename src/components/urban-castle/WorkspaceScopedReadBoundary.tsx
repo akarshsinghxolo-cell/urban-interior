@@ -39,9 +39,15 @@ export function WorkspaceScopedReadBoundary() {
   const requestedScope = workspaceReadScopeForModule(activeModuleId);
   const [loading, setLoading] = React.useState(false);
   const attemptedRef = React.useRef<string | null>(null);
+  const inFlightRef = React.useRef(false);
+  const mountedRef = React.useRef(true);
+
+  React.useEffect(() => () => {
+    mountedRef.current = false;
+  }, []);
 
   React.useEffect(() => {
-    if (!authUser || loading) return;
+    if (!authUser || inFlightRef.current) return;
     if (workspaceReadScopeIsCompatible(readState.scope, requestedScope)) {
       attemptedRef.current = null;
       return;
@@ -50,7 +56,7 @@ export function WorkspaceScopedReadBoundary() {
     const attemptKey = `${readState.scope}->${requestedScope}:${activeModuleId}`;
     if (attemptedRef.current === attemptKey) return;
     attemptedRef.current = attemptKey;
-    let active = true;
+    inFlightRef.current = true;
     setLoading(true);
 
     void fetch("/api/workspace", {
@@ -70,7 +76,7 @@ export function WorkspaceScopedReadBoundary() {
       }
 
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
-      if (!active) return;
+      if (!mountedRef.current) return;
       hydrateSecureWorkspace({
         db: overlay.db,
         revision: payload.revision,
@@ -88,19 +94,16 @@ export function WorkspaceScopedReadBoundary() {
       }
       attemptedRef.current = null;
     }).catch((error) => {
-      if (!active) return;
+      if (!mountedRef.current) return;
       toast.error("Module data could not be loaded", {
         description: error instanceof Error ? error.message : undefined,
         duration: 7000,
       });
     }).finally(() => {
-      if (active) setLoading(false);
+      inFlightRef.current = false;
+      if (mountedRef.current) setLoading(false);
     });
-
-    return () => {
-      active = false;
-    };
-  }, [activeModuleId, authUser, hydrateSecureWorkspace, loading, readState.scope, requestedScope]);
+  }, [activeModuleId, authUser, hydrateSecureWorkspace, readState.scope, requestedScope]);
 
   if (!loading) return null;
   return (
