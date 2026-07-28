@@ -14,7 +14,7 @@ describe("workspace detail-tab query state", () => {
     });
   });
 
-  test("accepts the shared record-detail tabs", () => {
+  test("accepts only record-detail tabs backed by a renderer", () => {
     expect(workspaceDetailTabRequest("?tab=overview", "task")).toEqual({
       tab: "overview",
       explicit: true,
@@ -25,14 +25,14 @@ describe("workspace detail-tab query state", () => {
       explicit: true,
       invalid: false,
     });
-    expect(workspaceDetailTabRequest("tab=history", "vendorBill")).toEqual({
-      tab: "history",
-      explicit: true,
-      invalid: false,
-    });
   });
 
-  test("rejects invalid, repeated and customer-workspace tab values", () => {
+  test("rejects stale history, invalid, repeated and customer-workspace values", () => {
+    expect(workspaceDetailTabRequest("tab=history", "vendorBill")).toEqual({
+      tab: "overview",
+      explicit: true,
+      invalid: true,
+    });
     expect(workspaceDetailTabRequest("tab=edit", "task")).toEqual({
       tab: "overview",
       explicit: true,
@@ -53,19 +53,22 @@ describe("workspace detail-tab query state", () => {
     )).toBe("/workspace/tasks/task-1");
   });
 
-  test("adds thread and history while preserving unrelated parameters", () => {
+  test("adds thread while preserving unrelated parameters", () => {
     expect(workspaceUrlWithDetailTab(
       "/workspace/tasks/task-1",
       "source=notification",
       "task",
       "thread",
     )).toBe("/workspace/tasks/task-1?source=notification&tab=thread");
+  });
+
+  test("never emits an unsupported history destination", () => {
     expect(workspaceUrlWithDetailTab(
       "/workspace/invoices/invoice-1",
       "tab=thread&source=search",
       "invoice",
       "history",
-    )).toBe("/workspace/invoices/invoice-1?source=search&tab=history");
+    )).toBe("/workspace/invoices/invoice-1?source=search");
   });
 
   test("removes record-detail tab state from unsupported destinations", () => {
