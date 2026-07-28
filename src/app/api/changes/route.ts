@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { getWorkspaceChanges } from "@/lib/rdash/server/workspace-changes";
+import { knownWorkspaceCollection } from "@/lib/rdash/workspace-delta";
 
 export const runtime = "nodejs";
+const MAX_COLLECTION_FILTERS = 150;
 
 function afterRevisionFromRequest(request: NextRequest): number | null {
   const raw = request.nextUrl.searchParams.get("afterRevision");
   if (raw === null || !/^\d+$/.test(raw)) return null;
   const revision = Number(raw);
   return Number.isSafeInteger(revision) && revision >= 0 ? revision : null;
+}
+
+function collectionsFromRequest(request: NextRequest): Set<string> | null | "INVALID" {
+  const raw = request.nextUrl.searchParams.get("collections");
+  if (raw === null) return null;
+  const values = [...new Set(raw.split(",").map((value) => value.trim()).filter(Boolean))];
+  if (!values.length || values.length > MAX_COLLECTION_FILTERS) return "INVALID";
+  if (values.some((collection) => !knownWorkspaceCollection(collection))) return "INVALID";
+  return new Set(values);
 }
 
 export async function GET(request: NextRequest) {
@@ -29,9 +40,16 @@ export async function GET(request: NextRequest) {
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
+  const collections = collectionsFromRequest(request);
+  if (collections === "INVALID") {
+    return NextResponse.json(
+      { error: "collections must contain known workspace collections." },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   try {
-    const delta = await getWorkspaceChanges(afterRevision);
+    const delta = await getWorkspaceChanges(afterRevision, collections || undefined);
     return NextResponse.json(delta, {
       headers: {
         "Cache-Control": "no-store",
@@ -40,6 +58,7 @@ export async function GET(request: NextRequest) {
         "X-UC-Delta-Current": String(delta.currentRevision),
         "X-UC-Delta-Has-More": delta.hasMore ? "1" : "0",
         "X-UC-Delta-Full-Reload": delta.requiresFullReload ? "1" : "0",
+        "X-UC-Delta-Filtered": collections ? "1" : "0",
         "Server-Timing": `workspace-changes;dur=${(delta.loadMs || 0).toFixed(2)}`,
       },
     });

@@ -8,11 +8,13 @@ import { UploadManagerProvider } from "@/components/uploads/UploadManagerProvide
 import { useRDashStore } from "@/lib/rdash/store";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 import { useInstallDirtyFormNavigationGuards } from "@/lib/rdash/use-dirty-form-guard";
+import { useInstallWorkspaceRowVersionBridge } from "@/lib/rdash/use-workspace-row-version-bridge";
 import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
 import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
 import type { WorkspaceReadScope } from "@/lib/rdash/workspace-read-scope";
 import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
 import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
+import { WorkspaceDeltaSync } from "./WorkspaceDeltaSync";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
 function scopeSupportsReconciliation(scope: WorkspaceReadScope): boolean {
@@ -29,6 +31,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
     }
   }, []);
 
+  useInstallWorkspaceRowVersionBridge();
   useInstallDirtyFormNavigationGuards();
   useBrowserHistorySync(historyEnabled);
   useWorkspaceExitGuard();
@@ -88,6 +91,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
       <LegacyDirtyFormAdapter />
       <DirtyFormNavigationGuard />
       <WorkspaceScopedReadBoundary />
+      <WorkspaceDeltaSync />
       <ReconcileWorkspaceButton />
     </UploadManagerProvider>
   );

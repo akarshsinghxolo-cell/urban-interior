@@ -167,7 +167,7 @@ describe("delta journal migration and API contract", () => {
     const route = await Bun.file("src/app/api/changes/route.ts").text();
     expect(route).toContain("requireSession(request)");
     expect(route).toContain('searchParams.get("afterRevision")');
-    expect(route).toContain("getWorkspaceChanges(afterRevision)");
+    expect(route).toContain("getWorkspaceChanges(afterRevision, collections || undefined)");
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
     expect(route).toContain('"Cache-Control": "no-store"');
     expect(route).toContain("status: 400");
