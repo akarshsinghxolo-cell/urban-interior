@@ -53,6 +53,8 @@ jobs:
         run: bun run test:module-scoped-reads
       - name: Test entity-scoped workspace reads
         run: bun run test:entity-scoped-reads
+      - name: Test workspace revision delta synchronization
+        run: bun run test:delta-sync
       - name: Test workspace auth return paths
         run: bun run test:auth-return
       - name: Test workspace route access

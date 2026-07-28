@@ -24,6 +24,7 @@
     "test:dirty-form-guard": "bun test tests/workspace-dirty-form-guard.test.ts",
     "test:module-scoped-reads": "bun test tests/workspace-module-scoped-read.test.ts",
     "test:entity-scoped-reads": "bun test tests/workspace-entity-scoped-read.test.ts",
+    "test:delta-sync": "bun test tests/workspace-delta-sync.test.ts",
     "test:auth-return": "bun test tests/workspace-auth-return.test.ts tests/workspace-auth-middleware.test.ts",
     "test:route-access": "bun test tests/workspace-route-access.test.ts",
     "test:auth-security": "bun test tests/auth-source-security.test.ts"
