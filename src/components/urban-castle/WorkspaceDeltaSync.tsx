@@ -6,11 +6,16 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import {
   applyWorkspaceDelta,
+  deletedDeltaVersionKeys,
   expandedDeltaRowVersions,
   workspaceCollectionFilterParam,
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
 import { workspaceDeltaSyncIsSafe } from "@/lib/rdash/workspace-delta-sync-policy";
+import {
+  mergeWorkspaceRowVersions,
+  workspaceRowVersionState,
+} from "@/lib/rdash/workspace-row-version-state";
 import {
   workspaceReadCoverageIsCompatible,
   workspaceReadTargetForModule,
@@ -22,7 +27,9 @@ import {
   workspaceOutboxStore,
 } from "@/lib/uploads/workspace-outbox";
 
-const DELTA_POLL_INTERVAL_MS = 30_000;
+const DELTA_SYNC_ENABLED = process.env.NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0";
+const DELTA_POLL_INTERVAL_MS = 5 * 60_000;
+const DELTA_EVENT_DEBOUNCE_MS = 750;
 const MAX_DELTA_PAGES_PER_RUN = 5;
 
 interface WorkspaceReadPayload {
@@ -78,7 +85,7 @@ async function reloadCurrentWorkspace(pathname: string, activeModuleId: string):
   if (!currentRunIsSafe(pathname, activeModuleId)) return false;
   workspaceReadState.recordResponse(response);
   useRDashStore.getState().hydrateSecureWorkspace({
-    db: overlay.database,
+    db: overlay.db,
     revision: payload.revision,
     user: payload.user,
     rowVersions: payload.rowVersions,
@@ -94,11 +101,11 @@ export function WorkspaceDeltaSync(): null {
   const pathname = usePathname();
   const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
-  const serverRevision = useRDashStore((state) => state.serverRevision);
   const inFlightRef = React.useRef(false);
   const rerunRef = React.useRef(false);
 
   const run = React.useCallback(async () => {
+    if (!DELTA_SYNC_ENABLED) return;
     if (inFlightRef.current) {
       rerunRef.current = true;
       return;
@@ -140,17 +147,23 @@ export function WorkspaceDeltaSync(): null {
           await reloadCurrentWorkspace(pathname, activeModuleId);
           return;
         }
+        if (delta.revision === afterRevision && !delta.hasMore) return;
 
         if (!currentRunIsSafe(pathname, activeModuleId)) return;
         const latest = useRDashStore.getState();
         if (latest.serverRevision !== afterRevision || !latest.authUser) return;
 
         const applied = applyWorkspaceDelta(latest.db, delta);
+        const mergedRowVersions = mergeWorkspaceRowVersions(
+          workspaceRowVersionState.getSnapshot(),
+          expandedDeltaRowVersions(delta),
+          deletedDeltaVersionKeys(delta),
+        );
         latest.hydrateSecureWorkspace({
           db: applied.database,
           revision: delta.revision,
           user: latest.authUser,
-          rowVersions: expandedDeltaRowVersions(delta),
+          rowVersions: mergedRowVersions,
         });
         afterRevision = delta.revision;
         if (!delta.hasMore) return;
@@ -168,13 +181,21 @@ export function WorkspaceDeltaSync(): null {
   }, [activeModuleId, pathname]);
 
   React.useEffect(() => {
-    if (!authUser) return;
-    const initialTimer = window.setTimeout(() => void run(), 1_500);
+    if (!DELTA_SYNC_ENABLED || !authUser) return;
+    let eventTimer: number | null = null;
+    const scheduleRun = () => {
+      if (eventTimer !== null) window.clearTimeout(eventTimer);
+      eventTimer = window.setTimeout(() => {
+        eventTimer = null;
+        void run();
+      }, DELTA_EVENT_DEBOUNCE_MS);
+    };
+    const initialTimer = window.setTimeout(() => void run(), 3_000);
     const interval = window.setInterval(() => void run(), DELTA_POLL_INTERVAL_MS);
-    const onFocus = () => void run();
-    const onOnline = () => void run();
+    const onFocus = () => scheduleRun();
+    const onOnline = () => scheduleRun();
     const onVisibility = () => {
-      if (document.visibilityState === "visible") void run();
+      if (document.visibilityState === "visible") scheduleRun();
     };
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
@@ -182,11 +203,12 @@ export function WorkspaceDeltaSync(): null {
     return () => {
       window.clearTimeout(initialTimer);
       window.clearInterval(interval);
+      if (eventTimer !== null) window.clearTimeout(eventTimer);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [authUser, run, serverRevision]);
+  }, [authUser, run]);
 
   return null;
 }
