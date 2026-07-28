@@ -7,6 +7,7 @@ import { RDashApp } from "../rdash/RDashApp";
 import { UploadManagerProvider } from "@/components/uploads/UploadManagerProvider";
 import { useRDashStore } from "@/lib/rdash/store";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
+import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
 
 /** Urban Castle application shell. */
 export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boolean }) {
@@ -19,6 +20,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
   }, []);
 
   useBrowserHistorySync(historyEnabled);
+  useWorkspaceExitGuard();
 
   const authUser = useRDashStore((s) => s.authUser);
   const reconcileWorkspace = useRDashStore((s) => s.reconcileWorkspace);

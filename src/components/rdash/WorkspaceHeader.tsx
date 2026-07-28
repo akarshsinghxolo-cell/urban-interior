@@ -5,6 +5,7 @@ import { MoreHorizontal, RefreshCw, Menu, Download, Settings, Filter, ChevronRig
 import { useRDashStore } from "@/lib/rdash/store";
 import { clearSessionToken } from "@/lib/rdash/client-auth";
 import { useWorkspaceOutbox } from "@/lib/uploads/use-workspace-outbox";
+import { confirmWorkspaceExit } from "@/lib/uploads/workspace-exit-guard";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationCenter } from "./NotificationCenter";
 import { CreateMenu } from "./CreateMenu";
@@ -36,7 +37,19 @@ export function WorkspaceHeader() {
   const outbox = useWorkspaceOutbox();
   const hasPendingChanges = outbox.items.length > 0;
   const hasConflict = outbox.items.some((item) => item.status === "conflict" || item.status === "failed_permanent");
-  const refresh = () => { window.location.reload(); };
+
+  const refresh = () => {
+    if (!confirmWorkspaceExit(outbox, "reload")) return;
+    window.location.reload();
+  };
+
+  const signOut = () => {
+    setMoreMenuOpen(false);
+    if (!confirmWorkspaceExit(outbox, "sign-out")) return;
+    clearSessionToken();
+    void fetch("/api/auth/logout", { method: "POST" })
+      .finally(() => window.location.assign("/signin"));
+  };
 
   return (
     <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-border bg-background/85 backdrop-blur-md">
@@ -78,7 +91,7 @@ export function WorkspaceHeader() {
           <span className="max-w-[140px] truncate">{authUser?.name || "User"}</span>
           <span className="shrink-0 text-muted-foreground">· {role}</span>
         </div>
-        <button type="button" className="hidden text-xs font-semibold text-muted-foreground hover:text-foreground md:inline-flex" onClick={() => { clearSessionToken(); void fetch("/api/auth/logout", { method: "POST" }).finally(() => window.location.assign("/signin")); }}>Sign out</button>
+        <button type="button" className="hidden text-xs font-semibold text-muted-foreground hover:text-foreground md:inline-flex" onClick={signOut}>Sign out</button>
 
         {hasPendingChanges ? (
           <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("uc-open-pending-uploads"))} title={workspaceSyncError || "Saved locally and waiting to synchronize"} className={cn("hidden text-[10px] font-semibold lg:inline", hasConflict ? "text-destructive" : "text-warning")}>
@@ -113,7 +126,7 @@ export function WorkspaceHeader() {
               <Settings className="mr-2 h-4 w-4" /> Settings
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => { setMoreMenuOpen(false); clearSessionToken(); void fetch("/api/auth/logout", { method: "POST" }).finally(() => window.location.assign("/signin")); }}>
+            <DropdownMenuItem onClick={signOut}>
               <LogOut className="mr-2 h-4 w-4" /> Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
