@@ -52,6 +52,23 @@ describe("workspace delta aggregation", () => {
     expect(delta.hasMore).toBe(false);
   });
 
+  test("mirrors delete-first then upsert commit ordering inside one revision", () => {
+    const delta = aggregateWorkspaceChangeBatches({
+      afterRevision: 20,
+      currentRevision: 21,
+      baselineRevision: 20,
+      batches: [batch(21, [{
+        collection: "tasks",
+        deleteIds: ["task-recreated"],
+        upsert: [{ id: "task-recreated", title: "Recreated" }],
+      }], { "tasks:task-recreated": 0 })],
+    });
+
+    expect(delta.changedRows.tasks).toEqual([{ id: "task-recreated", title: "Recreated" }]);
+    expect(delta.deletedRowIds.tasks).toBeUndefined();
+    expect(delta.rowVersions).toEqual({ "tasks:task-recreated": 0 });
+  });
+
   test("returns an empty delta when the client is current", () => {
     const delta = aggregateWorkspaceChangeBatches({
       afterRevision: 25,
@@ -166,5 +183,17 @@ describe("delta journal migration and API contract", () => {
     expect(source).toContain("revision_too_old");
     expect(source).toContain("journal_gap");
     expect(source).toContain("invalid_journal");
+    expect(source).toContain("PostgreSQL deletes every collection");
+  });
+
+  test("resets journal history before revision numbers restart", async () => {
+    const reset = await Bun.file("src/lib/rdash/server/workspace-change-reset.ts").text();
+    const workspace = await Bun.file("src/lib/rdash/server/workspace.ts").text();
+    expect(reset).toContain('from("entity_workspace_change_batches")');
+    expect(reset).toContain("revision: 0");
+    expect(reset).toContain("is_baseline: true");
+    expect(workspace).toContain("await resetWorkspaceChangeJournal()");
+    expect(workspace.indexOf("await resetWorkspaceChangeJournal()"))
+      .toBeLessThan(workspace.indexOf("return resetRestWorkspace()"));
   });
 });
