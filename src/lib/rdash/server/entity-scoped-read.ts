@@ -236,7 +236,7 @@ function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind
   const plan: EntityScopedReadPlan = {};
   const entityIds = allLoadedEntityIds(database);
   const attachmentIds = fieldValues(database, [
-    "attachment_id", "attachment_ids", "photo_attachment_ids", "proof_attachment_id",
+    "attachment_id", "attachment_ids", "photo_attachment_ids", "proof_attachment_id", "proof_attachment_ids",
     "business_card_attachment_id", "shop_attachment_id", "photo_attachment_id",
   ]);
   const threadIds = fieldValues(database, ["thread_id"]);
@@ -308,12 +308,9 @@ async function readEntityScope(
     throw new Error(`FORBIDDEN:Your role cannot open ${access.moduleLabel}.`);
   }
 
-  for (const plan of [
-    relationPlan(entity.kind, entity.id),
-  ]) {
-    requestedCollections(plan).forEach((collection) => touchedCollections.add(collection));
-    merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(plan));
-  }
+  const first = relationPlan(entity.kind, entity.id);
+  requestedCollections(first).forEach((collection) => touchedCollections.add(collection));
+  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(first));
 
   const second = downstreamPlan(entity.kind, merged.data);
   requestedCollections(second).forEach((collection) => touchedCollections.add(collection));
