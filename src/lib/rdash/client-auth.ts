@@ -10,8 +10,23 @@ import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 
 /** Client-side session token manager for Urban Castle. */
 const TOKEN_KEY = "uc_session_token";
+const HEALTH_CACHE_PREFIX = "uc_workspace_health_v1:";
 const HEALTH_CACHE_TTL_MS = 5 * 60_000;
+const HEALTH_HIDDEN_STALE_MS = 24 * 60 * 60_000;
 const WORKSPACE_READ_DEDUPE_TTL_MS = 2_500;
+
+interface StoredHealthResponse {
+  body: string;
+  status: number;
+  statusText: string;
+  headers: Array<[string, string]>;
+  expiresAt: number;
+  storedAt: number;
+}
+
+type BrowserLocks = {
+  request(name: string, callback: () => Promise<Response>): Promise<Response>;
+};
 
 export function getSessionToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -22,9 +37,37 @@ export function getSessionToken(): string | null {
   }
 }
 
+function tokenFingerprint(token: string | null) {
+  if (!token) return "anonymous";
+  let hash = 2166136261;
+  for (let index = 0; index < token.length; index += 1) {
+    hash ^= token.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function healthStorageKey() {
+  return `${HEALTH_CACHE_PREFIX}${tokenFingerprint(getSessionToken())}`;
+}
+
+function clearStoredHealthResponses() {
+  if (typeof window === "undefined") return;
+  try {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(HEALTH_CACHE_PREFIX)) window.localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage can be unavailable in restrictive privacy modes.
+  }
+}
+
 export function setSessionToken(token: string): void {
   if (typeof window === "undefined") return;
   try {
+    const previous = window.localStorage.getItem(TOKEN_KEY);
+    if (previous && previous !== token) clearStoredHealthResponses();
     window.localStorage.setItem(TOKEN_KEY, token);
   } catch {
     // localStorage may be unavailable in some privacy modes
@@ -35,6 +78,7 @@ export function clearSessionToken(): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(TOKEN_KEY);
+    clearStoredHealthResponses();
   } catch {
     // ignore
   }
@@ -48,7 +92,69 @@ const workspaceReadRequests = new Map<string, { promise: Promise<Response>; expi
 
 function invalidateReadCaches() {
   healthResponseCache = null;
+  clearStoredHealthResponses();
   workspaceReadRequests.clear();
+}
+
+function responseFromStored(stored: StoredHealthResponse) {
+  return new Response(stored.body, {
+    status: stored.status,
+    statusText: stored.statusText,
+    headers: stored.headers,
+  });
+}
+
+function readStoredHealthResponse(allowStale: boolean) {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(healthStorageKey());
+    if (!raw) return null;
+    const stored = JSON.parse(raw) as Partial<StoredHealthResponse>;
+    if (
+      typeof stored.body !== "string" ||
+      typeof stored.status !== "number" ||
+      typeof stored.statusText !== "string" ||
+      !Array.isArray(stored.headers) ||
+      typeof stored.expiresAt !== "number" ||
+      typeof stored.storedAt !== "number"
+    ) {
+      window.localStorage.removeItem(healthStorageKey());
+      return null;
+    }
+    const now = Date.now();
+    const fresh = stored.expiresAt > now;
+    const safelyStale = allowStale && stored.storedAt + HEALTH_HIDDEN_STALE_MS > now;
+    if (!fresh && !safelyStale) return null;
+    return {
+      response: responseFromStored(stored as StoredHealthResponse),
+      expiresAt: stored.expiresAt,
+      fresh,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function persistHealthResponse(response: Response) {
+  if (typeof window === "undefined" || !response.ok) return;
+  try {
+    const storedAt = Date.now();
+    const stored: StoredHealthResponse = {
+      body: await response.clone().text(),
+      status: response.status,
+      statusText: response.statusText,
+      headers: Array.from(response.headers.entries()),
+      expiresAt: storedAt + HEALTH_CACHE_TTL_MS,
+      storedAt,
+    };
+    window.localStorage.setItem(healthStorageKey(), JSON.stringify(stored));
+    healthResponseCache = {
+      response: response.clone(),
+      expiresAt: stored.expiresAt,
+    };
+  } catch {
+    // The in-memory cache still protects this tab when persistence is blocked.
+  }
 }
 
 /** Renew the short-lived browser session without prompting for credentials. */
@@ -135,17 +241,35 @@ async function sharedHealthRead(
   if (!force && healthResponseCache && healthResponseCache.expiresAt > now) {
     return healthResponseCache.response.clone();
   }
+
+  if (!force) {
+    const stored = readStoredHealthResponse(document.visibilityState !== "visible");
+    if (stored) {
+      if (stored.fresh) {
+        healthResponseCache = { response: stored.response.clone(), expiresAt: stored.expiresAt };
+      }
+      return stored.response;
+    }
+  }
   if (healthRequest) return (await healthRequest).clone();
 
-  healthRequest = originalFetch(input, { ...init, headers }).then((response) => {
-    if (response.ok) {
-      healthResponseCache = {
-        response: response.clone(),
-        expiresAt: Date.now() + HEALTH_CACHE_TTL_MS,
-      };
+  const fetchOrReuse = async () => {
+    // Re-check after entering the cross-tab lock because another tab may have
+    // completed the same request while this tab was waiting.
+    if (!force) {
+      const stored = readStoredHealthResponse(document.visibilityState !== "visible");
+      if (stored) return stored.response;
     }
+    const response = await originalFetch(input, { ...init, headers });
+    await persistHealthResponse(response);
     return response;
-  }).finally(() => {
+  };
+
+  const locks = (navigator as unknown as { locks?: BrowserLocks }).locks;
+  healthRequest = (locks
+    ? locks.request(`uc-workspace-health:${healthStorageKey()}`, fetchOrReuse)
+    : fetchOrReuse()
+  ).finally(() => {
     healthRequest = null;
   });
   return (await healthRequest).clone();
@@ -155,8 +279,8 @@ let fetchPatched = false;
 
 /**
  * Adds bearer authentication, durable workspace commit capture, and read
- * single-flight behavior. Multiple mounted dashboard widgets now share one
- * health request, and duplicate workspace bootstraps share one network response.
+ * single-flight behavior. Health responses are coordinated across components
+ * and browser tabs, while duplicate workspace bootstraps share one response.
  */
 export function initAuthFetch(): void {
   if (fetchPatched || typeof window === "undefined") return;
