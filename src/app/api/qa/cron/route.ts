@@ -3,84 +3,66 @@ import { timingSafeEqual } from "node:crypto";
 import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
+import { saveStoredIntegritySnapshot } from "@/lib/rdash/server/workspace-health";
+import { cleanupExpiredStaffLocationPings } from "@/lib/rdash/server/staff-location";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 /**
- * GET /api/qa/cron
+ * Daily QA and maintenance job.
  *
- * Recurring QA health check — designed to be called by Vercel Cron once daily
- * (see vercel.json `crons` array). Returns a compact JSON status report:
- *
- *   - workspace loaded OK?
- *   - integrity issues count (by severity)
- *   - business-rule validation issues count
- *   - critical entity counts (customers, sites, quotations, payments, workOrders)
- *   - storage templates / instances / accounts sanity
- *
- * Auth: REQUIRED bearer token when CRON_SECRET (Vercel convention) or
- *   CRON_BEARER_TOKEN (legacy alias) is set. Vercel Cron automatically sends
- *   `Authorization: Bearer <CRON_SECRET>` when CRON_SECRET is in the env.
- *   When neither env var is set (development), all requests are allowed.
- *
- * Response shape (HTTP 200 when healthy, 500 when something is broken):
- *   {
- *     "ok": true,
- *     "timestamp": "2026-07-22T03:30:00.000Z",
- *     "durationMs": 412,
- *     "workspace": { "revision": 42, "counts": {...} },
- *     "integrity": { "critical": 0, "warning": 0, "total": 0, "healthScore": 100 },
- *     "businessRules": { "total": 0, "firstError": null }
- *   }
+ * The expensive full integrity scan runs here instead of on every dashboard
+ * health request. Its compact result is persisted for the lightweight health
+ * endpoint. GPS retention is also cleaned once here rather than after every
+ * location insert.
  */
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
-
-  // Auth: require bearer token when CRON_SECRET (Vercel convention) or
-  // CRON_BEARER_TOKEN (legacy) is set. Vercel Cron automatically sends
-  // Authorization: Bearer <CRON_SECRET> when CRON_SECRET is set in the env.
-  // When neither env var is set (development mode), all requests are allowed.
   const expectedToken = (process.env.CRON_SECRET || process.env.CRON_BEARER_TOKEN || "").trim();
   const authHeader = request.headers.get("authorization") || "";
   if (expectedToken) {
     const suppliedToken = authHeader.toLowerCase().startsWith("bearer ")
       ? authHeader.slice("bearer ".length).trim()
       : "";
-    // Timing-safe comparison
-    const a = Buffer.from(suppliedToken);
-    const b = Buffer.from(expectedToken);
-    if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized." },
-        { status: 401 },
-      );
+    const supplied = Buffer.from(suppliedToken);
+    const expected = Buffer.from(expectedToken);
+    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
     }
   }
 
   try {
-    // 1. Load the workspace (this also exercises the prepareWorkspaceData normalization
-    //    that was added in QA-INTEGRITY-001 — if it throws, we want to know).
     const workspace = await getWorkspace(false);
     const db = workspace.data;
-
-    // 2. Integrity check (read-only, no repair)
     const integrity = checkWorkspaceIntegrity(db);
     const integrityBySeverity: Record<string, number> = { critical: 0, warning: 0, info: 0 };
     for (const issue of integrity.issues || []) {
-      const sev = (issue.severity || "info").toLowerCase();
-      integrityBySeverity[sev] = (integrityBySeverity[sev] || 0) + 1;
+      const severity = (issue.severity || "info").toLowerCase();
+      integrityBySeverity[severity] = (integrityBySeverity[severity] || 0) + 1;
     }
 
-    // 3. Business-rule validation (read-only)
     let businessRuleIssues: string[] = [];
     try {
       businessRuleIssues = validateBusinessData(db) || [];
-    } catch (validationErr) {
-      businessRuleIssues = [`Validator threw: ${validationErr instanceof Error ? validationErr.message : String(validationErr)}`];
+    } catch (validationError) {
+      businessRuleIssues = [
+        `Validator threw: ${validationError instanceof Error ? validationError.message : String(validationError)}`,
+      ];
     }
 
-    // 4. Critical entity counts + storage sanity
+    const [snapshotSaved, expiredGpsDeleted] = await Promise.all([
+      saveStoredIntegritySnapshot({
+        revision: workspace.revision,
+        report: integrity,
+        businessRuleIssues: businessRuleIssues.length,
+      }),
+      cleanupExpiredStaffLocationPings().catch((error) => {
+        console.error("[qa/cron] GPS cleanup failed:", error);
+        return -1;
+      }),
+    ]);
+
     const counts = {
       customers: db.customers?.length || 0,
       sites: db.sites?.length || 0,
@@ -99,7 +81,6 @@ export async function GET(request: NextRequest) {
       entityFileAttachments: db.entityFileAttachments?.length || 0,
       auditLog: db.auditLog?.length || 0,
     };
-
     const durationMs = Date.now() - startedAt;
     const ok = integrityBySeverity.critical === 0 && businessRuleIssues.length === 0;
 
@@ -108,29 +89,28 @@ export async function GET(request: NextRequest) {
         ok,
         timestamp: new Date().toISOString(),
         durationMs,
-        workspace: {
-          revision: workspace.revision,
-          counts,
-        },
+        workspace: { revision: workspace.revision, counts },
         integrity: {
           critical: integrityBySeverity.critical,
           warning: integrityBySeverity.warning,
           info: integrityBySeverity.info,
-          total: (integrity.issues?.length || 0),
+          total: integrity.issues?.length || 0,
           healthScore: integrity.healthScore ?? 100,
         },
         businessRules: {
           total: businessRuleIssues.length,
           firstError: businessRuleIssues[0] || null,
         },
+        maintenance: {
+          integritySnapshotSaved: snapshotSaved,
+          expiredGpsDeleted,
+        },
       },
       { status: ok ? 200 : 500 },
     );
-  } catch (err) {
+  } catch (error) {
     const durationMs = Date.now() - startedAt;
-    // Log full error server-side; return generic message to client to avoid
-    // leaking internal table/column names or stack-trace fragments.
-    console.error("[qa/cron] health check failed:", err);
+    console.error("[qa/cron] health check failed:", error);
     return NextResponse.json(
       {
         ok: false,

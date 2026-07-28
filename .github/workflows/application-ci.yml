@@ -63,5 +63,7 @@ jobs:
         run: bun run test:route-access
       - name: Test authentication source security
         run: bun run test:auth-security
+      - name: Test runtime efficiency hardening
+        run: bun run test:runtime-efficiency
       - name: Build application
         run: bun run build

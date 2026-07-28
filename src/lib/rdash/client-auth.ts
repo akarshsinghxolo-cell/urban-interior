@@ -6,11 +6,12 @@ import {
   markWorkspaceCommitResponse,
   rememberWorkspaceResponse,
 } from "@/lib/uploads/workspace-outbox";
-import { workspaceReadTargetForPath } from "@/lib/rdash/workspace-read-scope";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 
 /** Client-side session token manager for Urban Castle. */
 const TOKEN_KEY = "uc_session_token";
+const HEALTH_CACHE_TTL_MS = 5 * 60_000;
+const WORKSPACE_READ_DEDUPE_TTL_MS = 2_500;
 
 export function getSessionToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -41,6 +42,14 @@ export function clearSessionToken(): void {
 
 let nativeFetch: typeof window.fetch | null = null;
 let refreshPromise: Promise<boolean> | null = null;
+let healthResponseCache: { response: Response; expiresAt: number } | null = null;
+let healthRequest: Promise<Response> | null = null;
+const workspaceReadRequests = new Map<string, { promise: Promise<Response>; expiresAt: number }>();
+
+function invalidateReadCaches() {
+  healthResponseCache = null;
+  workspaceReadRequests.clear();
+}
 
 /** Renew the short-lived browser session without prompting for credentials. */
 export function refreshClientSession(): Promise<boolean> {
@@ -81,12 +90,73 @@ function deferredWorkspaceCommitResponse(operationId: string): Response {
   });
 }
 
+function workspaceReadKey(headers: Headers) {
+  return [
+    headers.get("X-UC-Workspace-Path") || `${window.location.pathname}${window.location.search}`,
+    headers.get("X-UC-Workspace-Module") || "",
+  ].join("|");
+}
+
+async function singleFlightWorkspaceRead(
+  originalFetch: typeof window.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  headers: Headers,
+) {
+  const key = workspaceReadKey(headers);
+  const now = Date.now();
+  const existing = workspaceReadRequests.get(key);
+  if (existing && existing.expiresAt > now) return (await existing.promise).clone();
+
+  const promise = originalFetch(input, { ...init, headers });
+  workspaceReadRequests.set(key, { promise, expiresAt: Number.POSITIVE_INFINITY });
+  void promise.then(() => {
+    const current = workspaceReadRequests.get(key);
+    if (!current || current.promise !== promise) return;
+    current.expiresAt = Date.now() + WORKSPACE_READ_DEDUPE_TTL_MS;
+    window.setTimeout(() => {
+      const latest = workspaceReadRequests.get(key);
+      if (latest?.promise === promise && latest.expiresAt <= Date.now()) workspaceReadRequests.delete(key);
+    }, WORKSPACE_READ_DEDUPE_TTL_MS + 50);
+  }).catch(() => {
+    if (workspaceReadRequests.get(key)?.promise === promise) workspaceReadRequests.delete(key);
+  });
+  return (await promise).clone();
+}
+
+async function sharedHealthRead(
+  originalFetch: typeof window.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+  headers: Headers,
+) {
+  const force = init?.cache === "reload" || headers.get("X-UC-Health-Refresh") === "1";
+  const now = Date.now();
+  if (!force && healthResponseCache && healthResponseCache.expiresAt > now) {
+    return healthResponseCache.response.clone();
+  }
+  if (healthRequest) return (await healthRequest).clone();
+
+  healthRequest = originalFetch(input, { ...init, headers }).then((response) => {
+    if (response.ok) {
+      healthResponseCache = {
+        response: response.clone(),
+        expiresAt: Date.now() + HEALTH_CACHE_TTL_MS,
+      };
+    }
+    return response;
+  }).finally(() => {
+    healthRequest = null;
+  });
+  return (await healthRequest).clone();
+}
+
 let fetchPatched = false;
 
 /**
- * Adds bearer authentication to API requests and durably captures workspace
- * commits before they touch the network. A replay request carries
- * X-UC-Outbox-Replay and bypasses capture so it does not create itself again.
+ * Adds bearer authentication, durable workspace commit capture, and read
+ * single-flight behavior. Multiple mounted dashboard widgets now share one
+ * health request, and duplicate workspace bootstraps share one network response.
  */
 export function initAuthFetch(): void {
   if (fetchPatched || typeof window === "undefined") return;
@@ -119,17 +189,6 @@ export function initAuthFetch(): void {
     if ((isWorkspaceRead || isWorkspaceHealthRead) && !headers.has("X-UC-Workspace-Path")) {
       headers.set("X-UC-Workspace-Path", `${window.location.pathname}${window.location.search}`);
     }
-    const workspacePath = headers.get("X-UC-Workspace-Path") || `${window.location.pathname}${window.location.search}`;
-    if (isWorkspaceHealthRead && workspaceReadTargetForPath(workspacePath).scope !== "full") {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          "Cache-Control": "no-store",
-          "X-UC-Read-Mode": "scoped-health-deferred",
-        },
-      });
-    }
-
     const deferReadState = headers.get("X-UC-Read-State-Deferred") === "1";
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
@@ -141,19 +200,23 @@ export function initAuthFetch(): void {
         const captured = await captureWorkspaceCommit(body);
         body = captured.body;
         operationId = captured.operationId;
-        if (captured.defer && operationId) {
-          deferredResponse = deferredWorkspaceCommitResponse(operationId);
-        }
+        if (captured.defer && operationId) deferredResponse = deferredWorkspaceCommitResponse(operationId);
       } catch (error) {
         console.error("[WorkspaceOutbox] Could not durably capture this commit; continuing with the online save.", error);
       }
     }
-
     if (deferredResponse) return deferredResponse;
 
     let responseReceived = false;
     try {
-      let response = await originalFetch(input, { ...init, headers, body });
+      let response: Response;
+      if (isWorkspaceRead) {
+        response = await singleFlightWorkspaceRead(originalFetch, input, { ...init, body }, headers);
+      } else if (isWorkspaceHealthRead) {
+        response = await sharedHealthRead(originalFetch, input, { ...init, body }, headers);
+      } else {
+        response = await originalFetch(input, { ...init, headers, body });
+      }
       responseReceived = true;
 
       if (isWorkspaceRead) {
@@ -171,6 +234,7 @@ export function initAuthFetch(): void {
         } catch (error) {
           console.error("[WorkspaceOutbox] Could not update the local commit status.", error);
         }
+        if (response.ok) invalidateReadCaches();
         if (response.status === 409 || response.status === 429 || response.status >= 500) {
           const payload = await response.clone().json().catch(() => ({})) as { error?: string };
           throw new TypeError(payload.error || "Workspace synchronization will retry in the background.");

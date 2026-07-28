@@ -1,33 +1,35 @@
 import type { AuthenticatedUser } from "./auth";
-import { STAFF_LOCATION_STALE_AFTER_MS, isValidStaffLocationPing, mergeStaffLocationPings, type StaffLocationPing, type StaffLocationSource } from "../staff-location";
+import {
+  STAFF_LOCATION_STALE_AFTER_MS,
+  isValidStaffLocationPing,
+  type StaffLocationPing,
+  type StaffLocationSource,
+} from "../staff-location";
 import { getSupabaseAdminClient } from "../../supabase/server";
 
 const RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
-const MAX_POINTS = 8000;
+const MAX_POINTS = 8_000;
 const MAX_CAPTURE_FUTURE_SKEW_MS = STAFF_LOCATION_STALE_AFTER_MS;
 
 function assertStaffDevice(user: AuthenticatedUser) {
   if (user.staffId) return user.staffId;
-  // Owner / Operations Manager may record GPS pings for themselves (e.g. during field visits)
-  // using a pseudo-staff id derived from their user id, so their live location appears on the
-  // GPS Tracking map even without a dedicated staff profile. NOTE: the StaffLocationPing
-  // table has a FK on staffId → StaffProfile(id), so a StaffProfile row MUST exist for this
-  // pseudo-id before pings are recorded. The bootstrap-owner script creates one for the
-  // owner's staff_id; for ad-hoc pseudo-devices the row must be provisioned separately.
   if (user.role === "Owner" || user.role === "Operations Manager") {
     return `owner-device:${user.userId}`;
   }
   throw new Error("FORBIDDEN:This account is not linked to a staff device.");
 }
+
 function canReadAll(user: AuthenticatedUser) {
   return user.role === "Owner" || user.role === "Operations Manager";
 }
+
 function numberInput(value: unknown, field: string) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`INVALID:${field} is required.`);
   }
   return value;
 }
+
 function normalizeCapturedAt(value: unknown) {
   const now = Date.now();
   if (value == null || value === "") return new Date(now).toISOString();
@@ -38,37 +40,6 @@ function normalizeCapturedAt(value: unknown) {
   if (capturedAt < now - RETENTION_MS) throw new Error("INVALID:GPS capture is outside the retention window.");
   return new Date(capturedAt).toISOString();
 }
-function prune(points: StaffLocationPing[]) {
-  const now = Date.now();
-  const cutoff = now - RETENTION_MS;
-  return mergeStaffLocationPings([], points.filter((point) => {
-    const capturedAt = new Date(point.captured_at).getTime();
-    return Number.isFinite(capturedAt) && capturedAt >= cutoff && capturedAt <= now + MAX_CAPTURE_FUTURE_SKEW_MS;
-  }), MAX_POINTS);
-}
-function decode(value: string): StaffLocationPing | null {
-  try {
-    const row = JSON.parse(value) as StaffLocationPing;
-    return isValidStaffLocationPing(row) ? row : null;
-  } catch {
-    return null;
-  }
-}
-async function allPoints() {
-  const { data, error } = await getSupabaseAdminClient()
-    .from("StaffLocationPing")
-    .select("dataJson")
-    .order("capturedAt", { ascending: true });
-  if (error) throw new Error(`Could not load staff location pings: ${error.message}`);
-  return prune((data || []).map((row) => decode(row.dataJson)).filter(Boolean) as StaffLocationPing[]);
-}
-
-export async function listStaffLocationPings(user: AuthenticatedUser) {
-  const points = await allPoints();
-  if (canReadAll(user)) return points;
-  const staffId = assertStaffDevice(user);
-  return points.filter((point) => point.staff_id === staffId);
-}
 
 type StaffLocationInput = {
   latitude: unknown;
@@ -77,6 +48,54 @@ type StaffLocationInput = {
   captured_at?: unknown;
   source?: StaffLocationSource;
 };
+
+type StaffLocationRow = {
+  id: string;
+  staffId: string;
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  capturedAt: string;
+  source: StaffLocationSource;
+};
+
+function pointFromRow(row: StaffLocationRow): StaffLocationPing {
+  return {
+    id: row.id,
+    staff_id: row.staffId,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    accuracy_m: row.accuracyM,
+    captured_at: row.capturedAt,
+    source: row.source === "native_background" ? "native_background" : "browser_foreground",
+  };
+}
+
+export async function listStaffLocationPings(user: AuthenticatedUser) {
+  const cutoff = new Date(Date.now() - RETENTION_MS).toISOString();
+  let query = getSupabaseAdminClient()
+    .from("StaffLocationPing")
+    .select("id,staffId,latitude,longitude,accuracyM,capturedAt,source")
+    .gte("capturedAt", cutoff)
+    .order("capturedAt", { ascending: false })
+    .limit(MAX_POINTS);
+
+  if (!canReadAll(user)) query = query.eq("staffId", assertStaffDevice(user));
+
+  const { data, error } = await query;
+  if (error) throw new Error(`Could not load staff location pings: ${error.message}`);
+  return ((data || []) as unknown as StaffLocationRow[]).map(pointFromRow).reverse();
+}
+
+export async function cleanupExpiredStaffLocationPings() {
+  const cutoff = new Date(Date.now() - RETENTION_MS).toISOString();
+  const { error, count } = await getSupabaseAdminClient()
+    .from("StaffLocationPing")
+    .delete({ count: "exact" })
+    .lt("capturedAt", cutoff);
+  if (error) throw new Error(`Could not clean up expired staff location pings: ${error.message}`);
+  return count || 0;
+}
 
 async function assertActiveTrackedStaff(staffId: string) {
   const { data: staff, error } = await getSupabaseAdminClient()
@@ -111,8 +130,7 @@ export async function recordStaffLocationPingForStaff(staffId: string, input: St
   if (!isValidStaffLocationPing(point)) throw new Error("INVALID:A valid device GPS point is required.");
   if (point.accuracy_m > 250) throw new Error("INVALID:GPS accuracy is too low to record a staff location.");
 
-  const admin = getSupabaseAdminClient();
-  const { error: upsertError } = await admin.from("StaffLocationPing").upsert({
+  const { error } = await getSupabaseAdminClient().from("StaffLocationPing").insert({
     id: point.id,
     staffId,
     latitude: point.latitude,
@@ -121,16 +139,8 @@ export async function recordStaffLocationPingForStaff(staffId: string, input: St
     capturedAt: point.captured_at,
     source: point.source,
     dataJson: JSON.stringify(point),
-  } as any, { onConflict: "id" });
-  if (upsertError) throw new Error(`Could not record GPS ping: ${upsertError.message}`);
-
-  const retained = prune(await allPoints());
-  const retainedIds = [...new Set(retained.map((row) => row.id))];
-  if (retainedIds.length) {
-    await admin.from("StaffLocationPing").delete().not("id", "in", `(${retainedIds.join(",")})`);
-  } else {
-    await admin.from("StaffLocationPing").delete().gt("id", "");
-  }
+  } as any);
+  if (error) throw new Error(`Could not record GPS ping: ${error.message}`);
   return point;
 }
 
