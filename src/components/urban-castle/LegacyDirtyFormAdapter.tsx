@@ -51,6 +51,36 @@ const LEGACY_DIALOG_CONFIGS: readonly LegacyDialogConfig[] = [
     label: "Direct Award Contractor form",
     saveButton: /^Create direct-award Work Order$/i,
   },
+  {
+    title: /^Add New Customer$/i,
+    label: "Customer form",
+    saveButton: /^Create customer$/i,
+  },
+  {
+    title: /^Edit Customer$/i,
+    label: "Customer form",
+    saveButton: /^Save changes$/i,
+  },
+  {
+    title: /^Add Site$/i,
+    label: "Site form",
+    saveButton: /^Add Site$/i,
+  },
+  {
+    title: /^Edit Site$/i,
+    label: "Site form",
+    saveButton: /^Save Site$/i,
+  },
+  {
+    title: /^Record Supplier Invoice$/i,
+    label: "Vendor bill form",
+    saveButton: /^Create draft invoice$/i,
+  },
+  {
+    title: /^Request contractor payment$/i,
+    label: "Contractor RA bill form",
+    saveButton: /^Submit bill$/i,
+  },
 ] as const;
 
 const DEFAULT_CANCEL_BUTTON = /^(?:Cancel|Close)$/i;
@@ -59,6 +89,7 @@ const CONTROL_SELECTOR = [
   "textarea",
   "select",
   '[role="combobox"]',
+  'button[title^="Preview "]',
 ].join(",");
 
 interface ManagedLegacyDialog {
@@ -105,6 +136,7 @@ function controlValue(control: Element): unknown {
   return [
     control.tagName,
     control.getAttribute("aria-label") || control.getAttribute("name") || "",
+    control.getAttribute("title") || "",
     normalizedText(control.textContent),
   ];
 }
