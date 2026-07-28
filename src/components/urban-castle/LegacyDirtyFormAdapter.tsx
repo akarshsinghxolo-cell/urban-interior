@@ -8,6 +8,7 @@ interface LegacyDialogConfig {
   label: string;
   saveButton: RegExp;
   cancelButton?: RegExp;
+  saveTimeoutMs?: number;
 }
 
 const LEGACY_DIALOG_CONFIGS: readonly LegacyDialogConfig[] = [
@@ -55,21 +56,25 @@ const LEGACY_DIALOG_CONFIGS: readonly LegacyDialogConfig[] = [
     title: /^Add New Customer$/i,
     label: "Customer form",
     saveButton: /^Create customer$/i,
+    saveTimeoutMs: 4_000,
   },
   {
     title: /^Edit Customer$/i,
     label: "Customer form",
     saveButton: /^Save changes$/i,
+    saveTimeoutMs: 4_000,
   },
   {
     title: /^Add Site$/i,
     label: "Site form",
     saveButton: /^Add Site$/i,
+    saveTimeoutMs: 4_000,
   },
   {
     title: /^Edit Site$/i,
     label: "Site form",
     saveButton: /^Save Site$/i,
+    saveTimeoutMs: 4_000,
   },
   {
     title: /^Record Supplier Invoice$/i,
@@ -247,7 +252,7 @@ export function LegacyDirtyFormAdapter(): null {
       // opening a nested dirty-form decision. Failed validation restores dirty.
       dirtyFormRegistry.markClean(entry.id);
       button.click();
-      if (await waitForDialogClose(entry.dialog)) return true;
+      if (await waitForDialogClose(entry.dialog, entry.config.saveTimeoutMs)) return true;
 
       syncManagedDialog(entry);
       return false;
