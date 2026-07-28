@@ -6,7 +6,6 @@ import { AlertTriangle, Database, LoaderCircle, RotateCw } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import {
   workspaceReadCoverageIsCompatible,
-  workspaceReadTargetForModule,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
@@ -35,16 +34,17 @@ interface WorkspaceReadPayload {
  */
 export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
-  const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
-  const requestedTarget = React.useMemo(() => {
-    const pathTarget = workspaceReadTargetForPath(pathname);
-    return pathTarget.moduleId === activeModuleId
-      ? pathTarget
-      : workspaceReadTargetForModule(activeModuleId);
-  }, [activeModuleId, pathname]);
+
+  // The browser URL is the canonical navigation source. The Zustand module can
+  // lag one render behind router navigation, so falling back to it here can load
+  // the previous module graph (for example Tasks while the URL is Quotations).
+  const requestedTarget = React.useMemo(
+    () => workspaceReadTargetForPath(pathname),
+    [pathname],
+  );
   const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -71,7 +71,7 @@ export function WorkspaceScopedReadBoundary() {
       cache: "no-store",
       headers: {
         "X-UC-Workspace-Path": pathname,
-        "X-UC-Workspace-Module": activeModuleId,
+        "X-UC-Workspace-Module": requestedTarget.moduleId,
         "X-UC-Read-State-Deferred": "1",
       },
     }).then(async (response) => {
@@ -110,7 +110,7 @@ export function WorkspaceScopedReadBoundary() {
       inFlightRef.current = false;
       if (mountedRef.current) setLoading(false);
     });
-  }, [activeModuleId, authUser, error, hydrateSecureWorkspace, needsExpansion, pathname, retryNonce, targetKey]);
+  }, [authUser, error, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget.moduleId, retryNonce, targetKey]);
 
   if (!needsExpansion) return null;
   return (
