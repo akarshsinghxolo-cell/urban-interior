@@ -88,6 +88,16 @@ export async function listStaffLocationPings(user: AuthenticatedUser) {
   return ((data || []) as unknown as StaffLocationRow[]).map(pointFromRow).reverse();
 }
 
+export async function cleanupExpiredStaffLocationPings() {
+  const cutoff = new Date(Date.now() - RETENTION_MS).toISOString();
+  const { error, count } = await getSupabaseAdminClient()
+    .from("StaffLocationPing")
+    .delete({ count: "exact" })
+    .lt("capturedAt", cutoff);
+  if (error) throw new Error(`Could not clean up expired staff location pings: ${error.message}`);
+  return count || 0;
+}
+
 async function assertActiveTrackedStaff(staffId: string) {
   const { data: staff, error } = await getSupabaseAdminClient()
     .from("StaffProfile")
