@@ -21,6 +21,7 @@
     "test:location-presentation": "bun test tests/workspace-location-presentation.test.ts",
     "test:share-links": "bun test tests/workspace-share-link.test.ts",
     "test:exit-guard": "bun test tests/workspace-exit-guard.test.ts",
+    "test:module-scoped-reads": "bun test tests/workspace-module-scoped-read.test.ts",
     "test:auth-return": "bun test tests/workspace-auth-return.test.ts tests/workspace-auth-middleware.test.ts",
     "test:route-access": "bun test tests/workspace-route-access.test.ts",
     "test:auth-security": "bun test tests/auth-source-security.test.ts"

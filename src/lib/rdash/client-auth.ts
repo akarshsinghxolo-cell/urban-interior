@@ -6,6 +6,8 @@ import {
   markWorkspaceCommitResponse,
   rememberWorkspaceResponse,
 } from "@/lib/uploads/workspace-outbox";
+import { workspaceReadTargetForPath } from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 
 /** Client-side session token manager for Urban Castle. */
 const TOKEN_KEY = "uc_session_token";
@@ -113,6 +115,22 @@ export function initAuthFetch(): void {
 
     const isWorkspaceCommit = pathname === "/api/operations/commit" && method === "POST";
     const isWorkspaceRead = pathname === "/api/workspace" && method === "GET";
+    const isWorkspaceHealthRead = pathname === "/api/health/summary" && method === "GET";
+    if ((isWorkspaceRead || isWorkspaceHealthRead) && !headers.has("X-UC-Workspace-Path")) {
+      headers.set("X-UC-Workspace-Path", `${window.location.pathname}${window.location.search}`);
+    }
+    const workspacePath = headers.get("X-UC-Workspace-Path") || `${window.location.pathname}${window.location.search}`;
+    if (isWorkspaceHealthRead && workspaceReadTargetForPath(workspacePath).scope !== "full") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Cache-Control": "no-store",
+          "X-UC-Read-Mode": "scoped-health-deferred",
+        },
+      });
+    }
+
+    const deferReadState = headers.get("X-UC-Read-State-Deferred") === "1";
     const isReplay = headers.get("X-UC-Outbox-Replay") === "1";
     let operationId: string | undefined;
     let deferredResponse: Response | undefined;
@@ -139,6 +157,7 @@ export function initAuthFetch(): void {
       responseReceived = true;
 
       if (isWorkspaceRead) {
+        if (response.ok && !deferReadState) workspaceReadState.recordResponse(response);
         try {
           await rememberWorkspaceResponse(response.clone());
         } catch (error) {
