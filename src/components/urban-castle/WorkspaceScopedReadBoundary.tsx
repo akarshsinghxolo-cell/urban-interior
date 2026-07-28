@@ -44,8 +44,11 @@ export function WorkspaceScopedReadBoundary() {
   const inFlightRef = React.useRef(false);
   const mountedRef = React.useRef(true);
 
-  React.useEffect(() => () => {
-    mountedRef.current = false;
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
   }, []);
 
   React.useEffect(() => {
