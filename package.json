@@ -23,6 +23,7 @@
     "test:exit-guard": "bun test tests/workspace-exit-guard.test.ts",
     "test:dirty-form-guard": "bun test tests/workspace-dirty-form-guard.test.ts",
     "test:module-scoped-reads": "bun test tests/workspace-module-scoped-read.test.ts",
+    "test:bootstrap-scoped-flow": "bun test tests/workspace-bootstrap-scoped-flow.test.ts",
     "test:entity-scoped-reads": "bun test tests/workspace-entity-scoped-read.test.ts",
     "test:delta-sync": "bun test tests/workspace-delta-sync.test.ts",
     "test:client-delta-sync": "bun test tests/workspace-client-delta-sync.test.ts",
