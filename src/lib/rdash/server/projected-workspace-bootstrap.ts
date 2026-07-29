@@ -112,13 +112,13 @@ export async function getProjectedWorkspaceBootstrap(
       PERMISSION_FIELDS,
       "staffRolePermissions",
       rowVersions,
-    ) as RDashDatabase["staffRolePermissions"];
+    ) as unknown as RDashDatabase["staffRolePermissions"];
     data.master.staff = decodeProjectedRows(
       staffRows,
       STAFF_IDENTITY_FIELDS,
       "master.staff",
       rowVersions,
-    ) as RDashDatabase["master"]["staff"];
+    ) as unknown as RDashDatabase["master"]["staff"];
 
     (data as unknown as Record<string, unknown>)._workspace_bootstrap_projection = {
       staffRolePermissions: [...PERMISSION_FIELDS],
