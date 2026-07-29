@@ -8,6 +8,7 @@ import {
   workspaceReadCoverageIsCompatible,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,10 @@ export function WorkspaceScopedReadBoundary() {
     () => workspaceReadTargetForPath(pathname),
     [pathname],
   );
+  const endpoint = React.useMemo(
+    () => workspaceReadEndpointForTarget(requestedTarget),
+    [requestedTarget],
+  );
   const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -59,14 +64,14 @@ export function WorkspaceScopedReadBoundary() {
     };
   }, []);
 
-  const targetKey = `${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
+  const targetKey = `${endpoint}:${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
 
   React.useEffect(() => {
     if (!needsExpansion || !authUser || inFlightRef.current || error) return;
     inFlightRef.current = true;
     setLoading(true);
 
-    void fetch("/api/workspace", {
+    void fetch(endpoint, {
       credentials: "same-origin",
       cache: "no-store",
       headers: {
@@ -80,7 +85,8 @@ export function WorkspaceScopedReadBoundary() {
         window.location.replace("/signin");
         return;
       }
-      if (!response.ok || !payload.data || typeof payload.revision !== "number" || !payload.user) {
+      const hydrationUser = payload.user || authUser;
+      if (!response.ok || !payload.data || typeof payload.revision !== "number" || !hydrationUser) {
         throw new Error(payload.error || "The requested workspace data could not be loaded.");
       }
 
@@ -89,7 +95,7 @@ export function WorkspaceScopedReadBoundary() {
       hydrateSecureWorkspace({
         db: overlay.db,
         revision: payload.revision,
-        user: payload.user,
+        user: hydrationUser,
         aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
       });
@@ -110,7 +116,7 @@ export function WorkspaceScopedReadBoundary() {
       inFlightRef.current = false;
       if (mountedRef.current) setLoading(false);
     });
-  }, [authUser, error, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget.moduleId, retryNonce, targetKey]);
+  }, [authUser, endpoint, error, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget.moduleId, retryNonce, targetKey]);
 
   if (!needsExpansion) return null;
   return (
@@ -121,9 +127,9 @@ export function WorkspaceScopedReadBoundary() {
             {error ? <AlertTriangle className="h-5 w-5" /> : <Database className="h-5 w-5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Loading record data"}</p>
+            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Loading module data"}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {error || "Loading the secure record graph without interrupting pending changes."}
+              {error || "Loading only the secure records required for this screen."}
             </p>
           </div>
           {!error ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
