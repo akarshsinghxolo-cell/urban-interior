@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { usePathname } from "next/navigation";
+import { clearSessionToken } from "@/lib/rdash/client-auth";
 import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import {
@@ -18,7 +19,6 @@ import {
 } from "@/lib/rdash/workspace-row-version-state";
 import {
   workspaceReadCoverageIsCompatible,
-  workspaceReadTargetForModule,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
@@ -37,18 +37,12 @@ interface WorkspaceReadPayload {
   revision?: number;
   data?: import("@/lib/rdash/types").RDashDatabase;
   rowVersions?: Record<string, number>;
+  aggregateRevisions?: Record<string, number>;
   user?: import("@/lib/rdash/store").AuthenticatedWorkspaceUser;
   error?: string;
 }
 
-function requestedTarget(pathname: string, activeModuleId: string) {
-  const pathTarget = workspaceReadTargetForPath(pathname);
-  return pathTarget.moduleId === activeModuleId
-    ? pathTarget
-    : workspaceReadTargetForModule(activeModuleId);
-}
-
-function currentRunIsSafe(pathname: string, activeModuleId: string): boolean {
+function currentRunIsSafe(pathname: string): boolean {
   const state = useRDashStore.getState();
   const outbox = workspaceOutboxStore.getSnapshot();
   const readCoverage = workspaceReadState.getSnapshot();
@@ -60,24 +54,48 @@ function currentRunIsSafe(pathname: string, activeModuleId: string): boolean {
     dirtyFormCount: dirtyFormRegistry.getSnapshot().dirtyForms.length,
     routeCovered: workspaceReadCoverageIsCompatible(
       readCoverage,
-      requestedTarget(pathname, activeModuleId),
+      workspaceReadTargetForPath(pathname),
     ),
     visible: document.visibilityState === "visible",
     online: navigator.onLine,
   });
 }
 
-async function reloadCurrentWorkspace(pathname: string, activeModuleId: string): Promise<boolean> {
-  const target = requestedTarget(pathname, activeModuleId);
+function isValidDelta(delta: WorkspaceDeltaPayload, afterRevision: number): boolean {
+  return Number.isInteger(delta.fromRevision) &&
+    Number.isInteger(delta.revision) &&
+    Number.isInteger(delta.currentRevision) &&
+    delta.fromRevision === afterRevision &&
+    delta.revision >= afterRevision &&
+    delta.currentRevision >= delta.revision &&
+    typeof delta.hasMore === "boolean";
+}
+
+async function redirectToSignin(): Promise<never> {
+  workspaceReadState.reset();
+  clearSessionToken();
+  window.location.replace("/signin");
+  throw new DOMException("Session expired", "AbortError");
+}
+
+async function reloadCurrentWorkspace(
+  pathname: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const target = workspaceReadTargetForPath(pathname);
   const response = await fetch(workspaceReadEndpointForTarget(target), {
     credentials: "same-origin",
     cache: "no-store",
+    signal,
     headers: {
+      Accept: "application/json",
       "X-UC-Workspace-Path": pathname,
       "X-UC-Workspace-Module": target.moduleId,
       "X-UC-Delta-Fallback": "1",
     },
   });
+  if (response.status === 401) await redirectToSignin();
+
   const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
   const hydrationUser = payload.user || useRDashStore.getState().authUser;
   if (!response.ok || !payload.data || typeof payload.revision !== "number" || !hydrationUser) {
@@ -85,14 +103,23 @@ async function reloadCurrentWorkspace(pathname: string, activeModuleId: string):
   }
 
   const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
-  if (!currentRunIsSafe(pathname, activeModuleId)) return false;
-  workspaceReadState.recordResponse(response);
+  if (signal.aborted || !currentRunIsSafe(pathname)) return false;
   useRDashStore.getState().hydrateSecureWorkspace({
     db: overlay.db,
     revision: payload.revision,
     user: hydrationUser,
+    aggregateRevisions: payload.aggregateRevisions,
     rowVersions: payload.rowVersions,
   });
+  workspaceReadState.recordResponse(response);
+  if (overlay.pendingCount) {
+    useRDashStore.setState({
+      workspaceSyncStatus: "error",
+      workspaceSyncError: overlay.hasConflict
+        ? "Locally saved changes need review."
+        : "Locally saved changes are waiting to synchronize.",
+    });
+  }
   return true;
 }
 
@@ -102,27 +129,57 @@ async function reloadCurrentWorkspace(pathname: string, activeModuleId: string):
  */
 export function WorkspaceDeltaSync(): null {
   const pathname = usePathname();
-  const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
   const inFlightRef = React.useRef(false);
   const rerunRef = React.useRef(false);
+  const mountedRef = React.useRef(true);
+  const generationRef = React.useRef(0);
+  const activeControllerRef = React.useRef<AbortController | null>(null);
+  const rerunTimerRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    generationRef.current += 1;
+    activeControllerRef.current?.abort();
+    inFlightRef.current = false;
+    rerunRef.current = false;
+    return () => {
+      mountedRef.current = false;
+      generationRef.current += 1;
+      activeControllerRef.current?.abort();
+      if (rerunTimerRef.current !== null) window.clearTimeout(rerunTimerRef.current);
+    };
+  }, [pathname, authUser?.email]);
 
   const run = React.useCallback(async () => {
-    if (!DELTA_SYNC_ENABLED) return;
+    if (!DELTA_SYNC_ENABLED || !mountedRef.current) return;
     if (inFlightRef.current) {
       rerunRef.current = true;
       return;
     }
-    if (!currentRunIsSafe(pathname, activeModuleId)) return;
+    if (!currentRunIsSafe(pathname)) return;
 
+    const generation = generationRef.current;
+    const controller = new AbortController();
+    activeControllerRef.current?.abort();
+    activeControllerRef.current = controller;
     inFlightRef.current = true;
+    let advanced = false;
+
     try {
       await useRDashStore.getState().awaitServerSync();
-      if (!currentRunIsSafe(pathname, activeModuleId)) return;
+      if (controller.signal.aborted || generationRef.current !== generation || !currentRunIsSafe(pathname)) return;
 
       let afterRevision = useRDashStore.getState().serverRevision;
+      if (!Number.isInteger(afterRevision) || afterRevision < 0) {
+        if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
+          throw new Error("Workspace revision was invalid and reload failed.");
+        }
+        return;
+      }
+
       for (let page = 0; page < MAX_DELTA_PAGES_PER_RUN; page += 1) {
-        if (!currentRunIsSafe(pathname, activeModuleId)) return;
+        if (controller.signal.aborted || generationRef.current !== generation || !currentRunIsSafe(pathname)) return;
         const state = useRDashStore.getState();
         if (state.serverRevision !== afterRevision || !state.authUser) return;
 
@@ -132,27 +189,32 @@ export function WorkspaceDeltaSync(): null {
         const response = await fetch(`/api/changes?${params.toString()}`, {
           credentials: "same-origin",
           cache: "no-store",
-          headers: { "X-UC-Delta-Client": "workspace-shell" },
+          signal: controller.signal,
+          headers: {
+            Accept: "application/json",
+            "X-UC-Delta-Client": "workspace-shell",
+          },
         });
-        if (response.status === 401) return;
+        if (response.status === 401) await redirectToSignin();
         if (!response.ok) throw new Error(`Delta request failed with ${response.status}.`);
 
         const delta = await response.json() as WorkspaceDeltaPayload;
-        if (delta.requiresFullReload) {
-          await reloadCurrentWorkspace(pathname, activeModuleId);
+        if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
+          if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
+            throw new Error("Delta recovery reload failed.");
+          }
           return;
         }
-        if (
-          delta.fromRevision !== afterRevision ||
-          delta.revision < afterRevision ||
-          delta.revision > delta.currentRevision
-        ) {
-          await reloadCurrentWorkspace(pathname, activeModuleId);
+        if (delta.revision === afterRevision) {
+          if (delta.hasMore) {
+            if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
+              throw new Error("Delta journal did not advance and recovery reload failed.");
+            }
+          }
           return;
         }
-        if (delta.revision === afterRevision && !delta.hasMore) return;
 
-        if (!currentRunIsSafe(pathname, activeModuleId)) return;
+        if (controller.signal.aborted || generationRef.current !== generation || !currentRunIsSafe(pathname)) return;
         const latest = useRDashStore.getState();
         if (latest.serverRevision !== afterRevision || !latest.authUser) return;
 
@@ -169,19 +231,27 @@ export function WorkspaceDeltaSync(): null {
           rowVersions: mergedRowVersions,
         });
         afterRevision = delta.revision;
+        advanced = true;
         if (!delta.hasMore) return;
       }
-      rerunRef.current = true;
+      if (advanced) rerunRef.current = true;
     } catch (error) {
-      console.warn("[workspace-delta] synchronization deferred:", error);
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        console.warn("[workspace-delta] synchronization deferred:", error);
+      }
     } finally {
+      if (activeControllerRef.current === controller) activeControllerRef.current = null;
       inFlightRef.current = false;
-      if (rerunRef.current) {
+      if (mountedRef.current && generationRef.current === generation && rerunRef.current) {
         rerunRef.current = false;
-        window.setTimeout(() => void run(), 1_000);
+        if (rerunTimerRef.current !== null) window.clearTimeout(rerunTimerRef.current);
+        rerunTimerRef.current = window.setTimeout(() => {
+          rerunTimerRef.current = null;
+          void run();
+        }, 1_000);
       }
     }
-  }, [activeModuleId, pathname]);
+  }, [pathname]);
 
   React.useEffect(() => {
     if (!DELTA_SYNC_ENABLED || !authUser) return;
