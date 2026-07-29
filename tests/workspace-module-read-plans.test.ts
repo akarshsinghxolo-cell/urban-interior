@@ -119,4 +119,14 @@ describe("bootstrap JSON projections", () => {
     expect(route).toContain('"X-UC-Read-Scope-Collections"');
     expect(route).toContain('"X-UC-Read-Limited-Collections"');
   });
+
+  test("keeps runtime verification preview-only and token protected", async () => {
+    const route = await Bun.file("src/app/api/internal/preview-read-plans/route.ts").text();
+    expect(route).toContain('process.env.VERCEL_ENV !== "preview"');
+    expect(route).toContain("UC_PREVIEW_VERIFY_TOKEN");
+    expect(route).toContain('request.headers.get("x-uc-preview-verifier")');
+    expect(route).toContain("timingSafeEqual");
+    expect(route).toContain("projectedBootstrap");
+    expect(route).toContain("status: valid ? 200 : 503");
+  });
 });
