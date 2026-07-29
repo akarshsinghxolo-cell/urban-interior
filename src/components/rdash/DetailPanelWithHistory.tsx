@@ -17,9 +17,20 @@ type ExtraTab = "history" | "variations";
 function useDetailPanelHosts(enabled: boolean, recordId?: string | null) {
   const [tabHost, setTabHost] = React.useState<HTMLElement | null>(null);
   const [contentHost, setContentHost] = React.useState<HTMLElement | null>(null);
+  const positionedHostRef = React.useRef<HTMLElement | null>(null);
+  const addedRelativeClassRef = React.useRef(false);
 
   React.useEffect(() => {
+    const releasePositionedHost = () => {
+      if (positionedHostRef.current && addedRelativeClassRef.current) {
+        positionedHostRef.current.classList.remove("relative");
+      }
+      positionedHostRef.current = null;
+      addedRelativeClassRef.current = false;
+    };
+
     if (!enabled || !recordId) {
+      releasePositionedHost();
       setTabHost(null);
       setContentHost(null);
       return;
@@ -32,14 +43,27 @@ function useDetailPanelHosts(enabled: boolean, recordId?: string | null) {
       const header = panel?.children.item(0) as HTMLElement | null;
       const body = panel?.children.item(1) as HTMLElement | null;
       const tabs = header?.lastElementChild as HTMLElement | null;
-      setTabHost(tabs || null);
-      setContentHost(body || null);
+
+      if (positionedHostRef.current !== body) {
+        releasePositionedHost();
+        if (body) {
+          positionedHostRef.current = body;
+          addedRelativeClassRef.current = !body.classList.contains("relative");
+          if (addedRelativeClassRef.current) body.classList.add("relative");
+        }
+      }
+
+      setTabHost((current) => current === tabs ? current : tabs || null);
+      setContentHost((current) => current === body ? current : body || null);
     };
 
     connect();
     const observer = new MutationObserver(connect);
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      releasePositionedHost();
+    };
   }, [enabled, recordId]);
 
   return { tabHost, contentHost };
@@ -48,35 +72,31 @@ function useDetailPanelHosts(enabled: boolean, recordId?: string | null) {
 function DetailExtraTabsExtension() {
   const detail = useRDashStore((state) => state.detailPanel);
   const supported = detail.kind === "visit" || detail.kind === "workOrder";
-  const [active, setActive] = React.useState<ExtraTab | null>(null);
+  const detailKey = `${detail.kind || "none"}:${detail.recordId || "none"}`;
+  const [selection, setSelection] = React.useState<{
+    detailKey: string;
+    tab: ExtraTab | null;
+  }>({ detailKey, tab: null });
+  const active = selection.detailKey === detailKey ? selection.tab : null;
   const { tabHost, contentHost } = useDetailPanelHosts(
     supported,
     detail.recordId,
   );
 
-  React.useEffect(() => {
-    setActive(null);
-  }, [detail.kind, detail.recordId]);
+  const clearActive = React.useCallback(() => {
+    setSelection({ detailKey, tab: null });
+  }, [detailKey]);
 
   React.useEffect(() => {
     if (!tabHost) return;
     const handleClick = (event: Event) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest("[data-uc-extra-detail-tab]")) return;
-      if (target?.closest("button")) setActive(null);
+      if (target?.closest("button")) clearActive();
     };
     tabHost.addEventListener("click", handleClick);
     return () => tabHost.removeEventListener("click", handleClick);
-  }, [tabHost]);
-
-  React.useEffect(() => {
-    if (!contentHost) return;
-    const previousPosition = contentHost.style.position;
-    contentHost.style.position = "relative";
-    return () => {
-      contentHost.style.position = previousPosition;
-    };
-  }, [contentHost]);
+  }, [clearActive, tabHost]);
 
   if (!supported || !detail.recordId || !tabHost || !contentHost) return null;
 
@@ -110,7 +130,7 @@ function DetailExtraTabsExtension() {
             type="button"
             data-uc-extra-detail-tab
             aria-pressed={active === tab.id}
-            onClick={() => setActive(tab.id)}
+            onClick={() => setSelection({ detailKey, tab: tab.id })}
             className={cn(
               "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
               active === tab.id
