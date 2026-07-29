@@ -25,23 +25,26 @@ export async function GET(request: NextRequest) {
       integritySnapshot: summary.integrity.snapshotAvailable,
       totalMs: Math.round((performance.now() - startedAt) * 100) / 100,
     });
-    return NextResponse.json(
-      {
-        status: "ok",
-        timestamp: new Date().toISOString(),
-        user: { name: user.name, email: user.email, role: user.role },
-        ...summary,
+    const payload = {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      user: { name: user.name, email: user.email, role: user.role },
+      ...summary,
+    };
+    const body = JSON.stringify(payload);
+    const responseBytes = Buffer.byteLength(body);
+    console.info("[workspace-health-response]", { responseBytes });
+    return new NextResponse(body, {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=3600",
+        "Vary": "Authorization, Cookie",
+        "X-UC-Health-Collections": String(summary.collectionCount),
+        "X-UC-Health-Queries": String(summary.queryCount),
+        "X-UC-Health-Load-Ms": String(summary.loadMs),
+        "X-UC-Response-Bytes": String(responseBytes),
       },
-      {
-        headers: {
-          "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
-          "Vary": "Authorization, Cookie",
-          "X-UC-Health-Collections": String(summary.collectionCount),
-          "X-UC-Health-Queries": String(summary.queryCount),
-          "X-UC-Health-Load-Ms": String(summary.loadMs),
-        },
-      },
-    );
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Summary unavailable.";
     const status = message === "UNAUTHORIZED" ? 401 : 503;

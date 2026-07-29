@@ -254,8 +254,40 @@ function buildOperationalHealth(db: RDashDatabase, integrity: StoredIntegritySna
   };
 }
 
+function isMissingHealthRpc(error: { code?: string; message?: string } | null) {
+  return Boolean(error && (
+    error.code === "42883" ||
+    error.code === "PGRST202" ||
+    error.message?.includes("get_workspace_health_summary")
+  ));
+}
+
 export async function getWorkspaceHealthSummary() {
   const startedAt = performance.now();
+  // The additive RPC is deployed by this PR's migration; generated database
+  // types will include it after the next schema type refresh. Keep the escape
+  // hatch local to this single call rather than weakening the admin client.
+  const healthRpcClient = getSupabaseAdminClient() as unknown as {
+    rpc: (
+      name: "get_workspace_health_summary",
+      args: { p_workspace_id: string },
+    ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
+  };
+  const { data, error } = await healthRpcClient.rpc("get_workspace_health_summary", {
+    p_workspace_id: workspaceId(),
+  });
+  if (!error && data && typeof data === "object") {
+    return {
+      ...(data as ReturnType<typeof buildOperationalHealth> & { revision: number }),
+      queryCount: 1,
+      collectionCount: 0,
+      loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    };
+  }
+  if (error && !isMissingHealthRpc(error)) {
+    throw new Error(`Could not load the workspace health aggregate: ${error.message}`);
+  }
+
   const [workspace, integrity] = await Promise.all([
     getWorkspaceSubset({ fullCollections: [...HEALTH_SUMMARY_COLLECTIONS] }),
     readStoredIntegritySnapshot(),

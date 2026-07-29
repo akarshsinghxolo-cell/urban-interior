@@ -13,7 +13,7 @@ import {
   type WorkspaceSubset,
 } from "./workspace";
 
-const TARGETED_COLLECTIONS = new Set(["tasks", "followups", "visits", "threads", "auditLog"]);
+const TARGETED_COLLECTIONS = new Set(["tasks", "followups", "visits", "threads", "auditLog", "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues"]);
 const TARGETED_THREAD_KINDS = new Set<ThreadKind>([
   "task",
   "followup",
@@ -134,6 +134,25 @@ function collectDirectDependencies(
     addId(plan, "master.contractors", row.contractor_id);
   }
 
+  if (collection === "master.workSubcategories") {
+    addId(plan, "master.workCategories", row.category_id);
+    addId(plan, "master.units", row.unit_id);
+  } else if (collection === "master.articles") {
+    addId(plan, "master.workCategories", row.category_id);
+    addId(plan, "master.units", row.unit_id || row.default_unit_id);
+  } else if (collection === "master.articleVariants") {
+    addId(plan, "master.articles", row.article_id);
+    addId(plan, "master.units", row.unit_id);
+  } else if (collection === "master.subcategoryArticleMap") {
+    addId(plan, "master.workSubcategories", row.work_required_id);
+    addId(plan, "master.articles", row.article_id);
+    addId(plan, "master.units", row.unit_id);
+  } else if (collection === "master.workOptionGroups") {
+    addId(plan, "master.workSubcategories", row.work_subcategory_id || row.work_required_id);
+  } else if (collection === "master.workOptionValues") {
+    addId(plan, "master.workOptionGroups", row.group_id || row.option_group_id);
+  }
+
   if (collection === "threads") {
     const parent = threadParentTarget(row);
     if (parent) addId(plan, parent.collection, parent.id);
@@ -185,7 +204,7 @@ export function canUseTargetedCommit(operations: WorkspaceOperation[]): boolean 
 
     const upserts = operation.upsert || [];
     rowCount += upserts.length;
-    if (["tasks", "followups", "visits", "threads"].includes(operation.collection) && upserts.length) {
+    if (operation.collection !== "auditLog" && upserts.length) {
       hasBusinessMutation = true;
     }
 
@@ -224,6 +243,8 @@ function dependenciesFromLoadedData(database: RDashDatabase, operations: Workspa
     "tasks", "followups", "visits", "threads", "customers", "sites", "areas",
     "workRequired", "workOrders", "quotations", "purchaseOrders", "grns",
     "payments", "invoices", "contractorPayments", "contractorBills",
+    "master.units", "master.workCategories", "master.workSubcategories", "master.articles",
+    "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues",
   ];
   for (const collection of collections) {
     for (const row of rowsFor(database, collection)) {
@@ -358,6 +379,26 @@ function validateTouchedRows(database: RDashDatabase, operations: WorkspaceOpera
           assertVisitRelations(database, row as Parameters<typeof assertVisitRelations>[1], "Visit", { allowArchived: true });
         } else if (operation.collection === "threads") {
           validateThread(row as unknown as Thread, database);
+        } else if (operation.collection.startsWith("master.")) {
+          const name = typeof row.name === "string" ? row.name.trim() : "";
+          if (["master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.workOptionGroups", "master.workOptionValues"].includes(operation.collection) && !name) {
+            throw new Error(`${operation.collection}: name is required.`);
+          }
+          const exists = (collection: string, value: unknown) => !value || rowsFor(database, collection).some((candidate) => rowId(candidate) === String(value));
+          if (operation.collection === "master.workSubcategories") {
+            if (!exists("master.workCategories", row.category_id)) throw new Error("Work sub-category category does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Work sub-category unit does not exist.");
+          } else if (operation.collection === "master.articles") {
+            if (!exists("master.workCategories", row.category_id)) throw new Error("Article category does not exist.");
+            if (!exists("master.units", row.unit_id || row.default_unit_id)) throw new Error("Article unit does not exist.");
+          } else if (operation.collection === "master.articleVariants") {
+            if (!exists("master.articles", row.article_id)) throw new Error("Variant article does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Variant unit does not exist.");
+          } else if (operation.collection === "master.subcategoryArticleMap") {
+            if (!exists("master.workSubcategories", row.work_required_id)) throw new Error("Scoped material sub-category does not exist.");
+            if (!exists("master.articles", row.article_id)) throw new Error("Scoped material article does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Scoped material unit does not exist.");
+          }
         }
       }
     }

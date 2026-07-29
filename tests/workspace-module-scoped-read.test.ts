@@ -287,15 +287,32 @@ describe("module-scoped collection plans", () => {
     expect(HR_SCOPE_COLLECTIONS).not.toContain("vendorRfqs");
   });
 
-  test("Master Setup includes all master collections without operational ledgers", () => {
-    const masterCollections = Object.keys(COLLECTION_TO_TABLE).filter((collection) =>
-      collection.startsWith("master.")
-    );
-    for (const collection of masterCollections) {
-      expect(MASTER_SCOPE_COLLECTIONS).toContain(collection);
+  test("Master Setup loads only the Work & Rate catalogue graph", () => {
+    expect(MASTER_SCOPE_COLLECTIONS).toEqual([
+      "auditLog",
+      "master.units",
+      "master.workCategories",
+      "master.workSubcategories",
+      "master.articles",
+      "master.articleVariants",
+      "master.subcategoryArticleMap",
+      "master.workOptionGroups",
+      "master.workOptionValues",
+    ]);
+    for (const excluded of [
+      "master.vendors",
+      "master.contractors",
+      "master.vendorRates",
+      "master.vendorRateHistories",
+      "master.storageAccounts",
+      "master.fileAssets",
+      "master.catalogues",
+      "master.referenceMedia",
+      "payments",
+      "workOrders",
+    ]) {
+      expect(MASTER_SCOPE_COLLECTIONS).not.toContain(excluded);
     }
-    expect(MASTER_SCOPE_COLLECTIONS).not.toContain("payments");
-    expect(MASTER_SCOPE_COLLECTIONS).not.toContain("workOrders");
   });
 
   test("Reports includes cross-domain metrics without media administration", () => {

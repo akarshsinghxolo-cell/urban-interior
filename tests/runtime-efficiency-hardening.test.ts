@@ -24,7 +24,7 @@ describe("runtime efficiency hardening", () => {
     expect(route).toContain("getWorkspaceHealthSummary");
     expect(route).not.toContain("getWorkspace(");
     expect(route).not.toContain("checkWorkspaceIntegrity");
-    expect(route).toContain("private, max-age=60, stale-while-revalidate=300");
+    expect(route).toContain("private, max-age=300, stale-while-revalidate=3600");
   });
 
   test("browser shares duplicate workspace and health requests", async () => {

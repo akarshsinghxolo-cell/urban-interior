@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
-import { initAuthFetch, getSessionToken } from "@/lib/rdash/client-auth";
+import { useWorkspaceHealth, type WorkspaceHealthSummary } from "@/lib/rdash/workspace-health-client";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
@@ -41,69 +41,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
  *   - Subtle gradient + animated pulse dot to feel "alive".
  *   - Clickable cells deep-link to the relevant module.
  *   - Graceful loading + error states (never blocks the dashboard).
- *   - Auto-refreshes every 60s; manual refresh button for immediate updates.
+ *   - Uses one shared request with write-triggered and manual refreshes; no polling timer.
  */
 
 type HealthBadge = "healthy" | "watch" | "attention";
 
-interface SummaryResponse {
-  status: string;
-  timestamp: string;
-  user: { name: string; email: string; role: string };
-  healthBadge: HealthBadge;
-  attentionCount: number;
-  integrity: {
-    healthScore: number;
-    totalIssues: number;
-    critical: number;
-    warning: number;
-    info: number;
-    totalRecords: number;
-    totalReferences: number;
-  };
-  operations: {
-    openTasks: number;
-    overdueTasks: number;
-    dueTodayTasks: number;
-    activeFollowups: number;
-    pendingApprovals: number;
-    unresolvedBlocked: number;
-    openRisks: number;
-    activeWorkOrders: number;
-    activeVisits: number;
-  };
-  commercial: {
-    pipelineValue: number;
-    pipelineQuotations: number;
-    customers: number;
-  };
-  exceptions: {
-    directAwardPOs: number;
-    variations: number;
-    total: number;
-  };
-  finance?: {
-    cashPosition: number;
-    monthRevenue: number;
-    overdueInvoiceValue: number;
-    overdueInvoiceCount: number;
-    pendingVendorBillValue: number;
-    pendingVendorBillCount: number;
-    totalReceived: number;
-    totalPaidOut: number;
-    revenueSeries?: Array<{ date: string; value: number }>;
-  };
-  recentActivity: Array<{
-    id: string;
-    action: string;
-    kind: string;
-    entityType: string;
-    entityLabel: string;
-    actor: string;
-    timestamp: string;
-    reason?: string;
-  }>;
-}
+type SummaryResponse = WorkspaceHealthSummary;
 
 const BADGE_CONFIG: Record<
   HealthBadge,
@@ -196,40 +139,9 @@ function Sparkline({ values, className }: { values: number[]; className?: string
 }
 
 export function WorkspaceHealthWidget() {
-  const [summary, setSummary] = React.useState<SummaryResponse | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [error, setError] = React.useState(false);
-  const [lastFetchedAt, setLastFetchedAt] = React.useState<number | null>(null);
+  const { summary, loading, refreshing, error, lastFetchedAt, refresh } = useWorkspaceHealth();
   const setActiveModule = useRDashStore((s) => s.setActiveModule);
-
-  const fetchSummary = React.useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
-    try {
-      initAuthFetch();
-      const token = getSessionToken();
-      const res = await fetch("/api/health/summary", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = (await res.json()) as SummaryResponse;
-      setSummary(data);
-      setError(false);
-      setLastFetchedAt(Date.now());
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  React.useEffect(() => {
-    fetchSummary();
-    // Refresh every 60s so the ribbon stays current without manual refresh.
-    const id = setInterval(fetchSummary, 60_000);
-    return () => clearInterval(id);
-  }, [fetchSummary]);
+  const fetchSummary = React.useCallback((manual = false) => refresh(manual), [refresh]);
 
   if (loading) {
     return (

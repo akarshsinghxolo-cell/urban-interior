@@ -78,6 +78,7 @@ export interface WorkspaceOperationCommitResult {
 export type WorkspaceReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
+  limitsByCollection?: Record<string, number>;
 };
 
 export interface WorkspaceSubset extends WorkspaceWithRevisions {
