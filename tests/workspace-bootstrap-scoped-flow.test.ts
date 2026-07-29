@@ -12,7 +12,7 @@ describe("workspace bootstrap and scoped client reads", () => {
     const target = workspaceReadTargetForModule("workdesk");
     expect(workspaceReadScopeFromMode("bootstrap")).toBe("bootstrap");
     expect(workspaceReadCoverageIsCompatible(
-      { scope: "bootstrap", mode: "bootstrap" },
+      { scope: "bootstrap", mode: "bootstrap", strategy: "bootstrap" },
       target,
     )).toBe(false);
   });
@@ -54,13 +54,15 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(bootstrap).not.toContain("getWorkspaceBootstrap");
     expect(bootstrap).not.toContain("data: workspace.data");
     expect(bootstrap).toContain('readStrategy: "module-scoped"');
+    expect(bootstrap).toContain('"X-UC-Read-Strategy": "bootstrap"');
     expect(bootstrap).toContain('"X-UC-Response-Bytes"');
   });
 
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {
     const helper = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain('request.headers.get("x-uc-workspace-module")');
-    expect(helper).toContain("target.scope === endpointTarget.scope");
+    expect(helper).toContain("tryWorkspaceReadTargetForModule(requestedModule)");
+    expect(helper).toContain("target?.scope === endpointTarget.scope");
     expect(helper).toContain("getModuleScopedWorkspace(user, target)");
     expect(helper).toContain('"X-UC-Read-Module"');
     expect(helper).toContain('"X-UC-Response-Bytes"');
