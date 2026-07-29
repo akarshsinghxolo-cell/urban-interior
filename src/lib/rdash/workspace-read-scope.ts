@@ -1,4 +1,8 @@
-import { canonicalModuleId, resolveRenderer } from "./modules";
+import {
+  canonicalModuleId,
+  isRegisteredModuleId,
+  resolveRenderer,
+} from "./modules";
 import { permissionModuleForRoute } from "./staff-operations";
 import {
   isWorkspaceEntityLocation,
@@ -26,6 +30,13 @@ export type RowScopedWorkspaceEntityKind = Extract<
   WorkspaceEntityKind,
   "customer" | "site"
 >;
+export type WorkspaceReadStrategy =
+  | "unknown"
+  | "bootstrap"
+  | "full"
+  | "scope"
+  | "module"
+  | "row";
 
 function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   const map = new Map<string, ModuleWorkspaceReadScope>();
@@ -143,6 +154,8 @@ export interface WorkspaceReadTarget {
 export interface WorkspaceReadCoverage {
   scope: WorkspaceReadScope;
   mode: string;
+  strategy?: WorkspaceReadStrategy;
+  moduleId?: string;
   entityKind?: RowScopedWorkspaceEntityKind;
   entityId?: string;
 }
@@ -150,17 +163,22 @@ export interface WorkspaceReadCoverage {
 export function workspaceReadScopeForModule(
   moduleId: string | null | undefined,
 ): WorkspaceReadScope {
-  const id = canonicalModuleId(String(moduleId || "").trim());
-  return MODULE_SCOPE_BY_ID.get(id) || "full";
+  const raw = String(moduleId || "").trim();
+  if (!raw || !isRegisteredModuleId(raw)) return "bootstrap";
+  const id = canonicalModuleId(raw);
+  return MODULE_SCOPE_BY_ID.get(id) || "bootstrap";
 }
 
 export function workspaceReadScopeFromMode(
   mode: string | null | undefined,
 ): WorkspaceReadScope {
-  const normalized = String(mode || "")
-    .trim()
-    .replace(/-row$/, "") as WorkspaceReadScope;
-  return KNOWN_SCOPES.has(normalized) ? normalized : "full";
+  const raw = String(mode || "").trim();
+  const normalized = raw.endsWith("-row")
+    ? raw.slice(0, -"-row".length)
+    : raw;
+  return KNOWN_SCOPES.has(normalized as WorkspaceReadScope)
+    ? normalized as WorkspaceReadScope
+    : "bootstrap";
 }
 
 export function workspaceReadScopeFromDatabase(
@@ -175,14 +193,30 @@ export function workspaceReadScopeFromDatabase(
   return workspaceReadScopeFromMode(value);
 }
 
+export function tryWorkspaceReadTargetForModule(
+  moduleId: string | null | undefined,
+): WorkspaceReadTarget | null {
+  const normalized = String(moduleId || "").trim();
+  if (!normalized || normalized.length > 120 || !isRegisteredModuleId(normalized)) {
+    return null;
+  }
+  const route = resolveRenderer(normalized);
+  const scope = MODULE_SCOPE_BY_ID.get(route.id);
+  if (!scope) return null;
+  return {
+    scope,
+    moduleId: route.id,
+    permissionModule: permissionModuleForRoute(route),
+  };
+}
+
 export function workspaceReadTargetForModule(
   moduleId: string,
 ): WorkspaceReadTarget {
-  const route = resolveRenderer(moduleId);
-  return {
-    scope: workspaceReadScopeForModule(route.id),
-    moduleId: route.id,
-    permissionModule: permissionModuleForRoute(route),
+  return tryWorkspaceReadTargetForModule(moduleId) || {
+    scope: "workdesk",
+    moduleId: resolveRenderer("workdesk").id,
+    permissionModule: permissionModuleForRoute(resolveRenderer("workdesk")),
   };
 }
 
@@ -197,14 +231,17 @@ export function workspaceReadTargetForPath(
   const location = resolveWorkspaceLocation(input);
   if (!location) return workspaceReadTargetForModule("workdesk");
   const route = resolveRenderer(location.moduleId);
+  const entityId = isWorkspaceEntityLocation(location)
+    ? String(location.entity.id || "").trim()
+    : "";
   return {
     scope: workspaceReadScopeForModule(route.id),
     moduleId: route.id,
     permissionModule: isWorkspaceEntityLocation(location)
       ? location.entity.permissionModule
       : permissionModuleForRoute(route),
-    ...(isWorkspaceEntityLocation(location)
-      ? { entity: { kind: location.entity.kind, id: location.entity.id } }
+    ...(isWorkspaceEntityLocation(location) && entityId
+      ? { entity: { kind: location.entity.kind, id: entityId } }
       : {}),
   };
 }
@@ -212,19 +249,20 @@ export function workspaceReadTargetForPath(
 export function rowScopedEntityForTarget(
   target: WorkspaceReadTarget,
 ): { kind: RowScopedWorkspaceEntityKind; id: string } | undefined {
+  const id = String(target.entity?.id || "").trim();
   if (
     target.entity?.kind === "customer" &&
     target.scope === "customer" &&
-    target.entity.id
+    id
   ) {
-    return { kind: "customer", id: target.entity.id };
+    return { kind: "customer", id };
   }
   if (
     target.entity?.kind === "site" &&
     target.scope === "site" &&
-    target.entity.id
+    id
   ) {
-    return { kind: "site", id: target.entity.id };
+    return { kind: "site", id };
   }
   return undefined;
 }
@@ -232,25 +270,37 @@ export function rowScopedEntityForTarget(
 /**
  * A full snapshot covers every destination. Bootstrap contains authentication
  * and permission context only, so it never satisfies a module or entity read.
- * Collection-scoped snapshots cover every module assigned to the same scope.
- * Customer/Site row snapshots remain compatible only with the same record.
+ * Scope snapshots cover every module assigned to the same scope. Exact-module
+ * snapshots cover only the module that produced them. Customer/Site row
+ * snapshots remain compatible only with the same record.
  */
 export function workspaceReadCoverageIsCompatible(
   current: WorkspaceReadCoverage,
   requested: WorkspaceReadTarget,
 ): boolean {
-  if (current.mode === "unknown" || current.scope === "bootstrap") return false;
-  if (current.scope === "full") return true;
+  const strategy = current.strategy || (
+    current.mode === current.scope ? "scope" : "unknown"
+  );
+  if (
+    current.mode === "unknown" ||
+    strategy === "unknown" ||
+    current.scope === "bootstrap" ||
+    strategy === "bootstrap"
+  ) return false;
+  if (current.scope === "full" && strategy === "full") return true;
   if (current.scope !== requested.scope) return false;
-  if (current.mode === current.scope) return true;
 
   const entity = rowScopedEntityForTarget(requested);
-  return Boolean(
-    entity &&
-      current.mode === `${current.scope}-row` &&
-      current.entityKind === entity.kind &&
-      current.entityId === entity.id,
-  );
+  if (strategy === "row" || current.mode.endsWith("-row")) {
+    return Boolean(
+      entity &&
+        current.entityKind === entity.kind &&
+        current.entityId === entity.id,
+    );
+  }
+  if (entity) return false;
+  if (strategy === "module") return current.moduleId === requested.moduleId;
+  return strategy === "scope";
 }
 
 // Compatibility helper retained for existing callers and tests.
