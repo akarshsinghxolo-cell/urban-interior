@@ -82,7 +82,7 @@ export function ProfitabilitySnapshot() {
         </div>
         <button
           type="button"
-          onClick={() => setActiveModule("siteProfitability")}
+          onClick={() => setActiveModule("profitability")}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           Details <ArrowRight className="h-3 w-3" />
@@ -145,7 +145,7 @@ export function ProfitabilitySnapshot() {
           <button
             key={site.workOrderId}
             type="button"
-            onClick={() => setActiveModule("workOrderPnL")}
+            onClick={() => setActiveModule("profitability")}
             className="group flex w-full items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
           >
             <div className="min-w-0 flex-1">
