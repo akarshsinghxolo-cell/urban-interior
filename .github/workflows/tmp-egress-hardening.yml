@@ -1,0 +1,946 @@
+name: Apply PostgREST egress hardening
+
+on:
+  push:
+    branches:
+      - feature/eliminate-postgrest-egress-leaks
+
+concurrency:
+  group: postgrest-egress-hardening
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/eliminate-postgrest-egress-leaks
+          fetch-depth: 0
+
+      - name: Apply egress hardening
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          def regex_once(path: str, pattern: str, replacement: str):
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              next_text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one regex match, found {count}: {pattern[:120]!r}")
+              p.write_text(next_text, encoding="utf-8")
+
+          Path("src/lib/rdash/workspace-health-client.ts").write_text(r'''"use client";
+
+import * as React from "react";
+import { getSessionToken, initAuthFetch } from "./client-auth";
+
+export type WorkspaceHealthBadge = "healthy" | "watch" | "attention";
+
+export interface WorkspaceHealthSummary {
+  status: string;
+  timestamp: string;
+  user: { name: string; email: string; role: string };
+  revision: number;
+  healthBadge: WorkspaceHealthBadge;
+  attentionCount: number;
+  integrity: {
+    snapshotAvailable?: boolean;
+    healthScore: number;
+    totalIssues: number;
+    critical: number;
+    warning: number;
+    info: number;
+    totalRecords: number;
+    totalReferences: number;
+    businessRuleIssues?: number;
+    calculatedAt?: string | null;
+  };
+  operations: {
+    openTasks: number;
+    overdueTasks: number;
+    dueTodayTasks: number;
+    activeFollowups: number;
+    pendingApprovals: number;
+    unresolvedBlocked: number;
+    openRisks: number;
+    activeWorkOrders: number;
+    activeVisits: number;
+  };
+  commercial: { pipelineValue: number; pipelineQuotations: number; customers: number };
+  exceptions: { directAwardPOs: number; variations: number; total: number };
+  finance?: {
+    cashPosition: number;
+    monthRevenue: number;
+    overdueInvoiceValue: number;
+    overdueInvoiceCount: number;
+    pendingVendorBillValue: number;
+    pendingVendorBillCount: number;
+    totalReceived: number;
+    totalPaidOut: number;
+    revenueSeries?: Array<{ date: string; value: number }>;
+  };
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    kind: string;
+    entityType: string;
+    entityLabel: string;
+    actor: string;
+    actorRole?: string;
+    sourceModule?: string;
+    timestamp: string;
+    reason?: string;
+  }>;
+}
+
+type HealthState = {
+  summary: WorkspaceHealthSummary | null;
+  loading: boolean;
+  refreshing: boolean;
+  error: string | null;
+  fetchedAt: number | null;
+};
+
+const FRESH_MS = 5 * 60_000;
+let state: HealthState = { summary: null, loading: false, refreshing: false, error: null, fetchedAt: null };
+let request: Promise<WorkspaceHealthSummary | null> | null = null;
+let invalidationTimer: number | null = null;
+const listeners = new Set<() => void>();
+
+function emit(patch: Partial<HealthState>) {
+  state = { ...state, ...patch };
+  for (const listener of listeners) listener();
+}
+
+export function getWorkspaceHealthSnapshot() {
+  return state;
+}
+
+export function subscribeWorkspaceHealth(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export async function loadWorkspaceHealth(options: { force?: boolean } = {}) {
+  const force = options.force === true;
+  const fresh = state.summary && state.fetchedAt && state.fetchedAt + FRESH_MS > Date.now();
+  if (!force && fresh) return state.summary;
+  if (request) return request;
+
+  initAuthFetch();
+  emit({ loading: !state.summary, refreshing: Boolean(state.summary), error: null });
+  request = (async () => {
+    const token = getSessionToken();
+    const response = await fetch("/api/health/summary", {
+      credentials: "same-origin",
+      cache: force ? "reload" : "default",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (response.status === 401) {
+      emit({ loading: false, refreshing: false, error: "Your session has expired." });
+      return null;
+    }
+    if (!response.ok) throw new Error(`Health summary failed (${response.status}).`);
+    const summary = await response.json() as WorkspaceHealthSummary;
+    emit({ summary, fetchedAt: Date.now(), loading: false, refreshing: false, error: null });
+    return summary;
+  })().catch((error) => {
+    emit({ loading: false, refreshing: false, error: error instanceof Error ? error.message : "Health summary unavailable." });
+    return null;
+  }).finally(() => {
+    request = null;
+  });
+  return request;
+}
+
+export function refreshWorkspaceHealth(manual = true) {
+  return loadWorkspaceHealth({ force: manual });
+}
+
+export function invalidateWorkspaceHealth() {
+  emit({ fetchedAt: null });
+  if (typeof window === "undefined" || listeners.size === 0) return;
+  if (invalidationTimer !== null) window.clearTimeout(invalidationTimer);
+  invalidationTimer = window.setTimeout(() => {
+    invalidationTimer = null;
+    void loadWorkspaceHealth({ force: true });
+  }, 750);
+}
+
+let invalidationListenerInstalled = false;
+function installInvalidationListener() {
+  if (invalidationListenerInstalled || typeof window === "undefined") return;
+  invalidationListenerInstalled = true;
+  window.addEventListener("uc-workspace-health-invalidated", invalidateWorkspaceHealth);
+}
+
+export function useWorkspaceHealth() {
+  installInvalidationListener();
+  const snapshot = React.useSyncExternalStore(
+    subscribeWorkspaceHealth,
+    getWorkspaceHealthSnapshot,
+    getWorkspaceHealthSnapshot,
+  );
+  React.useEffect(() => {
+    void loadWorkspaceHealth();
+  }, []);
+  return {
+    summary: snapshot.summary,
+    loading: snapshot.loading && !snapshot.summary,
+    refreshing: snapshot.refreshing,
+    error: snapshot.error,
+    lastFetchedAt: snapshot.fetchedAt,
+    refresh: refreshWorkspaceHealth,
+  };
+}
+''', encoding="utf-8")
+
+          # Workspace health widget: one shared store, no component timer.
+          p = Path("src/components/rdash/WorkspaceHealthWidget.tsx")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace('import { initAuthFetch, getSessionToken } from "@/lib/rdash/client-auth";', 'import { useWorkspaceHealth, type WorkspaceHealthSummary } from "@/lib/rdash/workspace-health-client";')
+          text = re.sub(r'interface SummaryResponse \{.*?\n\}\n\nconst BADGE_CONFIG', 'type SummaryResponse = WorkspaceHealthSummary;\n\nconst BADGE_CONFIG', text, count=1, flags=re.S)
+          text, count = re.subn(r'  const \[summary, setSummary\].*?  \}, \[fetchSummary\]\);\n', '''  const { summary, loading, refreshing, error, lastFetchedAt, refresh } = useWorkspaceHealth();
+  const setActiveModule = useRDashStore((s) => s.setActiveModule);
+  const fetchSummary = React.useCallback((manual = false) => refresh(manual), [refresh]);
+''', text, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit("WorkspaceHealthWidget state/effect block did not match")
+          text = text.replace(" *   - Auto-refreshes every 60s; manual refresh button for immediate updates.", " *   - Uses one shared request with write-triggered and manual refreshes; no polling timer.")
+          p.write_text(text, encoding="utf-8")
+
+          # Workspace pulse strip: subscribe to the same health store.
+          p = Path("src/components/rdash/WorkspacePulseStrip.tsx")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace('import { toast } from "sonner";', 'import { toast } from "sonner";\nimport { useWorkspaceHealth } from "@/lib/rdash/workspace-health-client";')
+          pattern = r'  // Health-aware greeting:.*?  \}, \[fetchHealth\]\);\n'
+          replacement = '''  // All dashboard surfaces share one health request and never install polling timers.
+  const { summary: healthSummary, refreshing, lastFetchedAt, refresh: refreshHealth } = useWorkspaceHealth();
+  const fetchHealth = React.useCallback((manual = false) => refreshHealth(manual), [refreshHealth]);
+  const health = React.useMemo(() => healthSummary ? ({
+    badge: healthSummary.healthBadge,
+    attentionCount: healthSummary.attentionCount,
+    integrityScore: healthSummary.integrity?.healthScore ?? 100,
+    integrityIssues: healthSummary.integrity?.totalIssues ?? 0,
+    pendingApprovals: healthSummary.operations?.pendingApprovals ?? 0,
+    overdueTasks: healthSummary.operations?.overdueTasks ?? 0,
+    unresolvedBlocked: healthSummary.operations?.unresolvedBlocked ?? 0,
+    openRisks: healthSummary.operations?.openRisks ?? 0,
+    cashPosition: healthSummary.finance?.cashPosition ?? 0,
+    overdueInvoiceValue: healthSummary.finance?.overdueInvoiceValue ?? 0,
+    monthRevenue: healthSummary.finance?.monthRevenue ?? 0,
+    totalRecords: healthSummary.integrity?.totalRecords ?? 0,
+    totalReferences: healthSummary.integrity?.totalReferences ?? 0,
+    revenueSeries: healthSummary.finance?.revenueSeries ?? [],
+  }) : null, [healthSummary]);
+'''
+          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit("WorkspacePulseStrip health block did not match")
+          p.write_text(text, encoding="utf-8")
+
+          # Login welcome consumes the same shared request rather than issuing its own fetch.
+          p = Path("src/components/rdash/RDashApp.tsx")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace('import { initAuthFetch, clearSessionToken, getSessionToken } from "@/lib/rdash/client-auth";', 'import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";\nimport { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";')
+          old = '''        const token = getSessionToken();
+        fetch("/api/health/summary", {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((summary: any) => {'''
+          new = '''        void loadWorkspaceHealth()
+            .then((summary: any) => {'''
+          if old not in text:
+              raise SystemExit("RDashApp health fetch prefix did not match")
+          text = text.replace(old, new, 1)
+          p.write_text(text, encoding="utf-8")
+
+          # Successful writes invalidate the shared summary once, across all subscribers.
+          replace_once(
+              "src/lib/rdash/client-auth.ts",
+              '''function invalidateReadCaches() {
+  healthResponseCache = null;
+  clearStoredHealthResponses();
+  workspaceReadRequests.clear();
+}
+''',
+              '''function invalidateReadCaches() {
+  healthResponseCache = null;
+  clearStoredHealthResponses();
+  workspaceReadRequests.clear();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("uc-workspace-health-invalidated"));
+  }
+}
+''',
+          )
+
+          # Compact accepted outbox item before any best-effort client adaptation.
+          replace_once(
+              "src/lib/uploads/workspace-outbox.ts",
+              '''  if (response.ok) {
+    const adaptedPayload = acceptCompactCommit(current, payload);
+    await uploadIndexedDb.deleteWorkspaceOutbox(operationId);
+    if (adaptedPayload.data && typeof adaptedPayload.revision === "number") {
+      await rebaseRemainingItems(adaptedPayload.data, adaptedPayload.revision);
+    } else {
+      await refresh();
+    }
+    return responseWithPayload(response, adaptedPayload);
+  }
+''',
+              '''  if (response.ok) {
+    await uploadIndexedDb.deleteWorkspaceOutbox(operationId);
+    await refresh();
+    let adaptedPayload = payload;
+    try {
+      adaptedPayload = acceptCompactCommit(current, payload);
+      if (adaptedPayload.data && typeof adaptedPayload.revision === "number") {
+        await rebaseRemainingItems(adaptedPayload.data, adaptedPayload.revision);
+      }
+    } catch (error) {
+      console.error("[WorkspaceOutbox] Server accepted the change, but local response adaptation failed.", error);
+    }
+    return responseWithPayload(response, adaptedPayload);
+  }
+''',
+          )
+
+          # One SQL aggregate RPC, retaining the bounded fallback until every environment has the migration.
+          p = Path("src/lib/rdash/server/workspace-health.ts")
+          text = p.read_text(encoding="utf-8")
+          old = '''export async function getWorkspaceHealthSummary() {
+  const startedAt = performance.now();
+  const [workspace, integrity] = await Promise.all([
+    getWorkspaceSubset({ fullCollections: [...HEALTH_SUMMARY_COLLECTIONS] }),
+    readStoredIntegritySnapshot(),
+  ]);
+  return {
+    revision: workspace.revision,
+    queryCount: workspace.queryCount + 1,
+    collectionCount: HEALTH_SUMMARY_COLLECTIONS.length,
+    loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    ...buildOperationalHealth(workspace.data, integrity),
+  };
+}
+'''
+          new = '''function isMissingHealthRpc(error: { code?: string; message?: string } | null) {
+  return Boolean(error && (
+    error.code === "42883" ||
+    error.code === "PGRST202" ||
+    error.message?.includes("get_workspace_health_summary")
+  ));
+}
+
+export async function getWorkspaceHealthSummary() {
+  const startedAt = performance.now();
+  const { data, error } = await getSupabaseAdminClient().rpc("get_workspace_health_summary", {
+    p_workspace_id: workspaceId(),
+  });
+  if (!error && data && typeof data === "object") {
+    return {
+      ...(data as Record<string, unknown>),
+      queryCount: 1,
+      collectionCount: 0,
+      loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    };
+  }
+  if (error && !isMissingHealthRpc(error)) {
+    throw new Error(`Could not load the workspace health aggregate: ${error.message}`);
+  }
+
+  const [workspace, integrity] = await Promise.all([
+    getWorkspaceSubset({ fullCollections: [...HEALTH_SUMMARY_COLLECTIONS] }),
+    readStoredIntegritySnapshot(),
+  ]);
+  return {
+    revision: workspace.revision,
+    queryCount: workspace.queryCount + 1,
+    collectionCount: HEALTH_SUMMARY_COLLECTIONS.length,
+    loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    ...buildOperationalHealth(workspace.data, integrity),
+  };
+}
+'''
+          if text.count(old) != 1:
+              raise SystemExit("workspace-health function did not match")
+          p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Target Work & Rate Master mutations instead of reconstructing the entire workspace.
+          p = Path("src/lib/rdash/server/targeted-commit.ts")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace(
+              'const TARGETED_COLLECTIONS = new Set(["tasks", "followups", "visits", "threads", "auditLog"]);',
+              'const TARGETED_COLLECTIONS = new Set(["tasks", "followups", "visits", "threads", "auditLog", "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues"]);',
+          )
+          text = text.replace(
+              'if (["tasks", "followups", "visits", "threads"].includes(operation.collection) && upserts.length) {',
+              'if (operation.collection !== "auditLog" && upserts.length) {',
+          )
+          marker = '''  if (collection === "visits") {
+    addId(plan, "master.staff", row.staff_id);
+    addId(plan, "master.vendors", row.vendor_id);
+    addId(plan, "master.contractors", row.contractor_id);
+  }
+'''
+          addition = marker + '''
+  if (collection === "master.workSubcategories") {
+    addId(plan, "master.workCategories", row.category_id);
+    addId(plan, "master.units", row.unit_id);
+  } else if (collection === "master.articles") {
+    addId(plan, "master.workCategories", row.category_id);
+    addId(plan, "master.units", row.unit_id || row.default_unit_id);
+  } else if (collection === "master.articleVariants") {
+    addId(plan, "master.articles", row.article_id);
+    addId(plan, "master.units", row.unit_id);
+  } else if (collection === "master.subcategoryArticleMap") {
+    addId(plan, "master.workSubcategories", row.work_required_id);
+    addId(plan, "master.articles", row.article_id);
+    addId(plan, "master.units", row.unit_id);
+  } else if (collection === "master.workOptionGroups") {
+    addId(plan, "master.workSubcategories", row.work_subcategory_id || row.work_required_id);
+  } else if (collection === "master.workOptionValues") {
+    addId(plan, "master.workOptionGroups", row.group_id || row.option_group_id);
+  }
+'''
+          if text.count(marker) != 1:
+              raise SystemExit("targeted dependency marker did not match")
+          text = text.replace(marker, addition, 1)
+          text = text.replace(
+              '"payments", "invoices", "contractorPayments", "contractorBills",\n  ];',
+              '"payments", "invoices", "contractorPayments", "contractorBills",\n    "master.units", "master.workCategories", "master.workSubcategories", "master.articles",\n    "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues",\n  ];',
+          )
+          validation_marker = '''        } else if (operation.collection === "threads") {
+          validateThread(row as unknown as Thread, database);
+        }
+'''
+          validation_addition = '''        } else if (operation.collection === "threads") {
+          validateThread(row as unknown as Thread, database);
+        } else if (operation.collection.startsWith("master.")) {
+          const name = typeof row.name === "string" ? row.name.trim() : "";
+          if (["master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.workOptionGroups", "master.workOptionValues"].includes(operation.collection) && !name) {
+            throw new Error(`${operation.collection}: name is required.`);
+          }
+          const exists = (collection: string, value: unknown) => !value || rowsFor(database, collection).some((candidate) => rowId(candidate) === String(value));
+          if (operation.collection === "master.workSubcategories") {
+            if (!exists("master.workCategories", row.category_id)) throw new Error("Work sub-category category does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Work sub-category unit does not exist.");
+          } else if (operation.collection === "master.articles") {
+            if (!exists("master.workCategories", row.category_id)) throw new Error("Article category does not exist.");
+            if (!exists("master.units", row.unit_id || row.default_unit_id)) throw new Error("Article unit does not exist.");
+          } else if (operation.collection === "master.articleVariants") {
+            if (!exists("master.articles", row.article_id)) throw new Error("Variant article does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Variant unit does not exist.");
+          } else if (operation.collection === "master.subcategoryArticleMap") {
+            if (!exists("master.workSubcategories", row.work_required_id)) throw new Error("Scoped material sub-category does not exist.");
+            if (!exists("master.articles", row.article_id)) throw new Error("Scoped material article does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Scoped material unit does not exist.");
+          }
+        }
+'''
+          if text.count(validation_marker) != 1:
+              raise SystemExit("targeted validation marker did not match")
+          text = text.replace(validation_marker, validation_addition, 1)
+          p.write_text(text, encoding="utf-8")
+
+          # Master Setup now loads only its Work & Rate catalog; vendors, rates, storage and media stay in their own modules.
+          p = Path("src/lib/rdash/server/module-scoped-collections.ts")
+          text = p.read_text(encoding="utf-8")
+          text, count = re.subn(
+              r'export const MASTER_SCOPE_COLLECTIONS = Object\.freeze\(\[.*?\] as const\);',
+              '''export const MASTER_SCOPE_COLLECTIONS = Object.freeze([
+  "auditLog",
+  "master.units",
+  "master.workCategories",
+  "master.workSubcategories",
+  "master.articles",
+  "master.articleVariants",
+  "master.subcategoryArticleMap",
+  "master.workOptionGroups",
+  "master.workOptionValues",
+] as const);''',
+              text,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit("MASTER_SCOPE_COLLECTIONS did not match")
+          p.write_text(text, encoding="utf-8")
+
+          # Bound history-heavy collection reads. The JSON payload column cannot be projected safely,
+          # so the server limits rows by newest entity revision and loads older pages on demand later.
+          p = Path("src/lib/rdash/server/commit-rest.ts")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace(
+              '''export type RestWorkspaceReadPlan = {
+  fullCollections?: string[];
+  rowsByCollection?: Record<string, string[]>;
+};''',
+              '''export type RestWorkspaceReadPlan = {
+  fullCollections?: string[];
+  rowsByCollection?: Record<string, string[]>;
+  limitsByCollection?: Record<string, number>;
+};''',
+          )
+          text = text.replace(
+              'const workspaceId = process.env.UC_WORKSPACE_ID || "default";',
+              '''const workspaceId = process.env.UC_WORKSPACE_ID || "default";
+const DEFAULT_COLLECTION_LIMITS: Record<string, number> = {
+  auditLog: 100,
+  executionLogs: 200,
+  commSends: 100,
+  "master.vendorRateHistories": 100,
+};''',
+              1,
+          )
+          old = '''    if (!fullCollections.has(collection)) {
+      query = query.in("id", rowsByCollection.get(collection) || []);
+    }
+    const { data, error } = await query;'''
+          new = '''    if (!fullCollections.has(collection)) {
+      query = query.in("id", rowsByCollection.get(collection) || []);
+    } else {
+      const limit = plan.limitsByCollection?.[collection] ?? DEFAULT_COLLECTION_LIMITS[collection];
+      if (limit) query = query.order("revision", { ascending: false }).limit(limit);
+    }
+    const { data, error } = await query;'''
+          if text.count(old) != 1:
+              raise SystemExit("commit-rest query block did not match")
+          p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          p = Path("src/lib/rdash/server/workspace.ts")
+          text = p.read_text(encoding="utf-8")
+          text = text.replace(
+              '''export type WorkspaceReadPlan = {
+  fullCollections?: string[];
+  rowsByCollection?: Record<string, string[]>;
+};''',
+              '''export type WorkspaceReadPlan = {
+  fullCollections?: string[];
+  rowsByCollection?: Record<string, string[]>;
+  limitsByCollection?: Record<string, number>;
+};''',
+          )
+          p.write_text(text, encoding="utf-8")
+
+          # Add response-byte telemetry to the two egress-heavy routes.
+          p = Path("src/app/api/health/summary/route.ts")
+          text = p.read_text(encoding="utf-8")
+          old = '''    return NextResponse.json(
+      {
+        status: "ok",
+        timestamp: new Date().toISOString(),
+        user: { name: user.name, email: user.email, role: user.role },
+        ...summary,
+      },
+      {
+        headers: {
+          "Cache-Control": "private, max-age=60, stale-while-revalidate=300",
+          "Vary": "Authorization, Cookie",
+          "X-UC-Health-Collections": String(summary.collectionCount),
+          "X-UC-Health-Queries": String(summary.queryCount),
+          "X-UC-Health-Load-Ms": String(summary.loadMs),
+        },
+      },
+    );'''
+          new = '''    const payload = {
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      user: { name: user.name, email: user.email, role: user.role },
+      ...summary,
+    };
+    const body = JSON.stringify(payload);
+    const responseBytes = Buffer.byteLength(body);
+    console.info("[workspace-health-response]", { responseBytes });
+    return new NextResponse(body, {
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=3600",
+        "Vary": "Authorization, Cookie",
+        "X-UC-Health-Collections": String(summary.collectionCount),
+        "X-UC-Health-Queries": String(summary.queryCount),
+        "X-UC-Health-Load-Ms": String(summary.loadMs),
+        "X-UC-Response-Bytes": String(responseBytes),
+      },
+    });'''
+          if text.count(old) != 1:
+              raise SystemExit("health response block did not match")
+          p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          # Workspace success payload helper avoids double serialization while reporting bytes.
+          p = Path("src/app/api/workspace/route.ts")
+          text = p.read_text(encoding="utf-8")
+          insert_after = '''function userPayload(user: Awaited<ReturnType<typeof requireSession>>) {
+  return {
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    staffId: user.staffId,
+    expiresAt: user.expiresAt,
+  };
+}
+'''
+          helper = insert_after + '''
+function workspaceJson(payload: Record<string, unknown>, headers: Record<string, string>) {
+  const body = JSON.stringify(payload);
+  const responseBytes = Buffer.byteLength(body);
+  return {
+    response: new NextResponse(body, {
+      headers: { "Content-Type": "application/json", ...headers, "X-UC-Response-Bytes": String(responseBytes) },
+    }),
+    responseBytes,
+  };
+}
+'''
+          if text.count(insert_after) != 1:
+              raise SystemExit("workspace userPayload marker did not match")
+          text = text.replace(insert_after, helper, 1)
+          # Entity success return.
+          entity_old = '''        return NextResponse.json({
+          revision: workspace.revision,
+          data: workspace.data,
+          ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
+          user: userPayload(user),
+        }, {
+          headers: responseHeaders(workspace.mode, workspace.queryCount, workspace.loadMs, {
+            collectionCount: workspace.collectionCount,
+            rowCount: workspace.rowCount,
+            entityKind: workspace.entityKind,
+            entityId: workspace.entityId,
+          }),
+        });'''
+          entity_new = '''        const measured = workspaceJson({
+          revision: workspace.revision,
+          data: workspace.data,
+          ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
+          user: userPayload(user),
+        }, responseHeaders(workspace.mode, workspace.queryCount, workspace.loadMs, {
+          collectionCount: workspace.collectionCount,
+          rowCount: workspace.rowCount,
+          entityKind: workspace.entityKind,
+          entityId: workspace.entityId,
+        }));
+        console.info("[workspace-response]", { mode: workspace.mode, responseBytes: measured.responseBytes });
+        return measured.response;'''
+          if text.count(entity_old) != 1:
+              raise SystemExit("entity workspace response did not match")
+          text = text.replace(entity_old, entity_new, 1)
+          module_old = '''        return NextResponse.json({
+          revision: workspace.revision,
+          data: workspace.data,
+          ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
+          user: userPayload(user),
+        }, {
+          headers: responseHeaders(workspace.scope, workspace.queryCount, workspace.loadMs, {
+            collectionCount: workspace.collectionCount,
+          }),
+        });'''
+          module_new = '''        const measured = workspaceJson({
+          revision: workspace.revision,
+          data: workspace.data,
+          ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
+          user: userPayload(user),
+        }, responseHeaders(workspace.scope, workspace.queryCount, workspace.loadMs, {
+          collectionCount: workspace.collectionCount,
+        }));
+        console.info("[workspace-response]", { mode: workspace.scope, responseBytes: measured.responseBytes });
+        return measured.response;'''
+          if text.count(module_old) != 1:
+              raise SystemExit("module workspace response did not match")
+          text = text.replace(module_old, module_new, 1)
+          full_old = '''    return NextResponse.json({
+      revision: full.workspace.revision,
+      data: full.workspace.data,
+      ...(full.workspace.rowVersions ? { rowVersions: full.workspace.rowVersions } : {}),
+      user: userPayload(user),
+    }, { headers: responseHeaders(mode, full.queryCount, full.loadMs) });'''
+          full_new = '''    const measured = workspaceJson({
+      revision: full.workspace.revision,
+      data: full.workspace.data,
+      ...(full.workspace.rowVersions ? { rowVersions: full.workspace.rowVersions } : {}),
+      user: userPayload(user),
+    }, responseHeaders(mode, full.queryCount, full.loadMs));
+    console.info("[workspace-response]", { mode, responseBytes: measured.responseBytes });
+    return measured.response;'''
+          if text.count(full_old) != 1:
+              raise SystemExit("full workspace response did not match")
+          p.write_text(text.replace(full_old, full_new, 1), encoding="utf-8")
+
+          # Store the migration in the repository.
+          Path("supabase/migrations/20260729030000_workspace_health_aggregate.sql").write_text(r'''create table if not exists public.workspace_health_snapshot (
+  workspace_id text primary key,
+  workspace_revision bigint not null default 0,
+  health_score integer not null default 100,
+  total_issues integer not null default 0,
+  critical_count integer not null default 0,
+  warning_count integer not null default 0,
+  info_count integer not null default 0,
+  total_records bigint not null default 0,
+  total_references bigint not null default 0,
+  business_rule_issues integer not null default 0,
+  report_json jsonb not null default '{}'::jsonb,
+  calculated_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create or replace function public.get_workspace_health_summary(p_workspace_id text default 'default')
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+with
+clock as (
+  select (now() at time zone 'Asia/Kolkata')::date as today,
+         date_trunc('month', now() at time zone 'Asia/Kolkata')::date as month_start
+),
+rev as (
+  select coalesce((select revision from public.entity_workspace_revision where id = p_workspace_id), 0) as revision
+),
+task_metrics as (
+  select
+    count(*) filter (where data->>'status' in ('todo','in_progress','review')) as open_tasks,
+    count(*) filter (where data->>'status' in ('todo','in_progress','review') and nullif(data->>'due_date','') < (select today::text from clock)) as overdue_tasks,
+    count(*) filter (where data->>'status' in ('todo','in_progress','review') and data->>'due_date' = (select today::text from clock)) as due_today_tasks
+  from public."entity_tasks" where workspace_id = p_workspace_id
+),
+followup_metrics as (
+  select count(*) filter (where data->>'status' in ('pending','scheduled','missed')) as active_followups
+  from public."entity_followups" where workspace_id = p_workspace_id
+),
+action_metrics as (
+  select count(*) filter (where data->>'status' = 'pending') as pending_approvals
+  from public."entity_actions" where workspace_id = p_workspace_id
+),
+blocked_metrics as (
+  select count(*) filter (where coalesce((data->>'resolved')::boolean, false) = false) as unresolved_blocked
+  from public."entity_blocked" where workspace_id = p_workspace_id
+),
+risk_metrics as (
+  select count(*) as open_risks from public."entity_risks" where workspace_id = p_workspace_id
+),
+work_order_metrics as (
+  select count(*) filter (where data->>'status' in ('in_progress','scheduled')) as active_work_orders
+  from public."entity_workOrders" where workspace_id = p_workspace_id
+),
+visit_metrics as (
+  select count(*) filter (where data->>'status' in ('scheduled','en_route','checked_in')) as active_visits
+  from public."entity_visits" where workspace_id = p_workspace_id
+),
+customer_metrics as (
+  select count(*) as customers from public."entity_customers" where workspace_id = p_workspace_id
+),
+quotation_current as (
+  select distinct on (coalesce(nullif(data->>'parent_quotation_id',''), id)) data
+  from public."entity_quotations"
+  where workspace_id = p_workspace_id
+  order by coalesce(nullif(data->>'parent_quotation_id',''), id),
+           coalesce(nullif(data->>'revision_no','')::integer, 0) desc,
+           coalesce(data->>'updated_at', data->>'created_at', '') desc
+),
+quotation_metrics as (
+  select
+    count(*) filter (where data->>'status' in ('draft','sent')) as pipeline_quotations,
+    coalesce(sum(case when data->>'status' in ('draft','sent') and coalesce(data->>'total_amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (data->>'total_amount')::numeric else 0 end), 0) as pipeline_value,
+    count(*) filter (where data->>'revision_kind' in ('variation','renegotiation')) as variations
+  from quotation_current
+),
+po_metrics as (
+  select count(*) filter (where coalesce((data->>'direct_award')::boolean, false) or data->>'award_basis' = 'direct') as direct_award_pos
+  from public."entity_purchaseOrders" where workspace_id = p_workspace_id
+),
+receipt_metrics as (
+  select
+    coalesce(sum(case when coalesce(data->>'amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (data->>'amount')::numeric else 0 end), 0) as total_received,
+    coalesce(sum(case when left(coalesce(data->>'received_at',''), 10) >= (select month_start::text from clock) and coalesce(data->>'amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (data->>'amount')::numeric else 0 end), 0) as month_revenue
+  from public."entity_customerReceipts" where workspace_id = p_workspace_id
+),
+vendor_payment_metrics as (
+  select coalesce(sum(case when coalesce(data->>'amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (data->>'amount')::numeric else 0 end), 0) as total_paid_out
+  from public."entity_vendorPayments" where workspace_id = p_workspace_id
+),
+invoice_metrics as (
+  select
+    count(*) filter (where data->>'status' in ('issued','partial','overdue') and nullif(data->>'due_date','') < (select today::text from clock)) as overdue_invoice_count,
+    coalesce(sum(case when data->>'status' in ('issued','partial','overdue') and nullif(data->>'due_date','') < (select today::text from clock) and coalesce(data->>'balance_amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (data->>'balance_amount')::numeric else 0 end), 0) as overdue_invoice_value
+  from public."entity_invoices" where workspace_id = p_workspace_id
+),
+vendor_bill_metrics as (
+  select
+    count(*) filter (where data->>'status' in ('pending','approved','partly_paid')) as pending_vendor_bill_count,
+    coalesce(sum(case when data->>'status' in ('pending','approved','partly_paid') and coalesce(data->>'balance_amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (data->>'balance_amount')::numeric else 0 end), 0) as pending_vendor_bill_value
+  from public."entity_vendorBills" where workspace_id = p_workspace_id
+),
+attention as (
+  select (tm.overdue_tasks + am.pending_approvals + bm.unresolved_blocked + rm.open_risks)::bigint as count
+  from task_metrics tm, action_metrics am, blocked_metrics bm, risk_metrics rm
+),
+integrity as (
+  select * from public.workspace_health_snapshot where workspace_id = p_workspace_id
+),
+recent_activity as (
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', id,
+    'action', data->>'action',
+    'kind', data->>'kind',
+    'entityType', data->>'entity_type',
+    'entityLabel', coalesce(data->>'entity_label', data->>'entity_type'),
+    'actor', coalesce(data->>'actor','system'),
+    'actorRole', data->>'actor_role',
+    'sourceModule', data->>'source_module',
+    'reason', data->>'reason',
+    'timestamp', data->>'timestamp'
+  ) order by data->>'timestamp' desc), '[]'::jsonb) as rows
+  from (
+    select id, data from public."entity_auditLog"
+    where workspace_id = p_workspace_id
+    order by data->>'timestamp' desc
+    limit 5
+  ) latest
+),
+revenue_series as (
+  select jsonb_agg(jsonb_build_object('date', day::text, 'value', value) order by day) as rows
+  from (
+    select d.day,
+      coalesce(sum(case when left(coalesce(r.data->>'received_at',''), 10) = d.day::text and coalesce(r.data->>'amount','') ~ '^-?[0-9]+(\.[0-9]+)?$' then (r.data->>'amount')::numeric else 0 end), 0) as value
+    from generate_series((select today from clock) - 6, (select today from clock), interval '1 day') d(day)
+    left join public."entity_customerReceipts" r on r.workspace_id = p_workspace_id and left(coalesce(r.data->>'received_at',''), 10) = d.day::date::text
+    group by d.day
+  ) values_by_day
+)
+select jsonb_build_object(
+  'revision', (select revision from rev),
+  'healthBadge', case
+    when not exists(select 1 from integrity) then 'watch'
+    when (select count from attention) = 0 and (select health_score from integrity) >= 95 then 'healthy'
+    when (select count from attention) <= 3 and (select health_score from integrity) >= 80 then 'watch'
+    else 'attention'
+  end,
+  'attentionCount', (select count from attention),
+  'integrity', jsonb_build_object(
+    'snapshotAvailable', exists(select 1 from integrity),
+    'healthScore', coalesce((select health_score from integrity), 100),
+    'totalIssues', coalesce((select total_issues from integrity), 0),
+    'critical', coalesce((select critical_count from integrity), 0),
+    'warning', coalesce((select warning_count from integrity), 0),
+    'info', coalesce((select info_count from integrity), 0),
+    'totalRecords', coalesce((select total_records from integrity), 0),
+    'totalReferences', coalesce((select total_references from integrity), 0),
+    'businessRuleIssues', coalesce((select business_rule_issues from integrity), 0),
+    'calculatedAt', (select calculated_at from integrity)
+  ),
+  'operations', jsonb_build_object(
+    'openTasks', (select open_tasks from task_metrics),
+    'overdueTasks', (select overdue_tasks from task_metrics),
+    'dueTodayTasks', (select due_today_tasks from task_metrics),
+    'activeFollowups', (select active_followups from followup_metrics),
+    'pendingApprovals', (select pending_approvals from action_metrics),
+    'unresolvedBlocked', (select unresolved_blocked from blocked_metrics),
+    'openRisks', (select open_risks from risk_metrics),
+    'activeWorkOrders', (select active_work_orders from work_order_metrics),
+    'activeVisits', (select active_visits from visit_metrics)
+  ),
+  'commercial', jsonb_build_object(
+    'pipelineValue', (select pipeline_value from quotation_metrics),
+    'pipelineQuotations', (select pipeline_quotations from quotation_metrics),
+    'customers', (select customers from customer_metrics)
+  ),
+  'exceptions', jsonb_build_object(
+    'directAwardPOs', (select direct_award_pos from po_metrics),
+    'variations', (select variations from quotation_metrics),
+    'total', (select direct_award_pos from po_metrics) + (select variations from quotation_metrics)
+  ),
+  'finance', jsonb_build_object(
+    'cashPosition', (select total_received from receipt_metrics) - (select total_paid_out from vendor_payment_metrics),
+    'monthRevenue', (select month_revenue from receipt_metrics),
+    'overdueInvoiceValue', (select overdue_invoice_value from invoice_metrics),
+    'overdueInvoiceCount', (select overdue_invoice_count from invoice_metrics),
+    'pendingVendorBillValue', (select pending_vendor_bill_value from vendor_bill_metrics),
+    'pendingVendorBillCount', (select pending_vendor_bill_count from vendor_bill_metrics),
+    'totalReceived', (select total_received from receipt_metrics),
+    'totalPaidOut', (select total_paid_out from vendor_payment_metrics),
+    'revenueSeries', (select rows from revenue_series)
+  ),
+  'recentActivity', (select rows from recent_activity)
+);
+$$;
+
+revoke all on function public.get_workspace_health_summary(text) from public;
+grant execute on function public.get_workspace_health_summary(text) to service_role;
+''', encoding="utf-8")
+
+          Path("tests/egress-guardrails.test.ts").write_text(r'''import { describe, expect, test } from "bun:test";
+
+const healthWidget = await Bun.file("src/components/rdash/WorkspaceHealthWidget.tsx").text();
+const pulse = await Bun.file("src/components/rdash/WorkspacePulseStrip.tsx").text();
+const healthServer = await Bun.file("src/lib/rdash/server/workspace-health.ts").text();
+const targeted = await Bun.file("src/lib/rdash/server/targeted-commit.ts").text();
+const scopes = await Bun.file("src/lib/rdash/server/module-scoped-collections.ts").text();
+const outbox = await Bun.file("src/lib/uploads/workspace-outbox.ts").text();
+const rest = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
+
+ describe("PostgREST egress guardrails", () => {
+  test("dashboard health consumers do not install polling timers", () => {
+    expect(healthWidget).not.toContain("setInterval(fetchSummary");
+    expect(pulse).not.toContain("setInterval(() => fetchHealth");
+    expect(healthWidget).toContain("useWorkspaceHealth");
+    expect(pulse).toContain("useWorkspaceHealth");
+  });
+
+  test("health uses one database aggregate RPC", () => {
+    expect(healthServer).toContain('.rpc("get_workspace_health_summary"');
+  });
+
+  test("Work & Rate Master edits use targeted validation", () => {
+    expect(targeted).toContain('"master.workSubcategories"');
+    expect(targeted).toContain('operation.collection.startsWith("master.")');
+  });
+
+  test("Master Setup excludes unrelated vendor, storage and media collections", () => {
+    const block = scopes.slice(scopes.indexOf("export const MASTER_SCOPE_COLLECTIONS"), scopes.indexOf("export const REPORTS_SCOPE_COLLECTIONS"));
+    expect(block).toContain('"master.workSubcategories"');
+    expect(block).not.toContain('"master.vendorRateHistories"');
+    expect(block).not.toContain('"master.storageAccounts"');
+    expect(block).not.toContain('"master.referenceMedia"');
+  });
+
+  test("successful acknowledgements clear IndexedDB before adaptation", () => {
+    const success = outbox.slice(outbox.indexOf("  if (response.ok) {"), outbox.indexOf("  const retryCount", outbox.indexOf("  if (response.ok) {")));
+    expect(success.indexOf("deleteWorkspaceOutbox(operationId)")).toBeLessThan(success.indexOf("acceptCompactCommit(current, payload)"));
+  });
+
+  test("history-heavy reads have server limits", () => {
+    expect(rest).toContain("DEFAULT_COLLECTION_LIMITS");
+    expect(rest).toContain('auditLog: 100');
+    expect(rest).toContain('.order("revision", { ascending: false }).limit(limit)');
+  });
+});
+''', encoding="utf-8")
+
+          Path(".github/workflows/tmp-egress-hardening.yml").unlink()
+          Path(".egress-hardening-trigger").unlink(missing_ok=True)
+
+      - name: Commit hardened implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Eliminate repeated PostgREST workspace egress"
+          git push origin HEAD:feature/eliminate-postgrest-egress-leaks
