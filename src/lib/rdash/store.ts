@@ -5,6 +5,7 @@ import { buildSeedDatabase } from "./seed";
 // mergeStaffLocationPings, StaffLocationPing moved to slices/core.ts (Phase 3o)
 import { formatINR } from "./format";
 import { prepareWorkspaceData } from "./work-category-master";
+import { applyVendorRateAverages } from "./vendor-rate-average";
 import { attachCustomerLabels, customerName, customerNameForJob, } from "./customer";
 import { assertUniqueCustomerIdentity, normalizeCustomerSegments } from "./customer-identity";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitExitGps, verifyVisitGps, type GpsCapture, } from "./gps";
@@ -521,7 +522,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                     activeWorkspaceTransaction!.baselineDb = structuredClone(state.db) as RDashDatabase;
                 }
                 activeWorkspaceTransaction!.dirty = true;
-                return { ...next, db: attachCustomerLabels(next.db) };
+                const averagedDb = applyVendorRateAverages(state.db, next.db);
+                return { ...next, db: attachCustomerLabels(averagedDb) };
             });
             return;
         }
@@ -530,7 +532,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             const next = typeof partial === "function" ? partial(state) : partial;
             if (!next.db)
                 return next;
-            const db = attachCustomerLabels(next.db);
+            const db = attachCustomerLabels(applyVendorRateAverages(state.db, next.db));
             // Validate but don't block — log issues instead of throwing.
             // Throwing inside setBase can leave the Zustand state inconsistent
             // and cause the UI to hang (setSaving(false) in finally blocks

@@ -306,6 +306,11 @@ export function applyVendorRateAverages(
   candidate: RDashDatabase,
   options: { articleIds?: Iterable<string>; at?: Date; updatedAt?: string } = {},
 ): RDashDatabase {
+  if (!options.articleIds
+    && previous.master.vendorRates === candidate.master.vendorRates
+    && previous.master.vendorRateHistories === candidate.master.vendorRateHistories) {
+    return candidate;
+  }
   const articleIds = options.articleIds
     ? new Set(options.articleIds)
     : changedArticleIds(previous, candidate);

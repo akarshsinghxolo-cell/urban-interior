@@ -4,7 +4,8 @@ import {
   assertVisitRelations,
 } from "../business-rules";
 import type { RDashDatabase, Thread, ThreadKind } from "../types";
-import { applyWorkspaceOperations, type WorkspaceOperation } from "../workspace-operations";
+import { applyWorkspaceOperations, diffWorkspaceOperations, type WorkspaceOperation } from "../workspace-operations";
+import { applyVendorRateAverages } from "../vendor-rate-average";
 import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import {
@@ -13,7 +14,14 @@ import {
   type WorkspaceSubset,
 } from "./workspace";
 
-const TARGETED_COLLECTIONS = new Set(["tasks", "followups", "visits", "threads", "auditLog", "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues"]);
+const VENDOR_RATE_COLLECTIONS = new Set(["master.vendorRates", "master.vendorRateHistories"]);
+const TARGETED_COLLECTIONS = new Set([
+  "tasks", "followups", "visits", "threads", "auditLog",
+  "master.units", "master.workCategories", "master.workSubcategories",
+  "master.articles", "master.articleVariants", "master.subcategoryArticleMap",
+  "master.workOptionGroups", "master.workOptionValues",
+  ...VENDOR_RATE_COLLECTIONS,
+]);
 const TARGETED_THREAD_KINDS = new Set<ThreadKind>([
   "task",
   "followup",
@@ -151,6 +159,12 @@ function collectDirectDependencies(
     addId(plan, "master.workSubcategories", row.work_subcategory_id || row.work_required_id);
   } else if (collection === "master.workOptionValues") {
     addId(plan, "master.workOptionGroups", row.group_id || row.option_group_id);
+  } else if (collection === "master.vendorRates" || collection === "master.vendorRateHistories") {
+    addId(plan, "master.vendors", row.vendor_id);
+    addId(plan, "master.articles", row.article_id);
+    addId(plan, "master.units", row.unit_id);
+    addId(plan, "master.subcategoryArticleMap", row.work_required_article_id);
+    addId(plan, "master.articleVariants", row.variant_id);
   }
 
   if (collection === "threads") {
@@ -200,11 +214,12 @@ export function canUseTargetedCommit(operations: WorkspaceOperation[]): boolean 
   let hasBusinessMutation = false;
   for (const operation of operations) {
     if (!TARGETED_COLLECTIONS.has(operation.collection)) return false;
-    if (operation.deleteIds?.length) return false;
+    const deletes = operation.deleteIds || [];
+    if (deletes.length && !VENDOR_RATE_COLLECTIONS.has(operation.collection)) return false;
 
     const upserts = operation.upsert || [];
-    rowCount += upserts.length;
-    if (operation.collection !== "auditLog" && upserts.length) {
+    rowCount += upserts.length + deletes.length;
+    if (operation.collection !== "auditLog" && (upserts.length || deletes.length)) {
       hasBusinessMutation = true;
     }
 
@@ -222,11 +237,20 @@ function initialReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation
   if (user.role !== "Owner") addFullCollection(plan, "staffRolePermissions");
   if (user.staffId) addId(plan, "master.staff", user.staffId);
 
+  const hasVendorRateMutation = operations.some((operation) => VENDOR_RATE_COLLECTIONS.has(operation.collection));
+  if (hasVendorRateMutation) {
+    for (const collection of [
+      "master.vendorRates", "master.vendorRateHistories", "master.subcategoryArticleMap",
+      "master.units", "master.articleVariants", "master.vendors", "taxConfigs",
+    ]) addFullCollection(plan, collection);
+  }
+
   for (const operation of operations) {
     for (const row of operation.upsert || []) {
       addId(plan, operation.collection, row.id);
       collectDirectDependencies(plan, operation.collection, row);
     }
+    for (const id of operation.deleteIds || []) addId(plan, operation.collection, id);
   }
   return plan;
 }
@@ -243,8 +267,9 @@ function dependenciesFromLoadedData(database: RDashDatabase, operations: Workspa
     "tasks", "followups", "visits", "threads", "customers", "sites", "areas",
     "workRequired", "workOrders", "quotations", "purchaseOrders", "grns",
     "payments", "invoices", "contractorPayments", "contractorBills",
-    "master.units", "master.workCategories", "master.workSubcategories", "master.articles",
+    "taxConfigs", "master.units", "master.workCategories", "master.workSubcategories", "master.articles",
     "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues",
+    "master.vendors", "master.vendorRates", "master.vendorRateHistories",
   ];
   for (const collection of collections) {
     for (const row of rowsFor(database, collection)) {
@@ -260,6 +285,7 @@ function toWorkspaceReadPlan(plan: MutableReadPlan): WorkspaceReadPlan {
     rowsByCollection: Object.fromEntries(
       [...plan.rowsByCollection.entries()].map(([collection, ids]) => [collection, [...ids]]),
     ),
+    limitsByCollection: { "master.vendorRateHistories": 5000 },
   };
 }
 
@@ -398,6 +424,17 @@ function validateTouchedRows(database: RDashDatabase, operations: WorkspaceOpera
             if (!exists("master.workSubcategories", row.work_required_id)) throw new Error("Scoped material sub-category does not exist.");
             if (!exists("master.articles", row.article_id)) throw new Error("Scoped material article does not exist.");
             if (!exists("master.units", row.unit_id)) throw new Error("Scoped material unit does not exist.");
+          } else if (operation.collection === "master.vendorRates" || operation.collection === "master.vendorRateHistories") {
+            if (!exists("master.vendors", row.vendor_id)) throw new Error("Vendor rate vendor does not exist.");
+            if (!exists("master.articles", row.article_id)) throw new Error("Vendor rate article does not exist.");
+            if (!exists("master.units", row.unit_id)) throw new Error("Vendor rate unit does not exist.");
+            if (!exists("master.subcategoryArticleMap", row.work_required_article_id)) throw new Error("Vendor rate scoped material does not exist.");
+            if (!exists("master.articleVariants", row.variant_id)) throw new Error("Vendor rate variant does not exist.");
+            const amount = Number(operation.collection === "master.vendorRates" ? row.rate : row.new_rate);
+            if (!Number.isFinite(amount) || amount < 0) throw new Error("Vendor rate amount must be a non-negative number.");
+            if (row.default_units_per_rate_unit != null && (!Number.isFinite(Number(row.default_units_per_rate_unit)) || Number(row.default_units_per_rate_unit) <= 0)) {
+              throw new Error("Vendor rate unit conversion factor must be greater than zero.");
+            }
           }
         }
       }
@@ -438,13 +475,15 @@ export async function prepareTargetedCommit(
   const loadedAt = Date.now();
 
   assertWorkspaceMutationAllowed(user, operations, current.data);
-  const candidate = applyWorkspaceOperations(current.data, operations);
-  validateTouchedRows(candidate, operations);
+  const rawCandidate = applyWorkspaceOperations(current.data, operations);
+  const canonicalCandidate = applyVendorRateAverages(current.data, rawCandidate);
+  const preparedOperations = diffWorkspaceOperations(current.data, canonicalCandidate);
+  validateTouchedRows(canonicalCandidate, preparedOperations);
   const validatedAt = Date.now();
 
   return {
     current,
-    operations,
+    operations: preparedOperations,
     loadMs: loadedAt - startedAt,
     authorizeAndValidateMs: validatedAt - loadedAt,
     queryCount: current.queryCount,

@@ -58,10 +58,18 @@ describe("Phase 2B targeted commit eligibility", () => {
     ])).toBe(false);
   });
 
-  test("rejects deletes", () => {
+  test("rejects operational deletes", () => {
     expect(canUseTargetedCommit([
       operation("tasks", [], ["task-1"]),
     ])).toBe(false);
+  });
+
+  test("accepts vendor-rate deletes with their derived article updates", () => {
+    expect(canUseTargetedCommit([
+      operation("master.vendorRates", [], ["vendor-rate-1"]),
+      operation("master.articles", [{ id: "article-1", name: "Article", base_rate: 125 }]),
+      operation("master.subcategoryArticleMap", [{ id: "scope-1", article_id: "article-1", reference_rate: 125 }]),
+    ])).toBe(true);
   });
 
   test("rejects mixed unsupported collections", () => {

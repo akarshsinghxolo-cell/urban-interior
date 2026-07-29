@@ -29,7 +29,8 @@
     "test:auth-return": "bun test tests/workspace-auth-return.test.ts tests/workspace-auth-middleware.test.ts",
     "test:route-access": "bun test tests/workspace-route-access.test.ts",
     "test:auth-security": "bun test tests/auth-source-security.test.ts",
-    "test:runtime-efficiency": "bun test tests/runtime-efficiency-hardening.test.ts"
+    "test:runtime-efficiency": "bun test tests/runtime-efficiency-hardening.test.ts",
+    "test:vendor-rate-average": "bun test tests/vendor-rate-average.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
