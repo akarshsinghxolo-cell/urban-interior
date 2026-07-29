@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { getWorkspaceBootstrap } from "@/lib/rdash/server/module-scoped-read";
+import { getWorkspaceSubset } from "@/lib/rdash/server/workspace";
 
 export const runtime = "nodejs";
 
@@ -18,13 +18,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const startedAt = performance.now();
-    const workspace = await getWorkspaceBootstrap(user);
+    const workspace = await getWorkspaceSubset({});
     const loadMs = performance.now() - startedAt;
-    (workspace.data as unknown as Record<string, unknown>)._workspace_read_scope = "bootstrap";
     const body = JSON.stringify({
       revision: workspace.revision,
-      data: workspace.data,
-      ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
       user: {
         name: user.name,
         email: user.email,
@@ -32,6 +29,7 @@ export async function GET(request: NextRequest) {
         staffId: user.staffId,
         expiresAt: user.expiresAt,
       },
+      readStrategy: "module-scoped",
     });
     return new NextResponse(body, {
       headers: {
