@@ -25,7 +25,7 @@ export type RowScopedWorkspaceEntityKind = Extract<WorkspaceEntityKind, "custome
 
 function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   const map = new Map<string, ModuleWorkspaceReadScope>();
-  ["customerDesk", "customerTimeline", "customerRequests", "salesPipeline"].forEach((id) => map.set(id, "customer"));
+  ["customerDesk", "customerTimeline", "customerRequests", "salesPipeline", "lostClosedReview"].forEach((id) => map.set(id, "customer"));
   ["siteExecution", "drawings", "executionLogs", "woTimeline", "contractorDetail", "contractorRates", "contractorPerformance", "contractors"].forEach((id) => map.set(id, "site"));
   ["workdesk", "unifiedThreadInbox", "tasks", "blockedRisks", "approvals", "calendarRecurring"].forEach((id) => map.set(id, "workdesk"));
   ["quotationDesk", "quotationConfig"].forEach((id) => map.set(id, "quotation"));
@@ -34,7 +34,7 @@ function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   ["financeDesk", "payments", "invoices", "vendorBills", "contractorPayments", "profitability", "commissions", "gstReturns", "siteProfitability", "workOrderPnl"].forEach((id) => map.set(id, "finance"));
   ["mediaCommunication", "driveManager", "communicationCentre"].forEach((id) => map.set(id, "media"));
   ["hrStaff", "attendancePayroll", "staffSalary", "staff"].forEach((id) => map.set(id, "hr"));
-  ["masterSetup"].forEach((id) => map.set(id, "master"));
+  ["masterSetup", "articleVariants"].forEach((id) => map.set(id, "master"));
   ["reportsDesk", "salesAnalytics", "collectionAnalytics", "operationsAnalytics", "financialAnalytics", "salesReport", "collectionReport", "jobPnlReport", "vendorExposureReport", "taxReport", "staffProductivity", "quotationConversion", "leadSourceReport", "agingReportRep", "visitCompliance", "taskThroughput"].forEach((id) => map.set(id, "reports"));
   ["systemSettings", "userApprovals", "controlBrainWorkflows", "approvalPolicies", "auditLog", "dataImport", "dataExport", "integrity"].forEach((id) => map.set(id, "system"));
   return map;
