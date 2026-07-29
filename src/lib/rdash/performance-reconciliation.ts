@@ -9,112 +9,215 @@ type PerformanceFields = {
 type PerformanceRecord = {
   reliability_score?: number;
   on_time_pct?: number;
+  rating?: number;
 };
 
+type PerformanceEvidence = PerformanceFields & {
+  evidenceCount: number;
+};
+
+const TERMINAL_EXCLUDED_STATUSES = new Set([
+  "cancelled",
+  "canceled",
+  "void",
+  "rejected",
+  "deleted",
+]);
+
+const BILL_EXCLUDED_STATUSES = new Set([
+  "draft",
+  ...TERMINAL_EXCLUDED_STATUSES,
+]);
+
+function normalizeStatus(value: unknown): string {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function sameId(value: unknown, expected: string): boolean {
+  return String(value || "").trim() === expected;
+}
+
+function validTimestamp(value: unknown): number | null {
+  const timestamp = Date.parse(String(value || "").trim());
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function percentage(numerator: number, denominator: number): number | null {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
+    return null;
+  }
+  return clampPercent((numerator / denominator) * 100);
+}
+
+function weightedScore(parts: Array<{ value: number | null; weight: number }>): number {
+  const available = parts.filter(
+    (part): part is { value: number; weight: number } =>
+      part.value !== null && Number.isFinite(part.value) && part.weight > 0,
+  );
+  const totalWeight = available.reduce((sum, part) => sum + part.weight, 0);
+  if (!totalWeight) return 0;
+  return clampPercent(
+    available.reduce((sum, part) => sum + part.value * part.weight, 0) / totalWeight,
+  );
+}
+
 function ratingForScore(score: number): number {
-  if (score >= 90) return 5;
-  if (score >= 75) return 4;
-  if (score >= 60) return 3;
-  if (score >= 40) return 2;
+  const normalized = clampPercent(score);
+  if (normalized >= 90) return 5;
+  if (normalized >= 75) return 4;
+  if (normalized >= 60) return 3;
+  if (normalized >= 40) return 2;
   return 1;
+}
+
+function buildPerformance(
+  onTimePct: number | null,
+  qualityPct: number | null,
+  disputeRate: number | null,
+  evidenceCount: number,
+): PerformanceEvidence {
+  const baseScore = weightedScore([
+    { value: onTimePct, weight: 0.55 },
+    { value: qualityPct, weight: 0.45 },
+  ]);
+  const disputePenalty = disputeRate === null
+    ? 0
+    : Math.min(30, Math.round(disputeRate * 0.3));
+  const reliabilityScore = clampPercent(baseScore - disputePenalty);
+  return {
+    reliability_score: reliabilityScore,
+    on_time_pct: onTimePct ?? 0,
+    rating: ratingForScore(reliabilityScore),
+    evidenceCount,
+  };
 }
 
 export function deriveVendorPerformance(
   db: Pick<RDashDatabase, "purchaseOrders" | "vendorBills">,
-  vendorId: string,
+  vendorIdInput: string,
 ): PerformanceFields {
-  const purchaseOrders = db.purchaseOrders.filter((row) => row.vendor_id === vendorId);
-  const delivered = purchaseOrders.filter(
-    (row) => Boolean(row.actual_delivery && row.expected_delivery),
-  );
-  const onTime = delivered.filter(
-    (row) => row.actual_delivery! <= row.expected_delivery,
-  ).length;
-  const onTimePct = delivered.length
-    ? Math.round((onTime / delivered.length) * 100)
-    : 0;
+  return deriveVendorPerformanceEvidence(db, vendorIdInput);
+}
 
-  const bills = db.vendorBills.filter(
-    (row) => row.vendor_id === vendorId && row.status !== "draft",
-  );
-  const matched = bills.filter(
-    (row) =>
-      row.matched === true ||
-      row.status === "approved" ||
-      row.status === "paid" ||
-      row.status === "partly_paid",
-  ).length;
-  const disputed = bills.filter((row) => row.status === "disputed").length;
-  const matchRate = bills.length ? Math.round((matched / bills.length) * 100) : 100;
-  const disputePenalty = Math.min(30, disputed * 10);
-  const reliabilityScore = Math.max(
-    0,
-    Math.min(100, Math.round(onTimePct * 0.55 + matchRate * 0.45) - disputePenalty),
-  );
+function deriveVendorPerformanceEvidence(
+  db: Pick<RDashDatabase, "purchaseOrders" | "vendorBills">,
+  vendorIdInput: string,
+): PerformanceEvidence {
+  const vendorId = String(vendorIdInput || "").trim();
+  if (!vendorId) return buildPerformance(null, null, null, 0);
 
-  return {
-    reliability_score: reliabilityScore,
-    on_time_pct: onTimePct,
-    rating: ratingForScore(reliabilityScore),
-  };
+  const delivered = db.purchaseOrders.filter((row) => {
+    if (!sameId(row.vendor_id, vendorId)) return false;
+    if (TERMINAL_EXCLUDED_STATUSES.has(normalizeStatus(row.status))) return false;
+    return validTimestamp(row.actual_delivery) !== null &&
+      validTimestamp(row.expected_delivery) !== null;
+  });
+  const onTime = delivered.filter((row) => {
+    const actual = validTimestamp(row.actual_delivery);
+    const expected = validTimestamp(row.expected_delivery);
+    return actual !== null && expected !== null && actual <= expected;
+  }).length;
+  const onTimePct = percentage(onTime, delivered.length);
+
+  const bills = db.vendorBills.filter((row) => {
+    if (!sameId(row.vendor_id, vendorId)) return false;
+    return !BILL_EXCLUDED_STATUSES.has(normalizeStatus(row.status));
+  });
+  const disputed = bills.filter((row) => normalizeStatus(row.status) === "disputed").length;
+  const qualityEligible = bills.filter((row) => normalizeStatus(row.status) !== "disputed");
+  const matched = qualityEligible.filter((row) => {
+    const status = normalizeStatus(row.status);
+    return row.matched === true ||
+      status === "approved" ||
+      status === "paid" ||
+      status === "partly_paid";
+  }).length;
+  const matchRate = percentage(matched, qualityEligible.length);
+  const disputeRate = percentage(disputed, bills.length);
+
+  return buildPerformance(
+    onTimePct,
+    matchRate,
+    disputeRate,
+    delivered.length + bills.length,
+  );
 }
 
 export function deriveContractorPerformance(
   db: Pick<RDashDatabase, "workOrders" | "contractorBills">,
-  contractorId: string,
+  contractorIdInput: string,
 ): PerformanceFields {
-  const workOrders = db.workOrders.filter(
-    (row) => row.contractor_id === contractorId,
-  );
-  const completed = workOrders.filter(
-    (row) => Boolean(row.actual_end && row.expected_end),
-  );
-  const onTime = completed.filter(
-    (row) => row.actual_end! <= row.expected_end!,
-  ).length;
-  const onTimePct = completed.length
-    ? Math.round((onTime / completed.length) * 100)
-    : 0;
+  return deriveContractorPerformanceEvidence(db, contractorIdInput);
+}
 
-  const bills = db.contractorBills.filter(
-    (row) => row.contractor_id === contractorId && row.status !== "held",
-  );
-  const settled = bills.filter(
-    (row) => row.status === "paid" || row.status === "partly_paid",
-  ).length;
-  const disputed = bills.filter((row) => row.status === "disputed").length;
-  const settlementRate = bills.length
-    ? Math.round((settled / bills.length) * 100)
-    : 100;
-  const disputePenalty = Math.min(30, disputed * 10);
-  const reliabilityScore = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(onTimePct * 0.55 + settlementRate * 0.45) - disputePenalty,
-    ),
-  );
+function deriveContractorPerformanceEvidence(
+  db: Pick<RDashDatabase, "workOrders" | "contractorBills">,
+  contractorIdInput: string,
+): PerformanceEvidence {
+  const contractorId = String(contractorIdInput || "").trim();
+  if (!contractorId) return buildPerformance(null, null, null, 0);
 
-  return {
-    reliability_score: reliabilityScore,
-    on_time_pct: onTimePct,
-    rating: ratingForScore(reliabilityScore),
-  };
+  const completed = db.workOrders.filter((row) => {
+    if (!sameId(row.contractor_id, contractorId)) return false;
+    if (TERMINAL_EXCLUDED_STATUSES.has(normalizeStatus(row.status))) return false;
+    return validTimestamp(row.actual_end) !== null &&
+      validTimestamp(row.expected_end) !== null;
+  });
+  const onTime = completed.filter((row) => {
+    const actual = validTimestamp(row.actual_end);
+    const expected = validTimestamp(row.expected_end);
+    return actual !== null && expected !== null && actual <= expected;
+  }).length;
+  const onTimePct = percentage(onTime, completed.length);
+
+  // Contractor quality must not be reduced because Urban Castle has not paid a
+  // valid bill yet. Only held/disputed evidence reflects a contractor-side
+  // quality or documentation problem; payment timing is a company obligation.
+  const bills = db.contractorBills.filter((row) => {
+    if (!sameId(row.contractor_id, contractorId)) return false;
+    return !BILL_EXCLUDED_STATUSES.has(normalizeStatus(row.status));
+  });
+  const disputedOrHeld = bills.filter((row) => {
+    const status = normalizeStatus(row.status);
+    return status === "disputed" || status === "held";
+  }).length;
+  const accepted = bills.length - disputedOrHeld;
+  const acceptanceRate = percentage(accepted, bills.length);
+  const disputeRate = percentage(disputedOrHeld, bills.length);
+
+  return buildPerformance(
+    onTimePct,
+    acceptanceRate,
+    disputeRate,
+    completed.length + bills.length,
+  );
 }
 
 function withPerformance<T extends PerformanceRecord>(
   row: T,
-  performance: PerformanceFields,
+  performance: PerformanceEvidence,
 ): T & PerformanceFields {
-  const currentRating = (row as T & { rating?: number }).rating;
+  if (performance.evidenceCount === 0) {
+    return row as T & PerformanceFields;
+  }
   if (
-    row.reliability_score === performance.reliability_score &&
-    row.on_time_pct === performance.on_time_pct &&
-    currentRating === performance.rating
+    clampPercent(Number(row.reliability_score)) === performance.reliability_score &&
+    clampPercent(Number(row.on_time_pct)) === performance.on_time_pct &&
+    Number(row.rating) === performance.rating
   ) {
     return row as T & PerformanceFields;
   }
-  return { ...row, ...performance };
+  return {
+    ...row,
+    reliability_score: performance.reliability_score,
+    on_time_pct: performance.on_time_pct,
+    rating: performance.rating,
+  };
 }
 
 /**
@@ -124,10 +227,10 @@ function withPerformance<T extends PerformanceRecord>(
  */
 export function reconcilePartnerPerformance(db: RDashDatabase): Master {
   const vendors = db.master.vendors.map((vendor) =>
-    withPerformance(vendor, deriveVendorPerformance(db, vendor.id)),
+    withPerformance(vendor, deriveVendorPerformanceEvidence(db, vendor.id)),
   );
   const contractors = db.master.contractors.map((contractor) =>
-    withPerformance(contractor, deriveContractorPerformance(db, contractor.id)),
+    withPerformance(contractor, deriveContractorPerformanceEvidence(db, contractor.id)),
   );
 
   const vendorsChanged = vendors.some(
