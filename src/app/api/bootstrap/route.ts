@@ -3,17 +3,38 @@ import { requireSession } from "@/lib/rdash/server/auth";
 import { getWorkspaceSubset } from "@/lib/rdash/server/workspace";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const PRIVATE_HEADERS = Object.freeze({
+  "Cache-Control": "private, no-store, max-age=0",
+  Pragma: "no-cache",
+  Vary: "Cookie, Authorization",
+  "X-Content-Type-Options": "nosniff",
+});
+
+function errorResponse(error: string, status: number, retryAfter?: string) {
+  return NextResponse.json(
+    { error },
+    {
+      status,
+      headers: {
+        ...PRIVATE_HEADERS,
+        ...(retryAfter ? { "Retry-After": retryAfter } : {}),
+      },
+    },
+  );
+}
 
 export async function GET(request: NextRequest) {
   let user: Awaited<ReturnType<typeof requireSession>>;
   try {
     user = await requireSession(request);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "UNAUTHORIZED";
-    return NextResponse.json(
-      { error: message === "UNAUTHORIZED" ? "Your session is missing or expired." : message },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
-    );
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return errorResponse("Your session is missing or expired.", 401);
+    }
+    console.error("[api/bootstrap] session verification failed:", error);
+    return errorResponse("The authentication service is temporarily unavailable.", 503, "5");
   }
 
   try {
@@ -22,6 +43,7 @@ export async function GET(request: NextRequest) {
     const loadMs = performance.now() - startedAt;
     const body = JSON.stringify({
       revision: workspace.revision,
+      updatedAt: workspace.updatedAt,
       user: {
         name: user.name,
         email: user.email,
@@ -32,10 +54,12 @@ export async function GET(request: NextRequest) {
       readStrategy: "module-scoped",
     });
     return new NextResponse(body, {
+      status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8",
+        ...PRIVATE_HEADERS,
         "X-UC-Read-Mode": "bootstrap",
+        "X-UC-Read-Strategy": "bootstrap",
         "X-UC-Read-Queries": String(workspace.queryCount),
         "X-UC-Response-Bytes": String(Buffer.byteLength(body)),
         "Server-Timing": `workspace-bootstrap;dur=${loadMs.toFixed(2)}`,
@@ -43,9 +67,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("[api/bootstrap] workspace bootstrap failed:", error);
-    return NextResponse.json(
-      { error: "The workspace bootstrap service is temporarily unavailable." },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
+    return errorResponse("The workspace bootstrap service is temporarily unavailable.", 503, "5");
   }
 }
