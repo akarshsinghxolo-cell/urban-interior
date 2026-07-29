@@ -51,6 +51,8 @@ jobs:
         run: bun run test:dirty-form-guard
       - name: Test module-scoped workspace reads
         run: bun run test:module-scoped-reads
+      - name: Test bootstrap and scoped client reads
+        run: bun run test:bootstrap-scoped-flow
       - name: Test entity-scoped workspace reads
         run: bun run test:entity-scoped-reads
       - name: Test workspace revision delta synchronization
