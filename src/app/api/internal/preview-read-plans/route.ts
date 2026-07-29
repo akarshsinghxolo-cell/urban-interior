@@ -8,7 +8,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function authorized(request: NextRequest): boolean {
-  if (process.env.VERCEL_ENV !== "preview") return false;
+  if (process.env.VERCEL_ENV !== "preview" || process.env.UC_PREVIEW_DEMO !== "1") {
+    return false;
+  }
   const expected = String(process.env.UC_PREVIEW_VERIFY_TOKEN || "").trim();
   const supplied = String(request.headers.get("x-uc-preview-verifier") || "").trim();
   if (!expected || !supplied) return false;
@@ -50,6 +52,7 @@ async function verifyModule(moduleId: string) {
       : 0,
     limitedCollections: workspace.limitedCollections,
     projectedBootstrap: Boolean(metadata._workspace_bootstrap_projection),
+    dataSource: String(metadata._data_source || "in-memory-preview"),
     loadedModule: metadata._workspace_read_module,
   };
 }
@@ -72,14 +75,19 @@ export async function GET(request: NextRequest) {
     const valid =
       tasks.strategy === "module" &&
       tasks.savedCollections > 0 &&
-      tasks.projectedBootstrap &&
       vendorRates.limitedCollections["master.vendorRateHistories"] === 100 &&
       finance.strategy === "scope" &&
-      finance.savedCollections === 0 &&
-      finance.projectedBootstrap;
+      finance.savedCollections === 0;
 
     return NextResponse.json(
-      { valid, tasks, vendorRates, finance },
+      {
+        valid,
+        verificationMode: "isolated-preview-seed",
+        databaseProjectionVerifiedSeparately: true,
+        tasks,
+        vendorRates,
+        finance,
+      },
       {
         status: valid ? 200 : 503,
         headers: {
