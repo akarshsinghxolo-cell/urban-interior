@@ -23,7 +23,6 @@ const SiteProfitabilityModule = React.lazy(() => import("./modules/SiteProfitabi
 const ProfitabilityWorkspaceModule = React.lazy(() => import("./modules/ProfitabilityWorkspaceModule").then((module) => ({ default: module.ProfitabilityWorkspaceModule })));
 const StaffSalaryModule = React.lazy(() => import("./modules/StaffSalaryModule").then((module) => ({ default: module.StaffSalaryModule })));
 const VendorPerformanceModule = React.lazy(() => import("./modules/VendorPerformanceModule").then((module) => ({ default: module.VendorPerformanceModule })));
-const ContractorPerformanceModule = React.lazy(() => import("./modules/ContractorPerformanceModule").then((module) => ({ default: module.ContractorPerformanceModule })));
 const ContractorWorkspaceModule = React.lazy(() => import("./modules/ContractorWorkspaceModule").then((module) => ({ default: module.ContractorWorkspaceModule })));
 const WorkOrderTimelineModule = React.lazy(() => import("./modules/WorkOrderTimelineModule").then((module) => ({ default: module.WorkOrderTimelineModule })));
 const VendorBillsModule = React.lazy(() => import("./modules/VendorBillsModule").then((module) => ({ default: module.VendorBillsModule })));
@@ -59,10 +58,8 @@ const GoogleDriveManagerModule = React.lazy(() => import("./modules/GoogleDriveM
 const UserApprovalsModule = React.lazy(() => import("./modules/UserApprovalsModule").then((module) => ({ default: module.UserApprovalsModule })));
 const SalesPipelineModule = React.lazy(() => import("./modules/SalesPipelineModule").then((module) => ({ default: module.SalesPipelineModule })));
 const LostClosedReviewModule = React.lazy(() => import("./modules/MiscModules").then((module) => ({ default: module.LostClosedReviewModule })));
-const ThreadsModule = React.lazy(() => import("./modules/ThreadsModule").then((module) => ({ default: module.ThreadsModule })));
 const UnifiedThreadInboxModule = React.lazy(() => import("./modules/UnifiedThreadInboxModule").then((module) => ({ default: module.UnifiedThreadInboxModule })));
 const IntegrityModule = React.lazy(() => import("./modules/IntegrityModule").then((module) => ({ default: module.IntegrityModule })));
-const ContractorDetailModule = React.lazy(() => import("./modules/ContractorDetailModule").then((module) => ({ default: module.ContractorDetailModule })));
 const CustomerRequestsWorkspace = React.lazy(() => import("./modules/CustomerRequestsWorkspace").then((module) => ({ default: module.CustomerRequestsWorkspace })));
 const QuotationWorkspaceModule = React.lazy(() => import("./modules/QuotationWorkspaceModule").then((module) => ({ default: module.QuotationWorkspaceModule })));
 const CommissionsWorkspaceModule = React.lazy(() => import("./modules/CommissionsWorkspaceModule").then((module) => ({ default: module.CommissionsWorkspaceModule })));
@@ -111,12 +108,10 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "profitability": return <ProfitabilityWorkspaceModule />;
         case "staff-salary": return <StaffSalaryModule />;
         case "vendor-performance": return <VendorPerformanceModule />;
-        case "contractor-performance": return <ContractorPerformanceModule />;
         case "contractor-workspace": return <ContractorWorkspaceModule />;
         case "wo-timeline": return <WorkOrderTimelineModule />;
         case "vendor-bills": return <VendorBillsModule />;
         case "contractor-payments": return <ContractorPaymentsModule />;
-        case "contractor-detail": return <ContractorDetailModule />;
         case "finance-overview": return <FinanceOverviewModule />;
         case "payment-recovery": return <PaymentRecoveryModule />;
         case "reports-v2": return <ReportsModule reportId={activeModuleId}/>;
@@ -140,7 +135,6 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "sales-pipeline": return <SalesPipelineModule />;
         case "lost-closed-review": return <LostClosedReviewModule />;
         case "commissions": return <CommissionsWorkspaceModule />;
-        case "threads": return <ThreadsModule />;
         case "unified-thread-inbox": return <UnifiedThreadInboxModule />;
         case "masters": return <WorkCategoryMasterModule initialView="catalogue"/>;
         case "article-variants": return <ArticleVariantsModule />;
@@ -157,7 +151,7 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         default: return renderUnreachableModule(route.renderer);
     }
 }
-function renderUnreachableModule(_renderer: never) {
+function renderUnreachableModule(_renderer: string) {
     return <DailyWork />;
 }
 
