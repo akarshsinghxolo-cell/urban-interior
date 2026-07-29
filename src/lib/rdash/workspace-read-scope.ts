@@ -1,4 +1,4 @@
-import { resolveRenderer } from "./modules";
+import { canonicalModuleId, resolveRenderer } from "./modules";
 import { permissionModuleForRoute } from "./staff-operations";
 import {
   isWorkspaceEntityLocation,
@@ -21,22 +21,92 @@ export type WorkspaceReadScope =
   | "reports"
   | "system";
 export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "full">;
-export type RowScopedWorkspaceEntityKind = Extract<WorkspaceEntityKind, "customer" | "site">;
+export type RowScopedWorkspaceEntityKind = Extract<
+  WorkspaceEntityKind,
+  "customer" | "site"
+>;
 
 function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   const map = new Map<string, ModuleWorkspaceReadScope>();
-  ["customerDesk", "customerTimeline", "customerRequests", "salesPipeline", "lostClosedReview"].forEach((id) => map.set(id, "customer"));
-  ["siteExecution", "drawings", "executionLogs", "woTimeline", "contractorDetail", "contractorRates", "contractorPerformance", "contractors"].forEach((id) => map.set(id, "site"));
-  ["workdesk", "unifiedThreadInbox", "tasks", "blockedRisks", "approvals", "calendarRecurring"].forEach((id) => map.set(id, "workdesk"));
-  ["quotationDesk", "quotationConfig"].forEach((id) => map.set(id, "quotation"));
-  ["fieldOperations", "siteMeasurement", "visitProofs", "fieldMode", "gpsTracking"].forEach((id) => map.set(id, "field"));
-  ["procurementInventory", "boqControlCentre", "grn", "inventory", "dispatch", "boq", "vendors", "vendorRates", "rateFinder", "vendorPerformance"].forEach((id) => map.set(id, "procurement"));
-  ["financeDesk", "payments", "invoices", "vendorBills", "contractorPayments", "profitability", "commissions", "gstReturns", "siteProfitability", "workOrderPnl"].forEach((id) => map.set(id, "finance"));
-  ["mediaCommunication", "driveManager", "communicationCentre"].forEach((id) => map.set(id, "media"));
-  ["hrStaff", "attendancePayroll", "staffSalary", "staff"].forEach((id) => map.set(id, "hr"));
-  ["masterSetup", "articleVariants"].forEach((id) => map.set(id, "master"));
-  ["reportsDesk", "salesAnalytics", "collectionAnalytics", "operationsAnalytics", "financialAnalytics", "salesReport", "collectionReport", "jobPnlReport", "vendorExposureReport", "taxReport", "staffProductivity", "quotationConversion", "leadSourceReport", "agingReportRep", "visitCompliance", "taskThroughput"].forEach((id) => map.set(id, "reports"));
-  ["systemSettings", "userApprovals", "controlBrainWorkflows", "approvalPolicies", "auditLog", "dataImport", "dataExport", "integrity"].forEach((id) => map.set(id, "system"));
+  [
+    "customerDesk",
+    "customerTimeline",
+    "customerRequests",
+    "salesPipeline",
+    "lostClosedReview",
+  ].forEach((id) => map.set(id, "customer"));
+  [
+    "siteExecution",
+    "drawings",
+    "executionLogs",
+    "woTimeline",
+    "contractorDetail",
+    "contractorRates",
+  ].forEach((id) => map.set(id, "site"));
+  [
+    "workdesk",
+    "unifiedThreadInbox",
+    "tasks",
+    "blockedRisks",
+    "approvals",
+    "calendarRecurring",
+  ].forEach((id) => map.set(id, "workdesk"));
+  ["quotationDesk", "quotationConfig"].forEach((id) =>
+    map.set(id, "quotation"),
+  );
+  [
+    "fieldOperations",
+    "siteMeasurement",
+    "visitProofs",
+    "fieldMode",
+    "gpsTracking",
+  ].forEach((id) => map.set(id, "field"));
+  [
+    "procurementInventory",
+    "boqControlCentre",
+    "grn",
+    "inventory",
+    "dispatch",
+    "vendors",
+    "vendorRates",
+    "rateFinder",
+  ].forEach((id) => map.set(id, "procurement"));
+  [
+    "financeDesk",
+    "payments",
+    "invoices",
+    "vendorBills",
+    "contractorPayments",
+    "profitability",
+    "commissions",
+    "gstReturns",
+  ].forEach((id) => map.set(id, "finance"));
+  ["mediaCommunication", "driveManager", "communicationCentre"].forEach(
+    (id) => map.set(id, "media"),
+  );
+  ["hrStaff", "attendancePayroll", "staffSalary"].forEach((id) =>
+    map.set(id, "hr"),
+  );
+  ["masterSetup", "articleVariants"].forEach((id) =>
+    map.set(id, "master"),
+  );
+  [
+    "reportsDesk",
+    "salesAnalytics",
+    "collectionAnalytics",
+    "operationsAnalytics",
+    "financialAnalytics",
+  ].forEach((id) => map.set(id, "reports"));
+  [
+    "systemSettings",
+    "userApprovals",
+    "controlBrainWorkflows",
+    "approvalPolicies",
+    "auditLog",
+    "dataImport",
+    "dataExport",
+    "integrity",
+  ].forEach((id) => map.set(id, "system"));
   return map;
 }
 
@@ -75,24 +145,37 @@ export interface WorkspaceReadCoverage {
   entityId?: string;
 }
 
-export function workspaceReadScopeForModule(moduleId: string | null | undefined): WorkspaceReadScope {
-  const id = String(moduleId || "").trim();
+export function workspaceReadScopeForModule(
+  moduleId: string | null | undefined,
+): WorkspaceReadScope {
+  const id = canonicalModuleId(String(moduleId || "").trim());
   return MODULE_SCOPE_BY_ID.get(id) || "full";
 }
 
-export function workspaceReadScopeFromMode(mode: string | null | undefined): WorkspaceReadScope {
-  const normalized = String(mode || "").trim().replace(/-row$/, "") as WorkspaceReadScope;
+export function workspaceReadScopeFromMode(
+  mode: string | null | undefined,
+): WorkspaceReadScope {
+  const normalized = String(mode || "")
+    .trim()
+    .replace(/-row$/, "") as WorkspaceReadScope;
   return KNOWN_SCOPES.has(normalized) ? normalized : "full";
 }
 
-export function workspaceReadScopeFromDatabase(database: unknown): WorkspaceReadScope {
-  const value = database && typeof database === "object"
-    ? String((database as Record<string, unknown>)._workspace_read_scope || "")
-    : "";
+export function workspaceReadScopeFromDatabase(
+  database: unknown,
+): WorkspaceReadScope {
+  const value =
+    database && typeof database === "object"
+      ? String(
+          (database as Record<string, unknown>)._workspace_read_scope || "",
+        )
+      : "";
   return workspaceReadScopeFromMode(value);
 }
 
-export function workspaceReadTargetForModule(moduleId: string): WorkspaceReadTarget {
+export function workspaceReadTargetForModule(
+  moduleId: string,
+): WorkspaceReadTarget {
   const route = resolveRenderer(moduleId);
   return {
     scope: workspaceReadScopeForModule(route.id),
@@ -106,7 +189,9 @@ export function workspaceReadTargetForModule(moduleId: string): WorkspaceReadTar
  * read target. Customer and Site entity URLs retain their concrete record ID so
  * the server can load one dependency graph instead of every row in the module.
  */
-export function workspaceReadTargetForPath(input: string): WorkspaceReadTarget {
+export function workspaceReadTargetForPath(
+  input: string,
+): WorkspaceReadTarget {
   const location = resolveWorkspaceLocation(input);
   if (!location) return workspaceReadTargetForModule("workdesk");
   const route = resolveRenderer(location.moduleId);
@@ -158,9 +243,9 @@ export function workspaceReadCoverageIsCompatible(
   const entity = rowScopedEntityForTarget(requested);
   return Boolean(
     entity &&
-    current.mode === `${current.scope}-row` &&
-    current.entityKind === entity.kind &&
-    current.entityId === entity.id,
+      current.mode === `${current.scope}-row` &&
+      current.entityKind === entity.kind &&
+      current.entityId === entity.id,
   );
 }
 
