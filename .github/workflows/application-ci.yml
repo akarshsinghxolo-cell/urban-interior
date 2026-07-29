@@ -69,6 +69,8 @@ jobs:
         run: bun run test:auth-security
       - name: Test runtime efficiency hardening
         run: bun run test:runtime-efficiency
+      - name: Test vendor landed-rate averages
+        run: bun run test:vendor-rate-average
       - name: Test bug hunt regressions
         run: bun run test:bug-hunt
       - name: Lint application
