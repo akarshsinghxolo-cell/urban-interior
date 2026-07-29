@@ -37,6 +37,15 @@ function targets(row) {
   return [];
 }
 
+function linkedToProject(row) {
+  const projects = Array.isArray(row.projectId)
+    ? row.projectId
+    : Array.isArray(row.projectIds)
+      ? row.projectIds
+      : [];
+  return projects.includes(projectId);
+}
+
 async function api(path, init = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
@@ -58,21 +67,30 @@ async function api(path, init = {}) {
   return body;
 }
 
-async function listEnvironmentVariables() {
+async function listProjectEnvironmentVariables() {
   const body = await api(`/v10/projects/${encodeURIComponent(projectId)}/env?teamId=${encodeURIComponent(teamId)}`);
   const rows = Array.isArray(body) ? body : body?.envs;
-  if (!Array.isArray(rows)) throw new Error("Vercel returned no environment-variable list.");
+  if (!Array.isArray(rows)) throw new Error("Vercel returned no project environment-variable list.");
   return rows;
 }
 
-async function deleteVariable(id) {
+async function listSharedEnvironmentVariables() {
+  const body = await api(
+    `/v1/env?teamId=${encodeURIComponent(teamId)}&projectId=${encodeURIComponent(projectId)}`,
+  );
+  const rows = Array.isArray(body) ? body : body?.data;
+  if (!Array.isArray(rows)) throw new Error("Vercel returned no shared environment-variable list.");
+  return rows.filter(linkedToProject);
+}
+
+async function deleteProjectVariable(id) {
   await api(
     `/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`,
     { method: "DELETE" },
   );
 }
 
-async function patchTargets(id, nextTargets) {
+async function patchProjectTargets(id, nextTargets) {
   await api(
     `/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`,
     {
@@ -80,6 +98,18 @@ async function patchTargets(id, nextTargets) {
       body: JSON.stringify({ target: nextTargets }),
     },
   );
+}
+
+async function patchSharedTargets(rows, transform) {
+  const updates = {};
+  for (const row of rows) {
+    updates[row.id] = { target: transform(targets(row)) };
+  }
+  if (!Object.keys(updates).length) return;
+  await api(`/v1/env?teamId=${encodeURIComponent(teamId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ updates }),
+  });
 }
 
 function assertRequiredKeys(rows) {
@@ -101,43 +131,73 @@ function assertRequiredKeys(rows) {
 }
 
 async function enable() {
-  let rows = await listEnvironmentVariables();
+  let projectRows = await listProjectEnvironmentVariables();
 
-  // Earlier failed attempts created Preview-only copies containing encrypted
-  // CLI references. Production originally had no Preview Supabase variables,
-  // so remove only managed Preview-only entries before sharing real records.
-  const previewOnly = rows.filter((row) => {
+  // Earlier failed attempts created Preview-only project variables containing
+  // encrypted CLI references. Production originally had no Preview Supabase
+  // variables, so remove only those managed Preview-only entries.
+  const previewOnly = projectRows.filter((row) => {
     const rowTargets = targets(row);
     return managedKeys.has(row.key) &&
       rowTargets.includes("preview") &&
       !rowTargets.includes("production");
   });
-  for (const row of previewOnly) await deleteVariable(row.id);
+  for (const row of previewOnly) await deleteProjectVariable(row.id);
 
-  rows = await listEnvironmentVariables();
-  assertRequiredKeys(rows);
-  const productionRows = rows.filter((row) =>
+  projectRows = await listProjectEnvironmentVariables();
+  const sharedRows = await listSharedEnvironmentVariables();
+  const allRows = [...projectRows, ...sharedRows];
+  assertRequiredKeys(allRows);
+
+  const projectProductionRows = projectRows.filter((row) =>
     managedKeys.has(row.key) && targets(row).includes("production"),
   );
-  for (const row of productionRows) {
-    const nextTargets = [...new Set([...targets(row), "preview"])];
-    await patchTargets(row.id, nextTargets);
+  const sharedProductionRows = sharedRows.filter((row) =>
+    managedKeys.has(row.key) && targets(row).includes("production"),
+  );
+
+  for (const row of projectProductionRows) {
+    await patchProjectTargets(row.id, [...new Set([...targets(row), "preview"])]);
   }
-  console.log(`Temporarily enabled ${productionRows.length} Production variable record(s) for Preview.`);
+  await patchSharedTargets(
+    sharedProductionRows,
+    (rowTargets) => [...new Set([...rowTargets, "preview"])],
+  );
+
+  console.log(
+    `Temporarily enabled ${projectProductionRows.length} project and ${sharedProductionRows.length} shared variable record(s) for Preview.`,
+  );
 }
 
 async function restore() {
-  const rows = await listEnvironmentVariables();
-  const sharedRows = rows.filter((row) => {
+  const [projectRows, sharedRows] = await Promise.all([
+    listProjectEnvironmentVariables(),
+    listSharedEnvironmentVariables(),
+  ]);
+  const projectSharedRows = projectRows.filter((row) => {
     const rowTargets = targets(row);
     return managedKeys.has(row.key) &&
       rowTargets.includes("production") &&
       rowTargets.includes("preview");
   });
-  for (const row of sharedRows) {
-    await patchTargets(row.id, targets(row).filter((target) => target !== "preview"));
+  const teamSharedRows = sharedRows.filter((row) => {
+    const rowTargets = targets(row);
+    return managedKeys.has(row.key) &&
+      rowTargets.includes("production") &&
+      rowTargets.includes("preview");
+  });
+
+  for (const row of projectSharedRows) {
+    await patchProjectTargets(row.id, targets(row).filter((target) => target !== "preview"));
   }
-  console.log(`Restored ${sharedRows.length} variable record(s) to their non-Preview targets.`);
+  await patchSharedTargets(
+    teamSharedRows,
+    (rowTargets) => rowTargets.filter((target) => target !== "preview"),
+  );
+
+  console.log(
+    `Restored ${projectSharedRows.length} project and ${teamSharedRows.length} shared variable record(s) to non-Preview targets.`,
+  );
 }
 
 await (mode === "enable" ? enable() : restore());
