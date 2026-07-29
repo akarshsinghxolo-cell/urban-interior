@@ -1,9 +1,14 @@
-import type { Contractor, Master, RDashDatabase, Vendor } from "./types";
+import type { Master, RDashDatabase } from "./types";
 
 type PerformanceFields = {
   reliability_score: number;
   on_time_pct: number;
   rating: number;
+};
+
+type PerformanceRecord = {
+  reliability_score?: number;
+  on_time_pct?: number;
 };
 
 function ratingForScore(score: number): number {
@@ -97,24 +102,25 @@ export function deriveContractorPerformance(
   };
 }
 
-function withPerformance<T extends Vendor | Contractor>(
+function withPerformance<T extends PerformanceRecord>(
   row: T,
   performance: PerformanceFields,
-): T {
+): T & PerformanceFields {
+  const currentRating = (row as T & { rating?: number }).rating;
   if (
     row.reliability_score === performance.reliability_score &&
     row.on_time_pct === performance.on_time_pct &&
-    row.rating === performance.rating
+    currentRating === performance.rating
   ) {
-    return row;
+    return row as T & PerformanceFields;
   }
   return { ...row, ...performance };
 }
 
 /**
  * Rebuild persisted partner scores from operational evidence. This is pure and
- * idempotent, so workspace normalization can run it after every mutation and on
- * every load without adding audit noise or relying on a user to press a button.
+ * idempotent, so the UI reconciliation agent can compare current values without
+ * adding audit noise or relying on a user to press a button.
  */
 export function reconcilePartnerPerformance(db: RDashDatabase): Master {
   const vendors = db.master.vendors.map((vendor) =>
