@@ -18,11 +18,22 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
+      - name: Stop after implementation commit
+        id: trigger
+        run: |
+          if [ -f .article-vendor-average-trigger ]; then
+            echo "enabled=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=0" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: oven-sh/setup-bun@v2
+        if: steps.trigger.outputs.enabled == '1'
         with:
           bun-version: 1.3.14
 
       - name: Execute reviewed integration script
+        if: steps.trigger.outputs.enabled == '1'
         shell: python
         run: |
           from pathlib import Path
@@ -47,18 +58,20 @@ jobs:
                       delimiter = None
           script = "\n".join(output)
           exec(compile(script, "article-vendor-average-patch.py", "exec"), {"__name__": "__main__"})
-          Path(".github/workflows/tmp-run-article-vendor-average.yml").unlink(missing_ok=True)
 
       - name: Install and run focused tests
+        if: steps.trigger.outputs.enabled == '1'
         run: |
           bun install --frozen-lockfile
           bun run test:vendor-rate-average
           bun run test:phase2b
 
       - name: Commit implementation
+        if: steps.trigger.outputs.enabled == '1'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout HEAD -- .github/workflows/application-ci.yml .github/workflows/tmp-article-vendor-average.yml .github/workflows/tmp-run-article-vendor-average.yml
           git add -A
           git commit -m "Average vendor landed rates by article"
           git push origin HEAD:${{ github.head_ref }}
