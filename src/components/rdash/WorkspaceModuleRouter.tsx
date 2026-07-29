@@ -18,8 +18,6 @@ const ProcurementModule = React.lazy(() => import("./modules/ProcurementModule")
 const GRNModule = React.lazy(() => import("./modules/GRNModule").then((module) => ({ default: module.GRNModule })));
 const InventoryModule = React.lazy(() => import("./modules/InventoryModule").then((module) => ({ default: module.InventoryModule })));
 const DispatchModule = React.lazy(() => import("./modules/DispatchModule").then((module) => ({ default: module.DispatchModule })));
-const JobPnLModule = React.lazy(() => import("./modules/JobPnLModule").then((module) => ({ default: module.JobPnLModule })));
-const SiteProfitabilityModule = React.lazy(() => import("./modules/SiteProfitabilityModule").then((module) => ({ default: module.SiteProfitabilityModule })));
 const ProfitabilityWorkspaceModule = React.lazy(() => import("./modules/ProfitabilityWorkspaceModule").then((module) => ({ default: module.ProfitabilityWorkspaceModule })));
 const StaffSalaryModule = React.lazy(() => import("./modules/StaffSalaryModule").then((module) => ({ default: module.StaffSalaryModule })));
 const VendorPerformanceModule = React.lazy(() => import("./modules/VendorPerformanceModule").then((module) => ({ default: module.VendorPerformanceModule })));
@@ -75,8 +73,8 @@ export function ModuleLoadingFallback() {
 }
 
 export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
-    const activeModuleId = moduleId;
-    const route = resolveRenderer(activeModuleId);
+    const route = resolveRenderer(moduleId);
+    const activeModuleId = route.id;
     const role = useRDashStore((state) => state.authUser?.role);
     const rawPermissions = useRDashStore((state) => (state.db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions || EMPTY_PERMISSIONS);
     const access = React.useMemo(
@@ -103,8 +101,6 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "grn": return <GRNModule />;
         case "inventory": return <InventoryModule />;
         case "dispatch": return <DispatchModule view={route.filter?.view}/>;
-        case "workOrder-pnl": return <JobPnLModule />;
-        case "site-profitability": return <SiteProfitabilityModule />;
         case "profitability": return <ProfitabilityWorkspaceModule />;
         case "staff-salary": return <StaffSalaryModule />;
         case "vendor-performance": return <VendorPerformanceModule />;
@@ -151,7 +147,7 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         default: return renderUnreachableModule(route.renderer);
     }
 }
-function renderUnreachableModule(_renderer: string) {
+function renderUnreachableModule(_renderer: never) {
     return <DailyWork />;
 }
 
