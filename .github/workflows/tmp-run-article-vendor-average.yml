@@ -1,0 +1,48 @@
+name: Run article vendor-rate integration
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Execute reviewed integration script
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path(".github/workflows/tmp-article-vendor-average.yml").read_text(encoding="utf-8")
+          start_marker = "      - name: Apply integration patch\n        shell: python\n        run: |\n"
+          end_marker = "\n      - name: Install and run focused tests"
+          if workflow.count(start_marker) != 1 or workflow.count(end_marker) != 1:
+              raise SystemExit("Could not locate the reviewed integration script")
+          script = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          exec(compile(textwrap.dedent(script), "article-vendor-average-patch.py", "exec"), {"__name__": "__main__"})
+          Path(".github/workflows/tmp-run-article-vendor-average.yml").unlink(missing_ok=True)
+
+      - name: Install and run focused tests
+        run: |
+          bun install --frozen-lockfile
+          bun run test:vendor-rate-average
+          bun run test:phase2b
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Average vendor landed rates by article"
+          git push origin HEAD:${{ github.head_ref }}
