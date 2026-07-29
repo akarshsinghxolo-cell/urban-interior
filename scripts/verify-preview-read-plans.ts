@@ -1,5 +1,6 @@
 import { getModuleScopedWorkspace } from "../src/lib/rdash/server/module-scoped-read";
 import { workspaceReadTargetForModule } from "../src/lib/rdash/workspace-read-scope";
+import { isSupabaseConfigured } from "../src/lib/supabase/server";
 import type { AuthenticatedUser } from "../src/lib/rdash/server/auth";
 
 const verifier: AuthenticatedUser = {
@@ -9,6 +10,28 @@ const verifier: AuthenticatedUser = {
   role: "Owner",
   expiresAt: Date.now() + 60_000,
 };
+
+function safeEnvState(name: string) {
+  const value = String(process.env[name] || "").trim();
+  return {
+    present: Boolean(value),
+    length: value.length,
+    placeholder: value.startsWith("replace-with-") || value.includes("<") || value.includes(">"),
+  };
+}
+
+const environmentState = {
+  configured: isSupabaseConfigured(),
+  SUPABASE_URL: safeEnvState("SUPABASE_URL"),
+  SUPABASE_PUBLISHABLE_KEY: safeEnvState("SUPABASE_PUBLISHABLE_KEY"),
+  SUPABASE_ANON_KEY: safeEnvState("SUPABASE_ANON_KEY"),
+  SUPABASE_SECRET_KEY: safeEnvState("SUPABASE_SECRET_KEY"),
+  SUPABASE_SERVICE_ROLE_KEY: safeEnvState("SUPABASE_SERVICE_ROLE_KEY"),
+};
+console.log("[preview-env-verification]", JSON.stringify(environmentState));
+if (!environmentState.configured) {
+  throw new Error(`Preview Supabase configuration is invalid: ${JSON.stringify(environmentState)}`);
+}
 
 function metadata(database: unknown): Record<string, unknown> {
   return database && typeof database === "object"
