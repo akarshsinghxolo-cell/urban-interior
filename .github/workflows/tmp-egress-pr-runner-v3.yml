@@ -1,0 +1,47 @@
+name: Run PostgREST egress hardening patch v3
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Execute complete embedded patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/tmp-egress-hardening.yml').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(workflow) if line.strip() == '- name: Apply egress hardening')
+          run_line = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'run: |')
+          end = next(i for i in range(run_line + 1, len(workflow)) if workflow[i].strip() == '- name: Commit hardened implementation')
+          script = []
+          for line in workflow[run_line + 1:end]:
+              script.append(line[10:] if line.startswith('          ') else line)
+          if len(script) < 100:
+              raise SystemExit(f'Embedded patch script was incomplete: {len(script)} lines')
+          code = '\n'.join(script) + '\n'
+          exec(compile(code, 'embedded-egress-patch.py', 'exec'), {'__name__': '__main__'})
+          Path('.github/workflows/tmp-egress-pr-runner-v2.yml').unlink(missing_ok=True)
+          Path('.github/workflows/tmp-egress-pr-runner-v3.yml').unlink()
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Eliminate repeated PostgREST workspace egress"
+          git push origin HEAD:${{ github.head_ref }}
