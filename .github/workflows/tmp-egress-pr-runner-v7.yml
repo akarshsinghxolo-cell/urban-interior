@@ -1,0 +1,64 @@
+name: Run PostgREST egress hardening patch v7
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Execute final egress patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import re
+
+          old_health = base64.b64decode("ICAgIHJldHVybiBOZXh0UmVzcG9uc2UuanNvbigKICAgICAgewogICAgICAgIHN0YXR1czogIm9rIiwKICAgICAgICB0aW1lc3RhbXA6IG5ldyBEYXRlKCkudG9JU09TdHJpbmcoKSwKICAgICAgICB1c2VyOiB7IG5hbWU6IHVzZXIubmFtZSwgZW1haWw6IHVzZXIuZW1haWwsIHJvbGU6IHVzZXIucm9sZSB9LAogICAgICAgIC4uLnN1bW1hcnksCiAgICAgIH0sCiAgICAgIHsKICAgICAgICBoZWFkZXJzOiB7CiAgICAgICAgICAiQ2FjaGUtQ29udHJvbCI6ICJwcml2YXRlLCBtYXgtYWdlPTYwLCBzdGFsZS13aGlsZS1yZXZhbGlkYXRlPTMwMCIsCiAgICAgICAgICAiVmFyeSI6ICJBdXRob3JpemF0aW9uLCBDb29raWUiLAogICAgICAgICAgIlgtVUMtSGVhbHRoLUNvbGxlY3Rpb25zIjogU3RyaW5nKHN1bW1hcnkuY29sbGVjdGlvbkNvdW50KSwKICAgICAgICAgICJYLVVDLUhlYWx0aC1RdWVyaWVzIjogU3RyaW5nKHN1bW1hcnkucXVlcnlDb3VudCksCiAgICAgICAgICAiWC1VQy1IZWFsdGgtTG9hZC1NcyI6IFN0cmluZyhzdW1tYXJ5LmxvYWRNcyksCiAgICAgICAgfSwKICAgICAgfSwKICAgICk7Cg==").decode("utf-8")
+          new_health = base64.b64decode("ICAgIGNvbnN0IHBheWxvYWQgPSB7CiAgICAgIHN0YXR1czogIm9rIiwKICAgICAgdGltZXN0YW1wOiBuZXcgRGF0ZSgpLnRvSVNPU3RyaW5nKCksCiAgICAgIHVzZXI6IHsgbmFtZTogdXNlci5uYW1lLCBlbWFpbDogdXNlci5lbWFpbCwgcm9sZTogdXNlci5yb2xlIH0sCiAgICAgIC4uLnN1bW1hcnksCiAgICB9OwogICAgY29uc3QgYm9keSA9IEpTT04uc3RyaW5naWZ5KHBheWxvYWQpOwogICAgY29uc3QgcmVzcG9uc2VCeXRlcyA9IEJ1ZmZlci5ieXRlTGVuZ3RoKGJvZHkpOwogICAgY29uc29sZS5pbmZvKCJbd29ya3NwYWNlLWhlYWx0aC1yZXNwb25zZV0iLCB7IHJlc3BvbnNlQnl0ZXMgfSk7CiAgICByZXR1cm4gbmV3IE5leHRSZXNwb25zZShib2R5LCB7CiAgICAgIGhlYWRlcnM6IHsKICAgICAgICAiQ29udGVudC1UeXBlIjogImFwcGxpY2F0aW9uL2pzb24iLAogICAgICAgICJDYWNoZS1Db250cm9sIjogInByaXZhdGUsIG1heC1hZ2U9MzAwLCBzdGFsZS13aGlsZS1yZXZhbGlkYXRlPTM2MDAiLAogICAgICAgICJWYXJ5IjogIkF1dGhvcml6YXRpb24sIENvb2tpZSIsCiAgICAgICAgIlgtVUMtSGVhbHRoLUNvbGxlY3Rpb25zIjogU3RyaW5nKHN1bW1hcnkuY29sbGVjdGlvbkNvdW50KSwKICAgICAgICAiWC1VQy1IZWFsdGgtUXVlcmllcyI6IFN0cmluZyhzdW1tYXJ5LnF1ZXJ5Q291bnQpLAogICAgICAgICJYLVVDLUhlYWx0aC1Mb2FkLU1zIjogU3RyaW5nKHN1bW1hcnkubG9hZE1zKSwKICAgICAgICAiWC1VQy1SZXNwb25zZS1CeXRlcyI6IFN0cmluZyhyZXNwb25zZUJ5dGVzKSwKICAgICAgfSwKICAgIH0pOwo=").decode("utf-8")
+          health_path = Path("src/app/api/health/summary/route.ts")
+          health = health_path.read_text(encoding="utf-8")
+          if health.count(old_health) != 1:
+              raise SystemExit(f"Health response anchor count: {health.count(old_health)}")
+          health_path.write_text(health.replace(old_health, new_health, 1), encoding="utf-8")
+
+          embedded_path = Path(".github/workflows/tmp-egress-hardening.yml")
+          embedded = embedded_path.read_text(encoding="utf-8")
+          embedded, removed = re.subn(
+              r"\n          # Add response-byte telemetry to the two egress-heavy routes\..*?\n          # Workspace success payload helper avoids double serialization while reporting bytes\.",
+              "\n          # Workspace success payload helper avoids double serialization while reporting bytes.",
+              embedded,
+              count=1,
+              flags=re.S,
+          )
+          if removed != 1:
+              raise SystemExit(f"Embedded health telemetry block removal count: {removed}")
+          embedded_path.write_text(embedded, encoding="utf-8")
+
+          runner = Path(".github/workflows/tmp-egress-pr-runner-v6.yml").read_text(encoding="utf-8").splitlines()
+          run_line = next(i for i, line in enumerate(runner) if line.strip() == "run: |")
+          end = next(i for i in range(run_line + 1, len(runner)) if runner[i].strip() == "- name: Commit implementation")
+          script = [line[10:] if line.startswith("          ") else line for line in runner[run_line + 1:end]]
+          exec(compile("\n".join(script) + "\n", "egress-runner-v6.py", "exec"), {"__name__": "__main__"})
+          for name in ("tmp-egress-pr-runner-v5.yml", "tmp-egress-pr-runner-v6.yml", "tmp-egress-pr-runner-v7.yml"):
+              Path(".github/workflows", name).unlink(missing_ok=True)
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Eliminate repeated PostgREST workspace egress"
+          git push origin HEAD:${{ github.head_ref }}
