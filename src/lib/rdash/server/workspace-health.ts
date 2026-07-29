@@ -264,7 +264,16 @@ function isMissingHealthRpc(error: { code?: string; message?: string } | null) {
 
 export async function getWorkspaceHealthSummary() {
   const startedAt = performance.now();
-  const { data, error } = await getSupabaseAdminClient().rpc("get_workspace_health_summary", {
+  // The additive RPC is deployed by this PR's migration; generated database
+  // types will include it after the next schema type refresh. Keep the escape
+  // hatch local to this single call rather than weakening the admin client.
+  const healthRpcClient = getSupabaseAdminClient() as unknown as {
+    rpc: (
+      name: "get_workspace_health_summary",
+      args: { p_workspace_id: string },
+    ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
+  };
+  const { data, error } = await healthRpcClient.rpc("get_workspace_health_summary", {
     p_workspace_id: workspaceId(),
   });
   if (!error && data && typeof data === "object") {
