@@ -21,6 +21,7 @@ import {
   workspaceReadTargetForModule,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import {
   restoreWorkspaceOutboxOverlay,
@@ -67,17 +68,19 @@ function currentRunIsSafe(pathname: string, activeModuleId: string): boolean {
 }
 
 async function reloadCurrentWorkspace(pathname: string, activeModuleId: string): Promise<boolean> {
-  const response = await fetch("/api/workspace", {
+  const target = requestedTarget(pathname, activeModuleId);
+  const response = await fetch(workspaceReadEndpointForTarget(target), {
     credentials: "same-origin",
     cache: "no-store",
     headers: {
       "X-UC-Workspace-Path": pathname,
-      "X-UC-Workspace-Module": activeModuleId,
+      "X-UC-Workspace-Module": target.moduleId,
       "X-UC-Delta-Fallback": "1",
     },
   });
   const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
-  if (!response.ok || !payload.data || typeof payload.revision !== "number" || !payload.user) {
+  const hydrationUser = payload.user || useRDashStore.getState().authUser;
+  if (!response.ok || !payload.data || typeof payload.revision !== "number" || !hydrationUser) {
     return false;
   }
 
@@ -87,7 +90,7 @@ async function reloadCurrentWorkspace(pathname: string, activeModuleId: string):
   useRDashStore.getState().hydrateSecureWorkspace({
     db: overlay.db,
     revision: payload.revision,
-    user: payload.user,
+    user: hydrationUser,
     rowVersions: payload.rowVersions,
   });
   return true;
