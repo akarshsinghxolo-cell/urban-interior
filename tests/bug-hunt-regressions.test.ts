@@ -40,7 +40,7 @@ describe("bug hunt: scoped read correctness", () => {
     }, approvals)).toBe(false);
   });
 
-  test("scope snapshots cover sibling modules but never row targets", () => {
+  test("complete scope snapshots cover sibling modules and their records", () => {
     expect(workspaceReadCoverageIsCompatible({
       scope: "workdesk",
       mode: "workdesk",
@@ -53,7 +53,7 @@ describe("bug hunt: scoped read correctness", () => {
     }, {
       ...workspaceReadTargetForModule("customerDesk"),
       entity: { kind: "customer", id: "cust-1" },
-    })).toBe(false);
+    })).toBe(true);
   });
 
   test("row snapshots require the exact entity", () => {
