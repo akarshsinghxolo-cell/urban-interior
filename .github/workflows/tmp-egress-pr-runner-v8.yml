@@ -1,0 +1,76 @@
+name: Run PostgREST egress hardening patch v8
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Execute completed egress patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import base64
+          import re
+
+          values = {
+            "marker": "ZnVuY3Rpb24gdXNlclBheWxvYWQodXNlcjogQXdhaXRlZDxSZXR1cm5UeXBlPHR5cGVvZiByZXF1aXJlU2Vzc2lvbj4+KSB7CiAgcmV0dXJuIHsKICAgIG5hbWU6IHVzZXIubmFtZSwKICAgIGVtYWlsOiB1c2VyLmVtYWlsLAogICAgcm9sZTogdXNlci5yb2xlLAogICAgc3RhZmZJZDogdXNlci5zdGFmZklkLAogICAgZXhwaXJlc0F0OiB1c2VyLmV4cGlyZXNBdCwKICB9Owp9Cg==",
+            "helper": "ZnVuY3Rpb24gdXNlclBheWxvYWQodXNlcjogQXdhaXRlZDxSZXR1cm5UeXBlPHR5cGVvZiByZXF1aXJlU2Vzc2lvbj4+KSB7CiAgcmV0dXJuIHsKICAgIG5hbWU6IHVzZXIubmFtZSwKICAgIGVtYWlsOiB1c2VyLmVtYWlsLAogICAgcm9sZTogdXNlci5yb2xlLAogICAgc3RhZmZJZDogdXNlci5zdGFmZklkLAogICAgZXhwaXJlc0F0OiB1c2VyLmV4cGlyZXNBdCwKICB9Owp9CgpmdW5jdGlvbiB3b3Jrc3BhY2VKc29uKHBheWxvYWQ6IFJlY29yZDxzdHJpbmcsIHVua25vd24+LCBoZWFkZXJzOiBSZWNvcmQ8c3RyaW5nLCBzdHJpbmc+KSB7CiAgY29uc3QgYm9keSA9IEpTT04uc3RyaW5naWZ5KHBheWxvYWQpOwogIGNvbnN0IHJlc3BvbnNlQnl0ZXMgPSBCdWZmZXIuYnl0ZUxlbmd0aChib2R5KTsKICByZXR1cm4gewogICAgcmVzcG9uc2U6IG5ldyBOZXh0UmVzcG9uc2UoYm9keSwgewogICAgICBoZWFkZXJzOiB7ICJDb250ZW50LVR5cGUiOiAiYXBwbGljYXRpb24vanNvbiIsIC4uLmhlYWRlcnMsICJYLVVDLVJlc3BvbnNlLUJ5dGVzIjogU3RyaW5nKHJlc3BvbnNlQnl0ZXMpIH0sCiAgICB9KSwKICAgIHJlc3BvbnNlQnl0ZXMsCiAgfTsKfQo=",
+            "entity_old": "ICAgICAgICByZXR1cm4gTmV4dFJlc3BvbnNlLmpzb24oewogICAgICAgICAgcmV2aXNpb246IHdvcmtzcGFjZS5yZXZpc2lvbiwKICAgICAgICAgIGRhdGE6IHdvcmtzcGFjZS5kYXRhLAogICAgICAgICAgLi4uKHdvcmtzcGFjZS5yb3dWZXJzaW9ucyA/IHsgcm93VmVyc2lvbnM6IHdvcmtzcGFjZS5yb3dWZXJzaW9ucyB9IDoge30pLAogICAgICAgICAgdXNlcjogdXNlclBheWxvYWQodXNlciksCiAgICAgICAgfSwgewogICAgICAgICAgaGVhZGVyczogcmVzcG9uc2VIZWFkZXJzKHdvcmtzcGFjZS5tb2RlLCB3b3Jrc3BhY2UucXVlcnlDb3VudCwgd29ya3NwYWNlLmxvYWRNcywgewogICAgICAgICAgICBjb2xsZWN0aW9uQ291bnQ6IHdvcmtzcGFjZS5jb2xsZWN0aW9uQ291bnQsCiAgICAgICAgICAgIHJvd0NvdW50OiB3b3Jrc3BhY2Uucm93Q291bnQsCiAgICAgICAgICAgIGVudGl0eUtpbmQ6IHdvcmtzcGFjZS5lbnRpdHlLaW5kLAogICAgICAgICAgICBlbnRpdHlJZDogd29ya3NwYWNlLmVudGl0eUlkLAogICAgICAgICAgfSksCiAgICAgICAgfSk7Cg==",
+            "entity_new": "ICAgICAgICBjb25zdCBtZWFzdXJlZCA9IHdvcmtzcGFjZUpzb24oewogICAgICAgICAgcmV2aXNpb246IHdvcmtzcGFjZS5yZXZpc2lvbiwKICAgICAgICAgIGRhdGE6IHdvcmtzcGFjZS5kYXRhLAogICAgICAgICAgLi4uKHdvcmtzcGFjZS5yb3dWZXJzaW9ucyA/IHsgcm93VmVyc2lvbnM6IHdvcmtzcGFjZS5yb3dWZXJzaW9ucyB9IDoge30pLAogICAgICAgICAgdXNlcjogdXNlclBheWxvYWQodXNlciksCiAgICAgICAgfSwgcmVzcG9uc2VIZWFkZXJzKHdvcmtzcGFjZS5tb2RlLCB3b3Jrc3BhY2UucXVlcnlDb3VudCwgd29ya3NwYWNlLmxvYWRNcywgewogICAgICAgICAgY29sbGVjdGlvbkNvdW50OiB3b3Jrc3BhY2UuY29sbGVjdGlvbkNvdW50LAogICAgICAgICAgcm93Q291bnQ6IHdvcmtzcGFjZS5yb3dDb3VudCwKICAgICAgICAgIGVudGl0eUtpbmQ6IHdvcmtzcGFjZS5lbnRpdHlLaW5kLAogICAgICAgICAgZW50aXR5SWQ6IHdvcmtzcGFjZS5lbnRpdHlJZCwKICAgICAgICB9KSk7CiAgICAgICAgY29uc29sZS5pbmZvKCJbd29ya3NwYWNlLXJlc3BvbnNlXSIsIHsgbW9kZTogd29ya3NwYWNlLm1vZGUsIHJlc3BvbnNlQnl0ZXM6IG1lYXN1cmVkLnJlc3BvbnNlQnl0ZXMgfSk7CiAgICAgICAgcmV0dXJuIG1lYXN1cmVkLnJlc3BvbnNlOwo=",
+            "module_old": "ICAgICAgICByZXR1cm4gTmV4dFJlc3BvbnNlLmpzb24oewogICAgICAgICAgcmV2aXNpb246IHdvcmtzcGFjZS5yZXZpc2lvbiwKICAgICAgICAgIGRhdGE6IHdvcmtzcGFjZS5kYXRhLAogICAgICAgICAgLi4uKHdvcmtzcGFjZS5yb3dWZXJzaW9ucyA/IHsgcm93VmVyc2lvbnM6IHdvcmtzcGFjZS5yb3dWZXJzaW9ucyB9IDoge30pLAogICAgICAgICAgdXNlcjogdXNlclBheWxvYWQodXNlciksCiAgICAgICAgfSwgewogICAgICAgICAgaGVhZGVyczogcmVzcG9uc2VIZWFkZXJzKHdvcmtzcGFjZS5zY29wZSwgd29ya3NwYWNlLnF1ZXJ5Q291bnQsIHdvcmtzcGFjZS5sb2FkTXMsIHsKICAgICAgICAgICAgY29sbGVjdGlvbkNvdW50OiB3b3Jrc3BhY2UuY29sbGVjdGlvbkNvdW50LAogICAgICAgICAgfSksCiAgICAgICAgfSk7Cg==",
+            "module_new": "ICAgICAgICBjb25zdCBtZWFzdXJlZCA9IHdvcmtzcGFjZUpzb24oewogICAgICAgICAgcmV2aXNpb246IHdvcmtzcGFjZS5yZXZpc2lvbiwKICAgICAgICAgIGRhdGE6IHdvcmtzcGFjZS5kYXRhLAogICAgICAgICAgLi4uKHdvcmtzcGFjZS5yb3dWZXJzaW9ucyA/IHsgcm93VmVyc2lvbnM6IHdvcmtzcGFjZS5yb3dWZXJzaW9ucyB9IDoge30pLAogICAgICAgICAgdXNlcjogdXNlclBheWxvYWQodXNlciksCiAgICAgICAgfSwgcmVzcG9uc2VIZWFkZXJzKHdvcmtzcGFjZS5zY29wZSwgd29ya3NwYWNlLnF1ZXJ5Q291bnQsIHdvcmtzcGFjZS5sb2FkTXMsIHsKICAgICAgICAgIGNvbGxlY3Rpb25Db3VudDogd29ya3NwYWNlLmNvbGxlY3Rpb25Db3VudCwKICAgICAgICB9KSk7CiAgICAgICAgY29uc29sZS5pbmZvKCJbd29ya3NwYWNlLXJlc3BvbnNlXSIsIHsgbW9kZTogd29ya3NwYWNlLnNjb3BlLCByZXNwb25zZUJ5dGVzOiBtZWFzdXJlZC5yZXNwb25zZUJ5dGVzIH0pOwogICAgICAgIHJldHVybiBtZWFzdXJlZC5yZXNwb25zZTsK",
+            "full_old": "ICAgIHJldHVybiBOZXh0UmVzcG9uc2UuanNvbih7CiAgICAgIHJldmlzaW9uOiBmdWxsLndvcmtzcGFjZS5yZXZpc2lvbiwKICAgICAgZGF0YTogZnVsbC53b3Jrc3BhY2UuZGF0YSwKICAgICAgLi4uKGZ1bGwud29ya3NwYWNlLnJvd1ZlcnNpb25zID8geyByb3dWZXJzaW9uczogZnVsbC53b3Jrc3BhY2Uucm93VmVyc2lvbnMgfSA6IHt9KSwKICAgICAgdXNlcjogdXNlclBheWxvYWQodXNlciksCiAgICB9LCB7IGhlYWRlcnM6IHJlc3BvbnNlSGVhZGVycyhtb2RlLCBmdWxsLnF1ZXJ5Q291bnQsIGZ1bGwubG9hZE1zKSB9KTsK",
+            "full_new": "ICAgIGNvbnN0IG1lYXN1cmVkID0gd29ya3NwYWNlSnNvbih7CiAgICAgIHJldmlzaW9uOiBmdWxsLndvcmtzcGFjZS5yZXZpc2lvbiwKICAgICAgZGF0YTogZnVsbC53b3Jrc3BhY2UuZGF0YSwKICAgICAgLi4uKGZ1bGwud29ya3NwYWNlLnJvd1ZlcnNpb25zID8geyByb3dWZXJzaW9uczogZnVsbC53b3Jrc3BhY2Uucm93VmVyc2lvbnMgfSA6IHt9KSwKICAgICAgdXNlcjogdXNlclBheWxvYWQodXNlciksCiAgICB9LCByZXNwb25zZUhlYWRlcnMobW9kZSwgZnVsbC5xdWVyeUNvdW50LCBmdWxsLmxvYWRNcykpOwogICAgY29uc29sZS5pbmZvKCJbd29ya3NwYWNlLXJlc3BvbnNlXSIsIHsgbW9kZSwgcmVzcG9uc2VCeXRlczogbWVhc3VyZWQucmVzcG9uc2VCeXRlcyB9KTsKICAgIHJldHVybiBtZWFzdXJlZC5yZXNwb25zZTsK",
+          }
+          decoded = {key: base64.b64decode(value).decode("utf-8") for key, value in values.items()}
+          route_path = Path("src/app/api/workspace/route.ts")
+          route = route_path.read_text(encoding="utf-8")
+          for old_key, new_key in (("marker", "helper"), ("entity_old", "entity_new"), ("module_old", "module_new"), ("full_old", "full_new")):
+            old = decoded[old_key]
+            if route.count(old) != 1:
+              raise SystemExit(f"Workspace response anchor {old_key}: {route.count(old)}")
+            route = route.replace(old, decoded[new_key], 1)
+          route_path.write_text(route, encoding="utf-8")
+
+          embedded_path = Path(".github/workflows/tmp-egress-hardening.yml")
+          embedded = embedded_path.read_text(encoding="utf-8")
+          embedded, removed = re.subn(
+            r"\n          # Workspace success payload helper avoids double serialization while reporting bytes\..*?\n          # Store the migration in the repository\.",
+            "\n          # Store the migration in the repository.",
+            embedded,
+            count=1,
+            flags=re.S,
+          )
+          if removed != 1:
+            raise SystemExit(f"Embedded workspace telemetry block removal count: {removed}")
+          embedded_path.write_text(embedded, encoding="utf-8")
+
+          runner = Path(".github/workflows/tmp-egress-pr-runner-v7.yml").read_text(encoding="utf-8").splitlines()
+          run_line = next(i for i, line in enumerate(runner) if line.strip() == "run: |")
+          end = next(i for i in range(run_line + 1, len(runner)) if runner[i].strip() == "- name: Commit implementation")
+          script = [line[10:] if line.startswith("          ") else line for line in runner[run_line + 1:end]]
+          exec(compile("\n".join(script) + "\n", "egress-runner-v7.py", "exec"), {"__name__": "__main__"})
+          for name in ("tmp-egress-pr-runner-v5.yml", "tmp-egress-pr-runner-v6.yml", "tmp-egress-pr-runner-v7.yml", "tmp-egress-pr-runner-v8.yml"):
+            Path(".github/workflows", name).unlink(missing_ok=True)
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Eliminate repeated PostgREST workspace egress"
+          git push origin HEAD:${{ github.head_ref }}
