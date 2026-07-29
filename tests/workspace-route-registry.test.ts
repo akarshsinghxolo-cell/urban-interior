@@ -35,6 +35,8 @@ describe("workspace route registry", () => {
     expect(workspacePathForModule("procurementInventory")).toBe("/workspace/procurement");
     expect(workspacePathForModule("financeDesk")).toBe("/workspace/finance");
     expect(workspacePathForModule("systemSettings")).toBe("/workspace/settings");
+    expect(workspacePathForModule("lostClosedReview")).toBe("/workspace/sales/lost-closed-review");
+    expect(workspacePathForModule("articleVariants")).toBe("/workspace/masters/article-variants");
   });
 
   test("keeps internal-ID paths as aliases", () => {
