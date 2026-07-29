@@ -62,7 +62,9 @@ export function WorkspaceScopedReadBoundary() {
   const requestSequenceRef = React.useRef(0);
   const latestTargetKeyRef = React.useRef(targetKey);
 
-  latestTargetKeyRef.current = targetKey;
+  React.useLayoutEffect(() => {
+    latestTargetKeyRef.current = targetKey;
+  }, [targetKey]);
 
   React.useEffect(() => {
     setError(null);
