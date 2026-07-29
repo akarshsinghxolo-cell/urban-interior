@@ -1,4 +1,4 @@
-export type ModuleRenderer = "daily-work" | "customer-desk" | "customer-extras" | "site-execution" | "tasks" | "quotations" | "boq" | "procurement" | "grn" | "inventory" | "dispatch" | "workOrder-pnl" | "vendor-bills" | "contractor-payments" | "contractor-detail" | "contractor-workspace" | "profitability" | "finance-overview" | "payment-recovery" | "reports-v2" | "report-family" | "calendar" | "site-measurement" | "approval-policies" | "control-brain" | "audit-log" | "data-import" | "data-export" | "rate-finder" | "gps-tracking" | "visit-proofs" | "field-mode" | "communication-centre" | "quotation-config" | "staff-board" | "attendance-payroll" | "gst-returns" | "masters" | "masters-v2" | "sales-ops" | "sales-pipeline" | "commissions" | "threads" | "obstacle-threads" | "approvals-v2" | "site-visits" | "media-library" | "auth-users" | "system" | "drawings" | "execution-logs" | "site-profitability" | "staff-salary" | "vendor-performance" | "contractor-performance" | "wo-timeline" | "unified-thread-inbox" | "integrity" | "drive-manager";
+export type ModuleRenderer = "daily-work" | "customer-desk" | "customer-extras" | "site-execution" | "tasks" | "quotations" | "boq" | "procurement" | "grn" | "inventory" | "dispatch" | "workOrder-pnl" | "vendor-bills" | "contractor-payments" | "contractor-detail" | "contractor-workspace" | "profitability" | "finance-overview" | "payment-recovery" | "reports-v2" | "report-family" | "calendar" | "site-measurement" | "approval-policies" | "control-brain" | "audit-log" | "data-import" | "data-export" | "rate-finder" | "gps-tracking" | "visit-proofs" | "field-mode" | "communication-centre" | "quotation-config" | "staff-board" | "attendance-payroll" | "gst-returns" | "masters" | "masters-v2" | "sales-ops" | "sales-pipeline" | "lost-closed-review" | "commissions" | "threads" | "obstacle-threads" | "approvals-v2" | "site-visits" | "media-library" | "auth-users" | "system" | "drawings" | "execution-logs" | "site-profitability" | "staff-salary" | "vendor-performance" | "contractor-performance" | "wo-timeline" | "unified-thread-inbox" | "integrity" | "drive-manager" | "article-variants";
 export type DataSource = "tasks" | "followups" | "visits" | "quotations" | "payments" | "invoices" | "workOrders" | "customers" | "approvals" | "risks" | "blocked" | "vendors" | "contractors" | "staff" | "master-units" | "master-categories" | "master-subcategories" | "master-articles" | "boqs" | "purchaseOrders" | "grns" | "inventory" | "dispatches" | "vendorBills" | "commissions" | "drawings" | "executionLogs" | "threads" | "attendance" | "sites" | "none";
 
 export interface FilterPreset {
@@ -64,7 +64,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 activePredicate: (db) => db.customers.length > 0 || db.tasks.some((t) => t.task_scope === "client" && t.status !== "completed") || db.blocked.some((b) => !b.resolved),
                 submodules: [
                     { id: "customerTimeline", label: "Customer Timeline", renderer: "customer-desk", dataSource: "customers", filter: { view: "timeline" }, hint: "Lifecycle timeline across every customer" },
-                    { id: "customerRequests", label: "Customer Requests", renderer: "customer-extras", dataSource: "customers", filter: { sub: "requests" }, hint: "Work-required review, pending actions and customer requests" },
+                    { id: "customerRequests", label: "Customer Requests", renderer: "customer-extras", dataSource: "customers", filter: { sub: "requests" }, hint: "Requests, qualification review and pending customer actions" },
                 ],
             },
             {
@@ -74,7 +74,9 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 icon: "📈",
                 renderer: "sales-pipeline",
                 dataSource: "customers",
-                submodules: [],
+                submodules: [
+                    { id: "lostClosedReview", label: "Lost / Closed Review", renderer: "lost-closed-review", dataSource: "quotations", hint: "Post-mortem on lost quotations, lost requirements and cancelled work orders" },
+                ],
             },
             {
                 id: "siteExecution",
@@ -178,7 +180,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                     { id: "vendorBills", label: "Vendor Bills & Payments", renderer: "vendor-bills", dataSource: "vendorBills" },
                     { id: "contractorPayments", label: "Contractor Bills & Payments", renderer: "contractor-payments", dataSource: "workOrders" },
                     { id: "profitability", label: "Profitability", renderer: "profitability", dataSource: "sites", hint: "One workspace with Site and Work Order views" },
-                    { id: "commissions", label: "Commissions", renderer: "commissions", dataSource: "commissions" },
+                    { id: "commissions", label: "Commissions", renderer: "commissions", dataSource: "commissions", hint: "Commission records and source/referral partner analytics" },
                     { id: "gstReturns", label: "GST Returns", renderer: "gst-returns", dataSource: "none" },
                 ],
             },
@@ -222,7 +224,9 @@ export const MODULE_GROUPS: ModuleGroup[] = [
                 renderer: "masters",
                 activePredicate: (db) => db.master.articles.length > 0 || db.master.contractors.length > 0,
                 dataSource: "master-categories",
-                submodules: [],
+                submodules: [
+                    { id: "articleVariants", label: "Article Variants", renderer: "article-variants", dataSource: "master-articles", hint: "Persisted brands, grades, finishes, sizes and variant-specific units" },
+                ],
             },
         ],
     },
@@ -376,43 +380,4 @@ export function isRegisteredModuleId(id: string): boolean {
 }
 export function resolveRenderer(id: string): ModuleRoute {
     return MODULE_ROUTE_REGISTRY.get(canonicalModuleId(id))!;
-}
-
-function stableFilter(filter?: Record<string, string>) {
-    if (!filter) return "";
-    return Object.entries(filter).sort(([left], [right]) => left.localeCompare(right)).map(([key, value]) => `${key}:${value}`).join("|");
-}
-export function validateModuleRegistry(): string[] {
-    const issues: string[] = [];
-    const visibleRoutes = Array.from(MODULE_ROUTE_REGISTRY.values()).filter((route) => !route.hidden);
-    for (const route of MODULE_ROUTE_REGISTRY.values()) {
-        if (!route.id.trim()) issues.push("A module route has an empty id.");
-        if (!route.label.trim()) issues.push(`Module route ${route.id} has an empty label.`);
-        if (!route.renderer) issues.push(`Module route ${route.id} has no screen renderer.`);
-        if (route.isSubmodule && !MODULE_ROUTE_REGISTRY.has(route.moduleId)) issues.push(`Submodule ${route.id} points to missing module ${route.moduleId}.`);
-    }
-    const signatures = new Map<string, ModuleRoute>();
-    for (const route of visibleRoutes) {
-        const signature = [route.renderer, route.dataSource || "", stableFilter(route.filter)].join("::");
-        const previous = signatures.get(signature);
-        if (previous && previous.moduleId === route.moduleId) {
-            issues.push(`Semantic duplicate routes ${previous.id} and ${route.id} use the same renderer, data source and filter inside ${route.moduleId}.`);
-        } else {
-            signatures.set(signature, route);
-        }
-    }
-    return issues;
-}
-export function groupSubmoduleCount(groupId: string): number {
-    const group = MODULE_GROUPS.find((entry) => entry.id === groupId);
-    return group ? group.modules.reduce((count, moduleDef) => count + moduleDef.submodules.length, 0) : 0;
-}
-export function moduleSubmoduleCount(moduleId: string): number {
-    const moduleDef = findModule(moduleId);
-    return moduleDef ? moduleDef.submodules.length : 0;
-}
-export function groupActiveCount(groupId: string, db: import("./types").RDashDatabase): number {
-    const group = MODULE_GROUPS.find((entry) => entry.id === groupId);
-    if (!group) return 0;
-    return group.modules.reduce((count, moduleDef) => count + (moduleDef.activePredicate?.(db) ? 1 : 0), 0);
 }
