@@ -14,7 +14,7 @@ import { WorkOrderVariationsPanel } from "./WorkOrderVariationsPanel";
 
 type ExtraTab = "history" | "variations";
 
-function useDetailPanelHosts(enabled: boolean, recordId?: string) {
+function useDetailPanelHosts(enabled: boolean, recordId?: string | null) {
   const [tabHost, setTabHost] = React.useState<HTMLElement | null>(null);
   const [contentHost, setContentHost] = React.useState<HTMLElement | null>(null);
 
