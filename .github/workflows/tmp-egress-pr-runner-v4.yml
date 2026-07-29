@@ -1,0 +1,70 @@
+name: Run PostgREST egress hardening patch v4
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Execute complete embedded patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          app_path = Path('src/components/rdash/RDashApp.tsx')
+          app = app_path.read_text(encoding='utf-8')
+          app = app.replace(
+              'import { initAuthFetch, clearSessionToken, getSessionToken } from "@/lib/rdash/client-auth";',
+              'import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";\nimport { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";',
+          )
+          app, count = re.subn(
+              r'        const token = getSessionToken\(\);\n        fetch\("/api/health/summary", \{.*?            \.then\(\(summary: any\) => \{',
+              '        void loadWorkspaceHealth()\n            .then((summary: any) => {',
+              app,
+              count=1,
+              flags=re.S,
+          )
+          if count != 1:
+              raise SystemExit(f'RDashApp direct health request replacement count: {count}')
+          app_path.write_text(app, encoding='utf-8')
+
+          workflow = Path('.github/workflows/tmp-egress-hardening.yml').read_text(encoding='utf-8').splitlines()
+          start = next(i for i, line in enumerate(workflow) if line.strip() == '- name: Apply egress hardening')
+          run_line = next(i for i in range(start, len(workflow)) if workflow[i].strip() == 'run: |')
+          end = next(i for i in range(run_line + 1, len(workflow)) if workflow[i].strip() == '- name: Commit hardened implementation')
+          script = [line[10:] if line.startswith('          ') else line for line in workflow[run_line + 1:end]]
+          code = '\n'.join(script) + '\n'
+          code, removed = re.subn(
+              r'\n# Login welcome consumes the same shared request.*?\n# Successful writes invalidate the shared summary once, across all subscribers\.',
+              '\n# Successful writes invalidate the shared summary once, across all subscribers.',
+              code,
+              count=1,
+              flags=re.S,
+          )
+          if removed != 1:
+              raise SystemExit(f'Embedded RDashApp block removal count: {removed}')
+          exec(compile(code, 'embedded-egress-patch.py', 'exec'), {'__name__': '__main__'})
+          for name in ('tmp-egress-pr-runner-v2.yml', 'tmp-egress-pr-runner-v3.yml', 'tmp-egress-pr-runner-v4.yml'):
+              Path('.github/workflows', name).unlink(missing_ok=True)
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Eliminate repeated PostgREST workspace egress"
+          git push origin HEAD:${{ github.head_ref }}
