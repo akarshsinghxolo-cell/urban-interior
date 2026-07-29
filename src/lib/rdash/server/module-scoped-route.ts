@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  tryWorkspaceReadTargetForModule,
   workspaceReadTargetForModule,
   type WorkspaceReadTarget,
 } from "../workspace-read-scope";
@@ -12,6 +13,12 @@ export interface ModuleScopedRouteOptions {
   timingLabel: string;
 }
 
+const PRIVATE_JSON_HEADERS = Object.freeze({
+  "Cache-Control": "private, no-store, max-age=0",
+  Pragma: "no-cache",
+  "X-Content-Type-Options": "nosniff",
+});
+
 function requestedTarget(
   request: NextRequest,
   options: ModuleScopedRouteOptions,
@@ -19,23 +26,40 @@ function requestedTarget(
   const endpointTarget = workspaceReadTargetForModule(options.moduleId);
   const requestedModule = request.headers.get("x-uc-workspace-module")?.trim();
   if (!requestedModule) return endpointTarget;
+  if (requestedModule.length > 120) return null;
 
-  const target = workspaceReadTargetForModule(requestedModule);
-  return target.scope === endpointTarget.scope ? target : null;
+  const target = tryWorkspaceReadTargetForModule(requestedModule);
+  return target?.scope === endpointTarget.scope ? target : null;
 }
 
 function measuredJson(
   payload: Record<string, unknown>,
   headers: Record<string, string>,
+  status = 200,
 ): NextResponse {
   const body = JSON.stringify(payload);
   return new NextResponse(body, {
+    status,
     headers: {
-      "Content-Type": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
+      ...PRIVATE_JSON_HEADERS,
       ...headers,
       "X-UC-Response-Bytes": String(Buffer.byteLength(body)),
     },
   });
+}
+
+function errorJson(error: string, status: number, extraHeaders?: Record<string, string>) {
+  return NextResponse.json(
+    { error },
+    {
+      status,
+      headers: {
+        ...PRIVATE_JSON_HEADERS,
+        ...(extraHeaders || {}),
+      },
+    },
+  );
 }
 
 /** Shared authenticated response shape for dedicated module-scoped read APIs. */
@@ -47,30 +71,29 @@ export async function handleModuleScopedRead(
   try {
     user = await requireSession(request);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "UNAUTHORIZED";
-    return NextResponse.json(
-      { error: message === "UNAUTHORIZED" ? "Your session is missing or expired." : message },
-      { status: 401, headers: { "Cache-Control": "no-store" } },
-    );
+    if (error instanceof Error && error.message === "UNAUTHORIZED") {
+      return errorJson("Your session is missing or expired.", 401);
+    }
+    console.error(`[${options.timingLabel}] session verification failed:`, error);
+    return errorJson("The authentication service is temporarily unavailable.", 503, {
+      "Retry-After": "5",
+    });
   }
 
   const target = requestedTarget(request, options);
   if (!target) {
-    return NextResponse.json(
-      { error: "The requested module does not belong to this scoped endpoint." },
-      { status: 400, headers: { "Cache-Control": "no-store" } },
-    );
+    return errorJson("The requested module is invalid for this scoped endpoint.", 400);
   }
 
   try {
     const workspace = await getModuleScopedWorkspace(user, target);
     return measuredJson({
       revision: workspace.revision,
+      updatedAt: workspace.updatedAt,
       data: workspace.data,
       ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
     }, {
-      "Cache-Control": "no-store",
-      "Vary": "X-UC-Workspace-Module",
+      Vary: "Cookie, Authorization, X-UC-Workspace-Module",
       "X-UC-Read-Mode": workspace.scope,
       "X-UC-Read-Module": target.moduleId,
       "X-UC-Read-Strategy": workspace.readStrategy,
@@ -85,15 +108,19 @@ export async function handleModuleScopedRead(
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
     if (message.startsWith("FORBIDDEN:")) {
-      return NextResponse.json(
-        { error: message.slice("FORBIDDEN:".length) },
-        { status: 403, headers: { "Cache-Control": "no-store" } },
-      );
+      return errorJson(message.slice("FORBIDDEN:".length), 403);
+    }
+    if (message.startsWith("INVALID:")) {
+      return errorJson(message.slice("INVALID:".length), 400);
+    }
+    if (message === "READ_CONFLICT") {
+      return errorJson("Workspace data changed while it was loading. Please retry.", 409, {
+        "Retry-After": "1",
+      });
     }
     console.error(`[${options.timingLabel}] module-scoped read failed:`, error);
-    return NextResponse.json(
-      { error: `${options.errorLabel} data is temporarily unavailable.` },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
-    );
+    return errorJson(`${options.errorLabel} data is temporarily unavailable.`, 503, {
+      "Retry-After": "5",
+    });
   }
 }
