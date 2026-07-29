@@ -127,10 +127,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          response="$(vercel curl /api/internal/preview-read-plans \
-            --deployment "${{ steps.deploy.outputs.url }}" \
-            -sS \
-            -H "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
+          url="${{ steps.deploy.outputs.url }}"
+          response="$(vercel curl "$url/api/internal/preview-read-plans" \
+            --silent --show-error \
+            --header "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
             --token="$VERCEL_TOKEN")"
           echo "$response" | jq .
           echo "$response" | jq -e '.valid == true and .verificationMode == "isolated-preview-seed"' >/dev/null
@@ -140,43 +140,43 @@ jobs:
           set -euo pipefail
           url="${{ steps.deploy.outputs.url }}"
 
-          signin_status="$(vercel curl /signin \
-            --deployment "$url" \
-            -sS -o /tmp/signin.html -w '%{http_code}' \
+          signin_status="$(vercel curl "$url/signin" \
+            --silent --show-error \
+            --output /tmp/signin.html --write-out '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$signin_status" = "200"
           grep -qi "sign in" /tmp/signin.html
 
-          unauthenticated_status="$(vercel curl /api/bootstrap \
-            --deployment "$url" \
-            -sS -o /tmp/unauthenticated.json -w '%{http_code}' \
+          unauthenticated_status="$(vercel curl "$url/api/bootstrap" \
+            --silent --show-error \
+            --output /tmp/unauthenticated.json --write-out '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$unauthenticated_status" = "401"
 
-          session_status="$(vercel curl /api/internal/preview-session \
-            --deployment "$url" \
-            -sS -X POST -c /tmp/preview.cookies \
-            -H "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
-            -o /tmp/session.json -w '%{http_code}' \
+          session_status="$(vercel curl "$url/api/internal/preview-session" \
+            --silent --show-error --request POST \
+            --cookie-jar /tmp/preview.cookies \
+            --header "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
+            --output /tmp/session.json --write-out '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$session_status" = "200"
           jq -e '.authenticated == true and .next == "/workspace/tasks"' /tmp/session.json >/dev/null
 
-          bootstrap_status="$(vercel curl /api/bootstrap \
-            --deployment "$url" \
-            -sS -b /tmp/preview.cookies \
-            -D /tmp/bootstrap.headers \
-            -o /tmp/bootstrap.json -w '%{http_code}' \
+          bootstrap_status="$(vercel curl "$url/api/bootstrap" \
+            --silent --show-error \
+            --cookie /tmp/preview.cookies \
+            --dump-header /tmp/bootstrap.headers \
+            --output /tmp/bootstrap.json --write-out '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$bootstrap_status" = "200"
           jq -e '.readStrategy == "module-scoped" and (.revision | type == "number")' /tmp/bootstrap.json >/dev/null
 
-          tasks_status="$(vercel curl /api/tasks \
-            --deployment "$url" \
-            -sS -b /tmp/preview.cookies \
-            -H "X-UC-Workspace-Module: tasks" \
-            -D /tmp/tasks.headers \
-            -o /tmp/tasks.json -w '%{http_code}' \
+          tasks_status="$(vercel curl "$url/api/tasks" \
+            --silent --show-error \
+            --cookie /tmp/preview.cookies \
+            --header "X-UC-Workspace-Module: tasks" \
+            --dump-header /tmp/tasks.headers \
+            --output /tmp/tasks.json --write-out '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$tasks_status" = "200"
           grep -qi '^x-uc-read-strategy: module' /tmp/tasks.headers
@@ -186,10 +186,10 @@ jobs:
           test -n "$scope_collections"
           test "$collections" -lt "$scope_collections"
 
-          workspace_status="$(vercel curl /workspace/tasks \
-            --deployment "$url" \
-            -sS -b /tmp/preview.cookies \
-            -o /tmp/workspace.html -w '%{http_code}' \
+          workspace_status="$(vercel curl "$url/workspace/tasks" \
+            --silent --show-error \
+            --cookie /tmp/preview.cookies \
+            --output /tmp/workspace.html --write-out '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$workspace_status" = "200"
           grep -qi "Urban Castle" /tmp/workspace.html
