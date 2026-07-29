@@ -3,11 +3,12 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
-import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
-import { formatINR, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
-import { Repeat, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Package, Layers, Plus, Power, TrendingDown, TrendingUp, } from "lucide-react";
+import { MetricCard, StatusBadge } from "../primitives";
+import { formatINR, relativeDay, titleCase } from "@/lib/rdash/format";
+import { Repeat, RefreshCw, CheckCircle2, XCircle, AlertTriangle, Power, TrendingDown, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+
 export function RecurringTasksModule() {
     const db = useRDashStore((s) => s.db);
     const toggleRecurringTask = useRDashStore((s) => s.toggleRecurringTask);
@@ -41,6 +42,7 @@ export function RecurringTasksModule() {
     } }}><Power className="mr-1 h-3.5 w-3.5"/>{task.enabled ? "Disable" : "Enable"}</Button></div>)}</div>
     </div>);
 }
+
 export function LostClosedReviewModule() {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
@@ -99,81 +101,6 @@ export function LostClosedReviewModule() {
             })}
             </div>)}
         </div>
-      </div>
-    </div>);
-}
-interface ArticleVariant {
-    id: string;
-    article_id: string;
-    article_name: string;
-    variant_name: string;
-    rate_diff: number;
-    unit: string;
-    enabled: boolean;
-}
-const SEED_VARIANTS: ArticleVariant[] = [
-    { id: "av-001", article_id: "art-mod-ply", article_name: "BWP Plywood Modular", variant_name: "Marine grade (BWP+)", rate_diff: 180, unit: "sqft", enabled: true },
-    { id: "av-002", article_id: "art-mod-ply", article_name: "BWP Plywood Modular", variant_name: "Commercial (MR)", rate_diff: -220, unit: "sqft", enabled: true },
-    { id: "av-003", article_id: "art-mod-shutter", article_name: "Acrylic Shutter", variant_name: "Glossy finish", rate_diff: 40, unit: "sqft", enabled: true },
-    { id: "av-004", article_id: "art-mod-shutter", article_name: "Acrylic Shutter", variant_name: "Matte finish", rate_diff: 0, unit: "sqft", enabled: true },
-    { id: "av-005", article_id: "art-hw-hinge", article_name: "Soft-close Hinges", variant_name: "Stainless steel", rate_diff: 35, unit: "nos", enabled: true },
-    { id: "av-006", article_id: "art-hw-hinge", article_name: "Soft-close Hinges", variant_name: "Standard (non-soft)", rate_diff: -120, unit: "nos", enabled: false },
-    { id: "av-007", article_id: "art-paint-tex", article_name: "Texture Finish", variant_name: "Premium Italian texture", rate_diff: 22, unit: "sqft", enabled: true },
-    { id: "av-008", article_id: "art-ward-ply", article_name: "Wardrobe Carcass", variant_name: "Pre-laminated (both sides)", rate_diff: 95, unit: "sqft", enabled: true },
-];
-export function ArticleVariantsModule() {
-    const db = useRDashStore((s) => s.db);
-    const [variants, setVariants] = React.useState<ArticleVariant[]>(SEED_VARIANTS);
-    const toggle = (id: string) => setVariants((vs) => vs.map((v) => v.id === id ? { ...v, enabled: !v.enabled } : v));
-    const enabled = variants.filter((v) => v.enabled).length;
-    const byArticle = new Set(variants.map((v) => v.article_id));
-    return (<div className="flex flex-col gap-5">
-      <div className="flex items-center gap-2.5">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Layers className="h-5 w-5"/></span>
-        <div>
-          <h2 className="text-lg font-bold tracking-tight">Article Variants</h2>
-          <p className="text-xs text-muted-foreground">Material grade + finish options with rate differentials from base</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Total variants" value={variants.length} tone="primary" icon={<Layers className="h-4 w-4"/>}/>
-        <MetricCard label="Enabled" value={enabled} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
-        <MetricCard label="Articles covered" value={byArticle.size} tone="default" icon={<Package className="h-4 w-4"/>}/>
-        <MetricCard label="Avg rate diff" value={`±${Math.round(variants.reduce((n, v) => n + Math.abs(v.rate_diff), 0) / variants.length)}`} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
-      </div>
-
-      <div className="rd-stagger grid gap-3 lg:grid-cols-2">
-        {variants.map((v) => {
-            const article = db.master.articles.find((a) => a.id === v.article_id);
-            const finalRate = (article?.base_rate || 0) + v.rate_diff;
-            return (<div key={v.id} className={cn("rounded-[var(--panel-radius)] border bg-card p-4 shadow-card", v.enabled ? "border-border" : "border-dashed border-border opacity-70")}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-bold">{v.variant_name}</p>
-                  <p className="text-[11px] text-muted-foreground">{v.article_name}</p>
-                </div>
-                <StatusBadge label={v.enabled ? "Active" : "Disabled"} className={v.enabled ? "bg-success/10 text-success border-success/20" : "bg-muted text-muted-foreground border-border"}/>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                <div className="rounded-md bg-muted/40 p-2">
-                  <p className="text-[10px] uppercase text-muted-foreground">Base rate</p>
-                  <p className="font-mono font-medium">{formatINR(article?.base_rate || 0)}</p>
-                </div>
-                <div className="rounded-md bg-muted/40 p-2">
-                  <p className="text-[10px] uppercase text-muted-foreground">Diff</p>
-                  <p className={cn("font-mono font-medium", v.rate_diff > 0 ? "text-destructive" : v.rate_diff < 0 ? "text-success" : "text-muted-foreground")}>{v.rate_diff > 0 ? "+" : ""}{v.rate_diff}</p>
-                </div>
-                <div className="rounded-md bg-muted/40 p-2">
-                  <p className="text-[10px] uppercase text-muted-foreground">Final/{v.unit}</p>
-                  <p className="font-mono font-bold">{formatINR(finalRate)}</p>
-                </div>
-              </div>
-              <Button size="sm" variant="outline" className="mt-2" onClick={() => { toggle(v.id); toast.success("Variant toggled"); }}>
-                <Power className="mr-1 h-3.5 w-3.5"/> {v.enabled ? "Disable" : "Enable"}
-              </Button>
-            </div>);
-        })}
       </div>
     </div>);
 }
