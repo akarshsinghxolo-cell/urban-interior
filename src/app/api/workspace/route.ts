@@ -76,6 +76,17 @@ function userPayload(user: Awaited<ReturnType<typeof requireSession>>) {
   };
 }
 
+function workspaceJson(payload: Record<string, unknown>, headers: Record<string, string>) {
+  const body = JSON.stringify(payload);
+  const responseBytes = Buffer.byteLength(body);
+  return {
+    response: new NextResponse(body, {
+      headers: { "Content-Type": "application/json", ...headers, "X-UC-Response-Bytes": String(responseBytes) },
+    }),
+    responseBytes,
+  };
+}
+
 async function fullWorkspacePayload() {
   const startedAt = performance.now();
   const workspace = await getWorkspace(true);
@@ -117,19 +128,19 @@ export async function GET(request: NextRequest) {
           rowCount: workspace.rowCount,
           loadMs: workspace.loadMs,
         });
-        return NextResponse.json({
+        const measured = workspaceJson({
           revision: workspace.revision,
           data: workspace.data,
           ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
           user: userPayload(user),
-        }, {
-          headers: responseHeaders(workspace.mode, workspace.queryCount, workspace.loadMs, {
-            collectionCount: workspace.collectionCount,
-            rowCount: workspace.rowCount,
-            entityKind: workspace.entityKind,
-            entityId: workspace.entityId,
-          }),
-        });
+        }, responseHeaders(workspace.mode, workspace.queryCount, workspace.loadMs, {
+          collectionCount: workspace.collectionCount,
+          rowCount: workspace.rowCount,
+          entityKind: workspace.entityKind,
+          entityId: workspace.entityId,
+        }));
+        console.info("[workspace-response]", { mode: workspace.mode, responseBytes: measured.responseBytes });
+        return measured.response;
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (message.startsWith("FORBIDDEN:")) {
@@ -154,16 +165,16 @@ export async function GET(request: NextRequest) {
           loadMs: workspace.loadMs,
           ...(entity ? { fallbackFrom: `${entity.kind}-row` } : {}),
         });
-        return NextResponse.json({
+        const measured = workspaceJson({
           revision: workspace.revision,
           data: workspace.data,
           ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
           user: userPayload(user),
-        }, {
-          headers: responseHeaders(workspace.scope, workspace.queryCount, workspace.loadMs, {
-            collectionCount: workspace.collectionCount,
-          }),
-        });
+        }, responseHeaders(workspace.scope, workspace.queryCount, workspace.loadMs, {
+          collectionCount: workspace.collectionCount,
+        }));
+        console.info("[workspace-response]", { mode: workspace.scope, responseBytes: measured.responseBytes });
+        return measured.response;
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
         if (message.startsWith("FORBIDDEN:")) {
@@ -184,12 +195,14 @@ export async function GET(request: NextRequest) {
       queryCount: full.queryCount,
       loadMs: Math.round(full.loadMs * 100) / 100,
     });
-    return NextResponse.json({
+    const measured = workspaceJson({
       revision: full.workspace.revision,
       data: full.workspace.data,
       ...(full.workspace.rowVersions ? { rowVersions: full.workspace.rowVersions } : {}),
       user: userPayload(user),
-    }, { headers: responseHeaders(mode, full.queryCount, full.loadMs) });
+    }, responseHeaders(mode, full.queryCount, full.loadMs));
+    console.info("[workspace-response]", { mode, responseBytes: measured.responseBytes });
+    return measured.response;
   } catch (error) {
     console.error("[api/workspace] workspace load failed:", error);
     return NextResponse.json(

@@ -3,7 +3,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Compass, MapPin, Pin, Zap, Menu, Plus } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
-import { initAuthFetch, clearSessionToken, getSessionToken } from "@/lib/rdash/client-auth";
+import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
+import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -122,11 +123,7 @@ export function RDashApp() {
             duration: 4000,
         });
         // Then fetch the health summary and surface any warnings.
-        const token = getSessionToken();
-        fetch("/api/health/summary", {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-        })
-            .then((r) => (r.ok ? r.json() : null))
+        void loadWorkspaceHealth()
             .then((summary: any) => {
             if (!summary) return;
             const warnings: string[] = [];
