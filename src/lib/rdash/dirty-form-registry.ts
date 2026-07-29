@@ -9,7 +9,7 @@ export interface DirtyFormRegistration {
   discard: () => DirtyFormTaskResult;
 }
 
-interface DirtyFormEntry extends DirtyFormRegistration {}
+type DirtyFormEntry = DirtyFormRegistration;
 
 interface PendingNavigationInternal {
   id: string;
