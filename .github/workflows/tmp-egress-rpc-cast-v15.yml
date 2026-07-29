@@ -1,0 +1,54 @@
+name: Fix health RPC typing v15
+
+on:
+  pull_request:
+    branches: [main]
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Add narrow RPC type bridge
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("src/lib/rdash/server/workspace-health.ts")
+          text = path.read_text(encoding="utf-8")
+          old = '''  const { data, error } = await getSupabaseAdminClient().rpc("get_workspace_health_summary", {
+    p_workspace_id: workspaceId(),
+  });'''
+          new = '''  // The additive RPC is deployed by this PR's migration; generated database
+  // types will include it after the next schema type refresh. Keep the escape
+  // hatch local to this single call rather than weakening the admin client.
+  const healthRpcClient = getSupabaseAdminClient() as unknown as {
+    rpc: (
+      name: "get_workspace_health_summary",
+      args: { p_workspace_id: string },
+    ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
+  };
+  const { data, error } = await healthRpcClient.rpc("get_workspace_health_summary", {
+    p_workspace_id: workspaceId(),
+  });'''
+          if text.count(old) != 1:
+              raise SystemExit(f"Health RPC call marker count: {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          Path(".github/workflows/tmp-egress-rpc-cast-v15.yml").unlink(missing_ok=True)
+
+      - name: Commit RPC type bridge
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Bridge the additive health RPC type"
+          git push origin HEAD:feature/eliminate-postgrest-egress-leaks
