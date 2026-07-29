@@ -78,9 +78,9 @@ describe("workspace route access", () => {
     expect(workspaceRouteAccessDecision("customerDesk", "Sales / Telecaller", permissions).status).toBe("denied");
   });
 
-  test("canonicalizes compatibility module IDs before checking access", () => {
+  test("canonicalizes legacy module IDs before checking access", () => {
     const decision = workspaceRouteAccessDecision("contractors", "Field Staff", []);
-    expect(decision.moduleId).toBe("contractors");
+    expect(decision.moduleId).toBe("contractorDetail");
     expect(decision.permissionModule).toBe("contractors");
     expect(decision.status).toBe("denied");
   });
