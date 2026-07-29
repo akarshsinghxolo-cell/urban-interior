@@ -267,20 +267,28 @@ export function rowScopedEntityForTarget(
   return undefined;
 }
 
+function inferredReadStrategy(current: WorkspaceReadCoverage): WorkspaceReadStrategy {
+  if (current.strategy) return current.strategy;
+  if (current.mode === "unknown") return "unknown";
+  if (current.scope === "full" && current.mode === "full") return "full";
+  if (current.scope === "bootstrap" || current.mode === "bootstrap") return "bootstrap";
+  if (current.mode.endsWith("-row")) return "row";
+  if (current.mode === current.scope) return "scope";
+  return "unknown";
+}
+
 /**
  * A full snapshot covers every destination. Bootstrap contains authentication
  * and permission context only, so it never satisfies a module or entity read.
- * Scope snapshots cover every module assigned to the same scope. Exact-module
- * snapshots cover only the module that produced them. Customer/Site row
- * snapshots remain compatible only with the same record.
+ * Scope snapshots cover every module and record assigned to the same scope.
+ * Exact-module snapshots cover only the module that produced them. Customer and
+ * Site row snapshots remain compatible only with the same concrete record.
  */
 export function workspaceReadCoverageIsCompatible(
   current: WorkspaceReadCoverage,
   requested: WorkspaceReadTarget,
 ): boolean {
-  const strategy = current.strategy || (
-    current.mode === current.scope ? "scope" : "unknown"
-  );
+  const strategy = inferredReadStrategy(current);
   if (
     current.mode === "unknown" ||
     strategy === "unknown" ||
@@ -291,15 +299,16 @@ export function workspaceReadCoverageIsCompatible(
   if (current.scope !== requested.scope) return false;
 
   const entity = rowScopedEntityForTarget(requested);
-  if (strategy === "row" || current.mode.endsWith("-row")) {
+  if (strategy === "row") {
     return Boolean(
       entity &&
         current.entityKind === entity.kind &&
         current.entityId === entity.id,
     );
   }
-  if (entity) return false;
-  if (strategy === "module") return current.moduleId === requested.moduleId;
+  if (strategy === "module") {
+    return !entity && current.moduleId === requested.moduleId;
+  }
   return strategy === "scope";
 }
 
