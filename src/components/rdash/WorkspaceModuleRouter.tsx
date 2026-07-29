@@ -77,10 +77,7 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     const activeModuleId = route.id;
     const role = useRDashStore((state) => state.authUser?.role);
     const rawPermissions = useRDashStore((state) => (state.db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions || EMPTY_PERMISSIONS);
-    const access = React.useMemo(
-        () => workspaceRouteAccessDecision(activeModuleId, role, rawPermissions),
-        [activeModuleId, role, rawPermissions],
-    );
+    const access = workspaceRouteAccessDecision(activeModuleId, role, rawPermissions);
 
     if (access.status === "pending") return <ModuleLoadingFallback />;
     if (access.status === "denied") {
