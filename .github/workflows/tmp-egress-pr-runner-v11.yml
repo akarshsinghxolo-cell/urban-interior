@@ -1,0 +1,66 @@
+name: Run PostgREST egress hardening patch v11
+
+on:
+  pull_request:
+    branches: [main]
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Execute resilient core egress patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source_path = Path(".github/workflows/tmp-egress-hardening.yml")
+          lines = source_path.read_text(encoding="utf-8").splitlines()
+          run_line = next(i for i, line in enumerate(lines) if line.strip() == "run: |")
+          end = next(i for i in range(run_line + 1, len(lines)) if lines[i].strip() == "- name: Commit hardened implementation")
+          script = "\n".join(line[10:] if line.startswith("          ") else line for line in lines[run_line + 1:end]) + "\n"
+
+          def remove_section(text: str, start_marker: str, end_marker: str) -> str:
+              start = text.find(start_marker)
+              finish = text.find(end_marker, start + 1)
+              if start < 0 or finish < 0:
+                  raise SystemExit(f"Section markers missing: {start_marker!r} / {end_marker!r}")
+              return text[:start] + text[finish:]
+
+          script = remove_section(
+              script,
+              "# Login welcome consumes the same shared request rather than issuing its own fetch.",
+              "# Successful writes invalidate the shared summary once, across all subscribers.",
+          )
+          script = remove_section(
+              script,
+              "# Add response-byte telemetry to the two egress-heavy routes.",
+              "# Store the migration in the repository.",
+          )
+
+          exec(compile(script, "egress-hardening-core-v11.py", "exec"), {"__name__": "__main__"})
+          for name in (
+              "tmp-egress-pr-runner-v5.yml", "tmp-egress-pr-runner-v6.yml",
+              "tmp-egress-pr-runner-v7.yml", "tmp-egress-pr-runner-v8.yml",
+              "tmp-egress-pr-runner-v9.yml", "tmp-egress-pr-runner-v10.yml",
+              "tmp-egress-pr-runner-v11.yml",
+          ):
+              Path(".github/workflows", name).unlink(missing_ok=True)
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Eliminate repeated PostgREST workspace egress"
+          git push origin HEAD:feature/eliminate-postgrest-egress-leaks
