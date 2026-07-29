@@ -7,6 +7,7 @@ import {
 } from "./workspace-entity-routes";
 
 export type WorkspaceReadScope =
+  | "bootstrap"
   | "full"
   | "customer"
   | "site"
@@ -20,7 +21,7 @@ export type WorkspaceReadScope =
   | "master"
   | "reports"
   | "system";
-export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "full">;
+export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "bootstrap" | "full">;
 export type RowScopedWorkspaceEntityKind = Extract<
   WorkspaceEntityKind,
   "customer" | "site"
@@ -113,6 +114,7 @@ function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
 const MODULE_SCOPE_BY_ID = buildModuleScopeMap();
 
 const KNOWN_SCOPES = new Set<WorkspaceReadScope>([
+  "bootstrap",
   "full",
   "customer",
   "site",
@@ -228,14 +230,16 @@ export function rowScopedEntityForTarget(
 }
 
 /**
- * A full snapshot covers every destination. Collection-scoped snapshots cover
- * every module and entity URL assigned to the same scope. Customer/Site row
- * snapshots remain compatible only with the exact same canonical record.
+ * A full snapshot covers every destination. Bootstrap contains authentication
+ * and permission context only, so it never satisfies a module or entity read.
+ * Collection-scoped snapshots cover every module assigned to the same scope.
+ * Customer/Site row snapshots remain compatible only with the same record.
  */
 export function workspaceReadCoverageIsCompatible(
   current: WorkspaceReadCoverage,
   requested: WorkspaceReadTarget,
 ): boolean {
+  if (current.mode === "unknown" || current.scope === "bootstrap") return false;
   if (current.scope === "full") return true;
   if (current.scope !== requested.scope) return false;
   if (current.mode === current.scope) return true;
