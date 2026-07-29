@@ -33,7 +33,6 @@ export function RDashApp() {
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
-    const hydrateSecureWorkspace = useRDashStore((s) => s.hydrateSecureWorkspace);
     const quickAddOpen = useRDashStore((s) => s.quickAddOpen);
     const setQuickAddOpen = useRDashStore((s) => s.setQuickAddOpen);
     const readState = useWorkspaceReadState();
@@ -60,9 +59,6 @@ export function RDashApp() {
             const payload = await response.json().catch(() => ({})) as {
                 error?: string;
                 revision?: number;
-                data?: import("@/lib/rdash/types").RDashDatabase;
-                aggregateRevisions?: Record<string, number>;
-                rowVersions?: Record<string, number>;
                 user?: {
                     name: string;
                     email: string;
@@ -76,24 +72,17 @@ export function RDashApp() {
                 window.location.replace("/signin");
                 return;
             }
-            if (!response.ok || !payload.data || typeof payload.revision !== "number" || !payload.user)
+            if (!response.ok || typeof payload.revision !== "number" || !payload.user)
                 throw new Error(payload.error || "The secure workspace session could not be initialized.");
             if (!active)
                 return;
-            try {
-                hydrateSecureWorkspace({
-                    db: payload.data,
-                    revision: payload.revision,
-                    user: payload.user,
-                    aggregateRevisions: payload.aggregateRevisions,
-                    rowVersions: payload.rowVersions,
-                });
-                workspaceReadState.recordResponse(response);
-            }
-            catch (hydrateError) {
-                console.error("[RDashApp] workspace bootstrap failed:", hydrateError);
-                throw hydrateError;
-            }
+            useRDashStore.setState({
+                authUser: payload.user,
+                serverRevision: payload.revision,
+                workspaceSyncStatus: "idle",
+                workspaceSyncError: null,
+            });
+            workspaceReadState.recordResponse(response);
             setSecureBootstrapReady(true);
         })
             .catch((error) => {
@@ -101,7 +90,7 @@ export function RDashApp() {
                 setSecureWorkspaceError(error instanceof Error ? error.message : "The secure workspace session could not be initialized.");
         });
         return () => { active = false; };
-    }, [hydrateSecureWorkspace]);
+    }, []);
 
     // ── Login welcome + workspace health banner ─────────────────────────
     // Once the secure workspace is hydrated, fetch /api/health/summary once
