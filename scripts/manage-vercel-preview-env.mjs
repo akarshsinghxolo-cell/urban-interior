@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { execFileSync } from "node:child_process";
+
 const mode = process.argv[2];
 if (mode !== "enable" && mode !== "restore") {
   console.error("Usage: manage-vercel-preview-env.mjs <enable|restore>");
@@ -8,196 +10,108 @@ if (mode !== "enable" && mode !== "restore") {
 
 const token = String(process.env.VERCEL_TOKEN || "").trim();
 const projectId = String(process.env.VERCEL_PROJECT_ID || "").trim();
-const teamId = String(process.env.VERCEL_ORG_ID || "").trim();
-if (!token || !projectId || !teamId) {
-  console.error("VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_ORG_ID are required.");
+const teamSlug = String(process.env.VERCEL_TEAM_SLUG || "akash264").trim();
+if (!token || !projectId || !teamSlug) {
+  console.error("VERCEL_TOKEN, VERCEL_PROJECT_ID and VERCEL_TEAM_SLUG are required.");
   process.exit(2);
 }
 
-const managedKeys = new Set([
-  "SUPABASE_URL",
-  "SUPABASE_PUBLISHABLE_KEY",
-  "SUPABASE_ANON_KEY",
-  "SUPABASE_SECRET_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "SUPABASE_JWKS_URL",
-  "UC_SESSION_SECRET",
-  "UC_WORKSPACE_ID",
-]);
-
-const apiBase = "https://api.vercel.com";
-const headers = {
-  Authorization: `Bearer ${token}`,
-  "Content-Type": "application/json",
-};
-
-function targets(row) {
-  if (Array.isArray(row.target)) return row.target.filter(Boolean);
-  if (typeof row.target === "string" && row.target) return [row.target];
-  return [];
-}
-
-function linkedToProject(row) {
-  const projects = Array.isArray(row.projectId)
-    ? row.projectId
-    : Array.isArray(row.projectIds)
-      ? row.projectIds
-      : [];
-  return projects.includes(projectId);
-}
-
-async function api(path, init = {}) {
-  const response = await fetch(`${apiBase}${path}`, {
-    ...init,
-    headers: { ...headers, ...(init.headers || {}) },
-  });
-  const text = await response.text();
-  let body = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
-  }
-  if (!response.ok) {
-    const detail = body && typeof body === "object"
-      ? body.error?.message || body.message || JSON.stringify(body)
-      : String(body || response.statusText);
-    throw new Error(`${init.method || "GET"} ${path} failed (${response.status}): ${detail}`);
-  }
-  return body;
-}
-
-async function listProjectEnvironmentVariables() {
-  const body = await api(`/v10/projects/${encodeURIComponent(projectId)}/env?teamId=${encodeURIComponent(teamId)}`);
-  const rows = Array.isArray(body) ? body : body?.envs;
-  if (!Array.isArray(rows)) throw new Error("Vercel returned no project environment-variable list.");
-  return rows;
-}
-
-async function listSharedEnvironmentVariables() {
-  const body = await api(
-    `/v1/env?teamId=${encodeURIComponent(teamId)}&projectId=${encodeURIComponent(projectId)}`,
-  );
-  const rows = Array.isArray(body) ? body : body?.data;
-  if (!Array.isArray(rows)) throw new Error("Vercel returned no shared environment-variable list.");
-  return rows.filter(linkedToProject);
-}
-
-async function deleteProjectVariable(id) {
-  await api(
-    `/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`,
-    { method: "DELETE" },
-  );
-}
-
-async function patchProjectTargets(id, nextTargets) {
-  await api(
-    `/v9/projects/${encodeURIComponent(projectId)}/env/${encodeURIComponent(id)}?teamId=${encodeURIComponent(teamId)}`,
+function vercel(args, options = {}) {
+  return execFileSync(
+    "vercel",
+    [...args, "--token", token, "--scope", teamSlug],
     {
-      method: "PATCH",
-      body: JSON.stringify({ target: nextTargets }),
+      encoding: "utf8",
+      stdio: options.inherit ? "inherit" : ["ignore", "pipe", "pipe"],
+      env: process.env,
     },
   );
 }
 
-async function patchSharedTargets(rows, transform) {
-  const updates = {};
-  for (const row of rows) {
-    updates[row.id] = { target: transform(targets(row)) };
-  }
-  if (!Object.keys(updates).length) return;
-  await api(`/v1/env?teamId=${encodeURIComponent(teamId)}`, {
-    method: "PATCH",
-    body: JSON.stringify({ updates }),
-  });
+function objects(value, output = []) {
+  if (!value || typeof value !== "object") return output;
+  if (!Array.isArray(value)) output.push(value);
+  for (const child of Object.values(value)) objects(child, output);
+  return output;
 }
 
-function assertRequiredKeys(rows) {
-  const productionKeys = new Set(
-    rows
-      .filter((row) => managedKeys.has(row.key) && targets(row).includes("production"))
-      .map((row) => row.key),
-  );
-  const missing = [];
-  if (!productionKeys.has("SUPABASE_URL")) missing.push("SUPABASE_URL");
-  if (!productionKeys.has("SUPABASE_PUBLISHABLE_KEY") && !productionKeys.has("SUPABASE_ANON_KEY")) {
-    missing.push("Supabase publishable key");
-  }
-  if (!productionKeys.has("SUPABASE_SECRET_KEY") && !productionKeys.has("SUPABASE_SERVICE_ROLE_KEY")) {
-    missing.push("Supabase server key");
-  }
-  if (!productionKeys.has("UC_SESSION_SECRET")) missing.push("UC_SESSION_SECRET");
-  if (missing.length) throw new Error(`Production is missing required variables: ${missing.join(", ")}`);
+function text(value) {
+  return typeof value === "string" ? value.toLowerCase() : "";
 }
 
-async function enable() {
-  let projectRows = await listProjectEnvironmentVariables();
-
-  // Earlier failed attempts created Preview-only project variables containing
-  // encrypted CLI references. Production originally had no Preview Supabase
-  // variables, so remove only those managed Preview-only entries.
-  const previewOnly = projectRows.filter((row) => {
-    const rowTargets = targets(row);
-    return managedKeys.has(row.key) &&
-      rowTargets.includes("preview") &&
-      !rowTargets.includes("production");
-  });
-  for (const row of previewOnly) await deleteProjectVariable(row.id);
-
-  projectRows = await listProjectEnvironmentVariables();
-  const sharedRows = await listSharedEnvironmentVariables();
-  const allRows = [...projectRows, ...sharedRows];
-  assertRequiredKeys(allRows);
-
-  const projectProductionRows = projectRows.filter((row) =>
-    managedKeys.has(row.key) && targets(row).includes("production"),
-  );
-  const sharedProductionRows = sharedRows.filter((row) =>
-    managedKeys.has(row.key) && targets(row).includes("production"),
-  );
-
-  for (const row of projectProductionRows) {
-    await patchProjectTargets(row.id, [...new Set([...targets(row), "preview"])]);
+function candidateName(row) {
+  for (const key of ["name", "resourceName", "slug", "resourceSlug"]) {
+    if (typeof row[key] === "string" && row[key].trim()) return row[key].trim();
   }
-  await patchSharedTargets(
-    sharedProductionRows,
-    (rowTargets) => [...new Set([...rowTargets, "preview"])],
-  );
-
-  console.log(
-    `Temporarily enabled ${projectProductionRows.length} project and ${sharedProductionRows.length} shared variable record(s) for Preview.`,
-  );
+  return "";
 }
 
-async function restore() {
-  const [projectRows, sharedRows] = await Promise.all([
-    listProjectEnvironmentVariables(),
-    listSharedEnvironmentVariables(),
+function resourceScore(row) {
+  const providerText = [
+    row.integration,
+    row.integrationSlug,
+    row.integrationName,
+    row.provider,
+    row.product,
+    row.productSlug,
+    row.marketplaceIntegration,
+  ].map((entry) => {
+    if (typeof entry === "string") return entry;
+    if (entry && typeof entry === "object") return JSON.stringify(entry);
+    return "";
+  }).join(" ").toLowerCase();
+  const rowText = JSON.stringify(row).toLowerCase();
+  let score = 0;
+  if (providerText.includes("supabase")) score += 10;
+  if (rowText.includes("supabase")) score += 3;
+  if (candidateName(row)) score += 2;
+  if (row.projectId === projectId || row.project?.id === projectId) score += 2;
+  return score;
+}
+
+function discoverSupabaseResource() {
+  const output = vercel([
+    "integration",
+    "list",
+    "--all",
+    "--format=json",
   ]);
-  const projectSharedRows = projectRows.filter((row) => {
-    const rowTargets = targets(row);
-    return managedKeys.has(row.key) &&
-      rowTargets.includes("production") &&
-      rowTargets.includes("preview");
-  });
-  const teamSharedRows = sharedRows.filter((row) => {
-    const rowTargets = targets(row);
-    return managedKeys.has(row.key) &&
-      rowTargets.includes("production") &&
-      rowTargets.includes("preview");
-  });
-
-  for (const row of projectSharedRows) {
-    await patchProjectTargets(row.id, targets(row).filter((target) => target !== "preview"));
+  let parsed;
+  try {
+    parsed = JSON.parse(output);
+  } catch (error) {
+    throw new Error(`Could not parse Vercel integration resource list: ${error instanceof Error ? error.message : String(error)}`);
   }
-  await patchSharedTargets(
-    teamSharedRows,
-    (rowTargets) => rowTargets.filter((target) => target !== "preview"),
-  );
 
-  console.log(
-    `Restored ${projectSharedRows.length} project and ${teamSharedRows.length} shared variable record(s) to non-Preview targets.`,
-  );
+  const candidates = objects(parsed)
+    .map((row) => ({ row, name: candidateName(row), score: resourceScore(row) }))
+    .filter((candidate) => candidate.name && candidate.score >= 5)
+    .sort((left, right) => right.score - left.score);
+  if (!candidates.length) {
+    throw new Error("No Supabase marketplace resource is visible to the connected Vercel team.");
+  }
+  return candidates[0].name;
 }
 
-await (mode === "enable" ? enable() : restore());
+function connect(resourceName, environments) {
+  const args = [
+    "integration",
+    "resource",
+    "connect",
+    resourceName,
+    projectId,
+    "--yes",
+    "--format=json",
+  ];
+  for (const environment of environments) args.push("--environment", environment);
+  vercel(args, { inherit: true });
+}
+
+const resourceName = discoverSupabaseResource();
+if (mode === "enable") {
+  connect(resourceName, ["production", "preview"]);
+  console.log(`Enabled Preview for Supabase resource ${resourceName}.`);
+} else {
+  connect(resourceName, ["production"]);
+  console.log(`Restored Supabase resource ${resourceName} to Production-only.`);
+}
