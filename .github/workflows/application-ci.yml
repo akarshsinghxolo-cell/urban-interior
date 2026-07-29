@@ -97,28 +97,30 @@ jobs:
           }
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
-      - name: Temporarily share Production variables with Preview
-        run: node scripts/manage-vercel-preview-env.mjs enable
       - name: Pull Preview build settings
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
       - name: Build Vercel preview
         run: vercel build --token="$VERCEL_TOKEN"
-      - name: Deploy Vercel preview
+      - name: Deploy isolated Vercel preview
         id: deploy
         shell: bash
         run: |
           set -euo pipefail
           verify_token="$(openssl rand -hex 32)"
+          session_secret="$(openssl rand -base64 48 | tr -d '\n')"
           echo "::add-mask::$verify_token"
+          echo "::add-mask::$session_secret"
           echo "UC_PREVIEW_VERIFY_TOKEN=$verify_token" >> "$GITHUB_ENV"
           url="$(vercel deploy --prebuilt --archive=tgz \
+            --env "UC_PREVIEW_DEMO=1" \
             --env "UC_PREVIEW_VERIFY_TOKEN=$verify_token" \
+            --env "UC_SESSION_SECRET=$session_secret" \
             --token="$VERCEL_TOKEN" | tail -n 1)"
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Preview URL: $url"
-          echo "### Scoped-read preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Isolated scoped-read preview" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"
-      - name: Verify deployed runtime read plans
+      - name: Verify deployed module plans
         shell: bash
         run: |
           set -euo pipefail
@@ -128,24 +130,63 @@ jobs:
             -H "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
             --token="$VERCEL_TOKEN")"
           echo "$response" | jq .
-          echo "$response" | jq -e '.valid == true' >/dev/null
-      - name: Verify public and protected routes
+          echo "$response" | jq -e '.valid == true and .verificationMode == "isolated-preview-seed"' >/dev/null
+      - name: Verify authenticated bootstrap and Tasks flow
         shell: bash
         run: |
           set -euo pipefail
+          url="${{ steps.deploy.outputs.url }}"
+
           signin_status="$(vercel curl /signin \
-            --deployment "${{ steps.deploy.outputs.url }}" \
+            --deployment "$url" \
             -sS -o /tmp/signin.html -w '%{http_code}' \
             --token="$VERCEL_TOKEN")"
           test "$signin_status" = "200"
           grep -qi "sign in" /tmp/signin.html
 
-          bootstrap_status="$(vercel curl /api/bootstrap \
-            --deployment "${{ steps.deploy.outputs.url }}" \
-            -sS -o /tmp/bootstrap.json -w '%{http_code}' \
+          unauthenticated_status="$(vercel curl /api/bootstrap \
+            --deployment "$url" \
+            -sS -o /tmp/unauthenticated.json -w '%{http_code}' \
             --token="$VERCEL_TOKEN")"
-          test "$bootstrap_status" = "401"
-          jq -e '.error | type == "string"' /tmp/bootstrap.json >/dev/null
-      - name: Restore Production-only variable targets
-        if: always()
-        run: node scripts/manage-vercel-preview-env.mjs restore
+          test "$unauthenticated_status" = "401"
+
+          session_status="$(vercel curl /api/internal/preview-session \
+            --deployment "$url" \
+            -sS -X POST -c /tmp/preview.cookies \
+            -H "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
+            -o /tmp/session.json -w '%{http_code}' \
+            --token="$VERCEL_TOKEN")"
+          test "$session_status" = "200"
+          jq -e '.authenticated == true and .next == "/workspace/tasks"' /tmp/session.json >/dev/null
+
+          bootstrap_status="$(vercel curl /api/bootstrap \
+            --deployment "$url" \
+            -sS -b /tmp/preview.cookies \
+            -D /tmp/bootstrap.headers \
+            -o /tmp/bootstrap.json -w '%{http_code}' \
+            --token="$VERCEL_TOKEN")"
+          test "$bootstrap_status" = "200"
+          jq -e '.readStrategy == "module-scoped" and (.revision | type == "number")' /tmp/bootstrap.json >/dev/null
+
+          tasks_status="$(vercel curl /api/tasks \
+            --deployment "$url" \
+            -sS -b /tmp/preview.cookies \
+            -H "X-UC-Workspace-Module: tasks" \
+            -D /tmp/tasks.headers \
+            -o /tmp/tasks.json -w '%{http_code}' \
+            --token="$VERCEL_TOKEN")"
+          test "$tasks_status" = "200"
+          grep -qi '^x-uc-read-strategy: module' /tmp/tasks.headers
+          collections="$(awk -F': ' 'tolower($1)=="x-uc-read-collections" {gsub("\r", "", $2); print $2}' /tmp/tasks.headers)"
+          scope_collections="$(awk -F': ' 'tolower($1)=="x-uc-read-scope-collections" {gsub("\r", "", $2); print $2}' /tmp/tasks.headers)"
+          test -n "$collections"
+          test -n "$scope_collections"
+          test "$collections" -lt "$scope_collections"
+
+          workspace_status="$(vercel curl /workspace/tasks \
+            --deployment "$url" \
+            -sS -b /tmp/preview.cookies \
+            -o /tmp/workspace.html -w '%{http_code}' \
+            --token="$VERCEL_TOKEN")"
+          test "$workspace_status" = "200"
+          grep -qi "Urban Castle" /tmp/workspace.html
