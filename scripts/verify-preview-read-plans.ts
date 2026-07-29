@@ -20,6 +20,10 @@ async function verify(moduleId: string) {
   const target = workspaceReadTargetForModule(moduleId);
   const workspace = await getModuleScopedWorkspace(verifier, target);
   const meta = metadata(workspace.data);
+  const savedCollections = Math.max(0, workspace.scopeCollectionCount - workspace.collectionCount);
+  const collectionReductionPercent = workspace.scopeCollectionCount > 0
+    ? Math.round((savedCollections / workspace.scopeCollectionCount) * 100)
+    : 0;
   return {
     moduleId,
     scope: workspace.scope,
@@ -27,6 +31,8 @@ async function verify(moduleId: string) {
     queries: workspace.queryCount,
     collections: workspace.collectionCount,
     scopeCollections: workspace.scopeCollectionCount,
+    savedCollections,
+    collectionReductionPercent,
     limitedCollections: workspace.limitedCollections,
     projectedBootstrap: Boolean(meta._workspace_bootstrap_projection),
     loadedModule: meta._workspace_read_module,
@@ -34,7 +40,7 @@ async function verify(moduleId: string) {
 }
 
 const tasks = await verify("tasks");
-if (tasks.strategy !== "module" || tasks.collections >= tasks.scopeCollections) {
+if (tasks.strategy !== "module" || tasks.savedCollections <= 0) {
   throw new Error(`Tasks did not use a narrower module plan: ${JSON.stringify(tasks)}`);
 }
 if (!tasks.projectedBootstrap) {
@@ -47,7 +53,7 @@ if (vendorRates.limitedCollections["master.vendorRateHistories"] !== 100) {
 }
 
 const finance = await verify("financeDesk");
-if (finance.strategy !== "scope") {
+if (finance.strategy !== "scope" || finance.savedCollections !== 0) {
   throw new Error(`Finance dashboard must retain its complete scope: ${JSON.stringify(finance)}`);
 }
 
