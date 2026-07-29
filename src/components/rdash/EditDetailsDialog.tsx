@@ -1,17 +1,31 @@
 "use client";
+
 import * as React from "react";
-import { useRDashStore } from "@/lib/rdash/store";
-import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
-import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Pencil } from "lucide-react";
 import { toast } from "sonner";
-import type { Task, Followup, Visit, WorkOrder } from "@/lib/rdash/types";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
+import { useRDashStore } from "@/lib/rdash/store";
+import type { Followup, Task, Visit, WorkOrder } from "@/lib/rdash/types";
 
 export type EditableEntityType = "task" | "followup" | "visit" | "workOrder";
 
@@ -61,7 +75,10 @@ const TITLE_MAP: Record<EditableEntityType, string> = {
   workOrder: "Edit Work Order",
 };
 
-function formValuesForEntity(type: EditableEntityType, entity: EditableEntity): EditFormValues {
+function formValuesForEntity(
+  type: EditableEntityType,
+  entity: EditableEntity,
+): EditFormValues {
   const values = { ...EMPTY_EDIT_FORM };
   if (type === "task") {
     const task = entity as Task;
@@ -108,7 +125,10 @@ function formValuesForEntity(type: EditableEntityType, entity: EditableEntity): 
   };
 }
 
-function formFingerprint(type: EditableEntityType, values: EditFormValues): string {
+function formFingerprint(
+  type: EditableEntityType,
+  values: EditFormValues,
+): string {
   if (type === "task") {
     return JSON.stringify([
       values.title,
@@ -132,22 +152,32 @@ function formFingerprint(type: EditableEntityType, values: EditFormValues): stri
   ]);
 }
 
-export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetailsDialogProps) {
-  const db = useRDashStore((s) => s.db);
-  const updateTask = useRDashStore((s) => s.updateTask);
-  const updateFollowup = useRDashStore((s) => s.updateFollowup);
-  const reassignVisit = useRDashStore((s) => s.reassignVisit);
-  const rescheduleVisit = useRDashStore((s) => s.rescheduleVisit);
-  const updateJob = useRDashStore((s) => s.updateJob);
+export function EditDetailsDialog({
+  type,
+  entityId,
+  open,
+  onClose,
+}: EditDetailsDialogProps) {
+  const db = useRDashStore((state) => state.db);
+  const updateTask = useRDashStore((state) => state.updateTask);
+  const updateFollowup = useRDashStore((state) => state.updateFollowup);
+  const reassignVisit = useRDashStore((state) => state.reassignVisit);
+  const rescheduleVisit = useRDashStore((state) => state.rescheduleVisit);
+  const updateJob = useRDashStore((state) => state.updateJob);
 
   const entity = React.useMemo(() => {
     if (!entityId) return null;
-    if (type === "task") return db.tasks.find((t) => t.id === entityId) || null;
-    if (type === "followup") return db.followups.find((f) => f.id === entityId) || null;
-    if (type === "visit") return db.visits.find((v) => v.id === entityId) || null;
-    if (type === "workOrder") return db.workOrders.find((w) => w.id === entityId) || null;
-    return null;
-  }, [entityId, type, db.tasks, db.followups, db.visits, db.workOrders]);
+    if (type === "task") {
+      return db.tasks.find((task) => task.id === entityId) || null;
+    }
+    if (type === "followup") {
+      return db.followups.find((followup) => followup.id === entityId) || null;
+    }
+    if (type === "visit") {
+      return db.visits.find((visit) => visit.id === entityId) || null;
+    }
+    return db.workOrders.find((workOrder) => workOrder.id === entityId) || null;
+  }, [db.followups, db.tasks, db.visits, db.workOrders, entityId, type]);
 
   const [title, setTitle] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -162,6 +192,9 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
   const [startDate, setStartDate] = React.useState("");
   const [expectedEnd, setExpectedEnd] = React.useState("");
   const baselineRef = React.useRef<EditFormValues>({ ...EMPTY_EDIT_FORM });
+  const [baselineFingerprint, setBaselineFingerprint] = React.useState(() =>
+    formFingerprint(type, EMPTY_EDIT_FORM),
+  );
   const formId = `edit-details:${type}:${entityId || "unknown"}`;
 
   const currentValues = React.useMemo<EditFormValues>(() => ({
@@ -178,18 +211,18 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
     startDate,
     expectedEnd,
   }), [
-    title,
-    description,
-    priority,
-    dueDate,
     assigneeId,
-    status,
-    notes,
-    locationName,
-    scheduledAt,
     contractorId,
-    startDate,
+    description,
+    dueDate,
     expectedEnd,
+    locationName,
+    notes,
+    priority,
+    scheduledAt,
+    startDate,
+    status,
+    title,
   ]);
 
   const applyValues = React.useCallback((values: EditFormValues) => {
@@ -207,30 +240,52 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
     setExpectedEnd(values.expectedEnd);
   }, []);
 
-  const staff = db.master.staff.filter((member) => member.status === "active");
+  const replaceBaseline = React.useCallback((values: EditFormValues) => {
+    baselineRef.current = values;
+    setBaselineFingerprint(formFingerprint(type, values));
+  }, [type]);
+
+  const staff = React.useMemo(
+    () => db.master.staff.filter((member) => member.status === "active"),
+    [db.master.staff],
+  );
   const contractors = db.master.contractors;
 
   const persistChanges = React.useCallback((): boolean => {
     if (!entityId || !entity) return false;
+    const normalizedTitle = title.trim();
+    if (type !== "visit" && !normalizedTitle) {
+      toast.error("Title is required");
+      return false;
+    }
+    if (type === "workOrder" && startDate && expectedEnd && expectedEnd < startDate) {
+      toast.error("Expected end date cannot be before the start date");
+      return false;
+    }
+
     try {
       if (type === "task") {
         const patch: Partial<Task> = {
-          title: title.trim(),
+          title: normalizedTitle,
           description: description.trim(),
           priority: priority as Task["priority"],
           due_date: dueDate,
         };
         if (assigneeId) {
           const member = staff.find((entry) => entry.id === assigneeId);
+          if (!member) {
+            toast.error("Choose a valid active staff member");
+            return false;
+          }
           patch.assignee_id = assigneeId;
-          patch.assignee_name = member?.name || "";
-          patch.assigned_to = member?.name || "";
+          patch.assignee_name = member.name;
+          patch.assigned_to = member.name;
         }
         updateTask(entityId, patch);
         toast.success("Task updated");
       } else if (type === "followup") {
         const patch: Partial<Followup> = {
-          title: title.trim(),
+          title: normalizedTitle,
           notes: notes.trim(),
           due_date: dueDate,
         };
@@ -239,31 +294,38 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
       } else if (type === "visit") {
         const visit = entity as Visit;
         if (scheduledAt) {
-          const iso = scheduledAt.length === 16 ? scheduledAt + ":00" : scheduledAt;
+          const iso = scheduledAt.length === 16 ? `${scheduledAt}:00` : scheduledAt;
           rescheduleVisit(entityId, iso);
         }
         if (assigneeId && assigneeId !== visit.staff_id) {
+          const member = staff.find((entry) => entry.id === assigneeId);
+          if (!member) {
+            toast.error("Choose a valid active staff member");
+            return false;
+          }
           reassignVisit(entityId, { type: "staff", id: assigneeId });
         }
         if (locationName.trim() && locationName !== visit.location_name) {
           toast.info("Visit location is linked to its Site or Vendor and was not changed here.");
         }
         toast.success("Visit updated");
-      } else if (type === "workOrder") {
-        const patch: Partial<WorkOrder> = {
-          title: title.trim(),
-        };
+      } else {
+        const patch: Partial<WorkOrder> = { title: normalizedTitle };
         if (contractorId) {
           const contractor = contractors.find((entry) => entry.id === contractorId);
+          if (!contractor) {
+            toast.error("Choose a valid contractor");
+            return false;
+          }
           patch.contractor_id = contractorId;
-          patch.contractor_name = contractor?.name || "";
+          patch.contractor_name = contractor.name;
         }
         if (startDate) patch.start_date = startDate;
         if (expectedEnd) patch.expected_end = expectedEnd;
         updateJob(entityId, patch);
         toast.success("Work Order updated");
       }
-      baselineRef.current = currentValues;
+      replaceBaseline(currentValues);
       dirtyFormRegistry.markClean(formId);
       return true;
     } catch (error) {
@@ -285,6 +347,7 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
     notes,
     priority,
     reassignVisit,
+    replaceBaseline,
     rescheduleVisit,
     scheduledAt,
     staff,
@@ -297,7 +360,7 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
   ]);
 
   const dirty = open && Boolean(entity) &&
-    formFingerprint(type, currentValues) !== formFingerprint(type, baselineRef.current);
+    formFingerprint(type, currentValues) !== baselineFingerprint;
 
   useDirtyFormRegistration({
     id: formId,
@@ -313,10 +376,10 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
   React.useEffect(() => {
     if (!open || !entity) return;
     const values = formValuesForEntity(type, entity as EditableEntity);
-    baselineRef.current = values;
+    replaceBaseline(values);
     applyValues(values);
     dirtyFormRegistry.markClean(formId);
-  }, [open, entityId, type, applyValues, formId]);
+  }, [applyValues, entityId, formId, open, replaceBaseline, type]);
   // `entity` is intentionally omitted: its reference changes on every database
   // mutation and would otherwise reset an in-progress edit form.
 
@@ -341,35 +404,51 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
 
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label htmlFor="edit-title">{type === "visit" ? "Location name" : type === "followup" ? "Subject" : "Title"}</Label>
+            <Label htmlFor="edit-title">
+              {type === "visit" ? "Location name" : type === "followup" ? "Subject" : "Title"}
+            </Label>
             <Input
               id="edit-title"
               value={type === "visit" ? locationName : title}
-              onChange={(event) => type === "visit" ? setLocationName(event.target.value) : setTitle(event.target.value)}
+              onChange={(event) => type === "visit"
+                ? setLocationName(event.target.value)
+                : setTitle(event.target.value)}
               placeholder="Enter title"
               readOnly={type === "visit"}
             />
           </div>
 
-          {type === "task" && (
+          {type === "task" ? (
             <div className="space-y-1.5">
               <Label htmlFor="edit-desc">Description</Label>
-              <Textarea id="edit-desc" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Enter description" rows={3} />
+              <Textarea
+                id="edit-desc"
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder="Enter description"
+                rows={3}
+              />
             </div>
-          )}
+          ) : null}
 
-          {type === "followup" && (
+          {type === "followup" ? (
             <div className="space-y-1.5">
               <Label htmlFor="edit-notes">Notes</Label>
-              <Textarea id="edit-notes" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Enter notes" rows={3} />
+              <Textarea
+                id="edit-notes"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Enter notes"
+                rows={3}
+              />
             </div>
-          )}
+          ) : null}
 
-          {type === "task" && (
+          {type === "task" ? (
             <div className="space-y-1.5">
-              <Label>Priority</Label>
+              <Label htmlFor="edit-priority">Priority</Label>
               <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger id="edit-priority"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="low">Low</SelectItem>
                   <SelectItem value="medium">Medium</SelectItem>
@@ -378,67 +457,96 @@ export function EditDetailsDialog({ type, entityId, open, onClose }: EditDetails
                 </SelectContent>
               </Select>
             </div>
-          )}
+          ) : null}
 
-          {(type === "task" || type === "followup") && (
+          {type === "task" || type === "followup" ? (
             <div className="space-y-1.5">
               <Label htmlFor="edit-due">Due date</Label>
-              <Input id="edit-due" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+              <Input
+                id="edit-due"
+                type="date"
+                value={dueDate}
+                onChange={(event) => setDueDate(event.target.value)}
+              />
             </div>
-          )}
+          ) : null}
 
-          {type === "visit" && (
+          {type === "visit" ? (
             <div className="space-y-1.5">
               <Label htmlFor="edit-scheduled">Scheduled date &amp; time</Label>
-              <Input id="edit-scheduled" type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} />
+              <Input
+                id="edit-scheduled"
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(event) => setScheduledAt(event.target.value)}
+              />
             </div>
-          )}
+          ) : null}
 
-          {(type === "task" || type === "visit") && staff.length > 0 && (
+          {(type === "task" || type === "visit") && staff.length > 0 ? (
             <div className="space-y-1.5">
-              <Label>Assigned staff</Label>
+              <Label htmlFor="edit-assigned-staff">Assigned staff</Label>
               <Select value={assigneeId} onValueChange={setAssigneeId}>
-                <SelectTrigger><SelectValue placeholder="Select staff" /></SelectTrigger>
+                <SelectTrigger id="edit-assigned-staff">
+                  <SelectValue placeholder="Select staff" />
+                </SelectTrigger>
                 <SelectContent>
                   {staff.map((member) => (
-                    <SelectItem key={member.id} value={member.id}>{member.name} ({member.role})</SelectItem>
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.name} ({member.role})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
+          ) : null}
 
-          {type === "workOrder" && contractors.length > 0 && (
+          {type === "workOrder" && contractors.length > 0 ? (
             <div className="space-y-1.5">
-              <Label>Contractor</Label>
+              <Label htmlFor="edit-contractor">Contractor</Label>
               <Select value={contractorId} onValueChange={setContractorId}>
-                <SelectTrigger><SelectValue placeholder="Select contractor" /></SelectTrigger>
+                <SelectTrigger id="edit-contractor">
+                  <SelectValue placeholder="Select contractor" />
+                </SelectTrigger>
                 <SelectContent>
                   {contractors.map((contractor) => (
-                    <SelectItem key={contractor.id} value={contractor.id}>{contractor.name} ({contractor.trade})</SelectItem>
+                    <SelectItem key={contractor.id} value={contractor.id}>
+                      {contractor.name} ({contractor.trade})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
+          ) : null}
 
-          {type === "workOrder" && (
+          {type === "workOrder" ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-start">Start date</Label>
-                <Input id="edit-start" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+                <Input
+                  id="edit-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="edit-end">Expected end</Label>
-                <Input id="edit-end" type="date" value={expectedEnd} onChange={(event) => setExpectedEnd(event.target.value)} />
+                <Input
+                  id="edit-end"
+                  type="date"
+                  value={expectedEnd}
+                  min={startDate || undefined}
+                  onChange={(event) => setExpectedEnd(event.target.value)}
+                />
               </div>
             </div>
-          )}
+          ) : null}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save changes</Button>
+          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Button type="button" onClick={handleSave}>Save changes</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
