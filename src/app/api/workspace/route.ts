@@ -19,6 +19,8 @@ import {
 
 export const runtime = "nodejs";
 
+const FULL_WORKSPACE_FALLBACK_ENABLED = process.env.UC_FULL_WORKSPACE_FALLBACK === "1";
+
 function requestWorkspaceTarget(request: NextRequest): WorkspaceReadTarget {
   const explicitPath = request.headers.get("x-uc-workspace-path")?.trim();
   if (explicitPath) return workspaceReadTargetForPath(explicitPath);
@@ -32,7 +34,7 @@ function requestWorkspaceTarget(request: NextRequest): WorkspaceReadTarget {
       const url = new URL(referer);
       return workspaceReadTargetForPath(`${url.pathname}${url.search}`);
     } catch {
-      // Fall through to the full compatibility read.
+      // Fall through to the bounded Workdesk read.
     }
   }
   return workspaceReadTargetForModule("workdesk");
@@ -112,6 +114,7 @@ export async function GET(request: NextRequest) {
   }
 
   const target = requestWorkspaceTarget(request);
+  let scopedFailure: unknown = null;
   try {
     const entity = rowScopedEntityForTarget(target);
     if (MODULE_SCOPED_READS_ENABLED && ENTITY_SCOPED_READS_ENABLED && entity) {
@@ -149,7 +152,8 @@ export async function GET(request: NextRequest) {
             { status: 403, headers: { "Cache-Control": "no-store", "X-UC-Read-Mode": `${entity.kind}-row` } },
           );
         }
-        console.error("[workspace-read] entity read failed; using collection-scoped compatibility read:", error);
+        scopedFailure = error;
+        console.error("[workspace-read] entity read failed; trying the collection-scoped graph:", error);
       }
     }
 
@@ -183,8 +187,32 @@ export async function GET(request: NextRequest) {
             { status: 403, headers: { "Cache-Control": "no-store", "X-UC-Read-Mode": target.scope } },
           );
         }
-        console.error("[workspace-read] scoped read failed; using full compatibility read:", error);
+        scopedFailure = error;
+        console.error("[workspace-read] scoped read failed:", error);
       }
+    }
+
+    if (
+      MODULE_SCOPED_READS_ENABLED &&
+      target.scope !== "full" &&
+      !FULL_WORKSPACE_FALLBACK_ENABLED
+    ) {
+      console.error("[workspace-read] full fallback blocked", {
+        moduleId: target.moduleId,
+        scope: target.scope,
+        cause: scopedFailure instanceof Error ? scopedFailure.message : "unknown",
+      });
+      return NextResponse.json(
+        { error: "The requested workspace scope is temporarily unavailable. A full-workspace fallback was not attempted." },
+        {
+          status: 503,
+          headers: {
+            "Cache-Control": "no-store",
+            "X-UC-Read-Mode": target.scope,
+            "X-UC-Full-Fallback": "blocked",
+          },
+        },
+      );
     }
 
     const full = await fullWorkspacePayload();
