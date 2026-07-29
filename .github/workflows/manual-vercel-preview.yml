@@ -2,6 +2,9 @@ name: Manual Vercel Preview
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - agent/integrate-hidden-workflows
 
 concurrency:
   group: manual-vercel-preview
