@@ -100,29 +100,10 @@ jobs:
           }
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
-      - name: Copy required production variables to Preview
+      - name: Remove accidental Preview environment overrides
         shell: bash
         run: |
           set -euo pipefail
-          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-          set -a
-          source .vercel/.env.production.local
-          set +a
-
-          test -n "${SUPABASE_URL:-}" || { echo "Production SUPABASE_URL is missing." >&2; exit 1; }
-          test -n "${SUPABASE_PUBLISHABLE_KEY:-${SUPABASE_ANON_KEY:-}}" || { echo "Production Supabase publishable key is missing." >&2; exit 1; }
-          test -n "${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}" || { echo "Production Supabase server key is missing." >&2; exit 1; }
-          test -n "${UC_SESSION_SECRET:-}" || { echo "Production UC_SESSION_SECRET is missing." >&2; exit 1; }
-
-          copy_preview_env() {
-            local name="$1"
-            local value="${!name:-}"
-            if [ -n "$value" ]; then
-              printf '%s\n' "$value" | vercel env add "$name" preview --force --token="$VERCEL_TOKEN" >/dev/null
-              echo "Configured ${name} for Preview."
-            fi
-          }
-
           for name in \
             SUPABASE_URL \
             SUPABASE_PUBLISHABLE_KEY \
@@ -131,27 +112,54 @@ jobs:
             SUPABASE_SERVICE_ROLE_KEY \
             UC_SESSION_SECRET \
             UC_WORKSPACE_ID; do
-            copy_preview_env "$name"
+            vercel env rm "$name" preview --yes --token="$VERCEL_TOKEN" >/dev/null 2>&1 || true
           done
-      - name: Pull preview environment
-        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
       - name: Install application dependencies
         run: bun install --frozen-lockfile
-      - name: Verify live Supabase read plans
-        shell: bash
-        run: |
-          set -euo pipefail
-          set -a
-          source .vercel/.env.preview.local
-          set +a
-          bun run scripts/verify-preview-read-plans.ts
+      - name: Verify production Supabase read plans
+        run: vercel env run -e production -- bun run scripts/verify-preview-read-plans.ts
+      - name: Pull Preview build settings
+        run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
       - name: Build Vercel preview
         run: vercel build --token="$VERCEL_TOKEN"
-      - name: Deploy Vercel preview
+      - name: Deploy Vercel preview with secure runtime variables
+        id: deploy
         shell: bash
         run: |
           set -euo pipefail
-          url="$(vercel deploy --prebuilt --archive=tgz --token="$VERCEL_TOKEN")"
+          verify_token="$(openssl rand -hex 32)"
+          echo "::add-mask::$verify_token"
+          echo "UC_PREVIEW_VERIFY_TOKEN=$verify_token" >> "$GITHUB_ENV"
+          url="$(vercel env run -e production -- bash scripts/deploy-preview-with-runtime-env.sh | tail -n 1)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Preview URL: $url"
           echo "### Scoped-read preview" >> "$GITHUB_STEP_SUMMARY"
           echo "$url" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify deployed runtime read plans
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(vercel curl /api/internal/preview-read-plans \
+            --deployment "${{ steps.deploy.outputs.url }}" \
+            -sS \
+            -H "x-uc-preview-verifier: $UC_PREVIEW_VERIFY_TOKEN" \
+            --token="$VERCEL_TOKEN")"
+          echo "$response" | jq .
+          echo "$response" | jq -e '.valid == true' >/dev/null
+      - name: Verify public and protected routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          signin_status="$(vercel curl /signin \
+            --deployment "${{ steps.deploy.outputs.url }}" \
+            -sS -o /tmp/signin.html -w '%{http_code}' \
+            --token="$VERCEL_TOKEN")"
+          test "$signin_status" = "200"
+          grep -qi "sign in" /tmp/signin.html
+
+          bootstrap_status="$(vercel curl /api/bootstrap \
+            --deployment "${{ steps.deploy.outputs.url }}" \
+            -sS -o /tmp/bootstrap.json -w '%{http_code}' \
+            --token="$VERCEL_TOKEN")"
+          test "$bootstrap_status" = "401"
+          jq -e '.error | type == "string"' /tmp/bootstrap.json >/dev/null
