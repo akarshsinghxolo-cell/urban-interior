@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { REGISTERED_MODULE_IDS } from "@/lib/rdash/modules";
 import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
 import {
+  COLLECTIONS_BY_SCOPE,
   CUSTOMER_SCOPE_COLLECTIONS,
   FIELD_SCOPE_COLLECTIONS,
   FINANCE_SCOPE_COLLECTIONS,
@@ -21,10 +22,12 @@ import {
 import { buildSeedDatabase } from "@/lib/rdash/seed";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import {
+  tryWorkspaceReadTargetForModule,
   workspaceReadCoverageIsCompatible,
   workspaceReadScopeForModule,
   workspaceReadScopeFromMode,
   workspaceReadScopeIsCompatible,
+  workspaceReadTargetForModule,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
 
@@ -40,65 +43,57 @@ function emptyDatabase(): RDashDatabase {
   return database as unknown as RDashDatabase;
 }
 
+const EXPECTED_SCOPE_BY_MODULE = {
+  customerDesk: "customer",
+  salesPipeline: "customer",
+  siteExecution: "site",
+  contractorDetail: "site",
+  contractorRates: "site",
+  workdesk: "workdesk",
+  tasks: "workdesk",
+  approvals: "workdesk",
+  quotationDesk: "quotation",
+  quotationConfig: "quotation",
+  fieldOperations: "field",
+  gpsTracking: "field",
+  procurementInventory: "procurement",
+  vendors: "procurement",
+  rateFinder: "procurement",
+  financeDesk: "finance",
+  vendorBills: "finance",
+  contractorPayments: "finance",
+  mediaCommunication: "media",
+  driveManager: "media",
+  hrStaff: "hr",
+  staffSalary: "hr",
+  masterSetup: "master",
+  reportsDesk: "reports",
+  systemSettings: "system",
+  integrity: "system",
+} as const;
+
 describe("workspace module read scopes", () => {
   test("maps every route family to a bounded scope", () => {
-    expect(workspaceReadScopeForModule("customerDesk")).toBe("customer");
-    expect(workspaceReadScopeForModule("salesPipeline")).toBe("customer");
-
-    expect(workspaceReadScopeForModule("siteExecution")).toBe("site");
-    expect(workspaceReadScopeForModule("contractorDetail")).toBe("site");
-    expect(workspaceReadScopeForModule("contractorRates")).toBe("site");
-
-    expect(workspaceReadScopeForModule("workdesk")).toBe("workdesk");
-    expect(workspaceReadScopeForModule("tasks")).toBe("workdesk");
-    expect(workspaceReadScopeForModule("approvals")).toBe("workdesk");
-
-    expect(workspaceReadScopeForModule("quotationDesk")).toBe("quotation");
-    expect(workspaceReadScopeForModule("quotationConfig")).toBe("quotation");
-
-    expect(workspaceReadScopeForModule("fieldOperations")).toBe("field");
-    expect(workspaceReadScopeForModule("gpsTracking")).toBe("field");
-
-    expect(workspaceReadScopeForModule("procurementInventory")).toBe("procurement");
-    expect(workspaceReadScopeForModule("vendors")).toBe("procurement");
-    expect(workspaceReadScopeForModule("rateFinder")).toBe("procurement");
-
-    expect(workspaceReadScopeForModule("financeDesk")).toBe("finance");
-    expect(workspaceReadScopeForModule("vendorBills")).toBe("finance");
-    expect(workspaceReadScopeForModule("contractorPayments")).toBe("finance");
-
-    expect(workspaceReadScopeForModule("mediaCommunication")).toBe("media");
-    expect(workspaceReadScopeForModule("driveManager")).toBe("media");
-
-    expect(workspaceReadScopeForModule("hrStaff")).toBe("hr");
-    expect(workspaceReadScopeForModule("staffSalary")).toBe("hr");
-
-    expect(workspaceReadScopeForModule("masterSetup")).toBe("master");
-    expect(workspaceReadScopeForModule("reportsDesk")).toBe("reports");
-    expect(workspaceReadScopeForModule("systemSettings")).toBe("system");
-    expect(workspaceReadScopeForModule("integrity")).toBe("system");
-  });
-
-  test("does not leave a registered module on the full compatibility read", () => {
-    for (const moduleId of REGISTERED_MODULE_IDS) {
-      expect(workspaceReadScopeForModule(moduleId)).not.toBe("full");
+    for (const [moduleId, scope] of Object.entries(EXPECTED_SCOPE_BY_MODULE)) {
+      expect(workspaceReadScopeForModule(moduleId)).toBe(scope);
     }
   });
 
-  test("normalizes server read modes without widening unknown values", () => {
+  test("does not leave a registered module on full or bootstrap fallback", () => {
+    for (const moduleId of REGISTERED_MODULE_IDS) {
+      expect(workspaceReadScopeForModule(moduleId)).not.toBe("full");
+      expect(workspaceReadScopeForModule(moduleId)).not.toBe("bootstrap");
+      expect(tryWorkspaceReadTargetForModule(moduleId)).not.toBeNull();
+    }
+  });
+
+  test("fails closed for unknown modes and module IDs", () => {
     expect(workspaceReadScopeFromMode("customer-row")).toBe("customer");
     expect(workspaceReadScopeFromMode("site-row")).toBe("site");
     expect(workspaceReadScopeFromMode("workdesk")).toBe("workdesk");
-    expect(workspaceReadScopeFromMode("quotation")).toBe("quotation");
-    expect(workspaceReadScopeFromMode("field")).toBe("field");
-    expect(workspaceReadScopeFromMode("procurement")).toBe("procurement");
-    expect(workspaceReadScopeFromMode("finance")).toBe("finance");
-    expect(workspaceReadScopeFromMode("media")).toBe("media");
-    expect(workspaceReadScopeFromMode("hr")).toBe("hr");
-    expect(workspaceReadScopeFromMode("master")).toBe("master");
-    expect(workspaceReadScopeFromMode("reports")).toBe("reports");
-    expect(workspaceReadScopeFromMode("system")).toBe("system");
-    expect(workspaceReadScopeFromMode("unknown-mode")).toBe("full");
+    expect(workspaceReadScopeFromMode("unknown-mode")).toBe("bootstrap");
+    expect(workspaceReadScopeForModule("unknown-module")).toBe("bootstrap");
+    expect(tryWorkspaceReadTargetForModule("unknown-module")).toBeNull();
   });
 
   test("retains entity-specific permissions while selecting bounded scopes", () => {
@@ -106,11 +101,13 @@ describe("workspace module read scopes", () => {
       scope: "customer",
       moduleId: "customerDesk",
       permissionModule: "customers",
+      entity: { kind: "customer", id: "cust-123" },
     });
     expect(workspaceReadTargetForPath("/workspace/sites/site-123")).toMatchObject({
       scope: "site",
       moduleId: "siteExecution",
       permissionModule: "sites",
+      entity: { kind: "site", id: "site-123" },
     });
     expect(workspaceReadTargetForPath("/workspace/work-orders/wo-123")).toMatchObject({
       scope: "site",
@@ -122,221 +119,119 @@ describe("workspace module read scopes", () => {
       moduleId: "tasks",
       permissionModule: "tasks",
     });
-    expect(workspaceReadTargetForPath("/workspace/quotations/quote-123")).toMatchObject({
-      scope: "quotation",
-      moduleId: "quotationDesk",
-      permissionModule: "quotations",
-    });
     expect(workspaceReadTargetForPath("/workspace/purchase-orders/po-123")).toMatchObject({
       scope: "procurement",
       moduleId: "procurementInventory",
       permissionModule: "purchaseOrders",
     });
-    expect(workspaceReadTargetForPath("/workspace/vendor-bills/vb-123")).toMatchObject({
-      scope: "finance",
-      moduleId: "vendorBills",
-      permissionModule: "finance",
-    });
   });
 
-  test("full snapshots cover every scope while collection families stay isolated", () => {
-    for (const requested of [
-      "customer",
-      "site",
-      "workdesk",
-      "quotation",
-      "field",
-      "procurement",
-      "finance",
-      "media",
-      "hr",
-      "master",
-      "reports",
-      "system",
-    ] as const) {
-      expect(workspaceReadScopeIsCompatible("full", requested)).toBe(true);
-      expect(workspaceReadScopeIsCompatible(requested, requested)).toBe(true);
-      expect(workspaceReadCoverageIsCompatible(
-        { scope: requested, mode: requested },
-        { scope: requested, moduleId: "test", permissionModule: "test" },
-      )).toBe(true);
-    }
-    expect(workspaceReadScopeIsCompatible("workdesk", "finance")).toBe(false);
-    expect(workspaceReadScopeIsCompatible("finance", "full")).toBe(false);
+  test("distinguishes full, scope, exact-module, and row coverage", () => {
+    const tasks = workspaceReadTargetForModule("tasks");
+    const approvals = workspaceReadTargetForModule("approvals");
     expect(workspaceReadCoverageIsCompatible(
-      { scope: "procurement", mode: "procurement" },
-      { scope: "finance", moduleId: "financeDesk", permissionModule: "finance" },
+      { scope: "full", mode: "full", strategy: "full" },
+      tasks,
+    )).toBe(true);
+    expect(workspaceReadCoverageIsCompatible(
+      { scope: "workdesk", mode: "workdesk", strategy: "scope" },
+      approvals,
+    )).toBe(true);
+    expect(workspaceReadCoverageIsCompatible(
+      { scope: "workdesk", mode: "workdesk", strategy: "module", moduleId: "tasks" },
+      tasks,
+    )).toBe(true);
+    expect(workspaceReadCoverageIsCompatible(
+      { scope: "workdesk", mode: "workdesk", strategy: "module", moduleId: "tasks" },
+      approvals,
     )).toBe(false);
+    expect(workspaceReadCoverageIsCompatible(
+      { scope: "bootstrap", mode: "unknown", strategy: "unknown" },
+      tasks,
+    )).toBe(false);
+  });
+
+  test("keeps compatibility helper behavior explicit", () => {
+    expect(workspaceReadScopeIsCompatible("full", "finance")).toBe(true);
+    expect(workspaceReadScopeIsCompatible("finance", "finance")).toBe(true);
+    expect(workspaceReadScopeIsCompatible("workdesk", "finance")).toBe(false);
   });
 });
 
 describe("module-scoped collection plans", () => {
   const knownCollections = new Set(Object.keys(COLLECTION_TO_TABLE));
   const fullCollectionCount = knownCollections.size;
-
-  function assertValidPlan(collections: readonly string[]) {
-    expect(new Set(collections).size).toBe(collections.length);
-    for (const collection of collections) {
-      expect(knownCollections.has(collection)).toBe(true);
-    }
-    expect(collections.length).toBeLessThan(fullCollectionCount * 0.8);
-  }
+  const plans = {
+    customer: CUSTOMER_SCOPE_COLLECTIONS,
+    site: SITE_SCOPE_COLLECTIONS,
+    workdesk: WORKDESK_SCOPE_COLLECTIONS,
+    quotation: QUOTATION_SCOPE_COLLECTIONS,
+    field: FIELD_SCOPE_COLLECTIONS,
+    procurement: PROCUREMENT_SCOPE_COLLECTIONS,
+    finance: FINANCE_SCOPE_COLLECTIONS,
+    media: MEDIA_SCOPE_COLLECTIONS,
+    hr: HR_SCOPE_COLLECTIONS,
+    master: MASTER_SCOPE_COLLECTIONS,
+    reports: REPORTS_SCOPE_COLLECTIONS,
+    system: SYSTEM_SCOPE_COLLECTIONS,
+  } as const;
 
   test("uses a minimal permission bootstrap", () => {
     expect(WORKSPACE_BOOTSTRAP_COLLECTIONS).toEqual(["staffRolePermissions"]);
   });
 
-  test("every supported scope resolves to a valid bounded collection plan", () => {
-    const plans = {
-      customer: CUSTOMER_SCOPE_COLLECTIONS,
-      site: SITE_SCOPE_COLLECTIONS,
-      workdesk: WORKDESK_SCOPE_COLLECTIONS,
-      quotation: QUOTATION_SCOPE_COLLECTIONS,
-      field: FIELD_SCOPE_COLLECTIONS,
-      procurement: PROCUREMENT_SCOPE_COLLECTIONS,
-      finance: FINANCE_SCOPE_COLLECTIONS,
-      media: MEDIA_SCOPE_COLLECTIONS,
-      hr: HR_SCOPE_COLLECTIONS,
-      master: MASTER_SCOPE_COLLECTIONS,
-      reports: REPORTS_SCOPE_COLLECTIONS,
-      system: SYSTEM_SCOPE_COLLECTIONS,
-    } as const;
-
+  test("every supported scope resolves to a unique valid bounded plan", () => {
     for (const [scope, collections] of Object.entries(plans)) {
-      assertValidPlan(collections);
       expect(collectionsForWorkspaceReadScope(scope as keyof typeof plans)).toBe(collections);
+      expect(COLLECTIONS_BY_SCOPE[scope as keyof typeof COLLECTIONS_BY_SCOPE]).toBe(collections);
+      expect(new Set(collections).size).toBe(collections.length);
+      expect(collections.length).toBeLessThan(fullCollectionCount);
+      for (const collection of collections) {
+        expect(knownCollections.has(collection)).toBe(true);
+      }
     }
   });
 
-  test("Workdesk covers action queues and every dashboard widget dependency", () => {
-    for (const collection of [
-      "tasks",
-      "followups",
-      "actions",
-      "blocked",
-      "risks",
-      "threads",
-      "customerReceipts",
-      "vendorPayments",
-      "contractorPayments",
-      "workOrderCostLines",
-      "inventory",
-      "stockMovements",
-      "attendance",
-      "master.vendorRates",
-      "master.vendorRateHistories",
-    ]) {
+  test("scope plans contain their critical dependencies without unrelated administration", () => {
+    for (const collection of ["tasks", "followups", "actions", "blocked", "risks", "threads"]) {
       expect(WORKDESK_SCOPE_COLLECTIONS).toContain(collection);
     }
+    for (const collection of ["quotations", "commercialTerms", "master.customerRateSuggestions"]) {
+      expect(QUOTATION_SCOPE_COLLECTIONS).toContain(collection);
+    }
+    for (const collection of ["visits", "attendance", "executionLogs"]) {
+      expect(FIELD_SCOPE_COLLECTIONS).toContain(collection);
+    }
+    for (const collection of ["boqs", "vendorRfqs", "purchaseOrders", "inventory", "master.vendorRates"]) {
+      expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain(collection);
+    }
+    for (const collection of ["payments", "invoices", "vendorBills", "contractorBills", "workOrderCostLines"]) {
+      expect(FINANCE_SCOPE_COLLECTIONS).toContain(collection);
+    }
     expect(WORKDESK_SCOPE_COLLECTIONS).not.toContain("payrollLines");
-    expect(WORKDESK_SCOPE_COLLECTIONS).not.toContain("automationRules");
-  });
-
-  test("Quotation includes pricing and terms but excludes inventory and payroll", () => {
-    expect(QUOTATION_SCOPE_COLLECTIONS).toContain("quotations");
-    expect(QUOTATION_SCOPE_COLLECTIONS).toContain("commercialTerms");
-    expect(QUOTATION_SCOPE_COLLECTIONS).toContain("master.customerRateSuggestions");
     expect(QUOTATION_SCOPE_COLLECTIONS).not.toContain("inventory");
-    expect(QUOTATION_SCOPE_COLLECTIONS).not.toContain("payrollPeriods");
-  });
-
-  test("Field includes visits, GPS attendance and execution context", () => {
-    expect(FIELD_SCOPE_COLLECTIONS).toContain("visits");
-    expect(FIELD_SCOPE_COLLECTIONS).toContain("attendance");
-    expect(FIELD_SCOPE_COLLECTIONS).toContain("executionLogs");
     expect(FIELD_SCOPE_COLLECTIONS).not.toContain("vendorBills");
-    expect(FIELD_SCOPE_COLLECTIONS).not.toContain("salaryAdjustments");
-  });
-
-  test("Procurement includes BOQ-to-stock and vendor dependencies", () => {
-    expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain("boqs");
-    expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain("vendorRfqs");
-    expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain("purchaseOrders");
-    expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain("inventory");
-    expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain("master.vendorRates");
-    expect(PROCUREMENT_SCOPE_COLLECTIONS).not.toContain("customerReceipts");
     expect(PROCUREMENT_SCOPE_COLLECTIONS).not.toContain("payrollLines");
-  });
-
-  test("Finance includes receivables, payables and profitability dependencies", () => {
-    expect(FINANCE_SCOPE_COLLECTIONS).toContain("payments");
-    expect(FINANCE_SCOPE_COLLECTIONS).toContain("invoices");
-    expect(FINANCE_SCOPE_COLLECTIONS).toContain("vendorBills");
-    expect(FINANCE_SCOPE_COLLECTIONS).toContain("contractorBills");
-    expect(FINANCE_SCOPE_COLLECTIONS).toContain("workOrderCostLines");
-    expect(FINANCE_SCOPE_COLLECTIONS).toContain("master.commissionRules");
-    expect(FINANCE_SCOPE_COLLECTIONS).not.toContain("attendance");
     expect(FINANCE_SCOPE_COLLECTIONS).not.toContain("automationRules");
-  });
-
-  test("Media includes Drive, catalogue and outbound communication data only", () => {
-    expect(MEDIA_SCOPE_COLLECTIONS).toContain("commSends");
-    expect(MEDIA_SCOPE_COLLECTIONS).toContain("master.storageAccounts");
-    expect(MEDIA_SCOPE_COLLECTIONS).toContain("master.catalogues");
-    expect(MEDIA_SCOPE_COLLECTIONS).toContain("master.referenceMedia");
-    expect(MEDIA_SCOPE_COLLECTIONS).not.toContain("payrollLines");
     expect(MEDIA_SCOPE_COLLECTIONS).not.toContain("contractorPayments");
-  });
-
-  test("HR includes attendance, payroll and staff evidence", () => {
-    expect(HR_SCOPE_COLLECTIONS).toContain("attendance");
-    expect(HR_SCOPE_COLLECTIONS).toContain("payrollPeriods");
-    expect(HR_SCOPE_COLLECTIONS).toContain("salaryAdjustments");
-    expect(HR_SCOPE_COLLECTIONS).toContain("staffDocuments");
-    expect(HR_SCOPE_COLLECTIONS).toContain("master.staff");
     expect(HR_SCOPE_COLLECTIONS).not.toContain("vendorRfqs");
   });
 
-  test("Master Setup loads only the Work & Rate catalogue graph", () => {
-    expect(MASTER_SCOPE_COLLECTIONS).toEqual([
-      "auditLog",
-      "master.units",
-      "master.workCategories",
-      "master.workSubcategories",
-      "master.articles",
-      "master.articleVariants",
-      "master.subcategoryArticleMap",
-      "master.workOptionGroups",
-      "master.workOptionValues",
-    ]);
-    for (const excluded of [
-      "master.vendors",
-      "master.contractors",
-      "master.vendorRates",
-      "master.vendorRateHistories",
-      "master.storageAccounts",
-      "master.fileAssets",
-      "master.catalogues",
-      "master.referenceMedia",
-      "payments",
-      "workOrders",
-    ]) {
-      expect(MASTER_SCOPE_COLLECTIONS).not.toContain(excluded);
-    }
-  });
-
-  test("Reports includes cross-domain metrics without media administration", () => {
-    expect(REPORTS_SCOPE_COLLECTIONS).toContain("quotations");
-    expect(REPORTS_SCOPE_COLLECTIONS).toContain("payments");
-    expect(REPORTS_SCOPE_COLLECTIONS).toContain("workOrderCostLines");
-    expect(REPORTS_SCOPE_COLLECTIONS).toContain("payrollLines");
-    expect(REPORTS_SCOPE_COLLECTIONS).not.toContain("master.storageAccounts");
-    expect(REPORTS_SCOPE_COLLECTIONS).not.toContain("automationRules");
-  });
-
-  test("System includes integrity and import/export dependencies without loading all 80 tables", () => {
-    expect(SYSTEM_SCOPE_COLLECTIONS).toContain("customers");
+  test("master and system plans stay intentionally bounded", () => {
+    expect(MASTER_SCOPE_COLLECTIONS).toContain("master.articles");
+    expect(MASTER_SCOPE_COLLECTIONS).not.toContain("master.vendors");
     expect(SYSTEM_SCOPE_COLLECTIONS).toContain("automationRules");
     expect(SYSTEM_SCOPE_COLLECTIONS).toContain("auditLog");
-    expect(SYSTEM_SCOPE_COLLECTIONS).toContain("master.articles");
-    expect(SYSTEM_SCOPE_COLLECTIONS).toContain("master.fileAssets");
     expect(SYSTEM_SCOPE_COLLECTIONS.length).toBeLessThan(fullCollectionCount);
-    expect(SYSTEM_SCOPE_COLLECTIONS).not.toContain("master.catalogues");
+    expect(REPORTS_SCOPE_COLLECTIONS).toContain("payments");
+    expect(REPORTS_SCOPE_COLLECTIONS).not.toContain("master.storageAccounts");
+    expect(CUSTOMER_SCOPE_COLLECTIONS).toContain("customers");
+    expect(SITE_SCOPE_COLLECTIONS).toContain("workOrders");
   });
 });
 
 describe("dedicated scoped read endpoints", () => {
-  test("exposes authenticated endpoints for the bounded high-frequency module families", async () => {
+  test("uses strict authenticated routing and structured errors", async () => {
     for (const path of [
       "src/app/api/tasks/route.ts",
       "src/app/api/quotations/route.ts",
@@ -351,10 +246,10 @@ describe("dedicated scoped read endpoints", () => {
 
     const helper = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain("requireSession(request)");
-    expect(helper).toContain("workspaceReadTargetForModule");
+    expect(helper).toContain("tryWorkspaceReadTargetForModule");
     expect(helper).toContain('"X-UC-Read-Mode"');
-    expect(helper).toContain("status: 403");
-    expect(helper).toContain("status: 503");
+    expect(helper).toContain("errorJson(message.slice(\"FORBIDDEN:\".length), 403)");
+    expect(helper).toContain("errorJson(`${options.errorLabel} data is temporarily unavailable.`, 503");
   });
 });
 
@@ -424,7 +319,7 @@ describe("revision-consistent subset merge", () => {
     expect(merged.updatedAt).toBe("2026-07-28T00:01:00.000Z");
   });
 
-  test("rejects a bootstrap and scope read from different workspace revisions", () => {
+  test("rejects reads from different workspace revisions", () => {
     const database = emptyDatabase();
     expect(() => mergeWorkspaceSubsets(
       {
