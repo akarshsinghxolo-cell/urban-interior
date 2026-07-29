@@ -73,8 +73,13 @@ export async function handleModuleScopedRead(
       "Vary": "X-UC-Workspace-Module",
       "X-UC-Read-Mode": workspace.scope,
       "X-UC-Read-Module": target.moduleId,
+      "X-UC-Read-Strategy": workspace.readStrategy,
       "X-UC-Read-Queries": String(workspace.queryCount),
       "X-UC-Read-Collections": String(workspace.collectionCount),
+      "X-UC-Read-Scope-Collections": String(workspace.scopeCollectionCount),
+      "X-UC-Read-Limited-Collections": Object.entries(workspace.limitedCollections)
+        .map(([collection, limit]) => `${collection}:${limit}`)
+        .join(","),
       "Server-Timing": `${options.timingLabel};dur=${workspace.loadMs.toFixed(2)}`,
     });
   } catch (error) {
