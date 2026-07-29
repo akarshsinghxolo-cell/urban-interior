@@ -98,7 +98,9 @@ async function readAuthorizedScope(
   user: AuthenticatedUser,
   target: WorkspaceReadTarget,
 ): Promise<ModuleScopedWorkspace> {
-  if (target.scope === "full") throw new Error("INVALID:Full reads do not use the module-scoped planner.");
+  if (target.scope === "full" || target.scope === "bootstrap") {
+    throw new Error("INVALID:Bootstrap and full reads do not use the module-scoped planner.");
+  }
 
   const startedAt = performance.now();
   const bootstrap = await getWorkspaceBootstrap(user);
