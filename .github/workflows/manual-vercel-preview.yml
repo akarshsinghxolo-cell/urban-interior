@@ -40,6 +40,39 @@ jobs:
           }
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
+      - name: Copy required production variables to Preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          set -a
+          source .vercel/.env.production.local
+          set +a
+
+          test -n "${SUPABASE_URL:-}" || { echo "Production SUPABASE_URL is missing." >&2; exit 1; }
+          test -n "${SUPABASE_PUBLISHABLE_KEY:-${SUPABASE_ANON_KEY:-}}" || { echo "Production Supabase publishable key is missing." >&2; exit 1; }
+          test -n "${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY:-}}" || { echo "Production Supabase server key is missing." >&2; exit 1; }
+          test -n "${UC_SESSION_SECRET:-}" || { echo "Production UC_SESSION_SECRET is missing." >&2; exit 1; }
+
+          copy_preview_env() {
+            local name="$1"
+            local value="${!name:-}"
+            if [ -n "$value" ]; then
+              printf '%s\n' "$value" | vercel env add "$name" preview --force --token="$VERCEL_TOKEN" >/dev/null
+              echo "Configured ${name} for Preview."
+            fi
+          }
+
+          for name in \
+            SUPABASE_URL \
+            SUPABASE_PUBLISHABLE_KEY \
+            SUPABASE_ANON_KEY \
+            SUPABASE_SECRET_KEY \
+            SUPABASE_SERVICE_ROLE_KEY \
+            UC_SESSION_SECRET \
+            UC_WORKSPACE_ID; do
+            copy_preview_env "$name"
+          done
       - name: Pull preview environment
         run: vercel pull --yes --environment=preview --token="$VERCEL_TOKEN"
       - name: Install application dependencies
