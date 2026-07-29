@@ -269,7 +269,7 @@ export async function getWorkspaceHealthSummary() {
   });
   if (!error && data && typeof data === "object") {
     return {
-      ...(data as Record<string, unknown>),
+      ...(data as ReturnType<typeof buildOperationalHealth> & { revision: number }),
       queryCount: 1,
       collectionCount: 0,
       loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
