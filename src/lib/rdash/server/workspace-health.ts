@@ -254,8 +254,31 @@ function buildOperationalHealth(db: RDashDatabase, integrity: StoredIntegritySna
   };
 }
 
+function isMissingHealthRpc(error: { code?: string; message?: string } | null) {
+  return Boolean(error && (
+    error.code === "42883" ||
+    error.code === "PGRST202" ||
+    error.message?.includes("get_workspace_health_summary")
+  ));
+}
+
 export async function getWorkspaceHealthSummary() {
   const startedAt = performance.now();
+  const { data, error } = await getSupabaseAdminClient().rpc("get_workspace_health_summary", {
+    p_workspace_id: workspaceId(),
+  });
+  if (!error && data && typeof data === "object") {
+    return {
+      ...(data as Record<string, unknown>),
+      queryCount: 1,
+      collectionCount: 0,
+      loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    };
+  }
+  if (error && !isMissingHealthRpc(error)) {
+    throw new Error(`Could not load the workspace health aggregate: ${error.message}`);
+  }
+
   const [workspace, integrity] = await Promise.all([
     getWorkspaceSubset({ fullCollections: [...HEALTH_SUMMARY_COLLECTIONS] }),
     readStoredIntegritySnapshot(),

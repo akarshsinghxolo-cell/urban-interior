@@ -337,12 +337,6 @@ export const HR_SCOPE_COLLECTIONS = Object.freeze([
 ] as const);
 
 export const MASTER_SCOPE_COLLECTIONS = Object.freeze([
-  "commercialTerms",
-  "paymentTermTemplates",
-  "taxConfigs",
-  "validityConfigs",
-  "entityFileAttachments",
-  "entityReferenceAssignments",
   "auditLog",
   "master.units",
   "master.workCategories",
@@ -352,23 +346,6 @@ export const MASTER_SCOPE_COLLECTIONS = Object.freeze([
   "master.subcategoryArticleMap",
   "master.workOptionGroups",
   "master.workOptionValues",
-  "master.vendors",
-  "master.contractors",
-  "master.staff",
-  "master.sourcePartners",
-  "master.commissionRules",
-  "master.vendorRates",
-  "master.contractorRates",
-  "master.customerRateSuggestions",
-  "master.vendorRateHistories",
-  "master.storageAccounts",
-  "master.storageFolderTemplates",
-  "master.storageFolderInstances",
-  "master.fileAssets",
-  "master.catalogues",
-  "master.catalogueArticleVendorLinks",
-  "master.pinterestBoards",
-  "master.referenceMedia",
 ] as const);
 
 export const REPORTS_SCOPE_COLLECTIONS = Object.freeze([

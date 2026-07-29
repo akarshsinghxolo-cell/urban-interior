@@ -272,12 +272,16 @@ export async function markWorkspaceCommitResponse(operationId: string, response:
   }
 
   if (response.ok) {
-    const adaptedPayload = acceptCompactCommit(current, payload);
     await uploadIndexedDb.deleteWorkspaceOutbox(operationId);
-    if (adaptedPayload.data && typeof adaptedPayload.revision === "number") {
-      await rebaseRemainingItems(adaptedPayload.data, adaptedPayload.revision);
-    } else {
-      await refresh();
+    await refresh();
+    let adaptedPayload = payload;
+    try {
+      adaptedPayload = acceptCompactCommit(current, payload);
+      if (adaptedPayload.data && typeof adaptedPayload.revision === "number") {
+        await rebaseRemainingItems(adaptedPayload.data, adaptedPayload.revision);
+      }
+    } catch (error) {
+      console.error("[WorkspaceOutbox] Server accepted the change, but local response adaptation failed.", error);
     }
     return responseWithPayload(response, adaptedPayload);
   }

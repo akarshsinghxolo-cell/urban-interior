@@ -14,6 +14,12 @@ import type { WorkspaceOperation } from "../workspace-operations";
 import type { RDashDatabase, Master } from "../types";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
+const DEFAULT_COLLECTION_LIMITS: Record<string, number> = {
+  auditLog: 100,
+  executionLogs: 200,
+  commSends: 100,
+  "master.vendorRateHistories": 100,
+};
 
 export const COLLECTION_TO_TABLE: Record<string, string> = {
   customers: "entity_customers",
@@ -111,6 +117,7 @@ type RestEntityRow = {
 export type RestWorkspaceReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
+  limitsByCollection?: Record<string, number>;
 };
 
 export type RestWorkspaceSubset = {
@@ -207,6 +214,9 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
       .eq("workspace_id", workspaceId);
     if (!fullCollections.has(collection)) {
       query = query.in("id", rowsByCollection.get(collection) || []);
+    } else {
+      const limit = plan.limitsByCollection?.[collection] ?? DEFAULT_COLLECTION_LIMITS[collection];
+      if (limit) query = query.order("revision", { ascending: false }).limit(limit);
     }
     const { data, error } = await query;
     if (error) throw new Error(`Could not read targeted collection ${collection}: ${error.message}`);

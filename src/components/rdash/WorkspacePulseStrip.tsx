@@ -9,6 +9,7 @@ import { indiaDate } from "@/lib/rdash/date";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { useWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 
 /** Compact "Xs/m/h ago" for the health-popover last-updated timestamp. */
 function timeAgoShort(ms: number): string {
@@ -205,67 +206,25 @@ export function WorkspacePulseStrip() {
   const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
   const now = useLiveClock();
 
-  // Health-aware greeting: fetch the workspace health summary once on mount
-  // so the greeting can show a contextual sub-line ("You have N items needing
-  // attention" or "All clear — workspace healthy") instead of a static label.
-  // Also powers the mini health-summary popover on the badge. The fetchHealth
-  // callback is extracted so the popover's manual refresh button can call it.
-  const [health, setHealth] = React.useState<{
-    badge: "healthy" | "watch" | "attention";
-    attentionCount: number;
-    integrityScore: number;
-    integrityIssues: number;
-    pendingApprovals: number;
-    overdueTasks: number;
-    unresolvedBlocked: number;
-    openRisks: number;
-    cashPosition: number;
-    overdueInvoiceValue: number;
-    monthRevenue: number;
-    totalRecords: number;
-    totalReferences: number;
-    revenueSeries: Array<{ date: string; value: number }>;
-  } | null>(null);
-  const [refreshing, setRefreshing] = React.useState(false);
-  const [lastFetchedAt, setLastFetchedAt] = React.useState<number | null>(null);
-  const fetchHealth = React.useCallback(async (manual = false) => {
-    if (manual) setRefreshing(true);
-    try {
-      const { getSessionToken } = await import("@/lib/rdash/client-auth");
-      const token = getSessionToken();
-      const res = await fetch("/api/health/summary", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      setHealth({
-        badge: data.healthBadge,
-        attentionCount: data.attentionCount,
-        integrityScore: data.integrity?.healthScore ?? 100,
-        integrityIssues: data.integrity?.totalIssues ?? 0,
-        pendingApprovals: data.operations?.pendingApprovals ?? 0,
-        overdueTasks: data.operations?.overdueTasks ?? 0,
-        unresolvedBlocked: data.operations?.unresolvedBlocked ?? 0,
-        openRisks: data.operations?.openRisks ?? 0,
-        cashPosition: data.finance?.cashPosition ?? 0,
-        overdueInvoiceValue: data.finance?.overdueInvoiceValue ?? 0,
-        monthRevenue: data.finance?.monthRevenue ?? 0,
-        totalRecords: data.integrity?.totalRecords ?? 0,
-        totalReferences: data.integrity?.totalReferences ?? 0,
-        revenueSeries: data.finance?.revenueSeries ?? [],
-      });
-      setLastFetchedAt(Date.now());
-    } catch {
-      // Non-fatal — greeting falls back to the static "Live" badge.
-    } finally {
-      if (manual) setRefreshing(false);
-    }
-  }, []);
-  React.useEffect(() => {
-    fetchHealth();
-    const id = setInterval(() => fetchHealth(), 60_000);
-    return () => clearInterval(id);
-  }, [fetchHealth]);
+  // All dashboard surfaces share one health request and never install polling timers.
+  const { summary: healthSummary, refreshing, lastFetchedAt, refresh: refreshHealth } = useWorkspaceHealth();
+  const fetchHealth = React.useCallback((manual = false) => refreshHealth(manual), [refreshHealth]);
+  const health = React.useMemo(() => healthSummary ? ({
+    badge: healthSummary.healthBadge,
+    attentionCount: healthSummary.attentionCount,
+    integrityScore: healthSummary.integrity?.healthScore ?? 100,
+    integrityIssues: healthSummary.integrity?.totalIssues ?? 0,
+    pendingApprovals: healthSummary.operations?.pendingApprovals ?? 0,
+    overdueTasks: healthSummary.operations?.overdueTasks ?? 0,
+    unresolvedBlocked: healthSummary.operations?.unresolvedBlocked ?? 0,
+    openRisks: healthSummary.operations?.openRisks ?? 0,
+    cashPosition: healthSummary.finance?.cashPosition ?? 0,
+    overdueInvoiceValue: healthSummary.finance?.overdueInvoiceValue ?? 0,
+    monthRevenue: healthSummary.finance?.monthRevenue ?? 0,
+    totalRecords: healthSummary.integrity?.totalRecords ?? 0,
+    totalReferences: healthSummary.integrity?.totalReferences ?? 0,
+    revenueSeries: healthSummary.finance?.revenueSeries ?? [],
+  }) : null, [healthSummary]);
 
   const liveWorkOrders = db.workOrders.filter(
     (w) => w.status === "in_progress" || w.status === "scheduled",

@@ -113,6 +113,9 @@ function invalidateReadCaches() {
   healthResponseCache = null;
   clearStoredHealthResponses();
   workspaceReadRequests.clear();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("uc-workspace-health-invalidated"));
+  }
 }
 
 function responseFromStored(stored: StoredHealthResponse) {
