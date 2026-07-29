@@ -13,7 +13,7 @@ import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
 import { indiaBusinessDate } from "@/lib/rdash/format";
-const DetailPanel = React.lazy(() => import("./DetailPanel").then((module) => ({ default: module.DetailPanel })));
+const DetailPanel = React.lazy(() => import("./DetailPanelWithHistory").then((module) => ({ default: module.DetailPanelWithHistory })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { PromptDialogProvider } from "./PromptDialog";
