@@ -130,132 +130,119 @@ async function reloadCurrentWorkspace(
 export function WorkspaceDeltaSync(): null {
   const pathname = usePathname();
   const authUser = useRDashStore((state) => state.authUser);
-  const inFlightRef = React.useRef(false);
-  const rerunRef = React.useRef(false);
-  const mountedRef = React.useRef(true);
-  const generationRef = React.useRef(0);
-  const activeControllerRef = React.useRef<AbortController | null>(null);
-  const rerunTimerRef = React.useRef<number | null>(null);
-
-  React.useEffect(() => {
-    mountedRef.current = true;
-    generationRef.current += 1;
-    activeControllerRef.current?.abort();
-    inFlightRef.current = false;
-    rerunRef.current = false;
-    return () => {
-      mountedRef.current = false;
-      generationRef.current += 1;
-      activeControllerRef.current?.abort();
-      if (rerunTimerRef.current !== null) window.clearTimeout(rerunTimerRef.current);
-    };
-  }, [pathname, authUser?.email]);
-
-  const run = React.useCallback(async () => {
-    if (!DELTA_SYNC_ENABLED || !mountedRef.current) return;
-    if (inFlightRef.current) {
-      rerunRef.current = true;
-      return;
-    }
-    if (!currentRunIsSafe(pathname)) return;
-
-    const generation = generationRef.current;
-    const controller = new AbortController();
-    activeControllerRef.current?.abort();
-    activeControllerRef.current = controller;
-    inFlightRef.current = true;
-    let advanced = false;
-
-    try {
-      await useRDashStore.getState().awaitServerSync();
-      if (controller.signal.aborted || generationRef.current !== generation || !currentRunIsSafe(pathname)) return;
-
-      let afterRevision = useRDashStore.getState().serverRevision;
-      if (!Number.isInteger(afterRevision) || afterRevision < 0) {
-        if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
-          throw new Error("Workspace revision was invalid and reload failed.");
-        }
-        return;
-      }
-
-      for (let page = 0; page < MAX_DELTA_PAGES_PER_RUN; page += 1) {
-        if (controller.signal.aborted || generationRef.current !== generation || !currentRunIsSafe(pathname)) return;
-        const state = useRDashStore.getState();
-        if (state.serverRevision !== afterRevision || !state.authUser) return;
-
-        const params = new URLSearchParams({ afterRevision: String(afterRevision) });
-        const collections = workspaceCollectionFilterParam(state.db);
-        if (collections) params.set("collections", collections);
-        const response = await fetch(`/api/changes?${params.toString()}`, {
-          credentials: "same-origin",
-          cache: "no-store",
-          signal: controller.signal,
-          headers: {
-            Accept: "application/json",
-            "X-UC-Delta-Client": "workspace-shell",
-          },
-        });
-        if (response.status === 401) await redirectToSignin();
-        if (!response.ok) throw new Error(`Delta request failed with ${response.status}.`);
-
-        const delta = await response.json() as WorkspaceDeltaPayload;
-        if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
-          if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
-            throw new Error("Delta recovery reload failed.");
-          }
-          return;
-        }
-        if (delta.revision === afterRevision) {
-          if (delta.hasMore) {
-            if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
-              throw new Error("Delta journal did not advance and recovery reload failed.");
-            }
-          }
-          return;
-        }
-
-        if (controller.signal.aborted || generationRef.current !== generation || !currentRunIsSafe(pathname)) return;
-        const latest = useRDashStore.getState();
-        if (latest.serverRevision !== afterRevision || !latest.authUser) return;
-
-        const applied = applyWorkspaceDelta(latest.db, delta);
-        const mergedRowVersions = mergeWorkspaceRowVersions(
-          workspaceRowVersionState.getSnapshot(),
-          expandedDeltaRowVersions(delta),
-          deletedDeltaVersionKeys(delta),
-        );
-        latest.hydrateSecureWorkspace({
-          db: applied.database,
-          revision: delta.revision,
-          user: latest.authUser,
-          rowVersions: mergedRowVersions,
-        });
-        afterRevision = delta.revision;
-        advanced = true;
-        if (!delta.hasMore) return;
-      }
-      if (advanced) rerunRef.current = true;
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
-        console.warn("[workspace-delta] synchronization deferred:", error);
-      }
-    } finally {
-      if (activeControllerRef.current === controller) activeControllerRef.current = null;
-      inFlightRef.current = false;
-      if (mountedRef.current && generationRef.current === generation && rerunRef.current) {
-        rerunRef.current = false;
-        if (rerunTimerRef.current !== null) window.clearTimeout(rerunTimerRef.current);
-        rerunTimerRef.current = window.setTimeout(() => {
-          rerunTimerRef.current = null;
-          void run();
-        }, 1_000);
-      }
-    }
-  }, [pathname]);
 
   React.useEffect(() => {
     if (!DELTA_SYNC_ENABLED || !authUser) return;
+
+    let disposed = false;
+    let inFlight = false;
+    let rerunRequested = false;
+    let activeController: AbortController | null = null;
+    let rerunTimer: number | null = null;
     let eventTimer: number | null = null;
+
+    const scheduleRerun = () => {
+      if (disposed || rerunTimer !== null) return;
+      rerunTimer = window.setTimeout(() => {
+        rerunTimer = null;
+        void run();
+      }, 1_000);
+    };
+
+    async function run(): Promise<void> {
+      if (disposed || !currentRunIsSafe(pathname)) return;
+      if (inFlight) {
+        rerunRequested = true;
+        return;
+      }
+
+      const controller = new AbortController();
+      activeController?.abort();
+      activeController = controller;
+      inFlight = true;
+      let advanced = false;
+
+      try {
+        await useRDashStore.getState().awaitServerSync();
+        if (disposed || controller.signal.aborted || !currentRunIsSafe(pathname)) return;
+
+        let afterRevision = useRDashStore.getState().serverRevision;
+        if (!Number.isInteger(afterRevision) || afterRevision < 0) {
+          if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
+            throw new Error("Workspace revision was invalid and reload failed.");
+          }
+          return;
+        }
+
+        for (let page = 0; page < MAX_DELTA_PAGES_PER_RUN; page += 1) {
+          if (disposed || controller.signal.aborted || !currentRunIsSafe(pathname)) return;
+          const state = useRDashStore.getState();
+          if (state.serverRevision !== afterRevision || !state.authUser) return;
+
+          const params = new URLSearchParams({ afterRevision: String(afterRevision) });
+          const collections = workspaceCollectionFilterParam(state.db);
+          if (collections) params.set("collections", collections);
+          const response = await fetch(`/api/changes?${params.toString()}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+            signal: controller.signal,
+            headers: {
+              Accept: "application/json",
+              "X-UC-Delta-Client": "workspace-shell",
+            },
+          });
+          if (response.status === 401) await redirectToSignin();
+          if (!response.ok) throw new Error(`Delta request failed with ${response.status}.`);
+
+          const delta = await response.json() as WorkspaceDeltaPayload;
+          if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
+            if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
+              throw new Error("Delta recovery reload failed.");
+            }
+            return;
+          }
+          if (delta.revision === afterRevision) {
+            if (delta.hasMore && !await reloadCurrentWorkspace(pathname, controller.signal)) {
+              throw new Error("Delta journal did not advance and recovery reload failed.");
+            }
+            return;
+          }
+
+          if (disposed || controller.signal.aborted || !currentRunIsSafe(pathname)) return;
+          const latest = useRDashStore.getState();
+          if (latest.serverRevision !== afterRevision || !latest.authUser) return;
+
+          const applied = applyWorkspaceDelta(latest.db, delta);
+          const mergedRowVersions = mergeWorkspaceRowVersions(
+            workspaceRowVersionState.getSnapshot(),
+            expandedDeltaRowVersions(delta),
+            deletedDeltaVersionKeys(delta),
+          );
+          latest.hydrateSecureWorkspace({
+            db: applied.database,
+            revision: delta.revision,
+            user: latest.authUser,
+            rowVersions: mergedRowVersions,
+          });
+          afterRevision = delta.revision;
+          advanced = true;
+          if (!delta.hasMore) return;
+        }
+        if (advanced) rerunRequested = true;
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.warn("[workspace-delta] synchronization deferred:", error);
+        }
+      } finally {
+        if (activeController === controller) activeController = null;
+        inFlight = false;
+        if (!disposed && rerunRequested) {
+          rerunRequested = false;
+          scheduleRerun();
+        }
+      }
+    }
+
     const scheduleRun = () => {
       if (eventTimer !== null) window.clearTimeout(eventTimer);
       eventTimer = window.setTimeout(() => {
@@ -273,15 +260,19 @@ export function WorkspaceDeltaSync(): null {
     window.addEventListener("focus", onFocus);
     window.addEventListener("online", onOnline);
     document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
+      disposed = true;
+      activeController?.abort();
       window.clearTimeout(initialTimer);
       window.clearInterval(interval);
       if (eventTimer !== null) window.clearTimeout(eventTimer);
+      if (rerunTimer !== null) window.clearTimeout(rerunTimer);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [authUser, run]);
+  }, [authUser, pathname]);
 
   return null;
 }
