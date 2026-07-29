@@ -1,0 +1,41 @@
+name: Fix health aggregate typing v14
+
+on:
+  pull_request:
+    branches: [main]
+    types: [reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Fix RPC aggregate type
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("src/lib/rdash/server/workspace-health.ts")
+          text = path.read_text(encoding="utf-8")
+          old = "...(data as Record<string, unknown>),"
+          new = "...(data as ReturnType<typeof buildOperationalHealth> & { revision: number }),"
+          if text.count(old) != 1:
+              raise SystemExit(f"RPC aggregate type marker count: {text.count(old)}")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          Path(".github/workflows/tmp-egress-type-fix-v14.yml").unlink(missing_ok=True)
+
+      - name: Commit type fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Type the workspace health aggregate"
+          git push origin HEAD:feature/eliminate-postgrest-egress-leaks
