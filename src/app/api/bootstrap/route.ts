@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
     const workspace = await getWorkspaceBootstrap(user);
     const loadMs = performance.now() - startedAt;
     (workspace.data as unknown as Record<string, unknown>)._workspace_read_scope = "bootstrap";
-    return NextResponse.json({
+    const body = JSON.stringify({
       revision: workspace.revision,
       data: workspace.data,
       ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
@@ -32,11 +32,14 @@ export async function GET(request: NextRequest) {
         staffId: user.staffId,
         expiresAt: user.expiresAt,
       },
-    }, {
+    });
+    return new NextResponse(body, {
       headers: {
+        "Content-Type": "application/json",
         "Cache-Control": "no-store",
         "X-UC-Read-Mode": "bootstrap",
         "X-UC-Read-Queries": String(workspace.queryCount),
+        "X-UC-Response-Bytes": String(Buffer.byteLength(body)),
         "Server-Timing": `workspace-bootstrap;dur=${loadMs.toFixed(2)}`,
       },
     });
