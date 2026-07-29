@@ -243,14 +243,17 @@ export function normalizeCatalogMaster(input: Master): Master {
         const variant = rate.variant_id && validVariantIds.has(rate.variant_id)
             ? fresh.articleVariants.find((entry) => entry.id === rate.variant_id)
             : undefined;
-        const expectedUnit = variant?.unit_id || map.unit_id;
+        const fallbackUnit = variant?.unit_id || map.unit_id;
+        const quotedUnit = rate.unit_id && validUnits.has(rate.unit_id)
+            ? rate.unit_id
+            : fallbackUnit;
         return [{
                 ...rate,
                 article_id: article.id,
                 article_name: article.name,
                 work_required_article_id: map.id,
                 variant_id: variant?.id,
-                unit_id: validUnits.has(expectedUnit) ? expectedUnit : map.unit_id,
+                unit_id: quotedUnit,
                 updated_at: rate.updated_at || timestamp,
             }];
     });

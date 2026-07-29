@@ -5,18 +5,32 @@ import { prepareWorkspaceData } from "../work-category-master";
 import { repairOperationalWorkspace } from "../operational-repair";
 import {
   applyWorkspaceOperations,
+  diffWorkspaceOperations,
   operationSummary,
   type WorkspaceOperation,
 } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
+import { applyVendorRateAverages } from "../vendor-rate-average";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 
 function normalizeWorkspace(data: RDashDatabase) {
   return attachCustomerLabels(prepareWorkspaceData(repairOperationalWorkspace(data)));
+}
+
+function canonicalizeVendorRateOperations(
+  current: RDashDatabase,
+  operations: WorkspaceOperation[],
+): WorkspaceOperation[] {
+  if (!operations.some((operation) => ["master.vendorRates", "master.vendorRateHistories"].includes(operation.collection))) {
+    return operations;
+  }
+  const candidate = applyWorkspaceOperations(current, operations);
+  const canonical = applyVendorRateAverages(current, candidate);
+  return diffWorkspaceOperations(current, canonical);
 }
 
 function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): AuditLogEntry {
@@ -84,6 +98,7 @@ export async function commitAuthorizedPostgresOperations(
     if (current.revision !== revision) throw new Error("CONFLICT");
 
     assertWorkspaceMutationAllowed(user, commitOperations, current.data);
+    commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
     const candidate = normalizeWorkspace(applyWorkspaceOperations(current.data, commitOperations));
     const issues = validateBusinessData(candidate);
     if (issues.length) throw new Error(`INVALID:${issues[0]}`);

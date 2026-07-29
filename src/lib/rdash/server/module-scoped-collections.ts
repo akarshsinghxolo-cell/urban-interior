@@ -236,6 +236,7 @@ export const PROCUREMENT_SCOPE_COLLECTIONS = Object.freeze([
   "actions",
   "threads",
   "entityFileAttachments",
+  "taxConfigs",
   "auditLog",
   "master.units",
   "master.workCategories",

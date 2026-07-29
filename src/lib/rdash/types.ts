@@ -1714,7 +1714,8 @@ export interface CommissionRule {
     category_id?: ID;
 }
 export type VendorRateSourceType = "PO" | "VENDOR_BILL" | "MANUAL" | "SEED";
-export type VendorRateHistoryStatus = "active" | "superseded" | "rejected";
+export type VendorRateStatus = "active" | "inactive" | "expired" | "draft" | "unapproved" | "rejected" | "superseded";
+export type VendorRateHistoryStatus = VendorRateStatus;
 export interface VendorRate {
     id: ID;
     vendor_id: ID;
@@ -1727,11 +1728,21 @@ export interface VendorRate {
     delivery_days?: number;
     moq?: number;
     gst_inclusive?: boolean;
+    gst_rate?: number;
+    discount_pct?: number;
+    discount_amount?: number;
+    freight_amount?: number;
+    loading_unloading_amount?: number;
+    other_charges?: number;
+    /** Number of article-default units represented by one quoted unit. */
+    default_units_per_rate_unit?: number;
+    status?: VendorRateStatus;
     preferred?: boolean;
     brand?: string;
     grade?: string;
     notes?: string;
     valid_from?: string;
+    valid_until?: string;
     updated_at?: string;
     current_source_type?: VendorRateSourceType;
     current_source_id?: ID;
@@ -1748,6 +1759,14 @@ export interface VendorRateHistory {
     unit_id: ID;
     old_rate?: number;
     new_rate: number;
+    gst_inclusive?: boolean;
+    gst_rate?: number;
+    discount_pct?: number;
+    discount_amount?: number;
+    freight_amount?: number;
+    loading_unloading_amount?: number;
+    other_charges?: number;
+    default_units_per_rate_unit?: number;
     source_type: VendorRateSourceType;
     source_id?: ID;
     source_no?: string;
