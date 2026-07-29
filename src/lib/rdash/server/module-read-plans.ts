@@ -1,0 +1,330 @@
+import type {
+  ModuleWorkspaceReadScope,
+  WorkspaceReadTarget,
+} from "../workspace-read-scope";
+import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
+
+export interface WorkspaceModuleReadPlan {
+  collections: readonly string[];
+  limitsByCollection?: Readonly<Record<string, number>>;
+  strategy: "module" | "scope";
+}
+
+const HISTORY_LIMITS = Object.freeze({
+  auditLog: 100,
+  executionLogs: 200,
+  commSends: 100,
+  "master.vendorRateHistories": 100,
+} as const);
+
+const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  tasks: Object.freeze([
+    "customers",
+    "sites",
+    "tasks",
+    "followups",
+    "actions",
+    "blocked",
+    "risks",
+    "threads",
+    "recurringTasks",
+    "entityFileAttachments",
+    "master.staff",
+  ]),
+  blockedRisks: Object.freeze([
+    "customers",
+    "sites",
+    "workOrders",
+    "tasks",
+    "blocked",
+    "risks",
+    "threads",
+    "master.staff",
+  ]),
+  approvals: Object.freeze([
+    "customers",
+    "sites",
+    "quotations",
+    "workOrders",
+    "purchaseOrders",
+    "vendorBills",
+    "contractorPayments",
+    "actions",
+    "approvalPolicies",
+    "threads",
+    "master.staff",
+  ]),
+  calendarRecurring: Object.freeze([
+    "customers",
+    "sites",
+    "tasks",
+    "recurringTasks",
+    "visits",
+    "attendance",
+    "master.staff",
+  ]),
+  quotationConfig: Object.freeze([
+    "commercialTerms",
+    "paymentTermTemplates",
+    "taxConfigs",
+    "validityConfigs",
+    "master.units",
+    "master.workCategories",
+    "master.workSubcategories",
+    "master.articles",
+    "master.articleVariants",
+    "master.workOptionGroups",
+    "master.workOptionValues",
+    "master.customerRateSuggestions",
+  ]),
+  siteMeasurement: Object.freeze([
+    "customers",
+    "sites",
+    "areas",
+    "workRequired",
+    "measurementRevisions",
+    "visits",
+    "entityFileAttachments",
+    "master.units",
+    "master.staff",
+  ]),
+  visitProofs: Object.freeze([
+    "customers",
+    "sites",
+    "visits",
+    "entityFileAttachments",
+    "master.staff",
+    "master.fileAssets",
+  ]),
+  fieldMode: Object.freeze([
+    "customers",
+    "sites",
+    "workOrders",
+    "visits",
+    "tasks",
+    "attendance",
+    "entityFileAttachments",
+    "master.staff",
+  ]),
+  gpsTracking: Object.freeze([
+    "attendance",
+    "master.staff",
+  ]),
+  grn: Object.freeze([
+    "customers",
+    "sites",
+    "workOrders",
+    "purchaseOrders",
+    "grns",
+    "inventory",
+    "stockMovements",
+    "vendorBills",
+    "threads",
+    "master.articles",
+    "master.vendors",
+    "master.staff",
+    "master.fileAssets",
+  ]),
+  inventory: Object.freeze([
+    "inventory",
+    "stockMovements",
+    "grns",
+    "dispatches",
+    "purchaseOrders",
+    "master.articles",
+    "master.vendors",
+    "master.staff",
+  ]),
+  dispatch: Object.freeze([
+    "customers",
+    "sites",
+    "workOrders",
+    "inventory",
+    "stockMovements",
+    "dispatches",
+    "threads",
+    "master.staff",
+  ]),
+  vendorRates: Object.freeze([
+    "master.units",
+    "master.articles",
+    "master.articleVariants",
+    "master.vendors",
+    "master.vendorRates",
+    "master.vendorRateHistories",
+  ]),
+  rateFinder: Object.freeze([
+    "master.units",
+    "master.articles",
+    "master.articleVariants",
+    "master.vendors",
+    "master.vendorRates",
+    "master.vendorRateHistories",
+  ]),
+  payments: Object.freeze([
+    "customers",
+    "sites",
+    "workOrders",
+    "payments",
+    "invoices",
+    "customerReceipts",
+    "followups",
+    "threads",
+    "commercialTerms",
+    "paymentTermTemplates",
+    "master.staff",
+  ]),
+  invoices: Object.freeze([
+    "customers",
+    "sites",
+    "workOrders",
+    "payments",
+    "invoices",
+    "customerReceipts",
+    "threads",
+    "taxConfigs",
+    "master.staff",
+  ]),
+  vendorBills: Object.freeze([
+    "purchaseOrders",
+    "grns",
+    "vendorBills",
+    "vendorPayments",
+    "threads",
+    "master.vendors",
+    "master.staff",
+  ]),
+  contractorPayments: Object.freeze([
+    "workOrders",
+    "contractorBills",
+    "contractorPayments",
+    "contractorSettlements",
+    "threads",
+    "master.contractors",
+    "master.staff",
+  ]),
+  commissions: Object.freeze([
+    "customers",
+    "workOrders",
+    "commissions",
+    "threads",
+    "master.sourcePartners",
+    "master.commissionRules",
+    "master.staff",
+  ]),
+  gstReturns: Object.freeze([
+    "invoices",
+    "customerReceipts",
+    "vendorBills",
+    "vendorPayments",
+    "taxConfigs",
+    "master.vendors",
+  ]),
+  driveManager: Object.freeze([
+    "master.storageAccounts",
+    "master.storageFolderTemplates",
+    "master.storageFolderInstances",
+    "master.fileAssets",
+  ]),
+  communicationCentre: Object.freeze([
+    "customers",
+    "quotations",
+    "tasks",
+    "followups",
+    "threads",
+    "commSends",
+    "entityFileAttachments",
+    "entityReferenceAssignments",
+    "master.articles",
+    "master.vendors",
+    "master.staff",
+    "master.fileAssets",
+    "master.catalogues",
+    "master.catalogueArticleVendorLinks",
+    "master.referenceMedia",
+  ]),
+  attendancePayroll: Object.freeze([
+    "attendance",
+    "leaveRequests",
+    "payrollPeriods",
+    "approvalPolicies",
+    "auditLog",
+    "master.staff",
+  ]),
+  staffSalary: Object.freeze([
+    "attendance",
+    "leaveRequests",
+    "payrollPeriods",
+    "payrollLines",
+    "salaryAdjustments",
+    "staffDocuments",
+    "auditLog",
+    "master.staff",
+  ]),
+  articleVariants: Object.freeze([
+    "auditLog",
+    "master.units",
+    "master.workCategories",
+    "master.workSubcategories",
+    "master.articles",
+    "master.articleVariants",
+    "master.subcategoryArticleMap",
+  ]),
+  userApprovals: Object.freeze([
+    "staffRolePermissions",
+    "auditLog",
+    "master.staff",
+  ]),
+  approvalPolicies: Object.freeze([
+    "actions",
+    "approvalPolicies",
+    "auditLog",
+    "master.staff",
+  ]),
+  auditLog: Object.freeze([
+    "auditLog",
+    "master.staff",
+  ]),
+});
+
+function limitsForModule(moduleId: string): Readonly<Record<string, number>> {
+  if (moduleId === "auditLog") return Object.freeze({ ...HISTORY_LIMITS, auditLog: 250 });
+  return HISTORY_LIMITS;
+}
+
+export function collectionsForWorkspaceReadTarget(
+  target: WorkspaceReadTarget,
+): readonly string[] {
+  if (target.scope === "bootstrap" || target.scope === "full") return [];
+  return EXACT_MODULE_COLLECTIONS[target.moduleId] || COLLECTIONS_BY_SCOPE[target.scope];
+}
+
+export function workspaceModuleReadPlan(
+  target: WorkspaceReadTarget,
+): WorkspaceModuleReadPlan {
+  if (target.scope === "bootstrap" || target.scope === "full") {
+    throw new Error("INVALID:Bootstrap and full reads do not use module read plans.");
+  }
+  const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  return Object.freeze({
+    collections: exact || COLLECTIONS_BY_SCOPE[target.scope],
+    limitsByCollection: limitsForModule(target.moduleId),
+    strategy: exact ? "module" : "scope",
+  });
+}
+
+export function moduleReadPlanSavings(
+  target: WorkspaceReadTarget,
+): { selected: number; scope: number } {
+  if (target.scope === "bootstrap" || target.scope === "full") {
+    return { selected: 0, scope: 0 };
+  }
+  return {
+    selected: collectionsForWorkspaceReadTarget(target).length,
+    scope: COLLECTIONS_BY_SCOPE[target.scope].length,
+  };
+}
+
+export function scopeCollectionCount(scope: ModuleWorkspaceReadScope): number {
+  return COLLECTIONS_BY_SCOPE[scope].length;
+}
