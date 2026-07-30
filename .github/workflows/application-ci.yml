@@ -73,6 +73,8 @@ jobs:
         run: bun run test:vendor-rate-average
       - name: Test bug hunt regressions
         run: bun run test:bug-hunt
+      - name: Test field staff UI visibility
+        run: bun test tests/field-staff-visibility.test.ts
       - name: Lint application
         run: bun run lint
       - name: Build application
