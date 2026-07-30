@@ -149,6 +149,7 @@ describe("canonical customer and Sites save", () => {
       id: "customer-2",
       name: "Other Customer",
       phone: "9999999999",
+      whatsapp: "9999999999",
     });
     expect(() => applyCustomerWithSitesSave(db, {
       customerId: "customer-2",
