@@ -189,8 +189,6 @@ export interface UIState {
 export interface CrmState {
   saveCustomerWithSites: (input: SaveCustomerWithSitesInput) => { customerId: string; siteIds: string[]; changed: boolean };
   mergeCustomers: (survivingCustomerId: string, duplicateCustomerId: string) => void;
-  addSite: (s: Partial<Site>) => string;
-  updateSite: (id: string, patch: Partial<Site>) => void;
   archiveSite: (id: string, options: { reason: string; cancelled?: boolean }) => void;
   addArea: (r: Partial<Area>) => string;
   updateArea: (id: string, patch: Partial<Area>) => void;
