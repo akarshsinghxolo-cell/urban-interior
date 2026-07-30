@@ -21,7 +21,9 @@ jobs:
         with:
           bun-version: 1.3.14
       - name: Apply reviewed integration
-        run: python scripts/apply-unified-customer-sites.py
+        run: |
+          python scripts/apply-unified-customer-sites.py
+          python scripts/fix-unified-customer-sites-types.py
       - name: Keep workflow changes for connector commit
         run: git restore .github/workflows/application-ci.yml .github/workflows/tmp-unified-customer-sites.yml
       - name: Install and validate focused behavior
@@ -35,7 +37,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json src tests scripts/apply-unified-customer-sites.py
+          git add package.json src tests scripts/apply-unified-customer-sites.py scripts/fix-unified-customer-sites-types.py
           git diff --cached --quiet && exit 0
           git commit -m "Unify Customer and Sites create and edit workflow"
           git push origin HEAD:${{ github.head_ref }}
