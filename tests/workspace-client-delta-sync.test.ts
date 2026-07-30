@@ -202,7 +202,7 @@ describe("delta synchronization safety policy", () => {
     }
   });
 
-  test("browser orchestrator rechecks safety and uses the low-egress schedule", async () => {
+  test("browser orchestrator rechecks safety and stays disabled by default", async () => {
     const source = await Bun.file("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
     expect(source).toContain("awaitServerSync()");
     expect(source).toContain("currentRunIsSafe(pathname)");
@@ -221,9 +221,10 @@ describe("delta synchronization safety policy", () => {
     expect(source).toContain("Delta journal did not advance");
     expect(source).toContain("visibilitychange");
     expect(source).toContain('window.addEventListener("online"');
-    expect(source).toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"');
-    expect(source).toContain("DELTA_POLL_INTERVAL_MS = 5 * 60_000");
-    expect(source).toContain("DELTA_EVENT_DEBOUNCE_MS = 750");
+    expect(source).toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"');
+    expect(source).toContain("DELTA_POLL_INTERVAL_MS = 15 * 60_000");
+    expect(source).not.toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"');
+    expect(source).not.toContain("initialTimer");
     expect(source).not.toContain("activeModuleId");
     expect(source).not.toContain("DELTA_POLL_INTERVAL_MS = 30_000");
   });
