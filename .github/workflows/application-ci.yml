@@ -71,6 +71,10 @@ jobs:
         run: bun run test:runtime-efficiency
       - name: Test vendor landed-rate averages
         run: bun run test:vendor-rate-average
+      - name: Test unified Customer and Sites saves
+        run: bun run test:customer-sites-save
+      - name: Test legacy Customer and Site path removal
+        run: bun run test:customer-sites-legacy
       - name: Test bug hunt regressions
         run: bun run test:bug-hunt
       - name: Test field staff UI visibility
