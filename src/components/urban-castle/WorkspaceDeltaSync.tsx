@@ -28,8 +28,11 @@ import {
   workspaceOutboxStore,
 } from "@/lib/uploads/workspace-outbox";
 
-const DELTA_SYNC_ENABLED = process.env.NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0";
-const DELTA_POLL_INTERVAL_MS = 5 * 60_000;
+// Delta polling is intentionally opt-in. Every run invokes a Vercel Function and
+// reads Supabase revision/journal rows, so Free/Hobby deployments remain quiet
+// unless an operator explicitly enables cross-session background synchronization.
+const DELTA_SYNC_ENABLED = process.env.NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1";
+const DELTA_POLL_INTERVAL_MS = 15 * 60_000;
 const DELTA_EVENT_DEBOUNCE_MS = 750;
 const MAX_DELTA_PAGES_PER_RUN = 5;
 
@@ -250,7 +253,6 @@ export function WorkspaceDeltaSync(): null {
         void run();
       }, DELTA_EVENT_DEBOUNCE_MS);
     };
-    const initialTimer = window.setTimeout(() => void run(), 3_000);
     const interval = window.setInterval(() => void run(), DELTA_POLL_INTERVAL_MS);
     const onFocus = () => scheduleRun();
     const onOnline = () => scheduleRun();
@@ -264,7 +266,6 @@ export function WorkspaceDeltaSync(): null {
     return () => {
       disposed = true;
       activeController?.abort();
-      window.clearTimeout(initialTimer);
       window.clearInterval(interval);
       if (eventTimer !== null) window.clearTimeout(eventTimer);
       if (rerunTimer !== null) window.clearTimeout(rerunTimer);
