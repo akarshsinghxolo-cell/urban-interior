@@ -8,6 +8,7 @@ import {
   workspaceReadCoverageIsCompatible,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,10 @@ interface WorkspaceReadPayload {
     staffId?: string;
     expiresAt: number;
   };
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 /**
@@ -45,31 +50,50 @@ export function WorkspaceScopedReadBoundary() {
     () => workspaceReadTargetForPath(pathname),
     [pathname],
   );
+  const endpoint = React.useMemo(
+    () => workspaceReadEndpointForTarget(requestedTarget),
+    [requestedTarget],
+  );
+  const targetKey = `${endpoint}:${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
   const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [retryNonce, setRetryNonce] = React.useState(0);
-  const inFlightRef = React.useRef(false);
-  const mountedRef = React.useRef(true);
+  const requestSequenceRef = React.useRef(0);
+  const latestTargetKeyRef = React.useRef(targetKey);
+
+  React.useLayoutEffect(() => {
+    latestTargetKeyRef.current = targetKey;
+  }, [targetKey]);
 
   React.useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-
-  const targetKey = `${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
+    setError(null);
+  }, [targetKey]);
 
   React.useEffect(() => {
-    if (!needsExpansion || !authUser || inFlightRef.current || error) return;
-    inFlightRef.current = true;
+    if (!authUser) {
+      workspaceReadState.reset();
+      setLoading(false);
+      setError(null);
+      return;
+    }
+    if (!needsExpansion) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const requestId = ++requestSequenceRef.current;
+    const requestTargetKey = targetKey;
     setLoading(true);
+    setError(null);
 
-    void fetch("/api/workspace", {
+    void fetch(endpoint, {
       credentials: "same-origin",
       cache: "no-store",
+      signal: controller.signal,
       headers: {
+        Accept: "application/json",
         "X-UC-Workspace-Path": pathname,
         "X-UC-Workspace-Module": requestedTarget.moduleId,
         "X-UC-Read-State-Deferred": "1",
@@ -77,22 +101,30 @@ export function WorkspaceScopedReadBoundary() {
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
       if (response.status === 401) {
+        workspaceReadState.reset();
         window.location.replace("/signin");
         return;
       }
-      if (!response.ok || !payload.data || typeof payload.revision !== "number" || !payload.user) {
+      const hydrationUser = payload.user || authUser;
+      if (!response.ok || !payload.data || typeof payload.revision !== "number" || !hydrationUser) {
         throw new Error(payload.error || "The requested workspace data could not be loaded.");
       }
 
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
-      if (!mountedRef.current) return;
+      if (
+        controller.signal.aborted ||
+        requestSequenceRef.current !== requestId ||
+        latestTargetKeyRef.current !== requestTargetKey
+      ) return;
+
       hydrateSecureWorkspace({
         db: overlay.db,
         revision: payload.revision,
-        user: payload.user,
+        user: hydrationUser,
         aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
       });
+      workspaceReadState.recordResponse(response);
       if (overlay.pendingCount) {
         useRDashStore.setState({
           workspaceSyncStatus: "error",
@@ -101,16 +133,28 @@ export function WorkspaceScopedReadBoundary() {
             : "Locally saved changes are waiting to synchronize.",
         });
       }
-      workspaceReadState.recordResponse(response);
-      setError(null);
     }).catch((caught) => {
-      if (!mountedRef.current) return;
+      if (
+        controller.signal.aborted ||
+        isAbortError(caught) ||
+        requestSequenceRef.current !== requestId ||
+        latestTargetKeyRef.current !== requestTargetKey
+      ) return;
       setError(caught instanceof Error ? caught.message : "The requested workspace data could not be loaded.");
     }).finally(() => {
-      inFlightRef.current = false;
-      if (mountedRef.current) setLoading(false);
+      if (
+        !controller.signal.aborted &&
+        requestSequenceRef.current === requestId &&
+        latestTargetKeyRef.current === requestTargetKey
+      ) {
+        setLoading(false);
+      }
     });
-  }, [authUser, error, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget.moduleId, retryNonce, targetKey]);
+
+    return () => {
+      controller.abort();
+    };
+  }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget.moduleId, retryNonce, targetKey]);
 
   if (!needsExpansion) return null;
   return (
@@ -121,9 +165,9 @@ export function WorkspaceScopedReadBoundary() {
             {error ? <AlertTriangle className="h-5 w-5" /> : <Database className="h-5 w-5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Loading record data"}</p>
+            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Loading module data"}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {error || "Loading the secure record graph without interrupting pending changes."}
+              {error || "Loading only the secure records required for this screen."}
             </p>
           </div>
           {!error ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
@@ -133,10 +177,7 @@ export function WorkspaceScopedReadBoundary() {
             type="button"
             size="sm"
             className="mt-4 w-full"
-            onClick={() => {
-              setError(null);
-              setRetryNonce((value) => value + 1);
-            }}
+            onClick={() => setRetryNonce((value) => value + 1)}
             disabled={loading}
           >
             <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry workspace data

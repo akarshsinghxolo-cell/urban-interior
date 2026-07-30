@@ -10,17 +10,28 @@ import {
   WORKSPACE_BOOTSTRAP_COLLECTIONS,
 } from "./module-scoped-collections";
 import {
+  collectionsForWorkspaceReadTarget,
+  moduleReadPlanSavings,
+  workspaceModuleReadPlan,
+} from "./module-read-plans";
+import { getProjectedWorkspaceBootstrap } from "./projected-workspace-bootstrap";
+import {
   getWorkspaceSubset,
   type WorkspaceSubset,
 } from "./workspace";
 
 export * from "./module-scoped-collections";
+export * from "./module-read-plans";
+export * from "./projected-workspace-bootstrap";
 
 export const MODULE_SCOPED_READS_ENABLED = process.env.UC_MODULE_SCOPED_READS !== "0";
 
 export interface ModuleScopedWorkspace extends WorkspaceSubset {
   scope: ModuleWorkspaceReadScope;
   collectionCount: number;
+  scopeCollectionCount: number;
+  readStrategy: "module" | "scope";
+  limitedCollections: Record<string, number>;
   loadMs: number;
 }
 
@@ -88,17 +99,16 @@ export function collectionsForWorkspaceReadScope(
 }
 
 export async function getWorkspaceBootstrap(user: AuthenticatedUser): Promise<WorkspaceSubset> {
-  return getWorkspaceSubset({
-    fullCollections: [...WORKSPACE_BOOTSTRAP_COLLECTIONS],
-    rowsByCollection: user.staffId ? { "master.staff": [user.staffId] } : undefined,
-  });
+  return getProjectedWorkspaceBootstrap(user.staffId);
 }
 
 async function readAuthorizedScope(
   user: AuthenticatedUser,
   target: WorkspaceReadTarget,
 ): Promise<ModuleScopedWorkspace> {
-  if (target.scope === "full") throw new Error("INVALID:Full reads do not use the module-scoped planner.");
+  if (target.scope === "full" || target.scope === "bootstrap") {
+    throw new Error("INVALID:Bootstrap and full reads do not use the module-scoped planner.");
+  }
 
   const startedAt = performance.now();
   const bootstrap = await getWorkspaceBootstrap(user);
@@ -112,33 +122,47 @@ async function readAuthorizedScope(
     throw new Error(`FORBIDDEN:Your role cannot open ${access.moduleLabel}.`);
   }
 
-  const collections = collectionsForWorkspaceReadScope(target.scope);
-  const scoped = await getWorkspaceSubset({ fullCollections: [...collections] });
+  const plan = workspaceModuleReadPlan(target);
+  const collections = collectionsForWorkspaceReadTarget(target);
+  const scoped = await getWorkspaceSubset({
+    fullCollections: [...collections],
+    limitsByCollection: { ...(plan.limitsByCollection || {}) },
+  });
   const merged = mergeWorkspaceSubsets(bootstrap, scoped);
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_scope = target.scope;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_mode = target.scope;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_collections = [...new Set([
+  const savings = moduleReadPlanSavings(target);
+  const limitedCollections = Object.fromEntries(
+    Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
+      collections.includes(collection),
+    ),
+  );
+  const readCollections = [...new Set([
     ...WORKSPACE_BOOTSTRAP_COLLECTIONS,
     ...(user.staffId ? ["master.staff"] : []),
     ...collections,
   ])];
 
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_scope = target.scope;
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_mode = target.scope;
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_module = target.moduleId;
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_strategy = plan.strategy;
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_collections = readCollections;
+  (merged.data as unknown as Record<string, unknown>)._workspace_read_limits = limitedCollections;
+
   return {
     ...merged,
     scope: target.scope,
-    collectionCount: new Set([
-      ...WORKSPACE_BOOTSTRAP_COLLECTIONS,
-      ...(user.staffId ? ["master.staff"] : []),
-      ...collections,
-    ]).size,
+    collectionCount: readCollections.length,
+    scopeCollectionCount: savings.scope + WORKSPACE_BOOTSTRAP_COLLECTIONS.length + (user.staffId ? 1 : 0),
+    readStrategy: plan.strategy,
+    limitedCollections,
     loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
   };
 }
 
 /**
- * Reads a permission bootstrap first, then the route's bounded collection set at
- * the same workspace revision. A concurrent write causes one clean retry;
- * callers retain the full-workspace compatibility fallback for service failures.
+ * Reads a projected permission bootstrap first, then the route's exact module
+ * plan (or its bounded scope fallback) at the same workspace revision. A
+ * concurrent write causes one clean retry.
  */
 export async function getModuleScopedWorkspace(
   user: AuthenticatedUser,

@@ -18,12 +18,9 @@ const ProcurementModule = React.lazy(() => import("./modules/ProcurementModule")
 const GRNModule = React.lazy(() => import("./modules/GRNModule").then((module) => ({ default: module.GRNModule })));
 const InventoryModule = React.lazy(() => import("./modules/InventoryModule").then((module) => ({ default: module.InventoryModule })));
 const DispatchModule = React.lazy(() => import("./modules/DispatchModule").then((module) => ({ default: module.DispatchModule })));
-const JobPnLModule = React.lazy(() => import("./modules/JobPnLModule").then((module) => ({ default: module.JobPnLModule })));
-const SiteProfitabilityModule = React.lazy(() => import("./modules/SiteProfitabilityModule").then((module) => ({ default: module.SiteProfitabilityModule })));
 const ProfitabilityWorkspaceModule = React.lazy(() => import("./modules/ProfitabilityWorkspaceModule").then((module) => ({ default: module.ProfitabilityWorkspaceModule })));
 const StaffSalaryModule = React.lazy(() => import("./modules/StaffSalaryModule").then((module) => ({ default: module.StaffSalaryModule })));
 const VendorPerformanceModule = React.lazy(() => import("./modules/VendorPerformanceModule").then((module) => ({ default: module.VendorPerformanceModule })));
-const ContractorPerformanceModule = React.lazy(() => import("./modules/ContractorPerformanceModule").then((module) => ({ default: module.ContractorPerformanceModule })));
 const ContractorWorkspaceModule = React.lazy(() => import("./modules/ContractorWorkspaceModule").then((module) => ({ default: module.ContractorWorkspaceModule })));
 const WorkOrderTimelineModule = React.lazy(() => import("./modules/WorkOrderTimelineModule").then((module) => ({ default: module.WorkOrderTimelineModule })));
 const VendorBillsModule = React.lazy(() => import("./modules/VendorBillsModule").then((module) => ({ default: module.VendorBillsModule })));
@@ -51,21 +48,21 @@ const GstReturnsModule = React.lazy(() => import("./modules/SalesExtraModules").
 const MastersModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.MastersModule })));
 const SalesOpsModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.SalesOpsModule })));
 const ObstacleThreadsModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.ObstacleThreadsModule })));
-const ApprovalsModule = React.lazy(() => import("./modules/RemainingModules").then((module) => ({ default: module.ApprovalsModule })));
 const SiteVisitsModule = React.lazy(() => import("./modules/RemainingModules").then((module) => ({ default: module.SiteVisitsModule })));
-const QuotationsModule = React.lazy(() => import("./modules/QuotationsModule").then((module) => ({ default: module.QuotationsModule })));
 const WorkCategoryMasterModule = React.lazy(() => import("./modules/WorkCategoryMasterModule").then((module) => ({ default: module.WorkCategoryMasterModule })));
 const VendorPriceMasterModule = React.lazy(() => import("./modules/VendorPriceMasterModule").then((module) => ({ default: module.VendorPriceMasterModule })));
 const MediaLibraryModule = React.lazy(() => import("./modules/MediaLibraryModule").then((module) => ({ default: module.MediaLibraryModule })));
 const GoogleDriveManagerModule = React.lazy(() => import("./modules/GoogleDriveManagerModule").then((module) => ({ default: module.GoogleDriveManagerModule })));
 const UserApprovalsModule = React.lazy(() => import("./modules/UserApprovalsModule").then((module) => ({ default: module.UserApprovalsModule })));
 const SalesPipelineModule = React.lazy(() => import("./modules/SalesPipelineModule").then((module) => ({ default: module.SalesPipelineModule })));
-const CommissionsModule = React.lazy(() => import("./modules/CommissionsModule").then((module) => ({ default: module.CommissionsModule })));
-const ThreadsModule = React.lazy(() => import("./modules/ThreadsModule").then((module) => ({ default: module.ThreadsModule })));
+const LostClosedReviewModule = React.lazy(() => import("./modules/MiscModules").then((module) => ({ default: module.LostClosedReviewModule })));
 const UnifiedThreadInboxModule = React.lazy(() => import("./modules/UnifiedThreadInboxModule").then((module) => ({ default: module.UnifiedThreadInboxModule })));
 const IntegrityModule = React.lazy(() => import("./modules/IntegrityModule").then((module) => ({ default: module.IntegrityModule })));
-const ContractorDetailModule = React.lazy(() => import("./modules/ContractorDetailModule").then((module) => ({ default: module.ContractorDetailModule })));
-const CustomerDeskExtrasModule = React.lazy(() => import("./modules/RemainingModules").then((module) => ({ default: module.CustomerDeskExtrasModule })));
+const CustomerRequestsWorkspace = React.lazy(() => import("./modules/CustomerRequestsWorkspace").then((module) => ({ default: module.CustomerRequestsWorkspace })));
+const QuotationWorkspaceModule = React.lazy(() => import("./modules/QuotationWorkspaceModule").then((module) => ({ default: module.QuotationWorkspaceModule })));
+const CommissionsWorkspaceModule = React.lazy(() => import("./modules/CommissionsWorkspaceModule").then((module) => ({ default: module.CommissionsWorkspaceModule })));
+const BusinessApprovalsWorkspace = React.lazy(() => import("./modules/BusinessApprovalsWorkspace").then((module) => ({ default: module.BusinessApprovalsWorkspace })));
+const ArticleVariantsModule = React.lazy(() => import("./modules/ArticleVariantsModule").then((module) => ({ default: module.ArticleVariantsModule })));
 const BlockedRisksCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.BlockedRisksCombined })));
 const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedViews").then((module) => ({ default: module.CalendarRecurringCombined })));
 
@@ -76,14 +73,11 @@ export function ModuleLoadingFallback() {
 }
 
 export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
-    const activeModuleId = moduleId;
-    const route = resolveRenderer(activeModuleId);
+    const route = resolveRenderer(moduleId);
+    const activeModuleId = route.id;
     const role = useRDashStore((state) => state.authUser?.role);
     const rawPermissions = useRDashStore((state) => (state.db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions || EMPTY_PERMISSIONS);
-    const access = React.useMemo(
-        () => workspaceRouteAccessDecision(activeModuleId, role, rawPermissions),
-        [activeModuleId, role, rawPermissions],
-    );
+    const access = workspaceRouteAccessDecision(activeModuleId, role, rawPermissions);
 
     if (access.status === "pending") return <ModuleLoadingFallback />;
     if (access.status === "denied") {
@@ -93,10 +87,10 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     switch (route.renderer) {
         case "daily-work": return <DailyWork />;
         case "customer-desk": return <CustomerDesk view={route.filter?.view === "timeline" ? "timeline" : "default"}/>;
-        case "customer-extras": return <CustomerDeskExtrasModule submodule={route.filter?.sub || "requests"} filterPresets={route.filterPresets} />;
+        case "customer-extras": return <CustomerRequestsWorkspace filterPresets={route.filterPresets} />;
         case "site-execution": return <SiteExecutionModule initialTab={route.filter?.tab}/>;
         case "tasks": return <TasksFollowups moduleId={activeModuleId} submoduleFilter={route.filter} filterPresets={route.filterPresets} dataSource={route.dataSource}/>;
-        case "quotations": return <QuotationsModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;
+        case "quotations": return <QuotationWorkspaceModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;
         case "boq": return <BOQModule />;
         case "drawings": return <DrawingsModule />;
         case "execution-logs": return <ExecutionLogsModule />;
@@ -104,17 +98,13 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "grn": return <GRNModule />;
         case "inventory": return <InventoryModule />;
         case "dispatch": return <DispatchModule view={route.filter?.view}/>;
-        case "workOrder-pnl": return <JobPnLModule />;
-        case "site-profitability": return <SiteProfitabilityModule />;
         case "profitability": return <ProfitabilityWorkspaceModule />;
         case "staff-salary": return <StaffSalaryModule />;
         case "vendor-performance": return <VendorPerformanceModule />;
-        case "contractor-performance": return <ContractorPerformanceModule />;
         case "contractor-workspace": return <ContractorWorkspaceModule />;
         case "wo-timeline": return <WorkOrderTimelineModule />;
         case "vendor-bills": return <VendorBillsModule />;
         case "contractor-payments": return <ContractorPaymentsModule />;
-        case "contractor-detail": return <ContractorDetailModule />;
         case "finance-overview": return <FinanceOverviewModule />;
         case "payment-recovery": return <PaymentRecoveryModule />;
         case "reports-v2": return <ReportsModule reportId={activeModuleId}/>;
@@ -136,14 +126,15 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "staff-board": return <StaffBoardModule />;
         case "gst-returns": return <GstReturnsModule />;
         case "sales-pipeline": return <SalesPipelineModule />;
-        case "commissions": return <CommissionsModule />;
-        case "threads": return <ThreadsModule />;
+        case "lost-closed-review": return <LostClosedReviewModule />;
+        case "commissions": return <CommissionsWorkspaceModule />;
         case "unified-thread-inbox": return <UnifiedThreadInboxModule />;
         case "masters": return <WorkCategoryMasterModule initialView="catalogue"/>;
+        case "article-variants": return <ArticleVariantsModule />;
         case "masters-v2": return activeModuleId === "vendorRates" ? <VendorPriceMasterModule /> : <MastersModule submodule={route.filter?.sub || activeModuleId}/>;
         case "sales-ops": return <SalesOpsModule submodule={route.filter?.sub || activeModuleId} filterPresets={route.filterPresets} statusFilter={route.filter?.status} expiringFilter={route.filter?.expiring}/>;
         case "obstacle-threads": return route.filter?.view === "combined" ? <BlockedRisksCombined /> : <ObstacleThreadsModule />;
-        case "approvals-v2": return <ApprovalsModule />;
+        case "approvals-v2": return <BusinessApprovalsWorkspace />;
         case "site-visits": return <SiteVisitsModule />;
         case "media-library": return <MediaLibraryModule initialView={route.filter?.view}/>;
         case "drive-manager": return <GoogleDriveManagerModule />;

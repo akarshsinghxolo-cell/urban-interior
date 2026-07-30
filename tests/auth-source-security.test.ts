@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+const repositoryRoot = join(import.meta.dir, "..");
 const authSource = readFileSync(
-  join(import.meta.dir, "../src/lib/rdash/server/auth.ts"),
+  join(repositoryRoot, "src/lib/rdash/server/auth.ts"),
   "utf8",
 );
 
@@ -21,5 +22,12 @@ describe("server authentication source security", () => {
   test("routes every non-empty credential attempt through Supabase Auth", () => {
     expect(authSource).toContain("return supabaseCredentials(email, password);");
     expect(authSource).toContain("auth.auth.signInWithPassword({ email, password })");
+  });
+
+  test("never tracks a live root environment file", () => {
+    expect(existsSync(join(repositoryRoot, ".env"))).toBe(false);
+    const example = readFileSync(join(repositoryRoot, ".env.example"), "utf8");
+    expect(example).toContain("replace_me");
+    expect(example).not.toMatch(/UC_OWNER_PASSWORD\s*=\s*["'][^"']+["']/);
   });
 });

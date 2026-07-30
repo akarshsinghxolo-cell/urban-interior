@@ -5,6 +5,7 @@ import { Compass, MapPin, Pin, Zap, Menu, Plus } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
 import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
+import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -13,7 +14,7 @@ import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
 import { indiaBusinessDate } from "@/lib/rdash/format";
-const DetailPanel = React.lazy(() => import("./DetailPanel").then((module) => ({ default: module.DetailPanel })));
+const DetailPanel = React.lazy(() => import("./DetailPanelWithHistory").then((module) => ({ default: module.DetailPanelWithHistory })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { PromptDialogProvider } from "./PromptDialog";
@@ -32,11 +33,12 @@ export function RDashApp() {
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
-    const hydrateSecureWorkspace = useRDashStore((s) => s.hydrateSecureWorkspace);
     const quickAddOpen = useRDashStore((s) => s.quickAddOpen);
     const setQuickAddOpen = useRDashStore((s) => s.setQuickAddOpen);
-    const [secureWorkspaceReady, setSecureWorkspaceReady] = React.useState(false);
+    const readState = useWorkspaceReadState();
+    const [secureBootstrapReady, setSecureBootstrapReady] = React.useState(false);
     const [secureWorkspaceError, setSecureWorkspaceError] = React.useState<string | null>(null);
+    const secureWorkspaceReady = secureBootstrapReady && readState.scope !== "bootstrap" && readState.mode !== "unknown";
     // CRON-7: Request notification permission on mount + check pending approvals
     React.useEffect(() => {
         requestNotificationPermission();
@@ -52,14 +54,11 @@ export function RDashApp() {
     React.useEffect(() => {
         initAuthFetch();
         let active = true;
-        void fetch("/api/workspace", { credentials: "same-origin", cache: "no-store" })
+        void fetch("/api/bootstrap", { credentials: "same-origin", cache: "no-store" })
             .then(async (response) => {
             const payload = await response.json().catch(() => ({})) as {
                 error?: string;
                 revision?: number;
-                data?: import("@/lib/rdash/types").RDashDatabase;
-                aggregateRevisions?: Record<string, number>;
-                rowVersions?: Record<string, number>;
                 user?: {
                     name: string;
                     email: string;
@@ -73,31 +72,25 @@ export function RDashApp() {
                 window.location.replace("/signin");
                 return;
             }
-            if (!response.ok || !payload.data || typeof payload.revision !== "number" || !payload.user)
-                throw new Error(payload.error || "The secure workspace could not be loaded.");
+            if (!response.ok || typeof payload.revision !== "number" || !payload.user)
+                throw new Error(payload.error || "The secure workspace session could not be initialized.");
             if (!active)
                 return;
-            try {
-                hydrateSecureWorkspace({
-                    db: payload.data,
-                    revision: payload.revision,
-                    user: payload.user,
-                    aggregateRevisions: payload.aggregateRevisions,
-                    rowVersions: payload.rowVersions,
-                });
-            }
-            catch (hydrateError) {
-                console.error("[RDashApp] hydrateSecureWorkspace failed:", hydrateError);
-                throw hydrateError;
-            }
-            setSecureWorkspaceReady(true);
+            useRDashStore.setState({
+                authUser: payload.user,
+                serverRevision: payload.revision,
+                workspaceSyncStatus: "idle",
+                workspaceSyncError: null,
+            });
+            workspaceReadState.recordResponse(response);
+            setSecureBootstrapReady(true);
         })
             .catch((error) => {
             if (active)
-                setSecureWorkspaceError(error instanceof Error ? error.message : "The secure workspace could not be loaded.");
+                setSecureWorkspaceError(error instanceof Error ? error.message : "The secure workspace session could not be initialized.");
         });
         return () => { active = false; };
-    }, [hydrateSecureWorkspace]);
+    }, []);
 
     // ── Login welcome + workspace health banner ─────────────────────────
     // Once the secure workspace is hydrated, fetch /api/health/summary once
@@ -252,7 +245,10 @@ export function RDashApp() {
         return () => window.removeEventListener("keydown", onKeyDown);
     }, [setActiveModule]);
     if (!secureWorkspaceReady) {
-        return <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4"><div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-card"><h1 className="text-lg font-bold">Loading protected workspace</h1><p className="mt-2 text-sm text-muted-foreground">{secureWorkspaceError || "Verifying your session and loading the server workspace…"}</p>{secureWorkspaceError ? <button type="button" className="mt-4 text-sm font-semibold text-primary underline" onClick={() => window.location.reload()}>Retry</button> : null}</div></main>;
+        const loadingMessage = secureWorkspaceError || (secureBootstrapReady
+            ? "Loading only the secure data required for this screen…"
+            : "Verifying your session and loading the workspace bootstrap…");
+        return <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4"><div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-card"><h1 className="text-lg font-bold">Loading protected workspace</h1><p className="mt-2 text-sm text-muted-foreground">{loadingMessage}</p>{secureWorkspaceError ? <button type="button" className="mt-4 text-sm font-semibold text-primary underline" onClick={() => window.location.reload()}>Retry</button> : null}</div></main>;
     }
     return (<PromptDialogProvider><ConfirmDialogProvider><div className="flex h-dvh flex-col overflow-hidden bg-background">
       <div className="flex min-h-0 flex-1 overflow-hidden">

@@ -35,19 +35,6 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
   const router = useRouter();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const initialSelectionRef = React.useRef(
-    selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
-  );
-  const initialEntityKind = initialSelectionRef.current?.entity?.kind;
-  const initialTabExplicit = initialEntityKind === "customer"
-    ? workspaceCustomerTabRequest(search).explicit
-    : workspaceDetailTabRequest(search, initialEntityKind).explicit;
-  const historyStartedRef = React.useRef(
-    !initialSelectionRef.current?.entity && !initialTabExplicit,
-  );
-  const handledEntityRef = React.useRef<string | null>(null);
-  const [bootstrapped, setBootstrapped] = React.useState(false);
-  const [historyEnabled, setHistoryEnabled] = React.useState(historyStartedRef.current);
 
   const authUser = useRDashStore((state) => state.authUser);
   const db = useRDashStore((state) => state.db);
@@ -55,9 +42,23 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
   const detailPanel = useRDashStore((state) => state.detailPanel);
   const contextHistory = useRDashStore((state) => state.contextHistory);
   const contextHistoryIndex = useRDashStore((state) => state.contextHistoryIndex);
+
+  const [initialSelection] = React.useState(() =>
+    selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
+  );
+  const initialEntityKind = initialSelection?.entity?.kind;
+  const initialTabExplicit = initialEntityKind === "customer"
+    ? workspaceCustomerTabRequest(search).explicit
+    : workspaceDetailTabRequest(search, initialEntityKind).explicit;
+  const initialHistoryEnabled = !initialSelection?.entity && !initialTabExplicit;
+  const historyStartedRef = React.useRef(initialHistoryEnabled);
+  const handledEntityRef = React.useRef<string | null>(null);
+  const [bootstrapped, setBootstrapped] = React.useState(false);
+  const [historyEnabled, setHistoryEnabled] = React.useState(initialHistoryEnabled);
+
   const selection = React.useMemo(
-    () => selectWorkspaceRoute(pathname, useRDashStore.getState().activeModuleId),
-    [pathname],
+    () => selectWorkspaceRoute(pathname, activeModuleId),
+    [activeModuleId, pathname],
   );
 
   const startHistory = React.useCallback(() => {
@@ -81,7 +82,9 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
         startHistory();
       }
     }
-    setBootstrapped(true);
+
+    const timer = window.setTimeout(() => setBootstrapped(true), 0);
+    return () => window.clearTimeout(timer);
   }, [pathname, router, search, startHistory]);
 
   React.useEffect(() => {

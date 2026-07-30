@@ -41,7 +41,7 @@ export function FinanceOverviewModule() {
     </div>
 
     <section className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-sm font-bold">Site financial position</p><p className="text-xs text-muted-foreground">Customer billing and collections are distinct from vendor and contractor liabilities.</p></div><Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setActiveModule("workOrderPnl")}>Open P&L</Button></div>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><p className="text-sm font-bold">Site financial position</p><p className="text-xs text-muted-foreground">Customer billing and collections are distinct from vendor and contractor liabilities.</p></div><Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setActiveModule("profitability")}>Open P&amp;L</Button></div>
       <div className="divide-y divide-border">
         {siteRows.length === 0 ? <div className="px-4 py-8 text-sm text-muted-foreground">Create a Site before creating service-work finance records.</div> : siteRows.map(({ site, financials }) => <div key={site.id} className="grid gap-3 px-4 py-3 md:grid-cols-[minmax(180px,1.4fr)_repeat(5,minmax(90px,1fr))] md:items-center">
           <div><p className="text-sm font-semibold">{site.name}</p><p className="text-[11px] text-muted-foreground">{db.customers.find((customer) => customer.id === site.customer_id)?.name || "Customer"} · {site.site_type}</p></div>

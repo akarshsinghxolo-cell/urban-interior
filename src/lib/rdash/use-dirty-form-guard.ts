@@ -21,8 +21,11 @@ export function useDirtyFormRegistration(
 ): { markClean: () => void } {
   const saveRef = React.useRef(registration.save);
   const discardRef = React.useRef(registration.discard);
-  saveRef.current = registration.save;
-  discardRef.current = registration.discard;
+
+  React.useLayoutEffect(() => {
+    saveRef.current = registration.save;
+    discardRef.current = registration.discard;
+  }, [registration.discard, registration.save]);
 
   React.useEffect(() => dirtyFormRegistry.register({
     ...registration,

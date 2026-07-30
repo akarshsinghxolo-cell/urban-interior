@@ -1,4 +1,8 @@
-import { resolveRenderer } from "./modules";
+import {
+  canonicalModuleId,
+  isRegisteredModuleId,
+  resolveRenderer,
+} from "./modules";
 import { permissionModuleForRoute } from "./staff-operations";
 import {
   isWorkspaceEntityLocation,
@@ -7,6 +11,7 @@ import {
 } from "./workspace-entity-routes";
 
 export type WorkspaceReadScope =
+  | "bootstrap"
   | "full"
   | "customer"
   | "site"
@@ -20,29 +25,107 @@ export type WorkspaceReadScope =
   | "master"
   | "reports"
   | "system";
-export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "full">;
-export type RowScopedWorkspaceEntityKind = Extract<WorkspaceEntityKind, "customer" | "site">;
+export type ModuleWorkspaceReadScope = Exclude<WorkspaceReadScope, "bootstrap" | "full">;
+export type RowScopedWorkspaceEntityKind = Extract<
+  WorkspaceEntityKind,
+  "customer" | "site"
+>;
+export type WorkspaceReadStrategy =
+  | "unknown"
+  | "bootstrap"
+  | "full"
+  | "scope"
+  | "module"
+  | "row";
 
 function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   const map = new Map<string, ModuleWorkspaceReadScope>();
-  ["customerDesk", "customerTimeline", "customerRequests", "salesPipeline"].forEach((id) => map.set(id, "customer"));
-  ["siteExecution", "drawings", "executionLogs", "woTimeline", "contractorDetail", "contractorRates", "contractorPerformance", "contractors"].forEach((id) => map.set(id, "site"));
-  ["workdesk", "unifiedThreadInbox", "tasks", "blockedRisks", "approvals", "calendarRecurring"].forEach((id) => map.set(id, "workdesk"));
-  ["quotationDesk", "quotationConfig"].forEach((id) => map.set(id, "quotation"));
-  ["fieldOperations", "siteMeasurement", "visitProofs", "fieldMode", "gpsTracking"].forEach((id) => map.set(id, "field"));
-  ["procurementInventory", "boqControlCentre", "grn", "inventory", "dispatch", "boq", "vendors", "vendorRates", "rateFinder", "vendorPerformance"].forEach((id) => map.set(id, "procurement"));
-  ["financeDesk", "payments", "invoices", "vendorBills", "contractorPayments", "profitability", "commissions", "gstReturns", "siteProfitability", "workOrderPnl"].forEach((id) => map.set(id, "finance"));
-  ["mediaCommunication", "driveManager", "communicationCentre"].forEach((id) => map.set(id, "media"));
-  ["hrStaff", "attendancePayroll", "staffSalary", "staff"].forEach((id) => map.set(id, "hr"));
-  ["masterSetup"].forEach((id) => map.set(id, "master"));
-  ["reportsDesk", "salesAnalytics", "collectionAnalytics", "operationsAnalytics", "financialAnalytics", "salesReport", "collectionReport", "jobPnlReport", "vendorExposureReport", "taxReport", "staffProductivity", "quotationConversion", "leadSourceReport", "agingReportRep", "visitCompliance", "taskThroughput"].forEach((id) => map.set(id, "reports"));
-  ["systemSettings", "userApprovals", "controlBrainWorkflows", "approvalPolicies", "auditLog", "dataImport", "dataExport", "integrity"].forEach((id) => map.set(id, "system"));
+  [
+    "customerDesk",
+    "customerTimeline",
+    "customerRequests",
+    "salesPipeline",
+    "lostClosedReview",
+  ].forEach((id) => map.set(id, "customer"));
+  [
+    "siteExecution",
+    "drawings",
+    "executionLogs",
+    "woTimeline",
+    "contractorDetail",
+    "contractorRates",
+  ].forEach((id) => map.set(id, "site"));
+  [
+    "workdesk",
+    "unifiedThreadInbox",
+    "tasks",
+    "blockedRisks",
+    "approvals",
+    "calendarRecurring",
+  ].forEach((id) => map.set(id, "workdesk"));
+  ["quotationDesk", "quotationConfig"].forEach((id) =>
+    map.set(id, "quotation"),
+  );
+  [
+    "fieldOperations",
+    "siteMeasurement",
+    "visitProofs",
+    "fieldMode",
+    "gpsTracking",
+  ].forEach((id) => map.set(id, "field"));
+  [
+    "procurementInventory",
+    "boqControlCentre",
+    "grn",
+    "inventory",
+    "dispatch",
+    "vendors",
+    "vendorRates",
+    "rateFinder",
+  ].forEach((id) => map.set(id, "procurement"));
+  [
+    "financeDesk",
+    "payments",
+    "invoices",
+    "vendorBills",
+    "contractorPayments",
+    "profitability",
+    "commissions",
+    "gstReturns",
+  ].forEach((id) => map.set(id, "finance"));
+  ["mediaCommunication", "driveManager", "communicationCentre"].forEach(
+    (id) => map.set(id, "media"),
+  );
+  ["hrStaff", "attendancePayroll", "staffSalary"].forEach((id) =>
+    map.set(id, "hr"),
+  );
+  ["masterSetup", "articleVariants"].forEach((id) =>
+    map.set(id, "master"),
+  );
+  [
+    "reportsDesk",
+    "salesAnalytics",
+    "collectionAnalytics",
+    "operationsAnalytics",
+    "financialAnalytics",
+  ].forEach((id) => map.set(id, "reports"));
+  [
+    "systemSettings",
+    "userApprovals",
+    "controlBrainWorkflows",
+    "approvalPolicies",
+    "auditLog",
+    "dataImport",
+    "dataExport",
+    "integrity",
+  ].forEach((id) => map.set(id, "system"));
   return map;
 }
 
 const MODULE_SCOPE_BY_ID = buildModuleScopeMap();
 
 const KNOWN_SCOPES = new Set<WorkspaceReadScope>([
+  "bootstrap",
   "full",
   "customer",
   "site",
@@ -71,33 +154,69 @@ export interface WorkspaceReadTarget {
 export interface WorkspaceReadCoverage {
   scope: WorkspaceReadScope;
   mode: string;
+  strategy?: WorkspaceReadStrategy;
+  moduleId?: string;
   entityKind?: RowScopedWorkspaceEntityKind;
   entityId?: string;
 }
 
-export function workspaceReadScopeForModule(moduleId: string | null | undefined): WorkspaceReadScope {
-  const id = String(moduleId || "").trim();
-  return MODULE_SCOPE_BY_ID.get(id) || "full";
+export function workspaceReadScopeForModule(
+  moduleId: string | null | undefined,
+): WorkspaceReadScope {
+  const raw = String(moduleId || "").trim();
+  if (!raw || !isRegisteredModuleId(raw)) return "bootstrap";
+  const id = canonicalModuleId(raw);
+  return MODULE_SCOPE_BY_ID.get(id) || "bootstrap";
 }
 
-export function workspaceReadScopeFromMode(mode: string | null | undefined): WorkspaceReadScope {
-  const normalized = String(mode || "").trim().replace(/-row$/, "") as WorkspaceReadScope;
-  return KNOWN_SCOPES.has(normalized) ? normalized : "full";
+export function workspaceReadScopeFromMode(
+  mode: string | null | undefined,
+): WorkspaceReadScope {
+  const raw = String(mode || "").trim();
+  const normalized = raw.endsWith("-row")
+    ? raw.slice(0, -"-row".length)
+    : raw;
+  return KNOWN_SCOPES.has(normalized as WorkspaceReadScope)
+    ? normalized as WorkspaceReadScope
+    : "bootstrap";
 }
 
-export function workspaceReadScopeFromDatabase(database: unknown): WorkspaceReadScope {
-  const value = database && typeof database === "object"
-    ? String((database as Record<string, unknown>)._workspace_read_scope || "")
-    : "";
+export function workspaceReadScopeFromDatabase(
+  database: unknown,
+): WorkspaceReadScope {
+  const value =
+    database && typeof database === "object"
+      ? String(
+          (database as Record<string, unknown>)._workspace_read_scope || "",
+        )
+      : "";
   return workspaceReadScopeFromMode(value);
 }
 
-export function workspaceReadTargetForModule(moduleId: string): WorkspaceReadTarget {
-  const route = resolveRenderer(moduleId);
+export function tryWorkspaceReadTargetForModule(
+  moduleId: string | null | undefined,
+): WorkspaceReadTarget | null {
+  const normalized = String(moduleId || "").trim();
+  if (!normalized || normalized.length > 120 || !isRegisteredModuleId(normalized)) {
+    return null;
+  }
+  const route = resolveRenderer(normalized);
+  const scope = MODULE_SCOPE_BY_ID.get(route.id);
+  if (!scope) return null;
   return {
-    scope: workspaceReadScopeForModule(route.id),
+    scope,
     moduleId: route.id,
     permissionModule: permissionModuleForRoute(route),
+  };
+}
+
+export function workspaceReadTargetForModule(
+  moduleId: string,
+): WorkspaceReadTarget {
+  return tryWorkspaceReadTargetForModule(moduleId) || {
+    scope: "workdesk",
+    moduleId: resolveRenderer("workdesk").id,
+    permissionModule: permissionModuleForRoute(resolveRenderer("workdesk")),
   };
 }
 
@@ -106,18 +225,23 @@ export function workspaceReadTargetForModule(moduleId: string): WorkspaceReadTar
  * read target. Customer and Site entity URLs retain their concrete record ID so
  * the server can load one dependency graph instead of every row in the module.
  */
-export function workspaceReadTargetForPath(input: string): WorkspaceReadTarget {
+export function workspaceReadTargetForPath(
+  input: string,
+): WorkspaceReadTarget {
   const location = resolveWorkspaceLocation(input);
   if (!location) return workspaceReadTargetForModule("workdesk");
   const route = resolveRenderer(location.moduleId);
+  const entityId = isWorkspaceEntityLocation(location)
+    ? String(location.entity.id || "").trim()
+    : "";
   return {
     scope: workspaceReadScopeForModule(route.id),
     moduleId: route.id,
     permissionModule: isWorkspaceEntityLocation(location)
       ? location.entity.permissionModule
       : permissionModuleForRoute(route),
-    ...(isWorkspaceEntityLocation(location)
-      ? { entity: { kind: location.entity.kind, id: location.entity.id } }
+    ...(isWorkspaceEntityLocation(location) && entityId
+      ? { entity: { kind: location.entity.kind, id: entityId } }
       : {}),
   };
 }
@@ -125,43 +249,67 @@ export function workspaceReadTargetForPath(input: string): WorkspaceReadTarget {
 export function rowScopedEntityForTarget(
   target: WorkspaceReadTarget,
 ): { kind: RowScopedWorkspaceEntityKind; id: string } | undefined {
+  const id = String(target.entity?.id || "").trim();
   if (
     target.entity?.kind === "customer" &&
     target.scope === "customer" &&
-    target.entity.id
+    id
   ) {
-    return { kind: "customer", id: target.entity.id };
+    return { kind: "customer", id };
   }
   if (
     target.entity?.kind === "site" &&
     target.scope === "site" &&
-    target.entity.id
+    id
   ) {
-    return { kind: "site", id: target.entity.id };
+    return { kind: "site", id };
   }
   return undefined;
 }
 
+function inferredReadStrategy(current: WorkspaceReadCoverage): WorkspaceReadStrategy {
+  if (current.strategy) return current.strategy;
+  if (current.mode === "unknown") return "unknown";
+  if (current.scope === "full" && current.mode === "full") return "full";
+  if (current.scope === "bootstrap" || current.mode === "bootstrap") return "bootstrap";
+  if (current.mode.endsWith("-row")) return "row";
+  if (current.mode === current.scope) return "scope";
+  return "unknown";
+}
+
 /**
- * A full snapshot covers every destination. Collection-scoped snapshots cover
- * every module and entity URL assigned to the same scope. Customer/Site row
- * snapshots remain compatible only with the exact same canonical record.
+ * A full snapshot covers every destination. Bootstrap contains authentication
+ * and permission context only, so it never satisfies a module or entity read.
+ * Scope snapshots cover every module and record assigned to the same scope.
+ * Exact-module snapshots cover only the module that produced them. Customer and
+ * Site row snapshots remain compatible only with the same concrete record.
  */
 export function workspaceReadCoverageIsCompatible(
   current: WorkspaceReadCoverage,
   requested: WorkspaceReadTarget,
 ): boolean {
-  if (current.scope === "full") return true;
+  const strategy = inferredReadStrategy(current);
+  if (
+    current.mode === "unknown" ||
+    strategy === "unknown" ||
+    current.scope === "bootstrap" ||
+    strategy === "bootstrap"
+  ) return false;
+  if (current.scope === "full" && strategy === "full") return true;
   if (current.scope !== requested.scope) return false;
-  if (current.mode === current.scope) return true;
 
   const entity = rowScopedEntityForTarget(requested);
-  return Boolean(
-    entity &&
-    current.mode === `${current.scope}-row` &&
-    current.entityKind === entity.kind &&
-    current.entityId === entity.id,
-  );
+  if (strategy === "row") {
+    return Boolean(
+      entity &&
+        current.entityKind === entity.kind &&
+        current.entityId === entity.id,
+    );
+  }
+  if (strategy === "module") {
+    return !entity && current.moduleId === requested.moduleId;
+  }
+  return strategy === "scope";
 }
 
 // Compatibility helper retained for existing callers and tests.
