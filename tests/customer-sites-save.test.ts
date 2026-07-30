@@ -158,6 +158,58 @@ describe("canonical customer and Sites save", () => {
     }, options)).toThrow(/cannot be moved/i);
   });
 
+  test("preserves omitted customer and Site fields for patch-style callers", () => {
+    const db = database();
+    db.customers[0].email = "existing@example.com";
+    db.sites[0].notes = "Keep this note";
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Renamed Customer" },
+      sites: [{ id: "site-1", name: "Renamed Site" }],
+    }, options);
+    expect(result.db.customers[0].email).toBe("existing@example.com");
+    expect(result.db.sites[0].notes).toBe("Keep this note");
+  });
+
+  test("rejects detaching a Site file owned by another Customer", () => {
+    const db = database();
+    db.customers.push({
+      ...db.customers[0],
+      id: "customer-2",
+      name: "Other Customer",
+      phone: "9999999999",
+      whatsapp: "9999999999",
+    });
+    db.sites.push({
+      ...db.sites[0],
+      id: "site-2",
+      customer_id: "customer-2",
+      name: "Other Site",
+      photo_attachment_ids: ["attachment-2"],
+    });
+    db.entityFileAttachments.push({
+      ...db.entityFileAttachments[0],
+      id: "attachment-2",
+      entity_id: "site-2",
+    });
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      detachAttachmentIds: ["attachment-2"],
+    }, options)).toThrow(/another Customer/i);
+  });
+
+  test("requires the owning Site to be included before detaching its file", () => {
+    const db = database();
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [],
+      detachAttachmentIds: ["attachment-1"],
+    }, options)).toThrow(/Include Site/i);
+  });
+
   test("requires a Site name for every supplied Site", () => {
     const db = database();
     expect(() => applyCustomerWithSitesSave(db, {

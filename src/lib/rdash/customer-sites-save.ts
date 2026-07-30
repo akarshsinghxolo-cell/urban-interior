@@ -88,26 +88,36 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
+function suppliedValue<T extends object, K extends keyof T>(
+  input: T,
+  key: K,
+  fallback: T[K],
+): T[K] {
+  return Object.prototype.hasOwnProperty.call(input, key) ? input[key] : fallback;
+}
+
 function customerRecord(
   existing: Customer | undefined,
   input: Partial<Customer>,
   customerId: string,
   now: string,
 ): Customer {
+  const phone = String(suppliedValue(input, "phone", existing?.phone ?? "") ?? "").trim();
+  const whatsapp = suppliedValue(input, "whatsapp", existing?.whatsapp);
   return {
     id: customerId,
-    name: String(input.name ?? existing?.name ?? "").trim() || "New customer",
-    phone: String(input.phone ?? existing?.phone ?? "").trim(),
-    whatsapp: String(input.whatsapp ?? input.phone ?? existing?.whatsapp ?? existing?.phone ?? "").trim() || undefined,
-    alternate_phone: input.alternate_phone,
-    email: input.email,
-    customer_segments: normalizeCustomerSegments(input.customer_segments ?? existing?.customer_segments),
-    status: input.status ?? existing?.status ?? "active",
-    interest_category_ids: input.interest_category_ids ?? existing?.interest_category_ids ?? [],
-    interest_work_subcategory_ids: input.interest_work_subcategory_ids ?? existing?.interest_work_subcategory_ids ?? [],
-    source_partner_id: input.source_partner_id,
-    source_partner_name: input.source_partner_name,
-    notes: input.notes,
+    name: String(suppliedValue(input, "name", existing?.name ?? "") ?? "").trim() || "New customer",
+    phone,
+    whatsapp: String(whatsapp ?? phone).trim() || undefined,
+    alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
+    email: suppliedValue(input, "email", existing?.email),
+    customer_segments: normalizeCustomerSegments(suppliedValue(input, "customer_segments", existing?.customer_segments)),
+    status: suppliedValue(input, "status", existing?.status ?? "active") ?? "active",
+    interest_category_ids: suppliedValue(input, "interest_category_ids", existing?.interest_category_ids ?? []) ?? [],
+    interest_work_subcategory_ids: suppliedValue(input, "interest_work_subcategory_ids", existing?.interest_work_subcategory_ids ?? []) ?? [],
+    source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id),
+    source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name),
+    notes: suppliedValue(input, "notes", existing?.notes),
     created_at: existing?.created_at ?? now,
     updated_at: existing?.updated_at ?? now,
   };
@@ -146,19 +156,19 @@ function siteRecord(
     id: siteId,
     customer_id: customer.id,
     name,
-    building_name: input.building_name,
-    site_type: input.site_type ?? existing?.site_type ?? "other",
-    stage: input.stage ?? existing?.stage ?? "enquiry",
-    address: input.address,
-    city: input.city,
-    locality: input.locality,
-    latitude: input.latitude,
-    longitude: input.longitude,
-    map_url: input.map_url,
+    building_name: suppliedValue(input, "building_name", existing?.building_name),
+    site_type: suppliedValue(input, "site_type", existing?.site_type ?? "other") ?? "other",
+    stage: suppliedValue(input, "stage", existing?.stage ?? "enquiry") ?? "enquiry",
+    address: suppliedValue(input, "address", existing?.address),
+    city: suppliedValue(input, "city", existing?.city),
+    locality: suppliedValue(input, "locality", existing?.locality),
+    latitude: suppliedValue(input, "latitude", existing?.latitude),
+    longitude: suppliedValue(input, "longitude", existing?.longitude),
+    map_url: suppliedValue(input, "map_url", existing?.map_url),
     photo_attachment_ids: attachmentIds,
-    source_partner_id: input.source_partner_id ?? customer.source_partner_id,
-    source_partner_name: input.source_partner_name ?? customer.source_partner_name,
-    notes: input.notes,
+    source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id ?? customer.source_partner_id),
+    source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name ?? customer.source_partner_name),
+    notes: suppliedValue(input, "notes", existing?.notes),
     is_archived: existing?.is_archived,
     archived_at: existing?.archived_at,
     archived_by: existing?.archived_by,
@@ -214,6 +224,24 @@ export function applyCustomerWithSitesSave(
     const index = resultingSites.findIndex((site) => site.id === siteId);
     if (index >= 0) resultingSites[index] = next;
     else resultingSites.unshift(next);
+  }
+
+  const suppliedSiteIds = new Set(siteIds);
+  for (const attachmentId of detachedSet) {
+    const attachment = (database.entityFileAttachments || []).find((row) => row.id === attachmentId);
+    if (!attachment || attachment.entity_type !== "site") {
+      throw new Error(`Site attachment \"${attachmentId}\" does not exist.`);
+    }
+    const attachmentSite = siteById.get(attachment.entity_id);
+    if (!attachmentSite || attachmentSite.customer_id !== customerId) {
+      throw new Error("A Site file cannot be detached from another Customer.");
+    }
+    if (!suppliedSiteIds.has(attachmentSite.id)) {
+      throw new Error(`Include Site \"${attachmentSite.name}\" in the save before detaching its file.`);
+    }
+    if (!(attachmentSite.photo_attachment_ids || []).includes(attachmentId)) {
+      throw new Error("The selected file is not attached through this Site's photo/file field.");
+    }
   }
 
   let attachmentChanged = false;

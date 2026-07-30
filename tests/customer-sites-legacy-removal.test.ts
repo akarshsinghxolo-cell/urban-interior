@@ -6,6 +6,7 @@ const types = readFileSync("src/lib/rdash/store/types.ts", "utf8");
 const customerDesk = readFileSync("src/components/rdash/modules/CustomerDesk.tsx", "utf8");
 const dataImport = readFileSync("src/components/rdash/modules/DataImportModule.tsx", "utf8");
 const partnerDialog = readFileSync("src/components/rdash/EntityFormDialog.tsx", "utf8");
+const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDialog.tsx", "utf8");
 
 test("legacy customer write APIs are removed from active store and UI paths", () => {
   for (const token of ["addCustomer:", "createCustomerWithFirstSite:", "updateCustomer:", "addSite:", "updateSite:"]) {
@@ -18,4 +19,7 @@ test("legacy customer write APIs are removed from active store and UI paths", ()
   expect(partnerDialog.includes("type === \"customer\"")).toBe(false);
   expect(partnerDialog.includes("createCustomerWithFirstSite")).toBe(false);
   expect(partnerDialog.includes("saveCustomerWithSites")).toBe(false);
+  expect(customerSitesDialog.includes("initializedKeyRef")).toBe(true);
+  expect(customerSitesDialog.indexOf("await awaitServerSync();")).toBeLessThan(customerSitesDialog.indexOf("commitBatches();"));
+  expect(customerSitesDialog.includes("dirtyFormRegistry.requestNavigation")).toBe(true);
 });

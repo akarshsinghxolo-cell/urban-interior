@@ -5,18 +5,17 @@
  * Phase 3n moved the 14 CRM actions out of store.ts in 6 groups:
  *   Group 1: addWorkRequired, updateWorkRequired
  *   Group 2: saveCustomerWithSites, mergeCustomers
- *   Group 3: addSite, updateSite, archiveSite (low-level compatibility paths)
+ *   Group 3: archiveSite
  *   Group 4: addArea, updateArea, archiveArea
  *   Group 5: addMeasurementRevision
  *   Group 6: captureStructuredWorkRequired
  *
  * No module-scope helpers were moved: all CRM action helpers
- * (`assertCustomerExists`, `assertSiteExists`, `assertSiteBelongsToCustomer`,
+ * (`assertSiteExists`, `assertSiteBelongsToCustomer`,
  * `assertAreasBelongToSite`, `assertAreaBelongsToSite`,
  * `assertMeasurementRevisionRelations`, `assertWorkRequiredMatchesContext`,
  * `assertWorkCategoryId`, `assertWorkSubcategoryId`,
- * `areaDependencySummary`, `replaceAreaId`,
- * `assertUniqueCustomerIdentity`, `normalizeCustomerSegments`)
+ * `areaDependencySummary`, `replaceAreaId`)
  * were already imported in store.ts from `../../business-rules` and
  * `../../customer-identity`. The shared `genId` / `nowIso` / `businessDate`
  * helpers were already in `../helpers`.
@@ -28,12 +27,11 @@ import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } fr
 import { assertRole, genId, nowIso } from "../helpers";
 import {
     assertAreaBelongsToSite, assertAreasBelongToSite,
-    assertCustomerExists, assertSiteExists, assertSiteBelongsToCustomer,
+    assertSiteExists, assertSiteBelongsToCustomer,
     assertMeasurementRevisionRelations, assertWorkRequiredMatchesContext,
     assertWorkCategoryId, assertWorkSubcategoryId,
     areaDependencySummary, replaceAreaId,
 } from "../../business-rules";
-import { assertUniqueCustomerIdentity, normalizeCustomerSegments } from "../../customer-identity";
 import { applyCustomerWithSitesSave } from "../../customer-sites-save";
 
 export function createCrmSlice(ctx: StoreContext): CrmState {

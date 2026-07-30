@@ -244,6 +244,7 @@ export function CustomerSitesDialog({
   const [showReferralDropdown, setShowReferralDropdown] = React.useState(false);
   const { registerBatch, commitBatches } = useUploadDraft(open);
   const formId = `customer-sites:${editId || "new"}`;
+  const initializedKeyRef = React.useRef<string | null>(null);
 
   const initialise = React.useCallback(() => {
     const existing = editId ? db.customers.find((row) => row.id === editId) : undefined;
@@ -261,8 +262,15 @@ export function CustomerSitesDialog({
   }, [db.customers, db.sites, editId, formId]);
 
   React.useEffect(() => {
-    if (open) initialise();
-  }, [open, initialise]);
+    if (!open) {
+      initializedKeyRef.current = null;
+      return;
+    }
+    const key = editId || "new";
+    if (initializedKeyRef.current === key) return;
+    initializedKeyRef.current = key;
+    initialise();
+  }, [editId, initialise, open]);
 
   const currentFingerprint = React.useMemo(
     () => fingerprint(customer, sites, detachAttachmentIds),
@@ -338,13 +346,13 @@ export function CustomerSitesDialog({
         sites: sites.filter((site) => site.enabled).map(sitePayload),
         detachAttachmentIds,
       });
-      commitBatches();
       await awaitServerSync();
+      commitBatches();
       const nextBaseline = fingerprint(customer, sites, detachAttachmentIds);
       setBaseline(nextBaseline);
       dirtyFormRegistry.markClean(formId);
       toast.success(result.changed
-        ? `Customer \"${customer.name.trim()}\" and ${result.siteIds.length} Site${result.siteIds.length === 1 ? "" : "s"} saved`
+        ? `Customer \"${customer.name.trim()}\" and Site changes saved`
         : "No customer or Site changes to save");
       onSaved?.(result.customerId);
       return true;
@@ -366,6 +374,12 @@ export function CustomerSitesDialog({
       return true;
     },
   });
+
+  const requestClose = React.useCallback(() => {
+    dirtyFormRegistry.requestNavigation(onClose, {
+      reason: isEdit ? "close the Customer and Sites editor" : "close the new Customer and Sites form",
+    });
+  }, [isEdit, onClose]);
 
   const saveAndClose = async () => {
     const saved = await persist();
@@ -396,7 +410,7 @@ export function CustomerSitesDialog({
   }));
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+    <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
       <DialogContent className="max-h-[94vh] max-w-4xl gap-0 overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -451,7 +465,7 @@ export function CustomerSitesDialog({
         </div>
 
         <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
+          <Button variant="outline" size="sm" onClick={requestClose}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
           <Button size="sm" onClick={() => void saveAndClose()} disabled={!dirty || saving || !customer.name.trim()}>{saving ? "Saving and confirming…" : isEdit ? <><Pencil className="mr-1 h-3.5 w-3.5" />Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5" />Create customer</>}</Button>
         </DialogFooter>
       </DialogContent>
