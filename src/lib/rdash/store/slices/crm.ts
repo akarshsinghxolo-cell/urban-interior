@@ -4,19 +4,18 @@
  *
  * Phase 3n moved the 14 CRM actions out of store.ts in 6 groups:
  *   Group 1: addWorkRequired, updateWorkRequired
- *   Group 2: addCustomer, createCustomerWithFirstSite, updateCustomer, mergeCustomers
- *   Group 3: addSite, updateSite, archiveSite
+ *   Group 2: saveCustomerWithSites, mergeCustomers
+ *   Group 3: archiveSite
  *   Group 4: addArea, updateArea, archiveArea
  *   Group 5: addMeasurementRevision
  *   Group 6: captureStructuredWorkRequired
  *
  * No module-scope helpers were moved: all CRM action helpers
- * (`assertCustomerExists`, `assertSiteExists`, `assertSiteBelongsToCustomer`,
+ * (`assertSiteExists`, `assertSiteBelongsToCustomer`,
  * `assertAreasBelongToSite`, `assertAreaBelongsToSite`,
  * `assertMeasurementRevisionRelations`, `assertWorkRequiredMatchesContext`,
  * `assertWorkCategoryId`, `assertWorkSubcategoryId`,
- * `areaDependencySummary`, `replaceAreaId`,
- * `assertUniqueCustomerIdentity`, `normalizeCustomerSegments`)
+ * `areaDependencySummary`, `replaceAreaId`)
  * were already imported in store.ts from `../../business-rules` and
  * `../../customer-identity`. The shared `genId` / `nowIso` / `businessDate`
  * helpers were already in `../helpers`.
@@ -28,12 +27,12 @@ import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } fr
 import { assertRole, genId, nowIso } from "../helpers";
 import {
     assertAreaBelongsToSite, assertAreasBelongToSite,
-    assertCustomerExists, assertSiteExists, assertSiteBelongsToCustomer,
+    assertSiteExists, assertSiteBelongsToCustomer,
     assertMeasurementRevisionRelations, assertWorkRequiredMatchesContext,
     assertWorkCategoryId, assertWorkSubcategoryId,
     areaDependencySummary, replaceAreaId,
 } from "../../business-rules";
-import { assertUniqueCustomerIdentity, normalizeCustomerSegments } from "../../customer-identity";
+import { applyCustomerWithSitesSave } from "../../customer-sites-save";
 
 export function createCrmSlice(ctx: StoreContext): CrmState {
     const { commitState, get } = ctx;
@@ -143,171 +142,75 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 ],
             });
         },
-        addCustomer: (p) => {
-            assertUniqueCustomerIdentity(get().db.customers, p);
-            const id = genId("cust");
-            commitState((s: any) => {
-                const now = nowIso();
-                const customerRecord: Customer = {
-                    id,
-                    name: p.name || "New customer",
-                    phone: p.phone || "",
-                    whatsapp: p.whatsapp || p.phone,
-                    alternate_phone: p.alternate_phone,
-                    email: p.email,
-                    customer_segments: normalizeCustomerSegments(p.customer_segments),
-                    status: p.status || "active",
-                    interest_category_ids: p.interest_category_ids || [],
-                    interest_work_subcategory_ids: p.interest_work_subcategory_ids || [],
-                    source_partner_id: p.source_partner_id,
-                    source_partner_name: p.source_partner_name,
-                    notes: p.notes,
-                    created_at: now,
-                    updated_at: now,
+        saveCustomerWithSites: (input) => {
+            const beforeDatabase = get().db;
+            const result = applyCustomerWithSitesSave(beforeDatabase, input, {
+                now: nowIso(),
+                createId: (prefix) => genId(prefix),
+            });
+            if (!result.changed) {
+                return {
+                    customerId: result.customerId,
+                    siteIds: result.siteIds,
+                    changed: false,
                 };
-                return { db: { ...s.db, customers: [customerRecord, ...s.db.customers] } };
-            });
-            get().logAudit({
-                actor: get().currentUser().name,
-                actor_role: get().currentUser().role,
-                action: `Created customer "${p.name || "New customer"}"`,
-                entity_type: "customer",
-                entity_id: id,
-                kind: "create",
-            });
-            return id;
-        },
-        createCustomerWithFirstSite: (customer, firstSite) => {
-            assertUniqueCustomerIdentity(get().db.customers, customer);
-            const customerId = customer.id || genId("cust");
-            const siteId = firstSite?.name?.trim() ? (firstSite.id || genId("site")) : undefined;
-            const now = nowIso();
-            const customerRecord: Customer = {
-                id: customerId,
-                name: customer.name || "New customer",
-                phone: customer.phone || "",
-                whatsapp: customer.whatsapp || customer.phone,
-                alternate_phone: customer.alternate_phone,
-                email: customer.email,
-                customer_segments: normalizeCustomerSegments(customer.customer_segments),
-                status: customer.status || "active",
-                interest_category_ids: customer.interest_category_ids || [],
-                interest_work_subcategory_ids: customer.interest_work_subcategory_ids || [],
-                source_partner_id: customer.source_partner_id,
-                source_partner_name: customer.source_partner_name,
-                notes: customer.notes,
-                created_at: now,
-                updated_at: now,
-            };
-            const site: Site | undefined = siteId && firstSite
-                ? {
-                    id: siteId,
-                    customer_id: customerId,
-                    name: firstSite.name!.trim(),
-                    building_name: firstSite.building_name,
-                    site_type: firstSite.site_type || "other",
-                    stage: firstSite.stage || "enquiry",
-                    address: firstSite.address,
-                    city: firstSite.city,
-                    locality: firstSite.locality,
-                    latitude: firstSite.latitude,
-                    longitude: firstSite.longitude,
-                    map_url: firstSite.map_url,
-                    photo_attachment_ids: firstSite.photo_attachment_ids || [],
-                    source_partner_id: firstSite.source_partner_id || customer.source_partner_id,
-                    source_partner_name: firstSite.source_partner_name || customer.source_partner_name,
-                    notes: firstSite.notes,
-                    created_at: now,
-                    updated_at: now,
-                }
-                : undefined;
-            commitState((state: any) => ({
-                db: {
-                    ...state.db,
-                    customers: [customerRecord, ...state.db.customers],
-                    sites: site ? [site, ...state.db.sites] : state.db.sites,
-                },
-            }));
-            get().logAudit({
-                actor: get().currentUser().name,
-                actor_role: get().currentUser().role,
-                action: `Created customer "${customerRecord.name}"${site ? ` with first Site "${site.name}"` : ""}`,
-                entity_type: "customer",
-                entity_id: customerId,
-                entity_label: customerRecord.name,
-                kind: "create",
-                cross_post: [
-                    ...(site ? [{ entity_type: "site", entity_id: site.id, entity_label: site.name }] : []),
-                ],
-            });
-            if (site)
-                get().logAudit({
-                    actor: get().currentUser().name,
-                actor_role: get().currentUser().role,
-                    action: `Created Site "${site.name}" for ${customerRecord.name}`,
-                    entity_type: "site",
-                    entity_id: site.id,
-                    entity_label: site.name,
-                    kind: "create",
-                    cross_post: [
-                        { entity_type: "customer", entity_id: customerId, entity_label: customerRecord.name },
-                    ],
-                });
-            return { customerId, siteId };
-        },
-        updateCustomer: (id, patch) => {
-            const before = get().db.customers.find((p: any) => p.id === id);
-            if (!before)
-                throw new Error("Customer not found.");
-            assertUniqueCustomerIdentity(get().db.customers, { ...before, ...patch, whatsapp: patch.whatsapp ?? patch.phone ?? before.whatsapp }, { excludeCustomerId: id });
-            commitState((s: any) => ({
-                db: {
-                    ...s.db,
-                    customers: s.db.customers.map((p: any) => p.id === id
-                        ? {
-                            ...p,
-                            ...patch,
-                            whatsapp: patch.whatsapp ?? patch.phone ?? p.whatsapp,
-                            updated_at: nowIso(),
-                        }
-                        : p),
-                },
-            }));
-            const after = get().db.customers.find((p: any) => p.id === id);
-            if (before && after) {
-                const changes: string[] = [];
-                if (before.name !== after.name)
-                    changes.push(`name → "${after.name}"`);
-                if (before.phone !== after.phone)
-                    changes.push(`phone → ${after.phone}`);
-                if (before.email !== after.email)
-                    changes.push(`email → ${after.email || "—"}`);
-                if (before.status !== after.status)
-                    changes.push(`status → ${after.status}`);
-                if (before.whatsapp !== after.whatsapp)
-                    changes.push(`WhatsApp → ${after.whatsapp || "—"}`);
-                if (before.alternate_phone !== after.alternate_phone)
-                    changes.push(`alternate phone → ${after.alternate_phone || "—"}`);
-                if (before.interest_category_ids?.join(",") !==
-                    after.interest_category_ids?.join(","))
-                    changes.push("work interests updated");
-                if (changes.length > 0) {
-                    const actor = get().currentUser();
-                    get().logAudit({
-                        actor: actor.name,
-                        actor_role: actor.role,
-                        action: `Updated customer "${after.name}": ${changes.join(", ")}`,
-                        entity_type: "customer",
-                        entity_id: id,
-                        entity_label: after.name,
-                        kind: "update",
-                        reason: `Edited by ${actor.name} (${actor.role})`,
-                        cross_post: [
-                            ...(after.source_partner_id ? [{ entity_type: "vendor", entity_id: after.source_partner_id, entity_label: after.source_partner_name }] : []),
-                        ],
-                    });
-                }
             }
+            commitState({ db: result.db });
+            const actor = get().currentUser();
+            const customer = result.db.customers.find((row: Customer) => row.id === result.customerId)!;
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: result.customerCreated
+                    ? `Created customer "${customer.name}" with ${result.siteIds.length} Site${result.siteIds.length === 1 ? "" : "s"}`
+                    : `Updated customer "${customer.name}"${result.customerChanges.length ? ` (${result.customerChanges.map((change) => String(change.field)).join(", ")})` : ""}`,
+                entity_type: "customer",
+                entity_id: customer.id,
+                entity_label: customer.name,
+                kind: result.customerCreated ? "create" : "update",
+                before: result.customerCreated ? undefined : beforeDatabase.customers.find((row: Customer) => row.id === customer.id),
+                after: customer,
+                changes: result.customerChanges.map((change) => ({
+                    field: String(change.field),
+                    before: change.before,
+                    after: change.after,
+                })),
+                cross_post: result.siteIds.map((siteId) => ({
+                    entity_type: "site",
+                    entity_id: siteId,
+                    entity_label: result.db.sites.find((site: Site) => site.id === siteId)?.name,
+                })),
+            });
+            for (const change of result.siteChanges) {
+                get().logAudit({
+                    actor: actor.name,
+                    actor_role: actor.role,
+                    action: `${change.kind === "create" ? "Created" : "Updated"} Site "${change.after.name}" for ${customer.name}`,
+                    entity_type: "site",
+                    entity_id: change.siteId,
+                    entity_label: change.after.name,
+                    kind: change.kind,
+                    before: change.before,
+                    after: change.after,
+                    cross_post: [{ entity_type: "customer", entity_id: customer.id, entity_label: customer.name }],
+                });
+            }
+            if (result.detachedAttachmentIds.length) {
+                get().logAudit({
+                    actor: actor.name,
+                    actor_role: actor.role,
+                    action: `Detached ${result.detachedAttachmentIds.length} Site file${result.detachedAttachmentIds.length === 1 ? "" : "s"} while saving ${customer.name}`,
+                    entity_type: "customer",
+                    entity_id: customer.id,
+                    entity_label: customer.name,
+                    kind: "update",
+                });
+            }
+            return {
+                customerId: result.customerId,
+                siteIds: result.siteIds,
+                changed: true,
+            };
         },
         mergeCustomers: (survivingCustomerId, duplicateCustomerId) => {
             const actor = get().currentUser();
@@ -386,73 +289,6 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     { entity_type: "customer", entity_id: duplicateCustomerId, entity_label: duplicate.name },
                 ],
             });
-        },
-        addSite: (s) => {
-            if (!s.customer_id)
-                throw new Error("Site requires a Customer.");
-            const id = s.id || genId("site");
-            const now = nowIso();
-            const site: Site = {
-                id,
-                customer_id: s.customer_id,
-                name: s.name || "New site",
-                building_name: s.building_name,
-                site_type: s.site_type || "other",
-                stage: s.stage || "enquiry",
-                address: s.address,
-                city: s.city,
-                locality: s.locality,
-                latitude: s.latitude,
-                longitude: s.longitude,
-                map_url: s.map_url,
-                photo_attachment_ids: s.photo_attachment_ids || [],
-                source_partner_id: s.source_partner_id,
-                source_partner_name: s.source_partner_name,
-                notes: s.notes,
-                created_at: now,
-                updated_at: now,
-            };
-            assertCustomerExists(get().db, site.customer_id, "Site");
-            commitState((state: any) => ({
-                db: { ...state.db, sites: [site, ...state.db.sites] },
-            }));
-            get().logAudit({
-                actor: get().currentUser().name,
-                actor_role: get().currentUser().role,
-                action: `Created site ${site.name}`,
-                entity_type: "site",
-                entity_id: id,
-                entity_label: site.name,
-                kind: "create",
-                cross_post: [
-                    ...(site.customer_id ? [{ entity_type: "customer", entity_id: site.customer_id }] : []),
-                ],
-            });
-            return id;
-        },
-        updateSite: (id, patch) => {
-            const before = get().db.sites.find((site: any) => site.id === id);
-            if (!before)
-                throw new Error("Site not found.");
-            if (before.is_archived)
-                throw new Error("Archived Sites cannot be edited. Reopen the Site before changing it.");
-            if (patch.customer_id && patch.customer_id !== before.customer_id) {
-                throw new Error("A Site cannot be moved to another Customer. Create a correctly linked Site instead.");
-            }
-            assertSiteBelongsToCustomer(get().db, id, before.customer_id, "Site");
-            commitState((state: any) => ({
-                db: {
-                    ...state.db,
-                    sites: state.db.sites.map((site: any) => site.id === id
-                        ? {
-                            ...site,
-                            ...patch,
-                            customer_id: before.customer_id,
-                            updated_at: nowIso(),
-                        }
-                        : site),
-                },
-            }));
         },
         archiveSite: (id, options) => {
             const site = get().db.sites.find((row: any) => row.id === id);

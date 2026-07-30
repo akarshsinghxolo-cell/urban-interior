@@ -6,8 +6,6 @@ import { attachedPreview } from "@/lib/rdash/file-attachments";
 import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { useRDashStore } from "@/lib/rdash/store";
-import type { CustomerSegment } from "@/lib/rdash/types";
-import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
@@ -19,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { MapPin, Camera, X, Plus, Search, Navigation, Image as ImageIcon, Wrench, Pencil, } from "lucide-react";
-export type EntityType = "customer" | "vendor" | "contractor";
+export type EntityType = "vendor" | "contractor";
 type PendingMediaFile = QueuedWorkflowFile & {
     url: string;
     file_name: string;
@@ -45,41 +43,16 @@ interface EntityFormDialogProps {
 }
 export function EntityFormDialog({ type, open, onClose, onSaved, editId }: EntityFormDialogProps) {
     const db = useRDashStore((s) => s.db);
-    const createCustomerWithFirstSite = useRDashStore((s) => s.createCustomerWithFirstSite);
     const addVendor = useRDashStore((s) => s.addVendor);
     const addContractor = useRDashStore((s) => s.addContractor);
-    const updateCustomer = useRDashStore((s) => s.updateCustomer);
     const updateVendor = useRDashStore((s) => s.updateVendor);
     const updateContractor = useRDashStore((s) => s.updateContractor);
-    const updateSite = useRDashStore((s) => s.updateSite);
     const isEditMode = !!editId;
     const [reservedEntityId, setReservedEntityId] = React.useState("");
-    const [reservedFirstSiteId, setReservedFirstSiteId] = React.useState("");
     const { registerBatch, commitBatches } = useUploadDraft(open);
     const [saving, setSaving] = React.useState(false);
     const [name, setName] = React.useState("");
     const [phone, setPhone] = React.useState("");
-    const [whatsapp, setWhatsapp] = React.useState("");
-    const [alternatePhone, setAlternatePhone] = React.useState("");
-    const [email, setEmail] = React.useState("");
-    const [customerStatus, setCustomerStatus] = React.useState<"active" | "inactive" | "blocked">("active");
-    const [customerNotes, setCustomerNotes] = React.useState("");
-    const [customerInterestCategories, setCustomerInterestCategories] = React.useState<string[]>([]);
-    const [addFirstSite, setAddFirstSite] = React.useState(true);
-    const [firstSiteName, setFirstSiteName] = React.useState("");
-    const [firstSiteNameError, setFirstSiteNameError] = React.useState<string | null>(null);
-    const firstSiteNameRef = React.useRef<HTMLInputElement>(null);
-    const [firstSiteBuildingName, setFirstSiteBuildingName] = React.useState("");
-    const [firstSiteType, setFirstSiteType] = React.useState<"apartment" | "office" | "villa" | "shop" | "showroom" | "other">("apartment");
-    const [firstSiteAddress, setFirstSiteAddress] = React.useState("");
-    const [firstSiteCity, setFirstSiteCity] = React.useState("");
-    const [firstSiteLocality, setFirstSiteLocality] = React.useState("");
-    const [firstSiteLat, setFirstSiteLat] = React.useState<number | undefined>();
-    const [firstSiteLng, setFirstSiteLng] = React.useState<number | undefined>();
-    const [firstSiteMapUrl, setFirstSiteMapUrl] = React.useState("");
-    const [firstSiteNotes, setFirstSiteNotes] = React.useState("");
-    const [firstSiteGpsLoading, setFirstSiteGpsLoading] = React.useState(false);
-    const [firstSiteCoordinateInput, setFirstSiteCoordinateInput] = React.useState("");
     const [address, setAddress] = React.useState("");
     const [city, setCity] = React.useState("");
     const [locality, setLocality] = React.useState("");
@@ -93,9 +66,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         name: string;
     } | null>(null);
     const [showReferralDropdown, setShowReferralDropdown] = React.useState(false);
-    const [firstSitePhotos, setFirstSitePhotos] = React.useState<Array<PendingMediaFile & { id: string; caption?: string }>>([]);
-    const [customerInterestSubcategories, setCustomerInterestSubcategories] = React.useState<string[]>([]);
-    const [customerSegments, setCustomerSegments] = React.useState<CustomerSegment[]>(["service_customer"]);
     const [businessCardPhoto, setBusinessCardPhoto] = React.useState<MediaFieldValue>("");
     const [shopPhoto, setShopPhoto] = React.useState<MediaFieldValue>("");
     const [vendorReliability, setVendorReliability] = React.useState<"good" | "very_good" | "average" | "bad">("average");
@@ -132,26 +102,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         if (!open)
             return;
         setReservedEntityId(editId || reserveEntityId(type));
-        setReservedFirstSiteId(reserveEntityId("site"));
         if (editId) {
-            if (type === "customer") {
-                const customer = db.customers.find((customer) => customer.id === editId);
-                if (customer) {
-                    setName(customer.name || "");
-                    setPhone(customer.phone || "");
-                    setWhatsapp(customer.whatsapp || customer.phone || "");
-                    setAlternatePhone(customer.alternate_phone || "");
-                    setEmail(customer.email || "");
-                    setCustomerStatus(customer.status || "active");
-                    setCustomerNotes(customer.notes || "");
-                    setCustomerInterestCategories(customer.interest_category_ids || []);
-                    setCustomerInterestSubcategories(customer.interest_work_subcategory_ids || []);
-                    setCustomerSegments(customer.customer_segments.length ? customer.customer_segments : ["service_customer"]);
-                    setReferralQuery(customer.source_partner_name || "");
-                    setReferralSelected(customer.source_partner_id ? { id: customer.source_partner_id, name: customer.source_partner_name || "" } : null);
-                    return;
-                }
-            }
             if (type === "vendor") {
                 const v = db.master.vendors.find((x) => x.id === editId);
                 if (v) {
@@ -213,28 +164,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         }
         setName("");
         setPhone("");
-        setWhatsapp("");
-        setAlternatePhone("");
-        setEmail("");
-        setCustomerStatus("active");
-        setCustomerNotes("");
-        setCustomerInterestCategories([]);
-        setCustomerInterestSubcategories([]);
-        setCustomerSegments(["service_customer"]);
-        setAddFirstSite(true);
-        setFirstSiteName("");
-        setFirstSiteBuildingName("");
-        setFirstSiteType("apartment");
-        setFirstSiteAddress("");
-        setFirstSiteCity("");
-        setFirstSiteLocality("");
-        setFirstSiteLat(undefined);
-        setFirstSiteLng(undefined);
-        setFirstSiteCoordinateInput("");
-        setFirstSiteMapUrl("");
-        setFirstSiteNotes("");
-        setFirstSiteGpsLoading(false);
-        setFirstSitePhotos([]);
         setAddress("");
         setCity("");
         setLocality("");
@@ -300,14 +229,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             setCoordinateInput(formatCoordinatePair(parsed));
         }
     };
-    const toggleCustomerSegment = (segment: CustomerSegment) => {
-        setCustomerSegments((current) => {
-            const next = current.includes(segment)
-                ? current.filter((value) => value !== segment)
-                : [...current, segment];
-            return next.length > 0 ? next : ["service_customer"];
-        });
-    };
     const handleCaptureGps = () => {
         if (!navigator.geolocation) {
             toast.error("GPS not available on this device. Enter coordinates manually or paste a Google Maps link.");
@@ -349,64 +270,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             toast.error(hints);
         }, { enableHighAccuracy: true, timeout: 10000 });
     };
-    const updateFirstSiteCoordinateInput = (value: string) => {
-        setFirstSiteCoordinateInput(value);
-        if (!value.trim()) {
-            setFirstSiteLat(undefined);
-            setFirstSiteLng(undefined);
-            return;
-        }
-        const parsed = parseCoordinatePair(value);
-        if (parsed) {
-            setFirstSiteLat(parsed.latitude);
-            setFirstSiteLng(parsed.longitude);
-            setFirstSiteCoordinateInput(formatCoordinatePair(parsed));
-            setFirstSiteMapUrl(`https://www.google.com/maps?q=${parsed.latitude},${parsed.longitude}`);
-        }
-    };
-    const handleCaptureFirstSiteGps = () => {
-        if (!navigator.geolocation) {
-            toast.error("GPS not available on this device. Enter coordinates manually or paste a Google Maps link.");
-            return;
-        }
-        setFirstSiteGpsLoading(true);
-        navigator.geolocation.getCurrentPosition((pos) => {
-        if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
-            const latitude = pos.coords.latitude;
-            const longitude = pos.coords.longitude;
-            setFirstSiteLat(latitude);
-            setFirstSiteLng(longitude);
-            setFirstSiteCoordinateInput(formatCoordinatePair({ latitude, longitude }));
-            setFirstSiteMapUrl(`https://www.google.com/maps?q=${latitude},${longitude}`);
-            setFirstSiteGpsLoading(false);
-            toast.success(`Site GPS captured: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
-            reverseGeocodeWithNominatim(latitude, longitude)
-                .then((data) => {
-                if (!data?.display_name)
-                    return;
-                setFirstSiteAddress(data.display_name);
-                if (data?.address?.city)
-                    setFirstSiteCity(data.address.city);
-                else if (data?.address?.town)
-                    setFirstSiteCity(data.address.town);
-                else if (data?.address?.village)
-                    setFirstSiteCity(data.address.village);
-                if (data?.address?.suburb || data?.address?.neighbourhood)
-                    setFirstSiteLocality(data.address.suburb || data.address.neighbourhood);
-            })
-                .catch(() => undefined);
-        }, (err) => {
-            setFirstSiteGpsLoading(false);
-            const hints = err.code === err.PERMISSION_DENIED
-                ? "GPS permission was denied. Enter coordinates manually (e.g. 26.739800, 83.371200) or paste a Google Maps link."
-                : err.code === err.POSITION_UNAVAILABLE
-                    ? "GPS position unavailable. Enter coordinates manually or paste a Google Maps link."
-                    : err.code === err.TIMEOUT
-                        ? "GPS timed out. Enter coordinates manually or paste a Google Maps link."
-                        : `GPS error: ${err.message}`;
-            toast.error(hints);
-        }, { enableHighAccuracy: true, timeout: 10000 });
-    };
     const handlePhotoUpload = async (
         event: React.ChangeEvent<HTMLInputElement>,
         callback: (value: MediaFieldValue) => void,
@@ -435,59 +298,14 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             toast.error(error instanceof Error ? error.message : "Could not queue the selected file");
         }
     };
-    const handleFirstSitePhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = Array.from(event.target.files || []);
-        event.currentTarget.value = "";
-        if (!files.length || !reservedFirstSiteId) return;
-        try {
-            const queued = await enqueueWorkflowFiles({
-                sourceFlow: "customer_first_site",
-                sourceLabel: "Customer first Site",
-                targetEntityType: "site",
-                targetEntityId: reservedFirstSiteId,
-                targetLabel: firstSiteName.trim() || "New Site",
-                purpose: "site_evidence",
-                attachmentField: "photo_attachment_ids",
-                attachmentFieldMode: "append",
-                files: files.map((file) => ({ file, ...classifyWorkflowFile(file), caption: "Site photo" })),
-            });
-            registerBatch(queued.batchId);
-            const next = queued.files.map((item, index) => {
-                const preview = withLocalPreview(item, files[index]);
-                return { ...preview, id: item.uploadItemId, file_name: item.fileName, mime_type: item.mimeType, url: preview.previewUrl, caption: "Site photo" };
-            });
-            setFirstSitePhotos((current) => [...current, ...next]);
-            toast.success(`${next.length} file${next.length === 1 ? "" : "s"} queued for upload`);
-        } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Could not queue Site files");
-        }
-    };
     const removePendingMedia = async (value: PendingMediaFile, callback: (value: MediaFieldValue) => void) => {
         await cancelQueuedWorkflowFile(value);
         callback("");
     };
-    const removeFirstSitePhoto = async (photo: PendingMediaFile & { id: string }) => {
-        await cancelQueuedWorkflowFile(photo);
-        setFirstSitePhotos((items) => items.filter((item) => item.id !== photo.id));
-    };
-    const customerIdentityMatches = React.useMemo(() => type === "customer"
-        ? findCustomerIdentityMatches(db.customers, {
-            phone,
-            whatsapp: whatsapp || phone,
-            alternate_phone: alternatePhone,
-            email,
-        }, { excludeCustomerId: editId })
-        : [], [alternatePhone, db.customers, editId, email, phone, type, whatsapp]);
     const allSubcategories = db.master.workSubcategories;
     const allCategories = db.master.workCategories;
     const allArticles = db.master.articles;
     const subcategoryArticleMap = db.master.subcategoryArticleMap;
-    const toggleCustomerInterestSubcategory = (id: string) => {
-        setCustomerInterestSubcategories((arr) => arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
-    };
-    const toggleCustomerInterestCategory = (id: string) => {
-        setCustomerInterestCategories((arr) => arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]);
-    };
     const toggleVendorArticle = (articleId: string) => {
         setVendorArticleIds((arr) => arr.includes(articleId) ? arr.filter((x) => x !== articleId) : [...arr, articleId]);
     };
@@ -519,86 +337,14 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             toast.error("Name is required");
             return;
         }
-        if (type !== "customer") {
-            const coordinateError = coordinateInputError(coordinateInput);
-            if (coordinateError) {
-                toast.error(coordinateError);
-                return;
-            }
+        const coordinateError = coordinateInputError(coordinateInput);
+        if (coordinateError) {
+            toast.error(coordinateError);
+            return;
         }
         const referralName = referralSelected?.name || referralQuery.trim() || undefined;
         const referralId = referralSelected?.id;
-        if (type === "customer") {
-            const customerPayload = {
-                ...(!isEditMode ? { id: reservedEntityId } : {}),
-                name: name.trim(),
-                phone: phone.trim(),
-                whatsapp: whatsapp.trim() || phone.trim(),
-                alternate_phone: alternatePhone.trim() || undefined,
-                email: email.trim() || undefined,
-                status: customerStatus,
-                customer_segments: customerSegments,
-                interest_category_ids: customerInterestCategories,
-                interest_work_subcategory_ids: customerInterestSubcategories,
-                source_partner_id: referralId,
-                source_partner_name: referralName,
-                notes: customerNotes.trim() || undefined,
-            };
-            if (customerIdentityMatches.length > 0) {
-                toast.error(`Existing customer found: ${customerIdentityMatches.map((match) => match.customer.name).join(", ")}. Open that customer and add a Site instead.`);
-                return;
-            }
-            try {
-                if (isEditMode && editId) {
-                    updateCustomer(editId, customerPayload);
-                    toast.success(`Customer "${name.trim()}" updated`);
-                    onSaved?.(editId);
-                }
-                else {
-                    if (addFirstSite && !firstSiteName.trim()) {
-                        setFirstSiteNameError("Enter a First Site name (or switch off ‘Add First Site’ for a product-only customer).");
-                        setTimeout(() => firstSiteNameRef.current?.focus(), 0);
-                        toast.error("Enter a First Site name or switch off Add First Site for a product-only customer");
-                        return;
-                    }
-                    if (addFirstSite) {
-                        const coordinateError = coordinateInputError(firstSiteCoordinateInput);
-                        if (coordinateError) {
-                            toast.error(coordinateError);
-                            return;
-                        }
-                    }
-                    setSaving(true);
-                    const result = createCustomerWithFirstSite(customerPayload, addFirstSite ? {
-                        id: reservedFirstSiteId,
-                        name: firstSiteName.trim(),
-                        building_name: firstSiteBuildingName.trim() || undefined,
-                        site_type: firstSiteType,
-                        stage: "enquiry",
-                        address: firstSiteAddress.trim() || undefined,
-                        city: firstSiteCity.trim() || undefined,
-                        locality: firstSiteLocality.trim() || undefined,
-                        latitude: firstSiteLat,
-                        longitude: firstSiteLng,
-                        map_url: firstSiteMapUrl.trim() || undefined,
-                        notes: firstSiteNotes.trim() || undefined,
-                        photo_attachment_ids: firstSitePhotos.map((photo) => photo.attachmentId),
-                        source_partner_id: referralId,
-                        source_partner_name: referralName,
-                    } : undefined);
-                    toast.success(addFirstSite ? `Customer "${name.trim()}" and first Site created` : `Customer "${name.trim()}" created`);
-                    onSaved?.(result.customerId);
-                }
-            }
-            catch (error) {
-                toast.error(error instanceof Error ? error.message : "Customer could not be saved.");
-                return;
-            }
-            finally {
-                setSaving(false);
-            }
-        }
-        else if (type === "vendor") {
+        if (type === "vendor") {
             try {
                 const articleNames = vendorArticleIds.map((aid) => allArticles.find((a) => a.id === aid)?.name).filter(Boolean);
                 const combinedNotes = [vendorNotes.trim(), articleNames.length > 0 ? `Supplies articles: ${articleNames.join(", ")}` : ""].filter(Boolean).join("\n");
@@ -688,9 +434,9 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
         onClose();
     };
     const titleLabel = isEditMode
-        ? (type === "customer" ? "Edit Customer" : type === "vendor" ? "Edit Vendor" : "Edit Contractor")
-        : (type === "customer" ? "Add New Customer" : type === "vendor" ? "Add New Vendor" : "Add New Contractor");
-    const nameLabel = type === "customer" ? "Customer name" : "Firm / Enterprise name";
+        ? (type === "vendor" ? "Edit Vendor" : "Edit Contractor")
+        : (type === "vendor" ? "Add New Vendor" : "Add New Contractor");
+    const nameLabel = "Firm / Enterprise name";
     return (<Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92vh] max-w-2xl gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
@@ -698,7 +444,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             {isEditMode ? <Pencil className="h-4 w-4 text-primary"/> : <Plus className="h-4 w-4 text-primary"/>} {titleLabel}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            {type === "customer" ? (isEditMode ? "Update customer contact, account status and broad work interests. Site details are managed per property." : "Create the customer and optionally capture the first Site in the same flow.") : (isEditMode ? "Update the fields below. Changes are saved to the record." : "Fill in the details below. GPS and photos can be captured directly.")}
+            {isEditMode ? "Update the fields below. Changes are saved to the record." : "Fill in the details below. GPS and photos can be captured directly."}
           </DialogDescription>
         </DialogHeader>
 
@@ -706,7 +452,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
           <div className="grid gap-3">
             <div>
               <label className="text-[10px] font-semibold uppercase text-muted-foreground">{nameLabel}</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={type === "customer" ? "e.g. Mr. Das" : "e.g. Sharma Interiors"} className="h-11 text-sm" autoFocus/>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sharma Interiors" className="h-11 text-sm" autoFocus/>
             </div>
             <div>
               <label className="text-[10px] font-semibold uppercase text-muted-foreground">Contact number</label>
@@ -714,7 +460,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
               {phone && phone.length > 0 && phone.length !== 10 && <p className="mt-0.5 text-[10px] text-warning">Enter 10 digits ({phone.length}/10)</p>}
               {phone && phone.length === 10 && !/^[6-9]/.test(phone) && <p className="mt-0.5 text-[10px] text-destructive">Must start with 6, 7, 8, or 9</p>}
             </div>
-            {type !== "customer" && <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <div className="rounded-lg border border-border bg-muted/20 p-3">
               <div className="mb-2 flex items-center justify-between">
                 <label className="text-[10px] font-semibold uppercase text-muted-foreground">Location & Address</label>
                 <Button size="sm" variant="outline" className="h-9 text-xs" onClick={handleCaptureGps} disabled={gpsLoading}>
@@ -730,9 +476,9 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                   <Input value={locality} onChange={(e) => setLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/>
                 </div>
               </div>
-            </div>}
+            </div>
             <div className="relative">
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">{type === "customer" ? "Recommended by" : "Referred by"}</label>
+              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Referred by</label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
                 <Input value={referralQuery} onChange={(e) => { setReferralQuery(e.target.value); setShowReferralDropdown(true); setReferralSelected(null); }} onFocus={() => setShowReferralDropdown(true)} placeholder="Type name to search existing records, or enter new referrer" className="h-11 pl-8 text-sm"/>
@@ -746,67 +492,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
               {referralSelected && (<p className="mt-1 text-[10px] text-success">✓ Linked to existing record: {referralSelected.name}</p>)}
               {!referralSelected && referralQuery.trim() && (<p className="mt-1 text-[10px] text-muted-foreground">Will save as new referrer: "{referralQuery.trim()}"</p>)}
             </div>
-            {type === "customer" && (<>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">WhatsApp number</label><Input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Defaults to contact number" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/></div>
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Alternate number</label><Input value={alternatePhone} onChange={(e) => setAlternatePhone(e.target.value)} placeholder="Optional" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-11 text-sm"/></div>
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Email</label><Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" className="h-11 text-sm"/></div>
-                </div>
-                {customerIdentityMatches.length > 0 && (<div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-900 dark:text-amber-200">
-                    <div className="flex items-start justify-between gap-3">
-                      <div><p className="font-semibold">Existing customer contact found</p><p className="mt-0.5">{customerIdentityMatches.map((match) => `${match.customer.name} · ${match.fields.join(", ")}`).join("; ")}</p></div>
-                      <Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={() => { const match = customerIdentityMatches[0]; if (match) {
-                onSaved?.(match.customer.id);
-                onClose();
-            } }}>Open existing</Button>
-                    </div>
-                  </div>)}
-                <div className="grid gap-2 sm:grid-cols-[180px_1fr]">
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Account condition</label><select value={customerStatus} onChange={(e) => setCustomerStatus(e.target.value as typeof customerStatus)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option></select></div>
-                  <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Customer notes</label><Input value={customerNotes} onChange={(e) => setCustomerNotes(e.target.value)} placeholder="Preferences, communication notes or customer-level instructions" className="h-11 text-sm"/></div>
-                </div>
-                <div className="rounded-lg border border-border bg-muted/20 p-3">
-                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer roles</p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">Select every relationship this customer has with the business.</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {([
-                ["walk_in", "Walk-in"],
-                ["service_customer", "Service customer"],
-                ["product_buyer", "Product buyer"],
-                ["repeat_customer", "Repeat customer"],
-                ["trade_customer", "Trade customer"],
-            ] as Array<[
-                CustomerSegment,
-                string
-            ]>).map(([segment, label]) => (<button key={segment} type="button" onClick={() => toggleCustomerSegment(segment)} className={cn("min-h-[36px] rounded-md border px-2.5 py-1.5 text-[11px] transition-colors", customerSegments.includes(segment) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>
-                        {label}
-                      </button>))}
-                  </div>
-                </div>
-                <div className="rounded-lg border border-border bg-muted/20 p-3">
-                  <div className="mb-1.5"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Work categories interested in</label><p className="mt-0.5 text-[11px] text-muted-foreground">Broad customer interest only. It does not create final work. Final Work Required is created under Site → Area.</p></div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {allCategories.map((cat) => <button key={cat.id} type="button" onClick={() => toggleCustomerInterestCategory(cat.id)} className={cn("rounded-md border px-2 py-1 text-[11px] font-medium transition-colors", customerInterestCategories.includes(cat.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>{cat.name}</button>)}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {allCategories.filter((cat) => customerInterestCategories.includes(cat.id)).map((cat) => {
-                const subs = allSubcategories.filter((sub) => sub.category_id === cat.id);
-                return <details key={cat.id} className="rounded-md border border-border bg-background"><summary className="cursor-pointer px-2.5 py-1 text-xs font-medium hover:bg-accent/40">Specific {cat.name} work</summary><div className="flex flex-wrap gap-1 p-2">{subs.map((sub) => <button key={sub.id} type="button" onClick={() => toggleCustomerInterestSubcategory(sub.id)} className={cn("rounded-md border px-2 py-0.5 text-[10px] transition-colors", customerInterestSubcategories.includes(sub.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground hover:bg-accent/40")}>{sub.name}</button>)}</div></details>;
-            })}
-                  </div>
-                  {(customerInterestCategories.length > 0 || customerInterestSubcategories.length > 0) && <p className="mt-2 text-[10px] text-success">{customerInterestCategories.length} category interest(s) and {customerInterestSubcategories.length} specific work preference(s) selected</p>}
-                </div>
-                {!isEditMode ? (<div className="rounded-lg border border-primary/25 bg-primary/[0.035] p-3">
-                    <label className="flex cursor-pointer items-start gap-2"><input type="checkbox" checked={addFirstSite} onChange={(e) => setAddFirstSite(e.target.checked)} className="mt-0.5"/><span><span className="text-sm font-semibold">Add First Site now</span><span className="mt-0.5 block text-[11px] text-muted-foreground">For service work, capture the property/site here. Address, GPS, building, property type and photos belong to the Site—not the Customer.</span></span></label>
-                    {addFirstSite && <div className="mt-3 space-y-3 border-t border-primary/15 pt-3">
-                      <div className="grid gap-2 sm:grid-cols-2"><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site name *</label><Input ref={firstSiteNameRef} aria-invalid={firstSiteNameError ? true : undefined} value={firstSiteName} onChange={(e) => { setFirstSiteName(e.target.value); if (firstSiteNameError) setFirstSiteNameError(null); }} placeholder="Das Residence — 3BHK Apartment" className="h-11 text-sm"/>{firstSiteNameError && <p className="mt-1 text-[11px] font-medium text-destructive">{firstSiteNameError}</p>}</div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Property type</label><select value={firstSiteType} onChange={(e) => setFirstSiteType(e.target.value as typeof firstSiteType)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm"><option value="apartment">Apartment</option><option value="office">Office</option><option value="villa">Villa</option><option value="shop">Shop</option><option value="showroom">Showroom</option><option value="other">Other</option></select></div></div>
-                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Building / project name</label><Input value={firstSiteBuildingName} onChange={(e) => setFirstSiteBuildingName(e.target.value)} placeholder="Legio Apartment, Tower B / project name" className="h-11 text-sm"/></div>
-                      <div className="rounded-md border border-border bg-card p-2.5"><div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">Site location</span><Button type="button" size="sm" variant="outline" className="h-7 text-xs" onClick={handleCaptureFirstSiteGps} disabled={firstSiteGpsLoading}><Navigation className={cn("mr-1 h-3.5 w-3.5", firstSiteGpsLoading && "animate-spin")}/>{firstSiteGpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><Input value={firstSiteCoordinateInput} onChange={(e) => updateFirstSiteCoordinateInput(e.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" className="mb-1 h-11 text-sm"/>{coordinateInputError(firstSiteCoordinateInput) ? <p className="mb-2 text-[10px] text-destructive">{coordinateInputError(firstSiteCoordinateInput)}</p> : <p className="mb-2 text-[10px] text-muted-foreground">Use one coordinate field: latitude, longitude.</p>}<div className="grid gap-2"><Input value={firstSiteAddress} onChange={(e) => setFirstSiteAddress(e.target.value)} placeholder="Full Site address" className="h-11 text-sm"/><div className="grid grid-cols-2 gap-2"><Input value={firstSiteLocality} onChange={(e) => setFirstSiteLocality(e.target.value)} placeholder="Locality / Area" className="h-11 text-sm"/><Input value={firstSiteCity} onChange={(e) => setFirstSiteCity(e.target.value)} placeholder="City" className="h-11 text-sm"/></div><Input value={firstSiteMapUrl} onChange={(e) => setFirstSiteMapUrl(e.target.value)} placeholder="Google Maps link (optional)" className="h-11 text-sm"/></div></div>
-                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label><Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={handleFirstSitePhotos} className="h-11 text-sm"/>{firstSitePhotos.length > 0 && <div className="mt-2 grid grid-cols-4 gap-2">{firstSitePhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => void removeFirstSitePhoto(photo)} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}</div>}</div>
-                      <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Site notes</label><Textarea value={firstSiteNotes} onChange={(e) => setFirstSiteNotes(e.target.value)} placeholder="Landmark, access conditions, site contact or property notes" rows={2} className="text-sm"/></div>
-                    </div>}
-                  </div>) : <p className="rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">Customer edit changes contact, account and broad interests only. Edit address, GPS, property type and photos from Context → Sites → Edit Site.</p>}
-              </>)}
             {type === "vendor" && (<>
                 <div className="grid grid-cols-2 gap-3">
                   <div>

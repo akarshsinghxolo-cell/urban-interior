@@ -113,8 +113,7 @@ function dispositionClass(disposition: ImportDisposition) {
 }
 export function DataImportModule() {
     const db = useRDashStore((state) => state.db);
-    const createCustomerWithFirstSite = useRDashStore((state) => state.createCustomerWithFirstSite);
-    const addSite = useRDashStore((state) => state.addSite);
+    const saveCustomerWithSites = useRDashStore((state) => state.saveCustomerWithSites);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [csvText, setCsvText] = React.useState("");
     const [parsedRows, setParsedRows] = React.useState<ParsedRow[]>([]);
@@ -276,20 +275,29 @@ export function DataImportModule() {
                     longitude: coordinates?.longitude,
                 };
                 if (row.disposition === "existing_customer_add_site" && row.matchedCustomer) {
-                    addSite({ ...firstSite, customer_id: row.matchedCustomer.id });
+                    const existingCustomer = db.customers.find((customer) => customer.id === row.matchedCustomer!.id);
+                    if (!existingCustomer) throw new Error("Matched customer no longer exists.");
+                    saveCustomerWithSites({
+                        customerId: existingCustomer.id,
+                        customer: { ...existingCustomer },
+                        sites: [{ ...firstSite, id: `site-import-${row.rowIndex}-${Date.now().toString(36)}` }],
+                    });
                     sitesAdded.push({ customerId: row.matchedCustomer.id, name: row.matchedCustomer.name, siteName: firstSite.name || "Site" });
                 }
                 else if (row.disposition === "new_customer") {
-                    const result = createCustomerWithFirstSite({
-                        name: row.data.name,
-                        phone: row.data.phone || "",
-                        whatsapp: row.data.whatsapp || row.data.phone || "",
-                        alternate_phone: row.data.alternate_phone || undefined,
-                        email: row.data.email || undefined,
-                        source_partner_name: row.data.source || undefined,
-                        status: "active",
-                        customer_segments: ["service_customer"],
-                    }, includesSite ? firstSite : undefined);
+                    const result = saveCustomerWithSites({
+                        customer: {
+                            name: row.data.name,
+                            phone: row.data.phone || "",
+                            whatsapp: row.data.whatsapp || row.data.phone || "",
+                            alternate_phone: row.data.alternate_phone || undefined,
+                            email: row.data.email || undefined,
+                            source_partner_name: row.data.source || undefined,
+                            status: "active",
+                            customer_segments: ["service_customer"],
+                        },
+                        sites: includesSite ? [firstSite] : [],
+                    });
                     created.push({ customerId: result.customerId, name: row.data.name });
                 }
             }

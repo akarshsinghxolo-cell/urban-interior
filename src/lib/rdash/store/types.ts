@@ -6,6 +6,7 @@ import type {
   AttendancePolicy, Site, Area, Thread, ThreadMessage, ThreadKind, StaffRolePermission, StaffDocument,
   IntegrityReport, RepairResult, CascadeResult,
 } from "../types";
+import type { SaveCustomerWithSitesInput } from "../customer-sites-save";
 import type { GpsCapture } from "../gps";
 import type { StaffLocationPing } from "../staff-location";
 import type {
@@ -186,12 +187,8 @@ export interface UIState {
 // CRM — customers, sites, areas, work required, measurements
 // ─────────────────────────────────────────────────────────────────────────
 export interface CrmState {
-  addCustomer: (p: Partial<Customer>) => string;
-  createCustomerWithFirstSite: (customer: Partial<Customer>, firstSite?: Partial<Site>) => { customerId: string; siteId?: string };
-  updateCustomer: (id: string, patch: Partial<Customer>) => void;
+  saveCustomerWithSites: (input: SaveCustomerWithSitesInput) => { customerId: string; siteIds: string[]; changed: boolean };
   mergeCustomers: (survivingCustomerId: string, duplicateCustomerId: string) => void;
-  addSite: (s: Partial<Site>) => string;
-  updateSite: (id: string, patch: Partial<Site>) => void;
   archiveSite: (id: string, options: { reason: string; cancelled?: boolean }) => void;
   addArea: (r: Partial<Area>) => string;
   updateArea: (id: string, patch: Partial<Area>) => void;
