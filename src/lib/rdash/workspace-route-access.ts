@@ -1,3 +1,4 @@
+import { fieldStaffCanViewRoute } from "./field-staff-presentation";
 import { resolveRenderer } from "./modules";
 import {
   canRole,
@@ -38,8 +39,13 @@ export function workspaceRouteAccessDecision(
   }
 
   const permissions = normalizeStaffPermissions(rawPermissions) as StaffPermissionRecord[];
+  const isFieldStaff = role.trim().toLowerCase() === "field staff";
+  const fieldStaffRouteAllowed = !isFieldStaff ||
+    fieldStaffCanViewRoute(route.id, permissionModule);
   return {
-    status: canRole(permissions, role, permissionModule, "view") ? "allowed" : "denied",
+    status: fieldStaffRouteAllowed && canRole(permissions, role, permissionModule, "view")
+      ? "allowed"
+      : "denied",
     moduleId: route.id,
     moduleLabel: route.label,
     permissionModule,

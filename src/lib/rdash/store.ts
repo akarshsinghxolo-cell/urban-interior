@@ -1,7 +1,7 @@
 "use client";
 
 import type { RDashState } from "./store/types";
-import { fieldStaffVisibleDatabase } from "./field-staff-visibility";
+import { fieldStaffPresentationDatabase } from "./field-staff-presentation";
 import { useRDashStore as useUnfilteredRDashStore } from "./raw-store";
 
 export * from "./raw-store";
@@ -13,7 +13,7 @@ function stateForPresentation(state: RDashState): RDashState {
   if (!user || user.role !== "Field Staff") return state;
   return {
     ...state,
-    db: fieldStaffVisibleDatabase(state.db, user),
+    db: fieldStaffPresentationDatabase(state.db, user),
   };
 }
 
