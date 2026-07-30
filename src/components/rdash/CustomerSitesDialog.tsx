@@ -21,7 +21,7 @@ import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
 import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
-import { reserveEntityId } from "@/lib/uploads/upload-types";
+import { reserveEntityId, type UploadBatchId } from "@/lib/uploads/upload-types";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 
@@ -463,7 +463,7 @@ function SiteDraftCard({ db, draft, index, registerBatch, onChange, onRemoveNew,
   db: RDashDatabase;
   draft: SiteDraft;
   index: number;
-  registerBatch: (batchId: string) => void;
+  registerBatch: (batchId: UploadBatchId) => UploadBatchId;
   onChange: (patch: Partial<SiteDraft>) => void;
   onRemoveNew: () => void;
   onDetachExisting: (attachmentId: string) => void;

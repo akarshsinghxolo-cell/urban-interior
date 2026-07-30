@@ -70,8 +70,8 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
     onSaved?: (siteId: string) => void;
 }) {
     const db = useRDashStore((state) => state.db);
-    const addSite = useRDashStore((state) => state.addSite);
-    const updateSite = useRDashStore((state) => state.updateSite);
+    const saveCustomerWithSites = useRDashStore((state) => state.saveCustomerWithSites);
+    const awaitServerSync = useRDashStore((state) => state.awaitServerSync);
     const [saving, setSaving] = React.useState(false);
     const [reservedSiteId, setReservedSiteId] = React.useState("");
     const { registerBatch, commitBatches } = useUploadDraft(open);
@@ -264,9 +264,16 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
             setSaving(true);
             const existingAttachmentIds = siteId ? (db.sites.find((site) => site.id === siteId)?.photo_attachment_ids || []) : [];
             const photoAttachmentIds = [...new Set([...existingAttachmentIds, ...pendingPhotos.map((photo) => photo.attachmentId)])];
-            const id = siteId || addSite({ ...payload, id: reservedSiteId, photo_attachment_ids: photoAttachmentIds });
-            if (siteId) updateSite(siteId, { ...payload, photo_attachment_ids: photoAttachmentIds });
+            const customer = db.customers.find((row) => row.id === draft.customerId);
+            if (!customer) throw new Error("Customer not found.");
+            const id = siteId || reservedSiteId;
+            saveCustomerWithSites({
+                customerId: customer.id,
+                customer: { ...customer },
+                sites: [{ ...payload, id, photo_attachment_ids: photoAttachmentIds }],
+            });
             commitBatches();
+            await awaitServerSync();
             toast.success(`Site "${payload.name}" ${siteId ? "updated" : "added"}. Pending files continue in Background Activity.`);
             onSaved?.(id);
             onClose();

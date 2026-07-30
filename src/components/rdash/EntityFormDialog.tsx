@@ -45,13 +45,11 @@ interface EntityFormDialogProps {
 }
 export function EntityFormDialog({ type, open, onClose, onSaved, editId }: EntityFormDialogProps) {
     const db = useRDashStore((s) => s.db);
-    const createCustomerWithFirstSite = useRDashStore((s) => s.createCustomerWithFirstSite);
+    const saveCustomerWithSites = useRDashStore((s) => s.saveCustomerWithSites);
     const addVendor = useRDashStore((s) => s.addVendor);
     const addContractor = useRDashStore((s) => s.addContractor);
-    const updateCustomer = useRDashStore((s) => s.updateCustomer);
     const updateVendor = useRDashStore((s) => s.updateVendor);
     const updateContractor = useRDashStore((s) => s.updateContractor);
-    const updateSite = useRDashStore((s) => s.updateSite);
     const isEditMode = !!editId;
     const [reservedEntityId, setReservedEntityId] = React.useState("");
     const [reservedFirstSiteId, setReservedFirstSiteId] = React.useState("");
@@ -550,9 +548,9 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
             }
             try {
                 if (isEditMode && editId) {
-                    updateCustomer(editId, customerPayload);
+                    const result = saveCustomerWithSites({ customerId: editId, customer: customerPayload, sites: [] });
                     toast.success(`Customer "${name.trim()}" updated`);
-                    onSaved?.(editId);
+                    onSaved?.(result.customerId);
                 }
                 else {
                     if (addFirstSite && !firstSiteName.trim()) {
@@ -569,23 +567,26 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Entit
                         }
                     }
                     setSaving(true);
-                    const result = createCustomerWithFirstSite(customerPayload, addFirstSite ? {
-                        id: reservedFirstSiteId,
-                        name: firstSiteName.trim(),
-                        building_name: firstSiteBuildingName.trim() || undefined,
-                        site_type: firstSiteType,
-                        stage: "enquiry",
-                        address: firstSiteAddress.trim() || undefined,
-                        city: firstSiteCity.trim() || undefined,
-                        locality: firstSiteLocality.trim() || undefined,
-                        latitude: firstSiteLat,
-                        longitude: firstSiteLng,
-                        map_url: firstSiteMapUrl.trim() || undefined,
-                        notes: firstSiteNotes.trim() || undefined,
-                        photo_attachment_ids: firstSitePhotos.map((photo) => photo.attachmentId),
-                        source_partner_id: referralId,
-                        source_partner_name: referralName,
-                    } : undefined);
+                    const result = saveCustomerWithSites({
+                        customer: customerPayload,
+                        sites: addFirstSite ? [{
+                            id: reservedFirstSiteId,
+                            name: firstSiteName.trim(),
+                            building_name: firstSiteBuildingName.trim() || undefined,
+                            site_type: firstSiteType,
+                            stage: "enquiry",
+                            address: firstSiteAddress.trim() || undefined,
+                            city: firstSiteCity.trim() || undefined,
+                            locality: firstSiteLocality.trim() || undefined,
+                            latitude: firstSiteLat,
+                            longitude: firstSiteLng,
+                            map_url: firstSiteMapUrl.trim() || undefined,
+                            notes: firstSiteNotes.trim() || undefined,
+                            photo_attachment_ids: firstSitePhotos.map((photo) => photo.attachmentId),
+                            source_partner_id: referralId,
+                            source_partner_name: referralName,
+                        }] : [],
+                    });
                     toast.success(addFirstSite ? `Customer "${name.trim()}" and first Site created` : `Customer "${name.trim()}" created`);
                     onSaved?.(result.customerId);
                 }

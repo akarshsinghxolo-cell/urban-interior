@@ -6,7 +6,7 @@ import { useRDashStore, siteFinancials, type ContextCustomerTab } from "@/lib/rd
 import { Avatar, StatusBadge, MetricCard, SectionHeader, EmptyState } from "../primitives";
 import { ContextRow, type ContextAction } from "../ContextMenuHost";
 import { buildCustomerActions, buildTaskActions, buildQuotationActions, buildPaymentActions, buildVisitActions } from "../recordActions";
-import { EntityFormDialog } from "../EntityFormDialog";
+import { CustomerSitesDialog } from "../CustomerSitesDialog";
 import { SiteFormDialog } from "../SiteFormDialog";
 import { FilePreview } from "../FilePreview";
 import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
@@ -57,7 +57,7 @@ export function CustomerDesk({ view }: {
     const [q, setQ] = React.useState("");
     const customerDispatch = React.useMemo(() => ({ setActiveModule, openActionDialog, openCreateDialog }), [setActiveModule, openActionDialog, openCreateDialog]);
     const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
-    // B-19: Local state for the top-level customer Edit dialog (EntityFormDialog in edit mode).
+    // B-19: Local state for the unified Customer and Sites edit dialog.
     // The Edit context-menu action on a customer row uses this to open the form directly,
     // instead of just opening the detail panel and forcing the user to click Edit again.
     const [editCustomerId, setEditCustomerId] = React.useState<string | undefined>(undefined);
@@ -146,9 +146,9 @@ export function CustomerDesk({ view }: {
           {selected ? (<CustomerTimelineView customerId={selected.id} name={selected.name} tasks={selectedTasks} quotations={selectedQuotes} payments={selectedPayments} visits={selectedVisits} sites={selectedSites} auditLog={db.auditLog.filter((a) => (a.entity_type === "customer" && a.entity_id === selected.id) || (a.entity_id && selectedRelatedIds.has(a.entity_id)))} drawings={(db.drawings || []).filter((d) => d.work_order_id && db.workOrders.some((w) => w.id === d.work_order_id && w.customer_id === selected.id))} executionLogs={(db.executionLogs || []).filter((el) => el.work_order_id && db.workOrders.some((w) => w.id === el.work_order_id && w.customer_id === selected.id))} boqs={(db.boqs || []).filter((b) => b.work_order_id && db.workOrders.some((w) => w.id === b.work_order_id && w.customer_id === selected.id))} purchaseOrders={(db.purchaseOrders || []).filter((p) => p.work_order_id && db.workOrders.some((w) => w.id === p.work_order_id && w.customer_id === selected.id))} grns={(db.grns || []).filter((g) => g.work_order_id && db.workOrders.some((w) => w.id === g.work_order_id && w.customer_id === selected.id))} vendorBills={(db.vendorBills || []).filter((vb) => vb.work_order_id && db.workOrders.some((w) => w.id === vb.work_order_id && w.customer_id === selected.id))} workOrders={(db.workOrders || []).filter((w) => w.customer_id === selected.id)} commSends={(db.commSends || []).filter((c) => c.customer_id === selected.id)} />) : (<EmptyState title="No customer selected" description="Pick a customer from the list to view their timeline."/>)}
         </div>
 
-        <EntityFormDialog type="customer" open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => { selectCustomer(id); }}/>
-        {/* B-19: Top-level Edit dialog for customer — opened by the context-menu Edit action. */}
-        <EntityFormDialog type="customer" editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => { setEditCustomerId(undefined); selectCustomer(id); }}/>
+        <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => { selectCustomer(id); }}/>
+        {/* B-19: Unified Customer and Sites editor — opened by the context-menu Edit action. */}
+        <CustomerSitesDialog editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => { setEditCustomerId(undefined); selectCustomer(id); }}/>
       </div>);
     }
     return (<div className="flex flex-col gap-3">
@@ -201,12 +201,12 @@ export function CustomerDesk({ view }: {
 
       {filtered.length === 0 && <EmptyState title="No customers found" description="Adjust the search or add a new customer."/>}
 
-      <EntityFormDialog type="customer" open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => {
+      <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => {
             selectCustomer(id);
             openDetail("customer", id, "customerDesk");
         }}/>
-        {/* B-19: Top-level Edit dialog for customer — opened by the context-menu Edit action. */}
-        <EntityFormDialog type="customer" editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => { setEditCustomerId(undefined); selectCustomer(id); }}/>
+        {/* B-19: Unified Customer and Sites editor — opened by the context-menu Edit action. */}
+        <CustomerSitesDialog editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => { setEditCustomerId(undefined); selectCustomer(id); }}/>
     </div>);
 }
 function CustomerDuplicateMergeControl() {
@@ -862,7 +862,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
         })()}
       <SiteFormDialog open={addSiteOpen} customerId={customerId} onClose={() => setAddSiteOpen(false)} onSaved={() => setAddSiteOpen(false)}/>
       <SiteFormDialog open={Boolean(editSiteId)} customerId={customerId} siteId={editSiteId} onClose={() => setEditSiteId(undefined)} onSaved={() => setEditSiteId(undefined)}/>
-      <EntityFormDialog type="customer" editId={customerId} open={editCustomerOpen} onClose={() => setEditCustomerOpen(false)}/>
+      <CustomerSitesDialog editId={customerId} open={editCustomerOpen} onClose={() => setEditCustomerOpen(false)}/>
       {/* B-5: Local RecordPaymentDialog pre-configured for advance creation (opened from "Add advance"). */}
       <RecordPaymentDialog open={advanceDialogOpen} onOpenChange={(v) => !v && setAdvanceDialogOpen(false)} customerId={customerId} defaultIsAdvance/>
     </div>);

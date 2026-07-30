@@ -33,7 +33,9 @@
     "test:auth-security": "bun test tests/auth-source-security.test.ts",
     "test:runtime-efficiency": "bun test tests/runtime-efficiency-hardening.test.ts",
     "test:vendor-rate-average": "bun test tests/vendor-rate-average.test.ts",
-    "test:bug-hunt": "bun test tests/bug-hunt-regressions.test.ts"
+    "test:bug-hunt": "bun test tests/bug-hunt-regressions.test.ts",
+    "test:customer-sites-save": "bun test tests/customer-sites-save.test.ts",
+    "test:customer-sites-legacy": "bun test tests/customer-sites-legacy-removal.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
