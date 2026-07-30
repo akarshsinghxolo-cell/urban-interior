@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, X } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { ALL_MODULES, type ModuleDef, type Submodule } from "@/lib/rdash/modules";
+import { fieldStaffCanViewRoute } from "@/lib/rdash/field-staff-presentation";
 import { canRole, normalizeStaffPermissions, permissionModuleForRoute, type StaffPermissionRecord } from "@/lib/rdash/staff-operations";
 
 // STAGE-4-FIX: stable ref for empty permissions (avoids recreating [] every render)
@@ -171,23 +172,29 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
     const authUser = useRDashStore((s) => s.authUser);
     const db = useRDashStore((s) => s.db);
     const role = authUser?.role || "Owner";
+    const isFieldStaff = role.trim().toLowerCase() === "field staff";
     const rawPermissions = (db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || EMPTY_PERMISSIONS;
     const permissions = React.useMemo(
         () => normalizeStaffPermissions(rawPermissions),
         [rawPermissions],
     );
-    const canSeeRoute = React.useCallback((route: ModuleDef | Submodule) => canRole(permissions, role, permissionModuleForRoute(route), "view"), [permissions, role]);
+    const canSeeRoute = React.useCallback((route: ModuleDef | Submodule) => {
+        const permissionModule = permissionModuleForRoute(route);
+        if (isFieldStaff && !fieldStaffCanViewRoute(route.id, permissionModule)) return false;
+        return canRole(permissions, role, permissionModule, "view");
+    }, [isFieldStaff, permissions, role]);
     const modules = React.useMemo(() => ALL_MODULES
         .map((module) => ({ ...module, submodules: module.submodules.filter((submodule) => canSeeRoute(submodule)) }))
         .filter((module) => canSeeRoute(module) || module.submodules.length > 0)
         .filter((module) => moduleMatches(module, moduleSearch.trim())), [canSeeRoute, moduleSearch]);
     const exceptionCount = React.useMemo(() => {
+        if (isFieldStaff) return 0;
         const directPOs = (db.purchaseOrders || []).filter((po: any) => po.direct_award || po.award_basis === "direct").length;
         const directContractors = (db.workOrders || []).filter((wo: any) => wo.contractor_selection_method === "direct_award").length;
         const renegotiations = (db.quotations || []).filter((q: any) => q.revision_kind === "renegotiation" || q.revision_kind === "variation").length;
         const regularized = (db.attendance || []).filter((a: any) => a.auto_generated && a.attendance_mode === "manual_adjustment").length;
         return directPOs + directContractors + renegotiations + regularized;
-    }, [db]);
+    }, [db, isFieldStaff]);
 
     if (collapsed) {
         return (
