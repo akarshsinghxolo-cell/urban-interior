@@ -4,7 +4,7 @@ import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
 import { saveStoredIntegritySnapshot } from "@/lib/rdash/server/workspace-health";
-import { cleanupExpiredStaffLocationPings } from "@/lib/rdash/server/staff-location";
+import { cleanupExpiredStaffRouteBundles } from "@/lib/rdash/server/staff-location";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,21 +14,32 @@ export const maxDuration = 60;
  *
  * The expensive full integrity scan runs here instead of on every dashboard
  * health request. Its compact result is persisted for the lightweight health
- * endpoint. GPS retention is also cleaned once here rather than after every
- * location insert.
+ * endpoint. Expired route bundles are also removed once per day.
  */
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
-  const expectedToken = (process.env.CRON_SECRET || process.env.CRON_BEARER_TOKEN || "").trim();
+  const expectedToken = (
+    process.env.CRON_SECRET
+    || process.env.CRON_BEARER_TOKEN
+    || ""
+  ).trim();
   const authHeader = request.headers.get("authorization") || "";
   if (expectedToken) {
-    const suppliedToken = authHeader.toLowerCase().startsWith("bearer ")
+    const suppliedToken = authHeader
+      .toLowerCase()
+      .startsWith("bearer ")
       ? authHeader.slice("bearer ".length).trim()
       : "";
     const supplied = Buffer.from(suppliedToken);
     const expected = Buffer.from(expectedToken);
-    if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      return NextResponse.json({ ok: false, error: "Unauthorized." }, { status: 401 });
+    if (
+      supplied.length !== expected.length
+      || !timingSafeEqual(supplied, expected)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "Unauthorized." },
+        { status: 401 },
+      );
     }
   }
 
@@ -36,10 +47,15 @@ export async function GET(request: NextRequest) {
     const workspace = await getWorkspace(false);
     const db = workspace.data;
     const integrity = checkWorkspaceIntegrity(db);
-    const integrityBySeverity: Record<string, number> = { critical: 0, warning: 0, info: 0 };
+    const integrityBySeverity: Record<string, number> = {
+      critical: 0,
+      warning: 0,
+      info: 0,
+    };
     for (const issue of integrity.issues || []) {
       const severity = (issue.severity || "info").toLowerCase();
-      integrityBySeverity[severity] = (integrityBySeverity[severity] || 0) + 1;
+      integrityBySeverity[severity] =
+        (integrityBySeverity[severity] || 0) + 1;
     }
 
     let businessRuleIssues: string[] = [];
@@ -47,18 +63,28 @@ export async function GET(request: NextRequest) {
       businessRuleIssues = validateBusinessData(db) || [];
     } catch (validationError) {
       businessRuleIssues = [
-        `Validator threw: ${validationError instanceof Error ? validationError.message : String(validationError)}`,
+        `Validator threw: ${
+          validationError instanceof Error
+            ? validationError.message
+            : String(validationError)
+        }`,
       ];
     }
 
-    const [snapshotSaved, expiredGpsDeleted] = await Promise.all([
+    const [
+      snapshotSaved,
+      expiredRouteBundlesDeleted,
+    ] = await Promise.all([
       saveStoredIntegritySnapshot({
         revision: workspace.revision,
         report: integrity,
         businessRuleIssues: businessRuleIssues.length,
       }),
-      cleanupExpiredStaffLocationPings().catch((error) => {
-        console.error("[qa/cron] GPS cleanup failed:", error);
+      cleanupExpiredStaffRouteBundles().catch((error) => {
+        console.error(
+          "[qa/cron] route-bundle cleanup failed:",
+          error,
+        );
         return -1;
       }),
     ]);
@@ -75,21 +101,30 @@ export async function GET(request: NextRequest) {
       grns: db.grns?.length || 0,
       vendorBills: db.vendorBills?.length || 0,
       fileAssets: db.master?.fileAssets?.length || 0,
-      storageAccounts: db.master?.storageAccounts?.length || 0,
-      storageFolderTemplates: db.master?.storageFolderTemplates?.length || 0,
-      storageFolderInstances: db.master?.storageFolderInstances?.length || 0,
-      entityFileAttachments: db.entityFileAttachments?.length || 0,
+      storageAccounts:
+        db.master?.storageAccounts?.length || 0,
+      storageFolderTemplates:
+        db.master?.storageFolderTemplates?.length || 0,
+      storageFolderInstances:
+        db.master?.storageFolderInstances?.length || 0,
+      entityFileAttachments:
+        db.entityFileAttachments?.length || 0,
       auditLog: db.auditLog?.length || 0,
     };
     const durationMs = Date.now() - startedAt;
-    const ok = integrityBySeverity.critical === 0 && businessRuleIssues.length === 0;
+    const ok =
+      integrityBySeverity.critical === 0
+      && businessRuleIssues.length === 0;
 
     return NextResponse.json(
       {
         ok,
         timestamp: new Date().toISOString(),
         durationMs,
-        workspace: { revision: workspace.revision, counts },
+        workspace: {
+          revision: workspace.revision,
+          counts,
+        },
         integrity: {
           critical: integrityBySeverity.critical,
           warning: integrityBySeverity.warning,
@@ -103,7 +138,7 @@ export async function GET(request: NextRequest) {
         },
         maintenance: {
           integritySnapshotSaved: snapshotSaved,
-          expiredGpsDeleted,
+          expiredRouteBundlesDeleted,
         },
       },
       { status: ok ? 200 : 500 },
