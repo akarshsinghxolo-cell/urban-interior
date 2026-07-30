@@ -8,268 +8,374 @@ import {
   readLocationTrackingState,
 } from "@/lib/rdash/location-tracking-status";
 import type { StaffLocationPing } from "@/lib/rdash/staff-location";
+import { distanceMeters } from "@/lib/rdash/staff-location";
+import {
+  STAFF_ROUTE_LAST_SYNC_KEY,
+  STAFF_ROUTE_QUEUE_EVENT,
+  STAFF_ROUTE_QUEUE_KEY,
+  STAFF_ROUTE_SYNC_EVENT,
+  publishStaffRouteQueueUpdated,
+} from "@/lib/rdash/staff-route-client";
 
-const PENDING_KEY = "rdash:pending-staff-location-pings:v2";
-const LEGACY_PENDING_KEY = "rdash:pending-staff-location-pings:v1";
-const MINIMUM_PING_INTERVAL_MS = 2 * 60_000;
-const STATIONARY_HEARTBEAT_MS = 10 * 60_000;
-const FOREGROUND_HEARTBEAT_INTERVAL_MS = 5 * 60_000;
-const MINIMUM_MOVEMENT_METERS = 30;
-const POST_TIMEOUT_MS = 8_000;
-const MAX_PENDING_POINTS = 1_500;
+const HOURLY_SYNC_MS = 60 * 60_000;
+const SYNC_CHECK_MS = 60_000;
+const MOVING_CAPTURE_INTERVAL_MS = 30_000;
+const SLOW_CAPTURE_INTERVAL_MS = 60_000;
+const STATIONARY_CAPTURE_INTERVAL_MS = 2 * 60_000;
+const MINIMUM_MOVEMENT_METERS = 10;
+const MAX_ACCEPTED_ACCURACY_M = 150;
+const MAX_REASONABLE_SPEED_KMH = 220;
+const MAX_QUEUE_POINTS = 6_000;
 const MAX_CAPTURE_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
-const MAX_CAPTURE_FUTURE_SKEW_MS = 2 * 60_000;
+const POST_TIMEOUT_MS = 15_000;
 const SESSION_RENEW_INTERVAL_MS = 30 * 60_000;
 
-const LIVE_POSITION_OPTIONS: PositionOptions = {
+const POSITION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  maximumAge: 60_000,
-  timeout: 10_000,
+  maximumAge: 15_000,
+  timeout: 20_000,
 };
 
-const WATCH_POSITION_OPTIONS: PositionOptions = {
-  enableHighAccuracy: true,
-  maximumAge: 60_000,
-  timeout: 15_000,
+type QueuedRoutePoint = Omit<StaffLocationPing, "id" | "staff_id"> & {
+  client_point_id: string;
 };
 
-type PendingPoint = Omit<StaffLocationPing, "id" | "staff_id">;
+type PreviousCapture = Pick<
+  QueuedRoutePoint,
+  "latitude" | "longitude" | "captured_at" | "speed_kmh"
+>;
 
-type SentPoint = {
-  latitude: number;
-  longitude: number;
-  sentAt: number;
-};
-
-class LocationPostError extends Error {
+class RouteSyncError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
   }
 }
 
-function isPendingPoint(value: Partial<PendingPoint>): value is PendingPoint {
+function isQueuedRoutePoint(
+  value: Partial<QueuedRoutePoint>,
+): value is QueuedRoutePoint {
+  const capturedAt = value.captured_at
+    ? new Date(value.captured_at).getTime()
+    : Number.NaN;
   const now = Date.now();
-  const capturedAt = value.captured_at ? new Date(value.captured_at).getTime() : Number.NaN;
   return Boolean(
-    Number.isFinite(value.latitude) &&
-    Number.isFinite(value.longitude) &&
-    Number.isFinite(value.accuracy_m) &&
-    value.latitude! >= -90 &&
-    value.latitude! <= 90 &&
-    value.longitude! >= -180 &&
-    value.longitude! <= 180 &&
-    value.accuracy_m! > 0 &&
-    value.accuracy_m! <= 250 &&
-    Number.isFinite(capturedAt) &&
-    capturedAt >= now - MAX_CAPTURE_AGE_MS &&
-    capturedAt <= now + MAX_CAPTURE_FUTURE_SKEW_MS &&
-    (value.source === "browser_foreground" || value.source === "native_background")
+    value.client_point_id
+    && Number.isFinite(value.latitude)
+    && Number.isFinite(value.longitude)
+    && Number.isFinite(value.accuracy_m)
+    && Number.isFinite(value.speed_kmh)
+    && value.latitude! >= -90
+    && value.latitude! <= 90
+    && value.longitude! >= -180
+    && value.longitude! <= 180
+    && value.accuracy_m! > 0
+    && value.accuracy_m! <= MAX_ACCEPTED_ACCURACY_M
+    && value.speed_kmh! >= 0
+    && value.speed_kmh! <= MAX_REASONABLE_SPEED_KMH
+    && Number.isFinite(capturedAt)
+    && capturedAt >= now - MAX_CAPTURE_AGE_MS
+    && capturedAt <= now + 2 * 60_000
+    && value.source === "browser_foreground"
   );
 }
 
-function readPendingPoints(): PendingPoint[] {
+function readQueue(): QueuedRoutePoint[] {
   try {
-    const raw = window.localStorage.getItem(PENDING_KEY) || window.localStorage.getItem(LEGACY_PENDING_KEY) || "[]";
-    const parsed = JSON.parse(raw) as unknown;
+    const parsed = JSON.parse(
+      window.localStorage.getItem(STAFF_ROUTE_QUEUE_KEY) || "[]",
+    ) as unknown;
     return Array.isArray(parsed)
       ? parsed
-          .filter((point): point is PendingPoint => Boolean(point && typeof point === "object" && isPendingPoint(point as Partial<PendingPoint>)))
-          .slice(-MAX_PENDING_POINTS)
+          .filter(
+            (point): point is QueuedRoutePoint =>
+              Boolean(
+                point
+                && typeof point === "object"
+                && isQueuedRoutePoint(point as Partial<QueuedRoutePoint>),
+              ),
+          )
+          .slice(-MAX_QUEUE_POINTS)
       : [];
   } catch {
     return [];
   }
 }
 
-function writePendingPoints(points: PendingPoint[]) {
-  const valid = points.filter(isPendingPoint).slice(-MAX_PENDING_POINTS);
+function writeQueue(points: QueuedRoutePoint[]) {
+  const valid = points.filter(isQueuedRoutePoint).slice(-MAX_QUEUE_POINTS);
   try {
-    window.localStorage.setItem(PENDING_KEY, JSON.stringify(valid));
-    window.localStorage.removeItem(LEGACY_PENDING_KEY);
+    window.localStorage.setItem(
+      STAFF_ROUTE_QUEUE_KEY,
+      JSON.stringify(valid),
+    );
   } catch {
-    // Keep tracking active even when persistent browser storage is unavailable.
+    // Tracking remains active in memory-constrained/private contexts.
   }
+  publishStaffRouteQueueUpdated();
   publishLocationTrackingState({ pendingCount: valid.length });
 }
 
-function enqueue(point: PendingPoint) {
-  writePendingPoints([...readPendingPoints(), point]);
-  publishLocationTrackingState({
-    status: "queued",
-    lastCapturedAt: point.captured_at,
-    message: navigator.onLine
-      ? "Location is queued and will retry automatically."
-      : "Offline: location is queued and will send when connectivity returns.",
-  });
+function writeLastSyncAt(value: number) {
+  try {
+    window.localStorage.setItem(
+      STAFF_ROUTE_LAST_SYNC_KEY,
+      String(value),
+    );
+  } catch {
+    // Best effort only.
+  }
 }
 
-function browserPoint(position: GeolocationPosition): PendingPoint {
+function derivedSpeedKmh(
+  previous: PreviousCapture | null,
+  point: Pick<QueuedRoutePoint, "latitude" | "longitude" | "captured_at">,
+) {
+  if (!previous) return 0;
+  const elapsedSeconds =
+    (new Date(point.captured_at).getTime()
+      - new Date(previous.captured_at).getTime())
+    / 1_000;
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) return 0;
+  return (distanceMeters(previous, point) / elapsedSeconds) * 3.6;
+}
+
+function queuedPoint(
+  position: GeolocationPosition,
+  previous: PreviousCapture | null,
+): QueuedRoutePoint {
+  const capturedAt = new Date(
+    position.timestamp || Date.now(),
+  ).toISOString();
+  const reportedMps = position.coords.speed;
+  const fallbackSpeed = derivedSpeedKmh(previous, {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+    captured_at: capturedAt,
+  });
+  const reportedSpeed =
+    typeof reportedMps === "number" && Number.isFinite(reportedMps)
+      ? Math.max(0, reportedMps * 3.6)
+      : 0;
+  const speedKmh = Math.max(reportedSpeed, fallbackSpeed);
+  const heading =
+    typeof position.coords.heading === "number"
+    && Number.isFinite(position.coords.heading)
+      ? Math.max(0, Math.min(360, position.coords.heading))
+      : undefined;
   return {
+    client_point_id: `route-point-${Date.now().toString(36)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)}`,
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
     accuracy_m: position.coords.accuracy,
-    captured_at: new Date(position.timestamp || Date.now()).toISOString(),
+    speed_kmh: Math.round(speedKmh * 10) / 10,
+    heading_deg: heading,
+    captured_at: capturedAt,
     source: "browser_foreground",
   };
 }
 
-function distanceMeters(a: Pick<SentPoint, "latitude" | "longitude">, b: Pick<PendingPoint, "latitude" | "longitude">) {
-  const radians = (degrees: number) => degrees * Math.PI / 180;
-  const earthRadius = 6_371_000;
-  const dLat = radians(b.latitude - a.latitude);
-  const dLon = radians(b.longitude - a.longitude);
-  const lat1 = radians(a.latitude);
-  const lat2 = radians(b.latitude);
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-  return 2 * earthRadius * Math.asin(Math.min(1, Math.sqrt(h)));
-}
-
-async function postPointOnce(point: PendingPoint) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
-  try {
-    const response = await fetch("/api/tracking/ping", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(point),
-      signal: controller.signal,
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      point?: StaffLocationPing;
-      ignored?: boolean;
-      error?: string;
-    };
-    if (!response.ok) throw new LocationPostError(payload.error || "Location point was not accepted.", response.status);
-    if (payload.ignored) {
-      return {
-        id: `demo-${point.captured_at}`,
-        staff_id: "demo",
-        latitude: point.latitude,
-        longitude: point.longitude,
-        accuracy_m: point.accuracy_m,
-        captured_at: point.captured_at,
-        source: point.source,
-        created_at: new Date().toISOString(),
-      } as StaffLocationPing;
-    }
-    if (!payload.point) throw new LocationPostError(payload.error || "Location point was not accepted.", response.status);
-    return payload.point;
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new LocationPostError("Location upload timed out and will retry later.", 408);
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
+function shouldCapture(
+  point: QueuedRoutePoint,
+  previous: PreviousCapture | null,
+) {
+  if (!previous) return true;
+  const elapsed =
+    new Date(point.captured_at).getTime()
+    - new Date(previous.captured_at).getTime();
+  const moved = distanceMeters(previous, point);
+  if (point.speed_kmh <= 0.8) {
+    return elapsed >= STATIONARY_CAPTURE_INTERVAL_MS;
   }
-}
-
-async function postPoint(point: PendingPoint) {
-  try {
-    return await postPointOnce(point);
-  } catch (error) {
-    if (error instanceof LocationPostError && error.status === 401 && await refreshClientSession()) {
-      return postPointOnce(point);
-    }
-    throw error;
+  if (point.speed_kmh <= 15) {
+    return elapsed >= SLOW_CAPTURE_INTERVAL_MS
+      && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= 60_000);
   }
+  return elapsed >= MOVING_CAPTURE_INTERVAL_MS
+    && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= 30_000);
 }
 
-function geolocationMessage(error: GeolocationPositionError): string {
-  if (error.code === error.PERMISSION_DENIED) return "Location permission is blocked. Allow precise location in browser/site settings.";
-  if (error.code === error.POSITION_UNAVAILABLE) return "This device cannot determine a location. Check GPS and network settings.";
-  if (error.code === error.TIMEOUT) return "Location timed out. Tracking will retry while the app is visible.";
-  return error.message || "Location tracking failed.";
+function geolocationMessage(error: GeolocationPositionError) {
+  if (error.code === error.PERMISSION_DENIED) {
+    return "Location permission is blocked. Allow precise location in browser settings.";
+  }
+  if (error.code === error.POSITION_UNAVAILABLE) {
+    return "This device cannot determine a reliable GPS position.";
+  }
+  if (error.code === error.TIMEOUT) {
+    return "Location timed out. Frontend route capture will retry.";
+  }
+  return error.message || "Location capture failed.";
 }
 
 export function StaffLocationTracker() {
   const authUser = useRDashStore((state) => state.authUser);
   const staff = useRDashStore((state) =>
-    authUser?.staffId ? state.db.master.staff.find((row) => row.id === authUser.staffId) : undefined,
+    authUser?.staffId
+      ? state.db.master.staff.find(
+          (row) => row.id === authUser.staffId,
+        )
+      : undefined,
   );
-  const upsertStaffLocationPing = useRDashStore((state) => state.upsertStaffLocationPing);
-  const lastAcceptedRef = React.useRef<SentPoint | null>(null);
-  const lastCaptureAtRef = React.useRef(0);
-  const flushing = React.useRef(false);
+  const upsertStaffLocationPing = useRDashStore(
+    (state) => state.upsertStaffLocationPing,
+  );
+  const previousCaptureRef = React.useRef<PreviousCapture | null>(null);
+  const syncingRef = React.useRef(false);
 
-  // Foreground browser tracking is opt-in through an active linked Staff profile.
-  // Owner/Operations accounts no longer start GPS merely because of their role.
   const enabled = Boolean(
-    authUser?.staffId && staff && staff.status === "active" && staff.gps_tracking_enabled !== false,
+    authUser?.staffId
+    && staff
+    && staff.status === "active"
+    && staff.gps_tracking_enabled !== false,
   );
 
-  const send = React.useCallback(async (point: PendingPoint): Promise<"sent" | "invalid" | "retry"> => {
-    try {
-      const accepted = await postPoint(point);
-      upsertStaffLocationPing(accepted);
-      lastAcceptedRef.current = {
-        latitude: point.latitude,
-        longitude: point.longitude,
-        sentAt: Date.now(),
-      };
-      publishLocationTrackingState({
-        status: "active",
-        lastCapturedAt: point.captured_at,
-        lastSentAt: new Date().toISOString(),
-        message: "Foreground tracking is active while this page is visible.",
-      });
-      return "sent";
-    } catch (error) {
-      if (error instanceof LocationPostError && error.status === 422) {
-        publishLocationTrackingState({ status: "error", message: error.message });
-        return "invalid";
-      }
-      if (error instanceof LocationPostError && (error.status === 401 || error.status === 403)) {
+  const syncQueue = React.useCallback(
+    async (reason: "hourly" | "manual") => {
+      if (syncingRef.current || !enabled) return;
+      const points = readQueue();
+      if (!points.length) {
         publishLocationTrackingState({
-          status: "auth_required",
-          message: error.status === 401
-            ? "Your session needs sign-in before queued locations can be sent."
-            : error.message,
+          status: "active",
+          pendingCount: 0,
+          message: "Route capture is active. No unsynced points.",
         });
-      } else {
+        return;
+      }
+      if (!navigator.onLine) {
         publishLocationTrackingState({
           status: "queued",
-          message: error instanceof Error ? error.message : "Location will retry automatically.",
+          pendingCount: points.length,
+          message: "Offline: route points remain safely queued on this device.",
         });
+        return;
       }
-      return "retry";
-    }
-  }, [upsertStaffLocationPing]);
 
-  const flushPending = React.useCallback(async () => {
-    if (flushing.current || !navigator.onLine) return;
-    flushing.current = true;
-    try {
-      const pending = readPendingPoints();
-      const remaining: PendingPoint[] = [];
-      for (let index = 0; index < pending.length; index += 1) {
-        const result = await send(pending[index]);
-        if (result === "retry") {
-          remaining.push(...pending.slice(index));
-          break;
+      syncingRef.current = true;
+      publishLocationTrackingState({
+        status: "queued",
+        pendingCount: points.length,
+        message:
+          reason === "manual"
+            ? `Sending ${points.length} route points now…`
+            : `Sending the hourly route bundle (${points.length} points)…`,
+      });
+
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        POST_TIMEOUT_MS,
+      );
+      try {
+        await refreshClientSession();
+        const first = points[0];
+        const last = points[points.length - 1];
+        const bundleId = `route-bundle-${first.client_point_id}-${last.client_point_id}`;
+        const response = await fetch("/api/tracking/routes", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bundleId,
+            startedAt: first.captured_at,
+            endedAt: last.captured_at,
+            points,
+          }),
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => ({}))) as {
+          points?: StaffLocationPing[];
+          ignored?: boolean;
+          error?: string;
+        };
+        if (!response.ok) {
+          throw new RouteSyncError(
+            payload.error || "Route bundle was not accepted.",
+            response.status,
+          );
         }
+
+        const uploadedIds = new Set(
+          points.map((point) => point.client_point_id),
+        );
+        writeQueue(
+          readQueue().filter(
+            (point) => !uploadedIds.has(point.client_point_id),
+          ),
+        );
+        for (const point of payload.points || []) {
+          upsertStaffLocationPing(point);
+        }
+        const now = Date.now();
+        writeLastSyncAt(now);
+        publishLocationTrackingState({
+          status: "active",
+          pendingCount: readQueue().length,
+          lastSentAt: new Date(now).toISOString(),
+          message: payload.ignored
+            ? "Route bundle accepted locally; server persistence is unavailable."
+            : `Route bundle synced successfully (${points.length} points).`,
+        });
+      } catch (error) {
+        const message =
+          error instanceof DOMException && error.name === "AbortError"
+            ? "Route bundle upload timed out. It remains queued."
+            : error instanceof Error
+              ? error.message
+              : "Route bundle upload failed. It remains queued.";
+        publishLocationTrackingState({
+          status:
+            error instanceof RouteSyncError
+              && (error.status === 401 || error.status === 403)
+              ? "auth_required"
+              : "queued",
+          pendingCount: readQueue().length,
+          message,
+        });
+      } finally {
+        window.clearTimeout(timeout);
+        syncingRef.current = false;
       }
-      writePendingPoints(remaining);
-    } finally {
-      flushing.current = false;
+    },
+    [enabled, upsertStaffLocationPing],
+  );
+
+  const syncIfDue = React.useCallback(() => {
+    const queue = readQueue();
+    if (!queue.length) return;
+    const oldest = new Date(queue[0].captured_at).getTime();
+    if (Date.now() - oldest >= HOURLY_SYNC_MS) {
+      void syncQueue("hourly");
     }
-  }, [send]);
+  }, [syncQueue]);
 
   React.useEffect(() => {
     if (!enabled) {
       publishLocationTrackingState({
         status: "disabled",
-        pendingCount: readPendingPoints().length,
+        mode: "frontend_bundle",
+        pendingCount: readQueue().length,
         message: authUser?.staffId
-          ? "GPS tracking is disabled for this staff profile."
-          : "GPS tracking requires a linked staff profile.",
+          ? "GPS route capture is disabled for this staff profile."
+          : "GPS route capture requires a linked active Staff profile.",
       });
       return;
     }
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
+    try {
+      window.localStorage.removeItem("rdash:pending-staff-location-pings:v1");
+      window.localStorage.removeItem("rdash:pending-staff-location-pings:v2");
+      window.localStorage.removeItem("rdash:location-tracking-status:v1");
+    } catch {
+      // Old browser keys are ignored and removed best-effort.
+    }
+    if (
+      typeof navigator === "undefined"
+      || !navigator.geolocation
+    ) {
       publishLocationTrackingState({
         status: "unsupported",
+        mode: "frontend_bundle",
         permission: "unsupported",
         message: "This browser does not provide device geolocation.",
       });
@@ -279,119 +385,136 @@ export function StaffLocationTracker() {
     let disposed = false;
     publishLocationTrackingState({
       status: "checking",
-      mode: "foreground_only",
-      pendingCount: readPendingPoints().length,
-      message: "Checking device location permission…",
+      mode: "frontend_bundle",
+      pendingCount: readQueue().length,
+      message:
+        "Starting frontend route capture. Bundles sync hourly or manually.",
     });
 
     if (navigator.permissions?.query) {
-      void navigator.permissions.query({ name: "geolocation" }).then((permission) => {
-        if (disposed) return;
-        publishLocationTrackingState({ permission: permission.state });
-        permission.onchange = () => publishLocationTrackingState({ permission: permission.state });
-      }).catch(() => publishLocationTrackingState({ permission: "unknown" }));
+      void navigator.permissions
+        .query({ name: "geolocation" })
+        .then((permission) => {
+          if (disposed) return;
+          publishLocationTrackingState({
+            permission: permission.state,
+          });
+          permission.onchange = () =>
+            publishLocationTrackingState({
+              permission: permission.state,
+            });
+        })
+        .catch(() =>
+          publishLocationTrackingState({ permission: "unknown" }),
+        );
     }
 
-    const capture = async (position: GeolocationPosition) => {
+    const capture = (position: GeolocationPosition) => {
       if (disposed || document.visibilityState !== "visible") return;
-      if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy <= 0 || position.coords.accuracy > 250) {
-        if (position.coords.accuracy > 250) {
-          publishLocationTrackingState({
-            status: "error",
-            message: `Location accuracy is too low (±${Math.round(position.coords.accuracy)} m). Waiting for a better signal.`,
-          });
-        }
+      if (
+        !Number.isFinite(position.coords.accuracy)
+        || position.coords.accuracy <= 0
+        || position.coords.accuracy > MAX_ACCEPTED_ACCURACY_M
+      ) {
+        publishLocationTrackingState({
+          status: "error",
+          message: `GPS accuracy is too low (±${Math.round(
+            position.coords.accuracy || 0,
+          )} m). Waiting for a better point.`,
+        });
         return;
       }
 
-      const now = Date.now();
-      lastCaptureAtRef.current = now;
-      const point = browserPoint(position);
-      if (!isPendingPoint(point)) return;
-      const previous = lastAcceptedRef.current;
-      if (previous) {
-        const elapsed = now - previous.sentAt;
-        if (elapsed < MINIMUM_PING_INTERVAL_MS) return;
-        if (elapsed < STATIONARY_HEARTBEAT_MS && distanceMeters(previous, point) < MINIMUM_MOVEMENT_METERS) return;
+      const point = queuedPoint(position, previousCaptureRef.current);
+      if (
+        !isQueuedRoutePoint(point)
+        || point.speed_kmh > MAX_REASONABLE_SPEED_KMH
+        || !shouldCapture(point, previousCaptureRef.current)
+      ) {
+        return;
       }
 
-      publishLocationTrackingState({ lastCapturedAt: point.captured_at });
-      if (!navigator.onLine || (await send(point)) === "retry") enqueue(point);
-      else await flushPending();
+      previousCaptureRef.current = point;
+      writeQueue([...readQueue(), point]);
+      publishLocationTrackingState({
+        status: "active",
+        mode: "frontend_bundle",
+        pendingCount: readQueue().length,
+        lastCapturedAt: point.captured_at,
+        message:
+          "Route capture is active in this browser. Data stays on-device until the hourly or manual sync.",
+      });
+      syncIfDue();
     };
 
     const onError = (error: GeolocationPositionError) => {
       const denied = error.code === error.PERMISSION_DENIED;
       publishLocationTrackingState({
         status: denied ? "permission_denied" : "error",
-        permission: denied ? "denied" : readLocationTrackingState().permission,
+        permission: denied
+          ? "denied"
+          : readLocationTrackingState().permission,
         message: geolocationMessage(error),
       });
     };
 
-    const requestCurrentPosition = () => {
-      if (disposed || document.visibilityState !== "visible") return;
-      navigator.geolocation.getCurrentPosition(
-        (position) => { void capture(position); },
-        onError,
-        LIVE_POSITION_OPTIONS,
-      );
-    };
-
     const watchId = navigator.geolocation.watchPosition(
-      (position) => { void capture(position); },
+      capture,
       onError,
-      WATCH_POSITION_OPTIONS,
+      POSITION_OPTIONS,
     );
-    requestCurrentPosition();
+    navigator.geolocation.getCurrentPosition(
+      capture,
+      onError,
+      POSITION_OPTIONS,
+    );
 
-    // A slow heartbeat only recovers stalled browser watches; it does not create
-    // an additional ping when watchPosition is already delivering updates.
-    const heartbeatTimer = window.setInterval(() => {
-      if (Date.now() - lastCaptureAtRef.current >= FOREGROUND_HEARTBEAT_INTERVAL_MS) {
-        requestCurrentPosition();
-      }
-    }, FOREGROUND_HEARTBEAT_INTERVAL_MS);
-
-    const resumeTracking = () => {
-      if (document.visibilityState !== "visible") return;
-      publishLocationTrackingState({ message: "Foreground tracking is active." });
-      requestCurrentPosition();
-      void flushPending();
+    const syncTimer = window.setInterval(syncIfDue, SYNC_CHECK_MS);
+    const sessionTimer = window.setInterval(
+      () => {
+        void refreshClientSession();
+      },
+      SESSION_RENEW_INTERVAL_MS,
+    );
+    const onManualSync = () => {
+      void syncQueue("manual");
     };
-    const onOnline = () => {
-      requestCurrentPosition();
-      void flushPending();
-    };
-    const onOffline = () => publishLocationTrackingState({
-      status: "queued",
-      message: "Offline: captured locations will be queued on this device.",
-    });
+    const onOnline = () => syncIfDue();
     const onVisibility = () => {
-      if (document.visibilityState === "visible") resumeTracking();
-      else publishLocationTrackingState({ message: "Foreground tracking pauses while this page is hidden." });
+      if (document.visibilityState === "visible") syncIfDue();
     };
 
+    window.addEventListener(STAFF_ROUTE_SYNC_EVENT, onManualSync);
     window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onOffline);
-    window.addEventListener("focus", resumeTracking);
-    window.addEventListener("pageshow", resumeTracking);
+    window.addEventListener(STAFF_ROUTE_QUEUE_EVENT, syncIfDue);
     document.addEventListener("visibilitychange", onVisibility);
-    const renewTimer = window.setInterval(() => { void refreshClientSession(); }, SESSION_RENEW_INTERVAL_MS);
-    void refreshClientSession().then(() => flushPending());
+    void refreshClientSession().then(syncIfDue);
 
     return () => {
       disposed = true;
       navigator.geolocation.clearWatch(watchId);
+      window.clearInterval(syncTimer);
+      window.clearInterval(sessionTimer);
+      window.removeEventListener(
+        STAFF_ROUTE_SYNC_EVENT,
+        onManualSync,
+      );
       window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onOffline);
-      window.removeEventListener("focus", resumeTracking);
-      window.removeEventListener("pageshow", resumeTracking);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(heartbeatTimer);
-      window.clearInterval(renewTimer);
+      window.removeEventListener(
+        STAFF_ROUTE_QUEUE_EVENT,
+        syncIfDue,
+      );
+      document.removeEventListener(
+        "visibilitychange",
+        onVisibility,
+      );
     };
-  }, [authUser?.staffId, enabled, flushPending, send]);
+  }, [
+    authUser?.staffId,
+    enabled,
+    syncIfDue,
+    syncQueue,
+  ]);
 
   return null;
 }
