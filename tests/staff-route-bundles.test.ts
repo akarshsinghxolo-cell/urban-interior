@@ -103,6 +103,21 @@ describe("frontend route queue safety", () => {
   });
 });
 
+describe("field map layout", () => {
+  test("Leaflet canvas fills the complete configured map panel", () => {
+    const map = readFileSync(
+      "src/components/rdash/LeafletMapView.tsx",
+      "utf8",
+    );
+    expect(map).toContain(
+      'className="absolute inset-0 h-full min-h-0 w-full"',
+    );
+    expect(map).not.toContain(
+      'className="h-full min-h-[280px] w-full"',
+    );
+  });
+});
+
 describe("old GPS paths are removed", () => {
   test("single-ping and native-device implementations no longer exist", () => {
     for (const path of [
