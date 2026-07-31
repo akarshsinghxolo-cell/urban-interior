@@ -1,16 +1,17 @@
-export function partnerFormFingerprint(value: unknown): string {
-  if (Array.isArray(value)) {
-    return JSON.stringify(value.map((entry) => JSON.parse(partnerFormFingerprint(entry))));
-  }
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
-    const sorted = Object.fromEntries(
+    return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, JSON.parse(partnerFormFingerprint(entry))]),
+        .map(([key, entry]) => [key, stableValue(entry)]),
     );
-    return JSON.stringify(sorted);
   }
-  return JSON.stringify(value === undefined ? null : value);
+  return value === undefined ? null : value;
+}
+
+export function partnerFormFingerprint(value: unknown): string {
+  return JSON.stringify(stableValue(value));
 }
 
 export function partnerChangedPatch<T extends Record<string, unknown>>(
@@ -23,4 +24,62 @@ export function partnerChangedPatch<T extends Record<string, unknown>>(
         partnerFormFingerprint(before[key]) !== partnerFormFingerprint(value),
     ),
   ) as Partial<T>;
+}
+
+export function legacyVendorArticleNames(notes?: string): string[] {
+  const line = String(notes || "")
+    .split(/\r?\n/)
+    .find((entry) => /^Supplies articles:\s*/i.test(entry.trim()));
+  return line
+    ? line
+        .replace(/^Supplies articles:\s*/i, "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    : [];
+}
+
+export function vendorNotesWithoutLegacyArticles(notes?: string): string {
+  return String(notes || "")
+    .split(/\r?\n/)
+    .filter((entry) => !/^Supplies articles:\s*/i.test(entry.trim()))
+    .join("\n")
+    .trim();
+}
+
+export function optionalIndianMobileError(value: string): string | null {
+  if (!value) return null;
+  return /^[6-9]\d{9}$/.test(value)
+    ? null
+    : "Enter a valid 10-digit Indian mobile number.";
+}
+
+export function optionalGstinError(value: string): string | null {
+  if (!value) return null;
+  return /^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]$/.test(value)
+    ? null
+    : "Enter a valid 15-character GSTIN.";
+}
+
+export function optionalPanError(value: string): string | null {
+  if (!value) return null;
+  return /^[A-Z]{5}\d{4}[A-Z]$/.test(value)
+    ? null
+    : "Enter a valid PAN.";
+}
+
+export function optionalIfscError(value: string): string | null {
+  if (!value) return null;
+  return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value)
+    ? null
+    : "Enter a valid IFSC code.";
+}
+
+export function fieldChanges(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): Array<{ field: string; before: unknown; after: unknown }> {
+  return Object.entries(partnerChangedPatch(before, after)).map(
+    ([field, value]) => ({ field, before: before[field], after: value }),
+  );
 }
