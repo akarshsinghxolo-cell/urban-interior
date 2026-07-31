@@ -1,0 +1,28 @@
+name: Export current source
+
+on:
+  push:
+    branches:
+      - ops/export-current-main
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Create source archive
+        run: git archive --format=zip --output=urban-interior-main.zip HEAD
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: urban-interior-main-source
+          path: urban-interior-main.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
