@@ -4,6 +4,7 @@ import {
   fieldChanges,
   legacyVendorArticleNames,
   partnerChangedPatch,
+  partnerFormFingerprint,
   vendorNotesWithoutLegacyArticles,
 } from "../src/lib/rdash/partner-form-consistency";
 
@@ -12,7 +13,9 @@ const types = readFileSync("src/lib/rdash/store/types.ts", "utf8");
 const customerDesk = readFileSync("src/components/rdash/modules/CustomerDesk.tsx", "utf8");
 const dataImport = readFileSync("src/components/rdash/modules/DataImportModule.tsx", "utf8");
 const partnerEntry = readFileSync("src/components/rdash/EntityFormDialog.tsx", "utf8");
+const partnerHost = readFileSync("src/components/rdash/PartnerFormDialog.tsx", "utf8");
 const partnerDialog = readFileSync("src/components/rdash/UnifiedPartnerFormDialog.tsx", "utf8");
+const partnerBridge = readFileSync("src/lib/rdash/partner-form-store-bridge.ts", "utf8");
 const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDialog.tsx", "utf8");
 
 test("legacy customer write APIs are removed from active store and UI paths", () => {
@@ -23,7 +26,7 @@ test("legacy customer write APIs are removed from active store and UI paths", ()
   expect(customerDesk.includes("<EntityFormDialog type=\"customer\"")).toBe(false);
   expect(customerDesk.includes("CustomerSitesDialog")).toBe(true);
   expect(dataImport.includes("createCustomerWithFirstSite")).toBe(false);
-  expect(partnerEntry.includes("UnifiedPartnerFormDialog")).toBe(true);
+  expect(partnerEntry.includes("PartnerFormDialog")).toBe(true);
   expect(partnerDialog.includes("type === \"customer\"")).toBe(false);
   expect(partnerDialog.includes("createCustomerWithFirstSite")).toBe(false);
   expect(partnerDialog.includes("saveCustomerWithSites")).toBe(false);
@@ -33,6 +36,7 @@ test("legacy customer write APIs are removed from active store and UI paths", ()
 });
 
 test("partner create and edit use one guarded patch-only workflow", () => {
+  expect(partnerHost.includes("retainPartnerFormStoreBridge")).toBe(true);
   expect(partnerDialog.includes("useDirtyFormRegistration")).toBe(true);
   expect(partnerDialog.includes("partnerChangedPatch")).toBe(true);
   expect(partnerDialog.includes("isEdit && !dirty")).toBe(true);
@@ -53,10 +57,42 @@ test("partner patches contain only modified fields", () => {
   ]);
 });
 
-test("legacy Vendor article text is migrated without polluting Notes", () => {
+test("record metadata and absent optional fields do not create false dirty state", () => {
+  const stored = {
+    id: "vendor-1",
+    name: "Vendor",
+    phone: undefined,
+    city: undefined,
+    outstanding: 500,
+    reliability_score: 92,
+    article_ids: [],
+  };
+  const form = {
+    name: "Vendor",
+    phone: "",
+    city: "",
+    locality: undefined,
+    address: undefined,
+    article_ids: [],
+  };
+  expect(partnerFormFingerprint(stored)).toBe(partnerFormFingerprint(form));
+});
+
+test("legacy Vendor article text is migrated on the next actual save", () => {
   const notes = "Cash only\nSupplies articles: Cement, Primer\nDeliver before noon";
   expect(legacyVendorArticleNames(notes)).toEqual(["Cement", "Primer"]);
   expect(vendorNotesWithoutLegacyArticles(notes)).toBe(
     "Cash only\nDeliver before noon",
   );
+  expect(partnerBridge.includes("legacyVendorArticleNames")).toBe(true);
+  expect(partnerBridge.includes("patch.article_ids")).toBe(true);
+  expect(partnerBridge.includes("patch.notes")).toBe(true);
+});
+
+test("partner updates emit one detailed audit instead of the generic edit audit", () => {
+  expect(partnerBridge.includes("withSuppressedGenericAudit")).toBe(true);
+  expect(partnerBridge.includes("detailedAudit")).toBe(true);
+  expect(partnerBridge.includes("before,")).toBe(true);
+  expect(partnerBridge.includes("after,")).toBe(true);
+  expect(partnerBridge.includes("Changed fields:")).toBe(true);
 });
