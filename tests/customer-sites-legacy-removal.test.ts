@@ -5,6 +5,7 @@ import {
   legacyVendorArticleNames,
   partnerChangedPatch,
   partnerFormFingerprint,
+  vendorLegacyMigrationPatch,
   vendorNotesWithoutLegacyArticles,
 } from "../src/lib/rdash/partner-form-consistency";
 
@@ -84,17 +85,47 @@ test("record metadata and absent optional collections do not create false dirty 
   ).toEqual({ categories: [] });
 });
 
-test("legacy Vendor article text is migrated on the next actual save", () => {
-  const notes = "Cash only\nSupplies articles: Cement, Primer\nDeliver before noon";
-  expect(legacyVendorArticleNames(notes)).toEqual(["Cement", "Primer"]);
-  expect(vendorNotesWithoutLegacyArticles(notes)).toBe(
+test("legacy Vendor article migration preserves explicit user edits", () => {
+  const before = {
+    notes: "Cash only\nSupplies articles: Cement, Primer\nDeliver before noon",
+  };
+  const articles = [
+    { id: "cement", name: "Cement" },
+    { id: "primer", name: "Primer" },
+  ];
+  expect(legacyVendorArticleNames(before.notes)).toEqual(["Cement", "Primer"]);
+  expect(vendorNotesWithoutLegacyArticles(before.notes)).toBe(
     "Cash only\nDeliver before noon",
   );
-  expect(partnerBridge.includes("legacyVendorArticleNames")).toBe(true);
-  expect(partnerBridge.includes("patch.article_ids")).toBe(true);
-  expect(partnerBridge.includes("patch.notes")).toBe(true);
-  expect(partnerBridge.includes('!("article_ids" in patch)')).toBe(true);
-  expect(partnerBridge.includes('!("notes" in patch)')).toBe(true);
+  expect(vendorLegacyMigrationPatch(before, { phone: "9876543210" }, articles)).toEqual({
+    phone: "9876543210",
+    article_ids: ["cement", "primer"],
+    notes: "Cash only\nDeliver before noon",
+  });
+  expect(
+    vendorLegacyMigrationPatch(
+      before,
+      { notes: "User-edited notes", article_ids: ["primer"] },
+      articles,
+    ),
+  ).toEqual({ notes: "User-edited notes", article_ids: ["primer"] });
+});
+
+test("legacy Vendor migration keeps unresolved text and respects an explicit empty list", () => {
+  const before = { notes: "Supplies articles: Cement, Unknown Article" };
+  expect(
+    vendorLegacyMigrationPatch(before, { phone: "9876543210" }, [
+      { id: "cement", name: "Cement" },
+    ]),
+  ).toEqual({ phone: "9876543210", article_ids: ["cement"] });
+  expect(
+    vendorLegacyMigrationPatch(
+      { ...before, article_ids: [] },
+      { phone: "9876543210" },
+      [{ id: "cement", name: "Cement" }],
+    ),
+  ).toEqual({ phone: "9876543210" });
+  expect(partnerBridge.includes("vendorLegacyMigrationPatch")).toBe(true);
 });
 
 test("partner updates emit one detailed audit instead of the generic edit audit", () => {
