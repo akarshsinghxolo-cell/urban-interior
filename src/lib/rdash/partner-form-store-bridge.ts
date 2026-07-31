@@ -1,8 +1,7 @@
 import { useRDashStore } from "./store";
 import {
   fieldChanges,
-  legacyVendorArticleNames,
-  vendorNotesWithoutLegacyArticles,
+  vendorLegacyMigrationPatch,
 } from "./partner-form-consistency";
 
 type PartnerType = "vendor" | "contractor";
@@ -73,32 +72,11 @@ function install(): () => void {
       | undefined;
     if (!before) return originalUpdateVendor(id, suppliedPatch as never);
 
-    const patch = { ...suppliedPatch };
-    const structuredIds = (before.article_ids as string[] | undefined) || [];
-    const legacyNames = legacyVendorArticleNames(before.notes as string | undefined);
-    if (!structuredIds.length && legacyNames.length) {
-      const resolvedIds = legacyNames
-        .map(
-          (articleName) =>
-            state.db.master.articles.find(
-              (article) =>
-                article.name.toLowerCase() === articleName.toLowerCase(),
-            )?.id,
-        )
-        .filter((articleId): articleId is string => Boolean(articleId));
-      if (!("article_ids" in patch) && resolvedIds.length) {
-        patch.article_ids = resolvedIds;
-      }
-      if (
-        !("notes" in patch) &&
-        resolvedIds.length === legacyNames.length
-      ) {
-        patch.notes =
-          vendorNotesWithoutLegacyArticles(before.notes as string | undefined) ||
-          undefined;
-      }
-    }
-
+    const patch = vendorLegacyMigrationPatch(
+      before,
+      suppliedPatch,
+      state.db.master.articles,
+    );
     const after = { ...before, ...patch };
     if (!fieldChanges(before, after).length) return;
     withSuppressedGenericAudit(() => originalUpdateVendor(id, patch as never));
