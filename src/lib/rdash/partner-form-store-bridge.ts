@@ -77,7 +77,7 @@ function install(): () => void {
     const structuredIds = (before.article_ids as string[] | undefined) || [];
     const legacyNames = legacyVendorArticleNames(before.notes as string | undefined);
     if (!structuredIds.length && legacyNames.length) {
-      patch.article_ids = legacyNames
+      const resolvedIds = legacyNames
         .map(
           (articleName) =>
             state.db.master.articles.find(
@@ -86,9 +86,17 @@ function install(): () => void {
             )?.id,
         )
         .filter((articleId): articleId is string => Boolean(articleId));
-      patch.notes =
-        vendorNotesWithoutLegacyArticles(before.notes as string | undefined) ||
-        undefined;
+      if (!("article_ids" in patch) && resolvedIds.length) {
+        patch.article_ids = resolvedIds;
+      }
+      if (
+        !("notes" in patch) &&
+        resolvedIds.length === legacyNames.length
+      ) {
+        patch.notes =
+          vendorNotesWithoutLegacyArticles(before.notes as string | undefined) ||
+          undefined;
+      }
     }
 
     const after = { ...before, ...patch };
