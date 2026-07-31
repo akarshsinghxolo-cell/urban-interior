@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  contractorCapabilityRateError,
   fieldChanges,
   legacyVendorArticleNames,
   partnerChangedPatch,
@@ -126,6 +127,22 @@ test("legacy Vendor migration keeps unresolved text and respects an explicit emp
     ),
   ).toEqual({ phone: "9876543210" });
   expect(partnerBridge.includes("vendorLegacyMigrationPatch")).toBe(true);
+});
+
+test("Contractor rates reject negative and nonnumeric values on create and edit", () => {
+  expect(
+    contractorCapabilityRateError([
+      { labour_rate: 100, with_material_rate: 250 },
+    ]),
+  ).toBeNull();
+  expect(
+    contractorCapabilityRateError([{ labour_rate: -1 }]),
+  ).toBe("Contractor rates must be valid non-negative numbers.");
+  expect(
+    contractorCapabilityRateError([{ with_material_rate: "invalid" }]),
+  ).toBe("Contractor rates must be valid non-negative numbers.");
+  expect(partnerBridge.includes("originalAddContractor")).toBe(true);
+  expect(partnerBridge.includes("contractorCapabilityRateError")).toBe(true);
 });
 
 test("partner updates emit one detailed audit instead of the generic edit audit", () => {
