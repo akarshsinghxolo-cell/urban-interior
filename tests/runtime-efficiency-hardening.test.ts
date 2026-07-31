@@ -67,18 +67,26 @@ describe("runtime efficiency hardening", () => {
     expect(source).toContain("clearStoredHealthResponses");
   });
 
-  test("GPS writes do not reload and prune the whole history table", async () => {
+  test("GPS writes use one hourly browser bundle instead of point-by-point database traffic", async () => {
     const server = await read("src/lib/rdash/server/staff-location.ts");
-    expect(server).toContain('.from("StaffLocationPing").insert');
-    expect(server).toContain("cleanupExpiredStaffLocationPings");
+    expect(server).toContain('.from("StaffRouteBundle")');
+    expect(server).toContain("recordStaffRouteBundle");
+    expect(server).toContain("cleanupExpiredStaffRouteBundles");
+    expect(server).not.toContain('from("StaffLocationPing")');
     expect(server).not.toContain("const retained =");
     expect(server).not.toContain("await allPoints()");
 
     const client = await read("src/components/rdash/StaffLocationTracker.tsx");
-    expect(client).toContain("MINIMUM_PING_INTERVAL_MS = 2 * 60_000");
-    expect(client).toContain("MINIMUM_MOVEMENT_METERS = 30");
-    expect(client).toContain("POST_TIMEOUT_MS = 8_000");
-    expect(client).not.toContain('authUser.role === "Owner"');
+    expect(client).toContain("HOURLY_SYNC_MS = 60 * 60_000");
+    expect(client).toContain("MOVING_CAPTURE_INTERVAL_MS = 30_000");
+    expect(client).toContain("STATIONARY_CAPTURE_INTERVAL_MS = 2 * 60_000");
+    expect(client).toContain("POSITION_HEARTBEAT_MS = 2 * 60_000");
+    expect(client).toContain("POST_TIMEOUT_MS = 15_000");
+    expect(client).toContain("staffRouteQueueKey(staffId)");
+    expect(client).toContain('/api/tracking/routes');
+    expect(client).not.toContain('/api/tracking/ping');
+    expect(client).not.toContain("native_background");
+    expect(client).not.toContain("SESSION_RENEW_INTERVAL_MS");
   });
 
   test("functions execute beside the Tokyo database", async () => {
@@ -86,10 +94,13 @@ describe("runtime efficiency hardening", () => {
     expect(config.regions).toEqual(["hnd1"]);
   });
 
-  test("database migration provides health storage and GPS indexes", async () => {
-    const migration = await read("supabase/migrations/20260728130000_runtime_efficiency_hardening.sql");
-    expect(migration).toContain("workspace_health_snapshot");
-    expect(migration).toContain('"StaffLocationPing_capturedAt_idx"');
-    expect(migration).toContain('"StaffLocationPing_staffId_capturedAt_desc_idx"');
+  test("database migration prepares route bundles before removing point telemetry", async () => {
+    const migration = await read("supabase/migrations/20260730171000_frontend_route_bundles.sql");
+    const createIndex = migration.indexOf('create table if not exists public."StaffRouteBundle"');
+    const dropIndex = migration.indexOf('drop table if exists public."StaffLocationPing"');
+    expect(createIndex).toBeGreaterThanOrEqual(0);
+    expect(dropIndex).toBeGreaterThan(createIndex);
+    expect(migration).toContain('"StaffRouteBundle_staffId_startedAt_idx"');
+    expect(migration).toContain('"StaffRouteBundle_endedAt_idx"');
   });
 });

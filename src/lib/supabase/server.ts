@@ -51,17 +51,15 @@ export type StaffProfileRow = {
   dataJson: string;
 };
 
-export type StaffLocationPingRow = {
+export type StaffRouteBundleRow = {
   id: string;
   staffId: string;
-  latitude: number;
-  longitude: number;
-  accuracyM: number | null;
-  speed: number | null;
-  battery: number | null;
-  capturedAt: string;
-  source: string;
+  startedAt: string;
+  endedAt: string;
+  pointCount: number;
+  distanceM: number;
   dataJson: string;
+  createdAt: string;
 };
 
 type StaffIdentityDriftRow = {
@@ -108,10 +106,10 @@ type RDashSupabaseSchema = {
         Update: Partial<StaffProfileRow>;
         Relationships: [];
       };
-      StaffLocationPing: {
-        Row: StaffLocationPingRow;
-        Insert: StaffLocationPingRow;
-        Update: Partial<StaffLocationPingRow>;
+      StaffRouteBundle: {
+        Row: StaffRouteBundleRow;
+        Insert: StaffRouteBundleRow;
+        Update: Partial<StaffRouteBundleRow>;
         Relationships: [];
       };
       [key: string]: {

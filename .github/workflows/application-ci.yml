@@ -75,6 +75,8 @@ jobs:
         run: bun run test:customer-sites-save
       - name: Test legacy Customer and Site path removal
         run: bun run test:customer-sites-legacy
+      - name: Test frontend staff route bundles
+        run: bun test tests/staff-route-bundles.test.ts
       - name: Test bug hunt regressions
         run: bun run test:bug-hunt
       - name: Test field staff UI visibility

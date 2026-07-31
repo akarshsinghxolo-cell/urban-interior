@@ -3,8 +3,16 @@
 import * as React from "react";
 
 export type LocationTrackingState = {
-  status: "disabled" | "checking" | "active" | "queued" | "permission_denied" | "auth_required" | "error" | "unsupported";
-  mode: "foreground_only" | "native_background";
+  status:
+    | "disabled"
+    | "checking"
+    | "active"
+    | "queued"
+    | "permission_denied"
+    | "auth_required"
+    | "error"
+    | "unsupported";
+  mode: "frontend_bundle";
   permission: PermissionState | "unknown" | "unsupported";
   pendingCount: number;
   lastCapturedAt?: string;
@@ -12,24 +20,20 @@ export type LocationTrackingState = {
   message: string;
 };
 
-const KEY = "rdash:location-tracking-status:v1";
-const EVENT = "rdash:location-tracking-status";
+const KEY = "uc:location-tracking-status:v2";
+const EVENT = "uc:location-tracking-status";
 const DEFAULT_STATE: LocationTrackingState = {
   status: "checking",
-  mode: "foreground_only",
+  mode: "frontend_bundle",
   permission: "unknown",
   pendingCount: 0,
-  message: "Checking device location permission…",
+  message:
+    "Starting frontend route capture. Bundles sync hourly or manually.",
 };
 
 let memoryState = DEFAULT_STATE;
 let cachedStorageValue: string | null | undefined;
 
-/**
- * useSyncExternalStore requires getSnapshot to return the exact same object
- * while the underlying store has not changed. Cache the serialized value so
- * ordinary React snapshot checks do not rebuild a new object on every read.
- */
 export function readLocationTrackingState(): LocationTrackingState {
   if (typeof window === "undefined") return memoryState;
   try {
@@ -40,18 +44,26 @@ export function readLocationTrackingState(): LocationTrackingState {
       memoryState = DEFAULT_STATE;
       return memoryState;
     }
-    const parsed = JSON.parse(stored) as Partial<LocationTrackingState> | null;
-    memoryState = parsed?.status && parsed?.mode
-      ? { ...DEFAULT_STATE, ...parsed }
+    const parsed = JSON.parse(
+      stored,
+    ) as Partial<LocationTrackingState> | null;
+    memoryState = parsed?.status
+      ? { ...DEFAULT_STATE, ...parsed, mode: "frontend_bundle" }
       : DEFAULT_STATE;
   } catch {
-    // Keep the last stable in-memory snapshot when storage is unavailable.
+    // Keep the latest stable in-memory state when storage is unavailable.
   }
   return memoryState;
 }
 
-export function publishLocationTrackingState(patch: Partial<LocationTrackingState>): LocationTrackingState {
-  const nextState = { ...readLocationTrackingState(), ...patch };
+export function publishLocationTrackingState(
+  patch: Partial<LocationTrackingState>,
+): LocationTrackingState {
+  const nextState = {
+    ...readLocationTrackingState(),
+    ...patch,
+    mode: "frontend_bundle" as const,
+  };
   const serialized = JSON.stringify(nextState);
   memoryState = nextState;
   cachedStorageValue = serialized;
@@ -59,9 +71,11 @@ export function publishLocationTrackingState(patch: Partial<LocationTrackingStat
     try {
       window.localStorage.setItem(KEY, serialized);
     } catch {
-      // Private browsing may block localStorage; the event still updates the UI.
+      // The event still updates the current page when storage is blocked.
     }
-    window.dispatchEvent(new CustomEvent(EVENT, { detail: memoryState }));
+    window.dispatchEvent(
+      new CustomEvent(EVENT, { detail: memoryState }),
+    );
   }
   return memoryState;
 }
@@ -78,5 +92,9 @@ function subscribe(listener: () => void) {
 }
 
 export function useLocationTrackingState() {
-  return React.useSyncExternalStore(subscribe, readLocationTrackingState, () => DEFAULT_STATE);
+  return React.useSyncExternalStore(
+    subscribe,
+    readLocationTrackingState,
+    () => DEFAULT_STATE,
+  );
 }

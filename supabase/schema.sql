@@ -1,13 +1,13 @@
 -- ============================================================================
 -- Urban Castle — bootstrap schema for authentication, settings, staff profiles,
--- and normalized GPS telemetry. Workspace business data is stored in the
+-- and frontend-collected GPS route bundles. Workspace business data is stored in
 -- revisioned entity_* tables and committed through commit_workspace_operations().
 --
 -- Tables (4 total):
 --   uc_user_roles       - maps Supabase Auth users to app roles/approval status
 --   "GenericRecord"     - JSON key/value store for settings such as Google Drive
 --   "StaffProfile"      - normalized staff identity/profile records
---   "StaffLocationPing" - normalized append-oriented GPS telemetry
+--   "StaffRouteBundle"  - hourly/manual browser GPS route bundles
 --
 -- Safe to re-run: every statement is idempotent (if not exists / or replace).
 -- ============================================================================
@@ -71,12 +71,11 @@ create table if not exists public."GenericRecord" (
   "dataJson" text not null,
   primary key (collection, id)
 );
-create index if not exists "GenericRecord_collection_idx" on public."GenericRecord" (collection);
+create index if not exists "GenericRecord_collection_idx"
+  on public."GenericRecord" (collection);
 
 -- ----------------------------------------------------------------------------
--- StaffProfile — real staff records. (roleId / attendancePolicyId are kept as
--- plain reference strings; the StaffRole / AttendancePolicy tables they used
--- to point to were part of the unused legacy schema and are not recreated.)
+-- StaffProfile — real staff records.
 -- ----------------------------------------------------------------------------
 create table if not exists public."StaffProfile" (
   id text primary key,
@@ -104,29 +103,37 @@ create table if not exists public."StaffProfile" (
 );
 
 -- ----------------------------------------------------------------------------
--- StaffLocationPing — GPS pings
+-- StaffRouteBundle — one browser upload per hour or manual sync.
 -- ----------------------------------------------------------------------------
-create table if not exists public."StaffLocationPing" (
+create table if not exists public."StaffRouteBundle" (
   id text primary key,
   "staffId" text not null references public."StaffProfile"(id) on delete cascade,
-  latitude double precision not null,
-  longitude double precision not null,
-  "accuracyM" double precision,
-  speed double precision,
-  battery double precision,
-  "capturedAt" text not null,
-  source text not null,
-  "dataJson" text not null
+  "startedAt" timestamptz not null,
+  "endedAt" timestamptz not null,
+  "pointCount" integer not null check ("pointCount" between 1 and 6000),
+  "distanceM" double precision not null default 0 check ("distanceM" >= 0),
+  "dataJson" text not null,
+  "createdAt" timestamptz not null default now(),
+  constraint "StaffRouteBundle_time_order_check"
+    check ("endedAt" >= "startedAt")
 );
-create index if not exists "StaffLocationPing_staffId_capturedAt_idx"
-  on public."StaffLocationPing" ("staffId", "capturedAt");
+create index if not exists "StaffRouteBundle_staffId_startedAt_idx"
+  on public."StaffRouteBundle" ("staffId", "startedAt" desc);
+create index if not exists "StaffRouteBundle_endedAt_idx"
+  on public."StaffRouteBundle" ("endedAt");
 
 -- ----------------------------------------------------------------------------
--- Row Level Security — these 3 tables are only ever touched by the app's
--- server-side Supabase admin (service-role) client, never directly by a
--- browser. RLS is enabled with NO policies for anon/authenticated on purpose,
--- which denies them all access by default; service_role bypasses RLS.
+-- Row Level Security — these tables are touched only by the server-side
+-- service-role client. No browser reads or writes them directly.
 -- ----------------------------------------------------------------------------
 alter table public."GenericRecord" enable row level security;
 alter table public."StaffProfile" enable row level security;
-alter table public."StaffLocationPing" enable row level security;
+alter table public."StaffRouteBundle" enable row level security;
+
+revoke all on public."GenericRecord" from anon, authenticated;
+revoke all on public."StaffProfile" from anon, authenticated;
+revoke all on public."StaffRouteBundle" from anon, authenticated;
+
+grant select, insert, update, delete on public."GenericRecord" to service_role;
+grant select, insert, update, delete on public."StaffProfile" to service_role;
+grant select, insert, update, delete on public."StaffRouteBundle" to service_role;
