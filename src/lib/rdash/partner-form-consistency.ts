@@ -17,15 +17,19 @@ const NON_FORM_KEYS = new Set([
 
 function stableValue(value: unknown): unknown {
   if (value === undefined || value === null || value === "") return null;
-  if (Array.isArray(value)) return value.map(stableValue);
+  if (Array.isArray(value)) {
+    if (!value.length) return null;
+    return value.map(stableValue);
+  }
   if (value && typeof value === "object") {
-    return Object.fromEntries(
+    const normalized = Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .filter(([key]) => !NON_FORM_KEYS.has(key))
         .map(([key, entry]) => [key, stableValue(entry)] as const)
         .filter(([, entry]) => entry !== null)
         .sort(([left], [right]) => left.localeCompare(right)),
     );
+    return Object.keys(normalized).length ? normalized : null;
   }
   return value;
 }
