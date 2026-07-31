@@ -26,12 +26,14 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           path = Path('tests/vendor-module-consistency.test.ts')
-          content = path.read_text()
-          content = content.replace(
-              'expect(procurement.includes("status: v.status || "active""")).toBe(true);',
-              'expect(procurement.includes(\'status: v.status || "active"\')).toBe(true);',
-          )
-          path.write_text(content)
+          lines = path.read_text().splitlines()
+          lines = [
+              '  expect(procurement.includes(\'status: v.status || "active"\')).toBe(true);'
+              if 'procurement.includes' in line and 'status: v.status' in line
+              else line
+              for line in lines
+          ]
+          path.write_text('\n'.join(lines) + '\n')
           PY
           rm scripts/apply-vendor-module-cleanup.py
       - name: Install dependencies
