@@ -80,10 +80,13 @@ describe("runtime efficiency hardening", () => {
     expect(client).toContain("HOURLY_SYNC_MS = 60 * 60_000");
     expect(client).toContain("MOVING_CAPTURE_INTERVAL_MS = 30_000");
     expect(client).toContain("STATIONARY_CAPTURE_INTERVAL_MS = 2 * 60_000");
+    expect(client).toContain("POSITION_HEARTBEAT_MS = 2 * 60_000");
     expect(client).toContain("POST_TIMEOUT_MS = 15_000");
+    expect(client).toContain("staffRouteQueueKey(staffId)");
     expect(client).toContain('/api/tracking/routes');
     expect(client).not.toContain('/api/tracking/ping');
     expect(client).not.toContain("native_background");
+    expect(client).not.toContain("SESSION_RENEW_INTERVAL_MS");
   });
 
   test("functions execute beside the Tokyo database", async () => {
@@ -91,10 +94,12 @@ describe("runtime efficiency hardening", () => {
     expect(config.regions).toEqual(["hnd1"]);
   });
 
-  test("database migration replaces point telemetry with indexed route bundles", async () => {
+  test("database migration prepares route bundles before removing point telemetry", async () => {
     const migration = await read("supabase/migrations/20260730171000_frontend_route_bundles.sql");
-    expect(migration).toContain('drop table if exists public."StaffLocationPing"');
-    expect(migration).toContain('create table public."StaffRouteBundle"');
+    const createIndex = migration.indexOf('create table if not exists public."StaffRouteBundle"');
+    const dropIndex = migration.indexOf('drop table if exists public."StaffLocationPing"');
+    expect(createIndex).toBeGreaterThanOrEqual(0);
+    expect(dropIndex).toBeGreaterThan(createIndex);
     expect(migration).toContain('"StaffRouteBundle_staffId_startedAt_idx"');
     expect(migration).toContain('"StaffRouteBundle_endedAt_idx"');
   });
