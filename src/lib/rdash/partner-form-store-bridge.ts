@@ -5,8 +5,15 @@ import {
   vendorNotesWithoutLegacyArticles,
 } from "./partner-form-consistency";
 
+type PartnerType = "vendor" | "contractor";
+
+const activeScopes = new Map<string, number>();
 let consumers = 0;
 let uninstallCurrent: (() => void) | null = null;
+
+const scopeKey = (type: PartnerType, id: string) => `${type}:${id}`;
+const isActiveScope = (type: PartnerType, id: string) =>
+  activeScopes.has(scopeKey(type, id));
 
 function withSuppressedGenericAudit<T>(run: () => T): T {
   const originalLogAudit = useRDashStore.getState().logAudit;
@@ -22,7 +29,7 @@ function withSuppressedGenericAudit<T>(run: () => T): T {
 }
 
 function detailedAudit(
-  entityType: "vendor" | "contractor",
+  entityType: PartnerType,
   id: string,
   before: Record<string, unknown>,
   after: Record<string, unknown>,
@@ -57,6 +64,9 @@ function install(): () => void {
   const originalUpdateContractor = initial.updateContractor;
 
   const updateVendor = (id: string, suppliedPatch: Record<string, unknown>) => {
+    if (!isActiveScope("vendor", id)) {
+      return originalUpdateVendor(id, suppliedPatch as never);
+    }
     const state = useRDashStore.getState();
     const before = state.db.master.vendors.find((row) => row.id === id) as
       | Record<string, unknown>
@@ -83,9 +93,7 @@ function install(): () => void {
 
     const after = { ...before, ...patch };
     if (!fieldChanges(before, after).length) return;
-    withSuppressedGenericAudit(() =>
-      originalUpdateVendor(id, patch as never),
-    );
+    withSuppressedGenericAudit(() => originalUpdateVendor(id, patch as never));
     detailedAudit("vendor", id, before, after);
   };
 
@@ -93,6 +101,9 @@ function install(): () => void {
     id: string,
     patch: Record<string, unknown>,
   ) => {
+    if (!isActiveScope("contractor", id)) {
+      return originalUpdateContractor(id, patch as never);
+    }
     const before = useRDashStore
       .getState()
       .db.master.contractors.find((row) => row.id === id) as
@@ -127,14 +138,29 @@ function install(): () => void {
   };
 }
 
-export function retainPartnerFormStoreBridge(): () => void {
+export function retainPartnerFormStoreBridge(
+  type: PartnerType,
+  editId?: string,
+): () => void {
   consumers += 1;
+  if (editId) {
+    const key = scopeKey(type, editId);
+    activeScopes.set(key, (activeScopes.get(key) || 0) + 1);
+  }
   if (consumers === 1) uninstallCurrent = install();
+
   return () => {
+    if (editId) {
+      const key = scopeKey(type, editId);
+      const next = (activeScopes.get(key) || 1) - 1;
+      if (next <= 0) activeScopes.delete(key);
+      else activeScopes.set(key, next);
+    }
     consumers = Math.max(0, consumers - 1);
     if (consumers === 0) {
       uninstallCurrent?.();
       uninstallCurrent = null;
+      activeScopes.clear();
     }
   };
 }
