@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - ops/export-current-main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -12,7 +15,7 @@ jobs:
   export:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out exact branch
+      - name: Check out exact PR head
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
