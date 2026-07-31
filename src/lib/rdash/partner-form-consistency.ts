@@ -104,6 +104,24 @@ export function vendorLegacyMigrationPatch(
   return patch;
 }
 
+export function contractorCapabilityRateError(
+  capabilities: unknown,
+): string | null {
+  if (!Array.isArray(capabilities)) return null;
+  for (const capability of capabilities) {
+    if (!capability || typeof capability !== "object") continue;
+    const row = capability as Record<string, unknown>;
+    for (const field of ["labour_rate", "with_material_rate"] as const) {
+      const value = row[field];
+      if (value === undefined || value === null || value === "") continue;
+      if (!Number.isFinite(Number(value)) || Number(value) < 0) {
+        return "Contractor rates must be valid non-negative numbers.";
+      }
+    }
+  }
+  return null;
+}
+
 export function optionalIndianMobileError(value: string): string | null {
   if (!value) return null;
   return /^[6-9]\d{9}$/.test(value)
