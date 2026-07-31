@@ -1,7 +1,7 @@
 name: Vendor Cleanup PR Runner
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, synchronize]
 
 permissions:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   apply-and-verify:
-    if: github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
+    if: github.event.pull_request.head.ref == 'feature/vendor-module-cleanup-no-legacy'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
