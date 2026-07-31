@@ -23,3 +23,8 @@ test("legacy customer write APIs are removed from active store and UI paths", ()
   expect(customerSitesDialog.indexOf("await awaitServerSync();")).toBeLessThan(customerSitesDialog.indexOf("commitBatches();"));
   expect(customerSitesDialog.includes("dirtyFormRegistry.requestNavigation")).toBe(true);
 });
+
+test("partner form retains structured article and capability fields", () => {
+  expect(partnerDialog.includes("vendorArticleIds")).toBe(true);
+  expect(partnerDialog.includes("article_ids")).toBe(true);
+});
