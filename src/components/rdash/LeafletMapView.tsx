@@ -337,7 +337,7 @@ export function LeafletMapView({
         center={initialCenter}
         zoom={15}
         scrollWheelZoom
-        className="h-full min-h-[280px] w-full"
+        className="absolute inset-0 h-full min-h-0 w-full"
         aria-label={title}
       >
         <TileLayer
