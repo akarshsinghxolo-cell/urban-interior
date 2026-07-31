@@ -71,6 +71,39 @@ export function vendorNotesWithoutLegacyArticles(notes?: string): string {
     .trim();
 }
 
+export function vendorLegacyMigrationPatch(
+  before: Record<string, unknown>,
+  suppliedPatch: Record<string, unknown>,
+  articles: Array<{ id: string; name: string }>,
+): Record<string, unknown> {
+  const patch = { ...suppliedPatch };
+  if (Array.isArray(before.article_ids)) return patch;
+
+  const legacyNames = legacyVendorArticleNames(before.notes as string | undefined);
+  if (!legacyNames.length) return patch;
+  const resolvedIds = legacyNames
+    .map(
+      (articleName) =>
+        articles.find(
+          (article) => article.name.toLowerCase() === articleName.toLowerCase(),
+        )?.id,
+    )
+    .filter((articleId): articleId is string => Boolean(articleId));
+
+  if (!("article_ids" in patch) && resolvedIds.length) {
+    patch.article_ids = resolvedIds;
+  }
+  if (
+    !("notes" in patch) &&
+    resolvedIds.length === legacyNames.length
+  ) {
+    patch.notes =
+      vendorNotesWithoutLegacyArticles(before.notes as string | undefined) ||
+      undefined;
+  }
+  return patch;
+}
+
 export function optionalIndianMobileError(value: string): string | null {
   if (!value) return null;
   return /^[6-9]\d{9}$/.test(value)
