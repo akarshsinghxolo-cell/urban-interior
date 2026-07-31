@@ -1,4 +1,4 @@
 export {
   EntityFormDialog,
   type EntityType,
-} from "./UnifiedPartnerFormDialog";
+} from "./PartnerFormDialog";
