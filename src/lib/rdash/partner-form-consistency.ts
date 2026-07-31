@@ -1,13 +1,33 @@
+const NON_FORM_KEYS = new Set([
+  "id",
+  "created_at",
+  "updated_at",
+  "outstanding",
+  "reliability_score",
+  "on_time_pct",
+  "active_jobs",
+  "past_jobs_count",
+  "performance_recomputed_at",
+  "status",
+  "category",
+  "trade",
+  "rating",
+  "specializations",
+]);
+
 function stableValue(value: unknown): unknown {
+  if (value === undefined || value === null || value === "") return null;
   if (Array.isArray(value)) return value.map(stableValue);
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, stableValue(entry)]),
+        .filter(([key]) => !NON_FORM_KEYS.has(key))
+        .map(([key, entry]) => [key, stableValue(entry)] as const)
+        .filter(([, entry]) => entry !== null)
+        .sort(([left], [right]) => left.localeCompare(right)),
     );
   }
-  return value === undefined ? null : value;
+  return value;
 }
 
 export function partnerFormFingerprint(value: unknown): string {
