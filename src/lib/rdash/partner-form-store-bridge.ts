@@ -76,6 +76,21 @@ function install(): () => void {
   };
 
   const updateVendor = (id: string, suppliedPatch: Record<string, unknown>) => {
+    const suppliedFields = Object.keys(suppliedPatch);
+    if (
+      isActiveCreate("vendor") &&
+      suppliedFields.length === 1 &&
+      suppliedFields[0] === "article_ids"
+    ) {
+      const articleIds = Array.isArray(suppliedPatch.article_ids)
+        ? suppliedPatch.article_ids
+        : [];
+      if (!articleIds.length) return;
+      withSuppressedGenericAudit(() =>
+        originalUpdateVendor(id, { article_ids: articleIds } as never),
+      );
+      return;
+    }
     if (!isActiveScope("vendor", id)) {
       return originalUpdateVendor(id, suppliedPatch as never);
     }
