@@ -25,32 +25,19 @@ jobs:
           python scripts/apply-vendor-module-cleanup.py
           python - <<'PY'
           from pathlib import Path
-
           test_path = Path('tests/vendor-module-consistency.test.ts')
           lines = test_path.read_text().splitlines()
-          lines = [
-              '  expect(procurement.includes(\'status: v.status || "active"\')).toBe(true);'
-              if 'procurement.includes' in line and 'status: v.status' in line
-              else line
-              for line in lines
-          ]
+          lines = ['  expect(procurement.includes(\'status: v.status || "active"\')).toBe(true);' if 'procurement.includes' in line and 'status: v.status' in line else line for line in lines]
           test_path.write_text('\n'.join(lines) + '\n')
-
           helper_path = Path('src/lib/rdash/partner-form-consistency.ts')
-          helper = helper_path.read_text()
-          old = '''  return String(value || "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\\s+/g, " ");'''
-          new = '''  return String(value || "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "");'''
-          if old not in helper:
-              raise SystemExit('Vendor name normalizer marker not found')
-          helper_path.write_text(helper.replace(old, new, 1))
+          helper_lines = helper_path.read_text().splitlines()
+          start = helper_lines.index('function normalizedVendorName(value: unknown): string {')
+          end = start + 1
+          while helper_lines[end] != '}':
+              end += 1
+          replacement = ['function normalizedVendorName(value: unknown): string {', '  return String(value || "")', '    .normalize("NFKC")', '    .toLowerCase()', '    .replace(/[^a-z0-9]+/g, "");', '}']
+          helper_lines[start:end + 1] = replacement
+          helper_path.write_text('\n'.join(helper_lines) + '\n')
           PY
           rm scripts/apply-vendor-module-cleanup.py
       - name: Install dependencies
