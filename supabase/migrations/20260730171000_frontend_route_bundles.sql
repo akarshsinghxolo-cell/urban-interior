@@ -1,13 +1,8 @@
 -- Frontend-only staff route capture with hourly bundle persistence.
--- This migration intentionally removes the earlier single-ping and native-device
--- tracking systems so only one GPS architecture remains.
+-- The new table is prepared first. Retired point/device objects are removed only
+-- after the replacement is ready, allowing a zero-downtime coordinated rollout.
 
-drop function if exists public.uc_register_tracking_device(text,text,text,text,text,text);
-drop table if exists public.uc_tracking_devices cascade;
-drop table if exists public.uc_tracking_device_enrollments cascade;
-drop table if exists public."StaffLocationPing" cascade;
-
-create table public."StaffRouteBundle" (
+create table if not exists public."StaffRouteBundle" (
   id text primary key,
   "staffId" text not null references public."StaffProfile"(id) on delete cascade,
   "startedAt" timestamptz not null,
@@ -20,10 +15,10 @@ create table public."StaffRouteBundle" (
     check ("endedAt" >= "startedAt")
 );
 
-create index "StaffRouteBundle_staffId_startedAt_idx"
+create index if not exists "StaffRouteBundle_staffId_startedAt_idx"
   on public."StaffRouteBundle" ("staffId", "startedAt" desc);
 
-create index "StaffRouteBundle_endedAt_idx"
+create index if not exists "StaffRouteBundle_endedAt_idx"
   on public."StaffRouteBundle" ("endedAt");
 
 alter table public."StaffRouteBundle" enable row level security;
@@ -31,3 +26,9 @@ revoke all on public."StaffRouteBundle" from anon, authenticated;
 grant select, insert, update, delete
   on public."StaffRouteBundle"
   to service_role;
+
+-- Clean replacement: no native-device or single-ping runtime remains.
+drop function if exists public.uc_register_tracking_device(text,text,text,text,text,text);
+drop table if exists public.uc_tracking_devices cascade;
+drop table if exists public.uc_tracking_device_enrollments cascade;
+drop table if exists public."StaffLocationPing" cascade;
