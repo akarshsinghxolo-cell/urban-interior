@@ -57,25 +57,31 @@ test("partner patches contain only modified fields", () => {
   ]);
 });
 
-test("record metadata and absent optional fields do not create false dirty state", () => {
+test("record metadata and absent optional collections do not create false dirty state", () => {
   const stored = {
-    id: "vendor-1",
-    name: "Vendor",
+    id: "contractor-1",
+    name: "Contractor",
     phone: undefined,
     city: undefined,
     outstanding: 500,
     reliability_score: 92,
-    article_ids: [],
   };
   const form = {
-    name: "Vendor",
+    name: "Contractor",
     phone: "",
     city: "",
     locality: undefined,
     address: undefined,
-    article_ids: [],
+    categories: [],
+    work_capabilities: [],
   };
   expect(partnerFormFingerprint(stored)).toBe(partnerFormFingerprint(form));
+  expect(
+    partnerChangedPatch(
+      { categories: ["Painting"] },
+      { categories: [] },
+    ),
+  ).toEqual({ categories: [] });
 });
 
 test("legacy Vendor article text is migrated on the next actual save", () => {
@@ -87,11 +93,14 @@ test("legacy Vendor article text is migrated on the next actual save", () => {
   expect(partnerBridge.includes("legacyVendorArticleNames")).toBe(true);
   expect(partnerBridge.includes("patch.article_ids")).toBe(true);
   expect(partnerBridge.includes("patch.notes")).toBe(true);
+  expect(partnerBridge.includes('!("article_ids" in patch)')).toBe(true);
+  expect(partnerBridge.includes('!("notes" in patch)')).toBe(true);
 });
 
 test("partner updates emit one detailed audit instead of the generic edit audit", () => {
   expect(partnerBridge.includes("withSuppressedGenericAudit")).toBe(true);
   expect(partnerBridge.includes("detailedAudit")).toBe(true);
+  expect(partnerBridge.includes("isActiveScope")).toBe(true);
   expect(partnerBridge.includes("before,")).toBe(true);
   expect(partnerBridge.includes("after,")).toBe(true);
   expect(partnerBridge.includes("Changed fields:")).toBe(true);
