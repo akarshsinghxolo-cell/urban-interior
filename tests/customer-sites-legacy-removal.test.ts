@@ -153,3 +153,10 @@ test("partner updates emit one detailed audit instead of the generic edit audit"
   expect(partnerBridge.includes("after,")).toBe(true);
   expect(partnerBridge.includes("Changed fields:")).toBe(true);
 });
+
+test("Vendor create does not emit an empty or duplicate follow-up audit", () => {
+  expect(partnerBridge.includes('isActiveCreate("vendor")')).toBe(true);
+  expect(partnerBridge.includes('suppliedFields[0] === "article_ids"')).toBe(true);
+  expect(partnerBridge.includes("if (!articleIds.length) return;")).toBe(true);
+  expect(partnerBridge.includes("withSuppressedGenericAudit")).toBe(true);
+});
