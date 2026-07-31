@@ -61,31 +61,63 @@ describe("frontend route bundle analytics", () => {
   });
 });
 
+describe("frontend route queue safety", () => {
+  test("queues are scoped to the authenticated Staff profile", () => {
+    const helper = readFileSync(
+      "src/lib/rdash/staff-route-client.ts",
+      "utf8",
+    );
+    const tracker = readFileSync(
+      "src/components/rdash/StaffLocationTracker.tsx",
+      "utf8",
+    );
+    expect(helper).toContain("staffRouteQueueKey");
+    expect(helper).toContain("encodeURIComponent(normalized)");
+    expect(helper).toContain("uc:staff-route-queue:v2");
+    expect(tracker).toContain("readQueue(staffId)");
+    expect(tracker).toContain("writeQueue(staffId");
+    expect(tracker).not.toContain('const STAFF_ROUTE_QUEUE_KEY = "uc:staff-route-queue:v1"');
+  });
+
+  test("stationary tracking has a two-minute browser heartbeat", () => {
+    const tracker = readFileSync(
+      "src/components/rdash/StaffLocationTracker.tsx",
+      "utf8",
+    );
+    expect(tracker).toContain("POSITION_HEARTBEAT_MS = 2 * 60_000");
+    expect(tracker).toContain("requestCurrentPosition");
+    expect(tracker).toContain("positionHeartbeat");
+  });
+
+  test("unavailable persistence never clears the local queue", () => {
+    const tracker = readFileSync(
+      "src/components/rdash/StaffLocationTracker.tsx",
+      "utf8",
+    );
+    const ignoredBranch = tracker.slice(
+      tracker.indexOf("if (payload.ignored)"),
+      tracker.indexOf("const uploadedIds"),
+    );
+    expect(ignoredBranch).toContain("remains queued");
+    expect(ignoredBranch).not.toContain("writeQueue(");
+  });
+});
+
 describe("old GPS paths are removed", () => {
-  test("single-ping and native-device APIs no longer exist", () => {
-    expect(
-      existsSync("src/app/api/tracking/ping/route.ts"),
-    ).toBe(false);
-    expect(
-      existsSync(
-        "src/app/api/tracking/locations/route.ts",
-      ),
-    ).toBe(false);
-    expect(
-      existsSync(
-        "src/app/api/tracking/devices/enroll/route.ts",
-      ),
-    ).toBe(false);
-    expect(
-      existsSync(
-        "src/app/api/tracking/devices/register/route.ts",
-      ),
-    ).toBe(false);
-    expect(
-      existsSync(
-        "src/app/api/tracking/devices/pings/route.ts",
-      ),
-    ).toBe(false);
+  test("single-ping and native-device implementations no longer exist", () => {
+    for (const path of [
+      "src/app/api/tracking/ping/route.ts",
+      "src/app/api/tracking/locations/route.ts",
+      "src/app/api/tracking/devices/enroll/route.ts",
+      "src/app/api/tracking/devices/register/route.ts",
+      "src/app/api/tracking/devices/pings/route.ts",
+      "src/lib/rdash/server/tracking-device.ts",
+      "mobile/android-tracker/settings.gradle.kts",
+      "mobile/android-tracker/app/src/main/AndroidManifest.xml",
+      "mobile/android-tracker/app/src/main/java/com/urbancastle/tracker/TrackingService.kt",
+    ]) {
+      expect(existsSync(path)).toBe(false);
+    }
   });
 
   test("frontend sends only hourly/manual bundles", () => {
