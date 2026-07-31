@@ -7,14 +7,16 @@ import {
   publishLocationTrackingState,
   readLocationTrackingState,
 } from "@/lib/rdash/location-tracking-status";
-import type { StaffLocationPing } from "@/lib/rdash/staff-location";
-import { distanceMeters } from "@/lib/rdash/staff-location";
 import {
-  STAFF_ROUTE_LAST_SYNC_KEY,
+  distanceMeters,
+  type StaffLocationPing,
+} from "@/lib/rdash/staff-location";
+import {
   STAFF_ROUTE_QUEUE_EVENT,
-  STAFF_ROUTE_QUEUE_KEY,
   STAFF_ROUTE_SYNC_EVENT,
   publishStaffRouteQueueUpdated,
+  staffRouteLastSyncKey,
+  staffRouteQueueKey,
 } from "@/lib/rdash/staff-route-client";
 
 const HOURLY_SYNC_MS = 60 * 60_000;
@@ -22,13 +24,13 @@ const SYNC_CHECK_MS = 60_000;
 const MOVING_CAPTURE_INTERVAL_MS = 30_000;
 const SLOW_CAPTURE_INTERVAL_MS = 60_000;
 const STATIONARY_CAPTURE_INTERVAL_MS = 2 * 60_000;
+const POSITION_HEARTBEAT_MS = 2 * 60_000;
 const MINIMUM_MOVEMENT_METERS = 10;
 const MAX_ACCEPTED_ACCURACY_M = 150;
 const MAX_REASONABLE_SPEED_KMH = 220;
 const MAX_QUEUE_POINTS = 6_000;
 const MAX_CAPTURE_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
 const POST_TIMEOUT_MS = 15_000;
-const SESSION_RENEW_INTERVAL_MS = 30 * 60_000;
 
 const POSITION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
@@ -42,8 +44,10 @@ type QueuedRoutePoint = Omit<StaffLocationPing, "id" | "staff_id"> & {
 
 type PreviousCapture = Pick<
   QueuedRoutePoint,
-  "latitude" | "longitude" | "captured_at" | "speed_kmh"
+  "latitude" | "longitude" | "accuracy_m" | "captured_at" | "speed_kmh"
 >;
+
+const memoryQueueByStaff = new Map<string, QueuedRoutePoint[]>();
 
 class RouteSyncError extends Error {
   constructor(message: string, readonly status: number) {
@@ -79,46 +83,54 @@ function isQueuedRoutePoint(
   );
 }
 
-function readQueue(): QueuedRoutePoint[] {
+function readQueue(staffId: string): QueuedRoutePoint[] {
+  if (!staffId) return [];
+  const key = staffRouteQueueKey(staffId);
   try {
     const parsed = JSON.parse(
-      window.localStorage.getItem(STAFF_ROUTE_QUEUE_KEY) || "[]",
+      window.localStorage.getItem(key) || "[]",
     ) as unknown;
-    return Array.isArray(parsed)
-      ? parsed
-          .filter(
-            (point): point is QueuedRoutePoint =>
-              Boolean(
-                point
-                && typeof point === "object"
-                && isQueuedRoutePoint(point as Partial<QueuedRoutePoint>),
-              ),
-          )
-          .slice(-MAX_QUEUE_POINTS)
-      : [];
+    if (Array.isArray(parsed)) {
+      const valid = parsed
+        .filter(
+          (point): point is QueuedRoutePoint =>
+            Boolean(
+              point
+              && typeof point === "object"
+              && isQueuedRoutePoint(point as Partial<QueuedRoutePoint>),
+            ),
+        )
+        .slice(-MAX_QUEUE_POINTS);
+      memoryQueueByStaff.set(staffId, valid);
+      return valid;
+    }
   } catch {
-    return [];
+    // Fall back to the current page's in-memory queue.
   }
+  return memoryQueueByStaff.get(staffId) || [];
 }
 
-function writeQueue(points: QueuedRoutePoint[]) {
+function writeQueue(staffId: string, points: QueuedRoutePoint[]) {
+  if (!staffId) return;
   const valid = points.filter(isQueuedRoutePoint).slice(-MAX_QUEUE_POINTS);
+  memoryQueueByStaff.set(staffId, valid);
   try {
     window.localStorage.setItem(
-      STAFF_ROUTE_QUEUE_KEY,
+      staffRouteQueueKey(staffId),
       JSON.stringify(valid),
     );
   } catch {
-    // Tracking remains active in memory-constrained/private contexts.
+    // The in-memory queue keeps the current page safe when storage is blocked.
   }
-  publishStaffRouteQueueUpdated();
+  publishStaffRouteQueueUpdated(staffId);
   publishLocationTrackingState({ pendingCount: valid.length });
 }
 
-function writeLastSyncAt(value: number) {
+function writeLastSyncAt(staffId: string, value: number) {
+  if (!staffId) return;
   try {
     window.localStorage.setItem(
-      STAFF_ROUTE_LAST_SYNC_KEY,
+      staffRouteLastSyncKey(staffId),
       String(value),
     );
   } catch {
@@ -128,7 +140,10 @@ function writeLastSyncAt(value: number) {
 
 function derivedSpeedKmh(
   previous: PreviousCapture | null,
-  point: Pick<QueuedRoutePoint, "latitude" | "longitude" | "captured_at">,
+  point: Pick<
+    QueuedRoutePoint,
+    "latitude" | "longitude" | "accuracy_m" | "captured_at"
+  >,
 ) {
   if (!previous) return 0;
   const elapsedSeconds =
@@ -136,7 +151,13 @@ function derivedSpeedKmh(
       - new Date(previous.captured_at).getTime())
     / 1_000;
   if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) return 0;
-  return (distanceMeters(previous, point) / elapsedSeconds) * 3.6;
+  const moved = distanceMeters(previous, point);
+  const noiseFloor = Math.max(
+    MINIMUM_MOVEMENT_METERS,
+    Math.min(previous.accuracy_m, point.accuracy_m) * 0.5,
+  );
+  if (moved <= noiseFloor) return 0;
+  return (moved / elapsedSeconds) * 3.6;
 }
 
 function queuedPoint(
@@ -150,6 +171,7 @@ function queuedPoint(
   const fallbackSpeed = derivedSpeedKmh(previous, {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
+    accuracy_m: position.coords.accuracy,
     captured_at: capturedAt,
   });
   const reportedSpeed =
@@ -190,10 +212,10 @@ function shouldCapture(
   }
   if (point.speed_kmh <= 15) {
     return elapsed >= SLOW_CAPTURE_INTERVAL_MS
-      && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= 60_000);
+      && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= SLOW_CAPTURE_INTERVAL_MS);
   }
   return elapsed >= MOVING_CAPTURE_INTERVAL_MS
-    && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= 30_000);
+    && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= MOVING_CAPTURE_INTERVAL_MS);
 }
 
 function geolocationMessage(error: GeolocationPositionError) {
@@ -213,19 +235,18 @@ export function StaffLocationTracker() {
   const authUser = useRDashStore((state) => state.authUser);
   const staff = useRDashStore((state) =>
     authUser?.staffId
-      ? state.db.master.staff.find(
-          (row) => row.id === authUser.staffId,
-        )
+      ? state.db.master.staff.find((row) => row.id === authUser.staffId)
       : undefined,
   );
   const upsertStaffLocationPing = useRDashStore(
     (state) => state.upsertStaffLocationPing,
   );
+  const staffId = authUser?.staffId || "";
   const previousCaptureRef = React.useRef<PreviousCapture | null>(null);
   const syncingRef = React.useRef(false);
 
   const enabled = Boolean(
-    authUser?.staffId
+    staffId
     && staff
     && staff.status === "active"
     && staff.gps_tracking_enabled !== false,
@@ -233,8 +254,8 @@ export function StaffLocationTracker() {
 
   const syncQueue = React.useCallback(
     async (reason: "hourly" | "manual") => {
-      if (syncingRef.current || !enabled) return;
-      const points = readQueue();
+      if (syncingRef.current || !enabled || !staffId) return;
+      const points = readQueue(staffId);
       if (!points.length) {
         publishLocationTrackingState({
           status: "active",
@@ -295,12 +316,22 @@ export function StaffLocationTracker() {
             response.status,
           );
         }
+        if (payload.ignored) {
+          publishLocationTrackingState({
+            status: "queued",
+            pendingCount: readQueue(staffId).length,
+            message:
+              "Server persistence is unavailable. The route remains queued on this device.",
+          });
+          return;
+        }
 
         const uploadedIds = new Set(
           points.map((point) => point.client_point_id),
         );
         writeQueue(
-          readQueue().filter(
+          staffId,
+          readQueue(staffId).filter(
             (point) => !uploadedIds.has(point.client_point_id),
           ),
         );
@@ -308,14 +339,12 @@ export function StaffLocationTracker() {
           upsertStaffLocationPing(point);
         }
         const now = Date.now();
-        writeLastSyncAt(now);
+        writeLastSyncAt(staffId, now);
         publishLocationTrackingState({
           status: "active",
-          pendingCount: readQueue().length,
+          pendingCount: readQueue(staffId).length,
           lastSentAt: new Date(now).toISOString(),
-          message: payload.ignored
-            ? "Route bundle accepted locally; server persistence is unavailable."
-            : `Route bundle synced successfully (${points.length} points).`,
+          message: `Route bundle synced successfully (${points.length} points).`,
         });
       } catch (error) {
         const message =
@@ -330,7 +359,7 @@ export function StaffLocationTracker() {
               && (error.status === 401 || error.status === 403)
               ? "auth_required"
               : "queued",
-          pendingCount: readQueue().length,
+          pendingCount: readQueue(staffId).length,
           message,
         });
       } finally {
@@ -338,41 +367,49 @@ export function StaffLocationTracker() {
         syncingRef.current = false;
       }
     },
-    [enabled, upsertStaffLocationPing],
+    [enabled, staffId, upsertStaffLocationPing],
   );
 
   const syncIfDue = React.useCallback(() => {
-    const queue = readQueue();
+    if (!staffId) return;
+    const queue = readQueue(staffId);
     if (!queue.length) return;
     const oldest = new Date(queue[0].captured_at).getTime();
     if (Date.now() - oldest >= HOURLY_SYNC_MS) {
       void syncQueue("hourly");
     }
-  }, [syncQueue]);
+  }, [staffId, syncQueue]);
 
   React.useEffect(() => {
+    previousCaptureRef.current = null;
+    if (staffId) {
+      const queue = readQueue(staffId);
+      previousCaptureRef.current = queue.at(-1) || null;
+    }
+
     if (!enabled) {
       publishLocationTrackingState({
         status: "disabled",
         mode: "frontend_bundle",
-        pendingCount: readQueue().length,
-        message: authUser?.staffId
+        pendingCount: staffId ? readQueue(staffId).length : 0,
+        message: staffId
           ? "GPS route capture is disabled for this staff profile."
           : "GPS route capture requires a linked active Staff profile.",
       });
       return;
     }
+
     try {
       window.localStorage.removeItem("rdash:pending-staff-location-pings:v1");
       window.localStorage.removeItem("rdash:pending-staff-location-pings:v2");
       window.localStorage.removeItem("rdash:location-tracking-status:v1");
+      window.localStorage.removeItem("uc:staff-route-queue:v1");
+      window.localStorage.removeItem("uc:staff-route-last-sync:v1");
     } catch {
-      // Old browser keys are ignored and removed best-effort.
+      // Retired browser keys are ignored and removed best-effort.
     }
-    if (
-      typeof navigator === "undefined"
-      || !navigator.geolocation
-    ) {
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
       publishLocationTrackingState({
         status: "unsupported",
         mode: "frontend_bundle",
@@ -386,7 +423,7 @@ export function StaffLocationTracker() {
     publishLocationTrackingState({
       status: "checking",
       mode: "frontend_bundle",
-      pendingCount: readQueue().length,
+      pendingCount: readQueue(staffId).length,
       message:
         "Starting frontend route capture. Bundles sync hourly or manually.",
     });
@@ -396,13 +433,9 @@ export function StaffLocationTracker() {
         .query({ name: "geolocation" })
         .then((permission) => {
           if (disposed) return;
-          publishLocationTrackingState({
-            permission: permission.state,
-          });
+          publishLocationTrackingState({ permission: permission.state });
           permission.onchange = () =>
-            publishLocationTrackingState({
-              permission: permission.state,
-            });
+            publishLocationTrackingState({ permission: permission.state });
         })
         .catch(() =>
           publishLocationTrackingState({ permission: "unknown" }),
@@ -435,11 +468,11 @@ export function StaffLocationTracker() {
       }
 
       previousCaptureRef.current = point;
-      writeQueue([...readQueue(), point]);
+      writeQueue(staffId, [...readQueue(staffId), point]);
       publishLocationTrackingState({
         status: "active",
         mode: "frontend_bundle",
-        pendingCount: readQueue().length,
+        pendingCount: readQueue(staffId).length,
         lastCapturedAt: point.captured_at,
         message:
           "Route capture is active in this browser. Data stays on-device until the hourly or manual sync.",
@@ -458,35 +491,45 @@ export function StaffLocationTracker() {
       });
     };
 
+    const requestCurrentPosition = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      navigator.geolocation.getCurrentPosition(
+        capture,
+        onError,
+        POSITION_OPTIONS,
+      );
+    };
+
     const watchId = navigator.geolocation.watchPosition(
       capture,
       onError,
       POSITION_OPTIONS,
     );
-    navigator.geolocation.getCurrentPosition(
-      capture,
-      onError,
-      POSITION_OPTIONS,
-    );
+    requestCurrentPosition();
 
     const syncTimer = window.setInterval(syncIfDue, SYNC_CHECK_MS);
-    const sessionTimer = window.setInterval(
-      () => {
-        void refreshClientSession();
-      },
-      SESSION_RENEW_INTERVAL_MS,
+    const positionHeartbeat = window.setInterval(
+      requestCurrentPosition,
+      POSITION_HEARTBEAT_MS,
     );
     const onManualSync = () => {
       void syncQueue("manual");
     };
     const onOnline = () => syncIfDue();
+    const onQueueUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ staffId?: string | null }>).detail;
+      if (!detail?.staffId || detail.staffId === staffId) syncIfDue();
+    };
     const onVisibility = () => {
-      if (document.visibilityState === "visible") syncIfDue();
+      if (document.visibilityState === "visible") {
+        requestCurrentPosition();
+        syncIfDue();
+      }
     };
 
     window.addEventListener(STAFF_ROUTE_SYNC_EVENT, onManualSync);
     window.addEventListener("online", onOnline);
-    window.addEventListener(STAFF_ROUTE_QUEUE_EVENT, syncIfDue);
+    window.addEventListener(STAFF_ROUTE_QUEUE_EVENT, onQueueUpdated);
     document.addEventListener("visibilitychange", onVisibility);
     void refreshClientSession().then(syncIfDue);
 
@@ -494,27 +537,13 @@ export function StaffLocationTracker() {
       disposed = true;
       navigator.geolocation.clearWatch(watchId);
       window.clearInterval(syncTimer);
-      window.clearInterval(sessionTimer);
-      window.removeEventListener(
-        STAFF_ROUTE_SYNC_EVENT,
-        onManualSync,
-      );
+      window.clearInterval(positionHeartbeat);
+      window.removeEventListener(STAFF_ROUTE_SYNC_EVENT, onManualSync);
       window.removeEventListener("online", onOnline);
-      window.removeEventListener(
-        STAFF_ROUTE_QUEUE_EVENT,
-        syncIfDue,
-      );
-      document.removeEventListener(
-        "visibilitychange",
-        onVisibility,
-      );
+      window.removeEventListener(STAFF_ROUTE_QUEUE_EVENT, onQueueUpdated);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [
-    authUser?.staffId,
-    enabled,
-    syncIfDue,
-    syncQueue,
-  ]);
+  }, [enabled, staffId, syncIfDue, syncQueue]);
 
   return null;
 }
