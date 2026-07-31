@@ -1,5 +1,6 @@
 import { useRDashStore } from "./store";
 import {
+  contractorCapabilityRateError,
   fieldChanges,
   vendorLegacyMigrationPatch,
 } from "./partner-form-consistency";
@@ -7,12 +8,15 @@ import {
 type PartnerType = "vendor" | "contractor";
 
 const activeScopes = new Map<string, number>();
+const activeCreateTypes = new Map<PartnerType, number>();
 let consumers = 0;
 let uninstallCurrent: (() => void) | null = null;
 
 const scopeKey = (type: PartnerType, id: string) => `${type}:${id}`;
 const isActiveScope = (type: PartnerType, id: string) =>
   activeScopes.has(scopeKey(type, id));
+const isActiveCreate = (type: PartnerType) =>
+  (activeCreateTypes.get(type) || 0) > 0;
 
 function withSuppressedGenericAudit<T>(run: () => T): T {
   const originalLogAudit = useRDashStore.getState().logAudit;
@@ -59,8 +63,17 @@ function detailedAudit(
 
 function install(): () => void {
   const initial = useRDashStore.getState();
+  const originalAddContractor = initial.addContractor;
   const originalUpdateVendor = initial.updateVendor;
   const originalUpdateContractor = initial.updateContractor;
+
+  const addContractor = (input: Record<string, unknown>) => {
+    if (isActiveCreate("contractor")) {
+      const error = contractorCapabilityRateError(input.work_capabilities);
+      if (error) throw new Error(error);
+    }
+    return originalAddContractor(input as never);
+  };
 
   const updateVendor = (id: string, suppliedPatch: Record<string, unknown>) => {
     if (!isActiveScope("vendor", id)) {
@@ -97,6 +110,8 @@ function install(): () => void {
       | undefined;
     if (!before) return originalUpdateContractor(id, patch as never);
     const after = { ...before, ...patch };
+    const error = contractorCapabilityRateError(after.work_capabilities);
+    if (error) throw new Error(error);
     if (!fieldChanges(before, after).length) return;
     withSuppressedGenericAudit(() =>
       originalUpdateContractor(id, patch as never),
@@ -105,6 +120,7 @@ function install(): () => void {
   };
 
   useRDashStore.setState({
+    addContractor: addContractor as never,
     updateVendor: updateVendor as never,
     updateContractor: updateContractor as never,
   });
@@ -112,6 +128,10 @@ function install(): () => void {
   return () => {
     const current = useRDashStore.getState();
     useRDashStore.setState({
+      addContractor:
+        current.addContractor === addContractor
+          ? originalAddContractor
+          : current.addContractor,
       updateVendor:
         current.updateVendor === updateVendor
           ? originalUpdateVendor
@@ -132,6 +152,8 @@ export function retainPartnerFormStoreBridge(
   if (editId) {
     const key = scopeKey(type, editId);
     activeScopes.set(key, (activeScopes.get(key) || 0) + 1);
+  } else {
+    activeCreateTypes.set(type, (activeCreateTypes.get(type) || 0) + 1);
   }
   if (consumers === 1) uninstallCurrent = install();
 
@@ -141,12 +163,17 @@ export function retainPartnerFormStoreBridge(
       const next = (activeScopes.get(key) || 1) - 1;
       if (next <= 0) activeScopes.delete(key);
       else activeScopes.set(key, next);
+    } else {
+      const next = (activeCreateTypes.get(type) || 1) - 1;
+      if (next <= 0) activeCreateTypes.delete(type);
+      else activeCreateTypes.set(type, next);
     }
     consumers = Math.max(0, consumers - 1);
     if (consumers === 0) {
       uninstallCurrent?.();
       uninstallCurrent = null;
       activeScopes.clear();
+      activeCreateTypes.clear();
     }
   };
 }
