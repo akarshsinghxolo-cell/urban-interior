@@ -18,8 +18,8 @@ export function EntityFormDialog(props: {
 }) {
   React.useEffect(() => {
     if (!props.open) return;
-    return retainPartnerFormStoreBridge();
-  }, [props.open]);
+    return retainPartnerFormStoreBridge(props.type, props.editId);
+  }, [props.open, props.type, props.editId]);
 
   return <PartnerForm {...props} />;
 }
