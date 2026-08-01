@@ -16,11 +16,13 @@ import { CustomerDetailsFields } from "./CustomerDetailsFields";
 import { CustomerSiteDraftCard } from "./CustomerSiteDraftCard";
 import {
   customerPayload,
+  defaultSiteName,
   draftForCustomer,
   draftForSite,
   emptyCustomerDraft,
   fingerprint,
   newSiteDraft,
+  siteNameFollowsCustomer,
   sitePayload,
   validEmail,
   validIndianPhone,
@@ -61,6 +63,7 @@ export function CustomerSitesDialog({
   const { registerBatch, commitBatches } = useUploadDraft(open);
   const formId = `customer-sites:${editId || "new"}`;
   const initializedKeyRef = React.useRef<string | null>(null);
+  const previousCustomerNameRef = React.useRef("");
 
   const initialise = React.useCallback(() => {
     const existing = editId ? db.customers.find((row) => row.id === editId) : undefined;
@@ -68,6 +71,7 @@ export function CustomerSitesDialog({
     const nextSites = existing
       ? db.sites.filter((site) => site.customer_id === existing.id && !site.is_archived).map(draftForSite)
       : [];
+    previousCustomerNameRef.current = nextCustomer.name;
     setCustomer(nextCustomer);
     setSites(nextSites);
     setDetachAttachmentIds([]);
@@ -86,6 +90,17 @@ export function CustomerSitesDialog({
     initializedKeyRef.current = key;
     initialise();
   }, [editId, initialise, open]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const previousCustomerName = previousCustomerNameRef.current;
+    if (previousCustomerName === customer.name) return;
+    const nextDefaultName = defaultSiteName(customer.name);
+    setSites((current) => current.map((site) => siteNameFollowsCustomer(site, previousCustomerName)
+      ? { ...site, name: nextDefaultName }
+      : site));
+    previousCustomerNameRef.current = customer.name;
+  }, [customer.name, open]);
 
   const currentFingerprint = React.useMemo(
     () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged),
@@ -283,13 +298,13 @@ export function CustomerSitesDialog({
 
             <section className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /><div><h3 className="text-sm font-semibold">Sites</h3><p className="text-[11px] text-muted-foreground">Sites are optional. Add one now or save the customer first.</p></div></div>
-                <Button type="button" size="sm" variant="outline" onClick={() => setSites((current) => [...current, newSiteDraft()])}><Plus className="mr-1 h-3.5 w-3.5" />Add Site</Button>
+                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /><div><h3 className="text-sm font-semibold">Sites</h3><p className="text-[11px] text-muted-foreground">Sites are optional. New Sites default to “{defaultSiteName(customer.name) || "Customer Name Site"}”.</p></div></div>
+                <Button type="button" size="sm" variant="outline" onClick={() => setSites((current) => [...current, newSiteDraft(customer.name)])}><Plus className="mr-1 h-3.5 w-3.5" />Add Site</Button>
               </div>
               {sites.length === 0 && (
                 <div className="rounded-lg border border-dashed border-border p-5 text-center">
                   <p className="text-sm font-medium">No Site added</p><p className="mt-1 text-xs text-muted-foreground">The customer can be saved without a Site.</p>
-                  <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => setSites([newSiteDraft()])}><Plus className="mr-1 h-3.5 w-3.5" />Add first Site</Button>
+                  <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => setSites([newSiteDraft(customer.name)])}><Plus className="mr-1 h-3.5 w-3.5" />Add first Site</Button>
                 </div>
               )}
               {sites.map((site, index) => (
