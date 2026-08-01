@@ -1,47 +1,51 @@
 "use client";
 
 import * as React from "react";
-import { Activity, SlidersHorizontal } from "lucide-react";
+import { FileText, LayoutDashboard, SlidersHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Partner360Phase2Workspace } from "./PartnerGovernanceModule";
+import { PartnerGovernanceModule } from "./PartnerGovernanceModule";
+import { Partner360Module } from "./Partner360Module";
 import { ContractorDetailModule } from "./ContractorDetailModule";
 
-type View = "relationship" | "operations";
+type View = "overview" | "operations" | "records";
+
+const views = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "operations", label: "Operations", icon: SlidersHorizontal },
+  { id: "records", label: "Records & Documents", icon: FileText },
+] as const;
 
 export function ContractorWorkspaceModule() {
-  const [view, setView] = React.useState<View>("relationship");
+  const [view, setView] = React.useState<View>("overview");
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-card">
-        <button
-          type="button"
-          onClick={() => setView("relationship")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold",
-            view === "relationship" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          <Activity className="h-3.5 w-3.5" />
-          360° & Governance
-        </button>
-        <button
-          type="button"
-          onClick={() => setView("operations")}
-          className={cn(
-            "inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold",
-            view === "operations" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          <SlidersHorizontal className="h-3.5 w-3.5" />
-          Operational Actions
-        </button>
-        <span className="ml-auto px-2 text-[10px] text-muted-foreground">
-          One contractor workspace · no duplicate sidebar entries
-        </span>
+      <div
+        className="flex overflow-x-auto rounded-xl border border-border bg-card p-1.5 shadow-card"
+        aria-label="Contractor workspace sections"
+      >
+        {views.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setView(id)}
+            aria-pressed={view === id}
+            className={cn(
+              "inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold",
+              view === id
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+            )}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {view === "relationship" ? <Partner360Phase2Workspace mode="contractor" /> : <ContractorDetailModule />}
+      {view === "overview" && <Partner360Module mode="contractor" />}
+      {view === "operations" && <ContractorDetailModule />}
+      {view === "records" && <PartnerGovernanceModule mode="contractor" />}
     </div>
   );
 }

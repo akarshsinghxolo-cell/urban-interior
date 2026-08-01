@@ -63,6 +63,7 @@ type ChecklistItem = {
   complete: boolean;
   detail?: string;
   critical?: boolean;
+  optional?: boolean;
 };
 
 const TABS: Array<{ id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }> = [
@@ -229,7 +230,8 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
 
   const wa = whatsappHref(selected.whatsapp || selected.phone);
   const maps = mapHref(selected);
-  const completionPct = Math.round((model.compliance.filter((item) => item.complete).length / Math.max(1, model.compliance.length)) * 100);
+  const requiredCompliance = model.compliance.filter((item) => !item.optional);
+  const completionPct = Math.round((requiredCompliance.filter((item) => item.complete).length / Math.max(1, requiredCompliance.length)) * 100);
 
   return (
     <div className="space-y-4">
@@ -388,13 +390,13 @@ function buildPartnerModel(mode: Partner360Mode, db: any, partner: PartnerRecord
   const activity = (db.auditLog || []).filter((row: any) => row.entity_id && relatedIds.has(row.entity_id)).sort((a: any, b: any) => auditTime(b).localeCompare(auditTime(a)));
   const insuranceValid = partner.insurance_expiry ? new Date(partner.insurance_expiry).getTime() >= Date.now() : false;
   const compliance: ChecklistItem[] = [
-    { label: "GSTIN", complete: Boolean(partner.business_gst), detail: partner.business_gst, critical: true },
-    { label: "PAN", complete: Boolean(partner.pan), detail: partner.pan, critical: true },
-    { label: "Bank account and IFSC", complete: Boolean(partner.bank_account && partner.ifsc), detail: partner.bank_account && partner.ifsc ? `${partner.bank_account} · ${partner.ifsc}` : undefined, critical: true },
-    { label: "Bank verification", complete: Boolean(partner.bank_verified), detail: partner.bank_verified ? "Verified" : "Pending verification", critical: true },
+    { label: "GSTIN", complete: Boolean(partner.business_gst), detail: partner.business_gst, optional: true },
+    { label: "PAN", complete: Boolean(partner.pan), detail: partner.pan, optional: true },
+    { label: "Bank account and IFSC", complete: Boolean(partner.bank_account && partner.ifsc), detail: partner.bank_account && partner.ifsc ? `${partner.bank_account} · ${partner.ifsc}` : undefined, optional: true },
+    { label: "Bank verification", complete: Boolean(partner.bank_verified), detail: partner.bank_verified ? "Verified" : "Not verified", optional: true },
     { label: "Supervisor contact", complete: Boolean(partner.supervisor_name && partner.supervisor_phone), detail: partner.supervisor_name && partner.supervisor_phone ? `${partner.supervisor_name} · ${partner.supervisor_phone}` : undefined },
-    { label: "Labour registration", complete: Boolean(partner.labour_registration_no), detail: partner.labour_registration_no },
-    { label: "Insurance", complete: insuranceValid, detail: partner.insurance_expiry ? `Expires ${formatOptionalDate(partner.insurance_expiry)}` : "Not recorded", critical: true },
+    { label: "Labour registration", complete: Boolean(partner.labour_registration_no), detail: partner.labour_registration_no, optional: true },
+    { label: "Insurance", complete: insuranceValid, detail: partner.insurance_expiry ? `Expires ${formatOptionalDate(partner.insurance_expiry)}` : "Not recorded", optional: true },
     { label: "PF / ESI", complete: Boolean(partner.pf_no || partner.esi_no), detail: [partner.pf_no && `PF ${partner.pf_no}`, partner.esi_no && `ESI ${partner.esi_no}`].filter(Boolean).join(" · ") || undefined },
     { label: "Photo and business card", complete: Boolean(partner.photo_attachment_id && partner.business_card_attachment_id) },
     { label: "Structured capabilities", complete: Boolean(partner.work_capabilities?.length), detail: `${partner.work_capabilities?.length || 0} capability record${partner.work_capabilities?.length === 1 ? "" : "s"}` },
@@ -406,7 +408,7 @@ function OverviewTab({ mode, selected, model, completionPct, openDetail, setTab 
   const activeWork = mode === "vendor"
     ? model.purchaseOrders.filter((row: any) => !["closed", "cancelled", "received"].includes(row.status))
     : model.workOrders.filter((row: any) => ["scheduled", "in_progress", "on_hold"].includes(row.status));
-  const criticalMissing = model.compliance.filter((item: ChecklistItem) => item.critical && !item.complete);
+  const criticalMissing = mode === "vendor" ? model.compliance.filter((item: ChecklistItem) => item.critical && !item.complete) : [];
   const recent = model.activity.slice(0, 5);
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(280px,.75fr)]">
@@ -417,10 +419,10 @@ function OverviewTab({ mode, selected, model, completionPct, openDetail, setTab 
             <InfoCell label="Reliability" value={selected.reliability_score != null ? `${selected.reliability_score}/100` : titleCase(selected.reliability_rating || "not rated")} />
             <InfoCell label="On-time" value={`${model.onTime || 0}%`} />
             <InfoCell label={mode === "vendor" ? "Orders" : "Work orders"} value={model.workCount} />
-            <InfoCell label="Compliance" value={`${completionPct}%`} />
+            <InfoCell label={mode === "vendor" ? "Compliance" : "Profile"} value={`${completionPct}%`} />
           </div>
           <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", completionPct >= 80 ? "bg-success" : completionPct >= 50 ? "bg-warning" : "bg-destructive")} style={{ width: `${completionPct}%` }} /></div>
-          <p className="mt-1 text-[10px] text-muted-foreground">Structured business and compliance profile completion.</p>
+          <p className="mt-1 text-[10px] text-muted-foreground">{mode === "vendor" ? "Structured business and compliance profile completion." : "Structured contractor profile completion."}</p>
         </section>
 
         <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
@@ -433,14 +435,14 @@ function OverviewTab({ mode, selected, model, completionPct, openDetail, setTab 
       </div>
 
       <div className="space-y-4">
-        <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
+        {mode === "vendor" && <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
           <SectionHeader title="Immediate attention" />
           <div className="mt-3 space-y-2">
             {model.outstanding > 0 && <button type="button" onClick={() => setTab("finance")} className="flex w-full items-start gap-2 rounded-lg border border-warning/30 bg-warning/[0.04] p-3 text-left"><Wallet className="mt-0.5 h-4 w-4 text-warning" /><div><p className="text-xs font-semibold">Outstanding payable</p><p className="text-[11px] text-muted-foreground">{formatINR(model.outstanding)} remains open.</p></div></button>}
             {criticalMissing.map((item: ChecklistItem) => <button key={item.label} type="button" onClick={() => setTab("compliance")} className="flex w-full items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/[0.04] p-3 text-left"><AlertTriangle className="mt-0.5 h-4 w-4 text-destructive" /><div><p className="text-xs font-semibold">Missing {item.label}</p><p className="text-[11px] text-muted-foreground">Complete before new awards or payment release.</p></div></button>)}
             {!model.outstanding && !criticalMissing.length && <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/[0.04] p-3"><CheckCircle2 className="mt-0.5 h-4 w-4 text-success" /><div><p className="text-xs font-semibold">No critical exception</p><p className="text-[11px] text-muted-foreground">Finance and mandatory compliance are currently clear.</p></div></div>}
           </div>
-        </section>
+        </section>}
 
         <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
           <SectionHeader title="Recent activity" count={model.activity.length} />
@@ -586,8 +588,8 @@ function ComplianceTab({ mode, selected, items, completionPct, onEdit }: any) {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,.8fr)]">
       <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold">Compliance checklist</h3><p className="text-xs text-muted-foreground">Mandatory business, banking and operational readiness for awards and payment release.</p></div><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1 h-3.5 w-3.5" />Update details</Button></div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">{items.map((item: ChecklistItem) => <div key={item.label} className={cn("rounded-xl border p-3", item.complete ? "border-success/25 bg-success/[0.04]" : item.critical ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><div className="flex items-start gap-2">{item.complete ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" /> : <AlertTriangle className={cn("mt-0.5 h-4 w-4", item.critical ? "text-destructive" : "text-warning")} />}<div><p className="text-xs font-semibold">{item.label}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{item.detail || (item.complete ? "Recorded" : "Missing")}</p></div></div></div>)}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-bold">{mode === "contractor" ? "Contractor profile" : "Compliance checklist"}</h3><p className="text-xs text-muted-foreground">{mode === "contractor" ? "Optional records and operational profile details." : "Mandatory business, banking and operational readiness for awards and payment release."}</p></div><Button size="sm" variant="outline" onClick={onEdit}><Pencil className="mr-1 h-3.5 w-3.5" />Update details</Button></div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">{items.map((item: ChecklistItem) => <div key={item.label} className={cn("rounded-xl border p-3", item.complete ? "border-success/25 bg-success/[0.04]" : item.optional ? "border-border bg-muted/10" : item.critical ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><div className="flex items-start gap-2">{item.complete ? <CheckCircle2 className="mt-0.5 h-4 w-4 text-success" /> : <AlertTriangle className={cn("mt-0.5 h-4 w-4", item.optional ? "text-muted-foreground" : item.critical ? "text-destructive" : "text-warning")} />}<div><div className="flex flex-wrap items-center gap-1.5"><p className="text-xs font-semibold">{item.label}</p>{item.optional && <span className="rounded bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase text-muted-foreground">Optional</span>}</div><p className="mt-0.5 text-[10px] text-muted-foreground">{item.detail || (item.complete ? "Recorded" : item.optional ? "Not recorded" : "Missing")}</p></div></div></div>)}</div>
         <div className="mt-4"><div className="flex items-center justify-between text-xs"><span>Profile completion</span><strong>{completionPct}%</strong></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", completionPct >= 80 ? "bg-success" : completionPct >= 50 ? "bg-warning" : "bg-destructive")} style={{ width: `${completionPct}%` }} /></div></div>
       </section>
       <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><SectionHeader title="Files and evidence" /><div className="mt-3"><OperationalMediaPanel entityType={mode} entityId={selected.id} title={`${mode === "vendor" ? "Vendor" : "Contractor"} files, agreements and evidence`} /></div></section>
