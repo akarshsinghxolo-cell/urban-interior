@@ -12,9 +12,9 @@
 begin;
 
 -- Password/reset material is authentication state, never workspace business
--- data. The current Staff form historically included these convenience fields;
--- strip them before the entity row can be stored, journaled, audited or read by
--- another module.
+-- data. Strip it regardless of write source before the entity row can retain it.
+-- The canonical commit wrapper separately sanitizes operation payloads before
+-- journaling so these fields cannot leak into the delta history either.
 create or replace function public.uc_sanitize_workspace_staff_auth_fields()
 returns trigger
 language plpgsql
@@ -22,11 +22,9 @@ security definer
 set search_path = public, pg_temp
 as $function$
 begin
-  if current_setting('uc.write_source', true) = 'workspace-commit' then
-    new.data := coalesce(new.data, '{}'::jsonb)
-      - 'temporary_password'
-      - 'force_password_change';
-  end if;
+  new.data := coalesce(new.data, '{}'::jsonb)
+    - 'temporary_password'
+    - 'force_password_change';
   return new;
 end;
 $function$;
@@ -267,7 +265,7 @@ for each row
 execute function public.uc_guard_workspace_staff_delete();
 
 comment on function public.uc_sanitize_workspace_staff_auth_fields() is
-  'Removes password/reset fields from workspace-origin Staff writes before they can be persisted or journaled.';
+  'Removes password/reset fields from every entity_master_staff write; workspace operations are also sanitized before journaling.';
 comment on function public.uc_sync_workspace_staff_mirrors() is
   'Mirrors workspace-origin edits for already-auth-linked Staff into StaffProfile and the one current uc_user_roles row while keeping auth identity/approval changes on the dedicated auth flow.';
 comment on function public.uc_guard_workspace_staff_delete() is
