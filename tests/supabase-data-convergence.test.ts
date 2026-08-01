@@ -19,6 +19,17 @@ describe("Supabase persistence convergence", () => {
     expect(drive).toContain('.from("GenericRecord")');
   });
 
+  test("binds every workspace collection to its canonical entity table", async () => {
+    const migration = await Bun.file(MIGRATION).text();
+
+    expect(migration).toContain("rename to commit_workspace_operations_internal");
+    expect(migration).toContain("v_expected_table := 'entity_' || replace(v_collection, '.', '_')");
+    expect(migration).toContain("v_table is distinct from v_expected_table");
+    expect(migration).toContain("INVALID_COLLECTION_TABLE");
+    expect(migration).toContain("return public.commit_workspace_operations_internal(");
+    expect(migration).toContain("revoke all on function public.commit_workspace_operations_internal");
+  });
+
   test("journals auth-driven master staff synchronization", async () => {
     const migration = await Bun.file(MIGRATION).text();
     const staffIdentity = await Bun.file(
