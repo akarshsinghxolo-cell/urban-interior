@@ -79,6 +79,17 @@ export const CUSTOMER_SEGMENTS: Array<[CustomerSegment, string]> = [
   ["trade_customer", "Trade customer"],
 ];
 
+export function defaultSiteName(customerName: string): string {
+  const trimmed = customerName.trim();
+  return trimmed ? `${trimmed} Site` : "";
+}
+
+export function siteNameFollowsCustomer(site: Pick<SiteDraft, "existing" | "name">, previousCustomerName: string): boolean {
+  if (site.existing) return false;
+  const currentName = site.name.trim();
+  return !currentName || currentName === defaultSiteName(previousCustomerName);
+}
+
 export function emptyCustomerDraft(): CustomerDraft {
   return {
     name: "",
@@ -117,13 +128,13 @@ export function draftForCustomer(customer: Customer): CustomerDraft {
   };
 }
 
-export function newSiteDraft(): SiteDraft {
+export function newSiteDraft(customerName = ""): SiteDraft {
   return {
     id: reserveEntityId("site"),
     existing: false,
     enabled: true,
     expanded: true,
-    name: "",
+    name: defaultSiteName(customerName),
     buildingName: "",
     siteType: "apartment",
     stage: "enquiry",
