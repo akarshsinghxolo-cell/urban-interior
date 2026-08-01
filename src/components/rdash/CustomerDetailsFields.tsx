@@ -200,7 +200,11 @@ export function CustomerDetailsFields({
         {customer.referralSelected ? (
           <p className="mt-1 text-[10px] text-success">Linked to source partner: {customer.referralSelected.name}</p>
         ) : customer.referralQuery.trim() ? (
-          <p className="mt-1 text-[10px] text-warning">Select a source partner from the list; free-text referrers are not saved.</p>
+          customer.referralQuery.trim() === customer.referralLegacyName ? (
+            <p className="mt-1 text-[10px] text-muted-foreground">Legacy unlinked referrer preserved. Select a source partner to replace it.</p>
+          ) : (
+            <p className="mt-1 text-[10px] text-warning">Select a source partner from the list; new free-text referrers are not saved.</p>
+          )
         ) : null}
       </div>
 
