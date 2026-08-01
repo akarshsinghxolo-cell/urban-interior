@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 const MIGRATION = "supabase/migrations/20260801143000_converge_workspace_persistence.sql";
 const STAFF_MIRROR_MIGRATION = "supabase/migrations/20260801144500_sync_workspace_staff_mirrors.sql";
 const CONTRACTOR_RATE_MIGRATION = "supabase/migrations/20260801150000_canonical_contractor_rate_projection.sql";
+const CONTRACTOR_RATE_REVISION_MIGRATION = "supabase/migrations/20260801151000_preserve_contractor_rate_row_versions.sql";
 
 describe("Supabase persistence convergence", () => {
   test("removes obsolete workspace writers without removing active GenericRecord", async () => {
@@ -78,6 +79,7 @@ describe("Supabase persistence convergence", () => {
 
   test("makes Contractor Rates an atomic projection of work capabilities", async () => {
     const migration = await Bun.file(CONTRACTOR_RATE_MIGRATION).text();
+    const revisionFix = await Bun.file(CONTRACTOR_RATE_REVISION_MIGRATION).text();
 
     expect(migration).toContain("create or replace function public.uc_contractor_rate_projection_rows");
     expect(migration).toContain("p_contractor -> 'work_capabilities'");
@@ -93,6 +95,11 @@ describe("Supabase persistence convergence", () => {
     expect(migration).toContain("'contractor-rate-projection'");
     expect(migration).toContain("v_next_revision := v_current_revision + 1");
     expect(migration).toContain("is_baseline");
+
+    expect(revisionFix).toContain("v_projection_ids text[]");
+    expect(revisionFix).toContain("v_contractor_projection := public.uc_contractor_rate_projection_rows");
+    expect(revisionFix).toContain("not (v_existing_id = any(v_projection_ids))");
+    expect(revisionFix).toContain("preserving stable row revisions");
   });
 
   test("establishes a fresh journal baseline after historical gaps", async () => {
