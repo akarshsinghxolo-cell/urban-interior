@@ -37,9 +37,10 @@ describe("Supabase persistence convergence", () => {
     expect(migration).toContain("from public, anon, authenticated, service_role");
   });
 
-  test("sanitizes Staff credentials before persistence and journaling", async () => {
+  test("sanitizes Staff credentials before response, persistence and journaling", async () => {
     const tableGuard = await Bun.file(STAFF_MIRROR_MIGRATION).text();
     const operationGuard = await Bun.file(OPERATION_SANITIZE_MIGRATION).text();
+    const authorized = await Bun.file("src/lib/rdash/server/authorized-commit.ts").text();
 
     expect(tableGuard).toContain("new.data := coalesce(new.data, '{}'::jsonb)");
     expect(tableGuard).toContain("- 'temporary_password'");
@@ -49,6 +50,11 @@ describe("Supabase persistence convergence", () => {
     expect(operationGuard).toContain("v_operations := public.uc_sanitize_workspace_operations(p_operations)");
     expect(operationGuard).toContain("v_operations := public.uc_expand_contractor_rate_operations");
     expect(operationGuard).toContain("return public.commit_workspace_operations_internal(");
+
+    expect(authorized).toContain("function sanitizeWorkspaceOperations(");
+    expect(authorized).toContain("temporary_password: _password");
+    expect(authorized).toContain("force_password_change: _forceReset");
+    expect(authorized).toContain("let commitOperations = sanitizeWorkspaceOperations(operations);");
   });
 
   test("journals auth-driven master staff synchronization exactly once", async () => {
@@ -104,9 +110,11 @@ describe("Supabase persistence convergence", () => {
     expect(types).toContain("auth_user_id?: string;");
   });
 
-  test("makes Contractor Rates an atomic projection of work capabilities", async () => {
+  test("makes Contractor Rates an atomic projection visible to server and database", async () => {
     const migration = await Bun.file(CONTRACTOR_RATE_MIGRATION).text();
     const revisionFix = await Bun.file(CONTRACTOR_RATE_REVISION_MIGRATION).text();
+    const authorized = await Bun.file("src/lib/rdash/server/authorized-commit.ts").text();
+    const profile = await Bun.file("src/lib/rdash/contractor-profile.ts").text();
 
     expect(migration).toContain("create or replace function public.uc_contractor_rate_projection_rows");
     expect(migration).toContain("p_contractor -> 'work_capabilities'");
@@ -127,6 +135,12 @@ describe("Supabase persistence convergence", () => {
     expect(revisionFix).toContain("v_contractor_projection := public.uc_contractor_rate_projection_rows");
     expect(revisionFix).toContain("not (v_existing_id = any(v_projection_ids))");
     expect(revisionFix).toContain("preserving stable row revisions");
+
+    expect(authorized).toContain('import { contractorRateProjection } from "../contractor-profile";');
+    expect(authorized).toContain("function canonicalizeContractorRateOperations(");
+    expect(authorized).toContain("contractorRates = contractorRateProjection(");
+    expect(authorized).toContain("canonicalizeContractorRateOperations(current.data, commitOperations)");
+    expect(profile).toContain("db.master.workSubcategories.find((row) => row.id === capability.subcategory_id)?.unit_id");
   });
 
   test("persists the work catalog in Supabase and stops runtime JSON replacement", async () => {
