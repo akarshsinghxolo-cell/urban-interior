@@ -97,6 +97,8 @@ jobs:
         run: bun run test:customer-sites-legacy
       - name: Test canonical Contractor profile
         run: bun run test:contractor-profile
+      - name: Test Supabase schema convergence
+        run: bun test tests/supabase-schema-convergence.test.ts
       - name: Test frontend staff route bundles
         run: bun test tests/staff-route-bundles.test.ts
       - name: Test bug hunt regressions
