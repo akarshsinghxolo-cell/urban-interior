@@ -21,6 +21,7 @@ export type CustomerFieldChange = {
 export type SiteSaveChange = {
   siteId: string;
   kind: "create" | "update";
+  archived?: boolean;
   before?: Site;
   after: Site;
 };
@@ -71,6 +72,10 @@ const siteMutableFields: Array<keyof Site> = [
   "source_partner_id",
   "source_partner_name",
   "notes",
+  "is_archived",
+  "archived_at",
+  "archived_by",
+  "archive_reason",
 ];
 
 function defaultId(prefix: "cust" | "site"): string {
@@ -149,9 +154,16 @@ function siteRecord(
   if (input.customer_id && input.customer_id !== customer.id) {
     throw new Error("Every Site in a customer bundle must belong to that Customer.");
   }
+
+  const isArchiving = Boolean(input.is_archived) && !existing?.is_archived;
+  const archiveReason = String(input.archive_reason ?? "").trim();
+  if (isArchiving && !existing) throw new Error("A new Site cannot be archived before it is created.");
+  if (isArchiving && !archiveReason) throw new Error(`An archive reason is required for Site \"${name}\".`);
+
   const attachmentIds = uniqueStrings([
     ...(input.photo_attachment_ids ?? existing?.photo_attachment_ids ?? []),
   ]).filter((id) => !detachedAttachmentIds.has(id));
+
   return {
     id: siteId,
     customer_id: customer.id,
@@ -169,10 +181,10 @@ function siteRecord(
     source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id ?? customer.source_partner_id),
     source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name ?? customer.source_partner_name),
     notes: suppliedValue(input, "notes", existing?.notes),
-    is_archived: existing?.is_archived,
-    archived_at: existing?.archived_at,
-    archived_by: existing?.archived_by,
-    archive_reason: existing?.archive_reason,
+    is_archived: suppliedValue(input, "is_archived", existing?.is_archived),
+    archived_at: isArchiving ? String(input.archived_at || now) : suppliedValue(input, "archived_at", existing?.archived_at),
+    archived_by: isArchiving ? String(input.archived_by || "Unknown user") : suppliedValue(input, "archived_by", existing?.archived_by),
+    archive_reason: isArchiving ? archiveReason : suppliedValue(input, "archive_reason", existing?.archive_reason),
     created_at: existing?.created_at ?? now,
     updated_at: existing?.updated_at ?? now,
   };
@@ -220,7 +232,9 @@ export function applyCustomerWithSitesSave(
     const next = siteRecord(existing, draft, nextCustomer, siteId, now, detachedSet);
     if (!siteChanged(existing, next)) continue;
     next.updated_at = now;
-    siteChanges.push({ siteId, kind: existing ? "update" : "create", before: existing, after: next });
+    const archived = Boolean(existing && next.is_archived && !existing.is_archived);
+    const kind: SiteSaveChange["kind"] = existing ? "update" : "create";
+    siteChanges.push({ siteId, kind, archived, before: existing, after: next });
     const index = resultingSites.findIndex((site) => site.id === siteId);
     if (index >= 0) resultingSites[index] = next;
     else resultingSites.unshift(next);
