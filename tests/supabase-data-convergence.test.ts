@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 const MIGRATION = "supabase/migrations/20260801143000_converge_workspace_persistence.sql";
 const STAFF_MIRROR_MIGRATION = "supabase/migrations/20260801144500_sync_workspace_staff_mirrors.sql";
+const CONTRACTOR_RATE_MIGRATION = "supabase/migrations/20260801150000_canonical_contractor_rate_projection.sql";
 
 describe("Supabase persistence convergence", () => {
   test("removes obsolete workspace writers without removing active GenericRecord", async () => {
@@ -73,6 +74,25 @@ describe("Supabase persistence convergence", () => {
     expect(migration).toContain("create trigger entity_master_staff_workspace_mirror");
     expect(migration).toContain("STAFF_AUTH_LINK_DELETE_MUST_USE_AUTH_FLOW");
     expect(migration).toContain("create trigger entity_master_staff_workspace_delete_guard");
+  });
+
+  test("makes Contractor Rates an atomic projection of work capabilities", async () => {
+    const migration = await Bun.file(CONTRACTOR_RATE_MIGRATION).text();
+
+    expect(migration).toContain("create or replace function public.uc_contractor_rate_projection_rows");
+    expect(migration).toContain("p_contractor -> 'work_capabilities'");
+    expect(migration).toContain("p_contractor -> 'capabilities_v2'");
+    expect(migration).toContain("'crate-' || v_contractor_id || '-' || v_subcategory_id");
+    expect(migration).toContain("create or replace function public.uc_expand_contractor_rate_operations");
+    expect(migration).toContain("v_op ->> 'collection' <> 'master.contractors'");
+    expect(migration).toContain("'collection', 'master.contractorRates'");
+    expect(migration).toContain("'table', 'entity_master_contractorRates'");
+    expect(migration).toContain("v_operations := public.uc_expand_contractor_rate_operations");
+    expect(migration).toContain("return public.commit_workspace_operations_internal(");
+    expect(migration).toContain("One-time live-data convergence");
+    expect(migration).toContain("'contractor-rate-projection'");
+    expect(migration).toContain("v_next_revision := v_current_revision + 1");
+    expect(migration).toContain("is_baseline");
   });
 
   test("establishes a fresh journal baseline after historical gaps", async () => {
