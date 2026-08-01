@@ -8,7 +8,7 @@
 begin;
 
 -- ---------------------------------------------------------------------------
--- 1. Remove obsolete writers from the pre-workspace-journal architecture.
+-- 1. Remove obsolete or unsafe writers outside the current journaled path.
 -- ---------------------------------------------------------------------------
 -- commit_operations() writes through CollectionMeta and contains stale special
 -- cases for tables that no longer exist. The application uses
@@ -18,6 +18,11 @@ drop function if exists public.commit_operations(text, jsonb, jsonb, text);
 -- write_workspace_snapshot() targets the removed WorkspaceMeta table and is no
 -- longer part of the application persistence path.
 drop function if exists public.write_workspace_snapshot(text, text, integer);
+
+-- This helper increments the global workspace revision without writing the
+-- corresponding delta batch. No current application code calls it; keeping it
+-- available would permit the exact journal-gap failure this migration fixes.
+drop function if exists public.uc_bump_workspace_revision(text);
 
 -- CollectionMeta belonged to commit_operations(). The current optimistic
 -- concurrency source is entity_workspace_revision + per-row revision columns.
