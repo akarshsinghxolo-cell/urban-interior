@@ -7,9 +7,38 @@
 --
 -- Workspace-origin Staff edits therefore mirror profile/role details only for
 -- an already-linked auth identity. They may not invent a login, replace the
--- auth user/email, or delete an auth-linked Staff record.
+-- auth user/email, persist credentials, or delete an auth-linked Staff record.
 
 begin;
+
+-- Password/reset material is authentication state, never workspace business
+-- data. The current Staff form historically included these convenience fields;
+-- strip them before the entity row can be stored, journaled, audited or read by
+-- another module.
+create or replace function public.uc_sanitize_workspace_staff_auth_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $function$
+begin
+  if current_setting('uc.write_source', true) = 'workspace-commit' then
+    new.data := coalesce(new.data, '{}'::jsonb)
+      - 'temporary_password'
+      - 'force_password_change';
+  end if;
+  return new;
+end;
+$function$;
+
+revoke all on function public.uc_sanitize_workspace_staff_auth_fields()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists entity_master_staff_workspace_auth_sanitize on public.entity_master_staff;
+create trigger entity_master_staff_workspace_auth_sanitize
+before insert or update on public.entity_master_staff
+for each row
+execute function public.uc_sanitize_workspace_staff_auth_fields();
 
 create or replace function public.uc_sync_workspace_staff_mirrors()
 returns trigger
@@ -237,6 +266,8 @@ before delete on public.entity_master_staff
 for each row
 execute function public.uc_guard_workspace_staff_delete();
 
+comment on function public.uc_sanitize_workspace_staff_auth_fields() is
+  'Removes password/reset fields from workspace-origin Staff writes before they can be persisted or journaled.';
 comment on function public.uc_sync_workspace_staff_mirrors() is
   'Mirrors workspace-origin edits for already-auth-linked Staff into StaffProfile and the one current uc_user_roles row while keeping auth identity/approval changes on the dedicated auth flow.';
 comment on function public.uc_guard_workspace_staff_delete() is
