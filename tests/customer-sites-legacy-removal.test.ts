@@ -18,6 +18,8 @@ const partnerEntry = readFileSync("src/components/rdash/EntityFormDialog.tsx", "
 const partnerHost = readFileSync("src/components/rdash/PartnerFormDialog.tsx", "utf8");
 const partnerDialog = readFileSync("src/components/rdash/UnifiedPartnerFormDialog.tsx", "utf8");
 const partnerBridge = readFileSync("src/lib/rdash/partner-form-store-bridge.ts", "utf8");
+const contractorPolicy = readFileSync("src/lib/rdash/contractor-store-policy.ts", "utf8");
+const contractorEntry = readFileSync("src/components/rdash/ContractorFormDialog.tsx", "utf8");
 const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDialog.tsx", "utf8");
 
 test("legacy customer write APIs are removed from active store and UI paths", () => {
@@ -37,8 +39,9 @@ test("legacy customer write APIs are removed from active store and UI paths", ()
   expect(customerSitesDialog.includes("dirtyFormRegistry.requestNavigation")).toBe(true);
 });
 
-test("partner create and edit use one guarded patch-only workflow", () => {
+test("partner create and edit use guarded canonical workflows", () => {
   expect(partnerHost.includes("retainPartnerFormStoreBridge")).toBe(true);
+  expect(partnerHost.includes("ContractorFormDialog")).toBe(true);
   expect(partnerDialog.includes("useDirtyFormRegistration")).toBe(true);
   expect(partnerDialog.includes("partnerChangedPatch")).toBe(true);
   expect(partnerDialog.includes("isEdit && !dirty")).toBe(true);
@@ -48,6 +51,8 @@ test("partner create and edit use one guarded patch-only workflow", () => {
   expect(partnerDialog.includes("article_ids: [...row.article_ids]")).toBe(true);
   expect(partnerDialog.includes("Will save as an unlinked referrer name")).toBe(true);
   expect(partnerDialog.includes("combinedNotes")).toBe(false);
+  expect(contractorEntry.includes("useDirtyFormRegistration")).toBe(true);
+  expect(contractorEntry.includes("contractorFormProjection")).toBe(true);
 });
 
 test("partner patches contain only modified fields", () => {
@@ -129,7 +134,7 @@ test("legacy Vendor migration keeps unresolved text and respects an explicit emp
   expect(partnerBridge.includes("vendorLegacyMigrationPatch")).toBe(true);
 });
 
-test("Contractor rates reject negative and nonnumeric values on create and edit", () => {
+test("Contractor rates reject negative and nonnumeric values at the permanent write boundary", () => {
   expect(
     contractorCapabilityRateError([
       { labour_rate: 100, with_material_rate: 250 },
@@ -141,8 +146,10 @@ test("Contractor rates reject negative and nonnumeric values on create and edit"
   expect(
     contractorCapabilityRateError([{ with_material_rate: "invalid" }]),
   ).toBe("Contractor rates must be valid non-negative numbers.");
-  expect(partnerBridge.includes("originalAddContractor")).toBe(true);
-  expect(partnerBridge.includes("contractorCapabilityRateError")).toBe(true);
+  expect(contractorPolicy.includes("originalAddContractor")).toBe(true);
+  expect(contractorPolicy.includes("contractorProfileValidationError")).toBe(true);
+  expect(contractorPolicy.includes("synchronizeRateProjection")).toBe(true);
+  expect(partnerBridge.includes("originalAddContractor")).toBe(false);
 });
 
 test("partner updates emit one detailed audit instead of the generic edit audit", () => {
