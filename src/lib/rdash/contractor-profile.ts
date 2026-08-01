@@ -61,6 +61,7 @@ export type ContractorProfileRecord = {
   pf_no?: string;
   esi_no?: string;
   notes?: string;
+  bank_verified?: boolean;
   compliance_documents?: Array<Record<string, unknown>>;
   [key: string]: unknown;
 };
@@ -339,6 +340,7 @@ export function normalizeContractorForWrite(
     pf_no: String(input.pf_no || "").trim() || undefined,
     esi_no: String(input.esi_no || "").trim() || undefined,
     notes: String(input.notes || "").trim() || undefined,
+    bank_verified: verifiedContractorBankProof(input),
     status: input.status || "onboarding",
     work_capabilities: capabilities,
     categories: derivedContractorCategoryNames(db, capabilities),

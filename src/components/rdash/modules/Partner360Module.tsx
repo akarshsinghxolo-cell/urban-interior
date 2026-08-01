@@ -283,8 +283,8 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" onClick={openEdit}><Pencil className="mr-1 h-3.5 w-3.5" />Basic profile</Button>
-                <Button size="sm" variant="outline" onClick={() => setBusinessDialogOpen(true)}><ShieldCheck className="mr-1 h-3.5 w-3.5" />Business details</Button>
+                <Button size="sm" variant="outline" onClick={openEdit}><Pencil className="mr-1 h-3.5 w-3.5" />{mode === "contractor" ? "Edit contractor" : "Basic profile"}</Button>
+                {mode === "vendor" && <Button size="sm" variant="outline" onClick={() => setBusinessDialogOpen(true)}><ShieldCheck className="mr-1 h-3.5 w-3.5" />Business details</Button>}
               </div>
             </div>
 
@@ -323,7 +323,7 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
       </div>
 
       <EntityFormDialog type={mode} editId={entityEditId} open={entityDialogOpen} onClose={() => { setEntityDialogOpen(false); setEntityEditId(undefined); }} onSaved={(id) => setSelectedId(id)} />
-      <PartnerBusinessDialog mode={mode} partner={selected} open={businessDialogOpen} onClose={() => setBusinessDialogOpen(false)} />
+      {mode === "vendor" && <PartnerBusinessDialog mode="vendor" partner={selected} open={businessDialogOpen} onClose={() => setBusinessDialogOpen(false)} />}
     </div>
   );
 }
