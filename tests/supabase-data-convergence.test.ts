@@ -52,8 +52,8 @@ describe("Supabase persistence convergence", () => {
     expect(operationGuard).toContain("return public.commit_workspace_operations_internal(");
 
     expect(authorized).toContain("function sanitizeWorkspaceOperations(");
-    expect(authorized).toContain("temporary_password: _password");
-    expect(authorized).toContain("force_password_change: _forceReset");
+    expect(authorized).toContain("delete safe.temporary_password;");
+    expect(authorized).toContain("delete safe.force_password_change;");
     expect(authorized).toContain("let commitOperations = sanitizeWorkspaceOperations(operations);");
   });
 
