@@ -81,6 +81,17 @@ export type ContractorDuplicateConflict = {
   hard: boolean;
 };
 
+const PROFILE_DOCUMENT_SOURCE = "contractor_profile";
+const PROFILE_DOCUMENT_TIMESTAMP = new Date(0).toISOString();
+
+type ContractorProfileDocumentSpec = {
+  kind: string;
+  label: string;
+  documentNo?: string;
+  expiryDate?: string;
+  mandatory: boolean;
+};
+
 const digits = (value?: string) => String(value || "").replace(/\D/g, "");
 const mobile = (value?: string) => {
   const valueDigits = digits(value);
@@ -212,6 +223,130 @@ export function contractorGovernanceCapabilityProjection(
     created_at: new Date(0).toISOString(),
     updated_at: new Date().toISOString(),
   }));
+}
+
+export function contractorCapabilitiesFromGovernance(
+  capabilities: Array<Record<string, unknown>>,
+): ContractorCapability[] {
+  return canonicalContractorCapabilities({ capabilities_v2: capabilities });
+}
+
+export function contractorProfileComplianceDocuments(
+  record: ContractorProfileRecord,
+): Array<Record<string, unknown>> {
+  const existing = Array.isArray(record.compliance_documents)
+    ? record.compliance_documents
+    : [];
+  const stableId = String(record.id || "draft");
+  const specs: ContractorProfileDocumentSpec[] = [
+    {
+      kind: "gst_registration",
+      label: "GST registration",
+      documentNo: String(record.business_gst || "").trim() || undefined,
+      mandatory: false,
+    },
+    {
+      kind: "pan_card",
+      label: "PAN card",
+      documentNo: String(record.pan || "").trim() || undefined,
+      mandatory: false,
+    },
+    {
+      kind: "bank_proof",
+      label: "Bank proof / cancelled cheque",
+      documentNo: [record.bank_account, record.ifsc].filter(Boolean).join(" · ") || undefined,
+      mandatory: false,
+    },
+    {
+      kind: "labour_license",
+      label: "Labour licence",
+      documentNo: String(record.labour_registration_no || "").trim() || undefined,
+      mandatory: false,
+    },
+    {
+      kind: "insurance",
+      label: "Insurance",
+      expiryDate: String(record.insurance_expiry || "").trim() || undefined,
+      mandatory: false,
+    },
+    {
+      kind: "pf_registration",
+      label: "PF registration",
+      documentNo: String(record.pf_no || "").trim() || undefined,
+      mandatory: false,
+    },
+    {
+      kind: "esi_registration",
+      label: "ESI registration",
+      documentNo: String(record.esi_no || "").trim() || undefined,
+      mandatory: false,
+    },
+  ];
+
+  const profileKinds = new Set(specs.map((spec) => spec.kind));
+  const retained = existing.filter((document) => {
+    if (document.source !== PROFILE_DOCUMENT_SOURCE) return true;
+    if (!profileKinds.has(String(document.kind || ""))) return true;
+    const spec = specs.find((candidate) => candidate.kind === document.kind);
+    return Boolean(spec?.documentNo || spec?.expiryDate || document.attachment_id || document.verified);
+  });
+
+  for (const spec of specs) {
+    if (!spec.documentNo && !spec.expiryDate) continue;
+    const manual = retained.find(
+      (document) => document.kind === spec.kind && document.source !== PROFILE_DOCUMENT_SOURCE,
+    );
+    if (manual) continue;
+    const currentIndex = retained.findIndex(
+      (document) => document.kind === spec.kind && document.source === PROFILE_DOCUMENT_SOURCE,
+    );
+    const current = currentIndex >= 0 ? retained[currentIndex] : undefined;
+    const evidenceChanged = Boolean(
+      current &&
+      (String(current.document_no || "") !== String(spec.documentNo || "") ||
+        String(current.expiry_date || "") !== String(spec.expiryDate || "")),
+    );
+    const next = {
+      ...current,
+      id: current?.id || `pdoc-profile-${stableId}-${spec.kind}`,
+      kind: spec.kind,
+      label: spec.label,
+      document_no: spec.documentNo,
+      expiry_date: spec.expiryDate,
+      mandatory: spec.mandatory,
+      verified: evidenceChanged ? false : Boolean(current?.verified),
+      verified_at: evidenceChanged ? undefined : current?.verified_at,
+      verified_by: evidenceChanged ? undefined : current?.verified_by,
+      source: PROFILE_DOCUMENT_SOURCE,
+      notes: current?.notes || "Optional profile details recorded for reference.",
+      created_at: current?.created_at || PROFILE_DOCUMENT_TIMESTAMP,
+      updated_at: evidenceChanged ? PROFILE_DOCUMENT_TIMESTAMP : current?.updated_at || PROFILE_DOCUMENT_TIMESTAMP,
+    };
+    if (currentIndex >= 0) retained[currentIndex] = next;
+    else retained.push(next);
+  }
+
+  return retained;
+}
+
+export function contractorMasterRecordForCreate(
+  input: ContractorProfileRecord,
+  id: string,
+): ContractorProfileRecord {
+  return {
+    ...input,
+    id,
+    name: String(input.name || "New contractor"),
+    active_jobs: Number.isFinite(Number(input.active_jobs)) ? Number(input.active_jobs) : 0,
+    outstanding: Number.isFinite(Number(input.outstanding)) ? Number(input.outstanding) : 0,
+    past_jobs_count: Number.isFinite(Number(input.past_jobs_count)) ? Number(input.past_jobs_count) : 0,
+    specializations: Array.isArray(input.specializations) ? input.specializations : [],
+    work_capabilities: Array.isArray(input.work_capabilities) ? input.work_capabilities : [],
+    capabilities_v2: Array.isArray(input.capabilities_v2) ? input.capabilities_v2 : [],
+    categories: Array.isArray(input.categories) ? input.categories : [],
+    compliance_documents: Array.isArray(input.compliance_documents) ? input.compliance_documents : [],
+    status: input.status || "active",
+  };
 }
 
 export function derivedContractorCategoryNames(
@@ -414,12 +549,13 @@ export function normalizeContractorForWrite(
     pf_no: String(input.pf_no || "").trim() || undefined,
     esi_no: String(input.esi_no || "").trim() || undefined,
     notes: String(input.notes || "").trim() || undefined,
-    bank_verified: verifiedContractorBankProof(input),
     status: input.status || "onboarding",
     work_capabilities: capabilities,
     categories: derivedContractorCategoryNames(db, capabilities),
     capabilities_v2: id ? contractorGovernanceCapabilityProjection(id, capabilities) : [],
   };
+  normalized.compliance_documents = contractorProfileComplianceDocuments(normalized);
+  normalized.bank_verified = verifiedContractorBankProof(normalized);
   return normalized;
 }
 

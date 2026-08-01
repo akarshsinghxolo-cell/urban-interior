@@ -108,10 +108,7 @@ export const DOCUMENT_KIND_LABELS: Record<PartnerDocumentKind, string> = {
   other: "Other document",
 };
 
-const MANDATORY_DOCUMENTS: Record<PartnerGovernanceMode, PartnerDocumentKind[]> = {
-  vendor: ["gst_registration", "pan_card", "bank_proof"],
-  contractor: ["pan_card", "bank_proof", "labour_license", "insurance"],
-};
+const VENDOR_MANDATORY_DOCUMENTS: PartnerDocumentKind[] = ["gst_registration", "pan_card", "bank_proof"];
 
 export function governanceId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -146,9 +143,26 @@ export function partnerDocuments(partner: Record<string, unknown>): PartnerCompl
 }
 
 export function partnerCapabilities(partner: Record<string, unknown>): PartnerCapability[] {
-  return Array.isArray(partner.capabilities_v2)
+  const governed = Array.isArray(partner.capabilities_v2)
     ? (partner.capabilities_v2 as PartnerCapability[])
     : [];
+  if (governed.length) return governed;
+  if (!Array.isArray(partner.work_capabilities)) return [];
+
+  const partnerId = String(partner.id || "contractor");
+  return (partner.work_capabilities as Array<Record<string, unknown>>).flatMap((row) => {
+    const subcategoryId = String(row.subcategory_id || row.work_subcategory_id || "").trim();
+    if (!subcategoryId) return [];
+    return [{
+      ...row,
+      id: String(row.id || `ccap-${partnerId}-${subcategoryId}`),
+      work_subcategory_id: subcategoryId,
+      work_subcategory_name: row.subcategory_name || row.work_subcategory_name,
+      status: row.status === "inactive" ? "inactive" : "active",
+      created_at: String(row.created_at || new Date(0).toISOString()),
+      updated_at: String(row.updated_at || new Date(0).toISOString()),
+    } as PartnerCapability];
+  });
 }
 
 export function documentStatus(document: PartnerComplianceDocument, at = new Date()): PartnerDocumentStatus {
@@ -169,15 +183,14 @@ export function daysUntilExpiry(document: PartnerComplianceDocument, at = new Da
   return Math.ceil((expiry.getTime() - at.getTime()) / 86_400_000);
 }
 
-export function paymentReadiness(
-  mode: PartnerGovernanceMode,
+export function vendorPaymentReadiness(
   partner: Record<string, unknown>,
   at = new Date(),
 ): PartnerPaymentReadiness {
   const documents = partnerDocuments(partner);
   const blockers: string[] = [];
   const warnings: string[] = [];
-  const mandatory = new Set(MANDATORY_DOCUMENTS[mode]);
+  const mandatory = new Set(VENDOR_MANDATORY_DOCUMENTS);
 
   for (const kind of mandatory) {
     const matching = documents.filter((document) => document.kind === kind);

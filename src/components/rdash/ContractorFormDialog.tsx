@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Navigation, Pencil, Plus, Search, ShieldCheck, X } from "lucide-react";
+import { CheckCircle2, Navigation, Pencil, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -316,6 +316,10 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       pf_no: draft.pfNo,
       esi_no: draft.esiNo,
       notes: draft.notes,
+      // Preserve documents added from Governance while the canonical profile
+      // helper synchronizes form-entered PAN, bank, labour, insurance, PF and
+      // ESI details into unverified document-register rows.
+      compliance_documents: baselineRef.current.compliance_documents,
     };
     return normalizeContractorForWrite(raw, db, { id: raw.id });
   }, [
@@ -845,11 +849,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
             <section className="space-y-2 rounded-lg border bg-muted/20 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tax and banking</p>
-                <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold", bankVerified ? "border-success/20 bg-success/10 text-success" : "border-warning/20 bg-warning/10 text-warning")}>
-                  {bankVerified ? <CheckCircle2 className="h-3 w-3" /> : <ShieldCheck className="h-3 w-3" />}
-                  {bankVerified ? "Bank proof verified" : "Bank proof pending"}
-                </span>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tax and banking (optional)</p>
+                {bankVerified && <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/10 px-2 py-1 text-[10px] font-semibold text-success"><CheckCircle2 className="h-3 w-3" />Bank proof verified</span>}
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <Input value={draft.gstin} onChange={(event) => { set("gstin", event.target.value.toUpperCase()); setDuplicateAcknowledged(false); }} placeholder="GSTIN" maxLength={15} />
@@ -857,11 +858,11 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                 <Input value={draft.bankAccount} onChange={(event) => { set("bankAccount", event.target.value.replace(/\D/g, "")); setDuplicateAcknowledged(false); }} placeholder="Bank account number" inputMode="numeric" />
                 <Input value={draft.ifsc} onChange={(event) => set("ifsc", event.target.value.toUpperCase())} placeholder="IFSC" maxLength={11} />
               </div>
-              <p className="text-[10px] text-muted-foreground">Bank verification is derived from a verified Bank Proof document in Governance; it cannot be self-certified here.</p>
+              <p className="text-[10px] text-muted-foreground">These details are optional reference information.</p>
             </section>
 
             <section className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Capacity and compliance readiness</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Capacity and optional records</p>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 <Input value={draft.supervisorName} onChange={(event) => set("supervisorName", event.target.value)} placeholder="Supervisor / foreman name" />
                 <Input value={draft.supervisorPhone} onChange={(event) => set("supervisorPhone", sanitizeIndianMobile(event.target.value))} placeholder="Supervisor phone" inputMode="numeric" />
@@ -869,8 +870,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                 <Input type="number" min={0} value={draft.concurrentSiteLimit} onChange={(event) => set("concurrentSiteLimit", event.target.value)} placeholder="Concurrent site limit" />
                 <Input type="date" value={draft.earliestMobilisationDate} onChange={(event) => set("earliestMobilisationDate", event.target.value)} title="Earliest mobilisation date" />
                 <Input type="number" min={0} value={draft.serviceRadiusKm} onChange={(event) => set("serviceRadiusKm", event.target.value)} placeholder="Service radius (km)" />
-                <Input value={draft.labourRegistrationNo} onChange={(event) => set("labourRegistrationNo", event.target.value)} placeholder="Labour registration number" />
-                <Input type="date" value={draft.insuranceExpiry} onChange={(event) => set("insuranceExpiry", event.target.value)} title="Insurance expiry" />
+                <Input value={draft.labourRegistrationNo} onChange={(event) => set("labourRegistrationNo", event.target.value)} placeholder="Labour registration number (optional)" />
+                <Input type="date" value={draft.insuranceExpiry} onChange={(event) => set("insuranceExpiry", event.target.value)} title="Insurance expiry (optional)" />
                 <Input value={draft.pfNo} onChange={(event) => set("pfNo", event.target.value)} placeholder="PF number" />
                 <Input value={draft.esiNo} onChange={(event) => set("esiNo", event.target.value)} placeholder="ESI number" />
               </div>

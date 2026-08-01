@@ -20,6 +20,7 @@ import { assertRole, genId, nowIso, today, addDays, contractorPaymentProofStatus
 import { formatINR } from "../../format";
 import { assertWorkOrderRelations } from "../../business-rules";
 import { materializePaymentSchedule } from "../finance-helpers";
+import { contractorMasterRecordForCreate, type ContractorProfileRecord } from "../../contractor-profile";
 // I: Import the canonical commission-rule lookup helper exposed by Agent A
 // in masters.ts. Match priority: (1) partner-specific category rule →
 // (2) partner-specific workOrder rule → (3) partner-specific all rule →
@@ -39,44 +40,14 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
     return {
         addContractor: (c) => {
             const id = c.id || genId("con");
-            const contractor: import("../../types").Contractor = {
+            // Preserve the complete normalized profile produced by
+            // ContractorFormDialog. The previous field-by-field copy silently
+            // dropped legal/contact, capacity, compliance, notes and the
+            // governance capability projection before server persistence.
+            const contractor = contractorMasterRecordForCreate(
+                c as ContractorProfileRecord,
                 id,
-                name: c.name || "New contractor",
-                phone: c.phone,
-                city: c.city,
-                locality: c.locality,
-                address: c.address,
-                trade: c.trade,
-                rating: c.rating,
-                active_jobs: 0,
-                outstanding: 0,
-                reliability_score: c.reliability_score,
-                on_time_pct: c.on_time_pct,
-                past_jobs_count: c.past_jobs_count || 0,
-                specializations: c.specializations || [],
-                latitude: c.latitude,
-                longitude: c.longitude,
-                photo_attachment_id: c.photo_attachment_id,
-                business_card_attachment_id: c.business_card_attachment_id,
-                reliability_rating: c.reliability_rating,
-                politeness_rating: c.politeness_rating,
-                worker_count_range: c.worker_count_range,
-                deadline_commitment: c.deadline_commitment,
-                source_partner_id: c.source_partner_id,
-                source_partner_name: c.source_partner_name,
-                work_capabilities: c.work_capabilities || [],
-                // FIX-CONTRACTOR-BATCH2 / F.6: persist the new business / tax /
-                // banking / category fields captured by EntityFormDialog.
-                business_gst: c.business_gst,
-                pan: c.pan,
-                bank_account: c.bank_account,
-                ifsc: c.ifsc,
-                categories: c.categories,
-                // FIX-CONTRACTOR-BATCH2 / F.13: default new contractors to
-                // "active" so the deactivate/activate lifecycle starts from a
-                // known state.
-                status: c.status || "active",
-            };
+            ) as import("../../types").Contractor;
             commitState((s: any) => ({
                 db: {
                     ...s.db,

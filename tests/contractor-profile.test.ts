@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   canonicalContractorCapabilities,
+  contractorMasterRecordForCreate,
   contractorDuplicateConflicts,
   contractorProfileValidationError,
   contractorRateProjection,
@@ -9,6 +10,7 @@ import {
   verifiedContractorBankProof,
   type ContractorProfileRecord,
 } from "../src/lib/rdash/contractor-profile";
+import { partnerCapabilities } from "../src/lib/rdash/partner-governance";
 
 function db() {
   return {
@@ -296,5 +298,92 @@ describe("contractor validation and duplicate prevention", () => {
         compliance_documents: [{ kind: "bank_proof", verified: true }],
       }),
     ).toBe(true);
+  });
+});
+
+describe("contractor create persistence and governance projection", () => {
+  test("create records preserve the complete normalized form payload", () => {
+    const record = contractorMasterRecordForCreate({
+      id: "reserved-id",
+      name: "Complete Contractor",
+      legal_name: "Complete Contractor Private Limited",
+      whatsapp: "9876543210",
+      alternate_phone: "9876543211",
+      email: "accounts@example.com",
+      supervisor_name: "Site Foreman",
+      supervisor_phone: "9876543212",
+      available_workers: 14,
+      concurrent_site_limit: 3,
+      service_radius_km: 45,
+      labour_registration_no: "LAB-42",
+      insurance_expiry: "2027-12-31",
+      pf_no: "PF-42",
+      esi_no: "ESI-42",
+      notes: "Preferred for complex work",
+      work_capabilities: [{ subcategory_id: "sub-paint", labour_rate: 40 }],
+      capabilities_v2: [{ id: "ccap-1", work_subcategory_id: "sub-paint" }],
+      compliance_documents: [{ id: "doc-1", kind: "insurance", verified: false }],
+    }, "con-42");
+
+    expect(record).toMatchObject({
+      id: "con-42",
+      legal_name: "Complete Contractor Private Limited",
+      email: "accounts@example.com",
+      supervisor_name: "Site Foreman",
+      available_workers: 14,
+      labour_registration_no: "LAB-42",
+      pf_no: "PF-42",
+      notes: "Preferred for complex work",
+    });
+    expect(record.capabilities_v2).toHaveLength(1);
+    expect(record.compliance_documents).toHaveLength(1);
+  });
+
+  test("form-entered compliance identifiers populate the document register as unverified evidence", () => {
+    const normalized = normalizeContractorForWrite({
+      id: "con-1",
+      name: "Mr Das",
+      pan: "ABCDE1234F",
+      bank_account: "1234567890",
+      ifsc: "HDFC0001234",
+      labour_registration_no: "LAB-1",
+      insurance_expiry: "2027-12-31",
+      pf_no: "PF-1",
+      esi_no: "ESI-1",
+    }, db(), { id: "con-1" });
+
+    expect(normalized.compliance_documents?.map((document) => document.kind)).toEqual([
+      "pan_card",
+      "bank_proof",
+      "labour_license",
+      "insurance",
+      "pf_registration",
+      "esi_registration",
+    ]);
+    expect(normalized.compliance_documents?.every((document) => document.verified === false)).toBe(true);
+    expect(normalized.compliance_documents?.every((document) => document.mandatory === false)).toBe(true);
+    expect(normalized.bank_verified).toBe(false);
+  });
+
+  test("governance reads canonical work capabilities when the legacy projection is missing", () => {
+    const capabilities = partnerCapabilities({
+      id: "con-1",
+      work_capabilities: [{
+        subcategory_id: "sub-paint",
+        subcategory_name: "Interior Painting",
+        labour_rate: 40,
+        with_material_rate: 110,
+      }],
+    });
+
+    expect(capabilities).toHaveLength(1);
+    expect(capabilities[0]).toMatchObject({
+      id: "ccap-con-1-sub-paint",
+      work_subcategory_id: "sub-paint",
+      work_subcategory_name: "Interior Painting",
+      labour_rate: 40,
+      with_material_rate: 110,
+      status: "active",
+    });
   });
 });
