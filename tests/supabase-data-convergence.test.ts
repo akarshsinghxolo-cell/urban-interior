@@ -77,6 +77,17 @@ describe("Supabase persistence convergence", () => {
     expect(migration).toContain("create trigger entity_master_staff_workspace_delete_guard");
   });
 
+  test("routes Staff login changes to User Approvals and never workspace passwords", async () => {
+    const dialog = await Bun.file("src/components/rdash/StaffEditDialog.tsx").text();
+
+    expect(dialog).toContain("Login access is managed in User Approvals");
+    expect(dialog).toContain("Passwords are never stored in Staff workspace data");
+    expect(dialog).toContain("temporary_password: undefined");
+    expect(dialog).toContain("force_password_change: undefined");
+    expect(dialog).not.toContain("Temporary password");
+    expect(dialog).not.toContain("ChangeMe_UrbanCastle_2026!");
+  });
+
   test("makes Contractor Rates an atomic projection of work capabilities", async () => {
     const migration = await Bun.file(CONTRACTOR_RATE_MIGRATION).text();
     const revisionFix = await Bun.file(CONTRACTOR_RATE_REVISION_MIGRATION).text();
