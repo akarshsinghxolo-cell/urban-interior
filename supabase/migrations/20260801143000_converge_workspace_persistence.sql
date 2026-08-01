@@ -29,7 +29,86 @@ drop function if exists public.uc_bump_workspace_revision(text);
 drop table if exists public."CollectionMeta";
 
 -- ---------------------------------------------------------------------------
--- 2. Make auth-driven Staff master writes participate in the workspace journal.
+-- 2. Harden the atomic commit RPC's collection -> physical table relationship.
+-- ---------------------------------------------------------------------------
+-- The existing function validates that the caller supplied an entity_* table,
+-- but it does not prove that the table belongs to the declared collection.
+-- Preserve the proven atomic implementation as an internal function and expose
+-- a wrapper that derives the only valid table name from the collection.
+do $guard$
+begin
+  if to_regprocedure('public.commit_workspace_operations_internal(text,integer,jsonb,jsonb)') is null then
+    if to_regprocedure('public.commit_workspace_operations(text,integer,jsonb,jsonb)') is null then
+      raise exception using errcode = 'P0002', message = 'COMMIT_WORKSPACE_OPERATIONS_NOT_FOUND';
+    end if;
+    alter function public.commit_workspace_operations(text, integer, jsonb, jsonb)
+      rename to commit_workspace_operations_internal;
+  end if;
+end;
+$guard$;
+
+create or replace function public.commit_workspace_operations(
+  p_workspace_id text,
+  p_expected_workspace_revision integer,
+  p_operations jsonb,
+  p_expected_row_versions jsonb default '{}'::jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $function$
+declare
+  v_op jsonb;
+  v_collection text;
+  v_table text;
+  v_expected_table text;
+begin
+  if jsonb_typeof(p_operations) <> 'array' then
+    raise exception using errcode = '22023', message = 'INVALID_OPERATIONS';
+  end if;
+
+  for v_op in select value from jsonb_array_elements(p_operations)
+  loop
+    v_collection := nullif(btrim(v_op ->> 'collection'), '');
+    v_table := nullif(btrim(v_op ->> 'table'), '');
+    if v_collection is null or v_table is null then
+      raise exception using errcode = '22023', message = 'INVALID_COLLECTION';
+    end if;
+
+    v_expected_table := 'entity_' || replace(v_collection, '.', '_');
+    if v_table is distinct from v_expected_table
+       or v_expected_table !~ '^entity_[A-Za-z0-9_]+$'
+       or to_regclass(format('public.%I', v_expected_table)) is null then
+      raise exception using errcode = '22023', message = 'INVALID_COLLECTION_TABLE';
+    end if;
+  end loop;
+
+  return public.commit_workspace_operations_internal(
+    p_workspace_id,
+    p_expected_workspace_revision,
+    p_operations,
+    coalesce(p_expected_row_versions, '{}'::jsonb)
+  );
+end;
+$function$;
+
+revoke all on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb)
+  from public, anon, authenticated;
+revoke all on function public.commit_workspace_operations(text, integer, jsonb, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.commit_workspace_operations(text, integer, jsonb, jsonb)
+  to service_role;
+grant execute on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb)
+  to service_role;
+
+comment on function public.commit_workspace_operations(text, integer, jsonb, jsonb) is
+  'Canonical workspace commit entrypoint. Validates collection-to-entity-table routing before delegating to the atomic internal implementation.';
+comment on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb) is
+  'Internal atomic workspace implementation. Call through commit_workspace_operations so collection/table routing is validated.';
+
+-- ---------------------------------------------------------------------------
+-- 3. Make auth-driven Staff master writes participate in the workspace journal.
 -- ---------------------------------------------------------------------------
 -- sync_staff_identity_bundle() intentionally writes three coordinated records:
 -- uc_user_roles, StaffProfile and entity_master_staff. Only entity_master_staff
@@ -99,7 +178,7 @@ when (new.updated_by = 'auth-system')
 execute function public.uc_journal_auth_staff_master_write();
 
 -- ---------------------------------------------------------------------------
--- 3. Reset the delta baseline at the current revision.
+-- 4. Reset the delta baseline at the current revision.
 -- ---------------------------------------------------------------------------
 -- Older deployments contain revision gaps created before the Staff journal fix.
 -- Turning the current revision into the new baseline makes every older client
