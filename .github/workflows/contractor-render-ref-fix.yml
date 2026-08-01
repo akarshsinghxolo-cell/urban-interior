@@ -1,0 +1,49 @@
+name: Contractor render-ref fix
+
+on:
+  push:
+    branches:
+      - agent/contractor-profile-unification
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/contractor-profile-unification
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Replace render-time refs with reactive baseline state
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/components/rdash/ContractorFormDialog.tsx')
+          s = p.read_text()
+          s = s.replace('''  const legacyReferralRef = React.useRef(\"\");\n''', '''  const [legacyReferral, setLegacyReferral] = React.useState(\"\");\n  const [baselineStatus, setBaselineStatus] = React.useState<string | undefined>();\n''')
+          s = s.replace('''    legacyReferralRef.current = normalized.source_partner_id ? \"\" : String(normalized.source_partner_name || \"\");\n''', '''    setLegacyReferral(normalized.source_partner_id ? \"\" : String(normalized.source_partner_name || \"\"));\n    setBaselineStatus(String(normalized.status || \"onboarding\"));\n''')
+          s = s.replace('''    currentPayload = contractorFormProjection(baselineRef.current);\n''', '''    currentPayload = { name: draft.name, status: draft.status, work_capabilities: [] };\n''')
+          s = s.replace('''  const referralError = referralQuery.trim() && !referralId && referralQuery.trim() !== legacyReferralRef.current\n''', '''  const referralError = referralQuery.trim() && !referralId && referralQuery.trim() !== legacyReferral\n''')
+          s = s.replace('''    activating: isEdit && baselineRef.current.status !== \"active\" && currentPayload.status === \"active\",\n''', '''    activating: isEdit && baselineStatus !== \"active\" && currentPayload.status === \"active\",\n''')
+          p.write_text(s)
+          PY
+      - name: Verify targeted lint and contractor tests
+        run: |
+          bunx eslint src/components/rdash/ContractorFormDialog.tsx
+          bun run test:contractor-profile
+      - name: Clean diagnostics and publish fix
+        run: |
+          rm -f contractor-lint-diagnostics.txt
+          rm .github/workflows/contractor-render-ref-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix Contractor form render-time baseline state"
+          git push origin HEAD:agent/contractor-profile-unification
