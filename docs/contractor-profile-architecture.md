@@ -24,7 +24,7 @@ Writes through a mapped Contractor Rate update the corresponding canonical capab
 
 Contractors use `ContractorFormDialog` for the full editable profile: identity, contact, lifecycle, location, referral, files, capabilities/rates, quality/crew characteristics, tax/banking, capacity/compliance readiness, and notes. Contractor 360 routes its edit action to this same editor. The separate Partner Business Details editor remains Vendor-only.
 
-Dirty-state comparison is limited to fields owned by the Contractor form and includes the raw coordinate input.
+Dirty-state comparison is limited to fields owned by the Contractor form and includes the raw coordinate input. Render-time validation uses reactive baseline state; refs are reserved for event/effect-only reset snapshots so React's render rules are not bypassed.
 
 ## Duplicate policy
 
