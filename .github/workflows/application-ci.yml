@@ -42,6 +42,9 @@ jobs:
           rm .github/workflows/vendor-module-cleanup-runner.yml
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Generate persisted work catalog convergence
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
+        run: bun scripts/generate-work-catalog-convergence.ts
       - name: Test Vendor module cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: bun run test:vendor-module
@@ -123,6 +126,18 @@ jobs:
           name: supabase-convergence-build
           path: supabase-convergence-build.txt
           if-no-files-found: ignore
+      - name: Commit verified work catalog convergence
+        if: success() && github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/rdash/server/commit-rest.ts supabase/migrations/20260801153000_persist_work_catalog_master.sql
+          if git diff --cached --quiet; then
+            echo "Generated work catalog outputs are already committed."
+            exit 0
+          fi
+          git commit -m "Persist work catalog as Supabase master data"
+          git push origin HEAD:agent/supabase-data-convergence
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |
