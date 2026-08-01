@@ -76,11 +76,22 @@ if (!authorizedCommit.includes('import { contractorRateProjection } from "../con
   if (!authorizedCommit.includes(importAnchor)) throw new Error("Could not find authorized-commit import anchor.");
   authorizedCommit = authorizedCommit.replace(importAnchor, `${importAnchor}import { contractorRateProjection } from "../contractor-profile";\n`);
 }
+const auditAnchor = `function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): AuditLogEntry {\n`;
+if (!authorizedCommit.includes("function sanitizeWorkspaceOperations(")) {
+  if (!authorizedCommit.includes(auditAnchor)) throw new Error("Could not find authorized-commit audit anchor.");
+  const sanitizer = `function sanitizeWorkspaceOperations(operations: WorkspaceOperation[]): WorkspaceOperation[] {\n  return operations.map((operation) => {\n    if (operation.collection !== "master.staff") return operation;\n    return {\n      ...operation,\n      upsert: (operation.upsert || []).map((row) => {\n        const { temporary_password: _password, force_password_change: _forceReset, ...safe } = row;\n        return safe;\n      }),\n    };\n  });\n}\n\n`;
+  authorizedCommit = authorizedCommit.replace(auditAnchor, `${sanitizer}${auditAnchor}`);
+}
 if (!authorizedCommit.includes("function canonicalizeContractorRateOperations(")) {
-  const functionAnchor = `function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): AuditLogEntry {\n`;
-  if (!authorizedCommit.includes(functionAnchor)) throw new Error("Could not find authorized-commit function anchor.");
+  if (!authorizedCommit.includes(auditAnchor)) throw new Error("Could not find authorized-commit function anchor.");
   const helper = `function canonicalizeContractorRateOperations(\n  current: RDashDatabase,\n  operations: WorkspaceOperation[],\n): WorkspaceOperation[] {\n  const contractorOperation = operations.find((operation) => operation.collection === "master.contractors");\n  if (!contractorOperation) return operations;\n\n  const candidate = applyWorkspaceOperations(current, operations);\n  let contractorRates = candidate.master.contractorRates || [];\n  const touchedIds = new Set<string>();\n  for (const row of contractorOperation.upsert || []) {\n    const id = String(row.id || "").trim();\n    if (id) touchedIds.add(id);\n  }\n  for (const id of contractorOperation.deleteIds || []) {\n    if (id) touchedIds.add(id);\n  }\n\n  for (const contractorId of touchedIds) {\n    const contractor = candidate.master.contractors.find((row) => row.id === contractorId);\n    if (!contractor) {\n      contractorRates = contractorRates.filter((rate) => rate.contractor_id !== contractorId);\n      continue;\n    }\n    contractorRates = contractorRateProjection(\n      { master: { ...candidate.master, contractorRates } },\n      contractor,\n    );\n  }\n\n  const canonical: RDashDatabase = {\n    ...candidate,\n    master: { ...candidate.master, contractorRates },\n  };\n  return diffWorkspaceOperations(current, canonical);\n}\n\n`;
-  authorizedCommit = authorizedCommit.replace(functionAnchor, `${helper}${functionAnchor}`);
+  authorizedCommit = authorizedCommit.replace(auditAnchor, `${helper}${auditAnchor}`);
+}
+const initialOps = "  let commitOperations = operations;\n";
+const sanitizedOps = "  let commitOperations = sanitizeWorkspaceOperations(operations);\n";
+if (!authorizedCommit.includes(sanitizedOps)) {
+  if (!authorizedCommit.includes(initialOps)) throw new Error("Could not find authorized-commit operation initialization.");
+  authorizedCommit = authorizedCommit.replace(initialOps, sanitizedOps);
 }
 const vendorCall = "    commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);\n";
 const contractorCall = "    commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);\n";
