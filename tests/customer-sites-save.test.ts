@@ -71,6 +71,24 @@ describe("canonical customer and Sites save", () => {
     expect(result.customerCreated).toBe(true);
   });
 
+  test("creates a customer without a Site", () => {
+    const db = database();
+    db.customers = [];
+    db.sites = [];
+    const result = applyCustomerWithSitesSave(db, {
+      customer: {
+        name: "Customer Without Site",
+        phone: "9123456789",
+        customer_segments: ["service_customer"],
+        status: "active",
+      },
+      sites: [],
+    }, options);
+    expect(result.customerId).toBe("cust-created");
+    expect(result.siteIds).toEqual([]);
+    expect(result.db.sites).toEqual([]);
+  });
+
   test("updates only changed customer and Site values", () => {
     const db = database();
     const result = applyCustomerWithSitesSave(db, {
@@ -120,6 +138,38 @@ describe("canonical customer and Sites save", () => {
     }, options);
     expect(result.db.sites.map((site) => site.id).sort()).toEqual(["site-1", "site-2"]);
     expect(result.siteChanges[0].kind).toBe("create");
+  });
+
+  test("archives an existing Site with a required reason", () => {
+    const db = database();
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{
+        ...db.sites[0],
+        is_archived: true,
+        archived_at: options.now,
+        archived_by: "Owner",
+        archive_reason: "Duplicate property record",
+        stage: "cancelled",
+      }],
+    }, options);
+    expect(result.siteChanges).toHaveLength(1);
+    expect(result.siteChanges[0].kind).toBe("update");
+    expect(result.siteChanges[0].archived).toBe(true);
+    expect(result.db.sites[0].is_archived).toBe(true);
+    expect(result.db.sites[0].archive_reason).toBe("Duplicate property record");
+    expect(result.db.sites[0].archived_by).toBe("Owner");
+    expect(result.db.sites[0].stage).toBe("cancelled");
+  });
+
+  test("rejects archiving a Site without a reason", () => {
+    const db = database();
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0], is_archived: true, archive_reason: "" }],
+    }, options)).toThrow(/archive reason/i);
   });
 
   test("detaches an existing Site photo in the same transformation", () => {
