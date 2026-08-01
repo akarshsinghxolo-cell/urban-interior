@@ -23,6 +23,14 @@ function db() {
         { id: "sub-paint", category_id: "cat-paint", name: "Interior Painting" },
         { id: "sub-wood", category_id: "cat-wood", name: "Wardrobes" },
       ],
+      articles: [
+        { id: "art-1", name: "Primer" },
+        { id: "art-2", name: "Premium Paint" },
+      ],
+      subcategoryArticleMap: [
+        { id: "scope-1", work_required_id: "sub-paint", article_id: "art-1", unit_id: "sqft" },
+        { id: "scope-2", work_required_id: "sub-paint", article_id: "art-2", unit_id: "sqft" },
+      ],
       sourcePartners: [{ id: "sp-1", name: "Architect One", type: "Architect" }],
     },
   } as any;
@@ -45,6 +53,10 @@ describe("canonical contractor profile", () => {
             labour_rate: 25,
             with_material_rate: 80,
             article_ids: ["art-1", "art-1"],
+            article_rates: [
+              { article_id: "art-1", labour_rate: 30, with_material_rate: 95 },
+              { article_id: "art-1", labour_rate: 35, with_material_rate: 100 },
+            ],
           },
         ],
       },
@@ -59,6 +71,9 @@ describe("canonical contractor profile", () => {
     expect(normalized.source_partner_name).toBe("Architect One");
     expect(normalized.categories).toEqual(["Painting"]);
     expect(normalized.work_capabilities?.[0].article_ids).toEqual(["art-1"]);
+    expect(normalized.work_capabilities?.[0].article_rates).toEqual([
+      { article_id: "art-1", labour_rate: 35, with_material_rate: 100 },
+    ]);
     expect(normalized.capabilities_v2?.[0].work_subcategory_id).toBe("sub-paint");
   });
 
@@ -121,6 +136,69 @@ describe("canonical contractor profile", () => {
       with_material_rate: 110,
       rate: 40,
     });
+  });
+
+  test("material rate fallback does not overwrite the subcategory default", () => {
+    const state = db();
+    state.master.contractorRates = [
+      {
+        id: "rate-default",
+        contractor_id: "con-1",
+        trade: "Interior Painting",
+        rate: 30,
+        work_subcategory_id: "sub-paint",
+        labour_rate: 30,
+        with_material_rate: 80,
+      },
+      {
+        id: "rate-material",
+        contractor_id: "con-1",
+        trade: "Interior Painting · Primer",
+        rate: 45,
+        work_subcategory_id: "sub-paint",
+        article_id: "art-1",
+        article_name: "Primer",
+        labour_rate: 45,
+        with_material_rate: 120,
+      },
+    ];
+
+    const capability = canonicalContractorCapabilities({ id: "con-1" }, state)[0];
+    expect(capability.labour_rate).toBe(30);
+    expect(capability.with_material_rate).toBe(80);
+    expect(capability.article_rates).toEqual([{
+      article_id: "art-1",
+      article_name: "Primer",
+      labour_rate: 45,
+      with_material_rate: 120,
+    }]);
+  });
+
+  test("material-specific rates project as separate contractor rate rows", () => {
+    const state = db();
+    const rates = contractorRateProjection(state, {
+      id: "con-1",
+      name: "Mr Das",
+      work_capabilities: [{
+        subcategory_id: "sub-paint",
+        subcategory_name: "Interior Painting",
+        article_ids: ["art-1", "art-2"],
+        article_rates: [
+          { article_id: "art-1", labour_rate: 30, with_material_rate: 90 },
+          { article_id: "art-2", labour_rate: 45, with_material_rate: 140 },
+        ],
+      }],
+    });
+
+    expect(rates).toHaveLength(2);
+    expect(rates.map((rate) => ({
+      article_id: rate.article_id,
+      labour_rate: rate.labour_rate,
+      with_material_rate: rate.with_material_rate,
+    }))).toEqual([
+      { article_id: "art-1", labour_rate: 30, with_material_rate: 90 },
+      { article_id: "art-2", labour_rate: 45, with_material_rate: 140 },
+    ]);
   });
 });
 

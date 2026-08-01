@@ -47,6 +47,7 @@ import {
   vendorNotesWithoutLegacyArticles,
 } from "@/lib/rdash/partner-form-consistency";
 import { FilePreview } from "./FilePreview";
+import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
 export type EntityType = "vendor" | "contractor";
 
@@ -856,9 +857,11 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
                               </div>
                             ) : null;
                           })}
+                        <AddWorkSubcategoryAction categoryId={category.id} />
                       </div>
                     </details>
                   ))}
+                  <AddWorkCategoryAction className="mt-2" />
                 </div>
               </>
             ) : (

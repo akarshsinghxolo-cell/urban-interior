@@ -13,12 +13,20 @@ export type ContractorCapability = {
   labour_rate?: number;
   with_material_rate?: number;
   article_ids?: string[];
+  article_rates?: ContractorArticleRate[];
   unit_id?: string;
   crew_required?: number;
   max_daily_capacity?: number;
   preferred?: boolean;
   status?: "active" | "inactive";
   notes?: string;
+};
+
+export type ContractorArticleRate = {
+  article_id: string;
+  article_name?: string;
+  labour_rate?: number;
+  with_material_rate?: number;
 };
 
 export type ContractorProfileRecord = {
@@ -97,14 +105,29 @@ const finiteNonNegative = (value: unknown): number | undefined => {
 function normalizeCapability(row: Record<string, unknown>): ContractorCapability | null {
   const subcategoryId = String(row.subcategory_id || row.work_subcategory_id || "").trim();
   if (!subcategoryId) return null;
+  const articleIds = Array.isArray(row.article_ids)
+    ? Array.from(new Set(row.article_ids.map(String).filter(Boolean)))
+    : [];
+  const articleRatesById = new Map<string, ContractorArticleRate>();
+  if (Array.isArray(row.article_rates)) {
+    for (const source of row.article_rates as Array<Record<string, unknown>>) {
+      const articleId = String(source.article_id || "").trim();
+      if (!articleId) continue;
+      articleRatesById.set(articleId, {
+        article_id: articleId,
+        article_name: String(source.article_name || "").trim() || undefined,
+        labour_rate: finiteNonNegative(source.labour_rate),
+        with_material_rate: finiteNonNegative(source.with_material_rate),
+      });
+    }
+  }
   return {
     subcategory_id: subcategoryId,
     subcategory_name: String(row.subcategory_name || row.work_subcategory_name || "").trim() || undefined,
     labour_rate: finiteNonNegative(row.labour_rate),
     with_material_rate: finiteNonNegative(row.with_material_rate),
-    article_ids: Array.isArray(row.article_ids)
-      ? Array.from(new Set(row.article_ids.map(String).filter(Boolean)))
-      : [],
+    article_ids: articleIds,
+    article_rates: Array.from(articleRatesById.values()).filter((rate) => articleIds.includes(rate.article_id)),
     unit_id: String(row.unit_id || "").trim() || undefined,
     crew_required: finiteNonNegative(row.crew_required),
     max_daily_capacity: finiteNonNegative(row.max_daily_capacity),
@@ -129,9 +152,16 @@ export function canonicalContractorCapabilities(
       .map((rate) => ({
         subcategory_id: rate.work_subcategory_id,
         subcategory_name: rate.work_subcategory_name || rate.trade,
-        labour_rate: rate.labour_rate ?? rate.rate,
-        with_material_rate: rate.with_material_rate,
+        labour_rate: rate.article_id ? undefined : rate.labour_rate ?? rate.rate,
+        with_material_rate: rate.article_id ? undefined : rate.with_material_rate,
         unit_id: rate.unit_id,
+        article_ids: rate.article_id ? [rate.article_id] : [],
+        article_rates: rate.article_id ? [{
+          article_id: rate.article_id,
+          article_name: rate.article_name,
+          labour_rate: rate.labour_rate ?? rate.rate,
+          with_material_rate: rate.with_material_rate,
+        }] : [],
       }));
   }
 
@@ -139,15 +169,23 @@ export function canonicalContractorCapabilities(
   for (const source of rows) {
     const normalized = normalizeCapability(source);
     if (!normalized) continue;
+    const previous = bySubcategory.get(normalized.subcategory_id);
+    const articleRatesById = new Map<string, ContractorArticleRate>();
+    for (const rate of [...(previous?.article_rates || []), ...(normalized.article_rates || [])]) {
+      articleRatesById.set(rate.article_id, { ...articleRatesById.get(rate.article_id), ...rate });
+    }
     bySubcategory.set(normalized.subcategory_id, {
-      ...bySubcategory.get(normalized.subcategory_id),
+      ...previous,
       ...normalized,
+      labour_rate: normalized.labour_rate ?? previous?.labour_rate,
+      with_material_rate: normalized.with_material_rate ?? previous?.with_material_rate,
       article_ids: Array.from(
         new Set([
           ...(bySubcategory.get(normalized.subcategory_id)?.article_ids || []),
           ...(normalized.article_ids || []),
         ]),
       ),
+      article_rates: Array.from(articleRatesById.values()),
     });
   }
   return Array.from(bySubcategory.values());
@@ -164,6 +202,8 @@ export function contractorGovernanceCapabilityProjection(
     unit_id: capability.unit_id,
     labour_rate: capability.labour_rate,
     with_material_rate: capability.with_material_rate,
+    article_ids: capability.article_ids,
+    article_rates: capability.article_rates,
     crew_required: capability.crew_required,
     max_daily_capacity: capability.max_daily_capacity,
     preferred: capability.preferred,
@@ -199,13 +239,14 @@ export function contractorRateProjection(
   );
   const otherContractors = existing.filter((rate) => rate.contractor_id !== contractor.id);
   const capabilities = canonicalContractorCapabilities(contractor, db);
-  const projected = capabilities.map((capability) => {
+  const projected = capabilities.flatMap((capability) => {
     const previous = existing.find(
       (rate) =>
         rate.contractor_id === contractor.id &&
-        rate.work_subcategory_id === capability.subcategory_id,
+        rate.work_subcategory_id === capability.subcategory_id &&
+        !rate.article_id,
     );
-    return {
+    const defaultRow = {
       id: previous?.id || `crate-${contractor.id}-${capability.subcategory_id}`,
       contractor_id: contractor.id!,
       trade: capability.subcategory_name || previous?.trade || "Contractor rate",
@@ -216,6 +257,34 @@ export function contractorRateProjection(
       labour_rate: capability.labour_rate,
       with_material_rate: capability.with_material_rate,
     };
+    const materialRows = (capability.article_rates || []).map((articleRate) => {
+      const article = (db.master.articles || []).find((row) => row.id === articleRate.article_id);
+      const scopedMaterial = (db.master.subcategoryArticleMap || []).find(
+        (row) => row.work_required_id === capability.subcategory_id && row.article_id === articleRate.article_id,
+      );
+      const priorMaterial = existing.find(
+        (rate) =>
+          rate.contractor_id === contractor.id &&
+          rate.work_subcategory_id === capability.subcategory_id &&
+          rate.article_id === articleRate.article_id,
+      );
+      return {
+        id: priorMaterial?.id || `crate-${contractor.id}-${capability.subcategory_id}-${articleRate.article_id}`,
+        contractor_id: contractor.id!,
+        trade: `${capability.subcategory_name || previous?.trade || "Contractor rate"} · ${articleRate.article_name || article?.name || "Material"}`,
+        rate: articleRate.labour_rate ?? articleRate.with_material_rate ?? 0,
+        unit_id: scopedMaterial?.unit_id || capability.unit_id || priorMaterial?.unit_id,
+        work_subcategory_id: capability.subcategory_id,
+        work_subcategory_name: capability.subcategory_name || previous?.work_subcategory_name,
+        article_id: articleRate.article_id,
+        article_name: articleRate.article_name || article?.name,
+        work_required_article_id: scopedMaterial?.id,
+        labour_rate: articleRate.labour_rate,
+        with_material_rate: articleRate.with_material_rate,
+      };
+    });
+    const hasDefaultRate = capability.labour_rate !== undefined || capability.with_material_rate !== undefined;
+    return hasDefaultRate || !materialRows.length ? [defaultRow, ...materialRows] : materialRows;
   });
   return [...projected, ...legacyUnmapped, ...otherContractors];
 }
@@ -282,7 +351,12 @@ export function contractorProfileValidationError(
     }
   }
   for (const capability of candidate.work_capabilities || []) {
-    for (const value of [capability.labour_rate, capability.with_material_rate]) {
+    const rateValues = [
+      capability.labour_rate,
+      capability.with_material_rate,
+      ...(capability.article_rates || []).flatMap((rate) => [rate.labour_rate, rate.with_material_rate]),
+    ];
+    for (const value of rateValues) {
       if (value !== undefined && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
         return "Contractor rates must be valid non-negative numbers.";
       }

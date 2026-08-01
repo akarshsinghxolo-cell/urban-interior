@@ -1647,6 +1647,12 @@ export interface Contractor {
         labour_rate?: number;
         with_material_rate?: number;
         article_ids?: ID[];
+        article_rates?: Array<{
+            article_id: ID;
+            article_name?: string;
+            labour_rate?: number;
+            with_material_rate?: number;
+        }>;
         unit_id?: ID;
         crew_required?: number;
         max_daily_capacity?: number;
@@ -1662,6 +1668,13 @@ export interface Contractor {
         unit_id?: ID;
         labour_rate?: number;
         with_material_rate?: number;
+        article_ids?: ID[];
+        article_rates?: Array<{
+            article_id: ID;
+            article_name?: string;
+            labour_rate?: number;
+            with_material_rate?: number;
+        }>;
         crew_required?: number;
         max_daily_capacity?: number;
         preferred?: boolean;
@@ -1849,6 +1862,9 @@ export interface ContractorRate {
     work_subcategory_name?: string;
     labour_rate?: number;
     with_material_rate?: number;
+    article_id?: ID;
+    article_name?: string;
+    work_required_article_id?: ID;
 }
 export type FileAssetKind = "document" | "media" | "catalogue" | "drawing" | "site_proof" | "other";
 export type FileAssetStorageMode = "managed" | "external_reference";

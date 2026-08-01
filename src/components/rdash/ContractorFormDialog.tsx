@@ -48,6 +48,7 @@ import {
   type ContractorProfileRecord,
 } from "@/lib/rdash/contractor-profile";
 import { FilePreview } from "./FilePreview";
+import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
 export type ContractorFormDialogProps = {
   open: boolean;
@@ -69,6 +70,7 @@ type CapabilityDraft = {
   labour_rate: string;
   with_material_rate: string;
   article_ids: string[];
+  article_rates: Record<string, { labour_rate: string; with_material_rate: string }>;
 };
 
 type Draft = {
@@ -196,6 +198,13 @@ function capabilitiesToDraft(capabilities: ContractorCapability[]): CapabilityDr
     labour_rate: row.labour_rate == null ? "" : String(row.labour_rate),
     with_material_rate: row.with_material_rate == null ? "" : String(row.with_material_rate),
     article_ids: row.article_ids || [],
+    article_rates: Object.fromEntries((row.article_rates || []).map((rate) => [
+      rate.article_id,
+      {
+        labour_rate: rate.labour_rate == null ? "" : String(rate.labour_rate),
+        with_material_rate: rate.with_material_rate == null ? "" : String(rate.with_material_rate),
+      },
+    ])),
   }));
 }
 
@@ -285,6 +294,16 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
         labour_rate: row.labour_rate ? Number(row.labour_rate) : undefined,
         with_material_rate: row.with_material_rate ? Number(row.with_material_rate) : undefined,
         article_ids: [...row.article_ids],
+        article_rates: row.article_ids.flatMap((articleId) => {
+          const rate = row.article_rates[articleId];
+          if (!rate || (!rate.labour_rate && !rate.with_material_rate)) return [];
+          return [{
+            article_id: articleId,
+            article_name: allArticles.find((article) => article.id === articleId)?.name,
+            labour_rate: rate.labour_rate ? Number(rate.labour_rate) : undefined,
+            with_material_rate: rate.with_material_rate ? Number(rate.with_material_rate) : undefined,
+          }];
+        }),
       })),
       supervisor_name: draft.supervisorName,
       supervisor_phone: draft.supervisorPhone,
@@ -300,6 +319,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     };
     return normalizeContractorForWrite(raw, db, { id: raw.id });
   }, [
+    allArticles,
     businessCard,
     capabilities,
     contractorPhoto,
@@ -563,6 +583,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
             labour_rate: "",
             with_material_rate: "",
             article_ids: [],
+            article_rates: {},
           }],
     );
     setDuplicateAcknowledged(false);
@@ -572,6 +593,41 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setCapabilities((values) =>
       values.map((value) => value.subcategory_id === subcategoryId ? { ...value, ...patch } : value),
     );
+
+  const toggleCapabilityArticle = (subcategoryId: string, articleId: string) =>
+    setCapabilities((values) => values.map((value) => {
+      if (value.subcategory_id !== subcategoryId) return value;
+      const selected = value.article_ids.includes(articleId);
+      if (!selected) return { ...value, article_ids: [...value.article_ids, articleId] };
+      const nextRates = { ...value.article_rates };
+      delete nextRates[articleId];
+      return {
+        ...value,
+        article_ids: value.article_ids.filter((id) => id !== articleId),
+        article_rates: nextRates,
+      };
+    }));
+
+  const updateCapabilityArticleRate = (
+    subcategoryId: string,
+    articleId: string,
+    field: "labour_rate" | "with_material_rate",
+    value: string,
+  ) => setCapabilities((values) => values.map((capability) =>
+    capability.subcategory_id === subcategoryId
+      ? {
+          ...capability,
+          article_rates: {
+            ...capability.article_rates,
+            [articleId]: {
+              labour_rate: capability.article_rates[articleId]?.labour_rate || "",
+              with_material_rate: capability.article_rates[articleId]?.with_material_rate || "",
+              [field]: value,
+            },
+          },
+        }
+      : capability,
+  ));
 
   const articlesForSubcategory = (subcategoryId: string) =>
     articleMap
@@ -734,34 +790,49 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                         )}
                       >{subcategory.name}</button>
                     ))}
+                    <div className="w-full">
+                      <AddWorkSubcategoryAction categoryId={category.id} />
+                    </div>
                   </div>
                 </details>
               ))}
+              <AddWorkCategoryAction className="mt-2" />
               <div className="mt-2 space-y-2">
                 {capabilities.map((capability) => {
                   const articles = articlesForSubcategory(capability.subcategory_id);
                   return (
-                    <div key={capability.subcategory_id} className="rounded border p-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="min-w-36 flex-1 text-xs font-medium">{capability.subcategory_name}</span>
-                        <Input type="number" min={0} value={capability.labour_rate} onChange={(event) => updateCapability(capability.subcategory_id, { labour_rate: event.target.value })} placeholder="Labour ₹" className="h-8 w-28" />
-                        <Input type="number" min={0} value={capability.with_material_rate} onChange={(event) => updateCapability(capability.subcategory_id, { with_material_rate: event.target.value })} placeholder="With material ₹" className="h-8 w-36" />
-                        <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="text-destructive"><X className="h-4 w-4" /></button>
+                    <div key={capability.subcategory_id} className="rounded border p-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-xs font-semibold">{capability.subcategory_name}</span>
+                        <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="shrink-0 text-destructive"><X className="h-4 w-4" /></button>
+                      </div>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
+                          Default labour rate
+                          <Input type="number" min={0} value={capability.labour_rate} onChange={(event) => updateCapability(capability.subcategory_id, { labour_rate: event.target.value })} placeholder="₹ 0" className="h-8 text-xs" />
+                        </label>
+                        <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
+                          Default with material
+                          <Input type="number" min={0} value={capability.with_material_rate} onChange={(event) => updateCapability(capability.subcategory_id, { with_material_rate: event.target.value })} placeholder="₹ 0" className="h-8 text-xs" />
+                        </label>
                       </div>
                       {articles.length ? (
-                        <div className="mt-2 flex flex-wrap gap-1">
+                        <div className="mt-2 overflow-hidden rounded-md border">
+                          <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_6.5rem] gap-1.5 bg-muted/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            <span>Material</span><span>Labour ₹</span><span>With material ₹</span>
+                          </div>
                           {articles.map((article) => {
                             const selected = capability.article_ids.includes(article!.id);
+                            const rate = capability.article_rates[article!.id];
                             return (
-                              <button
-                                key={article!.id}
-                                type="button"
-                                aria-pressed={selected}
-                                onClick={() => updateCapability(capability.subcategory_id, {
-                                  article_ids: selected ? capability.article_ids.filter((id) => id !== article!.id) : [...capability.article_ids, article!.id],
-                                })}
-                                className={cn("rounded border px-1.5 py-0.5 text-[10px]", selected && "border-primary bg-primary text-primary-foreground")}
-                              >{article!.name}</button>
+                              <div key={article!.id} className="grid grid-cols-[minmax(0,1fr)_5.5rem_6.5rem] items-center gap-1.5 border-t px-2 py-1.5 first:border-t-0">
+                                <label className="flex min-w-0 items-center gap-1.5 text-[10px]">
+                                  <input type="checkbox" checked={selected} onChange={() => toggleCapabilityArticle(capability.subcategory_id, article!.id)} className="h-3.5 w-3.5 shrink-0 accent-primary" />
+                                  <span className="truncate" title={article!.name}>{article!.name}</span>
+                                </label>
+                                <Input type="number" min={0} disabled={!selected} value={rate?.labour_rate || ""} onChange={(event) => updateCapabilityArticleRate(capability.subcategory_id, article!.id, "labour_rate", event.target.value)} placeholder="Default" aria-label={`${article!.name} labour rate`} className="h-7 px-1.5 text-[10px]" />
+                                <Input type="number" min={0} disabled={!selected} value={rate?.with_material_rate || ""} onChange={(event) => updateCapabilityArticleRate(capability.subcategory_id, article!.id, "with_material_rate", event.target.value)} placeholder="Default" aria-label={`${article!.name} with material rate`} className="h-7 px-1.5 text-[10px]" />
+                              </div>
                             );
                           })}
                         </div>
