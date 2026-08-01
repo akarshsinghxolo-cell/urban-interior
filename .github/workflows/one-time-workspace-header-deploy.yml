@@ -1,0 +1,31 @@
+name: One-time workspace header production deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/one-time-workspace-header-deploy.yml
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERCEL_ORG_ID: team_ruGxpkMnpHt7EwtHJrj8VRIz
+      VERCEL_PROJECT_ID: prj_5j1k1qwBvnsRdOsLQVSBmGgRWwEG
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: Pull production project settings
+        run: npx --yes vercel@58.4.4 pull --yes --environment=production --token="$VERCEL_TOKEN"
+      - name: Build production artifact
+        run: npx --yes vercel@58.4.4 build --prod --token="$VERCEL_TOKEN"
+      - name: Deploy production artifact
+        run: npx --yes vercel@58.4.4 deploy --prebuilt --prod --token="$VERCEL_TOKEN"
