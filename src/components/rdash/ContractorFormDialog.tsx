@@ -218,7 +218,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [referralQuery, setReferralQuery] = React.useState("");
   const [referralId, setReferralId] = React.useState<string>();
   const [referralOpen, setReferralOpen] = React.useState(false);
-  const legacyReferralRef = React.useRef("");
+  const [legacyReferral, setLegacyReferral] = React.useState("");
+  const [baselineStatus, setBaselineStatus] = React.useState<string | undefined>();
   const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
   const [businessCard, setBusinessCard] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
@@ -363,7 +364,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     );
     setReferralId(normalized.source_partner_id as string | undefined);
     setReferralQuery(String(normalized.source_partner_name || ""));
-    legacyReferralRef.current = normalized.source_partner_id ? "" : String(normalized.source_partner_name || "");
+    setLegacyReferral(normalized.source_partner_id ? "" : String(normalized.source_partner_name || ""));
+    setBaselineStatus(String(normalized.status || "onboarding"));
     setReferralOpen(false);
     setDuplicateAcknowledged(false);
     baselineRef.current = normalized;
@@ -378,17 +380,17 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   try {
     currentPayload = buildPayload();
   } catch (error) {
-    currentPayload = contractorFormProjection(baselineRef.current);
+    currentPayload = { name: draft.name, status: draft.status, work_capabilities: [] };
     normalizationError = error instanceof Error ? error.message : "Contractor data is invalid.";
   }
 
   const dirty = open && fingerprint(currentPayload, coordinates) !== baselineKey;
-  const referralError = referralQuery.trim() && !referralId && referralQuery.trim() !== legacyReferralRef.current
+  const referralError = referralQuery.trim() && !referralId && referralQuery.trim() !== legacyReferral
     ? "Choose an existing Source Partner from the referral search results."
     : null;
   const formatError = contractorProfileValidationError(currentPayload, {
     isCreate: !isEdit,
-    activating: isEdit && baselineRef.current.status !== "active" && currentPayload.status === "active",
+    activating: isEdit && baselineStatus !== "active" && currentPayload.status === "active",
   });
   const coordinateError = coordinateInputError(coordinates);
   const duplicateConflicts = contractorDuplicateConflicts(db, currentPayload, editId);
