@@ -22,6 +22,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      - name: Check out Supabase convergence branch head
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
       - name: Check out Vendor cleanup branch head
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         uses: actions/checkout@v5
@@ -42,6 +48,9 @@ jobs:
           rm .github/workflows/vendor-module-cleanup-runner.yml
       - name: Install dependencies
         run: bun install --frozen-lockfile
+      - name: Apply Contractor form lint fix
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
+        run: python scripts/patch-contractor-form-lint.py
       - name: Test Vendor module cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: bun run test:vendor-module
@@ -106,16 +115,21 @@ jobs:
       - name: Test field staff UI visibility
         run: bun test tests/field-staff-visibility.test.ts
       - name: Lint application
-        run: bun run lint 2>&1 | tee supabase-convergence-lint.txt
-      - name: Upload lint diagnostic
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: supabase-convergence-lint
-          path: supabase-convergence-lint.txt
-          if-no-files-found: error
+        run: bun run lint
       - name: Build application
         run: bun run build
+      - name: Commit verified Contractor form lint fix
+        if: success() && github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/rdash/ContractorFormDialog.tsx
+          if git diff --cached --quiet; then
+            echo "Contractor form lint fix is already committed."
+            exit 0
+          fi
+          git commit -m "Fix Contractor form hydration lint"
+          git push origin HEAD:agent/supabase-data-convergence
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |
