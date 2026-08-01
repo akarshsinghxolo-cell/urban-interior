@@ -234,7 +234,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
   const [duplicateAcknowledged, setDuplicateAcknowledged] = React.useState(false);
   const [baselineKey, setBaselineKey] = React.useState("");
-  const baselineRef = React.useRef<ContractorProfileRecord>({});
+  const [baselineProfile, setBaselineProfile] = React.useState<ContractorProfileRecord>({});
   const baselineCoordinateRef = React.useRef("");
   const disposedRef = React.useRef(false);
 
@@ -319,11 +319,12 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       // Preserve documents added from Governance while the canonical profile
       // helper synchronizes form-entered PAN, bank, labour, insurance, PF and
       // ESI details into unverified document-register rows.
-      compliance_documents: baselineRef.current.compliance_documents,
+      compliance_documents: baselineProfile.compliance_documents,
     };
     return normalizeContractorForWrite(raw, db, { id: raw.id });
   }, [
     allArticles,
+    baselineProfile,
     businessCard,
     capabilities,
     contractorPhoto,
@@ -392,7 +393,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setBaselineStatus(String(normalized.status || "onboarding"));
     setReferralOpen(false);
     setDuplicateAcknowledged(false);
-    baselineRef.current = normalized;
+    setBaselineProfile(normalized);
     baselineCoordinateRef.current = nextCoordinates;
     setBaselineKey(fingerprint(normalized, nextCoordinates));
     // Database dependencies are intentionally omitted so background sync does not reset an in-progress form.
@@ -435,7 +436,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   async function discard(): Promise<boolean> {
     const pending = [contractorPhoto, businessCard].filter(isPending);
     await Promise.all(pending.map((value) => cancelQueuedWorkflowFile(value)));
-    const baseline = baselineRef.current;
+    const baseline = baselineProfile;
     setDraft(draftFromRecord(baseline));
     setLatitude(baseline.latitude as number | undefined);
     setLongitude(baseline.longitude as number | undefined);
@@ -462,7 +463,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       else id = addContractor({ ...(currentPayload as any), id: reservedId });
       await awaitServerSync();
       commitBatches();
-      baselineRef.current = currentPayload;
+      setBaselineProfile(currentPayload);
       baselineCoordinateRef.current = coordinates;
       setBaselineKey(fingerprint(currentPayload, coordinates));
       dirtyFormRegistry.markClean(formId);
