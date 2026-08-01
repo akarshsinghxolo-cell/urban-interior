@@ -41,8 +41,7 @@ begin
     if to_regprocedure('public.commit_workspace_operations(text,integer,jsonb,jsonb)') is null then
       raise exception using errcode = 'P0002', message = 'COMMIT_WORKSPACE_OPERATIONS_NOT_FOUND';
     end if;
-    alter function public.commit_workspace_operations(text, integer, jsonb, jsonb)
-      rename to commit_workspace_operations_internal;
+    execute 'alter function public.commit_workspace_operations(text, integer, jsonb, jsonb) rename to commit_workspace_operations_internal';
   end if;
 end;
 $guard$;
@@ -55,7 +54,7 @@ create or replace function public.commit_workspace_operations(
 )
 returns jsonb
 language plpgsql
-security invoker
+security definer
 set search_path = public, pg_temp
 as $function$
 declare
@@ -93,19 +92,19 @@ begin
 end;
 $function$;
 
+-- The internal implementation is deliberately not executable by the app role.
+-- Only the validating SECURITY DEFINER wrapper above is part of the API surface.
 revoke all on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb)
-  from public, anon, authenticated;
+  from public, anon, authenticated, service_role;
 revoke all on function public.commit_workspace_operations(text, integer, jsonb, jsonb)
   from public, anon, authenticated;
 grant execute on function public.commit_workspace_operations(text, integer, jsonb, jsonb)
   to service_role;
-grant execute on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb)
-  to service_role;
 
 comment on function public.commit_workspace_operations(text, integer, jsonb, jsonb) is
-  'Canonical workspace commit entrypoint. Validates collection-to-entity-table routing before delegating to the atomic internal implementation.';
+  'Canonical workspace commit entrypoint. Validates collection-to-entity-table routing before delegating to the sealed atomic implementation.';
 comment on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb) is
-  'Internal atomic workspace implementation. Call through commit_workspace_operations so collection/table routing is validated.';
+  'Sealed internal atomic workspace implementation. Not executable by application roles; use commit_workspace_operations.';
 
 -- ---------------------------------------------------------------------------
 -- 3. Make auth-driven Staff master writes participate in the workspace journal.
