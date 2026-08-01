@@ -83,6 +83,11 @@ begin
     end if;
   end loop;
 
+  -- Transaction-local provenance lets table triggers distinguish a normal
+  -- workspace commit from an auth-system mirror write even when updated_by on
+  -- the existing row still contains an older source value.
+  perform set_config('uc.write_source', 'workspace-commit', true);
+
   return public.commit_workspace_operations_internal(
     p_workspace_id,
     p_expected_workspace_revision,
@@ -102,7 +107,7 @@ grant execute on function public.commit_workspace_operations(text, integer, json
   to service_role;
 
 comment on function public.commit_workspace_operations(text, integer, jsonb, jsonb) is
-  'Canonical workspace commit entrypoint. Validates collection-to-entity-table routing before delegating to the sealed atomic implementation.';
+  'Canonical workspace commit entrypoint. Validates collection-to-entity-table routing and marks workspace-origin writes before delegating to the sealed atomic implementation.';
 comment on function public.commit_workspace_operations_internal(text, integer, jsonb, jsonb) is
   'Sealed internal atomic workspace implementation. Not executable by application roles; use commit_workspace_operations.';
 
@@ -125,6 +130,13 @@ declare
   v_current_revision integer;
   v_next_revision integer;
 begin
+  -- Normal workspace commits already write their own atomic journal batch. The
+  -- transaction-local source marker is authoritative; updated_by may contain a
+  -- historical auth-system value because ordinary entity updates preserve it.
+  if current_setting('uc.write_source', true) = 'workspace-commit' then
+    return new;
+  end if;
+
   if new.updated_by is distinct from 'auth-system' then
     return new;
   end if;
