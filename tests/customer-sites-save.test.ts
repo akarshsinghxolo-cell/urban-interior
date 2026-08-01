@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { applyCustomerWithSitesSave } from "../src/lib/rdash/customer-sites-save";
 import type { RDashDatabase } from "../src/lib/rdash/types";
+import { defaultSiteName, newSiteDraft, siteNameFollowsCustomer } from "../src/components/rdash/customer-sites-form-model";
 
 function database(): RDashDatabase {
   const db = structuredClone(buildSeedDatabase());
@@ -48,6 +49,22 @@ const options = {
   now: "2026-07-30T10:00:00.000Z",
   createId: (prefix: "cust" | "site") => `${prefix}-created`,
 };
+
+describe("customer Site form defaults", () => {
+  test("defaults a new Site to the customer name plus Site", () => {
+    expect(defaultSiteName("Mr Das")).toBe("Mr Das Site");
+    expect(defaultSiteName("  Mr Das  ")).toBe("Mr Das Site");
+    expect(newSiteDraft("Mr Das").name).toBe("Mr Das Site");
+    expect(newSiteDraft("").name).toBe("");
+  });
+
+  test("automatic Site names follow customer renames until manually changed", () => {
+    expect(siteNameFollowsCustomer({ existing: false, name: "Mr Das Site" }, "Mr Das")).toBe(true);
+    expect(siteNameFollowsCustomer({ existing: false, name: "" }, "Mr Das")).toBe(true);
+    expect(siteNameFollowsCustomer({ existing: false, name: "Das Residence" }, "Mr Das")).toBe(false);
+    expect(siteNameFollowsCustomer({ existing: true, name: "Mr Das Site" }, "Mr Das")).toBe(false);
+  });
+});
 
 describe("canonical customer and Sites save", () => {
   test("creates a customer and first Site atomically", () => {
