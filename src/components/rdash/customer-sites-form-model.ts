@@ -47,6 +47,7 @@ export type CustomerDraft = {
   interestSubcategoryIds: string[];
   segments: CustomerSegment[];
   referralQuery: string;
+  referralLegacyName: string;
   referralSelected: { id: string; name: string } | null;
 };
 
@@ -91,6 +92,7 @@ export function emptyCustomerDraft(): CustomerDraft {
     interestSubcategoryIds: [],
     segments: ["service_customer"],
     referralQuery: "",
+    referralLegacyName: "",
     referralSelected: null,
   };
 }
@@ -108,6 +110,7 @@ export function draftForCustomer(customer: Customer): CustomerDraft {
     interestSubcategoryIds: customer.interest_work_subcategory_ids || [],
     segments: customer.customer_segments?.length ? customer.customer_segments : ["service_customer"],
     referralQuery: customer.source_partner_name || "",
+    referralLegacyName: customer.source_partner_id ? "" : customer.source_partner_name || "",
     referralSelected: customer.source_partner_id
       ? { id: customer.source_partner_id, name: customer.source_partner_name || "" }
       : null,
@@ -201,7 +204,8 @@ export function customerPayload(draft: CustomerDraft): Partial<Customer> {
     interest_category_ids: draft.interestCategoryIds,
     interest_work_subcategory_ids: draft.interestSubcategoryIds,
     source_partner_id: draft.referralSelected?.id,
-    source_partner_name: draft.referralSelected?.name,
+    source_partner_name: draft.referralSelected?.name
+      || (draft.referralQuery.trim() === draft.referralLegacyName ? draft.referralLegacyName || undefined : undefined),
     notes: draft.notes.trim() || undefined,
   };
 }
