@@ -29,6 +29,7 @@ import {
   vendorBalance,
 } from "@/lib/rdash/store";
 import { formatDate, formatINR, formatINRShort, titleCase } from "@/lib/rdash/format";
+import { contractorRateProjection } from "@/lib/rdash/contractor-profile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -376,7 +377,8 @@ function buildPartnerModel(mode: Partner360Mode, db: any, partner: PartnerRecord
   const bills = (db.contractorBills || []).filter((row: any) => row.contractor_id === partner.id);
   const payments = (db.contractorPayments || []).filter((row: any) => row.contractor_id === partner.id);
   const settlements = (db.contractorSettlements || []).filter((row: any) => row.contractor_id === partner.id);
-  const rates = (db.master.contractorRates || []).filter((row: any) => row.contractor_id === partner.id);
+  const rates = contractorRateProjection(db, partner)
+    .filter((row: any) => row.contractor_id === partner.id);
   const sites = (db.sites || []).filter((row: any) => siteIds.has(row.id));
   const customerIds = new Set(workOrders.map((row: any) => row.customer_id).filter(Boolean));
   const customers = (db.customers || []).filter((row: any) => customerIds.has(row.id));
@@ -517,8 +519,10 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
       <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
         <SectionHeader title={mode === "vendor" ? "Structured Vendor rates" : "Contractor rates"} count={model.rates.length} />
         <div className="mt-3 space-y-2">
-          {model.rates.map((rate: any) => <SmallRecord key={rate.id} title={mode === "vendor" ? rate.article_name || "Article" : rate.work_subcategory_name || rate.trade || "Trade"} subtitle={[rate.brand, rate.grade, rate.unit_id, rate.valid_from && `From ${formatOptionalDate(rate.valid_from)}`].filter(Boolean).join(" · ")} amount={rate.rate ?? rate.labour_rate} onOpen={mode === "vendor" ? () => openDetail("vendorRate", rate.id) : undefined} />)}
-          {!model.rates.length && <EmptyState title="No structured rates" description={mode === "vendor" ? "Add Vendor rates from Vendor Price Matrix or an actual invoice." : "Add Contractor rates from the Contractor Rates master."} />}
+          {mode === "vendor"
+            ? model.rates.map((rate: any) => <SmallRecord key={rate.id} title={rate.article_name || "Article"} subtitle={[rate.brand, rate.grade, rate.unit_id, rate.valid_from && `From ${formatOptionalDate(rate.valid_from)}`].filter(Boolean).join(" · ")} amount={rate.rate ?? rate.labour_rate} onOpen={() => openDetail("vendorRate", rate.id)} />)
+            : model.rates.map((rate: any) => <ContractorRateRecord key={rate.id} rate={rate} />)}
+          {!model.rates.length && <EmptyState title="No structured rates" description={mode === "vendor" ? "Add Vendor rates from Vendor Price Matrix or an actual invoice." : "Add labour and with-material rates while editing this contractor's capabilities."} />}
         </div>
       </section>
 
@@ -546,6 +550,37 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
           <div className="mt-3 space-y-2">{model.bids.slice(0, 8).map((bid: any) => <SmallRecord key={bid.id} title={mode === "vendor" ? `${bid.vendor_name || selected.name} bid` : `${bid.bid_no || bid.id} · ${bid.scope || "Scope"}`} subtitle={mode === "vendor" ? `${bid.lines?.length || 0} lines · ${bid.delivery_days || "—"} days` : `${bid.work_order_no || "Scope bid"} · ${bid.estimated_days || "—"} days`} amount={mode === "vendor" ? bid.quoted_amount : bid.quote_amount} status={bid.status} />)}{!model.bids.length && <p className="py-6 text-center text-xs text-muted-foreground">No bid history.</p>}</div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function ContractorRateRecord({ rate }: { rate: Record<string, any> }) {
+  const labourRate = rate.labour_rate ?? rate.rate;
+  const withMaterialRate = rate.with_material_rate;
+  return (
+    <div className="rounded-xl border border-border bg-muted/10 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold">{rate.work_subcategory_name || rate.trade || "Contractor rate"}</p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            {[rate.article_name || "General rate", rate.unit_id].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+        {rate.article_name && <StatusBadge label="Material-specific" />}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <RateValue label="Labour" value={labourRate != null ? formatINR(labourRate) : "—"} />
+        <RateValue label="With material" value={withMaterialRate != null ? formatINR(withMaterialRate) : "—"} />
+      </div>
+    </div>
+  );
+}
+
+function RateValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background p-2.5">
+      <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-1 text-sm font-bold tabular-nums">{value}</p>
     </div>
   );
 }
