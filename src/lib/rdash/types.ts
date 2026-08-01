@@ -1745,6 +1745,7 @@ export interface Staff {
     name: string;
     phone?: string;
     email?: string;
+    auth_user_id?: string;
     role: string;
     role_key?: StaffRoleKey;
     department?: string;

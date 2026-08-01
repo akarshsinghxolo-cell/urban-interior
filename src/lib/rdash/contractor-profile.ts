@@ -386,7 +386,7 @@ export function contractorRateProjection(
       contractor_id: contractor.id!,
       trade: capability.subcategory_name || previous?.trade || "Contractor rate",
       rate: capability.labour_rate ?? capability.with_material_rate ?? previous?.rate ?? 0,
-      unit_id: capability.unit_id || previous?.unit_id,
+      unit_id: capability.unit_id || db.master.workSubcategories.find((row) => row.id === capability.subcategory_id)?.unit_id || previous?.unit_id,
       work_subcategory_id: capability.subcategory_id,
       work_subcategory_name: capability.subcategory_name || previous?.work_subcategory_name,
       labour_rate: capability.labour_rate,

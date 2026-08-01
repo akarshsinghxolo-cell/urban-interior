@@ -12,6 +12,7 @@
 import { getSupabaseAdminClient } from "../../supabase/server";
 import type { WorkspaceOperation } from "../workspace-operations";
 import type { RDashDatabase, Master } from "../types";
+import { WORK_CATALOG_VERSION } from "../work-category-master";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 const DEFAULT_COLLECTION_LIMITS: Record<string, number> = {
@@ -131,6 +132,7 @@ export type RestWorkspaceSubset = {
 function emptyWorkspaceData(): RDashDatabase {
   const data: Record<string, unknown> = { master: {} };
   const master = data.master as Record<string, unknown>;
+  master.catalog_version = WORK_CATALOG_VERSION;
   for (const collection of Object.keys(COLLECTION_TO_TABLE)) {
     if (collection.startsWith("master.")) {
       master[collection.slice("master.".length)] = [];
