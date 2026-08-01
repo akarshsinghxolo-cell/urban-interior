@@ -10,6 +10,7 @@ describe("Supabase persistence convergence", () => {
 
     expect(migration).toContain("drop function if exists public.commit_operations");
     expect(migration).toContain("drop function if exists public.write_workspace_snapshot");
+    expect(migration).toContain("drop function if exists public.uc_bump_workspace_revision");
     expect(migration).toContain('drop table if exists public."CollectionMeta"');
     expect(migration).not.toContain('drop table if exists public."GenericRecord"');
 
