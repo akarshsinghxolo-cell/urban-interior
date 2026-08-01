@@ -106,7 +106,14 @@ jobs:
       - name: Test field staff UI visibility
         run: bun test tests/field-staff-visibility.test.ts
       - name: Lint application
-        run: bun run lint
+        run: bun run lint 2>&1 | tee supabase-convergence-lint.txt
+      - name: Upload lint diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-convergence-lint
+          path: supabase-convergence-lint.txt
+          if-no-files-found: ignore
       - name: Build application
         run: bun run build 2>&1 | tee supabase-convergence-build.txt
       - name: Upload build diagnostic
