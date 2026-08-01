@@ -106,16 +106,16 @@ jobs:
       - name: Test field staff UI visibility
         run: bun test tests/field-staff-visibility.test.ts
       - name: Lint application
-        run: bun run lint 2>&1 | tee supabase-convergence-lint.txt
-      - name: Upload lint diagnostic
+        run: bun run lint
+      - name: Build application
+        run: bun run build 2>&1 | tee supabase-convergence-build.txt
+      - name: Upload build diagnostic
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: supabase-convergence-lint
-          path: supabase-convergence-lint.txt
+          name: supabase-convergence-build
+          path: supabase-convergence-build.txt
           if-no-files-found: ignore
-      - name: Build application
-        run: bun run build
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |
