@@ -3,6 +3,7 @@ import { buildWorkCategoryCatalog, WORK_CATALOG_VERSION } from "../src/lib/rdash
 
 const migrationPath = "supabase/migrations/20260801153000_persist_work_catalog_master.sql";
 const commitRestPath = "src/lib/rdash/server/commit-rest.ts";
+const typesPath = "src/lib/rdash/types.ts";
 
 function sqlString(value: string) {
   return `'${value.replaceAll("'", "''")}'`;
@@ -49,6 +50,15 @@ if (!commitRest.includes(versionLine)) {
   commitRest = commitRest.replace(masterAnchor, `${masterAnchor}${versionLine}`);
 }
 writeFileSync(commitRestPath, commitRest);
+
+let types = readFileSync(typesPath, "utf8");
+const staffAnchor = `export interface Staff {\n    id: ID;\n    code?: string;\n    name: string;\n    phone?: string;\n    email?: string;\n`;
+const authLinkLine = `    auth_user_id?: string;\n`;
+if (!types.includes(authLinkLine)) {
+  if (!types.includes(staffAnchor)) throw new Error("Could not find Staff type anchor.");
+  types = types.replace(staffAnchor, `${staffAnchor}${authLinkLine}`);
+}
+writeFileSync(typesPath, types);
 
 console.log(JSON.stringify({
   version: WORK_CATALOG_VERSION,
