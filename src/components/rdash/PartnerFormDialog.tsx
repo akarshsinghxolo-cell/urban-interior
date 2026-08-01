@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import {
-  EntityFormDialog as PartnerForm,
+  EntityFormDialog as UnifiedVendorForm,
   type EntityType,
 } from "./UnifiedPartnerFormDialog";
+import { ContractorFormDialog } from "./ContractorFormDialog";
 import { retainPartnerFormStoreBridge } from "@/lib/rdash/partner-form-store-bridge";
 
 export type { EntityType };
@@ -17,9 +18,20 @@ export function EntityFormDialog(props: {
   editId?: string;
 }) {
   React.useEffect(() => {
-    if (!props.open) return;
-    return retainPartnerFormStoreBridge(props.type, props.editId);
+    if (!props.open || props.type !== "vendor") return;
+    return retainPartnerFormStoreBridge("vendor", props.editId);
   }, [props.open, props.type, props.editId]);
 
-  return <PartnerForm {...props} />;
+  if (props.type === "contractor") {
+    return (
+      <ContractorFormDialog
+        open={props.open}
+        onClose={props.onClose}
+        onSaved={props.onSaved}
+        editId={props.editId}
+      />
+    );
+  }
+
+  return <UnifiedVendorForm {...props} />;
 }

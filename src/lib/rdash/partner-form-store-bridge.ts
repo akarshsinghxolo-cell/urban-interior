@@ -1,6 +1,5 @@
 import { useRDashStore } from "./store";
 import {
-  contractorCapabilityRateError,
   fieldChanges,
   vendorLegacyMigrationPatch,
 } from "./partner-form-consistency";
@@ -63,17 +62,8 @@ function detailedAudit(
 
 function install(): () => void {
   const initial = useRDashStore.getState();
-  const originalAddContractor = initial.addContractor;
   const originalUpdateVendor = initial.updateVendor;
   const originalUpdateContractor = initial.updateContractor;
-
-  const addContractor = (input: Record<string, unknown>) => {
-    if (isActiveCreate("contractor")) {
-      const error = contractorCapabilityRateError(input.work_capabilities);
-      if (error) throw new Error(error);
-    }
-    return originalAddContractor(input as never);
-  };
 
   const updateVendor = (id: string, suppliedPatch: Record<string, unknown>) => {
     const suppliedFields = Object.keys(suppliedPatch);
@@ -125,8 +115,6 @@ function install(): () => void {
       | undefined;
     if (!before) return originalUpdateContractor(id, patch as never);
     const after = { ...before, ...patch };
-    const error = contractorCapabilityRateError(after.work_capabilities);
-    if (error) throw new Error(error);
     if (!fieldChanges(before, after).length) return;
     withSuppressedGenericAudit(() =>
       originalUpdateContractor(id, patch as never),
@@ -135,7 +123,6 @@ function install(): () => void {
   };
 
   useRDashStore.setState({
-    addContractor: addContractor as never,
     updateVendor: updateVendor as never,
     updateContractor: updateContractor as never,
   });
@@ -143,10 +130,6 @@ function install(): () => void {
   return () => {
     const current = useRDashStore.getState();
     useRDashStore.setState({
-      addContractor:
-        current.addContractor === addContractor
-          ? originalAddContractor
-          : current.addContractor,
       updateVendor:
         current.updateVendor === updateVendor
           ? originalUpdateVendor

@@ -2,9 +2,12 @@
 
 import type { RDashState } from "./store/types";
 import { fieldStaffPresentationDatabase } from "./field-staff-presentation";
+import { installContractorStorePolicy } from "./contractor-store-policy";
 import { useRDashStore as useUnfilteredRDashStore } from "./raw-store";
 
 export * from "./raw-store";
+
+installContractorStorePolicy(useUnfilteredRDashStore);
 
 type StoreSelector<T> = (state: RDashState) => T;
 

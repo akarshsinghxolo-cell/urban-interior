@@ -1615,7 +1615,11 @@ export interface Vendor {
 export interface Contractor {
     id: ID;
     name: string;
+    legal_name?: string;
     phone?: string;
+    whatsapp?: string;
+    alternate_phone?: string;
+    email?: string;
     city?: string;
     locality?: string;
     address?: string;
@@ -1642,6 +1646,29 @@ export interface Contractor {
         subcategory_name?: string;
         labour_rate?: number;
         with_material_rate?: number;
+        article_ids?: ID[];
+        unit_id?: ID;
+        crew_required?: number;
+        max_daily_capacity?: number;
+        preferred?: boolean;
+        status?: "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
+        notes?: string;
+    }>;
+    /** Compatibility projection for the governance UI. `work_capabilities` is canonical. */
+    capabilities_v2?: Array<{
+        id: ID;
+        work_subcategory_id: ID;
+        work_subcategory_name?: string;
+        unit_id?: ID;
+        labour_rate?: number;
+        with_material_rate?: number;
+        crew_required?: number;
+        max_daily_capacity?: number;
+        preferred?: boolean;
+        status: "active" | "inactive";
+        notes?: string;
+        created_at?: string;
+        updated_at?: string;
     }>;
     // FIX-CONTRACTOR-BATCH2 / F.6: Business / tax / banking fields, previously
     // declared-but-never-populated dead fields. Now captured in the
@@ -1654,6 +1681,37 @@ export interface Contractor {
      * list at create/edit time). Mirrors the customer interest_category_ids
      * pattern but kept as names for human readability on the contractor card. */
     categories?: string[];
+    supervisor_name?: string;
+    supervisor_phone?: string;
+    available_workers?: number;
+    concurrent_site_limit?: number;
+    earliest_mobilisation_date?: string;
+    service_radius_km?: number;
+    labour_registration_no?: string;
+    insurance_expiry?: string;
+    pf_no?: string;
+    esi_no?: string;
+    notes?: string;
+    bank_verified?: boolean;
+    compliance_documents?: Array<{
+        id?: ID;
+        kind?: string;
+        label?: string;
+        document_no?: string;
+        issue_date?: string;
+        expiry_date?: string;
+        verified?: boolean;
+        verified_at?: string;
+        verified_by?: string;
+        attachment_id?: ID;
+        mandatory?: boolean;
+        notes?: string;
+        created_at?: string;
+        updated_at?: string;
+    }>;
+    duplicate_of_id?: ID;
+    duplicate_resolved_at?: string;
+    duplicate_resolution_note?: string;
     // FIX-CONTRACTOR-BATCH2 / F.13: Soft-delete / archive support. A
     // contractor can be deactivated (status="inactive") or reactivated
     // (status="active") from the ContractorDetailModule. Inactive contractors
