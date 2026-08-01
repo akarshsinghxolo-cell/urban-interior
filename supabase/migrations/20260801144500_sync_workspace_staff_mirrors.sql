@@ -28,6 +28,7 @@ declare
   v_auth_user_text text := nullif(btrim(coalesce(v_new ->> 'auth_user_id', '')), '');
   v_old_auth_user_text text := nullif(btrim(coalesce(v_old ->> 'auth_user_id', '')), '');
   v_auth_user_id uuid;
+  v_role_assignment_id uuid;
   v_role_status text;
   v_master_email text := lower(btrim(coalesce(v_new ->> 'email', '')));
   v_master_login_email text := lower(btrim(coalesce(v_new ->> 'login_email', '')));
@@ -51,6 +52,11 @@ begin
     raise exception using errcode = '23514', message = 'INVALID_STAFF_ROLE';
   end if;
 
+  -- A normal workspace create/update cannot attach or replace an Auth identity.
+  -- Linking an auth.user is exclusively owned by sync_staff_identity_bundle().
+  if tg_op = 'INSERT' and v_auth_user_text is not null then
+    raise exception using errcode = '23514', message = 'STAFF_AUTH_LINK_MUST_USE_AUTH_FLOW';
+  end if;
   if tg_op = 'UPDATE' and v_auth_user_text is distinct from v_old_auth_user_text then
     raise exception using errcode = '23514', message = 'STAFF_AUTH_LINK_MUST_USE_AUTH_FLOW';
   end if;
@@ -83,8 +89,8 @@ begin
     end if;
   end if;
 
-  select status
-    into v_role_status
+  select id, status
+    into v_role_assignment_id, v_role_status
     from public.uc_user_roles
    where user_id = v_auth_user_id
       or staff_id = new.id
@@ -92,7 +98,7 @@ begin
    limit 1
    for update;
 
-  if v_role_status is null then
+  if v_role_assignment_id is null or v_role_status is null then
     raise exception using errcode = '23503', message = 'STAFF_ROLE_ASSIGNMENT_NOT_FOUND';
   end if;
 
@@ -178,8 +184,8 @@ begin
     updated_by = excluded.updated_by;
 
   -- For approved/inactive linked users, HR role/lifecycle edits are mirrored to
-  -- the access row. Pending/rejected access remains controlled only by the User
-  -- Approvals flow, while display name still follows the Staff profile.
+  -- the single current access row. Pending/rejected access remains controlled
+  -- only by the User Approvals flow, while display name still follows Staff.
   if v_role_status in ('active', 'inactive') then
     update public.uc_user_roles
        set role = v_role_key,
@@ -187,13 +193,13 @@ begin
            staff_id = new.id,
            status = case when v_status = 'active' then 'active' else 'inactive' end,
            updated_at = now()
-     where user_id = v_auth_user_id;
+     where id = v_role_assignment_id;
   else
     update public.uc_user_roles
        set display_name = v_name,
            staff_id = new.id,
            updated_at = now()
-     where user_id = v_auth_user_id;
+     where id = v_role_assignment_id;
   end if;
 
   return new;
@@ -232,7 +238,7 @@ for each row
 execute function public.uc_guard_workspace_staff_delete();
 
 comment on function public.uc_sync_workspace_staff_mirrors() is
-  'Mirrors workspace-origin edits for already-auth-linked Staff into StaffProfile and uc_user_roles while keeping auth identity/approval changes on the dedicated auth flow.';
+  'Mirrors workspace-origin edits for already-auth-linked Staff into StaffProfile and the one current uc_user_roles row while keeping auth identity/approval changes on the dedicated auth flow.';
 comment on function public.uc_guard_workspace_staff_delete() is
   'Prevents normal workspace commits from deleting Staff records that are linked to authentication identities.';
 
