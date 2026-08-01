@@ -131,7 +131,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib/rdash/server/commit-rest.ts supabase/migrations/20260801153000_persist_work_catalog_master.sql
+          git add src/lib/rdash/server/commit-rest.ts src/lib/rdash/types.ts supabase/migrations/20260801153000_persist_work_catalog_master.sql
           if git diff --cached --quiet; then
             echo "Generated work catalog outputs are already committed."
             exit 0
