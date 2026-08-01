@@ -40,7 +40,9 @@ function sanitizeWorkspaceOperations(operations: WorkspaceOperation[]): Workspac
     return {
       ...operation,
       upsert: (operation.upsert || []).map((row) => {
-        const { temporary_password: _password, force_password_change: _forceReset, ...safe } = row;
+        const safe = { ...row };
+        delete safe.temporary_password;
+        delete safe.force_password_change;
         return safe;
       }),
     };
