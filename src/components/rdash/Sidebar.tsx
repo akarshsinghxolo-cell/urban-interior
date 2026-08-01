@@ -1,7 +1,8 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { ChevronDown, X } from "lucide-react";
+import { ChevronDown, PanelLeft, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useRDashStore } from "@/lib/rdash/store";
 import { ALL_MODULES, type ModuleDef, type Submodule } from "@/lib/rdash/modules";
 import { fieldStaffCanViewRoute } from "@/lib/rdash/field-staff-presentation";
@@ -171,6 +172,7 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
     const moduleSearch = useRDashStore((s) => s.moduleSearch);
     const authUser = useRDashStore((s) => s.authUser);
     const db = useRDashStore((s) => s.db);
+    const toggleSidebar = useRDashStore((s) => s.toggleSidebar);
     const role = authUser?.role || "Owner";
     const isFieldStaff = role.trim().toLowerCase() === "field staff";
     const rawPermissions = (db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || EMPTY_PERMISSIONS;
@@ -199,10 +201,13 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
     if (collapsed) {
         return (
             <div className="flex h-full w-[52px] flex-col bg-sidebar text-sidebar-foreground">
-                <div className="flex h-[72px] items-center justify-center border-b border-sidebar-border">
+                <div className="flex h-[72px] flex-col items-center justify-center gap-1 border-b border-sidebar-border">
                     <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground shadow-md shadow-primary/20">
                         <span className="text-sm font-black">UC</span>
                     </div>
+                    <Button variant="ghost" size="icon" className="h-6 w-8 text-muted-foreground hover:text-foreground" onClick={toggleSidebar} aria-label="Expand sidebar" title="Expand sidebar">
+                        <PanelLeft className="h-4 w-4 rotate-180" />
+                    </Button>
                 </div>
                 <div className="rd-scroll flex-1 overflow-y-auto p-2">
                     <div className="flex flex-col items-center gap-1">
@@ -224,6 +229,9 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
           <p className="truncate text-[10px] text-muted-foreground">Business Workspace</p>
         </div>
         {exceptionCount > 0 && <span title={`${exceptionCount} audited exceptions — direct awards, renegotiations, regularized attendance`} className="relative inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-warning px-1.5 text-[10px] font-bold text-warning-foreground animate-pulse">{exceptionCount}</span>}
+        <Button variant="ghost" size="icon" className="relative h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={toggleSidebar} aria-label="Collapse sidebar" title="Collapse sidebar">
+          <PanelLeft className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="rd-scroll flex-1 overflow-y-auto p-3">
