@@ -26,7 +26,6 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const updateStaff = useRDashStore((s) => s.updateStaff);
   const staff = staffId ? db.master.staff.find((s) => s.id === staffId) : undefined;
   const [draft, setDraft] = React.useState<Partial<Staff>>({});
-  const [createLogin, setCreateLogin] = React.useState(false);
   const policy = (draft.attendance_policy || createDefaultAttendancePolicy()) as AttendancePolicy;
   const isNew = !staffId;
 
@@ -40,7 +39,6 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       login_email: base.login_email || base.email || "",
       attendance_policy: base.attendance_policy || createDefaultAttendancePolicy(),
     });
-    setCreateLogin(Boolean(base.login_enabled || base.login_email));
   }, [open, staff]);
 
   const patch = (value: Partial<Staff>) => setDraft((current) => ({ ...current, ...value }));
@@ -57,10 +55,12 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       role_key: roleKey,
       role: roleLabel(roleKey),
       status: draft.status || "active",
-      login_enabled: createLogin,
-      login_email: createLogin ? (draft.login_email || draft.email)?.trim() : undefined,
-      temporary_password: createLogin ? draft.temporary_password || "ChangeMe_UrbanCastle_2026!" : undefined,
-      force_password_change: createLogin ? draft.force_password_change !== false : false,
+      // Authentication identity is owned by Supabase Auth + User Approvals.
+      // Never persist password/reset material in the workspace Staff record.
+      login_enabled: staff?.login_enabled,
+      login_email: staff?.login_email || staff?.email,
+      temporary_password: undefined,
+      force_password_change: undefined,
       attendance_policy: policy,
     };
     if (isNew) {
@@ -110,10 +110,20 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             </TabsContent>
 
             <TabsContent value="login" className="grid gap-3 md:grid-cols-3">
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3 md:col-span-3"><div><p className="text-xs font-semibold">Create staff + login access</p><p className="text-[10px] text-muted-foreground">Turn on when the staff member should sign in and receive role-scoped server permissions.</p></div><Switch checked={createLogin} onCheckedChange={setCreateLogin}/></div>
-              <div>{fieldLabel("Login email")}<Input value={draft.login_email || ""} onChange={(e) => patch({ login_email: e.target.value })} disabled={!createLogin} className="h-9"/></div>
-              <div>{fieldLabel("Temporary password")}<Input value={draft.temporary_password || ""} onChange={(e) => patch({ temporary_password: e.target.value })} disabled={!createLogin} placeholder="ChangeMe_UrbanCastle_2026!" className="h-9"/></div>
-              <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 p-3"><div><p className="text-xs font-semibold">Force password change</p><p className="text-[10px] text-muted-foreground">Required before live deployment.</p></div><Switch checked={draft.force_password_change !== false} onCheckedChange={(v) => patch({ force_password_change: v })} disabled={!createLogin}/></div>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 md:col-span-3">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary"/>
+                  <div>
+                    <p className="text-xs font-semibold">Login access is managed in User Approvals</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {staff?.auth_user_id
+                        ? "This Staff profile is already linked to Supabase Auth. Change authentication access through System Settings → User Approvals; operational profile changes stay here."
+                        : "Save the Staff profile first, then create or approve login access through System Settings → User Approvals. Passwords are never stored in Staff workspace data."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {staff?.auth_user_id ? <div>{fieldLabel("Linked login email")}<Input value={staff.login_email || staff.email || ""} disabled className="h-9"/></div> : null}
             </TabsContent>
 
             <TabsContent value="access" className="grid gap-3 md:grid-cols-3">
