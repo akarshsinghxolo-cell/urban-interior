@@ -47,6 +47,6 @@ describe("Supabase schema convergence", () => {
     expect(ownership).toContain("exactly one canonical writable owner");
     expect(ownership).toContain("Contractor capability and agreed rate");
     expect(ownership).toContain("sync_staff_identity_bundle");
-    expect(ownership).toContain("GenericRecord is not retired");
+    expect(ownership).toContain("`GenericRecord` is not retired");
   });
 });
