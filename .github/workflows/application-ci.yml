@@ -22,12 +22,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - name: Check out Supabase convergence branch head
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
       - name: Check out Vendor cleanup branch head
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         uses: actions/checkout@v5
@@ -48,9 +42,6 @@ jobs:
           rm .github/workflows/vendor-module-cleanup-runner.yml
       - name: Install dependencies
         run: bun install --frozen-lockfile
-      - name: Generate persisted work catalog convergence
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
-        run: bun scripts/generate-work-catalog-convergence.ts
       - name: Test Vendor module cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: bun run test:vendor-module
@@ -115,35 +106,9 @@ jobs:
       - name: Test field staff UI visibility
         run: bun test tests/field-staff-visibility.test.ts
       - name: Lint application
-        run: bun run lint 2>&1 | tee supabase-convergence-lint.txt
-      - name: Upload lint diagnostic
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: supabase-convergence-lint
-          path: supabase-convergence-lint.txt
-          if-no-files-found: ignore
+        run: bun run lint
       - name: Build application
-        run: bun run build 2>&1 | tee supabase-convergence-build.txt
-      - name: Upload build diagnostic
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: supabase-convergence-build
-          path: supabase-convergence-build.txt
-          if-no-files-found: ignore
-      - name: Commit verified work catalog convergence
-        if: success() && github.event_name == 'pull_request' && github.head_ref == 'agent/supabase-data-convergence'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib/rdash/server/commit-rest.ts src/lib/rdash/server/authorized-commit.ts src/lib/rdash/contractor-profile.ts src/lib/rdash/types.ts supabase/migrations/20260801153000_persist_work_catalog_master.sql
-          if git diff --cached --quiet; then
-            echo "Generated convergence outputs are already committed."
-            exit 0
-          fi
-          git commit -m "Persist work catalog and Contractor rate projection"
-          git push origin HEAD:agent/supabase-data-convergence
+        run: bun run build
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |
