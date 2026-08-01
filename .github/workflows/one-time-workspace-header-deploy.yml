@@ -23,6 +23,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
       - name: Pull production project settings
         run: npx --yes vercel@58.4.4 pull --yes --environment=production --token="$VERCEL_TOKEN"
       - name: Build production artifact
