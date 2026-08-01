@@ -55,6 +55,10 @@ describe("Supabase persistence convergence", () => {
   test("keeps workspace Staff and auth/profile mirrors on explicit ownership boundaries", async () => {
     const migration = await Bun.file(STAFF_MIRROR_MIGRATION).text();
 
+    expect(migration).toContain("create or replace function public.uc_sanitize_workspace_staff_auth_fields()");
+    expect(migration).toContain("- 'temporary_password'");
+    expect(migration).toContain("- 'force_password_change'");
+    expect(migration).toContain("create trigger entity_master_staff_workspace_auth_sanitize");
     expect(migration).toContain("create or replace function public.uc_sync_workspace_staff_mirrors()");
     expect(migration).toContain("current_setting('uc.write_source', true) is distinct from 'workspace-commit'");
     expect(migration).toContain("STAFF_AUTH_LINK_MUST_USE_AUTH_FLOW");
