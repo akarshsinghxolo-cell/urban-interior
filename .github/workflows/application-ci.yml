@@ -131,12 +131,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/lib/rdash/server/commit-rest.ts src/lib/rdash/types.ts supabase/migrations/20260801153000_persist_work_catalog_master.sql
+          git add src/lib/rdash/server/commit-rest.ts src/lib/rdash/server/authorized-commit.ts src/lib/rdash/contractor-profile.ts src/lib/rdash/types.ts supabase/migrations/20260801153000_persist_work_catalog_master.sql
           if git diff --cached --quiet; then
-            echo "Generated work catalog outputs are already committed."
+            echo "Generated convergence outputs are already committed."
             exit 0
           fi
-          git commit -m "Persist work catalog as Supabase master data"
+          git commit -m "Persist work catalog and Contractor rate projection"
           git push origin HEAD:agent/supabase-data-convergence
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
