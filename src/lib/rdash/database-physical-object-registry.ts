@@ -16,7 +16,7 @@ const physical = (
 ): PhysicalDatabaseObjectDecision => Object.freeze({
   objectType,
   domain,
-  decision: architectureDecision,
+  decision,
   canonicalTruth,
   risk,
   runtimeOwner,
