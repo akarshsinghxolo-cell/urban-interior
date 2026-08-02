@@ -37,6 +37,7 @@ describe("database architecture registry", () => {
       "entity_workspace_revision",
       "entity_workspace_change_batches",
       "entity_issues",
+      "entity_workItems",
       "staff_identity_drift_report",
     ]));
   });
@@ -81,5 +82,16 @@ describe("database architecture registry", () => {
     expect(COLLECTION_ARCHITECTURE.actions.canonicalTruth).toBe("Approval action");
     expect(COLLECTION_ARCHITECTURE.recurringTasks.decision).toBe("keep");
     expect(COLLECTION_ARCHITECTURE.recurringTasks.canonicalTruth).toBe("Recurring task definition");
+  });
+
+  test("registers WorkItem as shadow-only before Task/Follow-up cutover", () => {
+    const workItems = SPECIAL_DATABASE_OBJECT_ARCHITECTURE.entity_workItems;
+    expect(workItems.objectType).toBe("table");
+    expect(workItems.domain).toBe("workflow");
+    expect(workItems.decision).toBe("keep-normalize-later");
+    expect(workItems.canonicalTruth).toBe("Canonical Task/Follow-up WorkItem shadow storage");
+    expect(workItems.runtimeOwner).toContain("shadow");
+    expect(COLLECTION_ARCHITECTURE.tasks.canonicalTruth).toBe("Task");
+    expect(COLLECTION_ARCHITECTURE.followups.canonicalTruth).toBe("Follow-up");
   });
 });
