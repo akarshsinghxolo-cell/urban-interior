@@ -85,12 +85,12 @@ export const COLLECTION_ARCHITECTURE = Object.freeze({
 
   tasks: decision("workflow", "merge-candidate", "Task", "high", "WorkItem"),
   followups: decision("workflow", "merge-candidate", "Follow-up", "high", "WorkItem"),
-  actions: decision("workflow", "merge-candidate", "Business action", "high", "WorkItem"),
+  actions: decision("workflow", "keep-normalize-later", "Approval action", "high"),
   payments: decision("finance", "merge-candidate", "Customer payment/collection", "critical", "FinancialTransaction"),
   invoices: decision("finance", "merge-candidate", "Customer invoice", "critical", "FinancialDocument"),
   customerReceipts: decision("finance", "merge-candidate", "Customer receipt", "critical", "FinancialTransaction"),
-  blocked: decision("workflow", "merge-candidate", "Blocker", "medium", "Issue"),
-  risks: decision("workflow", "merge-candidate", "Risk", "medium", "Issue"),
+  blocked: decision("workflow", "projection-view-candidate", "entity_issues", "medium", "Issue compatibility view"),
+  risks: decision("workflow", "projection-view-candidate", "entity_issues", "medium", "Issue compatibility view"),
   threads: decision("workflow", "keep-normalize-later", "Conversation thread", "high"),
 
   attendance: decision("hr", "keep-normalize-later", "Attendance", "high"),
@@ -103,7 +103,7 @@ export const COLLECTION_ARCHITECTURE = Object.freeze({
 
   approvalPolicies: decision("workflow", "keep", "Approval policy", "medium"),
   automationRules: decision("workflow", "keep", "Automation rule", "medium"),
-  recurringTasks: decision("workflow", "merge-candidate", "Recurring task template", "medium", "WorkItem recurrence"),
+  recurringTasks: decision("workflow", "keep", "Recurring task definition", "medium"),
   commSends: decision("media", "keep", "Communication send event", "medium"),
   entityFileAttachments: decision("media", "keep-normalize-later", "Entity-file attachment", "high"),
   entityReferenceAssignments: decision("media", "merge-candidate", "Entity-reference assignment", "medium", "Generic resource assignment"),
