@@ -14,7 +14,7 @@ import { createDefaultAttendancePolicy } from "@/lib/rdash/attendance-policy";
 import { STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, normalizeRoleKey, roleLabel } from "@/lib/rdash/staff-operations";
 import type { AttendancePolicy, Staff, StaffRoleKey } from "@/lib/rdash/types";
 
-const statusOptions = ["active", "inactive", "blocked", "blacklisted", "exited"] as const;
+const statusOptions = ["pending", "active", "inactive", "blocked", "blacklisted", "exited"] as const;
 
 function fieldLabel(text: string) {
   return <label className="text-[10px] font-semibold uppercase text-muted-foreground">{text}</label>;
@@ -51,7 +51,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       ...draft,
       name: draft.name.trim(),
       phone: draft.phone?.trim() || undefined,
-      email: draft.email?.trim() || undefined,
+      email: staff?.auth_user_id ? staff.email : draft.email?.trim() || undefined,
       role_key: roleKey,
       role: roleLabel(roleKey),
       status: draft.status || "active",
@@ -82,7 +82,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             {isNew ? "Add Staff Operations Profile" : "Edit Staff Operations Profile"}
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Staff profile, login identity, role permissions, attendance policy, salary, documents and lifecycle status stay connected.
+            Staff profile, role permissions, attendance policy, salary, documents and lifecycle status stay connected. Login identity stays in User Approvals.
           </DialogDescription>
         </DialogHeader>
 
@@ -101,7 +101,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             <TabsContent value="basic" className="grid gap-3 md:grid-cols-3">
               <div>{fieldLabel("Name")}<Input value={draft.name || ""} onChange={(e) => patch({ name: e.target.value })} autoFocus className="h-9"/></div>
               <div>{fieldLabel("Phone")}<Input value={draft.phone || ""} onChange={(e) => patch({ phone: sanitizeIndianMobile(e.target.value) })} placeholder="9876543210" type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} className="h-9"/></div>
-              <div>{fieldLabel("Email")}<Input value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel(staff?.auth_user_id ? "Email (managed in User Approvals)" : "Email")}<Input value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} disabled={Boolean(staff?.auth_user_id)} className="h-9"/></div>
               <div>{fieldLabel("Department")}<Input value={draft.department || ""} onChange={(e) => patch({ department: e.target.value })} className="h-9"/></div>
               <div>{fieldLabel("Designation")}<Input value={draft.designation || ""} onChange={(e) => patch({ designation: e.target.value })} className="h-9"/></div>
               <div>{fieldLabel("City")}<Input value={draft.city || ""} onChange={(e) => patch({ city: e.target.value })} className="h-9"/></div>
@@ -128,7 +128,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
 
             <TabsContent value="access" className="grid gap-3 md:grid-cols-3">
               <div>{fieldLabel("Controlled role")}
-                <Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })}>
+                <Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })} disabled={staff?.status === "pending"}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>{STAFF_ROLE_KEYS.map((key) => <SelectItem key={key} value={key}>{STAFF_ROLE_LABELS[key]}</SelectItem>)}</SelectContent>
                 </Select>
@@ -165,7 +165,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             </TabsContent>
 
             <TabsContent value="status" className="grid gap-3 md:grid-cols-3">
-              <div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>
+              <div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })} disabled={staff?.status === "pending"}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value} disabled={value === "pending"}>{value}</SelectItem>)}</SelectContent></Select></div>
               <div>{fieldLabel("Joining date")}<Input value={draft.joining_date || ""} onChange={(e) => patch({ joining_date: e.target.value })} className="h-9"/></div>
               <div>{fieldLabel("Exit date")}<Input value={draft.exit_date || ""} onChange={(e) => patch({ exit_date: e.target.value })} className="h-9"/></div>
               <div className="md:col-span-3 rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-xs text-muted-foreground">Inactive/exited staff cannot receive new tasks, visits, attendance check-ins or new payroll unless explicitly marked payable by Finance/Owner.</div>

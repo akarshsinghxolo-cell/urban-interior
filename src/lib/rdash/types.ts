@@ -1657,7 +1657,7 @@ export interface Contractor {
         crew_required?: number;
         max_daily_capacity?: number;
         preferred?: boolean;
-        status?: "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
+        status?: "active" | "inactive";
         notes?: string;
     }>;
     /** Compatibility projection for the governance UI. `work_capabilities` is canonical. */
@@ -1730,7 +1730,7 @@ export interface Contractor {
     // (status="active") from the ContractorDetailModule. Inactive contractors
     // remain in the master for historical lookup but are filtered out of
     // bid-invitation and direct-award dropdowns.
-    status?: "active" | "inactive" | "blacklisted";
+    status?: "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
     // FIX-CONTRACTOR-BATCH2 / F.16: Timestamp of the last
     // recomputeContractorPerformance call. Persisted so the
     // ContractorPerformanceModule can show "last recomputed" alongside the
@@ -1756,7 +1756,7 @@ export interface Staff {
     emergency_contact?: string;
     joining_date?: string;
     exit_date?: string;
-    status?: EntityStatus | "blacklisted" | "exited";
+    status?: EntityStatus | "pending" | "blacklisted" | "exited";
     salary_type?: StaffSalaryType;
     monthly_salary?: number;
     daily_wage?: number;
