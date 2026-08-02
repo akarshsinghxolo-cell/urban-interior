@@ -13,7 +13,8 @@ import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
-import { contractorRateProjection, type ContractorProfileRecord } from "../contractor-profile";
+import { contractorRateProjection } from "../contractor-profile";
+import type { ContractorProfileRecord } from "../contractor-profile";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
