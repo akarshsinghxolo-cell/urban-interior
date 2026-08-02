@@ -79,6 +79,8 @@ jobs:
         run: bun run test:entity-scoped-reads
       - name: Test workspace revision delta synchronization
         run: bun run test:delta-sync
+      - name: Test Supabase persistence convergence
+        run: bun test tests/supabase-data-convergence*.test.ts
       - name: Test client workspace delta synchronization
         run: bun run test:client-delta-sync
       - name: Test workspace auth return paths

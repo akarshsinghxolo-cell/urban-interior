@@ -229,6 +229,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [referralOpen, setReferralOpen] = React.useState(false);
   const [legacyReferral, setLegacyReferral] = React.useState("");
   const [baselineStatus, setBaselineStatus] = React.useState<string | undefined>();
+  const [baselineComplianceDocuments, setBaselineComplianceDocuments] = React.useState<ContractorProfileRecord["compliance_documents"]>();
   const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
   const [businessCard, setBusinessCard] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
@@ -319,11 +320,12 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       // Preserve documents added from Governance while the canonical profile
       // helper synchronizes form-entered PAN, bank, labour, insurance, PF and
       // ESI details into unverified document-register rows.
-      compliance_documents: baselineRef.current.compliance_documents,
+      compliance_documents: baselineComplianceDocuments,
     };
     return normalizeContractorForWrite(raw, db, { id: raw.id });
   }, [
     allArticles,
+    baselineComplianceDocuments,
     businessCard,
     capabilities,
     contractorPhoto,
@@ -343,6 +345,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     [],
   );
 
+  /* eslint-disable react-hooks/set-state-in-effect -- Opening the dialog intentionally hydrates a resettable draft snapshot from the selected Contractor. */
   React.useEffect(() => {
     if (!open) return;
     const id = editId || reserveEntityId("contractor");
@@ -390,6 +393,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setReferralQuery(String(normalized.source_partner_name || ""));
     setLegacyReferral(normalized.source_partner_id ? "" : String(normalized.source_partner_name || ""));
     setBaselineStatus(String(normalized.status || "onboarding"));
+    setBaselineComplianceDocuments(normalized.compliance_documents);
     setReferralOpen(false);
     setDuplicateAcknowledged(false);
     baselineRef.current = normalized;
@@ -398,6 +402,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     // Database dependencies are intentionally omitted so background sync does not reset an in-progress form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   let currentPayload: ContractorProfileRecord;
   let normalizationError: string | null = null;
@@ -464,6 +469,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       commitBatches();
       baselineRef.current = currentPayload;
       baselineCoordinateRef.current = coordinates;
+      setBaselineComplianceDocuments(currentPayload.compliance_documents);
       setBaselineKey(fingerprint(currentPayload, coordinates));
       dirtyFormRegistry.markClean(formId);
       toast.success(`Contractor ${isEdit ? "updated" : "created"}`, {

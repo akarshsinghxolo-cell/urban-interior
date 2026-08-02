@@ -13,6 +13,8 @@ import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
+import { contractorRateProjection } from "../contractor-profile";
+import type { ContractorProfileRecord } from "../contractor-profile";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -30,6 +32,58 @@ function canonicalizeVendorRateOperations(
   }
   const candidate = applyWorkspaceOperations(current, operations);
   const canonical = applyVendorRateAverages(current, candidate);
+  return diffWorkspaceOperations(current, canonical);
+}
+
+function sanitizeWorkspaceOperations(operations: WorkspaceOperation[]): WorkspaceOperation[] {
+  return operations.map((operation) => {
+    if (operation.collection !== "master.staff") return operation;
+    return {
+      ...operation,
+      upsert: (operation.upsert || []).map((row) => {
+        const safe = { ...row };
+        delete safe.temporary_password;
+        delete safe.force_password_change;
+        return safe;
+      }),
+    };
+  });
+}
+
+function canonicalizeContractorRateOperations(
+  current: RDashDatabase,
+  operations: WorkspaceOperation[],
+): WorkspaceOperation[] {
+  const contractorOperation = operations.find((operation) => operation.collection === "master.contractors");
+  if (!contractorOperation) return operations;
+
+  const candidate = applyWorkspaceOperations(current, operations);
+  let contractorRates = candidate.master.contractorRates || [];
+  const touchedIds = new Set<string>();
+  for (const row of contractorOperation.upsert || []) {
+    const id = String(row.id || "").trim();
+    if (id) touchedIds.add(id);
+  }
+  for (const id of contractorOperation.deleteIds || []) {
+    if (id) touchedIds.add(id);
+  }
+
+  for (const contractorId of touchedIds) {
+    const contractor = candidate.master.contractors.find((row) => row.id === contractorId);
+    if (!contractor) {
+      contractorRates = contractorRates.filter((rate) => rate.contractor_id !== contractorId);
+      continue;
+    }
+    contractorRates = contractorRateProjection(
+      { master: { ...candidate.master, contractorRates } },
+      contractor as ContractorProfileRecord,
+    );
+  }
+
+  const canonical: RDashDatabase = {
+    ...candidate,
+    master: { ...candidate.master, contractorRates },
+  };
   return diffWorkspaceOperations(current, canonical);
 }
 
@@ -78,7 +132,7 @@ export async function commitAuthorizedPostgresOperations(
   expectedRowVersions?: Record<string, number>,
 ): Promise<CommitResult> {
   const startedAt = Date.now();
-  let commitOperations = operations;
+  let commitOperations = sanitizeWorkspaceOperations(operations);
   let mode: CommitMode = "phase2-single-read";
   let queryCount: number | undefined;
   let loadMs = 0;
@@ -99,6 +153,7 @@ export async function commitAuthorizedPostgresOperations(
 
     assertWorkspaceMutationAllowed(user, commitOperations, current.data);
     commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
+    commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);
     const candidate = normalizeWorkspace(applyWorkspaceOperations(current.data, commitOperations));
     const issues = validateBusinessData(candidate);
     if (issues.length) throw new Error(`INVALID:${issues[0]}`);
