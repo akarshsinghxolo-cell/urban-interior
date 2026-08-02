@@ -13,7 +13,7 @@ import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
-import { contractorRateProjection } from "../contractor-profile";
+import { contractorRateProjection, type ContractorProfileRecord } from "../contractor-profile";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -75,7 +75,7 @@ function canonicalizeContractorRateOperations(
     }
     contractorRates = contractorRateProjection(
       { master: { ...candidate.master, contractorRates } },
-      contractor,
+      contractor as ContractorProfileRecord,
     );
   }
 
