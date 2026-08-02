@@ -95,6 +95,8 @@ jobs:
         run: bun run test:vendor-rate-average
       - name: Test unified Customer and Sites saves
         run: bun run test:customer-sites-save
+      - name: Test Sales Pipeline progression
+        run: bun test tests/sales-pipeline-progress.test.ts
       - name: Test legacy Customer and Site path removal
         run: bun run test:customer-sites-legacy
       - name: Test canonical Contractor profile
