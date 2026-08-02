@@ -59,11 +59,13 @@ staff = replace_once(
     "Staff email field lock",
 )
 staff = replace_once(
+    staff,
     '<Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })}>',
     '<Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })} disabled={staff?.status === "pending"}>',
     "Pending Staff role lock",
 )
 staff = replace_once(
+    staff,
     '<div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>',
     '<div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })} disabled={staff?.status === "pending"}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value} disabled={value === "pending"}>{value}</SelectItem>)}</SelectContent></Select></div>',
     "Pending Staff lifecycle lock",
