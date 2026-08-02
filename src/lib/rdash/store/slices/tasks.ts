@@ -21,6 +21,7 @@ import type { StoreContext } from "../context";
 import type { CurrentUserContext } from "../ui-types";
 import { assertRole, genId, nowIso, today, businessDate, isOwnerOrOperations } from "../helpers";
 import { resolveCustomerIdFromLinks } from "../../customer-relations";
+import { advanceWorkRequiredLifecycleStatus } from "../../work-required-lifecycle";
 
 const BUSINESS_DECISION_TASK_TYPES = new Set([
     "progress_verification",
@@ -536,6 +537,18 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 !["not_reached", "not_applicable"].includes(input.outcome))
                 throw new Error("Record a completion note with the customer response or decision before closing this Follow-up.");
             const now = nowIso();
+            const qualifiesLead = input.outcome === "contacted" || input.outcome === "converted";
+            const qualificationTargetIds = qualifiesLead
+                ? state.db.workRequired
+                    .filter((work: any) => {
+                        if (work.status !== "new")
+                            return false;
+                        if (followup.work_required_id)
+                            return work.id === followup.work_required_id;
+                        return Boolean(followup.customer_id && work.customer_id === followup.customer_id);
+                    })
+                    .map((work: any) => work.id)
+                : [];
             const threadId = followup.thread_id ||
                 get().openThreadFor("followup", id, followup.title, [
                     followup.assigned_to || actor.name,
@@ -582,13 +595,42 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                             updated_at: now,
                         }
                         : row),
+                    workRequired: qualificationTargetIds.length
+                        ? snapshot.db.workRequired.map((work: any) => qualificationTargetIds.includes(work.id)
+                            ? {
+                                ...work,
+                                status: advanceWorkRequiredLifecycleStatus(work.status, "contacted"),
+                                updated_at: now,
+                            }
+                            : work)
+                        : snapshot.db.workRequired,
                 },
             }));
             get().addThreadReply(threadId, {
                 author: actor.name,
                 role: actor.role,
-                body: `Follow-up outcome: ${input.outcome.replace(/_/g, " ")}${input.note.trim() ? ` — ${input.note.trim()}` : ""}${nextFollowupId ? ". Next follow-up scheduled." : "."}`,
+                body: `Follow-up outcome: ${input.outcome.replace(/_/g, " ")}${input.note.trim() ? ` — ${input.note.trim()}` : ""}${nextFollowupId ? ". Next follow-up scheduled." : "."}${qualificationTargetIds.length ? ` ${qualificationTargetIds.length} Work Required record${qualificationTargetIds.length === 1 ? "" : "s"} qualified.` : ""}`,
                 kind: "decision",
+            });
+            qualificationTargetIds.forEach((workRequiredId: string) => {
+                const work = state.db.workRequired.find((row: any) => row.id === workRequiredId);
+                if (!work)
+                    return;
+                get().logAudit({
+                    actor: actor.name,
+                    actor_role: actor.role,
+                    action: `Qualified work required "${work.title}" from follow-up outcome ${input.outcome}`,
+                    entity_type: "workRequired",
+                    entity_id: work.id,
+                    entity_label: work.title,
+                    kind: "update",
+                    reason: `Customer follow-up ${followup.title} recorded ${input.outcome}`,
+                    cross_post: [
+                        { entity_type: "customer", entity_id: work.customer_id },
+                        { entity_type: "site", entity_id: work.site_id },
+                        { entity_type: "followup", entity_id: followup.id, entity_label: followup.title },
+                    ],
+                });
             });
             get().logAudit({
                 actor: actor.name,
@@ -603,6 +645,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     ...(followup.visit_id ? [{ entity_type: "visit", entity_id: followup.visit_id }] : []),
                     ...(followup.payment_id ? [{ entity_type: "payment", entity_id: followup.payment_id }] : []),
                     ...(followup.customer_id ? [{ entity_type: "customer", entity_id: followup.customer_id }] : []),
+                    ...qualificationTargetIds.map((workRequiredId: string) => ({ entity_type: "workRequired", entity_id: workRequiredId })),
                 ],
             });
         },
