@@ -1,0 +1,44 @@
+name: Convergence Source Polish
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'agent/supabase-data-convergence'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Apply source polish
+        run: python scripts/finalize-convergence-source-polish.py
+      - name: Test convergence
+        run: bun test tests/supabase-data-convergence.test.ts
+      - name: Test Contractor profile
+        run: bun run test:contractor-profile
+      - name: Lint
+        run: bun run lint
+      - name: Build
+        run: bun run build
+      - name: Commit source polish
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/rdash/types.ts src/components/rdash/StaffEditDialog.tsx
+          if git diff --cached --quiet; then
+            echo "Source polish already applied."
+            exit 0
+          fi
+          git commit -m "Align Staff and Contractor persistence contracts"
+          git push origin HEAD:agent/supabase-data-convergence
