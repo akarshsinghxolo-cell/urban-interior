@@ -12,6 +12,7 @@ import { notifyCreated, notifyConverted } from "@/lib/rdash/notify";
 import { useRDashStore, type CreateDialogKind, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { VisitType, WorkRequired } from "@/lib/rdash/types";
 import { indiaDateTimeInputValue } from "@/lib/rdash/format";
+import { planVisitLeadWork } from "@/lib/rdash/lead-lifecycle";
 import { Plus, ListPlus, FilePlus2, MapPinPlus, PhoneCall, Check, CalendarClock, } from "lucide-react";
 const CREATE_OPTIONS: {
     kind: CreateDialogKind;
@@ -326,17 +327,50 @@ function CreateDialog({ request, onClose }: {
                 const assigneeType = isUnassigned ? "staff" : assigneeTypeRaw;
                 const assigneeId = isUnassigned ? "" : assigneeIdRaw;
                 const selectedWorkRequiredId = visitWorkRequiredId === "none" ? "" : visitWorkRequiredId;
-                if (visitType === "measurement" && !selectedWorkRequiredId) {
-                    toast.error("Select the Work Required being measured");
-                    setSubmitting(false);
-                    return;
-                }
-                const workRequired = selectedWorkRequiredId ? db.workRequired.find((row) => row.id === visitWorkRequiredId && row.customer_id === customerId && row.site_id === site.id) : undefined;
-                if (visitWorkRequiredId && !workRequired) {
+                let workRequired = selectedWorkRequiredId
+                    ? db.workRequired.find((row) => row.id === selectedWorkRequiredId && row.customer_id === customerId && row.site_id === site.id)
+                    : undefined;
+                if (selectedWorkRequiredId && !workRequired) {
                     toast.error("The selected Work Required no longer belongs to this customer site");
                     setSubmitting(false);
                     return;
                 }
+
+                const workPlan = planVisitLeadWork(db, {
+                    customerId,
+                    siteId: site.id,
+                    requestedWorkRequiredId: workRequired?.id,
+                    visitType,
+                    locationTargetType: visitTargetType,
+                    now: new Date().toISOString(),
+                    createId: () => `workRequired-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+                });
+                if (workPlan.requiresSelection) {
+                    toast.error(workPlan.reason || "Select the Work Required this Visit belongs to");
+                    setSubmitting(false);
+                    return;
+                }
+                if (!workRequired && workPlan.createdWorkRequired) {
+                    try {
+                        const createdId = addWorkRequired(workPlan.createdWorkRequired);
+                        workRequired = { ...workPlan.createdWorkRequired, id: createdId };
+                        toast.info(`Created and linked Work Required: ${workRequired.title}`);
+                    }
+                    catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Could not create Work Required for this Visit.");
+                        setSubmitting(false);
+                        return;
+                    }
+                }
+                if (!workRequired && workPlan.workRequiredId) {
+                    workRequired = db.workRequired.find((row) => row.id === workPlan.workRequiredId);
+                }
+                if (visitType === "measurement" && !workRequired) {
+                    toast.error("Select the Work Required being measured");
+                    setSubmitting(false);
+                    return;
+                }
+
                 const id = addVisit({
                     customer_id: customerId,
                     site_id: site.id,
@@ -504,11 +538,11 @@ function CreateDialog({ request, onClose }: {
                     <SelectContent>{db.master.vendors.map((vendor) => <SelectItem key={vendor.id} value={vendor.id}>{vendor.name}{vendor.city ? ` · ${vendor.city}` : ""}{vendor.latitude == null || vendor.longitude == null ? " · GPS required" : ""}</SelectItem>)}</SelectContent>
                   </Select>
                 </Field>)}
-              <Field label={visitType === "measurement" ? "Work Required for measurement *" : "Work Required (optional)"}>
+              <Field label={visitType === "measurement" ? "Work Required for measurement *" : "Work Required (auto-link / auto-create)"}>
                 <Select value={visitWorkRequiredId} onValueChange={setVisitWorkRequiredId} disabled={!visitSiteId || visitTargetType === "vendor"}>
-                  <SelectTrigger><SelectValue placeholder={visitTargetType === "vendor" ? "Vendor Visits do not use Site measurement scope" : visitSiteId ? "Select site work requirement…" : "Select Site first"}/></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={visitTargetType === "vendor" ? "Vendor Visits do not use Site measurement scope" : visitSiteId ? "Select scope or let the app resolve it" : "Select Site first"}/></SelectTrigger>
                   <SelectContent>
-                    {visitType !== "measurement" && <SelectItem value="none">No linked Work Required</SelectItem>}
+                    {visitType !== "measurement" && <SelectItem value="none">Resolve automatically from this Site</SelectItem>}
                     {db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId).map((work) => {
                         const areaNames = work.area_ids.map((areaId) => db.areas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
                         const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
@@ -516,8 +550,10 @@ function CreateDialog({ request, onClose }: {
                         const scope = [category?.name || work.title, subcategory?.name].filter(Boolean).join(" · ");
                         return <SelectItem key={work.id} value={work.id}>{areaNames || "Site-wide"} → {scope}</SelectItem>;
                     })}
+                    {visitSiteId && visitTargetType === "site" && db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId && work.status !== "lost" && work.status !== "completed").length === 0 && <SelectItem value="__auto__" disabled>↪ Customer interests will create the first Work Required</SelectItem>}
                   </SelectContent>
                 </Select>
+                {visitSiteId && visitTargetType === "site" && db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId && work.status !== "lost" && work.status !== "completed").length === 0 && <p className="mt-1 text-[11px] text-muted-foreground">No active Work Required exists on this Site. Scheduling a Site Visit or Measurement will create one from the Customer form's work interests and link the Visit automatically.</p>}
               </Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Visit type">
@@ -548,7 +584,7 @@ function CreateDialog({ request, onClose }: {
                 <Field label="Scheduled date & time"><Input type="datetime-local" value={visitScheduledAt} onChange={(e) => setVisitScheduledAt(e.target.value)}/></Field>
                 <Field label="Duration (minutes)"><Input type="number" min="15" step="15" value={visitDuration} onChange={(e) => setVisitDuration(e.target.value)}/></Field>
               </div>
-              <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">The assigned person cannot be scheduled into an overlapping Visit. Automatic geofence check-in/out uses the selected Customer Site or registered Vendor GPS while the app is open; Manual buttons remain available if automation cannot run.</p>
+              <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">The assigned person cannot be scheduled into an overlapping Visit. Site Visits and Measurements are connected to the lead lifecycle through Work Required. Automatic geofence check-in/out uses the selected Customer Site or registered Vendor GPS while the app is open.</p>
             </>)}
 
           {kind === "followup" && (<>
