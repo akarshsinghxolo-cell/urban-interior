@@ -62,11 +62,24 @@ describe("database architecture registry", () => {
     }
   });
 
-  test("marks the first pilot consolidation family explicitly", () => {
-    expect(COLLECTION_ARCHITECTURE.blocked.targetConcept).toBe("Issue");
-    expect(COLLECTION_ARCHITECTURE.risks.targetConcept).toBe("Issue");
-    expect(COLLECTION_ARCHITECTURE.blocked.decision).toBe("merge-candidate");
-    expect(COLLECTION_ARCHITECTURE.risks.decision).toBe("merge-candidate");
+  test("records the completed Issue physical consolidation", () => {
+    expect(COLLECTION_ARCHITECTURE.blocked.targetConcept).toBe("Issue compatibility view");
+    expect(COLLECTION_ARCHITECTURE.risks.targetConcept).toBe("Issue compatibility view");
+    expect(COLLECTION_ARCHITECTURE.blocked.decision).toBe("projection-view-candidate");
+    expect(COLLECTION_ARCHITECTURE.risks.decision).toBe("projection-view-candidate");
+    expect(COLLECTION_ARCHITECTURE.blocked.canonicalTruth).toBe("entity_issues");
+    expect(COLLECTION_ARCHITECTURE.risks.canonicalTruth).toBe("entity_issues");
     expect(SPECIAL_DATABASE_OBJECT_ARCHITECTURE.entity_issues.canonicalTruth).toBe("Canonical Issue pilot storage");
+  });
+
+  test("keeps approval actions and recurring schedules out of the WorkItem merge", () => {
+    expect(COLLECTION_ARCHITECTURE.tasks.targetConcept).toBe("WorkItem");
+    expect(COLLECTION_ARCHITECTURE.followups.targetConcept).toBe("WorkItem");
+    expect(COLLECTION_ARCHITECTURE.tasks.decision).toBe("merge-candidate");
+    expect(COLLECTION_ARCHITECTURE.followups.decision).toBe("merge-candidate");
+    expect(COLLECTION_ARCHITECTURE.actions.decision).toBe("keep-normalize-later");
+    expect(COLLECTION_ARCHITECTURE.actions.canonicalTruth).toBe("Approval action");
+    expect(COLLECTION_ARCHITECTURE.recurringTasks.decision).toBe("keep");
+    expect(COLLECTION_ARCHITECTURE.recurringTasks.canonicalTruth).toBe("Recurring task definition");
   });
 });
