@@ -31,9 +31,15 @@ types = replace_once(
 )
 types_path.write_text(types)
 
-# Do not offer an auth-linked email edit that the database must reject.
+# Keep authentication-owned fields and pending access states out of normal Staff edits.
 staff_path = Path("src/components/rdash/StaffEditDialog.tsx")
 staff = staff_path.read_text()
+staff = replace_once(
+    staff,
+    'const statusOptions = ["active", "inactive", "blocked", "blacklisted", "exited"] as const;\n',
+    'const statusOptions = ["pending", "active", "inactive", "blocked", "blacklisted", "exited"] as const;\n',
+    "Staff status options",
+)
 staff = replace_once(
     staff,
     '      email: draft.email?.trim() || undefined,\n',
@@ -51,5 +57,15 @@ staff = replace_once(
     '<div>{fieldLabel("Email")}<Input value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} className="h-9"/></div>',
     '<div>{fieldLabel(staff?.auth_user_id ? "Email (managed in User Approvals)" : "Email")}<Input value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} disabled={Boolean(staff?.auth_user_id)} className="h-9"/></div>',
     "Staff email field lock",
+)
+staff = replace_once(
+    '<Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })}>',
+    '<Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })} disabled={staff?.status === "pending"}>',
+    "Pending Staff role lock",
+)
+staff = replace_once(
+    '<div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></div>',
+    '<div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })} disabled={staff?.status === "pending"}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value} disabled={value === "pending"}>{value}</SelectItem>)}</SelectContent></Select></div>',
+    "Pending Staff lifecycle lock",
 )
 staff_path.write_text(staff)
