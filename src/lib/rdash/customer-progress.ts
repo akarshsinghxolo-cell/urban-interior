@@ -1,11 +1,28 @@
 import type { WorkRequired, WorkRequiredStatus, RDashDatabase } from "./types";
 import { indiaDate } from "./date";
+
 export type CustomerProgress = {
     key: "new" | "contacted" | "visit" | "measurement" | "quote" | "decision" | "negotiation" | "accepted" | "execution" | "on_hold" | "lost" | "completed";
     label: string;
     summary: string;
     percent: number;
 };
+
+const PROGRESS_RANK: Record<CustomerProgress["key"], number> = {
+    new: 0,
+    contacted: 1,
+    visit: 2,
+    measurement: 3,
+    quote: 4,
+    decision: 5,
+    negotiation: 6,
+    accepted: 7,
+    execution: 8,
+    on_hold: 9,
+    lost: 9,
+    completed: 10,
+};
+
 function latestWorkRequired(workRequired: WorkRequired[]) {
     return [...workRequired].sort((a, b) => {
         const aDate = a.updated_at || a.created_at;
@@ -13,12 +30,15 @@ function latestWorkRequired(workRequired: WorkRequired[]) {
         return bDate.localeCompare(aDate);
     })[0];
 }
+
 function progressForWorkRequired(workRequired: WorkRequired | undefined): CustomerProgress {
     const title = workRequired?.title || "Add work required to begin";
     const status: WorkRequiredStatus | undefined = workRequired?.status;
     switch (status) {
         case "new":
-            return { key: "new", label: "Contacted", summary: `${title} · qualify workRequired and plan a visit`, percent: 16 };
+            return { key: "new", label: "New enquiry", summary: `${title} · qualify the enquiry and plan the next action`, percent: 10 };
+        case "contacted":
+            return { key: "contacted", label: "Qualified", summary: `${title} · customer contact or scope qualification is complete`, percent: 18 };
         case "visit_scheduled":
             return { key: "visit", label: "Site visit planned", summary: `${title} · measurement or site visit is scheduled`, percent: 24 };
         case "measurement_done":
@@ -44,8 +64,65 @@ function progressForWorkRequired(workRequired: WorkRequired | undefined): Custom
         case "completed":
             return { key: "completed", label: "Work completed", summary: `${title} is complete`, percent: 100 };
         default:
-            return { key: "new", label: "WorkRequired captured", summary: title, percent: workRequired ? 10 : 5 };
+            return { key: "new", label: "New enquiry", summary: title, percent: workRequired ? 10 : 5 };
     }
+}
+
+function customerEventProgress(db: RDashDatabase, customerId: string): CustomerProgress {
+    const customer = db.customers.find((row) => row.id === customerId);
+    const activeSiteIds = new Set(
+        db.sites
+            .filter((site) => site.customer_id === customerId && !site.is_archived)
+            .map((site) => site.id),
+    );
+
+    const hasVerifiedMeasurement = db.measurementRevisions.some((revision) =>
+        revision.status === "verified" && activeSiteIds.has(revision.site_id),
+    );
+    if (hasVerifiedMeasurement) {
+        return {
+            key: "measurement",
+            label: "Measurement complete",
+            summary: "A verified Site measurement has been captured · prepare the quotation",
+            percent: 32,
+        };
+    }
+
+    const hasPlannedVisit = db.visits.some((visit) =>
+        visit.customer_id === customerId &&
+        (visit.visit_type === "site_visit" || visit.visit_type === "measurement") &&
+        visit.status !== "cancelled" &&
+        visit.status !== "missed",
+    );
+    if (hasPlannedVisit) {
+        return {
+            key: "visit",
+            label: "Site visit planned",
+            summary: "A customer Site Visit or Measurement is scheduled",
+            percent: 24,
+        };
+    }
+
+    const hasQualifiedContact = db.followups.some((followup) =>
+        followup.customer_id === customerId &&
+        followup.status === "completed" &&
+        (followup.outcome === "contacted" || followup.outcome === "converted" || followup.outcome === "promise_received"),
+    );
+    if (hasQualifiedContact) {
+        return {
+            key: "contacted",
+            label: "Qualified",
+            summary: "Customer contact outcome recorded · plan the Site Visit or next sales action",
+            percent: 18,
+        };
+    }
+
+    return {
+        key: "new",
+        label: "New enquiry",
+        summary: customer?.name ? `${customer.name} · qualify the enquiry and plan the next action` : "Qualify the enquiry and plan the next action",
+        percent: 5,
+    };
 }
 
 /**
@@ -84,7 +161,6 @@ export function customerCollectionPenalty(db: RDashDatabase, customerId: string)
 }
 
 export function customerProgress(db: RDashDatabase, customerId: string): CustomerProgress {
-    const customer = db.customers.find((row) => row.id === customerId);
     const workRequiredList = db.workRequired.filter((row) => row.customer_id === customerId);
     const activeWorkRequireds = workRequiredList.filter((row) => row.status !== "lost" && row.status !== "completed");
     const activeWorkRequired = latestWorkRequired(activeWorkRequireds) || latestWorkRequired(workRequiredList);
@@ -112,7 +188,15 @@ export function customerProgress(db: RDashDatabase, customerId: string): Custome
             percent: Math.max(0, Math.round((basePercent - penalty) * 10) / 10),
         };
     }
-    const base = progressForWorkRequired(activeWorkRequired);
+
+    const workBase = progressForWorkRequired(activeWorkRequired);
+    const eventBase = customerEventProgress(db, customerId);
+    const base = workBase.key === "lost" || workBase.key === "on_hold"
+        ? workBase
+        : PROGRESS_RANK[eventBase.key] > PROGRESS_RANK[workBase.key]
+            ? eventBase
+            : workBase;
+
     if (penalty <= 0 || base.percent <= 0)
         return base;
     return {
@@ -121,10 +205,12 @@ export function customerProgress(db: RDashDatabase, customerId: string): Custome
         percent: Math.max(0, Math.round((base.percent - penalty) * 10) / 10),
     };
 }
+
 export function customerMapHref(address?: string, latitude?: number, longitude?: number) {
     const query = latitude != null && longitude != null ? `${latitude},${longitude}` : address || "";
     return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : undefined;
 }
+
 export function customerWhatsappHref(phone?: string) {
     const digits = (phone || "").replace(/\D/g, "");
     if (!digits)
