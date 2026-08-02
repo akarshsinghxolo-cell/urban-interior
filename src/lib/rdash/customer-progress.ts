@@ -106,7 +106,7 @@ function customerEventProgress(db: RDashDatabase, customerId: string): CustomerP
     const hasQualifiedContact = db.followups.some((followup) =>
         followup.customer_id === customerId &&
         followup.status === "completed" &&
-        (followup.outcome === "contacted" || followup.outcome === "converted" || followup.outcome === "promise_received"),
+        (followup.outcome === "contacted" || followup.outcome === "converted"),
     );
     if (hasQualifiedContact) {
         return {
