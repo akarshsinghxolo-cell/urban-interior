@@ -7,7 +7,8 @@ export type WorkItemType = "task" | "followup";
  *
  * This is deliberately not wired into RDashDatabase or persistence yet. The
  * first gate is proving that both legacy row shapes can round-trip losslessly
- * while their distinct lifecycle statuses remain untouched.
+ * while their distinct lifecycle statuses and due-date semantics remain
+ * untouched.
  */
 export interface CanonicalWorkItem {
   id: ID;
@@ -31,8 +32,10 @@ export interface CanonicalWorkItem {
   assigned_to?: string;
   assigned_role?: string;
 
-  /** Exact legacy due value. Task stores a business date; Follow-up may store an ISO timestamp. */
-  due_value: string;
+  /** Business-date representation used by both Tasks and Follow-ups. */
+  due_date: string;
+  /** Precise Follow-up timestamp. Tasks intentionally leave this undefined. */
+  due_at?: string;
   work_kind?: string;
 
   created_at: string;
@@ -66,7 +69,7 @@ export function workItemFromTask(task: Task): CanonicalWorkItem {
     assignee_name: task.assignee_name,
     assigned_to: task.assigned_to,
     assigned_role: task.assigned_role,
-    due_value: task.due_date,
+    due_date: task.due_date,
     work_kind: task.task_type,
     created_at: task.created_at,
     updated_at: task.updated_at,
@@ -89,7 +92,8 @@ export function workItemFromFollowup(followup: Followup): CanonicalWorkItem {
     thread_id: followup.thread_id,
     assigned_to: followup.assigned_to,
     assigned_role: followup.assigned_role,
-    due_value: followup.due_at || followup.due_date,
+    due_date: followup.due_date,
+    due_at: followup.due_at,
     work_kind: followup.followup_type,
     created_at: followup.created_at,
     updated_at: followup.updated_at,
@@ -121,7 +125,7 @@ export function taskFromWorkItem(item: CanonicalWorkItem): Task {
     assignee_name: item.assignee_name,
     assigned_to: item.assigned_to,
     assigned_role: item.assigned_role,
-    due_date: item.due_value,
+    due_date: item.due_date,
     task_type: item.work_kind,
     created_at: item.created_at,
     updated_at: item.updated_at,
@@ -132,13 +136,12 @@ export function followupFromWorkItem(item: CanonicalWorkItem): Followup {
   if (item.item_type !== "followup") {
     throw new Error(`Cannot project ${item.item_type} work item ${item.id} as Followup.`);
   }
-
-  const legacy = (item.legacy_payload || {}) as Record<string, unknown>;
-  const legacyDueAt = typeof legacy.due_at === "string" ? legacy.due_at : undefined;
-  const legacyDueDate = typeof legacy.due_date === "string" ? legacy.due_date : undefined;
+  if (!item.due_at) {
+    throw new Error(`Follow-up work item ${item.id} is missing due_at.`);
+  }
 
   return {
-    ...legacy,
+    ...(item.legacy_payload || {}),
     id: item.id,
     title: item.title,
     status: item.lifecycle_status as Followup["status"],
@@ -151,11 +154,8 @@ export function followupFromWorkItem(item: CanonicalWorkItem): Followup {
     thread_id: item.thread_id,
     assigned_to: item.assigned_to,
     assigned_role: item.assigned_role,
-    // Keep both legacy fields because existing modules use both. If due_at was
-    // the active precise timestamp, the canonical value replaces it. If a row
-    // only had due_date, preserve that representation without inventing a time.
-    due_at: legacyDueAt ? item.due_value : (legacyDueDate ? legacyDueAt || item.due_value : item.due_value),
-    due_date: legacyDueAt && legacyDueDate ? legacyDueDate : (legacyDueDate ? item.due_value : item.due_value),
+    due_at: item.due_at,
+    due_date: item.due_date,
     followup_type: item.work_kind as Followup["followup_type"],
     created_at: item.created_at,
     updated_at: item.updated_at,
