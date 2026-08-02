@@ -44,6 +44,16 @@ const CUSTOMER_PROGRESS_STAGE: Record<CustomerProgress["key"], WorkRequiredStatu
   completed: "accepted",
 };
 
+const SALES_STAGE_RANK: Partial<Record<WorkRequiredStatus, number>> = {
+  new: 0,
+  contacted: 1,
+  visit_scheduled: 2,
+  measurement_done: 3,
+  quotation_in_progress: 4,
+  quotation_sent: 5,
+  negotiation: 6,
+};
+
 export function pipelineStageForSiteStage(stage: Site["stage"]): WorkRequiredStatus {
   return SITE_PROGRESS[stage].stage;
 }
@@ -52,13 +62,40 @@ export function pipelineStageForCustomerProgress(progress: CustomerProgress): Wo
   return CUSTOMER_PROGRESS_STAGE[progress.key];
 }
 
+function combinedSiteProgress(db: RDashDatabase, site: Site) {
+  const siteProgress = SITE_PROGRESS[site.stage];
+  const customer = customerProgress(db, site.customer_id);
+  const customerStage = pipelineStageForCustomerProgress(customer);
+  const siteRank = SALES_STAGE_RANK[siteProgress.stage];
+  const customerRank = SALES_STAGE_RANK[customerStage];
+
+  // Terminal/operational Site states stay authoritative. For the early sales
+  // funnel, however, real Customer events (successful contact, Visit, verified
+  // Measurement) may be ahead of a manually unchanged Site stage such as
+  // "enquiry". Use the later factual milestone until Work Required takes over.
+  if (siteRank != null && customerRank != null && customerRank > siteRank) {
+    return {
+      stage: customerStage,
+      label: customer.label,
+      percent: Math.max(siteProgress.percent, customer.percent),
+      sourceLabel: "Customer + Site progression",
+    };
+  }
+
+  return {
+    ...siteProgress,
+    sourceLabel: "Site progression",
+  };
+}
+
 /**
  * Builds fallback Sales Pipeline cards from the best progression source that
  * exists before a Work Required record is created.
  *
  * Precedence is intentionally:
  *   1. Work Required lifecycle (rendered by SalesPipelineModule itself)
- *   2. Site progression for Sites with no Work Required yet
+ *   2. Site progression, enriched by factual Customer milestones, for Sites
+ *      with no Work Required yet
  *   3. Customer progression for Customers with no active Site yet
  *
  * That keeps the board complete without duplicating a Site/Customer once its
@@ -73,7 +110,7 @@ export function buildProgressionPipelineEntries(db: RDashDatabase): ProgressionP
   const siteEntries = activeSites
     .filter((site) => !workRequiredSiteIds.has(site.id))
     .map((site): ProgressionPipelineEntry => {
-      const progress = SITE_PROGRESS[site.stage];
+      const progress = combinedSiteProgress(db, site);
       return {
         id: `progression:site:${site.id}`,
         source: "site_progress",
@@ -81,7 +118,7 @@ export function buildProgressionPipelineEntries(db: RDashDatabase): ProgressionP
         customer_id: site.customer_id,
         site_id: site.id,
         title: site.name,
-        source_label: "Site progression",
+        source_label: progress.sourceLabel,
         progress_label: progress.label,
         progress_percent: progress.percent,
         created_at: site.created_at,
