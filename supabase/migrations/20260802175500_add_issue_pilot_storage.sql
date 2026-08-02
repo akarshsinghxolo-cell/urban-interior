@@ -65,9 +65,9 @@ create table public.entity_issues (
   constraint entity_issues_id_matches_data_check
     check ((data ? 'id') and data ->> 'id' = id),
   constraint entity_issues_issue_type_check
-    check (issue_type in ('blocker', 'risk')),
+    check (issue_type is not null and issue_type in ('blocker', 'risk')),
   constraint entity_issues_status_check
-    check (status in ('open', 'resolved', 'dismissed')),
+    check (status is not null and status in ('open', 'resolved', 'dismissed')),
   constraint entity_issues_title_check
     check (nullif(btrim(title), '') is not null),
   constraint entity_issues_reason_check
@@ -78,7 +78,9 @@ create table public.entity_issues (
     check (
       issue_type <> 'risk'
       or (
-        risk_type in ('cash', 'margin', 'vendor', 'collection')
+        risk_type is not null
+        and risk_type in ('cash', 'margin', 'vendor', 'collection')
+        and severity is not null
         and severity in ('low', 'medium', 'high', 'urgent')
       )
     )
