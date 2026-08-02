@@ -119,6 +119,15 @@ export const SPECIAL_DATABASE_OBJECT_ARCHITECTURE = Object.freeze({
     "critical",
     "Workspace delta synchronization",
   ),
+  entity_issues: physical(
+    "table",
+    "workflow",
+    "keep-normalize-later",
+    "Canonical Issue pilot storage",
+    "medium",
+    "Risks/Blockers consolidation shadow and parity storage",
+    "issues logical collection after cutover",
+  ),
   staff_identity_drift_report: physical(
     "view",
     "hr",
