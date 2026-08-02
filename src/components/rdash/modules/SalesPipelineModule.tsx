@@ -10,6 +10,7 @@ import { TrendingUp, Users, Target, DollarSign, Phone, MapPin, Calendar, Plus, G
 import { toast } from "sonner";
 import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds } from "@/lib/rdash/metrics";
 import { evaluateWorkRequiredTransition } from "@/lib/rdash/work-required-lifecycle";
+import { buildProgressionPipelineEntries, type ProgressionPipelineEntry } from "@/lib/rdash/sales-pipeline-progress";
 import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, closestCorners, type DragEndEvent } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,10 @@ interface TransitionRequest {
     target: WorkRequiredStatus;
     source: "drag" | "keyboard";
 }
+
+type PipelineBoardItem =
+    | { kind: "work_required"; req: WorkRequired; customer?: Customer }
+    | { kind: "progression"; entry: ProgressionPipelineEntry; customer?: Customer };
 
 function stageLabel(status: WorkRequiredStatus): string {
     return PIPELINE_STAGES.find((stage) => stage.key === status)?.label || titleCase(status);
@@ -98,6 +103,34 @@ function DraggableCard({ req, customer, db, onOpen, onRequestTransition }: {
     </article>);
 }
 
+function ProgressionCard({ entry, customer, onOpen }: {
+    entry: ProgressionPipelineEntry;
+    customer?: Customer;
+    onOpen: () => void;
+}) {
+    return (<article className="rounded-lg border border-border bg-gradient-to-br from-card to-muted/20 p-3 shadow-card transition-all hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-lg">
+      <button type="button" onClick={onOpen} className="flex w-full min-w-0 items-center gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {customer && <Avatar name={customer.name} size={28}/>} 
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold">{customer?.name || entry.title}</span>
+          <span className="block truncate text-[10px] text-muted-foreground">{entry.source === "site_progress" ? entry.title : "Site not created yet"}</span>
+        </span>
+      </button>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <StatusBadge label={entry.progress_label} className="bg-primary/10 text-primary border-primary/20"/>
+        <span className="text-[10px] font-medium text-muted-foreground">{entry.source_label}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted" aria-label={`${entry.progress_label}: ${entry.progress_percent}%`}>
+        <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, entry.progress_percent))}%` }}/>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>{entry.progress_percent}%</span>
+        <span>{relativeDay(entry.created_at)}</span>
+      </div>
+      <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground/70">Read-only here · update the {entry.source === "site_progress" ? "Site stage" : "Customer record"} at its source.</p>
+    </article>);
+}
+
 function DroppableColumn({ stageKey, children }: { stageKey: WorkRequiredStatus; children: React.ReactNode }) {
     const workflowControlled = stageKey === "accepted";
     const { setNodeRef, isOver } = useDroppable({ id: `drop-${stageKey}`, disabled: workflowControlled });
@@ -150,18 +183,33 @@ export function SalesPipelineModule() {
 
     const [priorityFilter, setPriorityFilter] = React.useState<"all" | "urgent" | "high" | "medium" | "low">("all");
     const filteredWorkRequireds = React.useMemo(() => priorityFilter === "all" ? db.workRequired : db.workRequired.filter((row) => row.priority === priorityFilter), [db.workRequired, priorityFilter]);
+    const progressionEntries = React.useMemo(() => buildProgressionPipelineEntries(db), [db]);
+    const visibleProgressionEntries = React.useMemo(() => priorityFilter === "all" ? progressionEntries : [], [priorityFilter, progressionEntries]);
     const byStage = React.useMemo(() => {
-        const grouped = new Map<WorkRequiredStatus, Array<{ req: WorkRequired; customer?: Customer }>>();
+        const grouped = new Map<WorkRequiredStatus, PipelineBoardItem[]>();
+        const add = (stage: WorkRequiredStatus, item: PipelineBoardItem) => grouped.set(stage, [...(grouped.get(stage) || []), item]);
         filteredWorkRequireds.forEach((req) => {
             const customer = db.customers.find((row) => row.id === req.customer_id);
-            grouped.set(req.status, [...(grouped.get(req.status) || []), { req, customer }]);
+            add(req.status, { kind: "work_required", req, customer });
+        });
+        visibleProgressionEntries.forEach((entry) => {
+            const customer = db.customers.find((row) => row.id === entry.customer_id);
+            add(entry.stage, { kind: "progression", entry, customer });
         });
         return grouped;
-    }, [filteredWorkRequireds, db.customers]);
+    }, [filteredWorkRequireds, visibleProgressionEntries, db.customers]);
     const wonWorkRequiredIds = React.useMemo(() => collectWonWorkRequiredIds(db.quotations, db.workOrders), [db.quotations, db.workOrders]);
     const salesMetrics = React.useMemo(() => calculateSalesPipelineMetrics(filteredWorkRequireds, { wonWorkRequiredIds }), [filteredWorkRequireds, wonWorkRequiredIds]);
+    const progressionWonCount = visibleProgressionEntries.filter((entry) => entry.stage === "accepted").length;
+    const progressionLostCount = visibleProgressionEntries.filter((entry) => entry.stage === "lost").length;
+    const progressionDecidedCount = progressionWonCount + progressionLostCount;
+    const combinedWonCount = salesMetrics.wonCount + progressionWonCount;
+    const combinedDecidedCount = salesMetrics.decidedCount + progressionDecidedCount;
+    const combinedOpenCount = salesMetrics.openCount + visibleProgressionEntries.length - progressionDecidedCount;
+    const combinedWinRate = combinedDecidedCount > 0 ? Math.round((combinedWonCount / combinedDecidedCount) * 100) : 0;
+    const totalLeadCount = filteredWorkRequireds.length + visibleProgressionEntries.length;
     const priorityChips: Array<{ key: typeof priorityFilter; label: string; count: number }> = [
-        { key: "all", label: "All", count: db.workRequired.length },
+        { key: "all", label: "All", count: db.workRequired.length + progressionEntries.length },
         { key: "urgent", label: "Urgent", count: db.workRequired.filter((row) => row.priority === "urgent").length },
         { key: "high", label: "High", count: db.workRequired.filter((row) => row.priority === "high").length },
         { key: "medium", label: "Medium", count: db.workRequired.filter((row) => row.priority === "medium").length },
@@ -169,16 +217,16 @@ export function SalesPipelineModule() {
     ];
 
     return (<div className="flex flex-col gap-5">
-      <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><TrendingUp className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Sales Pipeline</h2><p className="text-xs text-muted-foreground">Lifecycle-controlled funnel · drag or use the keyboard stage selector</p></div></div>
+      <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><TrendingUp className="h-5 w-5"/></span><div><h2 className="text-lg font-bold tracking-tight">Sales Pipeline</h2><p className="text-xs text-muted-foreground">Progression-aware funnel · Work Required lifecycle, then Site or Customer progression</p></div></div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Total leads" value={filteredWorkRequireds.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
-        <MetricCard label="Won" value={salesMetrics.wonCount} tone="success" icon={<Target className="h-4 w-4"/>}/>
-        <MetricCard label="Win rate" value={`${salesMetrics.winRate}%`} hint={`${salesMetrics.decidedCount} decided`} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
-        <MetricCard label="Pipeline value" value={formatINRShort(salesMetrics.pipelineValue)} hint={`${salesMetrics.openCount} open`} tone="primary" icon={<DollarSign className="h-4 w-4"/>}/>
+        <MetricCard label="Total leads" value={totalLeadCount} tone="primary" icon={<Users className="h-4 w-4"/>}/>
+        <MetricCard label="Won" value={combinedWonCount} tone="success" icon={<Target className="h-4 w-4"/>}/>
+        <MetricCard label="Win rate" value={`${combinedWinRate}%`} hint={`${combinedDecidedCount} decided`} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
+        <MetricCard label="Pipeline value" value={formatINRShort(salesMetrics.pipelineValue)} hint={`${combinedOpenCount} open`} tone="primary" icon={<DollarSign className="h-4 w-4"/>}/>
       </div>
       <section aria-label="Priority filter" className="flex flex-wrap items-center gap-1.5"><span className="mr-1 text-xs font-semibold text-muted-foreground">Priority:</span>{priorityChips.map((chip) => { const active = priorityFilter === chip.key; return <button key={chip.key} type="button" aria-pressed={active} onClick={() => setPriorityFilter(chip.key)} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-all", active ? "bg-primary text-primary-foreground shadow-sm" : "border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground")}>{chip.label}<span className={cn("ml-1.5 rounded px-1 text-[10px]", active ? "bg-primary-foreground/20" : "bg-muted")}>{chip.count}</span></button>; })}</section>
       <DndContext sensors={[sensor]} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-        <div className="flex flex-col gap-3">{PIPELINE_STAGES.map((stage) => { const items = byStage.get(stage.key) || []; const stageValue = items.reduce((sum, item) => sum + (item.req.budget || 0), 0); return <section key={stage.key} aria-label={`${stage.label} pipeline stage`} className="grid gap-2 rounded-xl border border-border bg-card/30 p-2 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]"><div className={cn("rounded-lg border border-border border-l-4 bg-gradient-to-br px-3 py-2.5 shadow-sm sm:h-full", stage.color, stage.headerBg)}><div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"><span className="text-sm">{stage.icon}</span>{stage.label}</span><span className={cn("rounded-full bg-card/80 px-2 py-0.5 text-[10px] font-bold tabular-nums", stage.accent)}>{items.length}</span></div>{stageValue > 0 && <p className={cn("mt-1 text-[11px] font-mono font-semibold tabular-nums", stage.accent)}>{formatINRShort(stageValue)}</p>}</div><DroppableColumn stageKey={stage.key}>{items.map(({ req, customer }) => <DraggableCard key={req.id} req={req} customer={customer} db={db} onOpen={() => openDetail("workRequired", req.id)} onRequestTransition={requestTransition}/>)}{items.length === 0 && <div className="flex min-h-[96px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-muted/10 px-3 py-5 text-center sm:col-span-2 xl:col-span-3"><Plus className="h-4 w-4 text-muted-foreground/60"/><p className="text-[10px] font-semibold text-muted-foreground/80">No items</p><p className="text-[9px] text-muted-foreground/50">Lifecycle-valid moves appear here</p></div>}</DroppableColumn></section>; })}</div>
+        <div className="flex flex-col gap-3">{PIPELINE_STAGES.map((stage) => { const items = byStage.get(stage.key) || []; const stageValue = items.reduce((sum, item) => sum + (item.kind === "work_required" ? item.req.budget || 0 : 0), 0); return <section key={stage.key} aria-label={`${stage.label} pipeline stage`} className="grid gap-2 rounded-xl border border-border bg-card/30 p-2 sm:grid-cols-[minmax(180px,220px)_minmax(0,1fr)]"><div className={cn("rounded-lg border border-border border-l-4 bg-gradient-to-br px-3 py-2.5 shadow-sm sm:h-full", stage.color, stage.headerBg)}><div className="flex items-center justify-between"><span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider"><span className="text-sm">{stage.icon}</span>{stage.label}</span><span className={cn("rounded-full bg-card/80 px-2 py-0.5 text-[10px] font-bold tabular-nums", stage.accent)}>{items.length}</span></div>{stageValue > 0 && <p className={cn("mt-1 text-[11px] font-mono font-semibold tabular-nums", stage.accent)}>{formatINRShort(stageValue)}</p>}</div><DroppableColumn stageKey={stage.key}>{items.map((item) => item.kind === "work_required" ? <DraggableCard key={item.req.id} req={item.req} customer={item.customer} db={db} onOpen={() => openDetail("workRequired", item.req.id)} onRequestTransition={requestTransition}/> : <ProgressionCard key={item.entry.id} entry={item.entry} customer={item.customer} onOpen={() => item.entry.site_id ? openDetail("site", item.entry.site_id) : openDetail("customer", item.entry.customer_id)}/>)}{items.length === 0 && <div className="flex min-h-[96px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-muted/10 px-3 py-5 text-center sm:col-span-2 xl:col-span-3"><Plus className="h-4 w-4 text-muted-foreground/60"/><p className="text-[10px] font-semibold text-muted-foreground/80">No items</p><p className="text-[9px] text-muted-foreground/50">No Work Required, Site, or Customer progression at this stage</p></div>}</DroppableColumn></section>; })}</div>
       </DndContext>
       <Dialog open={pendingTransition !== null} onOpenChange={(open) => { if (!open) setPendingTransition(null); }}>
         <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Confirm lifecycle transition</DialogTitle><DialogDescription>{pendingTransition ? `Move “${pendingTransition.req.title}” from ${stageLabel(pendingTransition.req.status)} to ${stageLabel(pendingTransition.target)}.` : "Provide the required audit reason."}</DialogDescription></DialogHeader><label className="text-xs font-semibold">Reason<Textarea value={transitionReason} onChange={(event) => setTransitionReason(event.target.value)} className="mt-1 min-h-24" placeholder="Explain why this work is being held, lost, resumed, or moved backward." autoFocus/></label><DialogFooter><Button variant="outline" onClick={() => setPendingTransition(null)}>Cancel</Button><Button onClick={() => { if (!pendingTransition) return; const reason = transitionReason.trim(); if (!reason) { toast.error("A reason is required."); return; } commitTransition(pendingTransition, reason); setPendingTransition(null); }}>Confirm move</Button></DialogFooter></DialogContent>
