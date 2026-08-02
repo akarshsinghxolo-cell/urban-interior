@@ -36,6 +36,7 @@ describe("database architecture registry", () => {
       "uc_workspace_operations",
       "entity_workspace_revision",
       "entity_workspace_change_batches",
+      "entity_issues",
       "staff_identity_drift_report",
     ]));
   });
@@ -66,5 +67,6 @@ describe("database architecture registry", () => {
     expect(COLLECTION_ARCHITECTURE.risks.targetConcept).toBe("Issue");
     expect(COLLECTION_ARCHITECTURE.blocked.decision).toBe("merge-candidate");
     expect(COLLECTION_ARCHITECTURE.risks.decision).toBe("merge-candidate");
+    expect(SPECIAL_DATABASE_OBJECT_ARCHITECTURE.entity_issues.canonicalTruth).toBe("Canonical Issue pilot storage");
   });
 });
