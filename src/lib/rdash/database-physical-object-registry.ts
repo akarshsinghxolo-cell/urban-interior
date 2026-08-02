@@ -16,7 +16,7 @@ const physical = (
 ): PhysicalDatabaseObjectDecision => Object.freeze({
   objectType,
   domain,
-  decision,
+  decision: architectureDecision,
   canonicalTruth,
   risk,
   runtimeOwner,
@@ -127,6 +127,15 @@ export const SPECIAL_DATABASE_OBJECT_ARCHITECTURE = Object.freeze({
     "medium",
     "Risks/Blockers consolidation shadow and parity storage",
     "issues logical collection after cutover",
+  ),
+  entity_workItems: physical(
+    "table",
+    "workflow",
+    "keep-normalize-later",
+    "Canonical Task/Follow-up WorkItem shadow storage",
+    "high",
+    "Task/Follow-up consolidation shadow and parity storage",
+    "WorkItem logical collection after cutover",
   ),
   staff_identity_drift_report: physical(
     "view",
