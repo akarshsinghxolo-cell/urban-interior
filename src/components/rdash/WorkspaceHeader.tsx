@@ -49,62 +49,74 @@ export function WorkspaceHeader() {
     }, { reason: "sign out" });
   };
 
+  const syncState = hasPendingChanges
+    ? { label: hasConflict ? "Needs review" : "Saved locally", className: hasConflict ? "text-destructive bg-destructive/8 border-destructive/20" : "text-warning bg-warning/8 border-warning/20" }
+    : workspaceSyncStatus === "saving"
+      ? { label: "Saving…", className: "text-muted-foreground bg-muted/50 border-border/60" }
+      : workspaceSyncStatus === "error"
+        ? { label: "Sync failed", className: "text-destructive bg-destructive/8 border-destructive/20" }
+        : workspaceSyncStatus === "saved"
+          ? { label: "Saved", className: "text-success bg-success/8 border-success/20" }
+          : null;
+
   return (
-    <header className="sticky top-0 z-30 flex flex-col gap-2 border-b border-border bg-background/85 backdrop-blur-md">
+    <header className="sticky top-0 z-30 flex flex-col border-b border-border/80 bg-background/95 shadow-[0_1px_0_rgba(15,23,42,0.02)] backdrop-blur-xl">
       <CreateMenu showTrigger={false} enableHotkeys={false} />
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-[var(--page-pad)] py-2.5">
-        <div className="flex min-w-0 items-center justify-start gap-2">
-          <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
+      <div className="flex min-h-14 items-center gap-2 px-[var(--page-pad)] py-2">
+        <div className="flex shrink-0 items-center gap-1">
+          <Button variant="ghost" size="icon" className="h-10 w-10 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation">
             <Menu className="h-5 w-5" />
           </Button>
-          <div className="hidden shrink-0 items-center gap-0.5 sm:flex">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(-1)} disabled={moduleHistoryIndex <= 0} aria-label="Go back in module history" title="Back">
+          <div className="hidden items-center gap-0.5 sm:flex">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => navigateModuleHistory(-1)} disabled={moduleHistoryIndex <= 0} aria-label="Go back in module history" title="Back">
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigateModuleHistory(1)} disabled={moduleHistoryIndex >= moduleHistoryLength - 1} aria-label="Go forward in module history" title="Forward">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground" onClick={() => navigateModuleHistory(1)} disabled={moduleHistoryIndex >= moduleHistoryLength - 1} aria-label="Go forward in module history" title="Forward">
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
           <DemoModeBadge />
         </div>
 
-        <div className="flex items-center justify-center">
-          <EnhancedSearch />
-          <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 md:hidden" onClick={() => setCommandPaletteOpen(true)} aria-label="Open command palette" title="Command palette (Cmd+K)">
+        <div className="flex min-w-0 flex-1 items-center justify-center px-1 sm:px-3">
+          <div className="w-full max-w-2xl">
+            <EnhancedSearch />
+          </div>
+          <Button variant="outline" size="icon" className="ml-1 h-10 w-10 shrink-0 md:hidden" onClick={() => setCommandPaletteOpen(true)} aria-label="Open command palette" title="Command palette (Cmd+K)">
             <Command className="h-4 w-4" />
           </Button>
         </div>
 
-        <div className="flex min-w-0 items-center justify-end gap-2">
-          <Button variant="outline" size="icon" className="relative hidden h-11 w-11 shrink-0 xl:inline-flex" onClick={() => setKeyboardShortcutsOpen(true)} aria-label="Show keyboard shortcuts" title="Keyboard shortcuts (?)">
+        <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
+          {syncState ? (
+            <button
+              type="button"
+              onClick={hasPendingChanges ? () => window.dispatchEvent(new CustomEvent("uc-open-pending-uploads")) : undefined}
+              title={workspaceSyncError || syncState.label}
+              aria-live="polite"
+              className={cn("hidden h-7 items-center rounded-full border px-2 text-[10px] font-semibold 2xl:inline-flex", syncState.className)}
+            >
+              {syncState.label}
+            </button>
+          ) : null}
+
+          <Button variant="ghost" size="icon" className="hidden h-9 w-9 text-muted-foreground xl:inline-flex" onClick={() => setKeyboardShortcutsOpen(true)} aria-label="Show keyboard shortcuts" title="Keyboard shortcuts (?)">
             <Keyboard className="h-4 w-4" />
-            <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 font-mono text-[8px] font-bold text-primary-foreground">?</span>
           </Button>
-          <Button variant="outline" size="icon" className="hidden h-11 w-11 shrink-0 xl:inline-flex" onClick={refresh} aria-label="Refresh">
+          <Button variant="ghost" size="icon" className="hidden h-9 w-9 text-muted-foreground xl:inline-flex" onClick={refresh} aria-label="Refresh workspace" title="Refresh workspace">
             <RefreshCw className="h-4 w-4" />
           </Button>
           <UploadStatusIndicator />
           <NotificationCenter />
-          <div className="hidden xl:block">
+          <div className="hidden lg:block">
             <ThemeToggle />
           </div>
 
-          {hasPendingChanges ? (
-            <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("uc-open-pending-uploads"))} title={workspaceSyncError || "Saved locally and waiting to synchronize"} className={cn("hidden text-[10px] font-semibold 2xl:inline", hasConflict ? "text-destructive" : "text-warning")}>
-              {hasConflict ? "Needs review" : "Saved locally"}
-            </button>
-          ) : workspaceSyncStatus === "saving" ? (
-            <span className="hidden text-[10px] font-medium text-muted-foreground 2xl:inline">Saving…</span>
-          ) : workspaceSyncStatus === "error" ? (
-            <span title={workspaceSyncError || "Server synchronization failed"} className="hidden text-[10px] font-semibold text-destructive 2xl:inline">Sync failed</span>
-          ) : null}
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-11 shrink-0 gap-1.5 px-2" aria-label="Open profile menu">
-                <UserCircle2 className="h-4 w-4 shrink-0 text-primary" />
-                <span className="hidden max-w-[140px] truncate text-xs font-medium xl:inline">{authUser?.name || "User"}</span>
-                <span className="hidden shrink-0 text-xs text-muted-foreground 2xl:inline">· {role}</span>
+              <Button variant="ghost" className="h-10 shrink-0 gap-1.5 rounded-full px-1.5 sm:px-2.5" aria-label="Open profile menu">
+                <UserCircle2 className="h-5 w-5 shrink-0 text-primary" />
+                <span className="hidden max-w-[120px] truncate text-xs font-semibold xl:inline">{authUser?.name || "User"}</span>
                 <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground xl:block" />
               </Button>
             </DropdownMenuTrigger>
@@ -129,8 +141,10 @@ export function WorkspaceHeader() {
           </DropdownMenu>
         </div>
       </div>
-      <WorkspaceLocationBreadcrumbs />
-      <WorkspaceTabs />
+      <div className="border-t border-border/40 bg-muted/15">
+        <WorkspaceLocationBreadcrumbs />
+        <WorkspaceTabs />
+      </div>
     </header>
   );
 }
