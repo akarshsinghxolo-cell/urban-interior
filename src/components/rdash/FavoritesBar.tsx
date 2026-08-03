@@ -1,23 +1,9 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Star, X, Users, FileText, Wrench, MapPin, Building2 } from "lucide-react";
+import { Star, X, Users, FileText, Wrench, MapPin } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { DetailPanelKind } from "@/lib/rdash/store/ui-types";
-
-/**
- * FavoritesBar — a compact horizontal bar showing the user's pinned/favorite
- * records for quick access. Stored in localStorage (per-device).
- *
- * Features:
- * - Pin any record from the detail panel (star button)
- * - Click a favorite to open it in the detail panel
- * - Remove favorites (x button on hover)
- * - Color-coded icons by entity type
- * - Persists across sessions (localStorage)
- * - Shows above the module content area
- * - Empty state: "Pin records for quick access"
- */
 
 interface FavoriteItem {
   id: string;
@@ -96,13 +82,13 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   visit: MapPin,
 };
 
-const KIND_COLOR: Record<string, string> = {
-  customer: "text-primary bg-primary/10 border-primary/20",
-  quotation: "text-success bg-success/10 border-success/20",
-  workOrder: "text-warning bg-warning/10 border-warning/20",
-  site: "text-primary bg-primary/10 border-primary/20",
-  task: "text-muted-foreground bg-muted/40 border-border",
-  visit: "text-primary bg-primary/10 border-primary/20",
+const KIND_ICON_STYLE: Record<string, string> = {
+  customer: "text-primary",
+  quotation: "text-success",
+  workOrder: "text-warning",
+  site: "text-primary",
+  task: "text-muted-foreground",
+  visit: "text-primary",
 };
 
 export function FavoritesBar() {
@@ -117,50 +103,46 @@ export function FavoritesBar() {
   if (favorites.length === 0) return null;
 
   return (
-    <div className="flex items-center gap-1.5 overflow-x-auto rounded-lg border border-border/50 bg-card/60 p-1.5 backdrop-blur-sm rd-scroll">
-      <span className="flex shrink-0 items-center gap-1 px-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-        <Star className="h-3 w-3 fill-current text-warning" />
+    <section aria-label="Favorites" className="flex min-w-0 items-center gap-2 border-b border-border/40 py-2">
+      <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <Star className="h-3 w-3 fill-warning text-warning" />
         Favorites
       </span>
-      {favorites.map((fav) => {
-        const kindKey = (fav.kind || "task") as string;
-        const Icon = KIND_ICON[kindKey] || Star;
-        const colorClass = KIND_COLOR[kindKey] || KIND_COLOR.task;
-        return (
-          <div
-            key={favoriteKey(fav)}
-            className="group flex shrink-0 items-center gap-1 rounded-md border bg-card px-2 py-1 text-xs transition-all hover:shadow-sm"
-          >
-            <button
-              type="button"
-              onClick={() => openDetail(fav.kind, fav.id)}
-              className="flex items-center gap-1.5"
-              title={`Open ${fav.label}`}
+      <div className="rd-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
+        {favorites.map((fav) => {
+          const kindKey = (fav.kind || "task") as string;
+          const Icon = KIND_ICON[kindKey] || Star;
+          const iconClass = KIND_ICON_STYLE[kindKey] || KIND_ICON_STYLE.task;
+          return (
+            <div
+              key={favoriteKey(fav)}
+              className="group flex h-8 shrink-0 items-center rounded-full border border-border/70 bg-card pl-2 pr-1 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:bg-accent/50"
             >
-              <span className={cn("flex h-5 w-5 items-center justify-center rounded", colorClass)}>
-                <Icon className="h-3 w-3" />
-              </span>
-              <span className="max-w-32 truncate font-medium">{fav.label}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => removeFavorite(fav)}
-              className="ml-0.5 rounded p-0.5 text-muted-foreground/50 opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-              aria-label={`Remove ${fav.label} from favorites`}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        );
-      })}
-    </div>
+              <button
+                type="button"
+                onClick={() => openDetail(fav.kind, fav.id)}
+                className="flex min-w-0 items-center gap-1.5 pr-1.5 text-xs font-medium"
+                title={`Open ${fav.label}`}
+              >
+                <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClass)} />
+                <span className="max-w-36 truncate">{fav.label}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => removeFavorite(fav)}
+                className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground/50 opacity-60 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                aria-label={`Remove ${fav.label} from favorites`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
-/**
- * useFavorites — a hook for adding/removing favorites from any component.
- * Used by the DetailPanel to add a "pin to favorites" star button.
- */
 export function useFavorites() {
   const [favorites, updateFavorites] = useFavoriteItems();
 
