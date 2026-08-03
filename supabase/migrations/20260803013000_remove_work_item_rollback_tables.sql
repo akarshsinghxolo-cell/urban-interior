@@ -3,8 +3,8 @@
 --
 -- This migration is intentionally conservative: it refuses to remove the
 -- backups unless they still exactly match the public compatibility views.
--- DROP TABLE is used without CASCADE so any unexpected external dependency
--- aborts the migration instead of being removed implicitly.
+-- DROP TABLE is used without dependent-object removal so any unexpected
+-- external dependency aborts the migration instead of being removed implicitly.
 
 begin;
 
