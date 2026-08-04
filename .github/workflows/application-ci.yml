@@ -111,6 +111,7 @@ jobs:
         run: bun run test:bug-hunt
       - name: Test field staff UI visibility
         run: bun test tests/field-staff-visibility.test.ts
+      # TypeScript errors are blocking: this gate must stay green before lint/build.
       - name: Typecheck application
         run: bunx tsc --noEmit
       - name: Lint application
