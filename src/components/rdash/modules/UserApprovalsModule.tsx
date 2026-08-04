@@ -156,7 +156,7 @@ export function UserApprovalsModule() {
       <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
           <h3 className="text-sm font-semibold">Staff identity drift report</h3>
-          <span className="text-[11px] text-muted-foreground">StaffProfile · HR staff · access role</span>
+          <span className="text-[11px] text-muted-foreground">Canonical Staff · access role</span>
         </div>
         {driftedStaff.length === 0 ? (
           <div className="flex items-center gap-2 px-4 py-4 text-sm text-success">
@@ -170,7 +170,7 @@ export function UserApprovalsModule() {
                 <div>
                   <p className="text-sm font-semibold">{row.email || row.identity_key}</p>
                   <p className="text-xs text-muted-foreground">
-                    {row.role ? roleLabel(row.role) : "No access role"} · role {row.role_status || "missing"} · profile {row.profile_status || "missing"} · HR {row.master_status || "missing"}
+                    {row.role ? roleLabel(row.role) : "No access role"} · role {row.role_status || "missing"} · canonical Staff {row.master_status || row.profile_status || "missing"}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1.5 lg:justify-end">
