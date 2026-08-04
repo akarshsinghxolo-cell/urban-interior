@@ -35,8 +35,11 @@ export function fileKind(file: FilePreviewSource) {
     return "document" as const;
 }
 export function managedPreviewUrl(file: FilePreviewSource) {
-    if (file.googleFileId)
+    if (file.googleFileId) {
+        if (fileKind(file) === "pdf")
+            return `https://drive.google.com/file/d/${encodeURIComponent(file.googleFileId)}/preview`;
         return `/api/google-drive/preview?fileId=${encodeURIComponent(file.googleFileId)}`;
+    }
     return file.url || "";
 }
 export function managedThumbnailUrl(file: FilePreviewSource, width = 360) {
