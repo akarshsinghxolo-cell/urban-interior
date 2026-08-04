@@ -15,36 +15,19 @@ import {
   selectUploadAccount,
 } from "./direct-upload-storage";
 
-export async function bindDirectUpload(user: AuthenticatedUser, input: BindUploadRequest): Promise<void> {
-  if (!input.uploadBatchId || !input.uploadItemId) throw new Error("Upload batch and item identities are required.");
+export async function bindDirectUpload(_user: AuthenticatedUser, input: BindUploadRequest): Promise<void> {
+  if (!input.uploadItemId) throw new Error("Upload item identity is required.");
   const admin = getSupabaseAdminClient();
-  const timestamp = nowIso();
-  const [{ data: batch, error: batchError }, { data: item, error: itemError }] = await Promise.all([
-    admin.from("uc_upload_batches").update({
-      target_entity_type: input.targetEntityType,
-      target_entity_id: input.targetEntityId,
-      upload_purpose: input.purpose,
-      updated_at: timestamp,
-    }).eq("id", input.uploadBatchId).select("id").maybeSingle(),
-    admin.from("uc_upload_items").update({
-      target_entity_type: input.targetEntityType,
-      target_entity_id: input.targetEntityId,
-      upload_purpose: input.purpose,
-      attachment_field: input.attachmentField,
-      attachment_field_mode: input.attachmentFieldMode,
-      updated_at: timestamp,
-    }).eq("id", input.uploadItemId).select("id").maybeSingle(),
-  ]);
-  if (batchError) throw new Error(batchError.message);
-  if (itemError) throw new Error(itemError.message);
-  if (!batch || !item) throw new Error("The upload batch or item could not be bound because it does not exist.");
-  const { error: eventError } = await admin.from("uc_upload_events").insert({
-    upload_item_id: input.uploadItemId,
-    event_type: "bound",
-    detail: { by: user.userId, targetEntityType: input.targetEntityType, targetEntityId: input.targetEntityId, purpose: input.purpose },
-    created_at: timestamp,
-  });
-  if (eventError) throw new Error(eventError.message);
+  const { data: item, error } = await admin.from("uc_upload_items").update({
+    target_entity_type: input.targetEntityType,
+    target_entity_id: input.targetEntityId,
+    upload_purpose: input.purpose,
+    attachment_field: input.attachmentField,
+    attachment_field_mode: input.attachmentFieldMode,
+    updated_at: nowIso(),
+  }).eq("id", input.uploadItemId).select("id").maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!item) throw new Error("The upload item could not be bound because it does not exist.");
 }
 
 async function findCompletedDriveFile(accessToken: string, uploadItemId: string, sizeBytes: number) {
@@ -86,7 +69,7 @@ function normalizeBrowserOrigin(browserOrigin: string): string {
 }
 
 export async function initiateDirectUpload(
-  user: AuthenticatedUser,
+  _user: AuthenticatedUser,
   input: InitiateUploadRequest,
   browserOrigin: string,
 ): Promise<InitiateUploadResponse> {
@@ -172,31 +155,18 @@ export async function initiateDirectUpload(
   }
 
   const workspace = await getWorkspace();
-  const access = await selectUploadAccount(workspace.data, input.uploadBatchId, input.batchSizeBytes || input.sizeBytes);
+  const access = await selectUploadAccount(
+    workspace.data,
+    input.uploadBatchId,
+    input.batchSizeBytes || input.sizeBytes,
+    input.preferredStorageAccountId,
+  );
   const staging = await ensureFolderPath(access.accessToken, access.account, [
     { name: "_System", key: "root:system" },
     { name: "Staging", key: "system:staging" },
   ]);
   const timestamp = nowIso();
   const createdAt = String(existing?.created_at || timestamp);
-
-  const { error: batchError } = await admin.from("uc_upload_batches").upsert({
-    id: input.uploadBatchId,
-    workspace_id: WORKSPACE_ID,
-    source_flow: input.sourceFlow,
-    source_label: input.sourceLabel,
-    target_entity_type: input.targetEntityType,
-    target_entity_id: input.targetEntityId,
-    target_label: input.targetEntityId,
-    upload_purpose: input.purpose,
-    status: "uploading",
-    storage_account_id: access.account.id,
-    required_evidence: input.requiredEvidence,
-    created_by_user_id: user.userId,
-    created_at: createdAt,
-    updated_at: timestamp,
-  }, { onConflict: "id" });
-  if (batchError) throw new Error(batchError.message);
 
   const baseItem = {
     id: input.uploadItemId,
@@ -299,14 +269,6 @@ export async function initiateDirectUpload(
     google_file_id: null,
   }, { onConflict: "id" });
   if (itemError) throw new Error(itemError.message);
-
-  const { error: eventError } = await admin.from("uc_upload_events").insert({
-    upload_item_id: input.uploadItemId,
-    event_type: "session_started",
-    detail: { storageAccountId: access.account.id, stagingFolderId: staging.id, sessionOrigin },
-    created_at: timestamp,
-  });
-  if (eventError) throw new Error(eventError.message);
 
   return {
     sessionUri,
