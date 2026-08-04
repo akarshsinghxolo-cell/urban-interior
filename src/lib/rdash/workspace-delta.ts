@@ -72,6 +72,13 @@ export function loadedWorkspaceCollections(database: RDashDatabase): Set<string>
 export function workspaceCollectionFilterParam(database: RDashDatabase): string | undefined {
   const collections = loadedWorkspaceCollections(database);
   if (!collections) return undefined;
+  // Journal operations contain canonical full Staff rows. Directory-scoped
+  // clients intentionally skip master.staff deltas so a later HR edit cannot
+  // replace a projected row with salary/bank/auth data. Route/module reloads
+  // refresh the projected directory from the canonical Staff table.
+  if (workspaceStaffProjectionParam(database) === "directory") {
+    collections.delete("master.staff");
+  }
   return [...collections].sort().join(",");
 }
 
