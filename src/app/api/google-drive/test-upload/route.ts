@@ -8,6 +8,7 @@ import type { FileAsset } from "@/lib/rdash/types";
 
 export const runtime = "nodejs";
 
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
 
 function makeId(prefix: string) {
@@ -38,10 +39,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Only Owner can run a Google Drive test upload." }, { status: 403 });
     }
 
-    const input = await request.json().catch(() => ({})) as {
-      accountId?: string;
-      accessPolicy?: "internal" | "customer" | "vendor" | "contractor";
-    };
+    const input = await request.json().catch(() => ({})) as { accountId?: string };
 
     const current = await getWorkspace();
     const accounts = current.data.master.storageAccounts || [];
@@ -69,7 +67,7 @@ export async function POST(request: NextRequest) {
       `Uploaded at: ${timestamp}`,
       `Uploaded by: ${user.name} <${user.email}>`,
       `Storage account: ${selected.label}`,
-      `Access policy: ${input.accessPolicy || "internal"}`,
+      "Visibility: Public - anyone with the link can view",
     ].join("\n");
 
     const { boundary, body } = multipartBody({
@@ -102,6 +100,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: payload.error?.message || "Google Drive test upload failed." }, { status: 422 });
     }
 
+    const permission = await fetch(`${DRIVE_API}/files/${encodeURIComponent(payload.id)}/permissions?supportsAllDrives=true`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ type: "anyone", role: "reader", allowFileDiscovery: false }),
+      cache: "no-store",
+    });
+    if (!permission.ok) {
+      const permissionPayload = await permission.json().catch(() => ({})) as { error?: { message?: string } };
+      await fetch(`${DRIVE_API}/files/${encodeURIComponent(payload.id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      }).catch(() => undefined);
+      return NextResponse.json({ error: permissionPayload.error?.message || "Google Drive could not make the test file public." }, { status: 422 });
+    }
+
     const asset: FileAsset = {
       id: makeId("drive-test"),
       storage_account_id: selected.id,
@@ -122,7 +139,7 @@ export async function POST(request: NextRequest) {
       //   "managed uploads require their original physical folder"
       storage_mode: "external_reference",
       sync_status: "uploaded",
-      tags: ["drive-test", input.accessPolicy || "internal"],
+      tags: ["drive-test", "public"],
       status: "active",
       created_at: timestamp,
       updated_at: timestamp,

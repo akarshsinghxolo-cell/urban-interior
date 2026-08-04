@@ -30,7 +30,6 @@ type OAuthConfig = {
   }>;
 };
 type Tab = "overview" | "connect" | "oauth" | "guide";
-type AccessPolicy = "internal" | "customer" | "vendor" | "contractor";
 const now = () => new Date().toISOString();
 const makeId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const isHttpUrl = (v?: string) => /^https:\/\//.test(v || "");
@@ -56,7 +55,6 @@ export function GoogleDriveManagerModule() {
   const [working, setWorking] = React.useState(false);
 
   // Storage settings (imported from DriveStorageView)
-  const [accessPolicy, setAccessPolicy] = React.useState<AccessPolicy>("internal");
   const [fileDraft, setFileDraft] = React.useState({ accountId: "", name: "", kind: "document", url: "", googleFileId: "", tags: "" });
 
   const accounts = db.master.storageAccounts || [];
@@ -142,7 +140,7 @@ export function GoogleDriveManagerModule() {
     if (!writeDestination) return toast.error("No active Drive is available for a test upload");
     setWorking(true);
     try {
-      const r = await fetch("/api/google-drive/test-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: writeDestination.id, accessPolicy }) });
+      const r = await fetch("/api/google-drive/test-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountId: writeDestination.id }) });
       const p = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(p.error || "Test upload failed");
       toast.success(`Test file uploaded to ${writeDestination.label}`);
@@ -250,10 +248,9 @@ export function GoogleDriveManagerModule() {
               <span className="ml-auto shrink-0 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">{files.filter((f) => f.storage_provider === "local").length} local file(s)</span>
             </div>
             {/* Settings grid */}
-            <div className="mt-4 grid gap-2 md:grid-cols-5">
+            <div className="mt-4 grid gap-2 md:grid-cols-4">
               <Field label="Default Drive Root Folder"><Input value={rootFolderName} readOnly /></Field>
               <Field label="Auto-switch Threshold"><select value={String(threshold)} onChange={(e) => updateThresholdForAll(Number(e.target.value))} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20">{[75, 80, 85, 90, 95].map((i) => <option key={i} value={i}>{i}% - {i <= 85 ? "safer" : "higher risk"}</option>)}</select></Field>
-              <Field label="File Access"><select value={accessPolicy} onChange={(e) => setAccessPolicy(e.target.value as AccessPolicy)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="internal">Private - Google account only</option><option value="customer">Customer-shareable</option><option value="vendor">Vendor restricted</option><option value="contractor">Contractor restricted</option></select></Field>
               <Field label="Current Role"><Input value={role} readOnly /></Field>
               <Field label="Upload Destination"><Input value={writeDestination?.label || "No eligible Drive"} readOnly /></Field>
             </div>
