@@ -1,3 +1,4 @@
+import { hydrateStaffReferenceLabels } from "./staff-reference-labels";
 import type { RDashDatabase } from "./types";
 import {
   applyWorkspaceOperations,
@@ -113,8 +114,10 @@ export function applyWorkspaceDelta(
   delta: WorkspaceDeltaPayload,
 ): { database: RDashDatabase; operations: WorkspaceOperation[] } {
   const operations = workspaceDeltaOperations(delta, loadedWorkspaceCollections(database));
+  const next = operations.length ? applyWorkspaceOperations(database, operations) : database;
+  if (operations.length) hydrateStaffReferenceLabels(next);
   return {
-    database: operations.length ? applyWorkspaceOperations(database, operations) : database,
+    database: next,
     operations,
   };
 }

@@ -348,7 +348,10 @@ export interface Visit {
     vendor_id?: ID;
     vendor_name?: string;
     assignee_type?: "staff" | "contractor";
+    assigned_staff_id?: ID;
+    /** @deprecated Runtime compatibility alias; persist assigned_staff_id instead. */
     staff_id: ID;
+    /** @deprecated Derived from canonical Staff at read time. */
     staff_name: string;
     contractor_id?: ID;
     contractor_name?: string;
@@ -416,9 +419,15 @@ export interface Task {
     description?: string;
     status: TaskStatus;
     priority: Priority;
+    assigned_staff_id?: ID;
+    /** @deprecated Runtime compatibility alias; persist assigned_staff_id instead. */
     assignee_id?: ID;
+    /** @deprecated Derived from canonical Staff at read time. */
     assignee_name?: string;
+    assigned_staff_id?: ID;
+    /** @deprecated Derived from canonical Staff at read time. */
     assigned_to?: string;
+    /** @deprecated Derived from canonical Staff at read time. */
     assigned_role?: string;
     due_date: string;
     task_scope: TaskScope;
@@ -457,7 +466,10 @@ export interface Followup {
     priority: Priority;
     due_at: string;
     due_date: string;
+    assigned_staff_id?: ID;
+    /** @deprecated Derived from canonical Staff at read time. */
     assigned_to?: string;
+    /** @deprecated Derived from canonical Staff at read time. */
     assigned_role?: string;
     followup_type?: FollowupType;
     promise_date?: string;
@@ -1409,7 +1421,10 @@ export interface RecurringTaskDefinition {
     id: ID;
     title: string;
     frequency: "daily" | "weekly" | "monthly";
+    assigned_staff_id?: ID;
+    /** @deprecated Runtime compatibility alias; persist assigned_staff_id instead. */
     assignee_id?: ID;
+    /** @deprecated Derived from canonical Staff at read time. */
     assignee_name?: string;
     scope: TaskScope;
     priority: Priority;

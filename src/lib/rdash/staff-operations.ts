@@ -394,7 +394,7 @@ export function moduleForCollection(collection: string): string {
   return map[collection] || "workspace";
 }
 
-export function enrichStaffProfiles(staff: Staff[]): Staff[] {
+export function enrichStaffRecords(staff: Staff[]): Staff[] {
   return staff.map((member, index) => {
     const role_key = normalizeRoleKey((member as Staff & { role_key?: string }).role_key || member.role);
     const policy = member.attendance_policy || createDefaultAttendancePolicy();
@@ -439,8 +439,8 @@ function defaultSalaryForRole(role: StaffRoleKey) {
   }
 }
 
-export function createSeedStaffProfiles(): Staff[] {
-  return enrichStaffProfiles([
+export function createSeedStaffRecords(): Staff[] {
+  return enrichStaffRecords([
     { id: "staff-owner", name: "Owner", phone: "+91 9000003000", role: "Owner", status: "active", city: "Gorakhpur", attendance_policy: createDefaultAttendancePolicy(), monthly_salary: 0 } as Staff,
     { id: "staff-ops", name: "Anita Rao", phone: "+91 9000003001", role: "Operations Manager", status: "active", city: "Gorakhpur", attendance_policy: createDefaultAttendancePolicy(), monthly_salary: 45000 } as Staff,
     { id: "staff-field", name: "Ravi Kumar", phone: "+91 9000003002", role: "Field Staff", status: "active", city: "Gorakhpur", attendance_policy: createDefaultAttendancePolicy(), monthly_salary: 24000 } as Staff,
@@ -452,7 +452,7 @@ export function createSeedStaffProfiles(): Staff[] {
 
 export function createSeedAttendanceRecords(staff: Staff[]): AttendanceRecord[] {
   const today = new Date().toISOString().slice(0, 10);
-  return enrichStaffProfiles(staff).map((member, index) => {
+  return enrichStaffRecords(staff).map((member, index) => {
     const absent = member.id === "staff-sales";
     const half = member.id === "staff-procurement";
     return {
@@ -538,7 +538,7 @@ export function createSeedTasks(): Task[] {
 
 export function createSeedLocationPings(staff: Staff[]) {
   const now = new Date();
-  return enrichStaffProfiles(staff).flatMap((member, index) => {
+  return enrichStaffRecords(staff).flatMap((member, index) => {
     if (member.id === "staff-owner") return [];
     return [0, 1, 2].map((step) => ({
       id: `ping-${member.id}-${step}`,
@@ -566,7 +566,7 @@ export function createSeedPayroll(staff: Staff[]) {
     generated_at: now.toISOString(),
     approved_by_staff_id: "staff-owner",
   };
-  const lines: PayrollLineRecord[] = enrichStaffProfiles(staff).filter((member) => member.id !== "staff-owner").map((member) => {
+  const lines: PayrollLineRecord[] = enrichStaffRecords(staff).filter((member) => member.id !== "staff-owner").map((member) => {
     const absentDays = member.id === "staff-sales" ? 1 : 0;
     const halfDays = member.id === "staff-procurement" ? 0.5 : 0;
     const lateDeduction = member.id === "staff-field" ? 250 : 0;
@@ -596,7 +596,7 @@ export function createSeedPayroll(staff: Staff[]) {
   const leaves: LeaveRequestRecord[] = [
     { id: "leave-finance-casual", staff_id: "staff-finance", start_date: now.toISOString().slice(0, 10), end_date: now.toISOString().slice(0, 10), leave_type: "casual", status: "approved", reason: "Half-day bank documentation", approved_by_staff_id: "staff-owner" },
   ];
-  const documents: StaffDocumentRecord[] = enrichStaffProfiles(staff).map((member) => ({ id: `doc-photo-${member.id}`, staff_id: member.id, document_type: "photo", file_asset_id: `staff-file-photo-${member.id}`, status: member.id === "staff-owner" || member.id === "staff-ops" ? "verified" : "pending", created_at: now.toISOString() }));
+  const documents: StaffDocumentRecord[] = enrichStaffRecords(staff).map((member) => ({ id: `doc-photo-${member.id}`, staff_id: member.id, document_type: "photo", file_asset_id: `staff-file-photo-${member.id}`, status: member.id === "staff-owner" || member.id === "staff-ops" ? "verified" : "pending", created_at: now.toISOString() }));
   return { period, lines, adjustments, leaves, documents };
 }
 

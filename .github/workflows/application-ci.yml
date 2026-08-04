@@ -73,6 +73,8 @@ jobs:
         run: bun run test:module-scoped-reads
       - name: Test Staff data minimization
         run: bun test tests/staff-data-minimization.test.ts
+      - name: Test Staff reference integrity
+        run: bun test tests/staff-reference-integrity.test.ts
       - name: Test exact module read plans
         run: bun run test:module-read-plans
       - name: Test bootstrap and scoped client reads
