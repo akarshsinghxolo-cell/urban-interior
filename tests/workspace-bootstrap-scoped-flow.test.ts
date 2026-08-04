@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
+import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
 import {
   workspaceReadCoverageIsCompatible,
   workspaceReadScopeFromMode,
@@ -43,6 +44,23 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(workspaceReadEndpointForTarget(
       workspaceReadTargetForPath("/workspace/sites/site-123"),
     )).toBe("/api/workspace");
+  });
+
+  test("keeps foundational taxonomy loaded in every scoped snapshot", async () => {
+    const projectedBootstrap = await Bun.file("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
+    expect(projectedBootstrap).toContain('"master.units"');
+    expect(projectedBootstrap).toContain('"master.workCategories"');
+    expect(projectedBootstrap).toContain('"master.workSubcategories"');
+    expect(projectedBootstrap).toContain("fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]");
+
+    const scoped = {
+      _workspace_read_scope: "workdesk",
+      _workspace_read_collections: ["tasks", "followups"],
+    } as unknown as import("@/lib/rdash/types").RDashDatabase;
+    const collections = loadedWorkspaceCollections(scoped);
+    expect(collections?.has("master.units")).toBe(true);
+    expect(collections?.has("master.workCategories")).toBe(true);
+    expect(collections?.has("master.workSubcategories")).toBe(true);
   });
 
   test("starts with the minimal bootstrap and never hydrates the full workspace", async () => {

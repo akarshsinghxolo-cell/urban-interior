@@ -27,7 +27,13 @@ const KNOWN_COLLECTIONS = new Set<string>([
   ...topLevelCollections.map(String),
   ...masterCollections.map((key) => `master.${String(key)}`),
 ]);
-const SCOPED_BOOTSTRAP_COLLECTIONS = ["staffRolePermissions", "master.staff"] as const;
+const SCOPED_BOOTSTRAP_COLLECTIONS = [
+  "staffRolePermissions",
+  "master.staff",
+  "master.units",
+  "master.workCategories",
+  "master.workSubcategories",
+] as const;
 
 export function knownWorkspaceCollection(collection: string): boolean {
   return KNOWN_COLLECTIONS.has(collection);
@@ -35,8 +41,9 @@ export function knownWorkspaceCollection(collection: string): boolean {
 
 /**
  * Returns the collections represented by the current scoped snapshot. Full and
- * legacy snapshots without explicit metadata are treated as complete. Permission
- * bootstrap rows are always part of every authenticated scoped snapshot.
+ * legacy snapshots without explicit metadata are treated as complete. Permission,
+ * staff identity and foundational work-taxonomy rows are always part of every
+ * authenticated scoped snapshot so global create/edit pickers stay populated.
  */
 export function loadedWorkspaceCollections(database: RDashDatabase): Set<string> | null {
   const metadata = database as unknown as Record<string, unknown>;

@@ -6,7 +6,10 @@ import {
   moduleReadPlanSavings,
   workspaceModuleReadPlan,
 } from "@/lib/rdash/server/module-read-plans";
-import { WORKSPACE_BOOTSTRAP_PROJECTED_FIELDS } from "@/lib/rdash/server/projected-workspace-bootstrap";
+import {
+  WORKSPACE_BOOTSTRAP_PROJECTED_FIELDS,
+  WORKSPACE_FOUNDATION_COLLECTIONS,
+} from "@/lib/rdash/server/projected-workspace-bootstrap";
 import { workspaceReadTargetForModule } from "@/lib/rdash/workspace-read-scope";
 
 const EXACT_MODULES = [
@@ -105,11 +108,16 @@ describe("bootstrap JSON projections", () => {
     expect(WORKSPACE_BOOTSTRAP_PROJECTED_FIELDS["master.staff"]).toContain("status");
   });
 
-  test("builds JSON selectors and preserves a bounded fallback", async () => {
+  test("builds JSON selectors and preserves a bounded taxonomy foundation", async () => {
     const projected = await Bun.file("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
     expect(projected).toContain("data->${field}");
-    expect(projected).toContain("getWorkspaceSubset({});");
-    expect(projected).toContain('fullCollections: ["staffRolePermissions"]');
+    expect(WORKSPACE_FOUNDATION_COLLECTIONS).toEqual([
+      "master.units",
+      "master.workCategories",
+      "master.workSubcategories",
+    ]);
+    expect(projected).toContain("fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]");
+    expect(projected).toContain('"staffRolePermissions",\n        ...WORKSPACE_FOUNDATION_COLLECTIONS');
     expect(projected).not.toContain("select(\"id,revision,data\")");
   });
 
