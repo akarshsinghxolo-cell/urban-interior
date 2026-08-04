@@ -16,6 +16,7 @@ const rest = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
     expect(pulse).toContain("useWorkspaceHealth");
   });
 
+  // These objects were removed from the live database; health must stay on the bounded read path.
   test("health avoids removed database fast paths", () => {
     expect(healthServer).not.toContain('.rpc("get_workspace_health_summary"');
     expect(healthServer).not.toContain('.from("workspace_health_snapshot")');
