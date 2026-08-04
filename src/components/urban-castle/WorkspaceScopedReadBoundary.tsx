@@ -41,8 +41,9 @@ function isAbortError(error: unknown): boolean {
  * A scoped snapshot is interactive only while it covers the canonical route.
  * Moving from one row graph to another, closing to a module list, or crossing a
  * module family loads the destination scope before removing this blocking layer.
- * The shared read-state machine distinguishes not-loaded/loading/error from a
- * successfully loaded response whose collections may legitimately be empty.
+ * Entering a new module/row also revalidates an already-compatible scope so a
+ * previous response is not treated as permanently fresh. Compatible data stays
+ * visible during that bounded background refresh.
  */
 export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
@@ -67,12 +68,16 @@ export function WorkspaceScopedReadBoundary() {
   const [retryNonce, setRetryNonce] = React.useState(0);
   const requestSequenceRef = React.useRef(0);
   const latestTargetKeyRef = React.useRef(targetKey);
+  const previousEffectTargetKeyRef = React.useRef(targetKey);
 
   React.useLayoutEffect(() => {
     latestTargetKeyRef.current = targetKey;
   }, [targetKey]);
 
   React.useEffect(() => {
+    const enteredNewTarget = previousEffectTargetKeyRef.current !== targetKey;
+    previousEffectTargetKeyRef.current = targetKey;
+
     if (!authUser) {
       // The external read-state store notifies React subscribers. Defer that
       // notification out of the effect body and re-check auth so a rapid
@@ -82,7 +87,7 @@ export function WorkspaceScopedReadBoundary() {
       });
       return;
     }
-    if (!needsExpansion) {
+    if (!needsExpansion && !enteredNewTarget) {
       queueMicrotask(() => workspaceReadState.clearRequest(requestedTarget));
       return;
     }
@@ -109,6 +114,7 @@ export function WorkspaceScopedReadBoundary() {
         "X-UC-Workspace-Path": pathname,
         "X-UC-Workspace-Module": requestedTarget.moduleId,
         "X-UC-Read-State-Deferred": "1",
+        "X-UC-Read-Revalidate": enteredNewTarget ? "navigation" : "coverage",
       },
     }).then(async (response) => {
       const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
