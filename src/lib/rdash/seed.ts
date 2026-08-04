@@ -1,7 +1,7 @@
 import type { AcceptedScope, Area, ContractorBill, ContractorBid, ContractorPayment, CustomerInvoice, CustomerReceipt, GRN, InventoryItem, LineItem, Master, MeasurementRevision, Payment, Customer, PurchaseOrder, Quotation, RDashDatabase, Site, VendorBid, VendorBill, VendorRFQ, WorkOrder, WorkOrderBOQ, WorkOrderCostLine, VendorPayment, WorkRequired, Drawing, DailyExecutionLog, SiteDispatch, RiskItem, BlockedItem, ApprovalAction, Followup, Commission, PinterestBoard, StorageAccount, SourcePartner, } from "./types";
 import { buildWorkCategoryCatalog, prepareWorkspaceData } from "./work-category-master";
 import { createDefaultAttendancePolicy } from "./attendance-policy";
-import { createSeedStaffProfiles, createSeedAttendanceRecords, createSeedTasks, createSeedVisits } from "./staff-operations";
+import { createSeedStaffRecords, createSeedAttendanceRecords, createSeedTasks, createSeedVisits } from "./staff-operations";
 import { repairOperationalWorkspace } from "./operational-repair";
 import { backfillSeedThreads } from "./backfill-threads";
 const now = () => new Date().toISOString();
@@ -264,7 +264,7 @@ const master: Master = {
         { id: "con-paint", name: "Verma Paint Team", phone: "+91 9000002002", city: "Gorakhpur", trade: "Painting", rating: 4.6, reliability_score: 88, on_time_pct: 91, past_jobs_count: 26, specializations: ["Interior painting", "Texture paint"] },
         { id: "con-paint-2", name: "Khan Finishes", phone: "+91 9000002003", city: "Gorakhpur", trade: "Painting", rating: 4.3, reliability_score: 82, on_time_pct: 87, past_jobs_count: 18, specializations: ["Interior painting"] },
     ],
-    staff: createSeedStaffProfiles(),
+    staff: createSeedStaffRecords(),
     sourcePartners: seedSourcePartners, commissionRules: [],
     vendorRates: [
         { id: "vr-build-gypsum-board", vendor_id: "ven-build", article_id: "art-gypsum-board", article_name: "Gypsum Board (12.5mm)", rate: 44, unit_id: "unit-sft", brand: "USG Boral", grade: "Standard", preferred: true, current_source_type: "PO", current_source_id: "po-das-ceiling", current_source_no: "PO-2026-601", valid_from: at(-5), updated_at: at(-5), gst_inclusive: false },
