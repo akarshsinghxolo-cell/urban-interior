@@ -77,10 +77,14 @@ jobs:
         run: bun test tests/staff-reference-integrity.test.ts
       - name: Test public Google Drive access
         run: bun test tests/google-drive-public-access.test.ts
+      - name: Test Google Drive transaction simplification
+        run: bun test tests/google-drive-transaction-simplification.test.ts
       - name: Test exact module read plans
         run: bun run test:module-read-plans
       - name: Test bootstrap and scoped client reads
         run: bun run test:bootstrap-scoped-flow
+      - name: Test workspace navigation freshness
+        run: bun test tests/workspace-navigation-revalidation.test.ts
       - name: Test entity-scoped workspace reads
         run: bun run test:entity-scoped-reads
       - name: Test workspace revision delta synchronization
