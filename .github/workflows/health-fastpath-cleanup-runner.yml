@@ -1,0 +1,42 @@
+name: Health Fast-path Cleanup Runner
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'agent/remove-obsolete-health-fastpath'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Apply health fast-path cleanup
+        run: python scripts/apply-health-fastpath-cleanup.py
+      - name: Test egress guardrails
+        run: bun test tests/egress-guardrails.test.ts tests/runtime-efficiency-hardening.test.ts
+      - name: Typecheck application
+        run: bunx tsc --noEmit
+      - name: Lint application
+        run: bun run lint
+      - name: Build application
+        run: bun run build
+      - name: Commit verified health cleanup
+        run: |
+          rm scripts/apply-health-fastpath-cleanup.py
+          rm .github/workflows/health-fastpath-cleanup-runner.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove obsolete Supabase health fast paths"
+          git push origin HEAD:agent/remove-obsolete-health-fastpath
