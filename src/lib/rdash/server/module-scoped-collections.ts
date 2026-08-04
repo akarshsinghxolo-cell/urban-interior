@@ -2,6 +2,7 @@ import type { ModuleWorkspaceReadScope } from "../workspace-read-scope";
 
 export const WORKSPACE_BOOTSTRAP_COLLECTIONS = Object.freeze([
   "staffRolePermissions",
+  "master.staff",
 ] as const);
 
 export const CUSTOMER_SCOPE_COLLECTIONS = Object.freeze([
@@ -52,7 +53,6 @@ export const CUSTOMER_SCOPE_COLLECTIONS = Object.freeze([
   "master.articleVariants",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.sourcePartners",
   "master.fileAssets",
 ] as const);
@@ -109,7 +109,6 @@ export const SITE_SCOPE_COLLECTIONS = Object.freeze([
   "master.workOptionValues",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.vendorRates",
   "master.contractorRates",
   "master.fileAssets",
@@ -147,7 +146,6 @@ export const WORKDESK_SCOPE_COLLECTIONS = Object.freeze([
   "auditLog",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.vendorRates",
   "master.vendorRateHistories",
   "master.fileAssets",
@@ -184,7 +182,6 @@ export const QUOTATION_SCOPE_COLLECTIONS = Object.freeze([
   "master.subcategoryArticleMap",
   "master.workOptionGroups",
   "master.workOptionValues",
-  "master.staff",
   "master.sourcePartners",
   "master.customerRateSuggestions",
   "master.fileAssets",
@@ -212,7 +209,6 @@ export const FIELD_SCOPE_COLLECTIONS = Object.freeze([
   "auditLog",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.fileAssets",
 ] as const);
 
@@ -245,7 +241,6 @@ export const PROCUREMENT_SCOPE_COLLECTIONS = Object.freeze([
   "master.articleVariants",
   "master.subcategoryArticleMap",
   "master.vendors",
-  "master.staff",
   "master.vendorRates",
   "master.vendorRateHistories",
   "master.fileAssets",
@@ -285,7 +280,6 @@ export const FINANCE_SCOPE_COLLECTIONS = Object.freeze([
   "auditLog",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.sourcePartners",
   "master.commissionRules",
   "master.fileAssets",
@@ -304,7 +298,6 @@ export const MEDIA_SCOPE_COLLECTIONS = Object.freeze([
   "auditLog",
   "master.articles",
   "master.vendors",
-  "master.staff",
   "master.storageAccounts",
   "master.storageFolderTemplates",
   "master.storageFolderInstances",
@@ -394,7 +387,6 @@ export const REPORTS_SCOPE_COLLECTIONS = Object.freeze([
   "auditLog",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.sourcePartners",
   "master.commissionRules",
 ] as const);
@@ -458,7 +450,6 @@ export const SYSTEM_SCOPE_COLLECTIONS = Object.freeze([
   "master.subcategoryArticleMap",
   "master.vendors",
   "master.contractors",
-  "master.staff",
   "master.sourcePartners",
   "master.fileAssets",
 ] as const);
