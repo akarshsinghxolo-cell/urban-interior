@@ -71,6 +71,8 @@ jobs:
         run: bun run test:dirty-form-guard
       - name: Test module-scoped workspace reads
         run: bun run test:module-scoped-reads
+      - name: Test Staff data minimization
+        run: bun test tests/staff-data-minimization.test.ts
       - name: Test exact module read plans
         run: bun run test:module-read-plans
       - name: Test bootstrap and scoped client reads
