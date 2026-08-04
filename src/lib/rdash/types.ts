@@ -424,7 +424,6 @@ export interface Task {
     assignee_id?: ID;
     /** @deprecated Derived from canonical Staff at read time. */
     assignee_name?: string;
-    assigned_staff_id?: ID;
     /** @deprecated Derived from canonical Staff at read time. */
     assigned_to?: string;
     /** @deprecated Derived from canonical Staff at read time. */
@@ -1616,6 +1615,7 @@ export interface Vendor {
     outstanding?: number;
     reliability_score?: number;
     on_time_pct?: number;
+    rating?: number;
     latitude?: number;
     longitude?: number;
     business_card_attachment_id?: ID;

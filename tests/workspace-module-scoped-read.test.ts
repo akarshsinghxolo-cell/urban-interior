@@ -196,19 +196,19 @@ describe("module-scoped collection plans", () => {
   });
 
   test("scope plans contain their critical dependencies without unrelated administration", () => {
-    for (const collection of ["tasks", "followups", "actions", "blocked", "risks", "threads"]) {
+    for (const collection of ["tasks", "followups", "actions", "blocked", "risks", "threads"] as const) {
       expect(WORKDESK_SCOPE_COLLECTIONS).toContain(collection);
     }
-    for (const collection of ["quotations", "commercialTerms", "master.customerRateSuggestions"]) {
+    for (const collection of ["quotations", "commercialTerms", "master.customerRateSuggestions"] as const) {
       expect(QUOTATION_SCOPE_COLLECTIONS).toContain(collection);
     }
-    for (const collection of ["visits", "attendance", "executionLogs"]) {
+    for (const collection of ["visits", "attendance", "executionLogs"] as const) {
       expect(FIELD_SCOPE_COLLECTIONS).toContain(collection);
     }
-    for (const collection of ["boqs", "vendorRfqs", "purchaseOrders", "inventory", "master.vendorRates"]) {
+    for (const collection of ["boqs", "vendorRfqs", "purchaseOrders", "inventory", "master.vendorRates"] as const) {
       expect(PROCUREMENT_SCOPE_COLLECTIONS).toContain(collection);
     }
-    for (const collection of ["payments", "invoices", "vendorBills", "contractorBills", "workOrderCostLines"]) {
+    for (const collection of ["payments", "invoices", "vendorBills", "contractorBills", "workOrderCostLines"] as const) {
       expect(FINANCE_SCOPE_COLLECTIONS).toContain(collection);
     }
     expect(WORKDESK_SCOPE_COLLECTIONS).not.toContain("payrollLines");
