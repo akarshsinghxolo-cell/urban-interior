@@ -25,19 +25,12 @@ replace_once(
 )
 
 # Vendor performance reconciliation already preserves an existing rating; expose
-# that persisted compatibility field in the shared Vendor type as contractors do.
-types_path = Path("src/lib/rdash/types.ts")
-types_text = types_path.read_text()
-start = types_text.index("export interface Vendor {")
-end = types_text.index("export type VendorRateSourceType", start)
-vendor_block = types_text[start:end]
-if "    rating?: number;\n" not in vendor_block:
-    needle = "    on_time_pct?: number;\n"
-    if needle not in vendor_block:
-        raise SystemExit("Vendor on_time_pct field not found")
-    vendor_block = vendor_block.replace(needle, needle + "    rating?: number;\n", 1)
-    types_text = types_text[:start] + vendor_block + types_text[end:]
-    types_path.write_text(types_text)
+# that persisted compatibility field in the shared Vendor type.
+replace_once(
+    "src/lib/rdash/types.ts",
+    '    reliability_score?: number;\n    on_time_pct?: number;\n    latitude?: number;\n',
+    '    reliability_score?: number;\n    on_time_pct?: number;\n    rating?: number;\n    latitude?: number;\n',
+)
 
 # The generated Staff lookup column exists in production but is not yet part of
 # the generated row-key union. Keep the escape hatch local to this query.
@@ -53,6 +46,33 @@ replace_once(
     "tests/workspace-exit-guard.test.ts",
     "function item(status: WorkspaceOutboxStatus, id = status): WorkspaceCommitOutboxRecord {\n",
     "function item(status: WorkspaceOutboxStatus, id: string = status): WorkspaceCommitOutboxRecord {\n",
+)
+
+# Preserve literal collection unions in test loops so Bun's typed `toContain`
+# matcher can prove every expected value belongs to the readonly plan.
+replace_once(
+    "tests/runtime-efficiency-hardening.test.ts",
+    '      "auditLog",\n    ]) {\n',
+    '      "auditLog",\n    ] as const) {\n',
+)
+for old, new in [
+    ('for (const collection of ["tasks", "followups", "actions", "blocked", "risks", "threads"]) {',
+     'for (const collection of ["tasks", "followups", "actions", "blocked", "risks", "threads"] as const) {'),
+    ('for (const collection of ["quotations", "commercialTerms", "master.customerRateSuggestions"]) {',
+     'for (const collection of ["quotations", "commercialTerms", "master.customerRateSuggestions"] as const) {'),
+    ('for (const collection of ["visits", "attendance", "executionLogs"]) {',
+     'for (const collection of ["visits", "attendance", "executionLogs"] as const) {'),
+    ('for (const collection of ["boqs", "vendorRfqs", "purchaseOrders", "inventory", "master.vendorRates"]) {',
+     'for (const collection of ["boqs", "vendorRfqs", "purchaseOrders", "inventory", "master.vendorRates"] as const) {'),
+    ('for (const collection of ["payments", "invoices", "vendorBills", "contractorBills", "workOrderCostLines"]) {',
+     'for (const collection of ["payments", "invoices", "vendorBills", "contractorBills", "workOrderCostLines"] as const) {'),
+]:
+    replace_once("tests/workspace-module-scoped-read.test.ts", old, new)
+
+replace_once(
+    "tests/workspace-entity-routes.test.ts",
+    "      expect(location.canonicalPath).toBe(path);\n",
+    "      expect(location.canonicalPath).toBe(path!);\n",
 )
 
 # Once the explicit tsc gate is clean, Next.js must enforce the same type safety.
