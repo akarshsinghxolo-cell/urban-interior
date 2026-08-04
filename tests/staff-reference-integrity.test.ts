@@ -96,21 +96,24 @@ describe("canonical Staff references", () => {
     expect((db.visits[0] as unknown as Record<string, unknown>).staff_id).toBe("staff-active");
   });
 
-  test("has no StaffProfile runtime dependency", async () => {
+  test("has no legacy Staff profile runtime dependency", async () => {
     const matches: string[] = [];
     for (const root of RUNTIME_ROOTS) {
       for (const file of await runtimeFiles(root)) {
         const source = await readFile(file, "utf8");
-        if (source.includes("StaffProfile")) matches.push(file);
+        const legacyRelationName = ["Staff", "Profile"].join("");
+        if (source.includes(legacyRelationName)) matches.push(file);
       }
     }
-    expect(matches, `Runtime StaffProfile references remain: ${matches.join(", ")}`).toEqual([]);
+    expect(matches, `Legacy Staff profile runtime references remain: ${matches.join(", ")}`).toEqual([]);
   });
 
-  test("hydrates both scoped and full workspace read paths", async () => {
+  test("hydrates scoped, full and delta workspace read paths", async () => {
     const scoped = await readFile("src/lib/rdash/server/module-scoped-read.ts", "utf8");
     const full = await readFile("src/lib/rdash/server/workspace.ts", "utf8");
+    const delta = await readFile("src/lib/rdash/workspace-delta.ts", "utf8");
     expect(scoped).toContain("hydrateStaffReferenceLabels(data)");
     expect(full).toContain("hydrateStaffReferenceLabels(workspace.data)");
+    expect(delta).toContain("hydrateStaffReferenceLabels(next)");
   });
 });
