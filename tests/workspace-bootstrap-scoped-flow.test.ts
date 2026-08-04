@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
+import {
+  workspaceReadLoadStateForTarget,
+  workspaceReadTargetKey,
+  type WorkspaceReadStateSnapshot,
+} from "@/lib/rdash/workspace-read-state";
 import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
 import {
   workspaceReadCoverageIsCompatible,
@@ -16,6 +21,46 @@ describe("workspace bootstrap and scoped client reads", () => {
       { scope: "bootstrap", mode: "bootstrap", strategy: "bootstrap" },
       target,
     )).toBe(false);
+  });
+
+  test("distinguishes not-loaded, loading, error, loaded-empty and loaded-with-data", () => {
+    const target = workspaceReadTargetForModule("masterSetup");
+    const initial: WorkspaceReadStateSnapshot = {
+      scope: "bootstrap",
+      mode: "bootstrap",
+      strategy: "bootstrap",
+      requestStatus: "idle",
+    };
+    expect(workspaceReadLoadStateForTarget(initial, target)).toEqual({ status: "not_loaded" });
+
+    const loading: WorkspaceReadStateSnapshot = {
+      ...initial,
+      requestStatus: "loading",
+      requestTargetKey: workspaceReadTargetKey(target),
+    };
+    expect(workspaceReadLoadStateForTarget(loading, target)).toEqual({ status: "loading" });
+
+    const failed: WorkspaceReadStateSnapshot = {
+      ...loading,
+      requestStatus: "error",
+      requestError: "Network unavailable",
+    };
+    expect(workspaceReadLoadStateForTarget(failed, target)).toEqual({
+      status: "error",
+      error: "Network unavailable",
+    });
+
+    for (const rowCount of [0, 323]) {
+      const loaded: WorkspaceReadStateSnapshot = {
+        scope: "master",
+        mode: "master",
+        strategy: "scope",
+        moduleId: "masterSetup",
+        rowCount,
+        requestStatus: "idle",
+      };
+      expect(workspaceReadLoadStateForTarget(loaded, target)).toEqual({ status: "loaded" });
+    }
   });
 
   test("routes module families through dedicated bounded endpoints", () => {
@@ -74,6 +119,23 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(bootstrap).toContain('readStrategy: "module-scoped"');
     expect(bootstrap).toContain('"X-UC-Read-Strategy": "bootstrap"');
     expect(bootstrap).toContain('"X-UC-Response-Bytes"');
+  });
+
+  test("prevents modules from rendering unloaded arrays as authoritative zero values", async () => {
+    const router = await Bun.file("src/components/rdash/WorkspaceModuleRouter.tsx").text();
+    const boundary = await Bun.file("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
+    const gateIndex = router.indexOf('if (dataLoadState.status !== "loaded")');
+    const rendererIndex = router.indexOf("switch (route.renderer)");
+
+    expect(router).toContain("workspaceReadLoadStateForTarget");
+    expect(router).toContain("workspaceReadTargetForPath(pathname)");
+    expect(router).toContain("workspaceReadTargetForModule(activeModuleId)");
+    expect(gateIndex).toBeGreaterThan(-1);
+    expect(rendererIndex).toBeGreaterThan(gateIndex);
+    expect(boundary).toContain("workspaceReadState.beginRequest(requestedTarget)");
+    expect(boundary).toContain("workspaceReadState.failRequest(");
+    expect(boundary).toContain("workspaceReadState.clearRequest(requestedTarget)");
+    expect(boundary).toContain("workspaceReadState.recordResponse(response, requestedTarget)");
   });
 
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {

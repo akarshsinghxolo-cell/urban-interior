@@ -9,7 +9,12 @@ import {
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
-import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
+import {
+  useWorkspaceReadState,
+  workspaceReadLoadStateForTarget,
+  workspaceReadState,
+  workspaceReadTargetKey,
+} from "@/lib/rdash/workspace-read-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
@@ -36,6 +41,8 @@ function isAbortError(error: unknown): boolean {
  * A scoped snapshot is interactive only while it covers the canonical route.
  * Moving from one row graph to another, closing to a module list, or crossing a
  * module family loads the destination scope before removing this blocking layer.
+ * The shared read-state machine distinguishes not-loaded/loading/error from a
+ * successfully loaded response whose collections may legitimately be empty.
  */
 export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
@@ -54,10 +61,9 @@ export function WorkspaceScopedReadBoundary() {
     () => workspaceReadEndpointForTarget(requestedTarget),
     [requestedTarget],
   );
-  const targetKey = `${endpoint}:${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
+  const targetKey = workspaceReadTargetKey(requestedTarget);
   const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const loadState = workspaceReadLoadStateForTarget(readState, requestedTarget);
   const [retryNonce, setRetryNonce] = React.useState(0);
   const requestSequenceRef = React.useRef(0);
   const latestTargetKeyRef = React.useRef(targetKey);
@@ -67,26 +73,32 @@ export function WorkspaceScopedReadBoundary() {
   }, [targetKey]);
 
   React.useEffect(() => {
-    setError(null);
-  }, [targetKey]);
-
-  React.useEffect(() => {
     if (!authUser) {
-      workspaceReadState.reset();
-      setLoading(false);
-      setError(null);
+      // The external read-state store notifies React subscribers. Defer that
+      // notification out of the effect body and re-check auth so a rapid
+      // sign-out/sign-in cannot erase the new session's coverage.
+      queueMicrotask(() => {
+        if (!useRDashStore.getState().authUser) workspaceReadState.reset();
+      });
       return;
     }
     if (!needsExpansion) {
-      setLoading(false);
+      queueMicrotask(() => workspaceReadState.clearRequest(requestedTarget));
       return;
     }
 
     const controller = new AbortController();
     const requestId = ++requestSequenceRef.current;
     const requestTargetKey = targetKey;
-    setLoading(true);
-    setError(null);
+    queueMicrotask(() => {
+      if (
+        !controller.signal.aborted &&
+        requestSequenceRef.current === requestId &&
+        latestTargetKeyRef.current === requestTargetKey
+      ) {
+        workspaceReadState.beginRequest(requestedTarget);
+      }
+    });
 
     void fetch(endpoint, {
       credentials: "same-origin",
@@ -124,7 +136,7 @@ export function WorkspaceScopedReadBoundary() {
         aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
       });
-      workspaceReadState.recordResponse(response);
+      workspaceReadState.recordResponse(response, requestedTarget);
       if (overlay.pendingCount) {
         useRDashStore.setState({
           workspaceSyncStatus: "error",
@@ -140,23 +152,21 @@ export function WorkspaceScopedReadBoundary() {
         requestSequenceRef.current !== requestId ||
         latestTargetKeyRef.current !== requestTargetKey
       ) return;
-      setError(caught instanceof Error ? caught.message : "The requested workspace data could not be loaded.");
-    }).finally(() => {
-      if (
-        !controller.signal.aborted &&
-        requestSequenceRef.current === requestId &&
-        latestTargetKeyRef.current === requestTargetKey
-      ) {
-        setLoading(false);
-      }
+      workspaceReadState.failRequest(
+        requestedTarget,
+        caught instanceof Error ? caught.message : "The requested workspace data could not be loaded.",
+      );
     });
 
     return () => {
       controller.abort();
+      queueMicrotask(() => workspaceReadState.clearRequest(requestedTarget));
     };
-  }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget.moduleId, retryNonce, targetKey]);
+  }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget, retryNonce, targetKey]);
 
   if (!needsExpansion) return null;
+  const error = loadState.status === "error" ? loadState.error : undefined;
+  const loading = loadState.status === "not_loaded" || loadState.status === "loading";
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
       <div className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl">
@@ -170,7 +180,7 @@ export function WorkspaceScopedReadBoundary() {
               {error || "Loading only the secure records required for this screen."}
             </p>
           </div>
-          {!error ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
+          {loading ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
         </div>
         {error ? (
           <Button
@@ -178,7 +188,6 @@ export function WorkspaceScopedReadBoundary() {
             size="sm"
             className="mt-4 w-full"
             onClick={() => setRetryNonce((value) => value + 1)}
-            disabled={loading}
           >
             <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry workspace data
           </Button>
