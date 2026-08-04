@@ -34,7 +34,7 @@ describe("workspace entity routes", () => {
         id: "cust north 1",
         permissionModule: "customers",
       });
-      expect(location.canonicalPath).toBe(path);
+      expect(location.canonicalPath).toBe(path!);
     }
 
     const purchaseOrder = resolveWorkspaceLocation("/workspace/purchase-orders/po-1");

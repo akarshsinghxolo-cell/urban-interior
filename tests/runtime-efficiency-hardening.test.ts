@@ -14,7 +14,7 @@ describe("runtime efficiency hardening", () => {
       "customerReceipts",
       "vendorPayments",
       "auditLog",
-    ]) {
+    ] as const) {
       expect(HEALTH_SUMMARY_COLLECTIONS).toContain(collection);
     }
   });

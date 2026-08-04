@@ -141,7 +141,7 @@ async function supabaseCredentials(
     const { data: generatedRow, error: generatedLookupError } = await admin
         .from("entity_master_staff")
         .select("id,data")
-        .eq("auth_user_id_gen", data.user.id)
+        .eq("auth_user_id_gen" as never, data.user.id)
         .maybeSingle();
 
     if (generatedLookupError) {
