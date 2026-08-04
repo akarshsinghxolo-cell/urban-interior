@@ -1,7 +1,6 @@
 import { indiaDate, isDateOnlyOverdue } from "../date";
 import { calculateQuotationMetrics } from "../metrics";
 import type { IntegrityReport, RDashDatabase } from "../types";
-import { getSupabaseAdminClient } from "../../supabase/server";
 import { getWorkspaceSubset } from "./workspace";
 
 export const HEALTH_SUMMARY_COLLECTIONS = Object.freeze([
@@ -33,87 +32,6 @@ export interface StoredIntegritySnapshot {
   totalReferences: number;
   businessRuleIssues: number;
   calculatedAt: string;
-}
-
-type SnapshotRow = {
-  workspace_revision: number;
-  health_score: number;
-  total_issues: number;
-  critical_count: number;
-  warning_count: number;
-  info_count: number;
-  total_records: number;
-  total_references: number;
-  business_rule_issues: number;
-  calculated_at: string;
-};
-
-function workspaceId() {
-  return process.env.UC_WORKSPACE_ID || "default";
-}
-
-function isMissingSnapshotTable(error: { code?: string; message?: string } | null) {
-  return Boolean(error && (
-    error.code === "42P01" ||
-    error.code === "PGRST205" ||
-    error.message?.includes("workspace_health_snapshot")
-  ));
-}
-
-export async function readStoredIntegritySnapshot(): Promise<StoredIntegritySnapshot | null> {
-  const { data, error } = await getSupabaseAdminClient()
-    .from("workspace_health_snapshot")
-    .select("workspace_revision,health_score,total_issues,critical_count,warning_count,info_count,total_records,total_references,business_rule_issues,calculated_at")
-    .eq("workspace_id", workspaceId())
-    .maybeSingle();
-  if (error) {
-    if (isMissingSnapshotTable(error)) return null;
-    throw new Error(`Could not load the integrity snapshot: ${error.message}`);
-  }
-  if (!data) return null;
-  const row = data as unknown as SnapshotRow;
-  return {
-    workspaceRevision: row.workspace_revision,
-    healthScore: row.health_score,
-    totalIssues: row.total_issues,
-    critical: row.critical_count,
-    warning: row.warning_count,
-    info: row.info_count,
-    totalRecords: row.total_records,
-    totalReferences: row.total_references,
-    businessRuleIssues: row.business_rule_issues,
-    calculatedAt: row.calculated_at,
-  };
-}
-
-export async function saveStoredIntegritySnapshot(input: {
-  revision: number;
-  report: IntegrityReport;
-  businessRuleIssues: number;
-}) {
-  const { report } = input;
-  const { error } = await getSupabaseAdminClient()
-    .from("workspace_health_snapshot")
-    .upsert({
-      workspace_id: workspaceId(),
-      workspace_revision: input.revision,
-      health_score: report.healthScore ?? 100,
-      total_issues: report.issues?.length || 0,
-      critical_count: report.bySeverity?.critical || 0,
-      warning_count: report.bySeverity?.warning || 0,
-      info_count: report.bySeverity?.info || 0,
-      total_records: report.totalRecords || 0,
-      total_references: report.totalReferences || 0,
-      business_rule_issues: input.businessRuleIssues,
-      report_json: report,
-      calculated_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "workspace_id" });
-  if (error) {
-    if (isMissingSnapshotTable(error)) return false;
-    throw new Error(`Could not save the integrity snapshot: ${error.message}`);
-  }
-  return true;
 }
 
 function buildOperationalHealth(db: RDashDatabase, integrity: StoredIntegritySnapshot | null) {
@@ -254,49 +172,16 @@ function buildOperationalHealth(db: RDashDatabase, integrity: StoredIntegritySna
   };
 }
 
-function isMissingHealthRpc(error: { code?: string; message?: string } | null) {
-  return Boolean(error && (
-    error.code === "42883" ||
-    error.code === "PGRST202" ||
-    error.message?.includes("get_workspace_health_summary")
-  ));
-}
-
 export async function getWorkspaceHealthSummary() {
   const startedAt = performance.now();
-  // The additive RPC is deployed by this PR's migration; generated database
-  // types will include it after the next schema type refresh. Keep the escape
-  // hatch local to this single call rather than weakening the admin client.
-  const healthRpcClient = getSupabaseAdminClient() as unknown as {
-    rpc: (
-      name: "get_workspace_health_summary",
-      args: { p_workspace_id: string },
-    ) => Promise<{ data: unknown; error: { code?: string; message: string } | null }>;
-  };
-  const { data, error } = await healthRpcClient.rpc("get_workspace_health_summary", {
-    p_workspace_id: workspaceId(),
+  const workspace = await getWorkspaceSubset({
+    fullCollections: [...HEALTH_SUMMARY_COLLECTIONS],
   });
-  if (!error && data && typeof data === "object") {
-    return {
-      ...(data as ReturnType<typeof buildOperationalHealth> & { revision: number }),
-      queryCount: 1,
-      collectionCount: 0,
-      loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
-    };
-  }
-  if (error && !isMissingHealthRpc(error)) {
-    throw new Error(`Could not load the workspace health aggregate: ${error.message}`);
-  }
-
-  const [workspace, integrity] = await Promise.all([
-    getWorkspaceSubset({ fullCollections: [...HEALTH_SUMMARY_COLLECTIONS] }),
-    readStoredIntegritySnapshot(),
-  ]);
   return {
     revision: workspace.revision,
-    queryCount: workspace.queryCount + 1,
+    queryCount: workspace.queryCount,
     collectionCount: HEALTH_SUMMARY_COLLECTIONS.length,
     loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
-    ...buildOperationalHealth(workspace.data, integrity),
+    ...buildOperationalHealth(workspace.data, null),
   };
 }

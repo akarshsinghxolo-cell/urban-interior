@@ -3,7 +3,6 @@ import { timingSafeEqual } from "node:crypto";
 import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
-import { saveStoredIntegritySnapshot } from "@/lib/rdash/server/workspace-health";
 import { cleanupExpiredStaffRouteBundles } from "@/lib/rdash/server/staff-location";
 
 export const runtime = "nodejs";
@@ -12,9 +11,9 @@ export const maxDuration = 60;
 /**
  * Daily QA and maintenance job.
  *
- * The expensive full integrity scan runs here instead of on every dashboard
- * health request. Its compact result is persisted for the lightweight health
- * endpoint. Expired route bundles are also removed once per day.
+ * The expensive full integrity scan runs here as scheduled validation instead
+ * of on every dashboard health request. Expired route bundles are also removed
+ * once per day.
  */
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
@@ -71,23 +70,13 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    const [
-      snapshotSaved,
-      expiredRouteBundlesDeleted,
-    ] = await Promise.all([
-      saveStoredIntegritySnapshot({
-        revision: workspace.revision,
-        report: integrity,
-        businessRuleIssues: businessRuleIssues.length,
-      }),
-      cleanupExpiredStaffRouteBundles().catch((error) => {
-        console.error(
-          "[qa/cron] route-bundle cleanup failed:",
-          error,
-        );
-        return -1;
-      }),
-    ]);
+    const expiredRouteBundlesDeleted = await cleanupExpiredStaffRouteBundles().catch((error) => {
+      console.error(
+        "[qa/cron] route-bundle cleanup failed:",
+        error,
+      );
+      return -1;
+    });
 
     const counts = {
       customers: db.customers?.length || 0,
@@ -137,7 +126,6 @@ export async function GET(request: NextRequest) {
           firstError: businessRuleIssues[0] || null,
         },
         maintenance: {
-          integritySnapshotSaved: snapshotSaved,
           expiredRouteBundlesDeleted,
         },
       },
