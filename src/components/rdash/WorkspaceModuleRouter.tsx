@@ -109,10 +109,9 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     const readState = useWorkspaceReadState();
     const access = workspaceRouteAccessDecision(activeModuleId, role, rawPermissions);
     const isCurrentModule = resolveRenderer(currentActiveModuleId).id === activeModuleId;
-    const requestedReadTarget = React.useMemo(
-        () => isCurrentModule ? workspaceReadTargetForPath(pathname) : workspaceReadTargetForModule(activeModuleId),
-        [activeModuleId, isCurrentModule, pathname],
-    );
+    const requestedReadTarget = isCurrentModule
+        ? workspaceReadTargetForPath(pathname)
+        : workspaceReadTargetForModule(activeModuleId);
     const dataLoadState = workspaceReadLoadStateForTarget(readState, requestedReadTarget);
 
     if (access.status === "pending") return <ModuleLoadingFallback />;
