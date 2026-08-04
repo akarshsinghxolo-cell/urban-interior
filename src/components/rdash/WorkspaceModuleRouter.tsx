@@ -1,8 +1,19 @@
 "use client";
 import * as React from "react";
+import { usePathname } from "next/navigation";
+import { AlertTriangle, Database, LoaderCircle } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer } from "@/lib/rdash/modules";
 import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
+import {
+    workspaceReadTargetForModule,
+    workspaceReadTargetForPath,
+} from "@/lib/rdash/workspace-read-scope";
+import {
+    useWorkspaceReadState,
+    workspaceReadLoadStateForTarget,
+    type WorkspaceDataLoadStatus,
+} from "@/lib/rdash/workspace-read-state";
 import { PortalActivityProvider } from "@/components/ui/portal-activity";
 import { WorkspaceAccessDenied } from "./WorkspaceAccessDenied";
 
@@ -72,16 +83,44 @@ export function ModuleLoadingFallback() {
     return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 text-sm text-muted-foreground shadow-card">Loading workspace module...</div>;
 }
 
+function ModuleDataStateFallback({ status, error }: { status: WorkspaceDataLoadStatus; error?: string }) {
+    const failed = status === "error";
+    return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 shadow-card">
+      <div className="flex items-start gap-3">
+        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${failed ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>
+          {failed ? <AlertTriangle className="h-4 w-4"/> : <Database className="h-4 w-4"/>}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold">{failed ? "Module data unavailable" : status === "loading" ? "Loading module data" : "Preparing module data"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{error || "This screen will appear only after its authoritative data has loaded."}</p>
+        </div>
+        {!failed ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-primary"/> : null}
+      </div>
+    </div>;
+}
+
 export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
+    const pathname = usePathname();
     const route = resolveRenderer(moduleId);
     const activeModuleId = route.id;
+    const currentActiveModuleId = useRDashStore((state) => state.activeModuleId);
     const role = useRDashStore((state) => state.authUser?.role);
     const rawPermissions = useRDashStore((state) => (state.db as unknown as { staffRolePermissions?: unknown[] }).staffRolePermissions || EMPTY_PERMISSIONS);
+    const readState = useWorkspaceReadState();
     const access = workspaceRouteAccessDecision(activeModuleId, role, rawPermissions);
+    const isCurrentModule = resolveRenderer(currentActiveModuleId).id === activeModuleId;
+    const requestedReadTarget = React.useMemo(
+        () => isCurrentModule ? workspaceReadTargetForPath(pathname) : workspaceReadTargetForModule(activeModuleId),
+        [activeModuleId, isCurrentModule, pathname],
+    );
+    const dataLoadState = workspaceReadLoadStateForTarget(readState, requestedReadTarget);
 
     if (access.status === "pending") return <ModuleLoadingFallback />;
     if (access.status === "denied") {
         return <WorkspaceAccessDenied moduleLabel={access.moduleLabel} permissionModule={access.permissionModule} />;
+    }
+    if (dataLoadState.status !== "loaded") {
+        return <ModuleDataStateFallback status={dataLoadState.status} error={dataLoadState.error} />;
     }
 
     switch (route.renderer) {
