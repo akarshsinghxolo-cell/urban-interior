@@ -26,29 +26,13 @@ export type GenericRecordRow = {
   dataJson: string;
 };
 
-export type StaffProfileRow = {
+export type CanonicalStaffEntityRow = {
   id: string;
-  code: string;
-  name: string;
-  phone: string | null;
-  email: string | null;
-  roleId: string;
-  department: string | null;
-  designation: string | null;
-  reportingManagerId: string | null;
-  status: string;
-  joiningDate: string | null;
-  exitDate: string | null;
-  city: string | null;
-  address: string | null;
-  emergencyContact: string | null;
-  attendancePolicyId: string | null;
-  salaryType: string;
-  monthlySalary: number | null;
-  dailyWage: number | null;
-  bankDetailsJson: string | null;
-  gpsTrackingEnabled: boolean;
-  dataJson: string;
+  workspace_id: string;
+  revision: number;
+  updated_at: string;
+  updated_by: string | null;
+  data: Record<string, unknown>;
 };
 
 export type StaffRouteBundleRow = {
@@ -100,10 +84,10 @@ type RDashSupabaseSchema = {
         Update: Partial<GenericRecordRow>;
         Relationships: [];
       };
-      StaffProfile: {
-        Row: StaffProfileRow;
-        Insert: Partial<StaffProfileRow> & Pick<StaffProfileRow, "id" | "code" | "name" | "roleId" | "status" | "salaryType" | "dataJson">;
-        Update: Partial<StaffProfileRow>;
+      entity_master_staff: {
+        Row: CanonicalStaffEntityRow;
+        Insert: Partial<CanonicalStaffEntityRow> & Pick<CanonicalStaffEntityRow, "id" | "workspace_id" | "data">;
+        Update: Partial<CanonicalStaffEntityRow>;
         Relationships: [];
       };
       StaffRouteBundle: {
