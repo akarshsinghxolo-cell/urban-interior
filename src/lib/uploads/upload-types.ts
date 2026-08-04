@@ -196,6 +196,7 @@ export interface InitiateUploadRequest {
   mimeType: string;
   sizeBytes: number;
   batchSizeBytes: number;
+  preferredStorageAccountId?: string;
   lastModified: number;
   fingerprint: string;
   sourceFlow: string;
