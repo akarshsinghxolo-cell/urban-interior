@@ -1,4 +1,5 @@
 import { canReadFullStaffData } from "../staff-directory";
+import { hydrateStaffReferenceLabels } from "../staff-reference-labels";
 import type { RDashDatabase } from "../types";
 import { workspaceRouteAccessDecision } from "../workspace-route-access";
 import type {
@@ -83,6 +84,8 @@ export function mergeWorkspaceSubsets(target: WorkspaceSubset, source: Workspace
       value as Array<Record<string, unknown>>,
     );
   }
+
+  hydrateStaffReferenceLabels(data);
 
   return {
     revision: target.revision,
