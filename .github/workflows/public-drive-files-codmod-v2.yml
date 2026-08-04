@@ -1,6 +1,9 @@
 name: Public Drive files codemod v2
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - agent/public-drive-files-v2
