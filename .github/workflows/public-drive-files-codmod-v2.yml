@@ -1,0 +1,78 @@
+name: Public Drive files codemod v2
+
+on:
+  push:
+    branches:
+      - agent/public-drive-files-v2
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/public-drive-files-v2
+      - name: Patch public Drive visibility
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          manager = Path('src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx')
+          s = manager.read_text()
+          s = s.replace('type AccessPolicy = "internal" | "customer" | "vendor" | "contractor";\n', '')
+          s = s.replace('  const [accessPolicy, setAccessPolicy] = React.useState<AccessPolicy>("internal");\n', '')
+          s = s.replace('body: JSON.stringify({ accountId: writeDestination.id, accessPolicy })', 'body: JSON.stringify({ accountId: writeDestination.id })')
+          s = s.replace('            <div className="mt-4 grid gap-2 md:grid-cols-5">', '            <div className="mt-4 grid gap-2 md:grid-cols-4">')
+          old_field = '              <Field label="File Access"><select value={accessPolicy} onChange={(e) => setAccessPolicy(e.target.value as AccessPolicy)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="internal">Private - Google account only</option><option value="customer">Customer-shareable</option><option value="vendor">Vendor restricted</option><option value="contractor">Contractor restricted</option></select></Field>\n'
+          if old_field not in s:
+              raise SystemExit('File Access selector pattern not found')
+          s = s.replace(old_field, '')
+          manager.write_text(s)
+
+          test_upload = Path('src/app/api/google-drive/test-upload/route.ts')
+          s = test_upload.read_text()
+          s = s.replace('const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";\n', 'const DRIVE_API = "https://www.googleapis.com/drive/v3";\nconst DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";\n')
+          s = s.replace('    const input = await request.json().catch(() => ({})) as {\n      accountId?: string;\n      accessPolicy?: "internal" | "customer" | "vendor" | "contractor";\n    };', '    const input = await request.json().catch(() => ({})) as { accountId?: string };')
+          s = s.replace('      `Access policy: ${input.accessPolicy || "internal"}`,', '      "Visibility: Public - anyone with the link can view",')
+          marker = '    if (!upload.ok || !payload.id || !payload.webViewLink) {\n      return NextResponse.json({ error: payload.error?.message || "Google Drive test upload failed." }, { status: 422 });\n    }\n\n'
+          permission = '''    if (!upload.ok || !payload.id || !payload.webViewLink) {\n      return NextResponse.json({ error: payload.error?.message || "Google Drive test upload failed." }, { status: 422 });\n    }\n\n    const permission = await fetch(`${DRIVE_API}/files/${encodeURIComponent(payload.id)}/permissions?supportsAllDrives=true`, {\n      method: "POST",\n      headers: {\n        Authorization: `Bearer ${accessToken}`,\n        "Content-Type": "application/json",\n      },\n      body: JSON.stringify({ type: "anyone", role: "reader", allowFileDiscovery: false }),\n      cache: "no-store",\n    });\n    if (!permission.ok) {\n      const permissionPayload = await permission.json().catch(() => ({})) as { error?: { message?: string } };\n      await fetch(`${DRIVE_API}/files/${encodeURIComponent(payload.id)}`, {\n        method: "DELETE",\n        headers: { Authorization: `Bearer ${accessToken}` },\n        cache: "no-store",\n      }).catch(() => undefined);\n      return NextResponse.json({ error: permissionPayload.error?.message || "Google Drive could not make the test file public." }, { status: 422 });\n    }\n\n'''
+          if marker not in s:
+              raise SystemExit('Test upload success marker not found')
+          s = s.replace(marker, permission)
+          s = s.replace('      tags: ["drive-test", input.accessPolicy || "internal"],', '      tags: ["drive-test", "public"],')
+          test_upload.write_text(s)
+
+          finalize = Path('src/lib/rdash/server/direct-upload-finalize-core.ts')
+          s = finalize.read_text()
+          insertion = 'function requiredString(value: unknown, label: string): string {\n  const result = String(value || "").trim();\n  if (!result) throw new Error(`${label} is missing from the pending upload.`);\n  return result;\n}\n\n'
+          helper = '''function requiredString(value: unknown, label: string): string {\n  const result = String(value || "").trim();\n  if (!result) throw new Error(`${label} is missing from the pending upload.`);\n  return result;\n}\n\nasync function makeDriveFilePublic(accessToken: string, fileId: string): Promise<void> {\n  const existing = await driveFetch(\n    accessToken,\n    `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions?fields=permissions(id,type,role)`,\n  );\n  const existingPayload = await existing.json().catch(() => ({})) as {\n    permissions?: Array<{ id?: string; type?: string; role?: string }>;\n    error?: { message?: string };\n  };\n  if (!existing.ok) throw new Error(existingPayload.error?.message || "Google Drive could not read file sharing permissions.");\n  if (existingPayload.permissions?.some((permission) => permission.type === "anyone" && permission.role === "reader")) return;\n\n  const created = await driveFetch(\n    accessToken,\n    `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true`,\n    {\n      method: "POST",\n      headers: { "Content-Type": "application/json" },\n      body: JSON.stringify({ type: "anyone", role: "reader", allowFileDiscovery: false }),\n    },\n  );\n  if (!created.ok) {\n    const payload = await created.json().catch(() => ({})) as { error?: { message?: string } };\n    throw new Error(payload.error?.message || "Google Drive could not make the uploaded file public.");\n  }\n}\n\n'''
+          if insertion not in s:
+              raise SystemExit('Finalize helper insertion point not found')
+          s = s.replace(insertion, helper)
+          marker = '    Object.assign(file, movedFile);\n  }\n\n  const timestamp = nowIso();'
+          if marker not in s:
+              raise SystemExit('Finalize permission insertion point not found')
+          s = s.replace(marker, '    Object.assign(file, movedFile);\n  }\n\n  await makeDriveFilePublic(accessToken, file.id);\n\n  const timestamp = nowIso();')
+          finalize.write_text(s)
+
+          test = Path('tests/google-drive-public-access.test.ts')
+          test.write_text('''import { describe, expect, test } from "bun:test";\nimport { readFile } from "node:fs/promises";\n\ndescribe("public Google Drive files", () => {\n  test("removes configurable Drive file-access policy", async () => {\n    const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");\n    expect(manager).not.toContain("type AccessPolicy");\n    expect(manager).not.toContain('label="File Access"');\n    expect(manager).not.toContain("Private - Google account only");\n    expect(manager).not.toContain("Customer-shareable");\n    expect(manager).not.toContain("Vendor restricted");\n    expect(manager).not.toContain("Contractor restricted");\n  });\n\n  test("publishes managed and test uploads as anyone-reader links", async () => {\n    const finalize = await readFile("src/lib/rdash/server/direct-upload-finalize-core.ts", "utf8");\n    const testUpload = await readFile("src/app/api/google-drive/test-upload/route.ts", "utf8");\n    for (const source of [finalize, testUpload]) {\n      expect(source).toContain('type: "anyone"');\n      expect(source).toContain('role: "reader"');\n      expect(source).toContain("allowFileDiscovery: false");\n    }\n    expect(finalize).toContain("await makeDriveFilePublic(accessToken, file.id)");\n    expect(testUpload).toContain('["drive-test", "public"]');\n  });\n});\n''')
+
+          ci = Path('.github/workflows/application-ci.yml')
+          s = ci.read_text()
+          anchor = '      - name: Test Staff reference integrity\n        run: bun test tests/staff-reference-integrity.test.ts\n'
+          if anchor not in s:
+              raise SystemExit('CI anchor not found')
+          s = s.replace(anchor, anchor + '      - name: Test public Google Drive access\n        run: bun test tests/google-drive-public-access.test.ts\n')
+          ci.write_text(s)
+          PY
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx src/app/api/google-drive/test-upload/route.ts src/lib/rdash/server/direct-upload-finalize-core.ts tests/google-drive-public-access.test.ts .github/workflows/application-ci.yml
+          git commit -m "Make Google Drive uploads public by link"
+          git push origin HEAD:agent/public-drive-files-v2
