@@ -29,7 +29,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "threads",
     "recurringTasks",
     "entityFileAttachments",
-    "master.staff",
   ]),
   blockedRisks: Object.freeze([
     "customers",
@@ -39,7 +38,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "blocked",
     "risks",
     "threads",
-    "master.staff",
   ]),
   approvals: Object.freeze([
     "customers",
@@ -52,7 +50,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "actions",
     "approvalPolicies",
     "threads",
-    "master.staff",
   ]),
   calendarRecurring: Object.freeze([
     "customers",
@@ -61,7 +58,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "recurringTasks",
     "visits",
     "attendance",
-    "master.staff",
   ]),
   quotationConfig: Object.freeze([
     "commercialTerms",
@@ -86,14 +82,12 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "visits",
     "entityFileAttachments",
     "master.units",
-    "master.staff",
   ]),
   visitProofs: Object.freeze([
     "customers",
     "sites",
     "visits",
     "entityFileAttachments",
-    "master.staff",
     "master.fileAssets",
   ]),
   fieldMode: Object.freeze([
@@ -104,11 +98,9 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "tasks",
     "attendance",
     "entityFileAttachments",
-    "master.staff",
   ]),
   gpsTracking: Object.freeze([
     "attendance",
-    "master.staff",
   ]),
   grn: Object.freeze([
     "customers",
@@ -122,7 +114,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "threads",
     "master.articles",
     "master.vendors",
-    "master.staff",
     "master.fileAssets",
   ]),
   inventory: Object.freeze([
@@ -133,7 +124,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "purchaseOrders",
     "master.articles",
     "master.vendors",
-    "master.staff",
   ]),
   dispatch: Object.freeze([
     "customers",
@@ -143,7 +133,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "stockMovements",
     "dispatches",
     "threads",
-    "master.staff",
   ]),
   vendorRates: Object.freeze([
     "master.units",
@@ -172,7 +161,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "threads",
     "commercialTerms",
     "paymentTermTemplates",
-    "master.staff",
   ]),
   invoices: Object.freeze([
     "customers",
@@ -183,7 +171,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "customerReceipts",
     "threads",
     "taxConfigs",
-    "master.staff",
   ]),
   vendorBills: Object.freeze([
     "purchaseOrders",
@@ -192,7 +179,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "vendorPayments",
     "threads",
     "master.vendors",
-    "master.staff",
   ]),
   contractorPayments: Object.freeze([
     "workOrders",
@@ -201,7 +187,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "contractorSettlements",
     "threads",
     "master.contractors",
-    "master.staff",
   ]),
   commissions: Object.freeze([
     "customers",
@@ -210,7 +195,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "threads",
     "master.sourcePartners",
     "master.commissionRules",
-    "master.staff",
   ]),
   gstReturns: Object.freeze([
     "invoices",
@@ -237,7 +221,6 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "entityReferenceAssignments",
     "master.articles",
     "master.vendors",
-    "master.staff",
     "master.fileAssets",
     "master.catalogues",
     "master.catalogueArticleVendorLinks",
@@ -273,17 +256,14 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   userApprovals: Object.freeze([
     "staffRolePermissions",
     "auditLog",
-    "master.staff",
   ]),
   approvalPolicies: Object.freeze([
     "actions",
     "approvalPolicies",
     "auditLog",
-    "master.staff",
   ]),
   auditLog: Object.freeze([
     "auditLog",
-    "master.staff",
   ]),
 });
 
