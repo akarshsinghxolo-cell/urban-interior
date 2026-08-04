@@ -4,7 +4,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { uploadQueueStore } from "./upload-store";
 import type { FinalizedUploadResult, GoogleFileId, InitiateUploadResponse, UploadItemId, UploadItemRecord } from "./upload-types";
 
-const MB = 1024 * 1024;
+const CHUNK_SIZE = 8 * 1024 * 1024;
 const RETRY_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
 const LEASE_KEY = "uc-upload-manager-lease";
 const LEASE_MS = 20_000;
@@ -41,7 +41,6 @@ const jsonPost = async <T>(action: string, body: unknown): Promise<T> => {
   return payload;
 };
 
-const chunkSize = (retries: number) => retries >= 4 ? 2 * MB : retries >= 2 ? 4 * MB : 8 * MB;
 const rangeEnd = (response: Response, fallback: number) => Number(response.headers.get("range")?.match(/-(\d+)$/)?.[1] || fallback);
 
 function latestItem(uploadItemId: UploadItemId): UploadItemRecord {
@@ -72,6 +71,7 @@ async function initiate(item: UploadItemRecord): Promise<UploadItemRecord> {
     mimeType: item.mimeType,
     sizeBytes: item.sizeBytes,
     batchSizeBytes: uploadQueueStore.batchSizeBytes(item.batchId),
+    preferredStorageAccountId: batch.storageAccountId,
     lastModified: item.lastModified,
     fingerprint: item.fingerprint,
     sourceFlow: item.sourceFlow,
@@ -136,16 +136,6 @@ async function querySession(item: UploadItemRecord) {
   throw new Error(`Drive session query returned ${response.status}.`);
 }
 
-async function recordDriveCompletion(item: UploadItemRecord, googleFileId: GoogleFileId): Promise<void> {
-  await jsonPost("progress", {
-    uploadItemId: item.id,
-    confirmedBytes: item.sizeBytes,
-    progress: 100,
-    status: "uploaded_unverified",
-    googleFileId,
-  });
-}
-
 async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise<UploadItemRecord> {
   const blob = await uploadQueueStore.getBlob(item.id);
   if (!blob) throw new Error("The selected file is no longer available on this device.");
@@ -168,7 +158,6 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
   if (resumed.completed) {
     const googleFileId = String(resumed.completed.id || "") as GoogleFileId;
     if (!googleFileId) throw new Error("Drive completed without a file ID.");
-    await recordDriveCompletion(current, googleFileId);
     return uploadQueueStore.patchItem(current.id, {
       status: "uploaded_unverified",
       googleFileId,
@@ -187,7 +176,7 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
   while (offset < current.sizeBytes) {
     current = assertNotCancelled(current.id);
     if (!navigator.onLine) throw new TypeError("Network unavailable");
-    const end = Math.min(current.sizeBytes, offset + chunkSize(current.retryCount));
+    const end = Math.min(current.sizeBytes, offset + CHUNK_SIZE);
     const response = await fetch(current.sessionUri!, {
       method: "PUT",
       headers: {
@@ -206,12 +195,6 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
         confirmedBytes: offset,
         progress: Math.round(offset / current.sizeBytes * 100),
       });
-      void jsonPost("progress", {
-        uploadItemId: current.id,
-        confirmedBytes: offset,
-        progress: current.progress,
-        status: "uploading",
-      }).catch(() => undefined);
       continue;
     }
 
@@ -219,7 +202,7 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
       const payload = await response.json().catch(() => ({})) as { id?: string; webViewLink?: string; thumbnailLink?: string };
       if (!payload.id) throw new Error("Drive completed without a file ID.");
       const googleFileId = payload.id as GoogleFileId;
-      const completed = await uploadQueueStore.patchItem(current.id, {
+      return uploadQueueStore.patchItem(current.id, {
         status: "uploaded_unverified",
         googleFileId,
         webViewLink: payload.webViewLink,
@@ -227,8 +210,6 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
         confirmedBytes: current.sizeBytes,
         progress: 100,
       });
-      await recordDriveCompletion(completed, googleFileId);
-      return completed;
     }
 
     if (response.status === 404 || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
