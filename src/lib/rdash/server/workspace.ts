@@ -231,9 +231,7 @@ export async function resetWorkspace(user: AuthenticatedUser, confirmation: stri
     const { resetWorkspaceChangeJournal } = await import("./workspace-change-reset");
     const { resetRestWorkspace } = await getRestModule();
     await resetWorkspaceChangeJournal();
-    const reset = await resetRestWorkspace();
-    hydrateStaffReferenceLabels(reset.data);
-    return reset;
+    return resetRestWorkspace();
   }
 
   const { buildSeedDatabase } = await import("../seed");
