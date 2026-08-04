@@ -82,7 +82,7 @@ describe("client delta application", () => {
     expect(result.database.invoices.find((row) => row.id === "invoice-unloaded")?.invoice_no).toBe("INV-OLD");
   });
 
-  test("always includes permission bootstrap collections in scoped filters", () => {
+  test("keeps the safe Staff directory loaded but excludes canonical full Staff journal rows", () => {
     const collections = loadedWorkspaceCollections(scopedDatabase());
     expect(collections).not.toBeNull();
     expect(collections?.has("tasks")).toBe(true);
@@ -91,7 +91,7 @@ describe("client delta application", () => {
 
     const filter = workspaceCollectionFilterParam(scopedDatabase());
     expect(filter).toContain("staffRolePermissions");
-    expect(filter).toContain("master.staff");
+    expect(filter).not.toContain("master.staff");
     expect(filter).toContain("tasks");
   });
 

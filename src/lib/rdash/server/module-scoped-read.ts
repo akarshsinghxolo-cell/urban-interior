@@ -1,3 +1,4 @@
+import { canReadFullStaffData } from "../staff-directory";
 import type { RDashDatabase } from "../types";
 import { workspaceRouteAccessDecision } from "../workspace-route-access";
 import type {
@@ -123,22 +124,30 @@ async function readAuthorizedScope(
   }
 
   const plan = workspaceModuleReadPlan(target);
-  const collections = collectionsForWorkspaceReadTarget(target);
+  const plannedCollections = collectionsForWorkspaceReadTarget(target);
+  const plannedFullStaff = plannedCollections.includes("master.staff");
+  const fullStaffAllowed = plannedFullStaff && canReadFullStaffData(user.role);
+  const fullCollections = fullStaffAllowed
+    ? [...plannedCollections]
+    : plannedCollections.filter((collection) => collection !== "master.staff");
   const scoped = await getWorkspaceSubset({
-    fullCollections: [...collections],
+    fullCollections,
+    rowsByCollection:
+      plannedFullStaff && !fullStaffAllowed && user.staffId
+        ? { "master.staff": [user.staffId] }
+        : undefined,
     limitsByCollection: { ...(plan.limitsByCollection || {}) },
   });
   const merged = mergeWorkspaceSubsets(bootstrap, scoped);
   const savings = moduleReadPlanSavings(target);
   const limitedCollections = Object.fromEntries(
     Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
-      collections.includes(collection),
+      plannedCollections.includes(collection),
     ),
   );
   const readCollections = [...new Set([
     ...WORKSPACE_BOOTSTRAP_COLLECTIONS,
-    ...(user.staffId ? ["master.staff"] : []),
-    ...collections,
+    ...plannedCollections,
   ])];
 
   (merged.data as unknown as Record<string, unknown>)._workspace_read_scope = target.scope;
@@ -147,12 +156,15 @@ async function readAuthorizedScope(
   (merged.data as unknown as Record<string, unknown>)._workspace_read_strategy = plan.strategy;
   (merged.data as unknown as Record<string, unknown>)._workspace_read_collections = readCollections;
   (merged.data as unknown as Record<string, unknown>)._workspace_read_limits = limitedCollections;
+  (merged.data as unknown as Record<string, unknown>)._workspace_staff_projection = fullStaffAllowed
+    ? "full"
+    : "directory";
 
   return {
     ...merged,
     scope: target.scope,
     collectionCount: readCollections.length,
-    scopeCollectionCount: savings.scope + WORKSPACE_BOOTSTRAP_COLLECTIONS.length + (user.staffId ? 1 : 0),
+    scopeCollectionCount: savings.scope + WORKSPACE_BOOTSTRAP_COLLECTIONS.length,
     readStrategy: plan.strategy,
     limitedCollections,
     loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
@@ -160,9 +172,11 @@ async function readAuthorizedScope(
 }
 
 /**
- * Reads a projected permission bootstrap first, then the route's exact module
- * plan (or its bounded scope fallback) at the same workspace revision. A
- * concurrent write causes one clean retry.
+ * Reads a projected permission/bootstrap first, then the route's exact module
+ * plan (or bounded scope fallback) at the same workspace revision. Staff is
+ * directory-projected by default; only privileged HR reads receive all Staff
+ * HR fields, while ordinary Staff can receive their own full row on HR screens.
+ * A concurrent write causes one clean retry.
  */
 export async function getModuleScopedWorkspace(
   user: AuthenticatedUser,

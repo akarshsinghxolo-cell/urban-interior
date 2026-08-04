@@ -23,6 +23,8 @@ export interface WorkspaceDeltaPayload {
   loadMs?: number;
 }
 
+export type StaffDeltaProjection = "directory" | "full";
+
 const KNOWN_COLLECTIONS = new Set<string>([
   ...topLevelCollections.map(String),
   ...masterCollections.map((key) => `master.${String(key)}`),
@@ -40,10 +42,21 @@ export function knownWorkspaceCollection(collection: string): boolean {
 }
 
 /**
+ * Staff deltas must follow the same projection as the snapshot that the client
+ * currently holds. Missing/legacy metadata fails closed to the safe directory.
+ */
+export function workspaceStaffProjectionParam(
+  database: RDashDatabase,
+): StaffDeltaProjection {
+  const metadata = database as unknown as Record<string, unknown>;
+  return metadata._workspace_staff_projection === "full" ? "full" : "directory";
+}
+
+/**
  * Returns the collections represented by the current scoped snapshot. Full and
  * legacy snapshots without explicit metadata are treated as complete. Permission,
- * staff identity and foundational work-taxonomy rows are always part of every
- * authenticated scoped snapshot so global create/edit pickers stay populated.
+ * safe Staff directory and foundational work-taxonomy rows are always part of
+ * every authenticated scoped snapshot so global create/edit pickers stay populated.
  */
 export function loadedWorkspaceCollections(database: RDashDatabase): Set<string> | null {
   const metadata = database as unknown as Record<string, unknown>;
@@ -59,6 +72,13 @@ export function loadedWorkspaceCollections(database: RDashDatabase): Set<string>
 export function workspaceCollectionFilterParam(database: RDashDatabase): string | undefined {
   const collections = loadedWorkspaceCollections(database);
   if (!collections) return undefined;
+  // Journal operations contain canonical full Staff rows. Directory-scoped
+  // clients intentionally skip master.staff deltas so a later HR edit cannot
+  // replace a projected row with salary/bank/auth data. Route/module reloads
+  // refresh the projected directory from the canonical Staff table.
+  if (workspaceStaffProjectionParam(database) === "directory") {
+    collections.delete("master.staff");
+  }
   return [...collections].sort().join(",");
 }
 

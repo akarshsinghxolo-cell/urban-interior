@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canReadFullStaffData } from "@/lib/rdash/staff-directory";
 import { requireSession } from "@/lib/rdash/server/auth";
+import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
 import { getWorkspaceChanges } from "@/lib/rdash/server/workspace-changes";
 import { knownWorkspaceCollection } from "@/lib/rdash/workspace-delta";
 
@@ -22,9 +24,23 @@ function collectionsFromRequest(request: NextRequest): Set<string> | null | "INV
   return new Set(values);
 }
 
+function staffSafeCollections(
+  requested: Set<string> | null,
+  canReadFullStaff: boolean,
+): Set<string> | null {
+  if (canReadFullStaff) return requested;
+  // Fail closed for callers that omit a collection filter: non-HR roles may
+  // receive every workspace delta collection except canonical full Staff rows.
+  const allowed = requested || new Set(Object.keys(COLLECTION_TO_TABLE));
+  const safe = new Set(allowed);
+  safe.delete("master.staff");
+  return safe;
+}
+
 export async function GET(request: NextRequest) {
+  let user: Awaited<ReturnType<typeof requireSession>>;
   try {
-    await requireSession(request);
+    user = await requireSession(request);
   } catch (error) {
     const message = error instanceof Error ? error.message : "UNAUTHORIZED";
     return NextResponse.json(
@@ -40,13 +56,17 @@ export async function GET(request: NextRequest) {
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
-  const collections = collectionsFromRequest(request);
-  if (collections === "INVALID") {
+  const requestedCollections = collectionsFromRequest(request);
+  if (requestedCollections === "INVALID") {
     return NextResponse.json(
       { error: "collections must contain known workspace collections." },
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
+  const collections = staffSafeCollections(
+    requestedCollections,
+    canReadFullStaffData(user.role),
+  );
 
   try {
     const delta = await getWorkspaceChanges(afterRevision, collections || undefined);
@@ -59,6 +79,7 @@ export async function GET(request: NextRequest) {
         "X-UC-Delta-Has-More": delta.hasMore ? "1" : "0",
         "X-UC-Delta-Full-Reload": delta.requiresFullReload ? "1" : "0",
         "X-UC-Delta-Filtered": collections ? "1" : "0",
+        "X-UC-Staff-Delta": canReadFullStaffData(user.role) ? "full-allowed" : "directory-only",
         "Server-Timing": `workspace-changes;dur=${(delta.loadMs || 0).toFixed(2)}`,
       },
     });

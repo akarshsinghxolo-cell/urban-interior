@@ -176,8 +176,11 @@ describe("module-scoped collection plans", () => {
     system: SYSTEM_SCOPE_COLLECTIONS,
   } as const;
 
-  test("uses a minimal permission bootstrap", () => {
-    expect(WORKSPACE_BOOTSTRAP_COLLECTIONS).toEqual(["staffRolePermissions"]);
+  test("uses a minimal permission and safe Staff-directory bootstrap", () => {
+    expect(WORKSPACE_BOOTSTRAP_COLLECTIONS).toEqual([
+      "staffRolePermissions",
+      "master.staff",
+    ]);
   });
 
   test("every supported scope resolves to a unique valid bounded plan", () => {
@@ -215,6 +218,16 @@ describe("module-scoped collection plans", () => {
     expect(FINANCE_SCOPE_COLLECTIONS).not.toContain("automationRules");
     expect(MEDIA_SCOPE_COLLECTIONS).not.toContain("contractorPayments");
     expect(HR_SCOPE_COLLECTIONS).not.toContain("vendorRfqs");
+  });
+
+  test("loads canonical full Staff only in the HR scope", () => {
+    for (const [scope, collections] of Object.entries(plans)) {
+      if (scope === "hr") {
+        expect(collections).toContain("master.staff");
+      } else {
+        expect(collections).not.toContain("master.staff");
+      }
+    }
   });
 
   test("master and system plans stay intentionally bounded", () => {
