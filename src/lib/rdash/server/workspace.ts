@@ -1,3 +1,4 @@
+import { hydrateStaffReferenceLabels } from "../staff-reference-labels";
 import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
 import { applyWorkspaceOperations, diffWorkspaceOperations, operationSummary, type WorkspaceOperation } from "../workspace-operations";
@@ -54,6 +55,7 @@ async function getInMemoryWorkspace(): Promise<{ revision: number; data: RDashDa
     };
     console.log("[workspace] In-memory workspace seeded from buildSeedDatabase().");
   }
+  hydrateStaffReferenceLabels(inMemoryWorkspace.data);
   return inMemoryWorkspace;
 }
 
@@ -89,6 +91,7 @@ export async function getWorkspace(includeRevisions = false): Promise<WorkspaceW
   if (await checkSupabaseSchema()) {
     const { getRestWorkspace } = await getRestModule();
     const workspace = await getRestWorkspace();
+    hydrateStaffReferenceLabels(workspace.data);
     if (includeRevisions) return workspace;
     return { revision: workspace.revision, data: workspace.data, updatedAt: workspace.updatedAt };
   }
@@ -178,6 +181,7 @@ export async function commitWorkspaceOperations(
     data: applyWorkspaceOperations(current.data, operations),
     updatedAt: new Date().toISOString(),
   };
+  hydrateStaffReferenceLabels(inMemoryWorkspace.data);
   return {
     revision: inMemoryWorkspace.revision,
     updatedAt: inMemoryWorkspace.updatedAt,
@@ -227,7 +231,9 @@ export async function resetWorkspace(user: AuthenticatedUser, confirmation: stri
     const { resetWorkspaceChangeJournal } = await import("./workspace-change-reset");
     const { resetRestWorkspace } = await getRestModule();
     await resetWorkspaceChangeJournal();
-    return resetRestWorkspace();
+    const reset = await resetRestWorkspace();
+    hydrateStaffReferenceLabels(reset.data);
+    return reset;
   }
 
   const { buildSeedDatabase } = await import("../seed");
@@ -236,5 +242,6 @@ export async function resetWorkspace(user: AuthenticatedUser, confirmation: stri
     data: buildSeedDatabase(),
     updatedAt: new Date().toISOString(),
   };
+  hydrateStaffReferenceLabels(inMemoryWorkspace.data);
   return inMemoryWorkspace;
 }
