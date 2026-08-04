@@ -8,6 +8,12 @@ import {
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 
+export const WORKSPACE_FOUNDATION_COLLECTIONS = Object.freeze([
+  "master.units",
+  "master.workCategories",
+  "master.workSubcategories",
+] as const);
+
 const PERMISSION_FIELDS = Object.freeze([
   "role_key",
   "module_key",
@@ -85,16 +91,18 @@ async function projectedRows(
 }
 
 /**
- * Reads only the authorization fields required before a module query. The
- * entity tables store records inside a JSONB `data` envelope, so selecting the
- * whole envelope for every role permission wastes Supabase egress. If the
- * development fallback is active, or a projection is unavailable, this safely
- * falls back to the ordinary bounded bootstrap read.
+ * Reads the authorization fields required before a module query plus the small
+ * work-taxonomy foundation used by global create/edit flows. Category,
+ * subcategory and unit pickers can be opened from any module, so those records
+ * must not disappear merely because the current route uses a narrow scoped read.
+ * Permission and staff identity rows remain projected to minimize egress.
  */
 export async function getProjectedWorkspaceBootstrap(
   staffId?: string,
 ): Promise<WorkspaceSubset> {
-  const base = await getWorkspaceSubset({});
+  const base = await getWorkspaceSubset({
+    fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS],
+  });
   if (base.queryCount === 0) return base;
 
   try {
@@ -123,6 +131,7 @@ export async function getProjectedWorkspaceBootstrap(
     (data as unknown as Record<string, unknown>)._workspace_bootstrap_projection = {
       staffRolePermissions: [...PERMISSION_FIELDS],
       ...(staffId ? { "master.staff": [...STAFF_IDENTITY_FIELDS] } : {}),
+      foundation: [...WORKSPACE_FOUNDATION_COLLECTIONS],
     };
 
     return {
@@ -134,7 +143,10 @@ export async function getProjectedWorkspaceBootstrap(
   } catch (error) {
     console.warn("[workspace-bootstrap] projected read unavailable; using bounded compatibility read:", error);
     return getWorkspaceSubset({
-      fullCollections: ["staffRolePermissions"],
+      fullCollections: [
+        "staffRolePermissions",
+        ...WORKSPACE_FOUNDATION_COLLECTIONS,
+      ],
       rowsByCollection: staffId ? { "master.staff": [staffId] } : undefined,
     });
   }
