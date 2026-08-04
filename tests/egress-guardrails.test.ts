@@ -16,8 +16,11 @@ const rest = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
     expect(pulse).toContain("useWorkspaceHealth");
   });
 
-  test("health uses one database aggregate RPC", () => {
-    expect(healthServer).toContain('.rpc("get_workspace_health_summary"');
+  // These objects were removed from the live database; health must stay on the bounded read path.
+  test("health avoids removed database fast paths", () => {
+    expect(healthServer).not.toContain('.rpc("get_workspace_health_summary"');
+    expect(healthServer).not.toContain('.from("workspace_health_snapshot")');
+    expect(healthServer).toContain("getWorkspaceSubset");
   });
 
   test("Work & Rate Master edits use targeted validation", () => {
