@@ -81,6 +81,8 @@ jobs:
         run: bun run test:module-read-plans
       - name: Test bootstrap and scoped client reads
         run: bun run test:bootstrap-scoped-flow
+      - name: Test workspace navigation freshness
+        run: bun test tests/workspace-navigation-revalidation.test.ts
       - name: Test entity-scoped workspace reads
         run: bun run test:entity-scoped-reads
       - name: Test workspace revision delta synchronization
