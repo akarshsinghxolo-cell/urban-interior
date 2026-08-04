@@ -74,18 +74,31 @@ export function WorkspaceScopedReadBoundary() {
 
   React.useEffect(() => {
     if (!authUser) {
-      workspaceReadState.reset();
+      // The external read-state store notifies React subscribers. Defer that
+      // notification out of the effect body and re-check auth so a rapid
+      // sign-out/sign-in cannot erase the new session's coverage.
+      queueMicrotask(() => {
+        if (!useRDashStore.getState().authUser) workspaceReadState.reset();
+      });
       return;
     }
     if (!needsExpansion) {
-      workspaceReadState.clearRequest(requestedTarget);
+      queueMicrotask(() => workspaceReadState.clearRequest(requestedTarget));
       return;
     }
 
     const controller = new AbortController();
     const requestId = ++requestSequenceRef.current;
     const requestTargetKey = targetKey;
-    workspaceReadState.beginRequest(requestedTarget);
+    queueMicrotask(() => {
+      if (
+        !controller.signal.aborted &&
+        requestSequenceRef.current === requestId &&
+        latestTargetKeyRef.current === requestTargetKey
+      ) {
+        workspaceReadState.beginRequest(requestedTarget);
+      }
+    });
 
     void fetch(endpoint, {
       credentials: "same-origin",
@@ -147,7 +160,7 @@ export function WorkspaceScopedReadBoundary() {
 
     return () => {
       controller.abort();
-      workspaceReadState.clearRequest(requestedTarget);
+      queueMicrotask(() => workspaceReadState.clearRequest(requestedTarget));
     };
   }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget, retryNonce, targetKey]);
 
