@@ -50,7 +50,7 @@ function canReadAll(user: AuthenticatedUser) {
 function assertStaffDevice(user: AuthenticatedUser) {
   if (user.staffId) return user.staffId;
   throw new Error(
-    "FORBIDDEN:GPS route capture requires a linked active Staff profile.",
+    "FORBIDDEN:GPS route capture requires a linked active Staff record.",
   );
 }
 
@@ -245,8 +245,8 @@ function bundleFromRow(row: StaffRouteBundleRow): StaffRouteBundle | null {
 
 async function assertActiveTrackedStaff(staffId: string) {
   const { data: staff, error } = await getSupabaseAdminClient()
-    .from("StaffProfile")
-    .select("status,gpsTrackingEnabled")
+    .from("entity_master_staff")
+    .select("id,data")
     .eq("id", staffId)
     .maybeSingle();
   if (error) {
@@ -254,13 +254,16 @@ async function assertActiveTrackedStaff(staffId: string) {
       `Could not verify the GPS device owner: ${error.message}`,
     );
   }
+  const staffData = staff?.data && typeof staff.data === "object"
+    ? staff.data as Record<string, unknown>
+    : null;
   if (
-    !staff
-    || staff.status !== "active"
-    || staff.gpsTrackingEnabled === false
+    !staffData
+    || staffData.status !== "active"
+    || staffData.gps_tracking_enabled === false
   ) {
     throw new Error(
-      "FORBIDDEN:This Staff profile is inactive or GPS tracking is disabled.",
+      "FORBIDDEN:This Staff record is inactive or GPS tracking is disabled.",
     );
   }
 }
