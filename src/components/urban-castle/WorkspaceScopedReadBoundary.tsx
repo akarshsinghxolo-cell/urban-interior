@@ -13,6 +13,7 @@ import {
   useWorkspaceReadState,
   workspaceReadLoadStateForTarget,
   workspaceReadState,
+  workspaceReadTargetKey,
 } from "@/lib/rdash/workspace-read-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
@@ -60,16 +61,16 @@ export function WorkspaceScopedReadBoundary() {
     () => workspaceReadEndpointForTarget(requestedTarget),
     [requestedTarget],
   );
+  const targetKey = workspaceReadTargetKey(requestedTarget);
   const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
   const loadState = workspaceReadLoadStateForTarget(readState, requestedTarget);
   const [retryNonce, setRetryNonce] = React.useState(0);
   const requestSequenceRef = React.useRef(0);
-  const latestTargetRef = React.useRef(requestedTarget);
-  const latestTargetIdentity = `${requestedTarget.scope}:${requestedTarget.moduleId}:${requestedTarget.entity?.kind || "module"}:${requestedTarget.entity?.id || ""}`;
+  const latestTargetKeyRef = React.useRef(targetKey);
 
   React.useLayoutEffect(() => {
-    latestTargetRef.current = requestedTarget;
-  }, [requestedTarget]);
+    latestTargetKeyRef.current = targetKey;
+  }, [targetKey]);
 
   React.useEffect(() => {
     if (!authUser) {
@@ -83,7 +84,7 @@ export function WorkspaceScopedReadBoundary() {
 
     const controller = new AbortController();
     const requestId = ++requestSequenceRef.current;
-    const requestTargetIdentity = latestTargetIdentity;
+    const requestTargetKey = targetKey;
     workspaceReadState.beginRequest(requestedTarget);
 
     void fetch(endpoint, {
@@ -109,12 +110,10 @@ export function WorkspaceScopedReadBoundary() {
       }
 
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
-      const latest = latestTargetRef.current;
-      const latestIdentity = `${latest.scope}:${latest.moduleId}:${latest.entity?.kind || "module"}:${latest.entity?.id || ""}`;
       if (
         controller.signal.aborted ||
         requestSequenceRef.current !== requestId ||
-        latestIdentity !== requestTargetIdentity
+        latestTargetKeyRef.current !== requestTargetKey
       ) return;
 
       hydrateSecureWorkspace({
@@ -134,13 +133,11 @@ export function WorkspaceScopedReadBoundary() {
         });
       }
     }).catch((caught) => {
-      const latest = latestTargetRef.current;
-      const latestIdentity = `${latest.scope}:${latest.moduleId}:${latest.entity?.kind || "module"}:${latest.entity?.id || ""}`;
       if (
         controller.signal.aborted ||
         isAbortError(caught) ||
         requestSequenceRef.current !== requestId ||
-        latestIdentity !== requestTargetIdentity
+        latestTargetKeyRef.current !== requestTargetKey
       ) return;
       workspaceReadState.failRequest(
         requestedTarget,
@@ -152,7 +149,7 @@ export function WorkspaceScopedReadBoundary() {
       controller.abort();
       workspaceReadState.clearRequest(requestedTarget);
     };
-  }, [authUser, endpoint, hydrateSecureWorkspace, latestTargetIdentity, needsExpansion, pathname, requestedTarget, retryNonce]);
+  }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget, retryNonce, targetKey]);
 
   if (!needsExpansion) return null;
   const error = loadState.status === "error" ? loadState.error : undefined;
