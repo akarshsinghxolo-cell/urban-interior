@@ -16,6 +16,33 @@ function requiredString(value: unknown, label: string): string {
   return result;
 }
 
+async function makeDriveFilePublic(accessToken: string, fileId: string): Promise<void> {
+  const existing = await driveFetch(
+    accessToken,
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions?fields=permissions(id,type,role)`,
+  );
+  const existingPayload = await existing.json().catch(() => ({})) as {
+    permissions?: Array<{ id?: string; type?: string; role?: string }>;
+    error?: { message?: string };
+  };
+  if (!existing.ok) throw new Error(existingPayload.error?.message || "Google Drive could not read file sharing permissions.");
+  if (existingPayload.permissions?.some((permission) => permission.type === "anyone" && permission.role === "reader")) return;
+
+  const created = await driveFetch(
+    accessToken,
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}/permissions?supportsAllDrives=true`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "anyone", role: "reader", allowFileDiscovery: false }),
+    },
+  );
+  if (!created.ok) {
+    const payload = await created.json().catch(() => ({})) as { error?: { message?: string } };
+    throw new Error(payload.error?.message || "Google Drive could not make the uploaded file public.");
+  }
+}
+
 function assertFinalizationIdentity(item: UploadItemRow, input: FinalizeUploadRequest) {
   const serverTargetType = requiredString(item.target_entity_type, "Target entity type") as FileAttachmentEntityType;
   const serverTargetId = requiredString(item.target_entity_id, "Target entity ID");
@@ -118,6 +145,8 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
     if (!moved.ok) throw new Error(movedFile.error?.message || "The uploaded file could not be moved to its final Drive folder.");
     Object.assign(file, movedFile);
   }
+
+  await makeDriveFilePublic(accessToken, file.id);
 
   const timestamp = nowIso();
   let context: ReturnType<typeof resolveEntityContext> | undefined;
