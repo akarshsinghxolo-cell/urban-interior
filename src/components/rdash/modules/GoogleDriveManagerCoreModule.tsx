@@ -238,14 +238,12 @@ export function GoogleDriveManagerModule() {
                 <span className={cn("rounded-md px-3 py-2 text-xs font-semibold", working ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{working ? "Working..." : "Ready"}</span>
               </div>
             </div>
-            {/* Local storage fallback info */}
             <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/5 to-transparent px-3 py-2.5">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><HardDrive className="h-3.5 w-3.5" /></span>
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><Cloud className="h-3.5 w-3.5" /></span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-foreground">Local storage fallback is active</p>
-                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">When no Google Drive is connected (or an upload fails), files are saved to the server's local <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">download/uploads/</code> directory. Connect a Drive to enable cloud uploads.</p>
+                <p className="text-xs font-semibold text-foreground">Direct Google Drive uploads</p>
+                <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">File bytes upload directly from the browser to the selected Google Drive. If no writable Drive is available, uploads stop or remain pending; Urban Castle does not fall back to Vercel local storage.</p>
               </div>
-              <span className="ml-auto shrink-0 rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-semibold text-success">{files.filter((f) => f.storage_provider === "local").length} local file(s)</span>
             </div>
             {/* Settings grid */}
             <div className="mt-4 grid gap-2 md:grid-cols-4">
