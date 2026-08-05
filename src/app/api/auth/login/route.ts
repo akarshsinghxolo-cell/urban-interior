@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AuthAccessError, authenticateCredentials, sessionCookie, signSession } from "@/lib/rdash/server/auth";
+import {
+  AuthAccessError,
+  authenticateCredentialsWithSession,
+  refreshTokenCookie,
+  sessionCookie,
+  signSession,
+} from "@/lib/rdash/server/auth";
 import { rateLimit } from "@/lib/rdash/server/ratelimit";
 
 export const runtime = "nodejs";
@@ -20,11 +26,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const user = await authenticateCredentials(email, body.password || "");
-    if (!user) return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
-    const token = signSession(user);
-    const response = NextResponse.json({ user: { name: user.name, email: user.email, role: user.role, staffId: user.staffId }, token });
+    const renewable = await authenticateCredentialsWithSession(email, body.password || "");
+    if (!renewable) return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
+
+    const token = signSession(renewable.user);
+    const response = NextResponse.json({
+      user: {
+        name: renewable.user.name,
+        email: renewable.user.email,
+        role: renewable.user.role,
+        staffId: renewable.user.staffId,
+      },
+      token,
+    }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(sessionCookie(token));
+    response.cookies.set(refreshTokenCookie(renewable.refreshToken));
     return response;
   } catch (error) {
     if (error instanceof AuthAccessError) {
