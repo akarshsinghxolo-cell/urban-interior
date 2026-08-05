@@ -36,4 +36,29 @@ describe("Google Drive transaction simplification", () => {
     expect(storage).toContain("ensureCanonicalFolderPath");
     expect(storage).toContain('segment.key.includes(":commercial")');
   });
+
+  test("uses one paused state for temporary upload failures", async () => {
+    const types = await readFile("src/lib/uploads/upload-types.ts", "utf8");
+    const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
+    const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
+    const migration = await readFile("supabase/migrations/20260805113000_simplify_upload_retry_states.sql", "utf8");
+
+    for (const removedStatus of ["waiting_for_network", "waiting_for_entity", "failed_retryable"]) {
+      expect(types).not.toContain(`| \"${removedStatus}\"`);
+      expect(store).not.toContain(`status: \"${removedStatus}\"`);
+      expect(transfer).not.toContain(`status: \"${removedStatus}\"`);
+    }
+
+    expect(store).toContain('status: online ? "queued" : "paused"');
+    expect(store).toContain('lastErrorCode: online ? undefined : NETWORK_ERROR_CODE');
+    expect(transfer).toContain('status: "paused"');
+    expect(transfer).toContain('lastErrorCode: network ? "NETWORK" : "TEMPORARY_ERROR"');
+    expect(transfer).toContain('status: "failed_permanent"');
+    expect(transfer).toContain('lastErrorCode: "TARGET_NOT_READY"');
+
+    expect(migration).toContain("where status = 'waiting_for_network'");
+    expect(migration).toContain("where status = 'failed_retryable'");
+    expect(migration).toContain("where status = 'waiting_for_entity'");
+    expect(migration).toContain("where status = 'paused'");
+  });
 });
