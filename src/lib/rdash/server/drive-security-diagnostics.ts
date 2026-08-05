@@ -1,14 +1,13 @@
 import { createHash } from "node:crypto";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import type { AuthenticatedUser } from "./auth";
-import { accessTokenForDriveConnection } from "./drive-connections";
+import { accessTokenForDriveConnection, GOOGLE_DRIVE_SCOPE } from "./drive-connections";
 import { getWorkspace } from "./workspace";
 
 const OAUTH_CONFIG_COLLECTION = "system.googleDriveOAuth";
 const OAUTH_CONFIG_ID = "default";
 const DRIVE_VAULT_COLLECTION = "system.googleDriveVault";
 const DRIVE_VAULT_ID = "default";
-const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
 const DRIVE_ABOUT_URL = "https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)";
 
 type StoredOAuthSettings = {
