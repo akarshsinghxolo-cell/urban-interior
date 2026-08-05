@@ -24,14 +24,34 @@ describe("public Google Drive files", () => {
     expect(testUpload).toContain('["drive-test", "public"]');
   });
 
+  test("encrypts reusable Drive credentials and keeps OAuth secrets out of browser writes", async () => {
+    const connections = await readFile("src/lib/rdash/server/drive-connections.ts", "utf8");
+    const configRoute = await readFile("src/app/api/google-drive/oauth/config/route.ts", "utf8");
+    const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
+
+    expect(connections).toContain('const TOKEN_CIPHER = "aes-256-gcm"');
+    expect(connections).toContain('const TOKEN_KEY_ENV = "DRIVE_TOKEN_ENCRYPTION_KEY"');
+    expect(connections).toContain("refreshTokenEncrypted");
+    expect(connections).toContain("createCipheriv");
+    expect(connections).toContain("createDecipheriv");
+    expect(connections).toContain("Legacy plaintext value. Read only so old vaults can be migrated");
+    expect(configRoute).toContain("status: 405");
+    expect(configRoute).not.toContain("request.json");
+    expect(manager).toContain("Google OAuth Environment Setup");
+    expect(manager).not.toContain("Save Credentials");
+    expect(manager).not.toContain("setClientSecret");
+  });
+
   test("makes the copied-link security boundary explicit", async () => {
     const policy = await readFile("docs/google-drive-access-policy.md", "utf8");
     const open = await readFile("src/app/api/google-drive/open/route.ts", "utf8");
     const download = await readFile("src/app/api/google-drive/download/route.ts", "utf8");
+    const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
 
     expect(policy).toContain("anyone who obtains the Google Drive URL can read it without an Urban Castle session");
     expect(policy).toContain("Do not treat the current Drive sharing model as strong confidentiality");
     expect(open).toContain("canReadManagedFileAsset");
     expect(download).toContain("canReadManagedFileAsset");
+    expect(manager).toContain("Managed Drive files are link-readable");
   });
 });
