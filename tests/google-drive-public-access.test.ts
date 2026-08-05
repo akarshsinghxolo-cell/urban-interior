@@ -23,4 +23,15 @@ describe("public Google Drive files", () => {
     expect(finalize).toContain("await makeDriveFilePublic(accessToken, file.id)");
     expect(testUpload).toContain('["drive-test", "public"]');
   });
+
+  test("makes the copied-link security boundary explicit", async () => {
+    const policy = await readFile("docs/google-drive-access-policy.md", "utf8");
+    const open = await readFile("src/app/api/google-drive/open/route.ts", "utf8");
+    const download = await readFile("src/app/api/google-drive/download/route.ts", "utf8");
+
+    expect(policy).toContain("anyone who obtains the Google Drive URL can read it without an Urban Castle session");
+    expect(policy).toContain("Do not treat the current Drive sharing model as strong confidentiality");
+    expect(open).toContain("canReadManagedFileAsset");
+    expect(download).toContain("canReadManagedFileAsset");
+  });
 });
