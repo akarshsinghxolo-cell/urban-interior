@@ -14,6 +14,7 @@ import {
 } from "./upload-types";
 
 const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+const NETWORK_ERROR_CODE = "NETWORK";
 const EMPTY_SNAPSHOT: UploadQueueSnapshot = {
   ready: false,
   online: true,
@@ -115,7 +116,7 @@ export const uploadQueueStore = {
   setOnline(online: boolean): void {
     if (snapshot.online === online) return;
     emit({ ...snapshot, online });
-    const transition = online ? this.markWaitingItemsQueued() : this.markTransferItemsWaiting();
+    const transition = online ? this.resumeNetworkPausedItems() : this.pauseTransfersForNetwork();
     void transition.catch((error) => console.error("[UploadQueue] Connectivity transition failed", error));
   },
   async enqueueBatch(input: EnqueueUploadBatchInput): Promise<UploadBatchId> {
@@ -176,10 +177,12 @@ export const uploadQueueStore = {
           attachmentField: itemOptions?.attachmentField ?? input.attachmentField,
           attachmentFieldMode: itemOptions?.attachmentFieldMode ?? input.attachmentFieldMode,
           requiredEvidence: batch.requiredEvidence,
-          status: online ? "queued" : "waiting_for_network",
+          status: online ? "queued" : "paused",
           confirmedBytes: 0,
           progress: 0,
           retryCount: 0,
+          lastErrorCode: online ? undefined : NETWORK_ERROR_CODE,
+          lastErrorMessage: online ? undefined : "Upload paused until the network is available.",
           createdAt,
           updatedAt: createdAt,
         };
@@ -259,16 +262,14 @@ export const uploadQueueStore = {
     if (!item) return;
     const online = typeof navigator === "undefined" ? true : navigator.onLine;
     await this.patchItem(uploadItemId, {
-      status: online ? "queued" : "waiting_for_network",
+      status: online ? "queued" : "paused",
       retryAt: undefined,
-      lastErrorCode: undefined,
-      lastErrorMessage: undefined,
+      lastErrorCode: online ? undefined : NETWORK_ERROR_CODE,
+      lastErrorMessage: online ? undefined : "Upload paused until the network is available.",
     });
   },
   async retryAll(): Promise<void> {
-    const retryable = snapshot.items.filter((item) =>
-      item.status === "failed_retryable" || item.status === "failed_permanent" || item.status === "waiting_for_network" || item.status === "paused",
-    );
+    const retryable = snapshot.items.filter((item) => item.status === "paused" || item.status === "failed_permanent");
     for (const item of retryable) await this.retryItem(item.id);
   },
   async cancelItem(uploadItemId: UploadItemId): Promise<void> {
@@ -282,13 +283,27 @@ export const uploadQueueStore = {
     const batch = this.getBatch(uploadBatchId);
     if (batch) await this.patchBatch(uploadBatchId, { status: "cancelled" });
   },
-  async markWaitingItemsQueued(): Promise<void> {
-    const waiting = snapshot.items.filter((item) => item.status === "waiting_for_network");
-    for (const item of waiting) await this.patchItem(item.id, { status: "queued", retryAt: undefined });
+  async resumeNetworkPausedItems(): Promise<void> {
+    const paused = snapshot.items.filter((item) => item.status === "paused" && item.lastErrorCode === NETWORK_ERROR_CODE);
+    for (const item of paused) {
+      await this.patchItem(item.id, {
+        status: "queued",
+        retryAt: undefined,
+        lastErrorCode: undefined,
+        lastErrorMessage: undefined,
+      });
+    }
   },
-  async markTransferItemsWaiting(): Promise<void> {
+  async pauseTransfersForNetwork(): Promise<void> {
     const transferStates = new Set(["queued", "preparing", "starting_session", "uploading"]);
     const affected = snapshot.items.filter((item) => transferStates.has(item.status));
-    for (const item of affected) await this.patchItem(item.id, { status: "waiting_for_network", retryAt: undefined });
+    for (const item of affected) {
+      await this.patchItem(item.id, {
+        status: "paused",
+        retryAt: undefined,
+        lastErrorCode: NETWORK_ERROR_CODE,
+        lastErrorMessage: "Upload paused until the network is available.",
+      });
+    }
   },
 };

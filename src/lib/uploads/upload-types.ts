@@ -39,8 +39,6 @@ export type UploadPurpose =
 export type UploadItemStatus =
   | "queued"
   | "preparing"
-  | "waiting_for_network"
-  | "waiting_for_entity"
   | "starting_session"
   | "uploading"
   | "paused"
@@ -48,7 +46,6 @@ export type UploadItemStatus =
   | "verifying"
   | "finalizing"
   | "completed"
-  | "failed_retryable"
   | "failed_permanent"
   | "cancel_requested"
   | "cleanup_pending"
