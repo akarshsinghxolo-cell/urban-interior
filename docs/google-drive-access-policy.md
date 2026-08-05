@@ -2,6 +2,18 @@
 
 Urban Castle deliberately keeps large file bytes off Vercel. Managed uploads use Google Drive resumable sessions and the browser transfers the file directly to Google. Preview, thumbnail, open, and download routes authorize the Urban Castle user first and then redirect the browser to Google so Google serves the bytes.
 
+## OAuth scope boundary
+
+Urban Castle requests only:
+
+```text
+https://www.googleapis.com/auth/drive.file
+```
+
+This allows Urban Castle to create and manage files and folders created by the application, plus files a user explicitly selects for the application. It does not grant Urban Castle general access to unrelated files elsewhere in the connected Google Drive account.
+
+After changing from the broader `drive` scope, existing Google Drive connections should be revoked and reconnected so their reusable refresh tokens are issued with the narrower `drive.file` permission.
+
 ## Current sharing model
 
 After a managed upload is verified and moved to its canonical Drive folder, Urban Castle creates this Google Drive permission:

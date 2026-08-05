@@ -42,6 +42,17 @@ describe("public Google Drive files", () => {
     expect(manager).not.toContain("setClientSecret");
   });
 
+  test("requests only app-created or explicitly selected Drive files", async () => {
+    const connections = await readFile("src/lib/rdash/server/drive-connections.ts", "utf8");
+    const diagnostics = await readFile("src/lib/rdash/server/drive-security-diagnostics.ts", "utf8");
+
+    expect(connections).toContain('export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"');
+    expect(connections).toContain('url.searchParams.set("scope", GOOGLE_DRIVE_SCOPE)');
+    expect(connections).not.toContain('url.searchParams.set("scope", "https://www.googleapis.com/auth/drive")');
+    expect(diagnostics).toContain("accessTokenForDriveConnection, GOOGLE_DRIVE_SCOPE");
+    expect(diagnostics).not.toContain('const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"');
+  });
+
   test("makes the copied-link security boundary explicit", async () => {
     const policy = await readFile("docs/google-drive-access-policy.md", "utf8");
     const open = await readFile("src/app/api/google-drive/open/route.ts", "utf8");

@@ -8,6 +8,7 @@ const DRIVE_VAULT_COLLECTION = "system.googleDriveVault";
 const DRIVE_VAULT_ID = "default";
 const TOKEN_CIPHER = "aes-256-gcm";
 const TOKEN_KEY_ENV = "DRIVE_TOKEN_ENCRYPTION_KEY";
+export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 type EncryptedSecret = {
   version: 1;
@@ -314,7 +315,7 @@ export async function beginGoogleDriveConnect(user: AuthenticatedUser, input: { 
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", "https://www.googleapis.com/auth/drive");
+  url.searchParams.set("scope", GOOGLE_DRIVE_SCOPE);
   url.searchParams.set("access_type", "offline");
   url.searchParams.set("prompt", "consent");
   url.searchParams.set("state", state);
