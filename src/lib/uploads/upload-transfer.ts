@@ -61,7 +61,12 @@ async function initiate(item: UploadItemRecord): Promise<UploadItemRecord> {
   assertNotCancelled(item.id);
   const batch = uploadQueueStore.getBatch(item.batchId);
   if (!batch) throw new Error("Upload batch is missing on this device.");
-  await uploadQueueStore.patchItem(item.id, { status: "starting_session", lastErrorMessage: undefined });
+  await uploadQueueStore.patchItem(item.id, {
+    status: "starting_session",
+    retryAt: undefined,
+    lastErrorCode: undefined,
+    lastErrorMessage: undefined,
+  });
   const session = await jsonPost<InitiateUploadResponse>("initiate", {
     uploadBatchId: item.batchId,
     uploadItemId: item.id,
@@ -306,15 +311,29 @@ async function processItem(initial: UploadItemRecord) {
       });
       return;
     }
+
     const message = error instanceof Error ? error.message : String(error);
-    const waitingForEntity = error instanceof UploadApiError && error.code === "TARGET_NOT_READY";
+    const targetNotReady = error instanceof UploadApiError && error.code === "TARGET_NOT_READY";
     const network = error instanceof TypeError || /network|fetch|offline|temporarily/i.test(message);
     const retryCount = latest.retryCount + 1;
+
+    if (targetNotReady) {
+      await uploadQueueStore.patchItem(latest.id, {
+        status: "failed_permanent",
+        retryCount,
+        retryAt: undefined,
+        lastErrorCode: "TARGET_NOT_READY",
+        lastErrorMessage: message,
+      });
+      return;
+    }
+
+    const offline = typeof navigator !== "undefined" && !navigator.onLine;
     await uploadQueueStore.patchItem(latest.id, {
-      status: waitingForEntity ? "waiting_for_entity" : network ? "waiting_for_network" : "failed_retryable",
+      status: "paused",
       retryCount,
-      retryAt: new Date(Date.now() + RETRY_MS[Math.min(retryCount - 1, RETRY_MS.length - 1)]).toISOString(),
-      lastErrorCode: waitingForEntity ? "TARGET_NOT_READY" : network ? "NETWORK" : "UPLOAD_ERROR",
+      retryAt: offline ? undefined : new Date(Date.now() + RETRY_MS[Math.min(retryCount - 1, RETRY_MS.length - 1)]).toISOString(),
+      lastErrorCode: network ? "NETWORK" : "TEMPORARY_ERROR",
       lastErrorMessage: message,
     });
   }
