@@ -27,6 +27,14 @@ describe("Google Drive transaction simplification", () => {
     expect(preview).not.toContain("response.body");
   });
 
+  test("keeps Vercel on authorization while Google serves thumbnail bytes", async () => {
+    const thumbnail = await readFile("src/app/api/google-drive/thumbnail/route.ts", "utf8");
+    expect(thumbnail).toContain("canReadManagedFileAsset");
+    expect(thumbnail).toContain("thumbnailLink");
+    expect(thumbnail).toContain("NextResponse.redirect");
+    expect(thumbnail).not.toContain("response.body");
+  });
+
   test("preserves the canonical folder hierarchy and Drive folder registry", async () => {
     const hierarchy = await readFile("src/lib/rdash/server/drive-folder-hierarchy.ts", "utf8");
     const storage = await readFile("src/lib/rdash/server/direct-upload-storage.ts", "utf8");
