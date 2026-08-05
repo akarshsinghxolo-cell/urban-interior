@@ -15,7 +15,7 @@ describe("Google Drive transaction simplification", () => {
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
     const indexedDb = await readFile("src/lib/uploads/upload-indexed-db.ts", "utf8");
 
-    expect(indexedDb).toContain('const DB_NAME = "uc_upload_queue"');
+    expect(indexedDb).toContain('const DB_NAME = "urban-castle-uploads"');
     expect(store).toContain("await uploadQueueDb.putItem(item, input.file)");
     expect(transfer).toContain("sessionKnownExpired(current)");
     expect(transfer).toContain("resetDriveSession");
