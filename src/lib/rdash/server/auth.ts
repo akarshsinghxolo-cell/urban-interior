@@ -5,6 +5,7 @@ import { normalizeRoleKey, roleLabel } from "../staff-operations";
 import { getSupabaseAdminClient, getSupabaseAuthClient, isSupabaseConfigured } from "../../supabase/server";
 
 export const AUTH_COOKIE = "uc_session";
+export const AUTH_REFRESH_COOKIE = "uc_auth_refresh";
 export type RDashRole = "Owner" | "Operations Manager" | "Field Staff" | "Sales / Telecaller" | "Procurement Staff" | "Finance" | "Accounts / Admin";
 
 export interface AuthenticatedUser {
@@ -26,6 +27,17 @@ export class AuthAccessError extends Error {
 type Token = Omit<AuthenticatedUser, "expiresAt"> & {
     exp: number;
     v: 1;
+};
+
+type SupabaseAuthUser = {
+    id: string;
+    email?: string | null;
+    user_metadata?: Record<string, unknown>;
+};
+
+export type RenewableAuthSession = {
+    user: Omit<AuthenticatedUser, "expiresAt">;
+    refreshToken: string;
 };
 
 function secret() {
@@ -86,7 +98,12 @@ export function verifySession(token?: string | null): AuthenticatedUser | null {
     }
 }
 
+// The application token remains deliberately short-lived. Long-lived browser
+// access comes from the rotating Supabase refresh token, never from extending
+// this bearer token for weeks or months.
 export const SESSION_TTL = 28800;
+const REFRESH_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+
 export const sessionCookie = (value: string) => ({
     name: AUTH_COOKIE,
     value,
@@ -96,6 +113,17 @@ export const sessionCookie = (value: string) => ({
     path: "/",
     maxAge: SESSION_TTL,
 });
+
+export const refreshTokenCookie = (value: string) => ({
+    name: AUTH_REFRESH_COOKIE,
+    value,
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    path: "/api/auth",
+    maxAge: REFRESH_COOKIE_MAX_AGE,
+});
+
 export const expiredSessionCookie = () => ({
     name: AUTH_COOKIE,
     value: "",
@@ -105,6 +133,17 @@ export const expiredSessionCookie = () => ({
     path: "/",
     maxAge: 0,
 });
+
+export const expiredRefreshTokenCookie = () => ({
+    name: AUTH_REFRESH_COOKIE,
+    value: "",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict" as const,
+    path: "/api/auth",
+    maxAge: 0,
+});
+
 export const AUTH_HEADER = "authorization";
 
 /** Extract a session token from Authorization: Bearer, falling back to cookie. */
@@ -120,28 +159,25 @@ export function extractSessionToken(request?: NextRequest): string | null {
     return null;
 }
 
+export function extractRefreshToken(request: NextRequest): string | null {
+    return request.cookies.get(AUTH_REFRESH_COOKIE)?.value?.trim() || null;
+}
+
 function asRDashRole(value: string): RDashRole {
     return roleLabel(normalizeRoleKey(value)) as RDashRole;
 }
 
-async function supabaseCredentials(
-    email: string,
-    password: string,
-): Promise<Omit<AuthenticatedUser, "expiresAt"> | null> {
-    if (!isSupabaseConfigured()) {
-        throw new Error("Supabase Auth is not fully configured.");
+async function authorizedUserFromSupabase(user: SupabaseAuthUser): Promise<Omit<AuthenticatedUser, "expiresAt">> {
+    if (!user.id || !user.email) {
+        throw new AuthAccessError("The Supabase session is missing its user identity.", 401, "INVALID_AUTH_SESSION");
     }
-
-    const auth = getSupabaseAuthClient();
-    const { data, error } = await auth.auth.signInWithPassword({ email, password });
-    if (error || !data.user?.id || !data.user.email) return null;
 
     const admin = getSupabaseAdminClient();
     let staffRow: unknown = null;
     const { data: generatedRow, error: generatedLookupError } = await admin
         .from("entity_master_staff")
         .select("id,data")
-        .eq("auth_user_id_gen" as never, data.user.id)
+        .eq("auth_user_id_gen" as never, user.id)
         .maybeSingle();
 
     if (generatedLookupError) {
@@ -160,7 +196,7 @@ async function supabaseCredentials(
                 staffData &&
                 typeof staffData === "object" &&
                 "auth_user_id" in staffData &&
-                staffData.auth_user_id === data.user?.id,
+                staffData.auth_user_id === user.id,
             );
         }) || null;
     } else {
@@ -179,9 +215,9 @@ async function supabaseCredentials(
 
         if (status === "active") {
             return {
-                userId: data.user.id,
-                email: data.user.email.toLowerCase(),
-                name: String(staffData.name || data.user.user_metadata?.full_name || data.user.email),
+                userId: user.id,
+                email: user.email.toLowerCase(),
+                name: String(staffData.name || user.user_metadata?.full_name || user.email),
                 role: asRDashRole(String(staffData.role_key || staffData.role || "FIELD_STAFF")),
                 staffId: staffRowTyped.id,
             };
@@ -213,7 +249,7 @@ async function supabaseCredentials(
     const { data: rows, error: mappingError } = await admin
         .from("uc_user_roles")
         .select("role,staff_id,display_name,status")
-        .eq("user_id", data.user.id)
+        .eq("user_id", user.id)
         .in("status", ["active", "pending", "rejected", "inactive"]);
     if (mappingError) {
         throw new Error(`Urban Castle Supabase role lookup failed: ${mappingError.message}`);
@@ -222,9 +258,9 @@ async function supabaseCredentials(
     const activeRow = rows?.find((candidate: { status?: string }) => candidate.status === "active");
     if (activeRow?.role) {
         return {
-            userId: data.user.id,
-            email: data.user.email.toLowerCase(),
-            name: activeRow.display_name || String(data.user.user_metadata?.full_name || data.user.email),
+            userId: user.id,
+            email: user.email.toLowerCase(),
+            name: activeRow.display_name || String(user.user_metadata?.full_name || user.email),
             role: asRDashRole(activeRow.role),
             staffId: activeRow.staff_id || undefined,
         };
@@ -261,6 +297,27 @@ async function supabaseCredentials(
     );
 }
 
+async function supabaseCredentialSession(email: string, password: string): Promise<RenewableAuthSession | null> {
+    if (!isSupabaseConfigured()) {
+        throw new Error("Supabase Auth is not fully configured.");
+    }
+
+    const auth = getSupabaseAuthClient();
+    const { data, error } = await auth.auth.signInWithPassword({ email, password });
+    if (error || !data.user?.id || !data.user.email || !data.session?.refresh_token) return null;
+    return {
+        user: await authorizedUserFromSupabase(data.user),
+        refreshToken: data.session.refresh_token,
+    };
+}
+
+async function supabaseCredentials(
+    email: string,
+    password: string,
+): Promise<Omit<AuthenticatedUser, "expiresAt"> | null> {
+    return (await supabaseCredentialSession(email, password))?.user || null;
+}
+
 /**
  * Every account, including Owner accounts, authenticates through Supabase Auth.
  * Authorization is then derived from the linked active Staff record or the
@@ -273,6 +330,33 @@ export async function authenticateCredentials(
     const email = emailInput.trim().toLowerCase();
     if (!email || !password) return null;
     return supabaseCredentials(email, password);
+}
+
+/** Sign in and preserve Supabase's rotating refresh token in a server-only cookie. */
+export async function authenticateCredentialsWithSession(
+    emailInput: string,
+    password: string,
+): Promise<RenewableAuthSession | null> {
+    const email = emailInput.trim().toLowerCase();
+    if (!email || !password) return null;
+    return supabaseCredentialSession(email, password);
+}
+
+/**
+ * Rotate a Supabase refresh token and re-read the current Staff authorization.
+ * This means role deactivation/rejection takes effect on the next silent renew.
+ */
+export async function refreshAuthenticatedSession(refreshToken: string): Promise<RenewableAuthSession> {
+    if (!refreshToken) throw new AuthAccessError("The renewable browser session is missing.", 401, "MISSING_REFRESH_TOKEN");
+    const auth = getSupabaseAuthClient();
+    const { data, error } = await auth.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data.user?.id || !data.user.email || !data.session?.refresh_token) {
+        throw new AuthAccessError("The renewable browser session has expired or was revoked.", 401, "REFRESH_REJECTED");
+    }
+    return {
+        user: await authorizedUserFromSupabase(data.user),
+        refreshToken: data.session.refresh_token,
+    };
 }
 
 export async function requireSession(request?: NextRequest) {
