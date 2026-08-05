@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { RDashApp } from "../rdash/RDashApp";
 import { UploadManagerProvider } from "@/components/uploads/UploadManagerProvider";
 import { useRDashStore } from "@/lib/rdash/store";
+import { initAuthFetch, refreshClientSession } from "@/lib/rdash/client-auth";
 import { useBrowserHistorySync } from "@/lib/rdash/use-browser-history-sync";
 import { useInstallDirtyFormNavigationGuards } from "@/lib/rdash/use-dirty-form-guard";
 import { useInstallWorkspaceRowVersionBridge } from "@/lib/rdash/use-workspace-row-version-bridge";
@@ -17,8 +18,95 @@ import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
 import { WorkspaceDeltaSync } from "./WorkspaceDeltaSync";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
+const AUTH_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const AUTH_REFRESH_RECENT_MS = 5 * 60 * 1000;
+const AUTH_REFRESH_STORAGE_KEY = "uc_last_auth_refresh";
+
 function scopeSupportsReconciliation(scope: WorkspaceReadScope): boolean {
   return scope === "full" || scope === "workdesk";
+}
+
+async function renewBrowserSession(force = false) {
+  initAuthFetch();
+
+  const run = async () => {
+    try {
+      const lastRefresh = Number(window.localStorage.getItem(AUTH_REFRESH_STORAGE_KEY) || 0);
+      if (!force && Number.isFinite(lastRefresh) && Date.now() - lastRefresh < AUTH_REFRESH_RECENT_MS) {
+        return true;
+      }
+    } catch {
+      // Storage can be blocked. Renewal itself still works through HttpOnly cookies.
+    }
+
+    const renewed = await refreshClientSession();
+    if (renewed) {
+      try {
+        window.localStorage.setItem(AUTH_REFRESH_STORAGE_KEY, String(Date.now()));
+      } catch {
+        // Non-fatal. Cross-tab locking still prevents simultaneous refresh calls.
+      }
+    }
+    return renewed;
+  };
+
+  const locks = (navigator as Navigator & {
+    locks?: { request<T>(name: string, callback: () => Promise<T>): Promise<T> };
+  }).locks;
+  return locks?.request ? locks.request("uc-auth-session-refresh", run) : run();
+}
+
+/**
+ * Keep the application bearer token short-lived while the Supabase refresh
+ * session rotates silently in an HttpOnly cookie. The first renewal happens
+ * before RDashApp mounts, so a browser can reopen after the 8-hour app token
+ * expired without racing /api/bootstrap into a sign-in redirect.
+ */
+function RenewableSessionGate({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = React.useState(false);
+  const lastAttemptRef = React.useRef(0);
+
+  React.useEffect(() => {
+    let active = true;
+    const run = async (force = false) => {
+      lastAttemptRef.current = Date.now();
+      await renewBrowserSession(force).catch(() => false);
+      if (active) setReady(true);
+    };
+
+    void run(false);
+    const interval = window.setInterval(() => void run(true), AUTH_REFRESH_INTERVAL_MS);
+    const onOnline = () => {
+      if (Date.now() - lastAttemptRef.current > AUTH_REFRESH_RECENT_MS) void run(false);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastAttemptRef.current > AUTH_REFRESH_INTERVAL_MS / 2) {
+        void run(false);
+      }
+    };
+    window.addEventListener("online", onOnline);
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  if (!ready) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+        <div className="w-full max-w-sm rounded-xl border border-border bg-card p-6 text-center shadow-card">
+          <RefreshCw className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+          <h1 className="mt-3 text-lg font-bold">Restoring secure session</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Renewing your Urban Castle access before protected workspace data loads…</p>
+        </div>
+      </main>
+    );
+  }
+  return <>{children}</>;
 }
 
 /** Urban Castle application shell. */
@@ -86,14 +174,16 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
   }, [authSessionKey, readState.scope, reconcileWorkspace]);
 
   return (
-    <UploadManagerProvider>
-      <RDashApp />
-      <LegacyDirtyFormAdapter />
-      <DirtyFormNavigationGuard />
-      <WorkspaceScopedReadBoundary />
-      <WorkspaceDeltaSync />
-      <ReconcileWorkspaceButton />
-    </UploadManagerProvider>
+    <RenewableSessionGate>
+      <UploadManagerProvider>
+        <RDashApp />
+        <LegacyDirtyFormAdapter />
+        <DirtyFormNavigationGuard />
+        <WorkspaceScopedReadBoundary />
+        <WorkspaceDeltaSync />
+        <ReconcileWorkspaceButton />
+      </UploadManagerProvider>
+    </RenewableSessionGate>
   );
 }
 

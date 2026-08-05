@@ -10,6 +10,28 @@ describe("Google Drive transaction simplification", () => {
     expect(transfer).toContain("preferredStorageAccountId: batch.storageAccountId");
   });
 
+  test("keeps durable upload jobs and recreates dead resumable sessions", async () => {
+    const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
+    const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
+    const indexedDb = await readFile("src/lib/uploads/upload-indexed-db.ts", "utf8");
+
+    expect(indexedDb).toContain('const DB_NAME = "urban-castle-uploads"');
+    expect(store).toContain("await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt })");
+    expect(store).toContain("await persistItem(item)");
+    expect(transfer).toContain("sessionKnownExpired(current)");
+    expect(transfer).toContain("resetDriveSession");
+    expect(transfer).toContain("response.status >= 400 && response.status < 500 && response.status !== 429");
+    expect(transfer).toContain("refreshClientSession()");
+  });
+
+  test("backs temporary failures off with jitter and honors Retry-After", async () => {
+    const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
+    expect(transfer).toContain("function retryDelayMs(retryCount: number)");
+    expect(transfer).toContain("0.75 + Math.random() * 0.5");
+    expect(transfer).toContain("responseRetryAfterMs(response)");
+    expect(transfer).toContain("const hintedDelay");
+  });
+
   test("does not require a persisted server upload batch or noisy lifecycle events", async () => {
     const initiate = await readFile("src/lib/rdash/server/direct-upload-initiate.ts", "utf8");
     expect(initiate).not.toContain('.from("uc_upload_batches").upsert');
@@ -25,6 +47,22 @@ describe("Google Drive transaction simplification", () => {
     expect(preview).toContain("NextResponse.redirect");
     expect(preview).not.toContain("?alt=media");
     expect(preview).not.toContain("response.body");
+  });
+
+  test("keeps Vercel on authorization while Google serves download bytes", async () => {
+    const download = await readFile("src/app/api/google-drive/download/route.ts", "utf8");
+    const open = await readFile("src/app/api/google-drive/open/route.ts", "utf8");
+    const previewComponent = await readFile("src/components/rdash/FilePreview.tsx", "utf8");
+
+    expect(download).toContain("canReadManagedFileAsset");
+    expect(download).toContain("webContentLink");
+    expect(download).toContain("NextResponse.redirect");
+    expect(download).not.toContain("?alt=media");
+    expect(download).not.toContain("response.body");
+    expect(open).toContain("canReadManagedFileAsset");
+    expect(open).toContain("NextResponse.redirect");
+    expect(previewComponent).toContain("/api/google-drive/download?fileId=");
+    expect(previewComponent).toContain("/api/google-drive/open?fileId=");
   });
 
   test("keeps Vercel on authorization while Google serves thumbnail bytes", async () => {

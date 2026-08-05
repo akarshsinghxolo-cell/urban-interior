@@ -1,5 +1,6 @@
 "use client";
 
+import { refreshClientSession } from "@/lib/rdash/client-auth";
 import { useRDashStore } from "@/lib/rdash/store";
 import { uploadQueueStore } from "./upload-store";
 import type { FinalizedUploadResult, GoogleFileId, InitiateUploadResponse, UploadItemId, UploadItemRecord } from "./upload-types";
@@ -10,6 +11,7 @@ const LEASE_KEY = "uc-upload-manager-lease";
 const LEASE_MS = 20_000;
 const LEASE_RENEW_MS = 5_000;
 const MAX_SESSION_RESTARTS = 2;
+const SESSION_EXPIRY_SAFETY_MS = 30_000;
 const TAB_ID = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 let running: Promise<void> | null = null;
 
@@ -22,22 +24,68 @@ class UploadCancelledError extends Error {
 
 class UploadApiError extends Error {
   code?: string;
-  constructor(message: string, code?: string) {
+  status?: number;
+  retryAfterMs?: number;
+  constructor(message: string, code?: string, status?: number, retryAfterMs?: number) {
     super(message);
     this.name = "UploadApiError";
     this.code = code;
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
   }
 }
 
+class TemporaryDriveError extends TypeError {
+  retryAfterMs?: number;
+  constructor(message: string, retryAfterMs?: number) {
+    super(message);
+    this.name = "TemporaryDriveError";
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+function responseRetryAfterMs(response: Response): number | undefined {
+  const value = response.headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.min(15 * 60_000, Math.max(1_000, Math.round(seconds * 1000)));
+  const date = Date.parse(value);
+  if (!Number.isFinite(date)) return undefined;
+  return Math.min(15 * 60_000, Math.max(1_000, date - Date.now()));
+}
+
+function retryDelayMs(retryCount: number): number {
+  const base = RETRY_MS[Math.min(Math.max(0, retryCount - 1), RETRY_MS.length - 1)];
+  // 25% jitter prevents every reopened tab/device from retrying Google at once
+  // after a shared network outage or Drive rate-limit response.
+  return Math.max(1_000, Math.round(base * (0.75 + Math.random() * 0.5)));
+}
+
 const jsonPost = async <T>(action: string, body: unknown): Promise<T> => {
-  const response = await fetch(`/api/uploads/${action}`, {
+  const request = () => fetch(`/api/uploads/${action}`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+
+  let response = await request();
+  // A long-running/resumed upload may outlive the current 8-hour app bearer.
+  // Rotate the server-only Supabase refresh session, then retry this small
+  // control-plane request once. File bytes never take this path.
+  if (response.status === 401 && await refreshClientSession()) {
+    response = await request();
+  }
+
   const payload = await response.json().catch(() => ({})) as T & { error?: string; code?: string };
-  if (!response.ok) throw new UploadApiError(payload.error || `Upload ${action} failed.`, payload.code);
+  if (!response.ok) {
+    throw new UploadApiError(
+      payload.error || `Upload ${action} failed.`,
+      payload.code,
+      response.status,
+      responseRetryAfterMs(response),
+    );
+  }
   return payload;
 };
 
@@ -55,6 +103,22 @@ function assertNotCancelled(uploadItemId: UploadItemId): UploadItemRecord {
     throw new UploadCancelledError();
   }
   return item;
+}
+
+function sessionKnownExpired(item: UploadItemRecord): boolean {
+  if (!item.sessionExpiresAt) return false;
+  const expiresAt = Date.parse(item.sessionExpiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now() + SESSION_EXPIRY_SAFETY_MS;
+}
+
+async function resetDriveSession(item: UploadItemRecord): Promise<UploadItemRecord> {
+  return uploadQueueStore.patchItem(item.id, {
+    sessionUri: undefined,
+    sessionExpiresAt: undefined,
+    confirmedBytes: 0,
+    progress: 0,
+    status: "queued",
+  });
 }
 
 async function initiate(item: UploadItemRecord): Promise<UploadItemRecord> {
@@ -132,12 +196,19 @@ async function querySession(item: UploadItemRecord) {
     method: "PUT",
     headers: { "Content-Range": `bytes */${item.sizeBytes}`, "Content-Length": "0" },
   });
-  if (response.status === 404) return { confirmed: 0, completed: undefined as Record<string, unknown> | undefined, expired: true };
   if (response.status === 200 || response.status === 201) {
     return { confirmed: item.sizeBytes, completed: await response.json().catch(() => ({})), expired: false };
   }
   if (response.status === 308) return { confirmed: rangeEnd(response, -1) + 1, completed: undefined as Record<string, unknown> | undefined, expired: false };
-  if (response.status === 429 || response.status >= 500) throw new TypeError(`Drive session query temporarily failed (${response.status}).`);
+  // Google documents that a resumable upload should start a new session after
+  // a 4xx response. Treat all client errors except rate limiting as a dead
+  // capability instead of repeatedly pausing on an unusable session URI.
+  if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+    return { confirmed: 0, completed: undefined as Record<string, unknown> | undefined, expired: true };
+  }
+  if (response.status === 429 || response.status >= 500) {
+    throw new TemporaryDriveError(`Drive session query temporarily failed (${response.status}).`, responseRetryAfterMs(response));
+  }
   throw new Error(`Drive session query returned ${response.status}.`);
 }
 
@@ -149,16 +220,16 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
   assertNotCancelled(item.id);
   let current = item.sessionUri || item.googleFileId ? item : await initiate(item);
   if (current.googleFileId) return current;
+
+  if (sessionKnownExpired(current)) {
+    if (sessionRestarts >= MAX_SESSION_RESTARTS) throw new Error("The Drive upload session repeatedly expired. Retry the file later.");
+    return uploadBytes(await resetDriveSession(current), sessionRestarts + 1);
+  }
+
   const resumed = await querySession(current);
   if (resumed.expired) {
     if (sessionRestarts >= MAX_SESSION_RESTARTS) throw new Error("The Drive upload session repeatedly expired. Retry the file later.");
-    const reset = await uploadQueueStore.patchItem(current.id, {
-      sessionUri: undefined,
-      sessionExpiresAt: undefined,
-      confirmedBytes: 0,
-      progress: 0,
-    });
-    return uploadBytes(reset, sessionRestarts + 1);
+    return uploadBytes(await resetDriveSession(current), sessionRestarts + 1);
   }
   if (resumed.completed) {
     const googleFileId = String(resumed.completed.id || "") as GoogleFileId;
@@ -217,20 +288,16 @@ async function uploadBytes(item: UploadItemRecord, sessionRestarts = 0): Promise
       });
     }
 
-    if (response.status === 404 || (response.status >= 400 && response.status < 500 && response.status !== 429)) {
+    if (response.status >= 400 && response.status < 500 && response.status !== 429) {
       if (sessionRestarts >= MAX_SESSION_RESTARTS) throw new Error(`Drive rejected the resumable session with status ${response.status}.`);
-      const reset = await uploadQueueStore.patchItem(current.id, {
-        sessionUri: undefined,
-        sessionExpiresAt: undefined,
-        confirmedBytes: 0,
-        progress: 0,
-        status: "queued",
-      });
-      return uploadBytes(reset, sessionRestarts + 1);
+      return uploadBytes(await resetDriveSession(current), sessionRestarts + 1);
     }
 
     if (response.status === 429 || response.status >= 500) {
-      throw new TypeError(`Drive temporarily rejected ${current.fileName} with status ${response.status}.`);
+      throw new TemporaryDriveError(
+        `Drive temporarily rejected ${current.fileName} with status ${response.status}.`,
+        responseRetryAfterMs(response),
+      );
     }
     throw new Error(`Drive rejected ${current.fileName} with status ${response.status}.`);
   }
@@ -329,10 +396,14 @@ async function processItem(initial: UploadItemRecord) {
     }
 
     const offline = typeof navigator !== "undefined" && !navigator.onLine;
+    const hintedDelay = error instanceof TemporaryDriveError || error instanceof UploadApiError
+      ? error.retryAfterMs
+      : undefined;
+    const delay = hintedDelay ?? retryDelayMs(retryCount);
     await uploadQueueStore.patchItem(latest.id, {
       status: "paused",
       retryCount,
-      retryAt: offline ? undefined : new Date(Date.now() + RETRY_MS[Math.min(retryCount - 1, RETRY_MS.length - 1)]).toISOString(),
+      retryAt: offline ? undefined : new Date(Date.now() + delay).toISOString(),
       lastErrorCode: network ? "NETWORK" : "TEMPORARY_ERROR",
       lastErrorMessage: message,
     });

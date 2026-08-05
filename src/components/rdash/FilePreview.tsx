@@ -1,8 +1,9 @@
 "use client";
 import * as React from "react";
-import { ExternalLink, FileText, FileVideo, Image as ImageIcon, LinkIcon, Loader2, Play, Unlink, ZoomIn } from "lucide-react";
+import { Download, ExternalLink, FileText, FileVideo, Image as ImageIcon, Play, Unlink, ZoomIn } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+
 export type FilePreviewSource = {
     fileName: string;
     mimeType?: string;
@@ -10,6 +11,7 @@ export type FilePreviewSource = {
     url?: string;
     thumbnailUrl?: string;
 };
+
 type FilePreviewProps = {
     file: FilePreviewSource;
     className?: string;
@@ -18,11 +20,13 @@ type FilePreviewProps = {
     onOpen?: () => void;
     interactive?: boolean;
 };
+
 function extension(name: string) {
     const value = name.toLowerCase();
     const dot = value.lastIndexOf(".");
     return dot >= 0 ? value.slice(dot + 1) : "";
 }
+
 export function fileKind(file: FilePreviewSource) {
     const mime = (file.mimeType || "").toLowerCase();
     const ext = extension(file.fileName);
@@ -34,26 +38,37 @@ export function fileKind(file: FilePreviewSource) {
         return "pdf" as const;
     return "document" as const;
 }
+
 export function managedPreviewUrl(file: FilePreviewSource) {
     if (file.googleFileId) {
         if (fileKind(file) === "pdf")
-            return `https://drive.google.com/file/d/${encodeURIComponent(file.googleFileId)}/preview`;
+            return `/api/google-drive/open?fileId=${encodeURIComponent(file.googleFileId)}&mode=preview`;
         return `/api/google-drive/preview?fileId=${encodeURIComponent(file.googleFileId)}`;
     }
     return file.url || "";
 }
+
 export function managedThumbnailUrl(file: FilePreviewSource, width = 360) {
     if (file.googleFileId)
         return `/api/google-drive/thumbnail?fileId=${encodeURIComponent(file.googleFileId)}&w=${Math.max(120, Math.min(720, Math.round(width)))}`;
     return file.thumbnailUrl || (fileKind(file) === "image" ? file.url || "" : "");
 }
+
 export function managedOpenUrl(file: FilePreviewSource) {
-    if (file.url)
-        return file.url;
+    // Managed Drive files always pass through an Urban Castle authorization
+    // check before the browser is redirected to Google. External Drive links
+    // remain external references and keep their original URL behavior.
     if (file.googleFileId)
-        return `https://drive.google.com/file/d/${encodeURIComponent(file.googleFileId)}/view`;
+        return `/api/google-drive/open?fileId=${encodeURIComponent(file.googleFileId)}`;
+    return file.url || "";
+}
+
+export function managedDownloadUrl(file: FilePreviewSource) {
+    if (file.googleFileId)
+        return `/api/google-drive/download?fileId=${encodeURIComponent(file.googleFileId)}`;
     return "";
 }
+
 function IconForKind({ kind }: {
     kind: ReturnType<typeof fileKind>;
 }) {
@@ -63,6 +78,7 @@ function IconForKind({ kind }: {
         return <FileText className="h-6 w-6 text-primary"/>;
     return <ImageIcon className="h-6 w-6 text-primary"/>;
 }
+
 function FileViewer({ file, open, onOpenChange }: {
     file: FilePreviewSource;
     open: boolean;
@@ -71,6 +87,7 @@ function FileViewer({ file, open, onOpenChange }: {
     const kind = fileKind(file);
     const previewUrl = managedPreviewUrl(file);
     const driveUrl = managedOpenUrl(file);
+    const downloadUrl = managedDownloadUrl(file);
     return (<Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100vh-2rem)] max-w-6xl overflow-hidden p-0 sm:max-w-6xl">
         <DialogHeader className="border-b border-border px-5 py-4 pr-12">
@@ -83,12 +100,14 @@ function FileViewer({ file, open, onOpenChange }: {
           {kind === "pdf" && previewUrl ? <iframe title={`Preview ${file.fileName}`} src={previewUrl} className="h-[calc(100vh-12rem)] min-h-[32rem] w-full rounded-md border border-border bg-white"/> : null}
           {kind === "document" ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-center"><IconForKind kind={kind}/><p className="max-w-sm text-sm text-muted-foreground">This file does not have an inline preview. Open the managed Drive file to view it.</p></div> : null}
         </div>
-        <div className="flex justify-end border-t border-border px-4 py-3">
+        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+          {downloadUrl ? <a href={downloadUrl} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-primary hover:bg-accent/40"><Download className="h-3.5 w-3.5"/>Download</a> : null}
           {driveUrl ? <a href={driveUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-primary hover:bg-accent/40"><ExternalLink className="h-3.5 w-3.5"/>Open in Google Drive</a> : null}
         </div>
       </DialogContent>
     </Dialog>);
 }
+
 export function FilePreview({ file, className, compact = false, controls: _controls = true, onOpen, interactive = true }: FilePreviewProps) {
     const kind = fileKind(file);
     const sourceKey = `${file.googleFileId || ""}|${file.thumbnailUrl || ""}|${file.url || ""}|${file.mimeType || ""}|${file.fileName}`;
