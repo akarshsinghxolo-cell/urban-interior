@@ -92,7 +92,7 @@ export function PendingUploadsPanel() {
 
 function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: UploadItemRecord; sourceLabel: string; targetLabel: string; online: boolean }) {
   const percentage = Math.min(100, Math.max(item.progress || 0, item.sizeBytes > 0 ? Math.round((item.confirmedBytes / item.sizeBytes) * 100) : 0));
-  const retryable = ["failed_retryable", "failed_permanent", "waiting_for_network", "waiting_for_entity", "paused"].includes(item.status);
+  const retryable = item.status === "paused" || item.status === "failed_permanent";
   const cleanupPending = item.status === "cleanup_pending";
 
   const retry = async () => {
@@ -148,11 +148,19 @@ function PendingUploadRow({ item, sourceLabel, targetLabel, online }: { item: Up
 }
 
 function StatusBadge({ item, online }: { item: UploadItemRecord; online: boolean }) {
-  const failed = item.status === "failed_retryable" || item.status === "failed_permanent" || item.status === "cleanup_pending";
-  const waiting = item.status === "waiting_for_network" || item.status === "waiting_for_entity" || !online;
-  const Icon = failed ? AlertCircle : waiting ? CloudOff : UploadCloud;
-  const label = item.status.replaceAll("_", " ");
-  return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold capitalize", failed ? "bg-destructive/10 text-destructive" : waiting ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary")}><Icon className="h-3 w-3" />{label}</span>;
+  const networkPaused = item.status === "paused" && item.lastErrorCode === "NETWORK";
+  const temporaryPaused = item.status === "paused" && !networkPaused;
+  const failed = item.status === "failed_permanent" || item.status === "cleanup_pending";
+  const waiting = networkPaused || !online;
+  const Icon = failed || temporaryPaused ? AlertCircle : waiting ? CloudOff : UploadCloud;
+  const label = item.status === "failed_permanent" && item.lastErrorCode === "TARGET_NOT_READY"
+    ? "Target record required"
+    : networkPaused
+      ? "Paused · network"
+      : temporaryPaused
+        ? "Paused · retry scheduled"
+        : item.status.replaceAll("_", " ");
+  return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold capitalize", failed ? "bg-destructive/10 text-destructive" : waiting || temporaryPaused ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary")}><Icon className="h-3 w-3" />{label}</span>;
 }
 
 function formatBytes(bytes: number): string {
