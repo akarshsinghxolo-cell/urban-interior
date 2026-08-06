@@ -156,6 +156,15 @@ export const workspaceReadState = {
       requestError: undefined,
     });
   },
+  restoreCached(target: WorkspaceReadTarget, cached: WorkspaceReadStateSnapshot): void {
+    emit({
+      ...cached,
+      moduleId: cached.moduleId || target.moduleId,
+      requestStatus: "idle",
+      requestTargetKey: undefined,
+      requestError: undefined,
+    });
+  },
   recordResponse(response: Response, target?: WorkspaceReadTarget): boolean {
     if (!response.ok) return false;
 

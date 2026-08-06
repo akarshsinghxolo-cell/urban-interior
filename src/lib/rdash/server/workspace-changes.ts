@@ -84,6 +84,10 @@ function normalizedRowVersions(value: unknown): Record<string, number> {
  * over a delete recorded in the same revision. When allowedCollections is set,
  * unrelated operations are validated but omitted while the delivered revision
  * still advances across every contiguous batch.
+ *
+ * refreshOnOmittedCollections is used for projected data that is represented in
+ * a scoped snapshot but intentionally omitted from the delta payload itself. If
+ * one of those collections changed, the caller must reload the projection.
  */
 export function aggregateWorkspaceChangeBatches(input: {
   afterRevision: number;
@@ -92,6 +96,7 @@ export function aggregateWorkspaceChangeBatches(input: {
   batches: WorkspaceChangeBatch[];
   maxBatches?: number;
   allowedCollections?: ReadonlySet<string>;
+  refreshOnOmittedCollections?: ReadonlySet<string>;
 }): WorkspaceDeltaPayload {
   const {
     afterRevision,
@@ -100,6 +105,7 @@ export function aggregateWorkspaceChangeBatches(input: {
     batches,
     maxBatches = MAX_WORKSPACE_DELTA_BATCHES,
     allowedCollections,
+    refreshOnOmittedCollections,
   } = input;
 
   if (afterRevision > currentRevision) {
@@ -150,6 +156,19 @@ export function aggregateWorkspaceChangeBatches(input: {
         requiresFullReload: true,
         reason: "invalid_journal",
       });
+    }
+    if (allowedCollections && refreshOnOmittedCollections?.size) {
+      const projectedCollectionChanged = parsedOperations.some((operation) =>
+        !allowedCollections.has(operation.collection) &&
+        refreshOnOmittedCollections.has(operation.collection) &&
+        (operation.upsert.length > 0 || operation.deleteIds.length > 0),
+      );
+      if (projectedCollectionChanged) {
+        return emptyDelta(afterRevision, currentRevision, currentRevision, baselineRevision, {
+          requiresFullReload: true,
+          reason: "projection_changed",
+        });
+      }
     }
     const operations = allowedCollections
       ? parsedOperations.filter((operation) => allowedCollections.has(operation.collection))
@@ -217,6 +236,7 @@ export function aggregateWorkspaceChangeBatches(input: {
 export async function getWorkspaceChanges(
   afterRevision: number,
   allowedCollections?: ReadonlySet<string>,
+  refreshOnOmittedCollections?: ReadonlySet<string>,
 ): Promise<WorkspaceDeltaPayload> {
   const startedAt = performance.now();
   const admin = getSupabaseAdminClient();
@@ -252,6 +272,7 @@ export async function getWorkspaceChanges(
       baselineRevision,
       batches: [],
       allowedCollections,
+      refreshOnOmittedCollections,
     });
     return {
       ...payload,
@@ -277,6 +298,7 @@ export async function getWorkspaceChanges(
     baselineRevision,
     batches: (data || []) as WorkspaceChangeBatch[],
     allowedCollections,
+    refreshOnOmittedCollections,
   });
   return {
     ...payload,

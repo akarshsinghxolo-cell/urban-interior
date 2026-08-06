@@ -18,7 +18,7 @@ export interface WorkspaceDeltaPayload {
   collectionRevisions: Record<string, number>;
   hasMore: boolean;
   requiresFullReload: boolean;
-  reason?: "journal_gap" | "revision_too_old" | "client_ahead" | "invalid_journal";
+  reason?: "journal_gap" | "revision_too_old" | "client_ahead" | "invalid_journal" | "projection_changed";
   batchCount: number;
   queryCount?: number;
   loadMs?: number;
@@ -30,13 +30,13 @@ const KNOWN_COLLECTIONS = new Set<string>([
   ...topLevelCollections.map(String),
   ...masterCollections.map((key) => `master.${String(key)}`),
 ]);
-const SCOPED_BOOTSTRAP_COLLECTIONS = [
+export const WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS = Object.freeze([
   "staffRolePermissions",
   "master.staff",
   "master.units",
   "master.workCategories",
   "master.workSubcategories",
-] as const;
+] as const);
 
 export function knownWorkspaceCollection(collection: string): boolean {
   return KNOWN_COLLECTIONS.has(collection);
@@ -65,7 +65,7 @@ export function loadedWorkspaceCollections(database: RDashDatabase): Set<string>
   const raw = metadata._workspace_read_collections;
   if (scope === "full" || !Array.isArray(raw)) return null;
   return new Set([
-    ...SCOPED_BOOTSTRAP_COLLECTIONS,
+    ...WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS,
     ...raw.map((value) => String(value || "").trim()).filter(knownWorkspaceCollection),
   ]);
 }
@@ -75,8 +75,9 @@ export function workspaceCollectionFilterParam(database: RDashDatabase): string 
   if (!collections) return undefined;
   // Journal operations contain canonical full Staff rows. Directory-scoped
   // clients intentionally skip master.staff deltas so a later HR edit cannot
-  // replace a projected row with salary/bank/auth data. Route/module reloads
-  // refresh the projected directory from the canonical Staff table.
+  // replace a projected row with salary/bank/auth data. The changes endpoint
+  // requests a projected-snapshot reload if canonical Staff changed while it
+  // was omitted from this filter.
   if (workspaceStaffProjectionParam(database) === "directory") {
     collections.delete("master.staff");
   }

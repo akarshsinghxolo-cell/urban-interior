@@ -169,8 +169,10 @@ describe("bug hunt: source-level race and validation guards", () => {
   test("aborts stale scoped reads and validates the request target", async () => {
     const source = await Bun.file("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
     expect(source).toContain("new AbortController()");
-    expect(source).toContain("requestSequenceRef.current !== requestId");
-    expect(source).toContain("latestTargetKeyRef.current !== requestTargetKey");
+    expect(source).toContain("const requestStillCurrent = () =>");
+    expect(source).toContain("requestSequenceRef.current === requestId");
+    expect(source).toContain("latestTargetKeyRef.current === requestTargetKey");
+    expect(source).toContain("if (!requestStillCurrent()) return");
     expect(source).not.toContain("inFlightRef.current || error");
   });
 

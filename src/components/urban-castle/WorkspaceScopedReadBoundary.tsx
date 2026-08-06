@@ -15,6 +15,8 @@ import {
   workspaceReadState,
   workspaceReadTargetKey,
 } from "@/lib/rdash/workspace-read-state";
+import { workspaceReadCache } from "@/lib/rdash/workspace-read-cache";
+import { revalidateWorkspaceReadCacheEntry } from "@/lib/rdash/workspace-navigation-delta";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
@@ -37,13 +39,22 @@ function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+function applyOverlayStatus(overlay: Awaited<ReturnType<typeof restoreWorkspaceOutboxOverlay>>) {
+  if (!overlay.pendingCount) return;
+  useRDashStore.setState({
+    workspaceSyncStatus: "error",
+    workspaceSyncError: overlay.hasConflict
+      ? "Locally saved changes need review."
+      : "Locally saved changes are waiting to synchronize.",
+  });
+}
+
 /**
- * A scoped snapshot is interactive only while it covers the canonical route.
- * Moving from one row graph to another, closing to a module list, or crossing a
- * module family loads the destination scope before removing this blocking layer.
- * Entering a new module/row also revalidates an already-compatible scope so a
- * previous response is not treated as permanently fresh. Compatible data stays
- * visible during that bounded background refresh.
+ * The first visit to a module/row loads its bounded server snapshot. Later
+ * visits revalidate the cached target against the workspace change journal and
+ * transfer only changed rows. A full scoped read remains the recovery path for
+ * journal gaps, relationship-selected row graphs, limited collections, Staff
+ * projection refreshes, or an unavailable/corrupt cache.
  */
 export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
@@ -51,9 +62,6 @@ export function WorkspaceScopedReadBoundary() {
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
 
-  // The browser URL is the canonical navigation source. The Zustand module can
-  // lag one render behind router navigation, so falling back to it here can load
-  // the previous module graph (for example Tasks while the URL is Quotations).
   const requestedTarget = React.useMemo(
     () => workspaceReadTargetForPath(pathname),
     [pathname],
@@ -79,9 +87,7 @@ export function WorkspaceScopedReadBoundary() {
     previousEffectTargetKeyRef.current = targetKey;
 
     if (!authUser) {
-      // The external read-state store notifies React subscribers. Defer that
-      // notification out of the effect body and re-check auth so a rapid
-      // sign-out/sign-in cannot erase the new session's coverage.
+      workspaceReadCache.clear();
       queueMicrotask(() => {
         if (!useRDashStore.getState().authUser) workspaceReadState.reset();
       });
@@ -95,32 +101,37 @@ export function WorkspaceScopedReadBoundary() {
     const controller = new AbortController();
     const requestId = ++requestSequenceRef.current;
     const requestTargetKey = targetKey;
+    const requestStillCurrent = () =>
+      !controller.signal.aborted &&
+      requestSequenceRef.current === requestId &&
+      latestTargetKeyRef.current === requestTargetKey;
+
+    const redirectToSignin = () => {
+      workspaceReadCache.clear();
+      workspaceReadState.reset();
+      window.location.replace("/signin");
+    };
+
     queueMicrotask(() => {
-      if (
-        !controller.signal.aborted &&
-        requestSequenceRef.current === requestId &&
-        latestTargetKeyRef.current === requestTargetKey
-      ) {
-        workspaceReadState.beginRequest(requestedTarget);
-      }
+      if (requestStillCurrent()) workspaceReadState.beginRequest(requestedTarget);
     });
 
-    void fetch(endpoint, {
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "X-UC-Workspace-Path": pathname,
-        "X-UC-Workspace-Module": requestedTarget.moduleId,
-        "X-UC-Read-State-Deferred": "1",
-        "X-UC-Read-Revalidate": enteredNewTarget ? "navigation" : "coverage",
-      },
-    }).then(async (response) => {
+    const loadFullScope = async (): Promise<void> => {
+      const response = await fetch(endpoint, {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "X-UC-Workspace-Path": pathname,
+          "X-UC-Workspace-Module": requestedTarget.moduleId,
+          "X-UC-Read-State-Deferred": "1",
+          "X-UC-Read-Revalidate": enteredNewTarget ? "navigation-full" : "coverage",
+        },
+      });
       const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
       if (response.status === 401) {
-        workspaceReadState.reset();
-        window.location.replace("/signin");
+        redirectToSignin();
         return;
       }
       const hydrationUser = payload.user || authUser;
@@ -129,11 +140,7 @@ export function WorkspaceScopedReadBoundary() {
       }
 
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
-      if (
-        controller.signal.aborted ||
-        requestSequenceRef.current !== requestId ||
-        latestTargetKeyRef.current !== requestTargetKey
-      ) return;
+      if (!requestStillCurrent()) return;
 
       hydrateSecureWorkspace({
         db: overlay.db,
@@ -143,21 +150,61 @@ export function WorkspaceScopedReadBoundary() {
         rowVersions: payload.rowVersions,
       });
       workspaceReadState.recordResponse(response, requestedTarget);
-      if (overlay.pendingCount) {
-        useRDashStore.setState({
-          workspaceSyncStatus: "error",
-          workspaceSyncError: overlay.hasConflict
-            ? "Locally saved changes need review."
-            : "Locally saved changes are waiting to synchronize.",
-        });
+      workspaceReadCache.store({
+        target: requestedTarget,
+        user: hydrationUser,
+        revision: payload.revision,
+        data: payload.data,
+        aggregateRevisions: payload.aggregateRevisions,
+        rowVersions: payload.rowVersions,
+        readState: workspaceReadState.getSnapshot(),
+      });
+      applyOverlayStatus(overlay);
+    };
+
+    const revalidateCachedScope = async (): Promise<void> => {
+      const cached = workspaceReadCache.get(requestedTarget, authUser);
+      if (!cached) {
+        await loadFullScope();
+        return;
       }
-    }).catch((caught) => {
-      if (
-        controller.signal.aborted ||
-        isAbortError(caught) ||
-        requestSequenceRef.current !== requestId ||
-        latestTargetKeyRef.current !== requestTargetKey
-      ) return;
+
+      let result;
+      try {
+        result = await revalidateWorkspaceReadCacheEntry(cached, controller.signal);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        // Delta synchronization is an optimization. If its control path is
+        // temporarily unavailable, preserve correctness with the normal scoped read.
+        await loadFullScope();
+        return;
+      }
+      if (result.kind === "unauthorized") {
+        redirectToSignin();
+        return;
+      }
+      if (result.kind === "reload") {
+        await loadFullScope();
+        return;
+      }
+
+      const overlay = await restoreWorkspaceOutboxOverlay(result.entry.data);
+      if (!requestStillCurrent()) return;
+
+      hydrateSecureWorkspace({
+        db: overlay.db,
+        revision: result.entry.revision,
+        user: authUser,
+        aggregateRevisions: result.entry.aggregateRevisions,
+        rowVersions: result.entry.rowVersions,
+      });
+      workspaceReadCache.put(result.entry);
+      workspaceReadState.restoreCached(requestedTarget, result.entry.readState);
+      applyOverlayStatus(overlay);
+    };
+
+    void revalidateCachedScope().catch((caught) => {
+      if (!requestStillCurrent() || isAbortError(caught)) return;
       workspaceReadState.failRequest(
         requestedTarget,
         caught instanceof Error ? caught.message : "The requested workspace data could not be loaded.",
@@ -181,9 +228,9 @@ export function WorkspaceScopedReadBoundary() {
             {error ? <AlertTriangle className="h-5 w-5" /> : <Database className="h-5 w-5" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Loading module data"}</p>
+            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Refreshing module data"}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {error || "Loading only the secure records required for this screen."}
+              {error || "Checking for workspace changes before showing this screen."}
             </p>
           </div>
           {loading ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
