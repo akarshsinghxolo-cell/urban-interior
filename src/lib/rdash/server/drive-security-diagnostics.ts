@@ -17,8 +17,17 @@ type StoredOAuthSettings = {
   updatedBy?: string;
 };
 
+type StoredEncryptedSecret = {
+  version?: number;
+  iv?: string;
+  tag?: string;
+  ciphertext?: string;
+};
+
 type StoredDriveConnection = {
   id: string;
+  refreshTokenEncrypted?: StoredEncryptedSecret;
+  /** Legacy plaintext token. Retained only so old vault rows can still be diagnosed during migration. */
   refreshToken?: string;
   email?: string;
   googleAccountId?: string;
@@ -66,6 +75,17 @@ function fingerprint(value: string | null | undefined) {
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
 }
 
+function hasReusableRefreshToken(connection: StoredDriveConnection | undefined) {
+  return Boolean(connection?.refreshToken || connection?.refreshTokenEncrypted?.ciphertext);
+}
+
+function refreshTokenFingerprint(connection: StoredDriveConnection | undefined) {
+  if (connection?.refreshTokenEncrypted?.ciphertext) {
+    return fingerprint(connection.refreshTokenEncrypted.ciphertext);
+  }
+  return fingerprint(connection?.refreshToken);
+}
+
 function sessionHost(value: string | null | undefined) {
   if (!value) return null;
   try {
@@ -87,7 +107,7 @@ async function readGenericRecord(collection: string, id: string) {
 }
 
 async function inspectAccessToken(connection: StoredDriveConnection) {
-  if (!connection.id || !connection.refreshToken) {
+  if (!connection.id || !hasReusableRefreshToken(connection)) {
     return {
       state: "missing" as const,
       fingerprint: null,
@@ -199,8 +219,8 @@ export async function readGoogleDriveSecurityDiagnostics(user: AuthenticatedUser
       rootFolderId: connection?.rootFolderId || account.root_folder_id || null,
       rootFolderName: connection?.rootFolderName || account.root_folder_name || null,
       refreshToken: {
-        configured: Boolean(connection?.refreshToken),
-        fingerprint: fingerprint(connection?.refreshToken),
+        configured: hasReusableRefreshToken(connection),
+        fingerprint: refreshTokenFingerprint(connection),
         storage: "server-only",
         updatedAt: connection?.updatedAt || null,
       },
@@ -216,8 +236,8 @@ export async function readGoogleDriveSecurityDiagnostics(user: AuthenticatedUser
       oauthConnectionId: connection.id,
       email: connection.email || null,
       googleAccountId: connection.googleAccountId || null,
-      refreshTokenConfigured: Boolean(connection.refreshToken),
-      refreshTokenFingerprint: fingerprint(connection.refreshToken),
+      refreshTokenConfigured: hasReusableRefreshToken(connection),
+      refreshTokenFingerprint: refreshTokenFingerprint(connection),
       updatedAt: connection.updatedAt || null,
     }));
 
