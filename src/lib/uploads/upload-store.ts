@@ -147,7 +147,12 @@ export const uploadQueueStore = {
         const itemOptions = input.fileOptions?.[fileIndex];
         const fingerprint = await fingerprintUploadBlob(file, file.name);
         const duplicate = snapshot.items.find((entry) =>
-          entry.fingerprint === fingerprint && entry.fileName === file.name && entry.sizeBytes === file.size &&
+          entry.fingerprint === fingerprint &&
+          entry.fileName === file.name &&
+          entry.sizeBytes === file.size &&
+          entry.targetEntityType === batch.targetEntityType &&
+          entry.targetEntityId === batch.targetEntityId &&
+          entry.purpose === batch.purpose &&
           !["completed", "cancelled", "failed_permanent"].includes(entry.status),
         );
         if (duplicate) continue;
@@ -207,7 +212,7 @@ export const uploadQueueStore = {
     if (queuedCount === 0) {
       await uploadIndexedDb.deleteBatch(batchId);
       emit({ ...snapshot, batches: snapshot.batches.filter((entry) => entry.id !== batchId) });
-      throw new Error("Every selected file is already pending on this device.");
+      throw new Error("Every selected file is already pending for this record on this device.");
     }
     return batchId;
   },
@@ -228,15 +233,11 @@ export const uploadQueueStore = {
     return snapshot.items.find((entry) => entry.id === uploadItemId);
   },
   getNextProcessableItem(): UploadItemRecord | undefined {
-    const firstItemByBatch = new Map<UploadBatchId, UploadItemRecord>();
-    for (const item of snapshot.items) {
-      if (!["completed", "cancelled"].includes(item.status) && !firstItemByBatch.has(item.batchId)) {
-        firstItemByBatch.set(item.batchId, item);
-      }
+    for (const batch of snapshot.batches) {
+      const item = snapshot.items.find((entry) => entry.batchId === batch.id && itemIsProcessable(entry));
+      if (item) return item;
     }
-    return snapshot.batches
-      .map((batch) => firstItemByBatch.get(batch.id))
-      .find((item): item is UploadItemRecord => Boolean(item && itemIsProcessable(item)));
+    return undefined;
   },
   batchSizeBytes(uploadBatchId: UploadBatchId): number {
     return snapshot.items.filter((item) => item.batchId === uploadBatchId).reduce((sum, item) => sum + item.sizeBytes, 0);

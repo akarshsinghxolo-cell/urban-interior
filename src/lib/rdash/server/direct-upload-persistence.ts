@@ -60,12 +60,13 @@ const ENTITY_COLLECTIONS: Partial<Record<FileAttachmentEntityType, string>> = {
 };
 
 function pendingCommit(): PendingUploadWorkspaceCommit {
-  let pending = uploadCommitContext.getStore();
-  if (!pending) {
-    pending = { upserts: [] };
-    uploadCommitContext.enterWith(pending);
-  }
+  const pending = uploadCommitContext.getStore();
+  if (!pending) throw new Error("Upload workspace commit context is missing.");
   return pending;
+}
+
+export function withUploadCommitContext<T>(work: () => Promise<T>): Promise<T> {
+  return uploadCommitContext.run({ upserts: [] }, work);
 }
 
 function collectionRows(data: unknown, collection: string): Array<Record<string, unknown>> {
@@ -127,8 +128,8 @@ export async function updateAttachmentField(
 }
 
 export async function bumpWorkspaceRevision(): Promise<void> {
-  const pending = uploadCommitContext.getStore();
-  if (!pending || (!pending.upserts.length && !pending.attachmentUpdate)) return;
+  const pending = pendingCommit();
+  if (!pending.upserts.length && !pending.attachmentUpdate) return;
 
   const rowsByCollection: Record<string, string[]> = {};
   for (const entry of pending.upserts) {

@@ -1037,7 +1037,7 @@ export interface WorkOrderCostLine {
 // are currently created with status="submitted" by addContractorBid. The
 // "withdrawn" status IS reachable from the UI via the EditContractorBidDialog
 // (FIX-CONTRACTOR-BATCH1 / F.5). "open" is kept so the type reflects the
-// intended lifecycle (open → submitted → selected | rejected | withdrawn).
+// intended lifecycle (open → submitted | selected | rejected | withdrawn).
 export type ContractorBidStatus = "open" | "submitted" | "selected" | "rejected" | "withdrawn";
 export interface ContractorBid {
     id: ID;
@@ -1053,7 +1053,7 @@ export interface ContractorBid {
     quote_amount?: number;
     rate_basis?: {
         rate: number;
-        unit_id?: string;
+        unit_id?: ID;
         estimated_qty?: number;
     };
     estimated_days?: number;
@@ -1943,7 +1943,7 @@ export interface FileAsset {
     web_view_link: string;
     thumbnail_url?: string;
     file_size_bytes?: number;
-    storage_provider: "google_drive" | "local";
+    storage_provider: "google_drive";
     storage_mode: FileAssetStorageMode;
     sync_status: FileAssetSyncStatus;
     tags?: string[];

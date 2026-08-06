@@ -14,6 +14,7 @@ const MAX_SESSION_RESTARTS = 2;
 const SESSION_EXPIRY_SAFETY_MS = 30_000;
 const TAB_ID = typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 let running: Promise<void> | null = null;
+let retryTimer: number | null = null;
 
 class UploadCancelledError extends Error {
   constructor() {
@@ -59,6 +60,10 @@ function retryDelayMs(retryCount: number): number {
   // 25% jitter prevents every reopened tab/device from retrying Google at once
   // after a shared network outage or Drive rate-limit response.
   return Math.max(1_000, Math.round(base * (0.75 + Math.random() * 0.5)));
+}
+
+function targetReadyRetryDelayMs(retryCount: number): number {
+  return Math.min(30_000, 2_000 * Math.pow(2, Math.min(Math.max(0, retryCount - 1), 4)));
 }
 
 const jsonPost = async <T>(action: string, body: unknown): Promise<T> => {
@@ -385,12 +390,13 @@ async function processItem(initial: UploadItemRecord) {
     const retryCount = latest.retryCount + 1;
 
     if (targetNotReady) {
+      const delay = targetReadyRetryDelayMs(retryCount);
       await uploadQueueStore.patchItem(latest.id, {
-        status: "failed_permanent",
+        status: "paused",
         retryCount,
-        retryAt: undefined,
+        retryAt: new Date(Date.now() + delay).toISOString(),
         lastErrorCode: "TARGET_NOT_READY",
-        lastErrorMessage: message,
+        lastErrorMessage: "Waiting for the related record to finish saving before Drive upload starts.",
       });
       return;
     }
@@ -410,6 +416,23 @@ async function processItem(initial: UploadItemRecord) {
   }
 }
 
+function scheduleNextRetry() {
+  if (typeof window === "undefined") return;
+  if (retryTimer !== null) {
+    window.clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  const next = uploadQueueStore.getSnapshot().items
+    .map((item) => item.retryAt ? Date.parse(item.retryAt) : NaN)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b)[0];
+  if (!Number.isFinite(next)) return;
+  retryTimer = window.setTimeout(() => {
+    retryTimer = null;
+    void kickUploadManager();
+  }, Math.max(50, next - Date.now()));
+}
+
 async function run() {
   await uploadQueueStore.hydrate();
   uploadQueueStore.setProcessing(true);
@@ -421,6 +444,7 @@ async function run() {
     }
   } finally {
     uploadQueueStore.setProcessing(false);
+    scheduleNextRetry();
   }
 }
 
@@ -477,6 +501,10 @@ async function withLease(work: () => Promise<void>) {
 
 export function kickUploadManager(): Promise<void> {
   if (typeof window === "undefined" || running) return running || Promise.resolve();
+  if (retryTimer !== null) {
+    window.clearTimeout(retryTimer);
+    retryTimer = null;
+  }
   running = withLease(run)
     .catch((error) => console.error("[UploadManager]", error))
     .finally(() => { running = null; });

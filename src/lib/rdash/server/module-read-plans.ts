@@ -272,11 +272,22 @@ function limitsForModule(moduleId: string): Readonly<Record<string, number>> {
   return HISTORY_LIMITS;
 }
 
+function completeFileJoin(collections: readonly string[]): readonly string[] {
+  const hasAttachments = collections.includes("entityFileAttachments");
+  const hasAssets = collections.includes("master.fileAssets");
+  if (!hasAttachments && !hasAssets) return collections;
+  const joined = [...collections];
+  if (!hasAttachments) joined.push("entityFileAttachments");
+  if (!hasAssets) joined.push("master.fileAssets");
+  return Object.freeze(joined);
+}
+
 export function collectionsForWorkspaceReadTarget(
   target: WorkspaceReadTarget,
 ): readonly string[] {
   if (target.scope === "bootstrap" || target.scope === "full") return [];
-  return EXACT_MODULE_COLLECTIONS[target.moduleId] || COLLECTIONS_BY_SCOPE[target.scope];
+  const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  return exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope];
 }
 
 export function workspaceModuleReadPlan(
@@ -287,7 +298,7 @@ export function workspaceModuleReadPlan(
   }
   const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
   return Object.freeze({
-    collections: exact || COLLECTIONS_BY_SCOPE[target.scope],
+    collections: exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope],
     limitsByCollection: limitsForModule(target.moduleId),
     strategy: exact ? "module" : "scope",
   });

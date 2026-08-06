@@ -584,7 +584,7 @@ export function validateBusinessData(db: RDashDatabase) {
             fail("Storage account", "must have a switch threshold from 1 to 100.");
     }));
     db.master.storageFolderInstances.forEach((folder) => capture(`Storage folder ${folder.id}`, () => {
-        if (folder.storage_account_id !== "local" && !storageAccounts.has(folder.storage_account_id))
+        if (!storageAccounts.has(folder.storage_account_id))
             fail("Storage folder", "belongs to a missing connected Drive account.");
         if (!storageTemplates.has(folder.template_id))
             fail("Storage folder", "uses a missing logical folder template.");
@@ -592,16 +592,13 @@ export function validateBusinessData(db: RDashDatabase) {
             fail("Storage folder", "must record its logical path.");
     }));
     db.master.fileAssets.forEach((file) => capture(`Drive file ${file.id}`, () => {
-        const isLocal = file.storage_provider === "local" || file.storage_account_id === "local";
-        if (!isLocal && !/^https:\/\/drive\.google\.com\//.test(file.web_view_link || ""))
+        if (!/^https:\/\/drive\.google\.com\//.test(file.web_view_link || ""))
             fail("Drive file", "must use a Google Drive web link.");
         if (/^(data:|blob:)/i.test(file.web_view_link || ""))
             fail("Drive file", "cannot retain embedded or temporary binary data.");
-        if (!isLocal && (file.storage_provider !== "google_drive" || file.sync_status !== "uploaded"))
+        if (file.storage_provider !== "google_drive" || file.sync_status !== "uploaded")
             fail("Drive file", "must be a completed Google Drive upload.");
-        if (isLocal && file.sync_status !== "uploaded")
-            fail("Drive file", "must be a completed upload.");
-        if (file.storage_account_id && !isLocal && !storageAccounts.has(file.storage_account_id))
+        if (file.storage_account_id && !storageAccounts.has(file.storage_account_id))
             fail("Drive file", "belongs to a missing connected Drive account.");
         if (file.storage_folder_instance_id) {
             const folder = storageFolders.get(file.storage_folder_instance_id);
@@ -611,7 +608,7 @@ export function validateBusinessData(db: RDashDatabase) {
                 fail("Drive file", "folder and account ownership do not match.");
         }
         if (file.storage_mode === "managed") {
-            if (!isLocal && !file.google_file_id)
+            if (!file.google_file_id)
                 fail("Drive file", "managed uploads require a Google Drive file ID.");
             if (!file.storage_account_id)
                 fail("Drive file", "managed uploads require their original connected Drive account.");

@@ -62,8 +62,30 @@ function resolveAttachmentEntityLabel(db: RDashDatabase, type: EntityFileAttachm
         id);
 }
 
+function requestCleanupAfterSync(get: () => any, fileAssetId: string) {
+    if (typeof window === "undefined") return;
+    queueMicrotask(() => {
+        const awaitServerSync = get().awaitServerSync;
+        if (typeof awaitServerSync !== "function") return;
+        void awaitServerSync()
+            .then(async () => {
+                const response = await fetch("/api/google-drive/cleanup", {
+                    method: "POST",
+                    credentials: "same-origin",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ fileAssetId }),
+                });
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => ({})) as { error?: string };
+                    throw new Error(payload.error || `Drive cleanup failed (${response.status}).`);
+                }
+            })
+            .catch((error: unknown) => console.error("[FileCleanup] Could not clean detached Drive file", error));
+    });
+}
+
 export function createFilesSlice(ctx: StoreContext): FilesState {
-    const { commitState, get, setBase } = ctx;
+    const { commitState, get } = ctx;
 
     return {
         // Adds a FileAsset + Attachment that were uploaded to Google Drive.
@@ -89,9 +111,8 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
         }) => {
             const linkValue = file.web_view_link || "";
             const isDriveLink = /^https:\/\/drive\.google\.com\//.test(linkValue);
-            const isLocalLink = /^\/api\/local-file\//.test(linkValue);
-            if (!isDriveLink && !isLocalLink) {
-                throw new Error("Operational files must use a Google Drive file link or a locally uploaded file link.");
+            if (!isDriveLink) {
+                throw new Error("Operational files must use a Google Drive file link.");
             }
             if (/^(data:|blob:)/i.test(linkValue)) {
                 throw new Error("Embedded or temporary file data cannot be saved. Upload the file first.");
@@ -108,11 +129,10 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
             commitState((s: any) => {
                 const storageAccountId = file.storage_account_id;
                 const suppliedInstance = file.storage_folder_instance;
-                const isLocalAccount = storageAccountId === "local";
                 const knownAccount = storageAccountId
-                    ? (isLocalAccount ? undefined : s.db.master.storageAccounts.find((account: any) => account.id === storageAccountId))
+                    ? s.db.master.storageAccounts.find((account: any) => account.id === storageAccountId)
                     : undefined;
-                if (storageAccountId && !knownAccount && !isLocalAccount) {
+                if (storageAccountId && !knownAccount) {
                     throw new Error("The selected Drive account is no longer connected.");
                 }
                 const folderInstanceId = file.storage_folder_instance_id || suppliedInstance?.id;
@@ -125,7 +145,9 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
                 if (suppliedInstance && suppliedInstance.storage_account_id !== storageAccountId) {
                     throw new Error("The file folder must belong to the same connected Drive account as the file.");
                 }
-                const storageMode = isLocalAccount ? "managed" as const : (file.storage_mode === "managed" && knownAccount && folderInstanceId ? "managed" as const : "external_reference" as const);
+                const storageMode = file.storage_mode === "managed" && knownAccount && folderInstanceId
+                    ? "managed" as const
+                    : "external_reference" as const;
                 const driveFile: FileAsset = {
                     id,
                     storage_account_id: storageAccountId,
@@ -137,7 +159,7 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
                     web_view_link: file.web_view_link.trim(),
                     thumbnail_url: file.thumbnail_url,
                     file_size_bytes: file.file_size_bytes,
-                    storage_provider: isLocalAccount ? "local" : "google_drive",
+                    storage_provider: "google_drive",
                     storage_mode: storageMode,
                     sync_status: "uploaded",
                     tags: file.tags || [],
@@ -251,16 +273,18 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
                     entityFileAttachments: (s.db.entityFileAttachments || []).filter((row: EntityFileAttachment) => row.id !== id),
                 },
             }));
-            if (attachment)
+            if (attachment) {
                 get().logAudit({
                     actor: get().currentUser().name,
-                actor_role: get().currentUser().role,
+                    actor_role: get().currentUser().role,
                     action: `Detached Drive file from ${attachment.entity_type}`,
                     entity_type: attachment.entity_type,
                     entity_id: attachment.entity_id,
                     entity_label: attachment.entity_label,
                     kind: "update",
                 });
+                requestCleanupAfterSync(get, attachment.file_asset_id);
+            }
         },
 
         assignReferenceResource: (assignment: Partial<EntityReferenceAssignment> & {
