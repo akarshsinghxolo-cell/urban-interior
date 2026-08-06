@@ -32,13 +32,21 @@ describe("Google Drive transaction simplification", () => {
     expect(transfer).toContain("const hintedDelay");
   });
 
-  test("waits for newly reserved target records and retries automatically", async () => {
+  test("waits for every persisted attachment target and retries automatically", async () => {
     const initiate = await readFile("src/lib/rdash/server/direct-upload-initiate.ts", "utf8");
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
 
     expect(initiate).toContain("assertUploadTargetReady");
     expect(initiate).toContain("TARGET_NOT_READY:Save the related record before its Drive upload starts.");
     expect(initiate).toContain('purpose === "diagnostic" || purpose === "import_source"');
+    expect(initiate).toContain('case "quotation_item"');
+    expect(initiate).toContain('case "boq"');
+    expect(initiate).toContain('case "boq_item"');
+    expect(initiate).toContain('case "commission"');
+    expect(initiate).toContain('case "thread_message"');
+    expect(initiate).toContain('case "communication"');
+    expect(initiate).toContain("const exhaustive: never = targetEntityType");
+    expect(initiate).toContain('targetEntityType === "general" || !uploadTargetExists');
     expect(transfer).toContain("targetReadyRetryDelayMs");
     expect(transfer).toContain('status: "paused"');
     expect(transfer).toContain('lastErrorCode: "TARGET_NOT_READY"');
@@ -121,10 +129,12 @@ describe("Google Drive transaction simplification", () => {
     expect(attachments).toContain("url: asset.web_view_link");
   });
 
-  test("does not advertise or implement a Vercel local-file upload fallback", async () => {
+  test("removes the local-file provider from the active routes and shared contract", async () => {
     const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
     const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
     const thumbnail = await readFile("src/app/api/google-drive/thumbnail/route.ts", "utf8");
+    const types = await readFile("src/lib/rdash/types.ts", "utf8");
+
     expect(manager).toContain("Direct Google Drive uploads");
     expect(manager).toContain("does not fall back to Vercel local storage");
     expect(manager).not.toContain("Local storage fallback is active");
@@ -132,9 +142,11 @@ describe("Google Drive transaction simplification", () => {
     expect(files).not.toContain("/api/local-file/");
     expect(files).not.toContain('storageAccountId === "local"');
     expect(thumbnail).not.toContain('fileId.startsWith("local-")');
+    expect(types).toContain('storage_provider: "google_drive";');
+    expect(types).not.toContain('storage_provider: "google_drive" | "local";');
   });
 
-  test("cleans a managed Drive file only after its last reference is detached", async () => {
+  test("claims the last unreferenced FileAsset before deleting its managed Drive object", async () => {
     const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
     const cleanup = await readFile("src/lib/rdash/server/file-cleanup.ts", "utf8");
     const cleanupRoute = await readFile("src/app/api/google-drive/cleanup/route.ts", "utf8");
@@ -144,9 +156,13 @@ describe("Google Drive transaction simplification", () => {
     expect(cleanup).toContain("entityFileAttachments");
     expect(cleanup).toContain("drive_asset_id === fileAssetId");
     expect(cleanup).toContain("attachment.file_asset_id === fileAssetId");
-    expect(cleanup).toContain('asset.storage_provider !== "google_drive" || asset.storage_mode !== "managed"');
-    expect(cleanup).toContain('{ method: "DELETE" }');
+    expect(cleanup).toContain("claimUnreferencedFileAsset");
+    expect(cleanup).toContain("restoreFileAsset");
     expect(cleanup).toContain('deleteIds: [fileAssetId]');
+    expect(cleanup).toContain('{ method: "DELETE" }');
+    expect(cleanup.indexOf('deleteIds: [fileAssetId]')).toBeLessThan(cleanup.indexOf("const deleted = await driveFetch"));
+    expect(cleanup).toContain('reason: "external_reference"');
+    expect(cleanup).toContain("driveDeleted: false");
     expect(cleanupRoute).toContain("cleanupUnreferencedManagedFile");
   });
 
