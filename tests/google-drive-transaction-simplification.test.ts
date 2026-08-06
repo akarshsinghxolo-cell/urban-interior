@@ -40,6 +40,21 @@ describe("Google Drive transaction simplification", () => {
     expect(initiate).toContain("input.preferredStorageAccountId");
   });
 
+  test("finalizes file registry and attachment changes through the canonical workspace journal", async () => {
+    const persistence = await readFile("src/lib/rdash/server/direct-upload-persistence.ts", "utf8");
+    const finalizer = await readFile("src/lib/rdash/server/direct-upload-finalize-core.ts", "utf8");
+
+    expect(persistence).toContain('import { AsyncLocalStorage } from "node:async_hooks"');
+    expect(persistence).toContain("commitWorkspaceOperations");
+    expect(persistence).toContain("getWorkspaceSubset");
+    expect(persistence).toContain('"master.storageFolderInstances"');
+    expect(persistence).toContain('"master.fileAssets"');
+    expect(persistence).toContain('"entityFileAttachments"');
+    expect(persistence).not.toContain('rpc("uc_bump_workspace_revision"');
+    expect(persistence).not.toContain("getSupabaseAdminClient");
+    expect(finalizer).toContain("await bumpWorkspaceRevision()");
+  });
+
   test("keeps Vercel on authorization while Google serves preview bytes", async () => {
     const preview = await readFile("src/app/api/google-drive/preview/route.ts", "utf8");
     expect(preview).toContain("canReadManagedFileAsset");
