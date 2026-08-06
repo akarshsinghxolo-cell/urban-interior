@@ -3,7 +3,7 @@ import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
 import type { RDashDatabase } from "../types";
-import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse } from "@/lib/uploads/upload-types";
+import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse, UploadPurpose } from "@/lib/uploads/upload-types";
 import {
   DRIVE_API,
   DRIVE_UPLOAD_API,
@@ -51,10 +51,15 @@ function targetRows(db: RDashDatabase, collection: string): Array<{ id?: string 
   return Array.isArray(value) ? value as Array<{ id?: string }> : [];
 }
 
-function assertUploadTargetReady(db: RDashDatabase, targetEntityType: string, targetEntityId: string) {
+function assertUploadTargetReady(
+  db: RDashDatabase,
+  targetEntityType: string,
+  targetEntityId: string,
+  purpose: UploadPurpose,
+) {
+  // Diagnostics and import-source retention intentionally use synthetic targets.
+  if (purpose === "diagnostic" || purpose === "import_source") return;
   const collection = TARGET_COLLECTIONS[targetEntityType];
-  // Synthetic/system upload targets (for example diagnostics/import source files)
-  // intentionally do not require a business entity row.
   if (!collection) return;
   if (!targetRows(db, collection).some((row) => String(row.id || "") === targetEntityId)) {
     throw new Error("TARGET_NOT_READY:Save the related record before its Drive upload starts.");
@@ -154,7 +159,7 @@ export async function initiateDirectUpload(
   // the corresponding business row has reached Supabase. The blob stays durable
   // in IndexedDB and the client retries automatically after Save completes.
   const workspace = await getWorkspace();
-  assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId);
+  assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose);
 
   if (existing) {
     if (existing.google_file_id && ["uploaded_unverified", "verifying", "finalizing", "completed"].includes(String(existing.status || ""))) {
