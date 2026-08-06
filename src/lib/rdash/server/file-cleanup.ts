@@ -75,7 +75,7 @@ async function restoreFileAsset(asset: FileAsset): Promise<void> {
     try {
       await commitWorkspaceOperations(
         workspace.revision,
-        [{ collection: "master.fileAssets", upsert: [asset] }],
+        [{ collection: "master.fileAssets", upsert: [{ ...asset }] }],
         workspace.rowVersions || {},
       );
       return;
