@@ -2,11 +2,11 @@
 
 import type { RDashDatabase } from "./types";
 import type { AuthenticatedWorkspaceUser } from "./store/ui-types";
-import type { WorkspaceReadStateSnapshot } from "./workspace-read-state";
 import {
   workspaceReadTargetKey,
-  type WorkspaceReadTarget,
-} from "./workspace-read-scope";
+  type WorkspaceReadStateSnapshot,
+} from "./workspace-read-state";
+import type { WorkspaceReadTarget } from "./workspace-read-scope";
 
 const MAX_CACHE_ENTRIES = 32;
 
@@ -56,6 +56,13 @@ function trim(): void {
   }
 }
 
+function putEntry(entry: WorkspaceReadCacheEntry): void {
+  const next = cloneEntry({ ...entry, cachedAt: Date.now() });
+  entries.delete(next.cacheKey);
+  entries.set(next.cacheKey, next);
+  trim();
+}
+
 export const workspaceReadCache = {
   get(
     target: WorkspaceReadTarget,
@@ -70,10 +77,7 @@ export const workspaceReadCache = {
   },
 
   put(entry: WorkspaceReadCacheEntry): void {
-    const next = cloneEntry({ ...entry, cachedAt: Date.now() });
-    entries.delete(next.cacheKey);
-    entries.set(next.cacheKey, next);
-    trim();
+    putEntry(entry);
   },
 
   store(input: {
@@ -104,7 +108,7 @@ export const workspaceReadCache = {
       },
       cachedAt: Date.now(),
     };
-    this.put(entry);
+    putEntry(entry);
     return cloneEntry(entry);
   },
 
