@@ -63,16 +63,43 @@ describe("public Google Drive files", () => {
     expect(diagnostics).not.toContain('const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"');
   });
 
-  test("makes the copied-link security boundary explicit", async () => {
+  test("uses public Drive links directly for preview, open, thumbnail and download", async () => {
     const policy = await readFile("docs/google-drive-access-policy.md", "utf8");
     const open = await readFile("src/app/api/google-drive/open/route.ts", "utf8");
+    const preview = await readFile("src/app/api/google-drive/preview/route.ts", "utf8");
     const download = await readFile("src/app/api/google-drive/download/route.ts", "utf8");
+    const thumbnail = await readFile("src/app/api/google-drive/thumbnail/route.ts", "utf8");
+    const previewComponent = await readFile("src/components/rdash/FilePreview.tsx", "utf8");
     const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
 
     expect(policy).toContain("anyone who obtains the Google Drive URL can read it without an Urban Castle session");
     expect(policy).toContain("Do not treat the current Drive sharing model as strong confidentiality");
-    expect(open).toContain("canReadManagedFileAsset");
-    expect(download).toContain("canReadManagedFileAsset");
+    for (const route of [open, preview, download, thumbnail]) {
+      expect(route).toContain("NextResponse.redirect");
+      expect(route).not.toContain("canReadManagedFileAsset");
+      expect(route).not.toContain("getGoogleDriveAccessToken");
+    }
+    expect(open).toContain("https://drive.google.com/file/d/");
+    expect(preview).toContain("https://drive.google.com/file/d/");
+    expect(download).toContain("https://drive.google.com/uc?export=download&id=");
+    expect(thumbnail).toContain("https://drive.google.com/thumbnail?id=");
+    expect(previewComponent).toContain("publicDrivePreviewUrl");
+    expect(previewComponent).toContain("publicDriveThumbnailUrl");
+    expect(previewComponent).toContain("publicDriveDownloadUrl");
+    expect(previewComponent).not.toContain("/api/google-drive/preview?fileId=");
+    expect(previewComponent).not.toContain("/api/google-drive/download?fileId=");
     expect(manager).toContain("Managed Drive files are link-readable");
+  });
+
+  test("removes the local-file architecture from active file handling", async () => {
+    const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
+    const thumbnail = await readFile("src/app/api/google-drive/thumbnail/route.ts", "utf8");
+
+    expect(files).not.toContain("/api/local-file/");
+    expect(files).not.toContain('storage_provider: "local"');
+    expect(files).not.toContain('storageAccountId === "local"');
+    expect(files).toContain('storage_provider: "google_drive"');
+    expect(thumbnail).not.toContain('fileId.startsWith("local-")');
+    expect(thumbnail).not.toContain("extractSessionToken");
   });
 });
