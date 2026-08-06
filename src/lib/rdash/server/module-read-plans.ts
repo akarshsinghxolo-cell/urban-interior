@@ -286,7 +286,8 @@ export function collectionsForWorkspaceReadTarget(
   target: WorkspaceReadTarget,
 ): readonly string[] {
   if (target.scope === "bootstrap" || target.scope === "full") return [];
-  return completeFileJoin(EXACT_MODULE_COLLECTIONS[target.moduleId] || COLLECTIONS_BY_SCOPE[target.scope]);
+  const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  return exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope];
 }
 
 export function workspaceModuleReadPlan(
@@ -297,7 +298,7 @@ export function workspaceModuleReadPlan(
   }
   const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
   return Object.freeze({
-    collections: completeFileJoin(exact || COLLECTIONS_BY_SCOPE[target.scope]),
+    collections: exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope],
     limitsByCollection: limitsForModule(target.moduleId),
     strategy: exact ? "module" : "scope",
   });
