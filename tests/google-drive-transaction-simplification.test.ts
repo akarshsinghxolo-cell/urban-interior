@@ -129,11 +129,12 @@ describe("Google Drive transaction simplification", () => {
     expect(attachments).toContain("url: asset.web_view_link");
   });
 
-  test("removes the local-file provider from the active routes and shared contract", async () => {
+  test("removes the local-file provider from the active routes, validation, and shared contract", async () => {
     const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
     const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
     const thumbnail = await readFile("src/app/api/google-drive/thumbnail/route.ts", "utf8");
     const types = await readFile("src/lib/rdash/types.ts", "utf8");
+    const businessRules = await readFile("src/lib/rdash/business-rules.ts", "utf8");
 
     expect(manager).toContain("Direct Google Drive uploads");
     expect(manager).toContain("does not fall back to Vercel local storage");
@@ -144,6 +145,9 @@ describe("Google Drive transaction simplification", () => {
     expect(thumbnail).not.toContain('fileId.startsWith("local-")');
     expect(types).toContain('storage_provider: "google_drive";');
     expect(types).not.toContain('storage_provider: "google_drive" | "local";');
+    expect(businessRules).not.toContain('storage_provider === "local"');
+    expect(businessRules).not.toContain('storage_account_id === "local"');
+    expect(businessRules).not.toContain('storage_account_id !== "local"');
   });
 
   test("claims the last unreferenced FileAsset before deleting its managed Drive object", async () => {
