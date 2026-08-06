@@ -42,6 +42,16 @@ describe("public Google Drive files", () => {
     expect(manager).not.toContain("setClientSecret");
   });
 
+  test("recognizes encrypted refresh tokens in owner diagnostics", async () => {
+    const diagnostics = await readFile("src/lib/rdash/server/drive-security-diagnostics.ts", "utf8");
+
+    expect(diagnostics).toContain("refreshTokenEncrypted?: StoredEncryptedSecret");
+    expect(diagnostics).toContain("hasReusableRefreshToken(connection)");
+    expect(diagnostics).toContain("refreshTokenFingerprint(connection)");
+    expect(diagnostics).not.toContain("if (!connection.id || !connection.refreshToken)");
+    expect(diagnostics).not.toContain("configured: Boolean(connection?.refreshToken)");
+  });
+
   test("requests only app-created or explicitly selected Drive files", async () => {
     const connections = await readFile("src/lib/rdash/server/drive-connections.ts", "utf8");
     const diagnostics = await readFile("src/lib/rdash/server/drive-security-diagnostics.ts", "utf8");
