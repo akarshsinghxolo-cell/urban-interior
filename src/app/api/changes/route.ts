@@ -7,6 +7,7 @@ import { knownWorkspaceCollection } from "@/lib/rdash/workspace-delta";
 
 export const runtime = "nodejs";
 const MAX_COLLECTION_FILTERS = 150;
+const DIRECTORY_PROJECTION_COLLECTIONS = new Set(["master.staff"]);
 
 function afterRevisionFromRequest(request: NextRequest): number | null {
   const raw = request.nextUrl.searchParams.get("afterRevision");
@@ -63,13 +64,15 @@ export async function GET(request: NextRequest) {
       { status: 400, headers: { "Cache-Control": "no-store" } },
     );
   }
-  const collections = staffSafeCollections(
-    requestedCollections,
-    canReadFullStaffData(user.role),
-  );
+  const canReadFullStaff = canReadFullStaffData(user.role);
+  const collections = staffSafeCollections(requestedCollections, canReadFullStaff);
 
   try {
-    const delta = await getWorkspaceChanges(afterRevision, collections || undefined);
+    const delta = await getWorkspaceChanges(
+      afterRevision,
+      collections || undefined,
+      canReadFullStaff ? undefined : DIRECTORY_PROJECTION_COLLECTIONS,
+    );
     return NextResponse.json(delta, {
       headers: {
         "Cache-Control": "no-store",
@@ -79,7 +82,7 @@ export async function GET(request: NextRequest) {
         "X-UC-Delta-Has-More": delta.hasMore ? "1" : "0",
         "X-UC-Delta-Full-Reload": delta.requiresFullReload ? "1" : "0",
         "X-UC-Delta-Filtered": collections ? "1" : "0",
-        "X-UC-Staff-Delta": canReadFullStaffData(user.role) ? "full-allowed" : "directory-only",
+        "X-UC-Staff-Delta": canReadFullStaff ? "full-allowed" : "directory-only",
         "Server-Timing": `workspace-changes;dur=${(delta.loadMs || 0).toFixed(2)}`,
       },
     });
