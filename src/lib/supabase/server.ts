@@ -125,6 +125,12 @@ type RDashSupabaseSchema = {
           newRevision: number;
         };
       };
+      get_workspace_health_summary_v2: {
+        Args: {
+          p_workspace_id: string;
+        };
+        Returns: Record<string, unknown>;
+      };
       sync_staff_identity_bundle: {
         Args: {
           p_assignment_id: string | null;
