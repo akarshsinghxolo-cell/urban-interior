@@ -1,76 +1,62 @@
 import type { AuthenticatedUser } from "./auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/server";
-import type { FileAttachmentEntityType } from "../types";
-import { nowIso, WORKSPACE_ID } from "./direct-upload-storage";
+import type {
+  EntityFileAttachment,
+  FileAsset,
+  FileAttachmentEntityType,
+  StorageFolderInstance,
+} from "../types";
+import type { WorkspaceOperation } from "../workspace-operations";
+import { commitWorkspaceOperations, getWorkspaceSubset } from "./workspace";
 
-function equalData(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-export async function upsertEntityRow(table: string, id: string, data: unknown, user: AuthenticatedUser): Promise<void> {
-  const admin = getSupabaseAdminClient();
-  const { data: existing, error: readError } = await admin.from(table).select("revision,data").eq("id", id).maybeSingle();
-  if (readError) throw new Error(`Could not inspect ${table}: ${readError.message}`);
-  if (existing?.data && equalData(existing.data, data)) return;
-
-  const revision = Number(existing?.revision || 0) + (existing ? 1 : 0);
-  const { error } = await admin.from(table).upsert({
-    id,
-    workspace_id: WORKSPACE_ID,
-    revision,
-    updated_at: nowIso(),
-    updated_by: user.name,
-    data,
-  }, { onConflict: "id" });
-  if (error) throw new Error(`Could not persist ${table}: ${error.message}`);
-}
-
-const ENTITY_TABLES: Partial<Record<FileAttachmentEntityType, string>> = {
-  customer: "entity_customers",
-  site: "entity_sites",
-  room: "entity_areas",
-  workRequired: "entity_workRequired",
-  quotation: "entity_quotations",
-  workOrder: "entity_workOrders",
-  purchase_order: "entity_purchaseOrders",
-  grn: "entity_grns",
-  vendor_bill: "entity_vendorBills",
-  dispatch: "entity_dispatches",
-  inventory: "entity_inventory",
-  drawing: "entity_drawings",
-  execution_log: "entity_executionLogs",
-  visit: "entity_visits",
-  task: "entity_tasks",
-  followup: "entity_followups",
-  payment: "entity_payments",
-  invoice: "entity_invoices",
-  vendor: "entity_master_vendors",
-  vendor_rate: "entity_master_vendorRates",
-  contractor: "entity_master_contractors",
-  contractor_bid: "entity_contractorBids",
-  contractor_settlement: "entity_contractorSettlements",
-  blocked: "entity_blocked",
-  communication: "entity_commSends",
+const ENTITY_COLLECTIONS: Partial<Record<FileAttachmentEntityType, string>> = {
+  customer: "customers",
+  site: "sites",
+  room: "areas",
+  workRequired: "workRequired",
+  quotation: "quotations",
+  workOrder: "workOrders",
+  purchase_order: "purchaseOrders",
+  grn: "grns",
+  vendor_bill: "vendorBills",
+  dispatch: "dispatches",
+  inventory: "inventory",
+  drawing: "drawings",
+  execution_log: "executionLogs",
+  visit: "visits",
+  task: "tasks",
+  followup: "followups",
+  payment: "payments",
+  invoice: "invoices",
+  vendor: "master.vendors",
+  vendor_rate: "master.vendorRates",
+  contractor: "master.contractors",
+  contractor_bid: "contractorBids",
+  contractor_settlement: "contractorSettlements",
+  blocked: "blocked",
+  communication: "commSends",
 };
 
-export async function updateAttachmentField(
-  user: AuthenticatedUser,
-  entityType: FileAttachmentEntityType,
+function collectionRows(data: unknown, collection: string): Array<Record<string, unknown>> {
+  const workspace = data as Record<string, unknown> & { master?: Record<string, unknown> };
+  const value = collection.startsWith("master.")
+    ? workspace.master?.[collection.slice("master.".length)]
+    : workspace[collection];
+  return Array.isArray(value)
+    ? value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object")
+    : [];
+}
+
+function updatedTargetRow(
+  data: unknown,
+  collection: string,
   entityId: string,
-  field: string | undefined,
+  field: string,
   mode: "set" | "append" | undefined,
   attachmentId: string,
-): Promise<void> {
-  if (!field) return;
-  const table = ENTITY_TABLES[entityType];
-  if (!table) throw new Error(`Attachment field updates are not configured for ${entityType}.`);
+): Record<string, unknown> {
+  const current = collectionRows(data, collection).find((row) => String(row.id || "") === entityId);
+  if (!current) throw new Error(`TARGET_NOT_READY:The related record is not synchronized yet.`);
 
-  const admin = getSupabaseAdminClient();
-  const { data: row, error } = await admin.from(table).select("revision,data").eq("id", entityId).maybeSingle();
-  if (error) throw new Error(`Could not read ${entityType} before attaching the file: ${error.message}`);
-  if (!row?.data) throw new Error(`TARGET_NOT_READY:The related ${entityType} record is not synchronized yet.`);
-
-  const current = row.data as Record<string, unknown>;
   const next = { ...current };
   if (mode === "append") {
     const values = Array.isArray(current[field]) ? current[field] as unknown[] : [];
@@ -78,23 +64,55 @@ export async function updateAttachmentField(
   } else {
     next[field] = attachmentId;
   }
-  if (equalData(current, next)) return;
-
-  const expectedRevision = Number(row.revision || 0);
-  const { data: updated, error: updateError } = await admin.from(table).update({
-    data: next,
-    revision: expectedRevision + 1,
-    updated_at: nowIso(),
-    updated_by: user.name,
-  }).eq("id", entityId).eq("revision", expectedRevision).select("id").maybeSingle();
-  if (updateError) throw new Error(`Could not attach the file to ${entityType}: ${updateError.message}`);
-  if (!updated) throw new Error(`TARGET_NOT_READY:The ${entityType} record changed while the file was being attached. Retry finalization.`);
+  return next;
 }
 
-export async function bumpWorkspaceRevision(): Promise<void> {
-  const { data, error } = await getSupabaseAdminClient().rpc("uc_bump_workspace_revision", {
-    p_workspace_id: WORKSPACE_ID,
-  });
-  if (error) throw new Error(`Could not update the workspace revision: ${error.message}`);
-  if (typeof data !== "number") throw new Error("The workspace revision function returned no revision.");
+export async function commitFinalizedUploadWorkspace(input: {
+  user: AuthenticatedUser;
+  folderInstance: StorageFolderInstance;
+  asset: FileAsset;
+  attachment: EntityFileAttachment;
+  entityType: FileAttachmentEntityType;
+  entityId: string;
+  attachmentField?: string;
+  attachmentFieldMode?: "set" | "append";
+}): Promise<void> {
+  const targetCollection = ENTITY_COLLECTIONS[input.entityType];
+  if (input.attachmentField && !targetCollection) {
+    throw new Error(`Attachment field updates are not configured for ${input.entityType}.`);
+  }
+
+  const rowsByCollection: Record<string, string[]> = {
+    "master.storageFolderInstances": [input.folderInstance.id],
+    "master.fileAssets": [input.asset.id],
+    entityFileAttachments: [input.attachment.id],
+  };
+  if (input.attachmentField && targetCollection) rowsByCollection[targetCollection] = [input.entityId];
+
+  const snapshot = await getWorkspaceSubset({ rowsByCollection });
+  const operations: WorkspaceOperation[] = [
+    { collection: "master.storageFolderInstances", upsert: [input.folderInstance as unknown as Record<string, unknown>] },
+    { collection: "master.fileAssets", upsert: [input.asset as unknown as Record<string, unknown>] },
+    { collection: "entityFileAttachments", upsert: [input.attachment as unknown as Record<string, unknown>] },
+  ];
+
+  if (input.attachmentField && targetCollection) {
+    operations.push({
+      collection: targetCollection,
+      upsert: [updatedTargetRow(
+        snapshot.data,
+        targetCollection,
+        input.entityId,
+        input.attachmentField,
+        input.attachmentFieldMode,
+        input.attachment.id,
+      )],
+    });
+  }
+
+  // Upload finalization participates in the same atomic row-CAS + workspace
+  // revision/change-journal transaction as ordinary workspace saves. Replaying
+  // an already-partially-written upload is intentional: the canonical commit
+  // records those rows in the delta journal and makes the retry self-healing.
+  await commitWorkspaceOperations(snapshot.revision, operations, snapshot.rowVersions || {});
 }
