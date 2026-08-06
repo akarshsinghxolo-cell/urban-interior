@@ -1,22 +1,28 @@
 import { describe, expect, test } from "bun:test";
-import { HEALTH_SUMMARY_COLLECTIONS } from "@/lib/rdash/server/workspace-health";
 
 const read = (path: string) => Bun.file(path).text();
 
 describe("runtime efficiency hardening", () => {
-  test("health summary uses a bounded collection plan", () => {
-    expect(HEALTH_SUMMARY_COLLECTIONS.length).toBeLessThan(20);
-    for (const collection of [
-      "tasks",
-      "actions",
-      "visits",
-      "invoices",
-      "customerReceipts",
-      "vendorPayments",
-      "auditLog",
-    ] as const) {
-      expect(HEALTH_SUMMARY_COLLECTIONS).toContain(collection);
-    }
+  test("health summary uses one aggregate PostgreSQL RPC", async () => {
+    const source = await read("src/lib/rdash/server/workspace-health.ts");
+    expect(source).toContain('admin.rpc("get_workspace_health_summary_v2"');
+    expect(source).toContain("queryCount: 1");
+    expect(source).toContain("collectionCount: 0");
+    expect(source).not.toContain("getWorkspaceSubset");
+    expect(source).not.toContain("HEALTH_SUMMARY_COLLECTIONS");
+    expect(source).not.toContain("buildOperationalHealth");
+
+    const migration = await read("supabase/migrations/20260806131500_get_workspace_health_summary_v2.sql");
+    expect(migration).toContain("create or replace function public.get_workspace_health_summary_v2");
+    expect(migration).toContain("returns jsonb");
+    expect(migration).toContain("security definer");
+    expect(migration).toContain("grant execute on function public.get_workspace_health_summary_v2(text) to service_role");
+    expect(migration).toContain("with recursive");
+    expect(migration).toContain("quotation_chain");
+    expect(migration).toContain("latest_quotations");
+    expect(migration).toContain("Asia/Kolkata");
+    expect(migration).toContain("limit 5");
+    expect(migration).toContain('"entity_auditLog_workspace_timestamp_idx"');
   });
 
   test("dashboard health no longer loads or scans the full workspace", async () => {
