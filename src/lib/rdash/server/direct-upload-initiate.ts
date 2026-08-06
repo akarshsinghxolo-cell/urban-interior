@@ -2,6 +2,7 @@ import type { AuthenticatedUser } from "./auth";
 import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
+import type { RDashDatabase } from "../types";
 import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse } from "@/lib/uploads/upload-types";
 import {
   DRIVE_API,
@@ -14,6 +15,51 @@ import {
   safeSegment,
   selectUploadAccount,
 } from "./direct-upload-storage";
+
+const TARGET_COLLECTIONS: Record<string, string> = {
+  customer: "customers",
+  site: "sites",
+  room: "areas",
+  workRequired: "workRequired",
+  quotation: "quotations",
+  workOrder: "workOrders",
+  purchase_order: "purchaseOrders",
+  grn: "grns",
+  vendor_bill: "vendorBills",
+  dispatch: "dispatches",
+  inventory: "inventory",
+  drawing: "drawings",
+  execution_log: "executionLogs",
+  visit: "visits",
+  task: "tasks",
+  followup: "followups",
+  payment: "payments",
+  invoice: "invoices",
+  vendor: "master.vendors",
+  vendor_rate: "master.vendorRates",
+  contractor: "master.contractors",
+  contractor_bid: "contractorBids",
+  contractor_settlement: "contractorSettlements",
+  blocked: "blocked",
+  communication: "commSends",
+};
+
+function targetRows(db: RDashDatabase, collection: string): Array<{ id?: string }> {
+  const value = collection.startsWith("master.")
+    ? (db.master as unknown as Record<string, unknown>)[collection.slice("master.".length)]
+    : (db as unknown as Record<string, unknown>)[collection];
+  return Array.isArray(value) ? value as Array<{ id?: string }> : [];
+}
+
+function assertUploadTargetReady(db: RDashDatabase, targetEntityType: string, targetEntityId: string) {
+  const collection = TARGET_COLLECTIONS[targetEntityType];
+  // Synthetic/system upload targets (for example diagnostics/import source files)
+  // intentionally do not require a business entity row.
+  if (!collection) return;
+  if (!targetRows(db, collection).some((row) => String(row.id || "") === targetEntityId)) {
+    throw new Error("TARGET_NOT_READY:Save the related record before its Drive upload starts.");
+  }
+}
 
 export async function bindDirectUpload(_user: AuthenticatedUser, input: BindUploadRequest): Promise<void> {
   if (!input.uploadItemId) throw new Error("Upload item identity is required.");
@@ -102,6 +148,15 @@ export async function initiateDirectUpload(
     ) {
       throw new Error("The pending upload routing changed. Bind it before requesting another Drive session.");
     }
+  }
+
+  // Do not create or resume a Drive session for a client-reserved entity ID until
+  // the corresponding business row has reached Supabase. The blob stays durable
+  // in IndexedDB and the client retries automatically after Save completes.
+  const workspace = await getWorkspace();
+  assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId);
+
+  if (existing) {
     if (existing.google_file_id && ["uploaded_unverified", "verifying", "finalizing", "completed"].includes(String(existing.status || ""))) {
       return {
         storageAccountId: String(existing.storage_account_id),
@@ -117,7 +172,6 @@ export async function initiateDirectUpload(
       Date.parse(String(existing.session_expires_at)) > Date.now() &&
       !["completed", "cancelled"].includes(String(existing.status || ""))
     ) {
-      const workspace = await getWorkspace();
       const account = workspace.data.master.storageAccounts.find((row) => row.id === String(existing.storage_account_id));
       if (account) {
         const accessToken = await getGoogleDriveAccessToken(account);
@@ -154,7 +208,6 @@ export async function initiateDirectUpload(
     }
   }
 
-  const workspace = await getWorkspace();
   const access = await selectUploadAccount(
     workspace.data,
     input.uploadBatchId,
