@@ -32,10 +32,11 @@ export function attachedFileById(db: RDashDatabase, attachmentId?: ID): Attached
     return asset ? { attachment, asset } : undefined;
 }
 export function assetPreview(asset: FileAsset): FilePreviewSource {
+    const managedDriveFile = asset.storage_provider === "google_drive" && asset.storage_mode === "managed";
     return {
         fileName: asset.file_name,
         mimeType: asset.mime_type,
-        googleFileId: asset.google_file_id,
+        googleFileId: managedDriveFile ? asset.google_file_id : undefined,
         url: asset.web_view_link,
         thumbnailUrl: asset.thumbnail_url,
     };
