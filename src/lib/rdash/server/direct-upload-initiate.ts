@@ -2,7 +2,7 @@ import type { AuthenticatedUser } from "./auth";
 import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
-import type { RDashDatabase } from "../types";
+import type { FileAttachmentEntityType, RDashDatabase } from "../types";
 import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse, UploadPurpose } from "@/lib/uploads/upload-types";
 import {
   DRIVE_API,
@@ -16,52 +16,61 @@ import {
   selectUploadAccount,
 } from "./direct-upload-storage";
 
-const TARGET_COLLECTIONS: Record<string, string> = {
-  customer: "customers",
-  site: "sites",
-  room: "areas",
-  workRequired: "workRequired",
-  quotation: "quotations",
-  workOrder: "workOrders",
-  purchase_order: "purchaseOrders",
-  grn: "grns",
-  vendor_bill: "vendorBills",
-  dispatch: "dispatches",
-  inventory: "inventory",
-  drawing: "drawings",
-  execution_log: "executionLogs",
-  visit: "visits",
-  task: "tasks",
-  followup: "followups",
-  payment: "payments",
-  invoice: "invoices",
-  vendor: "master.vendors",
-  vendor_rate: "master.vendorRates",
-  contractor: "master.contractors",
-  contractor_bid: "contractorBids",
-  contractor_settlement: "contractorSettlements",
-  blocked: "blocked",
-  communication: "commSends",
-};
+function hasId(rows: Array<{ id?: string }>, id: string): boolean {
+  return rows.some((row) => String(row.id || "") === id);
+}
 
-function targetRows(db: RDashDatabase, collection: string): Array<{ id?: string }> {
-  const value = collection.startsWith("master.")
-    ? (db.master as unknown as Record<string, unknown>)[collection.slice("master.".length)]
-    : (db as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<{ id?: string }> : [];
+function uploadTargetExists(db: RDashDatabase, targetEntityType: FileAttachmentEntityType, targetEntityId: string): boolean {
+  switch (targetEntityType) {
+    case "customer": return hasId(db.customers, targetEntityId);
+    case "site": return hasId(db.sites, targetEntityId);
+    case "room": return hasId(db.areas, targetEntityId);
+    case "workRequired": return hasId(db.workRequired, targetEntityId);
+    case "quotation": return hasId(db.quotations, targetEntityId);
+    case "quotation_item":
+      return db.quotations.some((quotation) =>
+        [...(quotation.scope_lines || []), ...(quotation.items || [])].some((item) => item.id === targetEntityId),
+      );
+    case "workOrder": return hasId(db.workOrders, targetEntityId);
+    case "boq": return hasId(db.boqs, targetEntityId);
+    case "boq_item": return db.boqs.some((boq) => (boq.items || []).some((item) => item.id === targetEntityId));
+    case "purchase_order": return hasId(db.purchaseOrders, targetEntityId);
+    case "grn": return hasId(db.grns, targetEntityId);
+    case "vendor_bill": return hasId(db.vendorBills, targetEntityId);
+    case "dispatch": return hasId(db.dispatches, targetEntityId);
+    case "inventory": return hasId(db.inventory, targetEntityId);
+    case "drawing": return hasId(db.drawings, targetEntityId);
+    case "execution_log": return hasId(db.executionLogs, targetEntityId);
+    case "visit": return hasId(db.visits, targetEntityId);
+    case "task": return hasId(db.tasks, targetEntityId);
+    case "followup": return hasId(db.followups, targetEntityId);
+    case "payment": return hasId(db.payments, targetEntityId);
+    case "invoice": return hasId(db.invoices, targetEntityId);
+    case "vendor": return hasId(db.master.vendors, targetEntityId);
+    case "vendor_rate": return hasId(db.master.vendorRates, targetEntityId);
+    case "contractor": return hasId(db.master.contractors, targetEntityId);
+    case "contractor_bid": return hasId(db.contractorBids, targetEntityId);
+    case "contractor_settlement": return hasId(db.contractorSettlements, targetEntityId);
+    case "commission": return hasId(db.commissions, targetEntityId);
+    case "blocked": return hasId(db.blocked, targetEntityId);
+    case "thread_message":
+      return (db.threads || []).some((thread) => (thread.messages || []).some((message) => message.id === targetEntityId));
+    case "communication": return hasId(db.commSends, targetEntityId);
+    case "general": return false;
+  }
+  const exhaustive: never = targetEntityType;
+  return exhaustive;
 }
 
 function assertUploadTargetReady(
   db: RDashDatabase,
-  targetEntityType: string,
+  targetEntityType: FileAttachmentEntityType,
   targetEntityId: string,
   purpose: UploadPurpose,
 ) {
   // Diagnostics and import-source retention intentionally use synthetic targets.
   if (purpose === "diagnostic" || purpose === "import_source") return;
-  const collection = TARGET_COLLECTIONS[targetEntityType];
-  if (!collection) return;
-  if (!targetRows(db, collection).some((row) => String(row.id || "") === targetEntityId)) {
+  if (targetEntityType === "general" || !uploadTargetExists(db, targetEntityType, targetEntityId)) {
     throw new Error("TARGET_NOT_READY:Save the related record before its Drive upload starts.");
   }
 }
