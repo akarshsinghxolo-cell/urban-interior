@@ -167,7 +167,9 @@ describe("delta journal migration and API contract", () => {
     const route = await Bun.file("src/app/api/changes/route.ts").text();
     expect(route).toContain("requireSession(request)");
     expect(route).toContain('searchParams.get("afterRevision")');
-    expect(route).toContain("getWorkspaceChanges(afterRevision, collections || undefined)");
+    expect(route).toContain("getWorkspaceChanges(");
+    expect(route).toContain("DIRECTORY_PROJECTION_COLLECTIONS");
+    expect(route).toContain("canReadFullStaff ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
     expect(route).toContain('"Cache-Control": "no-store"');
     expect(route).toContain("status: 400");
@@ -183,6 +185,8 @@ describe("delta journal migration and API contract", () => {
     expect(source).toContain("revision_too_old");
     expect(source).toContain("journal_gap");
     expect(source).toContain("invalid_journal");
+    expect(source).toContain("projection_changed");
+    expect(source).toContain("refreshOnOmittedCollections");
     expect(source).toContain("PostgreSQL deletes every collection");
   });
 
