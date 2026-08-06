@@ -6,7 +6,7 @@ import { resolveEntityContext } from "../entity-context";
 import type { EntityFileAttachment, FileAsset, FileAttachmentEntityType, StorageFolderInstance } from "../types";
 import type { FinalizeUploadRequest, FinalizedUploadResult, GoogleFileId, UploadPurpose } from "@/lib/uploads/upload-types";
 import { DRIVE_API, destinationSegments, driveFetch, ensureFolderPath, nowIso } from "./direct-upload-storage";
-import { bumpWorkspaceRevision, updateAttachmentField, upsertEntityRow } from "./direct-upload-persistence";
+import { bumpWorkspaceRevision, updateAttachmentField, upsertEntityRow, withUploadCommitContext } from "./direct-upload-persistence";
 
 type UploadItemRow = Record<string, unknown>;
 
@@ -61,6 +61,96 @@ function assertFinalizationIdentity(item: UploadItemRow, input: FinalizeUploadRe
   return { serverTargetType, serverTargetId, serverPurpose };
 }
 
+function finalizedResult(item: UploadItemRow, asset: FileAsset, attachment: EntityFileAttachment, verifiedAt: string): FinalizedUploadResult {
+  return {
+    uploadBatchId: String(item.batch_id) as FinalizedUploadResult["uploadBatchId"],
+    uploadItemId: String(item.id) as FinalizedUploadResult["uploadItemId"],
+    googleFileId: String(asset.google_file_id || item.google_file_id) as FinalizedUploadResult["googleFileId"],
+    fileAssetId: String(item.file_asset_id) as FinalizedUploadResult["fileAssetId"],
+    attachmentId: String(item.attachment_id) as FinalizedUploadResult["attachmentId"],
+    storageAccountId: String(asset.storage_account_id || item.storage_account_id),
+    storageFolderId: asset.storage_folder_instance_id || "",
+    webViewLink: asset.web_view_link,
+    thumbnailLink: asset.thumbnail_url,
+    fileName: asset.file_name,
+    mimeType: asset.mime_type || "application/octet-stream",
+    sizeBytes: asset.file_size_bytes || Number(item.size_bytes),
+    verifiedAt,
+    fileAsset: asset,
+    attachment,
+  };
+}
+
+async function markUploadCompleted(
+  admin: ReturnType<typeof getSupabaseAdminClient>,
+  item: UploadItemRow,
+  result: FinalizedUploadResult,
+  finalFolderId?: string,
+): Promise<void> {
+  const timestamp = nowIso();
+  const update: Record<string, unknown> = {
+    status: "completed",
+    google_file_id: result.googleFileId,
+    confirmed_bytes: result.sizeBytes,
+    progress: 100,
+    verified_at: result.verifiedAt || timestamp,
+    finalized_at: timestamp,
+    updated_at: timestamp,
+  };
+  if (finalFolderId) update.final_folder_id = finalFolderId;
+
+  const { error: updateError } = await admin.from("uc_upload_items")
+    .update(update)
+    .eq("id", String(item.id));
+  if (updateError) throw new Error(updateError.message);
+
+  const { count, error: countError } = await admin.from("uc_upload_items").select("id", { count: "exact", head: true })
+    .eq("batch_id", String(item.batch_id))
+    .neq("status", "completed")
+    .neq("status", "cancelled");
+  if (countError) {
+    console.warn("[upload-finalize] Could not count remaining batch items", countError.message);
+  } else if (!count) {
+    const { error: batchError } = await admin.from("uc_upload_batches")
+      .update({ status: "completed", updated_at: timestamp })
+      .eq("id", String(item.batch_id));
+    if (batchError) console.warn("[upload-finalize] Could not mark batch completed", batchError.message);
+  }
+
+  const { error: eventError } = await admin.from("uc_upload_events").insert({
+    upload_item_id: String(item.id),
+    event_type: "completed",
+    detail: {
+      googleFileId: result.googleFileId,
+      fileAssetId: result.fileAssetId,
+      attachmentId: result.attachmentId,
+      finalFolderId,
+    },
+    created_at: timestamp,
+  });
+  if (eventError) console.warn("[upload-finalize] Could not write completion event", eventError.message);
+}
+
+async function registeredResult(
+  admin: ReturnType<typeof getSupabaseAdminClient>,
+  item: UploadItemRow,
+  input: FinalizeUploadRequest,
+): Promise<FinalizedUploadResult | null> {
+  const [{ data: assetRow, error: assetError }, { data: attachmentRow, error: attachmentError }] = await Promise.all([
+    admin.from("entity_master_fileAssets").select("data").eq("id", String(item.file_asset_id)).maybeSingle(),
+    admin.from("entity_entityFileAttachments").select("data").eq("id", String(item.attachment_id)).maybeSingle(),
+  ]);
+  if (assetError) throw new Error(assetError.message);
+  if (attachmentError) throw new Error(attachmentError.message);
+  if (!assetRow?.data || !attachmentRow?.data) return null;
+
+  const asset = assetRow.data as FileAsset;
+  const attachment = attachmentRow.data as EntityFileAttachment;
+  if (asset.google_file_id !== String(input.googleFileId)) return null;
+  if (attachment.id !== String(item.attachment_id) || attachment.file_asset_id !== asset.id) return null;
+  return finalizedResult(item, asset, attachment, String(item.verified_at || item.updated_at || nowIso()));
+}
+
 export async function finalizeDirectUpload(user: AuthenticatedUser, input: FinalizeUploadRequest): Promise<FinalizedUploadResult> {
   const admin = getSupabaseAdminClient();
   const { data: rawItem, error } = await admin.from("uc_upload_items").select("*").eq("id", input.uploadItemId).maybeSingle();
@@ -69,34 +159,17 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
   const item = rawItem as UploadItemRow;
   const { serverTargetType, serverTargetId, serverPurpose } = assertFinalizationIdentity(item, input);
 
-  if (item.status === "completed") {
-    const [{ data: assetRow, error: assetError }, { data: attachmentRow, error: attachmentError }] = await Promise.all([
-      admin.from("entity_master_fileAssets").select("data").eq("id", String(item.file_asset_id)).maybeSingle(),
-      admin.from("entity_entityFileAttachments").select("data").eq("id", String(item.attachment_id)).maybeSingle(),
-    ]);
-    if (assetError) throw new Error(assetError.message);
-    if (attachmentError) throw new Error(attachmentError.message);
-    if (assetRow?.data && attachmentRow?.data) {
-      const asset = assetRow.data as FileAsset;
-      const attachment = attachmentRow.data as EntityFileAttachment;
-      return {
-        uploadBatchId: String(item.batch_id) as FinalizedUploadResult["uploadBatchId"],
-        uploadItemId: String(item.id) as FinalizedUploadResult["uploadItemId"],
-        googleFileId: String(item.google_file_id) as FinalizedUploadResult["googleFileId"],
-        fileAssetId: String(item.file_asset_id) as FinalizedUploadResult["fileAssetId"],
-        attachmentId: String(item.attachment_id) as FinalizedUploadResult["attachmentId"],
-        storageAccountId: String(item.storage_account_id),
-        storageFolderId: asset.storage_folder_instance_id || "",
-        webViewLink: asset.web_view_link,
-        thumbnailLink: asset.thumbnail_url,
-        fileName: asset.file_name,
-        mimeType: asset.mime_type || "application/octet-stream",
-        sizeBytes: asset.file_size_bytes || Number(item.size_bytes),
-        verifiedAt: String(item.verified_at || item.updated_at),
-        fileAsset: asset,
-        attachment,
-      };
+  // If workspace persistence succeeded but the final uc_upload_items update did
+  // not, recover from the already-registered rows instead of redoing Drive moves
+  // and workspace writes. This also keeps completed finalization idempotent.
+  const existingResult = await registeredResult(admin, item, input);
+  if (existingResult) {
+    if (item.status !== "completed") {
+      await markUploadCompleted(admin, item, existingResult, item.final_folder_id ? String(item.final_folder_id) : undefined);
     }
+    return existingResult;
+  }
+  if (item.status === "completed") {
     throw new Error("The completed upload is missing its registered FileAsset or attachment.");
   }
 
@@ -204,67 +277,24 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
     updated_at: timestamp,
   };
 
-  await upsertEntityRow("entity_master_storageFolderInstances", folderInstance.id, folderInstance, user);
-  await upsertEntityRow("entity_master_fileAssets", asset.id, asset, user);
-  await upsertEntityRow("entity_entityFileAttachments", attachment.id, attachment, user);
-  await updateAttachmentField(
-    user,
-    serverTargetType,
-    serverTargetId,
-    input.attachmentField || (item.attachment_field ? String(item.attachment_field) : undefined),
-    input.attachmentFieldMode || (item.attachment_field_mode as "set" | "append" | undefined),
-    attachment.id,
-  );
-  await bumpWorkspaceRevision();
-
-  const { error: updateError } = await admin.from("uc_upload_items").update({
-    status: "completed",
-    google_file_id: file.id,
-    final_folder_id: destination.id,
-    confirmed_bytes: Number(file.size || item.size_bytes),
-    progress: 100,
-    verified_at: timestamp,
-    finalized_at: timestamp,
-    updated_at: timestamp,
-  }).eq("id", String(item.id));
-  if (updateError) throw new Error(updateError.message);
-
-  const { count, error: countError } = await admin.from("uc_upload_items").select("id", { count: "exact", head: true })
-    .eq("batch_id", String(item.batch_id))
-    .neq("status", "completed")
-    .neq("status", "cancelled");
-  if (countError) throw new Error(countError.message);
-  if (!count) {
-    const { error: batchError } = await admin.from("uc_upload_batches")
-      .update({ status: "completed", updated_at: timestamp })
-      .eq("id", String(item.batch_id));
-    if (batchError) throw new Error(batchError.message);
-  }
-
-  await admin.from("uc_upload_events").insert({
-    upload_item_id: String(item.id),
-    event_type: "completed",
-    detail: { googleFileId: file.id, fileAssetId: asset.id, attachmentId: attachment.id, finalFolderId: destination.id },
-    created_at: timestamp,
+  await withUploadCommitContext(async () => {
+    await upsertEntityRow("entity_master_storageFolderInstances", folderInstance.id, folderInstance, user);
+    await upsertEntityRow("entity_master_fileAssets", asset.id, asset, user);
+    await upsertEntityRow("entity_entityFileAttachments", attachment.id, attachment, user);
+    await updateAttachmentField(
+      user,
+      serverTargetType,
+      serverTargetId,
+      input.attachmentField || (item.attachment_field ? String(item.attachment_field) : undefined),
+      input.attachmentFieldMode || (item.attachment_field_mode as "set" | "append" | undefined),
+      attachment.id,
+    );
+    await bumpWorkspaceRevision();
   });
 
-  return {
-    uploadBatchId: String(item.batch_id) as FinalizedUploadResult["uploadBatchId"],
-    uploadItemId: String(item.id) as FinalizedUploadResult["uploadItemId"],
-    googleFileId: file.id as FinalizedUploadResult["googleFileId"],
-    fileAssetId: asset.id as FinalizedUploadResult["fileAssetId"],
-    attachmentId: attachment.id as FinalizedUploadResult["attachmentId"],
-    storageAccountId: account.id,
-    storageFolderId: folderInstance.id,
-    webViewLink: asset.web_view_link,
-    thumbnailLink: asset.thumbnail_url,
-    fileName: asset.file_name,
-    mimeType: asset.mime_type || "application/octet-stream",
-    sizeBytes: asset.file_size_bytes || 0,
-    verifiedAt: timestamp,
-    fileAsset: asset,
-    attachment,
-  };
+  const result = finalizedResult(item, asset, attachment, timestamp);
+  await markUploadCompleted(admin, item, result, destination.id);
+  return result;
 }
 
 export async function cancelDirectUpload(user: AuthenticatedUser, uploadItemId: string, clientGoogleFileId?: GoogleFileId): Promise<void> {
