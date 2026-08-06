@@ -27,6 +27,22 @@ function extension(name: string) {
     return dot >= 0 ? value.slice(dot + 1) : "";
 }
 
+function publicDriveViewUrl(fileId: string) {
+    return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/view`;
+}
+
+function publicDrivePreviewUrl(fileId: string) {
+    return `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview`;
+}
+
+function publicDriveThumbnailUrl(fileId: string, width: number) {
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${width}`;
+}
+
+function publicDriveDownloadUrl(fileId: string) {
+    return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+}
+
 export function fileKind(file: FilePreviewSource) {
     const mime = (file.mimeType || "").toLowerCase();
     const ext = extension(file.fileName);
@@ -40,32 +56,30 @@ export function fileKind(file: FilePreviewSource) {
 }
 
 export function managedPreviewUrl(file: FilePreviewSource) {
-    if (file.googleFileId) {
-        if (fileKind(file) === "pdf")
-            return `/api/google-drive/open?fileId=${encodeURIComponent(file.googleFileId)}&mode=preview`;
-        return `/api/google-drive/preview?fileId=${encodeURIComponent(file.googleFileId)}`;
-    }
+    if (file.googleFileId)
+        return publicDrivePreviewUrl(file.googleFileId);
     return file.url || "";
 }
 
 export function managedThumbnailUrl(file: FilePreviewSource, width = 360) {
-    if (file.googleFileId)
-        return `/api/google-drive/thumbnail?fileId=${encodeURIComponent(file.googleFileId)}&w=${Math.max(120, Math.min(720, Math.round(width)))}`;
+    if (file.googleFileId) {
+        const safeWidth = Math.max(120, Math.min(1600, Math.round(width)));
+        return publicDriveThumbnailUrl(file.googleFileId, safeWidth);
+    }
     return file.thumbnailUrl || (fileKind(file) === "image" ? file.url || "" : "");
 }
 
 export function managedOpenUrl(file: FilePreviewSource) {
-    // Managed Drive files always pass through an Urban Castle authorization
-    // check before the browser is redirected to Google. External Drive links
-    // remain external references and keep their original URL behavior.
+    if (file.url)
+        return file.url;
     if (file.googleFileId)
-        return `/api/google-drive/open?fileId=${encodeURIComponent(file.googleFileId)}`;
-    return file.url || "";
+        return publicDriveViewUrl(file.googleFileId);
+    return "";
 }
 
 export function managedDownloadUrl(file: FilePreviewSource) {
     if (file.googleFileId)
-        return `/api/google-drive/download?fileId=${encodeURIComponent(file.googleFileId)}`;
+        return publicDriveDownloadUrl(file.googleFileId);
     return "";
 }
 
@@ -88,17 +102,19 @@ function FileViewer({ file, open, onOpenChange }: {
     const previewUrl = managedPreviewUrl(file);
     const driveUrl = managedOpenUrl(file);
     const downloadUrl = managedDownloadUrl(file);
+    const publicDrivePreview = Boolean(file.googleFileId);
     return (<Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100vh-2rem)] max-w-6xl overflow-hidden p-0 sm:max-w-6xl">
         <DialogHeader className="border-b border-border px-5 py-4 pr-12">
           <DialogTitle className="truncate text-base">{file.fileName}</DialogTitle>
-          <DialogDescription className="sr-only">Full preview loaded on demand from managed Google Drive.</DialogDescription>
+          <DialogDescription className="sr-only">Full preview loaded directly from Google Drive or the selected local file.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[calc(100vh-9rem)] min-h-72 overflow-auto bg-muted/30 p-3">
-          {kind === "image" && previewUrl ? <img src={previewUrl} alt={file.fileName} className="mx-auto max-h-[calc(100vh-12rem)] max-w-full rounded-md object-contain"/> : null}
-          {kind === "video" && previewUrl ? <video src={previewUrl} controls preload="metadata" className="mx-auto max-h-[calc(100vh-12rem)] max-w-full rounded-md bg-black"/> : null}
-          {kind === "pdf" && previewUrl ? <iframe title={`Preview ${file.fileName}`} src={previewUrl} className="h-[calc(100vh-12rem)] min-h-[32rem] w-full rounded-md border border-border bg-white"/> : null}
-          {kind === "document" ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-center"><IconForKind kind={kind}/><p className="max-w-sm text-sm text-muted-foreground">This file does not have an inline preview. Open the managed Drive file to view it.</p></div> : null}
+          {publicDrivePreview && previewUrl ? <iframe title={`Preview ${file.fileName}`} src={previewUrl} allow="autoplay; fullscreen" className="h-[calc(100vh-12rem)] min-h-[32rem] w-full rounded-md border border-border bg-white"/> : null}
+          {!publicDrivePreview && kind === "image" && previewUrl ? <img src={previewUrl} alt={file.fileName} className="mx-auto max-h-[calc(100vh-12rem)] max-w-full rounded-md object-contain"/> : null}
+          {!publicDrivePreview && kind === "video" && previewUrl ? <video src={previewUrl} controls preload="metadata" className="mx-auto max-h-[calc(100vh-12rem)] max-w-full rounded-md bg-black"/> : null}
+          {!publicDrivePreview && kind === "pdf" && previewUrl ? <iframe title={`Preview ${file.fileName}`} src={previewUrl} className="h-[calc(100vh-12rem)] min-h-[32rem] w-full rounded-md border border-border bg-white"/> : null}
+          {!publicDrivePreview && kind === "document" ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-center"><IconForKind kind={kind}/><p className="max-w-sm text-sm text-muted-foreground">This file does not have an inline preview. Open the file to view it.</p></div> : null}
         </div>
         <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
           {downloadUrl ? <a href={downloadUrl} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-primary hover:bg-accent/40"><Download className="h-3.5 w-3.5"/>Download</a> : null}
