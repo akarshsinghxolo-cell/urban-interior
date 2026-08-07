@@ -54,16 +54,13 @@ function scopeForArticle(master: Master, articleId: string) {
 }
 
 function canonicalStatusRate(rate: VendorRate, status: VendorRate["status"], timestamp: string): VendorRate {
-  const amount = vendorQuotedRate(rate);
   return {
     id: rate.id,
     vendor_id: rate.vendor_id,
     article_id: rate.article_id,
     article_name: rate.article_name,
-    work_required_article_id: rate.work_required_article_id,
     variant_id: rate.variant_id,
-    quoted_rate: amount,
-    rate: amount,
+    rate: vendorQuotedRate(rate),
     status,
     created_at: rate.created_at || rate.updated_at || timestamp,
     updated_at: timestamp,
@@ -171,7 +168,7 @@ export function VendorPriceMasterModule() {
       kind: "update",
       source_module: "vendorRates",
       reason: `Quoted rate changed by ${actor.name}`,
-      changes: [{ field: "quoted_rate", before, after: amount }],
+      changes: [{ field: "rate", before, after: amount }],
     });
   };
 
