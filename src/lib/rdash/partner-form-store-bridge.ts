@@ -90,9 +90,20 @@ function install(): () => void {
       | undefined;
     if (!before) return originalUpdateVendor(id, suppliedPatch as never);
 
+    // The canonical Vendor form deliberately does not expose referral/source
+    // editing. Do not interpret its undefined source fields as an instruction
+    // to erase existing relationship attribution while editing other details.
+    const scopedPatch = { ...suppliedPatch };
+    if (scopedPatch.source_partner_id === undefined) {
+      delete scopedPatch.source_partner_id;
+    }
+    if (scopedPatch.source_partner_name === undefined) {
+      delete scopedPatch.source_partner_name;
+    }
+
     const patch = vendorLegacyMigrationPatch(
       before,
-      suppliedPatch,
+      scopedPatch,
       state.db.master.articles,
     );
     const after = { ...before, ...patch };
