@@ -94,7 +94,7 @@ export function RateFinderModule() {
 
             for (const selected of summary.selected) {
                 const vendor = db.master.vendors.find((entry) => entry.id === selected.vendorId);
-                const vendorRate = selected.normalizedLandedRate ?? Number.NaN;
+                const vendorRate = selected.normalizedQuotedRate ?? Number.NaN;
                 const diff = baseRate != null && Number.isFinite(vendorRate) ? vendorRate - baseRate : undefined;
                 const diffPct = baseRate && diff != null ? (diff / baseRate) * 100 : undefined;
                 const rawUnit = unitById.get(selected.rawUnitId || "")?.symbol || selected.rawUnitId || defaultUnit;
@@ -238,7 +238,6 @@ export function RateFinderModule() {
     </div>);
 }
 
-// H: "Use in quotation" dialog — pick a draft quotation + line and apply the Vendor quoted rate.
 function UseInQuotationDialog({ rate, db, onClose, onApply, onOpenQuotations }: {
     rate: RateRow;
     db: import("@/lib/rdash/types").RDashDatabase;
