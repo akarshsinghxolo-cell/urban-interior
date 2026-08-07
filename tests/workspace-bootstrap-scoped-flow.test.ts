@@ -139,6 +139,15 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(boundary).toContain("workspaceReadState.recordResponse(response, requestedTarget)");
   });
 
+  test("does not present omitted scoped collections as real zero totals", async () => {
+    const app = await Bun.file("src/components/rdash/RDashApp.tsx").text();
+    expect(app).toContain("loadedWorkspaceCollections(db)");
+    expect(app).toContain('loadedCollections && !loadedCollections.has(collection) ? "—" : String(count)');
+    expect(app).toContain('collectionCount("customers", db.customers.length)');
+    expect(app).toContain('collectionCount("workOrders", db.workOrders.length)');
+    expect(app).toContain('collectionCount("purchaseOrders", db.purchaseOrders.length)');
+  });
+
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {
     const helper = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain('request.headers.get("x-uc-workspace-module")');
