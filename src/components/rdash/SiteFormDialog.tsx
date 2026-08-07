@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";
+import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { MapView } from "@/components/rdash/MapView";
 const SITE_TYPES: Array<{
     value: Site["site_type"];
@@ -172,19 +173,15 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         setLocationSearch(result.display_name);
         setSearchResults([]);
     };
-    const captureGps = () => {
-        if (!navigator.geolocation) {
-            toast.error("GPS is not available on this device");
-            return;
-        }
+    const captureGps = async () => {
         setGpsLoading(true);
-        navigator.geolocation.getCurrentPosition((position) => {
-            const latitude = position.coords.latitude;
-            const longitude = position.coords.longitude;
+        try {
+            const capture = await captureDeviceGps({ mode: "master-location" });
+            const { latitude, longitude } = capture;
             applyCoordinates(latitude, longitude);
             setGpsLoading(false);
-            toast.success("Site GPS captured");
-            reverseGeocodeWithNominatim(latitude, longitude)
+            toast.success(`Site GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+            void reverseGeocodeWithNominatim(latitude, longitude)
                 .then((data) => {
                 const location = data?.address || {};
                 setDraft((current) => ({
@@ -193,12 +190,15 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
                     city: location.city || location.town || location.village || current.city,
                     locality: location.suburb || location.neighbourhood || current.locality,
                 }));
+                if (data?.display_name)
+                    setLocationSearch(data.display_name);
             })
                 .catch(() => undefined);
-        }, (error) => {
+        }
+        catch (error) {
             setGpsLoading(false);
-            toast.error(`GPS error: ${error.message}`);
-        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+            toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+        }
     };
     const addPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(event.target.files || []);

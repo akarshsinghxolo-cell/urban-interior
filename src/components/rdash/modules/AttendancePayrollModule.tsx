@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
+import { captureDevicePosition, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { MapView } from "../MapView";
 import type { SalaryAdjustment } from "@/lib/rdash/types";
 function ymd(value: Date) {
@@ -150,27 +151,23 @@ export function AttendancePayrollModule() {
     const totalAbsent = db.attendance.filter((record) => record.status === "absent" && record.date === ymd(new Date())).length;
     const totalPayroll = staffWithAttendance.reduce((sum, staff) => sum + staff.monthlySalary, 0);
     const totalEarned = staffWithAttendance.reduce((sum, staff) => sum + staff.earnedThisMonth, 0);
-    const capturePosition = (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {
-        if (!navigator.geolocation) {
-            toast.error("Device GPS is required for this attendance action.");
-            return;
-        }
+    const capturePosition = async (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {
         setCapturing(action);
-        navigator.geolocation.getCurrentPosition((position) => {
-        if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
-            try {
-                callback(position);
-            }
-            catch (error) {
-                toast.error(error instanceof Error ? error.message : "Attendance could not be verified.");
-            }
-            finally {
+        try {
+            const position = await captureDevicePosition({
+                mode: action === "office" ? "master-location" : "transaction",
+            });
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            callback(position);
+        }
+        catch (error) {
+            if (!disposedRef.current)
+                toast.error(`Device GPS is required: ${deviceGpsErrorMessage(error)}`);
+        }
+        finally {
+            if (!disposedRef.current)
                 setCapturing(null);
-            }
-        }, (error) => {
-            setCapturing(null);
-            toast.error(`Device GPS is required: ${error.message}`);
-        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        }
     };
     const startAttendance = () => {
         if (attendanceMode === "field_visit" && !selectedVisitId) {

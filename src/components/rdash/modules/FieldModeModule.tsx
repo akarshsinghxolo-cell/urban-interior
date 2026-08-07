@@ -14,6 +14,9 @@ import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
+import { captureDeviceGps, deviceGpsErrorMessage, watchDevicePosition } from "@/lib/rdash/device-gps";
+import { distanceMeters } from "@/lib/rdash/gps";
+import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 export function FieldModeModule() {
     const db = useRDashStore((s) => s.db);
     const checkIn = useRDashStore((s) => s.checkInVisit);
@@ -29,6 +32,7 @@ export function FieldModeModule() {
     const currentUser = useRDashStore((s) => s.currentUser);
     const user = currentUser();
     const attendancePolicy = db.master.staff.find((staff) => staff.id === user.staffId)?.attendance_policy;
+    const normalizedAttendancePolicy = React.useMemo(() => normalizeAttendancePolicy(attendancePolicy), [attendancePolicy]);
     React.useEffect(() => {
         if (user.role !== "Owner" && user.role !== "Operations Manager")
             return;
@@ -67,20 +71,22 @@ export function FieldModeModule() {
         return active?.id || null;
     }, [db.visits, canManageAll, user.staffId]);
     React.useEffect(() => {
-        if (!activeVisitId || !navigator.geolocation)
+        if (!activeVisitId || typeof navigator === "undefined" || !navigator.geolocation)
             return;
-        const watchId = navigator.geolocation.watchPosition((position) => {
+        const stopWatching = watchDevicePosition((position) => {
             const now = Date.now();
             if (now - lastTrackingPointAt.current < 30000)
                 return;
+            if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy <= 0 || position.coords.accuracy > normalizedAttendancePolicy.max_gps_accuracy_m)
+                return;
             try {
-                recordTrackingPoint(activeVisitId, { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, captured_at: new Date().toISOString() });
+                recordTrackingPoint(activeVisitId, { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, captured_at: new Date(position.timestamp || Date.now()).toISOString() });
                 lastTrackingPointAt.current = now;
             }
             catch { }
-        }, () => undefined, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
-        return () => navigator.geolocation.clearWatch(watchId);
-    }, [activeVisitId, recordTrackingPoint]);  // STAGE-4-FIX: deps [activeVisitId, recordTrackingPoint]
+        }, () => undefined);
+        return stopWatching;
+    }, [activeVisitId, normalizedAttendancePolicy.max_gps_accuracy_m, recordTrackingPoint]);
     const visitMapPoints: MapPoint[] = React.useMemo(() => sorted.map((visit, index) => {
         const coordinates = visitPrimaryCoordinates(visit);
         return {
@@ -147,78 +153,52 @@ export function FieldModeModule() {
         if (item) await cancelQueuedWorkflowFile(item);
         setPhotos((current) => current.filter((_, index) => index !== idx));
     };
-    const handleCheckIn = (v: (typeof sorted)[number]) => {
+    const handleCheckIn = async (v: (typeof sorted)[number]) => {
         if (v.planned_latitude == null || v.planned_longitude == null) {
             toast.error("This Visit has no verified Site GPS. Add Site coordinates before check-in.");
             return;
         }
-        if (!navigator.geolocation) {
-            toast.error("Device GPS is required for field check-in.");
-            return;
-        }
         setGpsStatus("capturing");
         setCapturingVisitId(v.id);
-        navigator.geolocation.getCurrentPosition((position) => {
+        try {
+            const capture = await captureDeviceGps({ mode: "transaction" });
             if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
-            try {
-                checkIn(v.id, {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy_m: position.coords.accuracy,
-                    captured_at: new Date().toISOString(),
-                });
-                setGpsStatus("captured");
-                toast.success("Verified field check-in recorded");
-                setTimeout(() => setGpsStatus("idle"), 1500);
-            }
-            catch (error) {
-                toast.error(error instanceof Error
-                    ? error.message
-                    : "Field check-in could not be verified.");
+            checkIn(v.id, capture);
+            setGpsStatus("captured");
+            toast.success("Verified field check-in recorded");
+            setTimeout(() => setGpsStatus("idle"), 1500);
+        }
+        catch (error) {
+            if (!disposedRef.current) {
+                toast.error(deviceGpsErrorMessage(error));
                 setGpsStatus("idle");
             }
-            finally {
+        }
+        finally {
+            if (!disposedRef.current)
                 setCapturingVisitId(null);
-            }
-        }, (error) => {
-            setGpsStatus("idle");
-            setCapturingVisitId(null);
-            toast.error(`Device GPS is required for check-in: ${error.message}`);
-        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        }
     };
-    const handleCheckOut = (v: (typeof sorted)[number]) => {
-        if (!navigator.geolocation) {
-            toast.error("Device GPS is required for field check-out.");
-            return;
-        }
+    const handleCheckOut = async (v: (typeof sorted)[number]) => {
         setGpsStatus("capturing");
         setCapturingVisitId(v.id);
-        navigator.geolocation.getCurrentPosition((position) => {
+        try {
+            const capture = await captureDeviceGps({ mode: "transaction" });
             if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
-            try {
-                checkOut(v.id, {
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracy_m: position.coords.accuracy,
-                    captured_at: new Date().toISOString(),
-                });
-                toast.success("Verified field check-out recorded — file report within 2h");
-                setReportingVisit(v.id);
-            }
-            catch (error) {
-                toast.error(error instanceof Error
-                    ? error.message
-                    : "Field check-out could not be verified.");
-            }
-            finally {
+            checkOut(v.id, capture);
+            toast.success("Verified field check-out recorded — file report within 2h");
+            setReportingVisit(v.id);
+        }
+        catch (error) {
+            if (!disposedRef.current)
+                toast.error(deviceGpsErrorMessage(error));
+        }
+        finally {
+            if (!disposedRef.current) {
                 setGpsStatus("idle");
                 setCapturingVisitId(null);
             }
-        }, (error) => {
-            setGpsStatus("idle");
-            setCapturingVisitId(null);
-            toast.error(`Device GPS is required for check-out: ${error.message}`);
-        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        }
     };
     const handleFileReport = async () => {
         if (!reportingVisit) return;
@@ -244,61 +224,56 @@ export function FieldModeModule() {
     const activeVisit = db.visits.find((visit) => visit.id === reportingVisit);
     const pendingReports = db.visits.filter((visit) => canOperateVisit(visit) && visit.status === "report_pending" && !visit.report_filed);
     const [quickCheckInProgress, setQuickCheckInProgress] = React.useState(false);
-    /** Finds the nearest registered Site within 500m, creates a Visit, and checks it in with the captured GPS. */
-    const handleQuickCheckIn = () => {
-        if (!navigator.geolocation) {
-            toast.error("Device GPS is required for quick check-in.");
-            return;
-        }
+    /** Finds the nearest registered Site inside the configured Visit geofence, creates a Visit, and checks it in. */
+    const handleQuickCheckIn = async () => {
         if (!user.staffId) {
             toast.error("Quick check-in requires a linked staff profile.");
             return;
         }
         setQuickCheckInProgress(true);
-        navigator.geolocation.getCurrentPosition((position) => {
+        try {
+            const capture = await captureDeviceGps({
+                mode: "transaction",
+                maxAccuracyM: normalizedAttendancePolicy.max_gps_accuracy_m,
+            });
             if (disposedRef.current) return;
-            const { latitude, longitude, accuracy } = position.coords;
+            const { latitude, longitude } = capture;
+            const quickCheckInRadiusM = normalizedAttendancePolicy.visit_geofence_radius_m;
             const candidates = db.sites
                 .filter((site) => Number.isFinite(site.latitude) && Number.isFinite(site.longitude))
-                .map((site) => {
-                    const radiusM = 6371000;
-                    const toRad = (degrees: number) => (degrees * Math.PI) / 180;
-                    const deltaLat = toRad(site.latitude! - latitude);
-                    const deltaLon = toRad(site.longitude! - longitude);
-                    const haversine = Math.sin(deltaLat / 2) ** 2 + Math.cos(toRad(latitude)) * Math.cos(toRad(site.latitude!)) * Math.sin(deltaLon / 2) ** 2;
-                    return { site, distanceM: 2 * radiusM * Math.asin(Math.sqrt(haversine)) };
-                })
-                .filter((candidate) => candidate.distanceM <= 500)
+                .map((site) => ({
+                    site,
+                    distanceM: distanceMeters(latitude, longitude, site.latitude!, site.longitude!),
+                }))
+                .filter((candidate) => candidate.distanceM <= quickCheckInRadiusM)
                 .sort((a, b) => a.distanceM - b.distanceM);
             if (!candidates.length) {
-                toast.error("No site within 500m of your GPS. Schedule a visit first or move closer to a registered site.");
-                setQuickCheckInProgress(false);
+                toast.error(`No site within ${quickCheckInRadiusM}m of your GPS. Schedule a visit first or move closer to a registered site.`);
                 return;
             }
             const nearest = candidates[0];
-            try {
-                const visitId = addVisit({
-                    customer_id: nearest.site.customer_id,
-                    site_id: nearest.site.id,
-                    staff_id: user.staffId,
-                    staff_name: user.name,
-                    assignee_type: "staff",
-                    visit_type: "site_visit",
-                    scheduled_at: new Date().toISOString(),
-                    scheduled_duration_minutes: 60,
-                    notes: `Quick check-in auto-created at ${new Date().toLocaleString("en-IN")} · ${Math.round(nearest.distanceM)}m from registered site.`,
-                });
-                checkIn(visitId, { latitude, longitude, accuracy_m: accuracy, captured_at: new Date().toISOString() });
-                toast.success(`Quick check-in at ${nearest.site.name}`, { description: `Auto-created visit · ${Math.round(nearest.distanceM)}m from registered GPS` });
-            } catch (error) {
-                toast.error(error instanceof Error ? error.message : "Quick check-in failed.");
-            } finally {
+            const visitId = addVisit({
+                customer_id: nearest.site.customer_id,
+                site_id: nearest.site.id,
+                staff_id: user.staffId,
+                staff_name: user.name,
+                assignee_type: "staff",
+                visit_type: "site_visit",
+                scheduled_at: new Date().toISOString(),
+                scheduled_duration_minutes: 60,
+                notes: `Quick check-in auto-created at ${new Date().toLocaleString("en-IN")} · ${Math.round(nearest.distanceM)}m from registered site.`,
+            });
+            checkIn(visitId, capture);
+            toast.success(`Quick check-in at ${nearest.site.name}`, { description: `Auto-created visit · ${Math.round(nearest.distanceM)}m from registered GPS` });
+        }
+        catch (error) {
+            if (!disposedRef.current)
+                toast.error(deviceGpsErrorMessage(error));
+        }
+        finally {
+            if (!disposedRef.current)
                 setQuickCheckInProgress(false);
-            }
-        }, (error) => {
-            toast.error(`GPS required for quick check-in: ${error.message}`);
-            setQuickCheckInProgress(false);
-        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        }
     };
     return (<div className="mx-auto flex max-w-2xl flex-col gap-4">
       <div className="flex items-center gap-2.5">
@@ -312,9 +287,8 @@ export function FieldModeModule() {
             filing
           </p>
         </div>
-        {/* H1: Quick check-in at current location — auto-creates a visit if the
-            staff is within 500m of a registered site. */}
-        <Button size="sm" variant="outline" onClick={handleQuickCheckIn} disabled={quickCheckInProgress || !isActiveStaff} className="ml-auto h-8 shrink-0 text-xs" title="Find the nearest site from your GPS and auto-create + check in a visit">
+        {/* Quick check-in uses the same configured Visit geofence radius and GPS accuracy policy as normal field actions. */}
+        <Button size="sm" variant="outline" onClick={handleQuickCheckIn} disabled={quickCheckInProgress || !isActiveStaff} className="ml-auto h-8 shrink-0 text-xs" title={`Find the nearest site within ${normalizedAttendancePolicy.visit_geofence_radius_m}m and auto-create + check in a visit`}>
             <MapPin className="mr-1 h-3.5 w-3.5"/> {quickCheckInProgress ? "Locating…" : "Quick check-in"}
         </Button>
       </div>
