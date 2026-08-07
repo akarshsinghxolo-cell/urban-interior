@@ -2,8 +2,6 @@ import "./types";
 
 declare module "./types" {
   interface Vendor {
-    /** Structured Article Library links supplied by this Vendor. */
-    article_ids?: string[];
     legal_name?: string;
     whatsapp?: string;
     alternate_phone?: string;
@@ -33,8 +31,6 @@ declare module "./types" {
   }
 
   interface VendorRate {
-    /** Canonical quoted value. `rate` remains a compatibility mirror for existing consumers. */
-    quoted_rate?: number;
     created_at?: string;
   }
 }
