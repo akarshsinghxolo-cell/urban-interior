@@ -8,6 +8,7 @@ const dataImport = readFileSync("src/components/rdash/modules/DataImportModule.t
 const partnerEntry = readFileSync("src/components/rdash/EntityFormDialog.tsx", "utf8");
 const partnerHost = readFileSync("src/components/rdash/PartnerFormDialog.tsx", "utf8");
 const vendorForm = readFileSync("src/components/rdash/VendorFormDialog.tsx", "utf8");
+const vendorPriceMatrix = readFileSync("src/components/rdash/modules/VendorPriceMasterModule.tsx", "utf8");
 const vendorProfile = readFileSync("src/lib/rdash/vendor-profile.ts", "utf8");
 const vendorRate = readFileSync("src/lib/rdash/vendor-rate.ts", "utf8");
 const contractorPolicy = readFileSync("src/lib/rdash/contractor-store-policy.ts", "utf8");
@@ -64,6 +65,10 @@ test("Vendor capability and rate code has no runtime legacy aliases", () => {
   expect(vendorRate.includes("valid_until")).toBe(false);
   expect(vendorRate.includes("Compatibility mirror")).toBe(false);
   expect(vendorRate.includes("work_required_article_id: input.change.scope.id")).toBe(false);
+
+  expect(vendorPriceMatrix.includes("quoted_rate")).toBe(false);
+  expect(vendorPriceMatrix.includes("work_required_article_id: rate.work_required_article_id")).toBe(false);
+  expect(vendorPriceMatrix.includes('changes: [{ field: "rate"')).toBe(true);
 });
 
 test("Contractor remains on its independent canonical form and permanent policy boundary", () => {
