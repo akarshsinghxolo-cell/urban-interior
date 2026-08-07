@@ -128,8 +128,9 @@ describe("workspace bootstrap and scoped client reads", () => {
     const rendererIndex = router.indexOf("switch (route.renderer)");
 
     expect(router).toContain("workspaceReadLoadStateForTarget");
-    expect(router).toContain("workspaceReadTargetForPath(pathname)");
+    expect(router).toContain("workspaceReadTargetForActiveNavigation(pathname, currentActiveModuleId)");
     expect(router).toContain("workspaceReadTargetForModule(activeModuleId)");
+    expect(boundary).toContain("workspaceReadTargetForActiveNavigation(pathname, activeModuleId)");
     expect(gateIndex).toBeGreaterThan(-1);
     expect(rendererIndex).toBeGreaterThan(gateIndex);
     expect(boundary).toContain("workspaceReadState.beginRequest(requestedTarget)");
