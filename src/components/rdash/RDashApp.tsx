@@ -6,6 +6,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
 import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
+import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -36,6 +37,9 @@ export function RDashApp() {
     const quickAddOpen = useRDashStore((s) => s.quickAddOpen);
     const setQuickAddOpen = useRDashStore((s) => s.setQuickAddOpen);
     const readState = useWorkspaceReadState();
+    const loadedCollections = React.useMemo(() => loadedWorkspaceCollections(db), [db]);
+    const collectionCount = React.useCallback((collection: string, count: number) =>
+        loadedCollections && !loadedCollections.has(collection) ? "—" : String(count), [loadedCollections]);
     const [secureBootstrapReady, setSecureBootstrapReady] = React.useState(false);
     const [secureWorkspaceError, setSecureWorkspaceError] = React.useState<string | null>(null);
     const secureWorkspaceReady = secureBootstrapReady && readState.scope !== "bootstrap" && readState.mode !== "unknown";
@@ -338,19 +342,19 @@ export function RDashApp() {
               </span>
               <span className="font-semibold text-foreground/80">Urban Castle</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="rd-tabular">{db.customers.length} customers</span>
+            <div className="flex items-center gap-2" title="A dash means that collection is outside the current module's scoped snapshot.">
+              <span className="rd-tabular">{collectionCount("customers", db.customers.length)} customers</span>
               <span className="hidden sm:inline" aria-hidden>
                 ·
               </span>
               <span className="hidden sm:inline rd-tabular">
-                {db.workOrders.length} workOrders
+                {collectionCount("workOrders", db.workOrders.length)} workOrders
               </span>
               <span className="hidden sm:inline" aria-hidden>
                 ·
               </span>
               <span className="hidden sm:inline rd-tabular">
-                {db.purchaseOrders.length} POs
+                {collectionCount("purchaseOrders", db.purchaseOrders.length)} POs
               </span>
             </div>
           </footer>
