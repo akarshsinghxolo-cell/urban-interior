@@ -97,7 +97,11 @@ export type VendorTimelineEvent = {
 
 const compact = (value: unknown) => String(value ?? "").trim();
 const lower = (value: unknown) => compact(value).toLowerCase();
-const digits = (value: unknown) => compact(value).replace(/\D/g, "");
+const rawDigits = (value: unknown) => compact(value).replace(/\D/g, "");
+const indianPhoneDigits = (value: unknown) => {
+  const valueDigits = rawDigits(value);
+  return valueDigits.length === 12 && valueDigits.startsWith("91") ? valueDigits.slice(2) : valueDigits;
+};
 const round = (value: number, digits = 0) => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
@@ -112,6 +116,7 @@ const positiveNumber = (value: unknown) => {
 };
 const average = (values: number[]) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : undefined;
 const clampScore = (value: number) => Math.max(0, Math.min(100, round(value)));
+const uniqueStrings = (values: unknown[]) => [...new Set(values.map((value) => compact(value)).filter(Boolean))];
 
 export function normalizeVendorName(value: unknown) {
   return lower(value)
@@ -134,14 +139,10 @@ export function vendorNameSimilarity(left: unknown, right: unknown) {
   const b = normalizeVendorName(right);
   if (!a || !b) return 0;
   if (a === b) return 1;
-  const aBigrams = bigrams(a);
-  const bBigrams = bigrams(b);
-  const intersection = [...aBigrams].filter((token) => bBigrams.has(token)).length;
-  return (2 * intersection) / Math.max(1, aBigrams.size + bBigrams.size);
-}
-
-function uniqueStrings(values: unknown[]) {
-  return [...new Set(values.map((value) => compact(value)).filter(Boolean))];
+  const leftBigrams = bigrams(a);
+  const rightBigrams = bigrams(b);
+  const intersection = [...leftBigrams].filter((token) => rightBigrams.has(token)).length;
+  return (2 * intersection) / Math.max(1, leftBigrams.size + rightBigrams.size);
 }
 
 function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase): VendorSupplyCapability | undefined {
@@ -170,9 +171,7 @@ function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase): Ve
 
 export function canonicalVendorCapabilities(vendor: VendorProfileRecord, db: RDashDatabase): VendorSupplyCapability[] {
   const structured = Array.isArray(vendor.supply_capabilities) ? vendor.supply_capabilities : [];
-  const normalized = structured
-    .map((row) => normalizeCapability(row, db))
-    .filter((row): row is VendorSupplyCapability => Boolean(row));
+  const normalized = structured.map((row) => normalizeCapability(row, db)).filter((row): row is VendorSupplyCapability => Boolean(row));
   if (normalized.length) return normalized;
 
   return uniqueStrings((vendor.article_ids || []) as string[]).flatMap((articleId) => {
@@ -195,16 +194,8 @@ export function canonicalVendorCapabilities(vendor: VendorProfileRecord, db: RDa
 export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDatabase, options: { id?: string } = {}): VendorProfileRecord {
   const capabilities = canonicalVendorCapabilities(input, db);
   const articleIds = uniqueStrings(capabilities.filter((row) => row.status !== "inactive").map((row) => row.article_id));
-  const categories = uniqueStrings([
-    ...(input.categories || []),
-    ...capabilities.map((row) => row.category_name),
-  ]);
-  const brands = uniqueStrings([
-    ...(input.brands || []),
-    ...capabilities.map((row) => row.brand),
-  ]);
-  const now = new Date().toISOString();
-
+  const categories = uniqueStrings([...(input.categories || []), ...capabilities.map((row) => row.category_name)]);
+  const brands = uniqueStrings([...(input.brands || []), ...capabilities.map((row) => row.brand)]);
   return {
     id: options.id || input.id,
     name: compact(input.name),
@@ -235,16 +226,16 @@ export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDat
     article_ids: articleIds,
     supply_capabilities: capabilities,
     created_at: input.created_at,
-    updated_at: now,
+    updated_at: new Date().toISOString(),
   };
 }
 
 export function vendorProfileValidationError(vendor: VendorProfileRecord) {
   if (!compact(vendor.name)) return "Vendor name is required.";
-  const phone = digits(vendor.phone);
-  if (phone && phone.length !== 10 && !(phone.length === 12 && phone.startsWith("91"))) return "Vendor mobile number must be a valid Indian mobile number.";
-  const alternate = digits(vendor.alternate_phone);
-  if (alternate && alternate.length !== 10 && !(alternate.length === 12 && alternate.startsWith("91"))) return "Alternate mobile number must be a valid Indian mobile number.";
+  const phone = indianPhoneDigits(vendor.phone);
+  if (phone && phone.length !== 10) return "Vendor mobile number must be a valid Indian mobile number.";
+  const alternate = indianPhoneDigits(vendor.alternate_phone);
+  if (alternate && alternate.length !== 10) return "Alternate mobile number must be a valid Indian mobile number.";
   const gstin = compact(vendor.gstin).toUpperCase();
   if (gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) return "GSTIN format is invalid.";
   const email = compact(vendor.email);
@@ -255,7 +246,7 @@ export function vendorProfileValidationError(vendor: VendorProfileRecord) {
 }
 
 export function vendorDuplicateConflicts(db: RDashDatabase, candidate: VendorProfileRecord, excludeId?: string): VendorDuplicateConflict[] {
-  const candidatePhone = digits(candidate.phone);
+  const candidatePhone = indianPhoneDigits(candidate.phone);
   const candidateGstin = compact(candidate.gstin).toUpperCase();
   const candidateLegal = normalizeVendorName(candidate.legal_name);
   return db.master.vendors
@@ -264,7 +255,7 @@ export function vendorDuplicateConflicts(db: RDashDatabase, candidate: VendorPro
       const row = vendor as VendorProfileRecord;
       const reasons: string[] = [];
       let hard = false;
-      if (candidatePhone && digits(row.phone) === candidatePhone) {
+      if (candidatePhone && indianPhoneDigits(row.phone) === candidatePhone) {
         hard = true;
         reasons.push("same mobile number");
       }
@@ -300,7 +291,6 @@ export function buildVendorCommercialProfile(db: RDashDatabase, vendorId: string
   const quoted = activeRates.map(vendorQuotedRate).filter((value) => value > 0);
   const latest = [...activeRates].sort((a, b) => compact((b as any).updated_at).localeCompare(compact((a as any).updated_at)))[0];
   const purchaseOrders = db.purchaseOrders.filter((row) => row.vendor_id === vendorId);
-  const poIds = new Set(purchaseOrders.map((row) => row.id));
   const bills = db.vendorBills.filter((row) => row.vendor_id === vendorId);
   const payments = db.vendorPayments.filter((row) => row.vendor_id === vendorId);
   const deliveryDays = purchaseOrders.flatMap((po: any) => {
@@ -310,8 +300,6 @@ export function buildVendorCommercialProfile(db: RDashDatabase, vendorId: string
   const totalBilledValue = bills.reduce((sum, row: any) => sum + Number(row.total_amount || row.amount || 0), 0);
   const totalPaidValue = payments.reduce((sum, row: any) => sum + Number(row.amount || 0), 0);
   const totalOrderedValue = purchaseOrders.reduce((sum, row: any) => sum + Number(row.total_amount || row.amount || 0), 0);
-  const outstandingValue = Math.max(0, totalBilledValue - totalPaidValue);
-  void poIds;
   return {
     rateCount: rates.length,
     activeRateCount: activeRates.length,
@@ -323,40 +311,40 @@ export function buildVendorCommercialProfile(db: RDashDatabase, vendorId: string
     totalOrderedValue,
     totalBilledValue,
     totalPaidValue,
-    outstandingValue,
+    outstandingValue: Math.max(0, totalBilledValue - totalPaidValue),
     averageActualDeliveryDays: average(deliveryDays),
   };
 }
 
 function relationshipScore(vendor: VendorProfileRecord) {
-  const reliability = lower(vendor.reliability_rating);
-  const delivery = lower(vendor.delivery_time_rating);
   const map = (value: string) => value === "very_good" ? 100 : value === "good" ? 90 : value === "average" ? 70 : value === "bad" || value === "poor" ? 40 : 70;
-  return average([map(reliability), map(delivery)]) || 70;
+  return average([map(lower(vendor.reliability_rating)), map(lower(vendor.delivery_time_rating))]) || 70;
 }
 
 function qualityScoreFromGrns(grns: any[]) {
   if (!grns.length) return 70;
   const scores = grns.map((grn) => {
-    const status = lower(grn.status);
-    if (["rejected", "failed"].includes(status)) return 20;
-    if (["accepted", "received", "completed", "verified"].includes(status)) return 95;
+    const inspection = lower(grn.inspection_status || grn.quality_status);
+    if (["rejected", "failed"].includes(inspection)) return 20;
+    if (["accepted", "approved", "passed", "verified"].includes(inspection)) return 95;
     const mismatch = Number(grn.rejected_qty || grn.short_qty || grn.damaged_qty || 0);
     const received = Number(grn.received_qty || grn.quantity || 0);
     if (received > 0 && mismatch > 0) return Math.max(20, 100 - (mismatch / received) * 100);
+    const status = lower(grn.status);
+    if (["rejected", "failed"].includes(status)) return 20;
+    if (["accepted", "received", "completed", "verified", "matched", "closed"].includes(status)) return 90;
     return 75;
   });
   return clampScore(average(scores) || 70);
 }
 
 function priceScoreForVendor(db: RDashDatabase, vendorId: string) {
-  const vendorRates = db.master.vendorRates.filter((rate) => rate.vendor_id === vendorId && vendorQuotedRate(rate) > 0);
+  const active = (rate: VendorRate) => !rate.status || rate.status === "active";
+  const vendorRates = db.master.vendorRates.filter((rate) => rate.vendor_id === vendorId && active(rate) && vendorQuotedRate(rate) > 0);
   if (!vendorRates.length) return { score: 60, count: 0 };
   const scores = vendorRates.flatMap((rate) => {
-    const keyArticle = rate.article_id;
-    const keyVariant = rate.variant_id || "";
     const comparable = db.master.vendorRates
-      .filter((row) => row.article_id === keyArticle && (row.variant_id || "") === keyVariant && vendorQuotedRate(row) > 0)
+      .filter((row) => active(row) && row.article_id === rate.article_id && (row.variant_id || "") === (rate.variant_id || "") && vendorQuotedRate(row) > 0)
       .map(vendorQuotedRate);
     if (!comparable.length) return [];
     const lowest = Math.min(...comparable);
@@ -366,28 +354,38 @@ function priceScoreForVendor(db: RDashDatabase, vendorId: string) {
   return { score: clampScore(average(scores) || 60), count: scores.length };
 }
 
+function observedDeliveryDate(po: any, grns: any[]) {
+  if (po.actual_delivery) return po.actual_delivery as string;
+  const receipts = grns
+    .filter((grn) => grn.po_id === po.id)
+    .map((grn) => compact(grn.received_at || grn.created_at || grn.updated_at))
+    .filter(Boolean)
+    .sort();
+  return receipts[receipts.length - 1];
+}
+
 export function computeVendorPerformance(db: RDashDatabase, vendorId: string): VendorPerformanceScore {
   const vendor = db.master.vendors.find((row) => row.id === vendorId) as VendorProfileRecord | undefined;
   const purchaseOrders = db.purchaseOrders.filter((row) => row.vendor_id === vendorId);
   const poIds = new Set(purchaseOrders.map((row) => row.id));
-  const delivered = purchaseOrders.filter((row: any) => row.actual_delivery || ["received", "closed", "completed"].includes(lower(row.status)));
-  const onTime = delivered.filter((row: any) => {
-    if (!row.expected_delivery || !row.actual_delivery) return true;
-    return new Date(row.actual_delivery).getTime() <= new Date(row.expected_delivery).getTime();
-  });
-  const deliveryScore = delivered.length ? (onTime.length / delivered.length) * 100 : relationshipScore(vendor || {});
   const grns = db.grns.filter((row: any) => poIds.has(row.po_id));
+  const completed = purchaseOrders.flatMap((po: any) => {
+    const actual = observedDeliveryDate(po, grns);
+    return actual ? [{ po, actual }] : [];
+  });
+  const comparableDeliveries = completed.filter(({ po }: any) => Boolean(po.expected_delivery));
+  const onTime = comparableDeliveries.filter(({ po, actual }: any) => new Date(actual).getTime() <= new Date(po.expected_delivery).getTime());
+  const relationship = clampScore(relationshipScore(vendor || {}));
+  const delivery = comparableDeliveries.length ? clampScore((onTime.length / comparableDeliveries.length) * 100) : relationship;
   const quality = qualityScoreFromGrns(grns);
   const price = priceScoreForVendor(db, vendorId);
-  const relationship = clampScore(relationshipScore(vendor || {}));
-  const overall = clampScore(deliveryScore * 0.4 + quality * 0.3 + price.score * 0.2 + relationship * 0.1);
   return {
-    overall,
-    delivery: clampScore(deliveryScore),
+    overall: clampScore(delivery * 0.4 + quality * 0.3 + price.score * 0.2 + relationship * 0.1),
+    delivery,
     quality,
     price: price.score,
     relationship,
-    completedDeliveries: delivered.length,
+    completedDeliveries: completed.length,
     onTimeDeliveries: onTime.length,
     grnCount: grns.length,
     scoredRateCount: price.count,
@@ -462,7 +460,5 @@ export function buildVendorRelationshipTimeline(db: RDashDatabase, vendorId: str
   payments.forEach((row: any) => events.push({ id: `payment-${row.id}`, at: eventDate(row.paid_at || row.created_at || row.updated_at), kind: "payment", title: `Payment ${row.payment_no || row.id}`, detail: row.reference || row.mode, entityId: row.id, amount: Number(row.amount || 0) || undefined, status: row.status }));
   ((db as any).auditLog || []).filter((row: any) => row.entity_type === "vendor" && row.entity_id === vendorId).forEach((row: any) => events.push({ id: `audit-${row.id}`, at: eventDate(row.timestamp || row.created_at), kind: "audit", title: row.action || "Vendor updated", detail: row.reason, entityId: row.id }));
 
-  return events
-    .filter((event) => event.at)
-    .sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
+  return events.filter((event) => event.at).sort((left, right) => new Date(right.at).getTime() - new Date(left.at).getTime());
 }
