@@ -136,6 +136,7 @@ export function WorkspaceDeltaSync(): null {
 
   React.useEffect(() => {
     if (!DELTA_SYNC_ENABLED || !authUser) return;
+    const target = workspaceReadTargetForPath(pathname);
 
     let disposed = false;
     let inFlight = false;
@@ -192,6 +193,7 @@ export function WorkspaceDeltaSync(): null {
             headers: {
               Accept: "application/json",
               "X-UC-Delta-Client": "workspace-shell",
+              "X-UC-Delta-Module": target.moduleId,
             },
           });
           if (response.status === 401) await redirectToSignin();
