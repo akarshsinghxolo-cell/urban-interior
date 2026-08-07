@@ -44,7 +44,7 @@ function db() {
 }
 
 describe("canonical Vendor profile", () => {
-  test("keeps requested concerns while dropping explicitly excluded business fields", () => {
+  test("keeps only the canonical profile and explicitly requested supply model", () => {
     const state = db();
     const normalized = normalizeVendorForWrite({
       id: "ven-1",
@@ -57,7 +57,7 @@ describe("canonical Vendor profile", () => {
       vendor_type: "distributor",
       status: "active",
       city: " Gorakhpur ",
-      article_ids: ["art-switch"],
+      supply_capabilities: [{ article_id: "art-switch", availability: "in_stock" }],
       pan: "ABCDE1234F",
       bank_account: "123456",
       payment_terms: "30 days",
@@ -66,20 +66,20 @@ describe("canonical Vendor profile", () => {
       warranty_terms: "1 year",
       udyam_no: "UDYAM-1",
       verified_bank: true,
+      article_ids: ["art-panel"],
     } as any, state, { id: "ven-1" }) as unknown as Record<string, unknown>;
 
     expect(normalized.name).toBe("ABC Electricals");
     expect(normalized.legal_name).toBe("ABC Electricals Private Limited");
     expect(normalized.email).toBe("sales@abc.in");
     expect(normalized.status).toBe("active");
-    expect(normalized.article_ids).toEqual(["art-switch"]);
     expect(normalized.supply_capabilities).toHaveLength(1);
-    for (const excluded of ["pan", "bank_account", "payment_terms", "credit_days", "credit_limit", "warranty_terms", "udyam_no", "verified_bank"]) {
+    for (const excluded of ["pan", "bank_account", "payment_terms", "credit_days", "credit_limit", "warranty_terms", "udyam_no", "verified_bank", "article_ids"]) {
       expect(excluded in normalized).toBe(false);
     }
   });
 
-  test("structured capability owns Article variants, brand, availability, lead time and MOQ", () => {
+  test("supply_capabilities is the only Vendor capability model", () => {
     const state = db();
     const normalized = normalizeVendorForWrite({
       id: "ven-1",
@@ -95,7 +95,7 @@ describe("canonical Vendor profile", () => {
       }],
     }, state, { id: "ven-1" });
 
-    expect(normalized.article_ids).toEqual(["art-switch"]);
+    expect((normalized as any).article_ids).toBeUndefined();
     expect(normalized.brands).toEqual(["Havells"]);
     expect(normalized.categories).toEqual(["Electrical"]);
     expect(normalized.supply_capabilities?.[0]).toMatchObject({
@@ -109,17 +109,7 @@ describe("canonical Vendor profile", () => {
       moq: 50,
       preferred: true,
     });
-  });
-
-  test("legacy flat Article links remain readable as structured capability", () => {
-    const state = db();
-    expect(canonicalVendorCapabilities({ id: "ven-legacy", name: "Legacy", article_ids: ["art-panel"] }, state)[0]).toMatchObject({
-      article_id: "art-panel",
-      article_name: "12W LED Panel",
-      category_name: "Electrical",
-      availability: "unknown",
-      status: "active",
-    });
+    expect(canonicalVendorCapabilities({ id: "legacy", name: "Legacy", article_ids: ["art-panel"] } as any, state)).toEqual([]);
   });
 });
 
@@ -146,8 +136,8 @@ describe("Vendor commercial, performance and recommendation intelligence", () =>
     const state = db();
     state.master.vendors = [{ id: "ven-1", name: "ABC", status: "active" }];
     state.master.vendorRates = [
-      { id: "vr-1", vendor_id: "ven-1", article_id: "art-switch", article_name: "Switch", quoted_rate: 100, rate: 100, status: "active", updated_at: "2026-08-01T00:00:00Z" },
-      { id: "vr-2", vendor_id: "ven-1", article_id: "art-panel", article_name: "Panel", quoted_rate: 200, rate: 200, status: "active", updated_at: "2026-08-02T00:00:00Z" },
+      { id: "vr-1", vendor_id: "ven-1", article_id: "art-switch", article_name: "Switch", rate: 100, status: "active", updated_at: "2026-08-01T00:00:00Z" },
+      { id: "vr-2", vendor_id: "ven-1", article_id: "art-panel", article_name: "Panel", rate: 200, status: "active", updated_at: "2026-08-02T00:00:00Z" },
     ];
     state.purchaseOrders = [{ id: "po-1", vendor_id: "ven-1", total_amount: 10000, created_at: "2026-08-01", actual_delivery: "2026-08-04" }];
     state.vendorBills = [{ id: "bill-1", vendor_id: "ven-1", total_amount: 9000 }];
@@ -168,8 +158,8 @@ describe("Vendor commercial, performance and recommendation intelligence", () =>
       { id: "ven-b", name: "B", status: "active", reliability_rating: "average", delivery_time_rating: "average" },
     ];
     state.master.vendorRates = [
-      { id: "a-rate", vendor_id: "ven-a", article_id: "art-switch", article_name: "Switch", quoted_rate: 90, rate: 90, status: "active" },
-      { id: "b-rate", vendor_id: "ven-b", article_id: "art-switch", article_name: "Switch", quoted_rate: 120, rate: 120, status: "active" },
+      { id: "a-rate", vendor_id: "ven-a", article_id: "art-switch", article_name: "Switch", rate: 90, status: "active" },
+      { id: "b-rate", vendor_id: "ven-b", article_id: "art-switch", article_name: "Switch", rate: 120, status: "active" },
     ];
     state.purchaseOrders = [
       { id: "po-a", vendor_id: "ven-a", expected_delivery: "2026-08-05", actual_delivery: "2026-08-04", status: "received" },
@@ -192,8 +182,8 @@ describe("Vendor commercial, performance and recommendation intelligence", () =>
       normalizeVendorForWrite({ id: "ven-b", name: "Slow Electric", status: "active", reliability_rating: "average", delivery_time_rating: "average", supply_capabilities: [{ article_id: "art-switch", availability: "on_order", typical_lead_time_days: 12 }] }, state, { id: "ven-b" }),
     ];
     state.master.vendorRates = [
-      { id: "a-rate", vendor_id: "ven-a", article_id: "art-switch", article_name: "Switch", quoted_rate: 95, rate: 95, status: "active" },
-      { id: "b-rate", vendor_id: "ven-b", article_id: "art-switch", article_name: "Switch", quoted_rate: 110, rate: 110, status: "active" },
+      { id: "a-rate", vendor_id: "ven-a", article_id: "art-switch", article_name: "Switch", rate: 95, status: "active" },
+      { id: "b-rate", vendor_id: "ven-b", article_id: "art-switch", article_name: "Switch", rate: 110, status: "active" },
     ];
 
     const ranked = recommendVendorsForArticle(state, "art-switch");
@@ -219,7 +209,7 @@ describe("Vendor relationship timeline", () => {
 });
 
 describe("canonical Vendor Rate", () => {
-  test("new live writes contain quote identity/status only and never add validity or duplicated commercial fields", () => {
+  test("live writes use one rate field and never add legacy commercial or validity fields", () => {
     const state = db();
     const updated = applyVendorRateUpdates(state.master, [{
       vendorId: "ven-1",
@@ -234,12 +224,11 @@ describe("canonical Vendor Rate", () => {
 
     const rate = updated.vendorRates[0] as unknown as Record<string, unknown>;
     expect(vendorQuotedRate(rate as any)).toBe(125.5);
-    expect(rate.quoted_rate).toBe(125.5);
     expect(rate.rate).toBe(125.5);
     expect(rate.status).toBe("active");
     expect(rate.created_at).toBe("2026-08-07T10:00:00Z");
     expect(rate.updated_at).toBe("2026-08-07T10:00:00Z");
-    for (const excluded of ["unit_id", "gst_inclusive", "gst_rate", "discount_pct", "freight_amount", "loading_unloading_amount", "other_charges", "moq", "delivery_days", "brand", "grade", "preferred", "valid_from", "valid_until"]) {
+    for (const excluded of ["quoted_rate", "work_required_article_id", "unit_id", "gst_inclusive", "gst_rate", "discount_pct", "freight_amount", "loading_unloading_amount", "other_charges", "moq", "delivery_days", "brand", "grade", "preferred", "valid_from", "valid_until", "current_source_type", "current_source_id", "current_source_no"]) {
       expect(excluded in rate).toBe(false);
     }
     expect(updated.vendorRateHistories).toHaveLength(1);
