@@ -175,9 +175,10 @@ describe("delta journal migration and API contract", () => {
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
     expect(route).toContain('"Cache-Control": "private, no-store, max-age=0"');
     expect(route).toContain('"X-Content-Type-Options": "nosniff"');
-    expect(route).toContain("status: 400");
-    expect(route).toContain("status: 401");
-    expect(route).toContain("status: 503");
+    expect(route).toContain('errorJson("afterRevision must be a non-negative integer.", 400)');
+    expect(route).toContain('errorJson("Your session is missing or expired.", 401)');
+    expect(route).toContain('errorJson(message.slice("FORBIDDEN:".length), 403)');
+    expect(route).toContain('errorJson("Workspace changes are temporarily unavailable.", 503');
   });
 
   test("bounds server reads and constrains batches to one coherent current revision", async () => {
