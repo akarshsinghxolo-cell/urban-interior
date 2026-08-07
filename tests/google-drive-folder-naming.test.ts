@@ -107,7 +107,7 @@ describe("human-readable Google Drive folder names", () => {
     const db = namingFixture();
     const vendor = destinationSegments(db, "vendor_document", "vendor", "vendor-internal-d51f9981");
     const contractor = destinationSegments(db, "contractor_document", "contractor", "contractor-internal-91bdab41");
-    const staff = destinationSegments(db, "staff_document", "staff", "staff-internal-049afb91");
+    const staff = destinationSegments(db, "staff_document", "general", "staff-internal-049afb91");
 
     expect(names(vendor)).toEqual(["Vendors", "Shree Plywood - Lucknow", "Business Documents"]);
     expect(names(contractor)).toEqual(["Contractors", "Ravi Interiors - False Ceiling", "Business Documents"]);
