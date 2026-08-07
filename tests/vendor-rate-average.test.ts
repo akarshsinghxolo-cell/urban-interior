@@ -40,7 +40,6 @@ function rate(input: Partial<VendorRate> & { id: string; vendor_id: string; rate
     article_name: "Test article",
     status: "active",
     ...input,
-    quoted_rate: input.quoted_rate ?? input.rate,
   } as VendorRate;
 }
 
@@ -77,14 +76,14 @@ describe("article-level canonical Vendor quoted-rate averages", () => {
     expect(articleVendorRateAverage(db, "article-1", new Date("2026-07-10T00:00:00.000Z")).average).toBe(120);
   });
 
-  test("legacy GST, discount, freight and validity fields cannot alter a current canonical quote", () => {
+  test("current quoted rates use only the canonical rate amount", () => {
     const db = database();
     db.master.vendorRates = [
-      rate({ id: "legacy-fields", vendor_id: "vendor-1", rate: 100, gst_inclusive: false, gst_rate: 18, discount_pct: 10, freight_amount: 100, valid_from: "2099-01-01" } as any),
-      rate({ id: "clean", vendor_id: "vendor-2", rate: 100 }),
+      rate({ id: "vendor-1-rate", vendor_id: "vendor-1", rate: 100 }),
+      rate({ id: "vendor-2-rate", vendor_id: "vendor-2", rate: 100 }),
     ];
     const result = articleVendorRateAverage(db, "article-1", new Date("2026-08-07"));
-    expect(result.included.map((row) => row.normalizedLandedRate)).toEqual([100, 100]);
+    expect(result.included.map((row) => row.normalizedQuotedRate)).toEqual([100, 100]);
     expect(result.average).toBe(100);
   });
 
@@ -98,7 +97,7 @@ describe("article-level canonical Vendor quoted-rate averages", () => {
       rate({ id: "pair", vendor_id: "vendor-2", rate: 20, variant_id: "pair-variant" }),
     ];
     const result = articleVendorRateAverage(db, "article-1");
-    expect(result.included.map((row) => row.normalizedLandedRate)).toEqual([10, 10]);
+    expect(result.included.map((row) => row.normalizedQuotedRate)).toEqual([10, 10]);
     expect(result.average).toBe(10);
   });
 
