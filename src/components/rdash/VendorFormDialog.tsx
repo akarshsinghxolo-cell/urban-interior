@@ -4,14 +4,7 @@ import * as React from "react";
 import { Navigation, Plus, Search, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -22,13 +15,7 @@ import { attachedPreview } from "@/lib/rdash/file-attachments";
 import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
-import {
-  cancelQueuedWorkflowFile,
-  classifyWorkflowFile,
-  enqueueWorkflowFiles,
-  withLocalPreview,
-  type QueuedWorkflowFile,
-} from "@/lib/uploads/workflow-upload";
+import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
@@ -44,13 +31,7 @@ import {
 } from "@/lib/rdash/vendor-profile";
 import { FilePreview } from "./FilePreview";
 
-export type VendorFormDialogProps = {
-  open: boolean;
-  onClose: () => void;
-  onSaved?: (id: string) => void;
-  editId?: string;
-};
-
+export type VendorFormDialogProps = { open: boolean; onClose: () => void; onSaved?: (id: string) => void; editId?: string };
 type PendingMedia = QueuedWorkflowFile & { url: string; file_name: string; mime_type: string };
 type ExistingMedia = { attachment_id: string };
 type MediaValue = "" | PendingMedia | ExistingMedia;
@@ -64,7 +45,6 @@ type CapabilityDraft = {
   preferred: boolean;
   notes: string;
 };
-
 type Draft = {
   name: string;
   legalName: string;
@@ -84,77 +64,30 @@ type Draft = {
   notes: string;
 };
 
-const EMPTY_DRAFT: Draft = {
-  name: "",
-  legalName: "",
-  phone: "",
-  whatsapp: "",
-  alternatePhone: "",
-  email: "",
-  gstin: "",
-  vendorType: "dealer",
-  status: "onboarding",
-  address: "",
-  city: "",
-  locality: "",
-  reliability: "average",
-  delivery: "average",
-  returnPolicy: "available",
-  notes: "",
-};
-
+const EMPTY_DRAFT: Draft = { name: "", legalName: "", phone: "", whatsapp: "", alternatePhone: "", email: "", gstin: "", vendorType: "dealer", status: "onboarding", address: "", city: "", locality: "", reliability: "average", delivery: "average", returnPolicy: "available", notes: "" };
 const isPending = (value: MediaValue): value is PendingMedia => typeof value === "object" && value != null && "uploadItemId" in value;
 const isExisting = (value: MediaValue): value is ExistingMedia => typeof value === "object" && value != null && "attachment_id" in value;
 const attachmentId = (value: MediaValue) => isExisting(value) ? value.attachment_id : isPending(value) ? value.attachmentId : undefined;
 const optionalNumber = (value: string) => value.trim() === "" ? undefined : Number(value);
-const fingerprint = (value: unknown) => JSON.stringify(value);
-
+function fingerprint(value: VendorProfileRecord) {
+  const { created_at: _createdAt, updated_at: _updatedAt, ...stable } = value;
+  return JSON.stringify(stable);
+}
 function mediaFile(value: MediaValue, db: any) {
   if (isExisting(value)) return attachedPreview(db, value.attachment_id);
   if (isPending(value)) return { fileName: value.file_name, mimeType: value.mime_type, url: value.url };
   return undefined;
 }
-
 function draftFromRecord(record: VendorProfileRecord): Draft {
   return {
-    name: String(record.name || ""),
-    legalName: String(record.legal_name || ""),
-    phone: String(record.phone || ""),
-    whatsapp: String(record.whatsapp || ""),
-    alternatePhone: String(record.alternate_phone || ""),
-    email: String(record.email || ""),
-    gstin: String(record.gstin || ""),
-    vendorType: (record.vendor_type || "dealer") as VendorType,
-    status: (record.status || "onboarding") as Draft["status"],
-    address: String(record.address || ""),
-    city: String(record.city || ""),
-    locality: String(record.locality || ""),
-    reliability: (record.reliability_rating || "average") as Draft["reliability"],
-    delivery: (record.delivery_time_rating || "average") as Draft["delivery"],
-    returnPolicy: (record.return_policy || "available") as Draft["returnPolicy"],
-    notes: String(record.notes || ""),
+    name: String(record.name || ""), legalName: String(record.legal_name || ""), phone: String(record.phone || ""), whatsapp: String(record.whatsapp || ""), alternatePhone: String(record.alternate_phone || ""), email: String(record.email || ""), gstin: String(record.gstin || ""), vendorType: (record.vendor_type || "dealer") as VendorType, status: (record.status || "onboarding") as Draft["status"], address: String(record.address || ""), city: String(record.city || ""), locality: String(record.locality || ""), reliability: (record.reliability_rating || "average") as Draft["reliability"], delivery: (record.delivery_time_rating || "average") as Draft["delivery"], returnPolicy: (record.return_policy || "available") as Draft["returnPolicy"], notes: String(record.notes || ""),
   };
 }
-
 function capabilityDrafts(rows: VendorSupplyCapability[]): CapabilityDraft[] {
-  return rows.map((row) => ({
-    article_id: row.article_id,
-    variant_ids: row.variant_ids || [],
-    brand: row.brand || "",
-    availability: row.availability || "unknown",
-    typical_lead_time_days: row.typical_lead_time_days == null ? "" : String(row.typical_lead_time_days),
-    moq: row.moq == null ? "" : String(row.moq),
-    preferred: Boolean(row.preferred),
-    notes: row.notes || "",
-  }));
+  return rows.map((row) => ({ article_id: row.article_id, variant_ids: row.variant_ids || [], brand: row.brand || "", availability: row.availability || "unknown", typical_lead_time_days: row.typical_lead_time_days == null ? "" : String(row.typical_lead_time_days), moq: row.moq == null ? "" : String(row.moq), preferred: Boolean(row.preferred), notes: row.notes || "" }));
 }
-
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  return <label className="space-y-1.5 text-xs font-semibold text-foreground">
-    <span>{label}</span>
-    {children}
-    {hint && <span className="block text-[10px] font-normal text-muted-foreground">{hint}</span>}
-  </label>;
+  return <label className="space-y-1.5 text-xs font-semibold text-foreground"><span>{label}</span>{children}{hint && <span className="block text-[10px] font-normal text-muted-foreground">{hint}</span>}</label>;
 }
 
 export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormDialogProps) {
@@ -176,12 +109,11 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const [softDuplicateAcknowledged, setSoftDuplicateAcknowledged] = React.useState(false);
   const baselineRef = React.useRef<VendorProfileRecord>({});
   const [baselineKey, setBaselineKey] = React.useState("");
-  const formId = `vendor-form:${editId || "new"}`;
   const disposedRef = React.useRef(false);
+  const formId = `vendor-form:${editId || "new"}`;
   const { registerBatch, commitBatches } = useUploadDraft(open);
 
   React.useEffect(() => () => { disposedRef.current = true; }, []);
-
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
   const buildPayload = React.useCallback((): VendorProfileRecord => normalizeVendorForWrite({
@@ -206,25 +138,15 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     delivery_time_rating: draft.delivery,
     return_policy: draft.returnPolicy,
     notes: draft.notes,
-    supply_capabilities: capabilities.map((row) => ({
-      article_id: row.article_id,
-      variant_ids: row.variant_ids,
-      brand: row.brand,
-      availability: row.availability,
-      typical_lead_time_days: optionalNumber(row.typical_lead_time_days),
-      moq: optionalNumber(row.moq),
-      preferred: row.preferred,
-      notes: row.notes,
-      status: "active",
-    })),
+    supply_capabilities: capabilities.map((row) => ({ article_id: row.article_id, variant_ids: row.variant_ids, brand: row.brand, availability: row.availability, typical_lead_time_days: optionalNumber(row.typical_lead_time_days), moq: optionalNumber(row.moq), preferred: row.preferred, notes: row.notes, status: "active" })),
   }, db, { id: editId || reservedId || undefined }), [businessCard, capabilities, db, draft, editId, latitude, longitude, reservedId, shopPhoto]);
 
   React.useEffect(() => {
     if (!open) return;
     const id = editId || reserveEntityId("vendor");
     setReservedId(id);
-    const existing = editId ? db.master.vendors.find((row) => row.id === editId) as VendorProfileRecord | undefined : undefined;
-    const normalized = normalizeVendorForWrite(existing || { id, name: "", vendor_type: "dealer", status: "onboarding", supply_capabilities: [] }, db, { id });
+    const record = editId ? db.master.vendors.find((row) => row.id === editId) as VendorProfileRecord | undefined : undefined;
+    const normalized = normalizeVendorForWrite(record || { id, name: "", vendor_type: "dealer", status: "onboarding", supply_capabilities: [] }, db, { id });
     setDraft(draftFromRecord(normalized));
     setLatitude(normalized.latitude);
     setLongitude(normalized.longitude);
@@ -236,7 +158,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setSoftDuplicateAcknowledged(false);
     baselineRef.current = normalized;
     setBaselineKey(fingerprint(normalized));
-    // Background refreshes intentionally do not reset an open draft.
+    // Intentional: background sync must not reset an in-progress Vendor draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
@@ -245,11 +167,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const duplicateConflicts = vendorDuplicateConflicts(db, currentPayload, editId);
   const hardDuplicate = duplicateConflicts.find((row) => row.hard);
   const softDuplicate = duplicateConflicts.find((row) => !row.hard);
-  const validationError =
-    vendorProfileValidationError(currentPayload) ||
-    coordinateInputError(coordinates) ||
-    (hardDuplicate ? `Duplicate vendor blocked: ${hardDuplicate.name} has ${hardDuplicate.reasons.join(", ")}.` : null) ||
-    (softDuplicate && !softDuplicateAcknowledged ? `Review possible duplicate ${softDuplicate.name} before saving.` : null);
+  const validationError = vendorProfileValidationError(currentPayload) || coordinateInputError(coordinates) || (hardDuplicate ? `Duplicate Vendor blocked: ${hardDuplicate.name} has ${hardDuplicate.reasons.join(", ")}.` : null) || (softDuplicate && !softDuplicateAcknowledged ? `Review possible duplicate ${softDuplicate.name} before saving.` : null);
 
   async function discard(): Promise<boolean> {
     await Promise.all([businessCard, shopPhoto].filter(isPending).map((value) => cancelQueuedWorkflowFile(value)));
@@ -267,20 +185,14 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
 
   async function save(): Promise<boolean> {
     if (saving) return false;
-    if (validationError) {
-      toast.error(validationError);
-      return false;
-    }
+    if (validationError) { toast.error(validationError); return false; }
     if (editId && !dirty) return true;
     setSaving(true);
     try {
       let id = editId || reservedId;
-      if (editId) {
-        updateVendor(editId, currentPayload as any);
-      } else {
+      if (editId) updateVendor(editId, currentPayload as any);
+      else {
         id = addVendor({ ...(currentPayload as any), id: reservedId });
-        // addVendor preserves the historical compact base record; the canonical
-        // patch immediately completes the new record with structured capabilities.
         updateVendor(id, currentPayload as any);
       }
       await awaitServerSync();
@@ -288,47 +200,30 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
       baselineRef.current = currentPayload;
       setBaselineKey(fingerprint(currentPayload));
       dirtyFormRegistry.markClean(formId);
-      toast.success(`Vendor ${editId ? "updated" : "created"}`, { description: "Canonical profile, catalogue capability and location were confirmed by the workspace server." });
+      toast.success(`Vendor ${editId ? "updated" : "created"}`, { description: "Canonical profile and supply capability were confirmed by the workspace server." });
       onSaved?.(id);
       return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Vendor could not be saved.");
       return false;
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
-  useDirtyFormRegistration({ id: formId, label: `${editId ? "Edit" : "Add"} vendor`, dirty, save, discard });
-
-  function requestClose() {
-    dirtyFormRegistry.requestNavigation(onClose, { reason: "close this vendor form" });
-  }
-
+  useDirtyFormRegistration({ id: formId, label: `${editId ? "Edit" : "Add"} Vendor`, dirty, save, discard });
+  function requestClose() { dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Vendor form" }); }
   function updateCoordinates(value: string) {
     setCoordinates(value);
-    if (!value.trim()) {
-      setLatitude(undefined);
-      setLongitude(undefined);
-      return;
-    }
+    if (!value.trim()) { setLatitude(undefined); setLongitude(undefined); return; }
     const parsed = parseCoordinatePair(value);
-    if (parsed) {
-      setLatitude(parsed.latitude);
-      setLongitude(parsed.longitude);
-      setCoordinates(formatCoordinatePair(parsed));
-    }
+    if (parsed) { setLatitude(parsed.latitude); setLongitude(parsed.longitude); setCoordinates(formatCoordinatePair(parsed)); }
   }
-
   async function captureGps() {
     setGpsLoading(true);
     try {
       const capture = await captureDeviceGps({ mode: "master-location" });
       if (disposedRef.current) return;
       const next = { latitude: capture.latitude, longitude: capture.longitude };
-      setLatitude(next.latitude);
-      setLongitude(next.longitude);
-      setCoordinates(formatCoordinatePair(next));
+      setLatitude(next.latitude); setLongitude(next.longitude); setCoordinates(formatCoordinatePair(next));
       toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
       void reverseGeocodeWithNominatim(next.latitude, next.longitude).then((result) => {
         if (!result?.display_name || disposedRef.current) return;
@@ -336,150 +231,45 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
         set("city", result.address?.city || result.address?.town || result.address?.village || "");
         set("locality", result.address?.suburb || result.address?.neighbourhood || "");
       });
-    } catch (error) {
-      if (!disposedRef.current) toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
-    } finally {
-      if (!disposedRef.current) setGpsLoading(false);
-    }
+    } catch (error) { if (!disposedRef.current) toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`); }
+    finally { if (!disposedRef.current) setGpsLoading(false); }
   }
-
   async function uploadMedia(event: React.ChangeEvent<HTMLInputElement>, setter: (value: MediaValue) => void, attachmentField: string, caption: string) {
-    const file = event.target.files?.[0];
-    event.currentTarget.value = "";
-    if (!file || !reservedId) return;
+    const file = event.target.files?.[0]; event.currentTarget.value = ""; if (!file || !reservedId) return;
     try {
-      const queued = await enqueueWorkflowFiles({
-        sourceFlow: "vendor_form",
-        sourceLabel: "Vendor form",
-        targetEntityType: "vendor",
-        targetEntityId: reservedId,
-        targetLabel: draft.name.trim() || "New vendor",
-        purpose: "vendor_document",
-        files: [{ file, ...classifyWorkflowFile(file), caption, attachmentField, attachmentFieldMode: "set" }],
-      });
+      const queued = await enqueueWorkflowFiles({ sourceFlow: "vendor_form", sourceLabel: "Vendor form", targetEntityType: "vendor", targetEntityId: reservedId, targetLabel: draft.name.trim() || "New Vendor", purpose: "vendor_document", files: [{ file, ...classifyWorkflowFile(file), caption, attachmentField, attachmentFieldMode: "set" }] });
       registerBatch(queued.batchId);
       const preview = withLocalPreview(queued.files[0], file);
       setter({ ...preview, url: preview.previewUrl, file_name: file.name, mime_type: file.type || "application/octet-stream" });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not queue the file.");
-    }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue the file."); }
   }
-
-  async function removeMedia(value: MediaValue, setter: (value: MediaValue) => void) {
-    if (isPending(value)) await cancelQueuedWorkflowFile(value);
-    setter("");
-  }
-
+  async function removeMedia(value: MediaValue, setter: (value: MediaValue) => void) { if (isPending(value)) await cancelQueuedWorkflowFile(value); setter(""); }
   function addCapability(articleId: string) {
     if (capabilities.some((row) => row.article_id === articleId)) return;
-    setCapabilities((current) => [...current, {
-      article_id: articleId,
-      variant_ids: [],
-      brand: "",
-      availability: "unknown",
-      typical_lead_time_days: "",
-      moq: "",
-      preferred: false,
-      notes: "",
-    }]);
+    setCapabilities((current) => [...current, { article_id: articleId, variant_ids: [], brand: "", availability: "unknown", typical_lead_time_days: "", moq: "", preferred: false, notes: "" }]);
     setArticleQuery("");
   }
-
-  function updateCapability(index: number, patch: Partial<CapabilityDraft>) {
-    setCapabilities((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
-  }
+  function updateCapability(index: number, patch: Partial<CapabilityDraft>) { setCapabilities((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row)); }
 
   const filteredArticles = React.useMemo(() => {
     const needle = articleQuery.trim().toLowerCase();
     if (!needle) return [];
-    return db.master.articles
-      .filter((article) => !capabilities.some((row) => row.article_id === article.id))
-      .filter((article) => article.name.toLowerCase().includes(needle))
-      .slice(0, 8);
+    return db.master.articles.filter((article) => !capabilities.some((row) => row.article_id === article.id) && article.name.toLowerCase().includes(needle)).slice(0, 8);
   }, [articleQuery, capabilities, db.master.articles]);
-
   const businessFile = mediaFile(businessCard, db);
   const shopFile = mediaFile(shopPhoto, db);
 
-  return <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
-    <DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle>{editId ? "Edit Vendor" : "Add Vendor"}</DialogTitle>
-        <DialogDescription>One canonical Vendor profile for identity, location, GST, supplied articles, variants, brands and operating capability. PAN, banking, payment terms, credit fields, warranty and Udyam are intentionally not part of this profile.</DialogDescription>
-      </DialogHeader>
+  return <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto"><DialogHeader><DialogTitle>{editId ? "Edit Vendor" : "Add Vendor"}</DialogTitle><DialogDescription>One canonical Vendor profile for identity, location, GST and supply capability. PAN, banking, payment/credit terms, warranty, Udyam and bank verification are intentionally excluded.</DialogDescription></DialogHeader><div className="space-y-5">
+    <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Identity & contact</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Vendor name"><Input value={draft.name} onChange={(e) => set("name", e.target.value)} /></Field><Field label="Legal / registered name"><Input value={draft.legalName} onChange={(e) => set("legalName", e.target.value)} /></Field><Field label="Vendor type"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.vendorType} onChange={(e) => set("vendorType", e.target.value as VendorType)}><option value="manufacturer">Manufacturer</option><option value="distributor">Distributor</option><option value="dealer">Dealer</option><option value="retailer">Retailer</option><option value="service_provider">Service provider</option><option value="other">Other</option></select></Field><Field label="Lifecycle"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.status} onChange={(e) => set("status", e.target.value as Draft["status"])}><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blacklisted">Blacklisted</option><option value="inactive">Inactive</option></select></Field><Field label="Mobile"><Input value={draft.phone} onChange={(e) => set("phone", e.target.value)} /></Field><Field label="WhatsApp"><Input value={draft.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} /></Field><Field label="Alternate mobile"><Input value={draft.alternatePhone} onChange={(e) => set("alternatePhone", e.target.value)} /></Field><Field label="Email"><Input type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} /></Field><Field label="GSTIN"><Input value={draft.gstin} onChange={(e) => set("gstin", e.target.value.toUpperCase())} /></Field></div></section>
 
-      <div className="space-y-5">
-        <section className="rounded-xl border border-border bg-muted/10 p-4">
-          <h3 className="text-sm font-bold">Identity & contact</h3>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Vendor name"><Input value={draft.name} onChange={(event) => set("name", event.target.value)} placeholder="ABC Traders" /></Field>
-            <Field label="Legal / registered name"><Input value={draft.legalName} onChange={(event) => set("legalName", event.target.value)} /></Field>
-            <Field label="Vendor type"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.vendorType} onChange={(event) => set("vendorType", event.target.value as VendorType)}><option value="manufacturer">Manufacturer</option><option value="distributor">Distributor</option><option value="dealer">Dealer</option><option value="retailer">Retailer</option><option value="service_provider">Service provider</option><option value="other">Other</option></select></Field>
-            <Field label="Lifecycle"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.status} onChange={(event) => set("status", event.target.value as Draft["status"])}><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blacklisted">Blacklisted</option><option value="inactive">Inactive</option></select></Field>
-            <Field label="Mobile"><Input value={draft.phone} onChange={(event) => set("phone", event.target.value)} /></Field>
-            <Field label="WhatsApp"><Input value={draft.whatsapp} onChange={(event) => set("whatsapp", event.target.value)} /></Field>
-            <Field label="Alternate mobile"><Input value={draft.alternatePhone} onChange={(event) => set("alternatePhone", event.target.value)} /></Field>
-            <Field label="Email"><Input type="email" value={draft.email} onChange={(event) => set("email", event.target.value)} /></Field>
-            <Field label="GSTIN"><Input value={draft.gstin} onChange={(event) => set("gstin", event.target.value.toUpperCase())} placeholder="Optional" /></Field>
-          </div>
-        </section>
+    <section className="rounded-xl border border-border bg-muted/10 p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold">Location</h3><p className="text-[10px] text-muted-foreground">Fresh master-location GPS also reverse-geocodes full address, city and locality.</p></div><Button type="button" size="sm" variant="outline" disabled={gpsLoading} onClick={() => void captureGps()}><Navigation className="mr-1.5 h-3.5 w-3.5" />{gpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="City"><Input value={draft.city} onChange={(e) => set("city", e.target.value)} /></Field><Field label="Locality"><Input value={draft.locality} onChange={(e) => set("locality", e.target.value)} /></Field><Field label="Coordinates"><Input value={coordinates} onChange={(e) => updateCoordinates(e.target.value)} placeholder="26.8467, 80.9462" /></Field><div className="sm:col-span-3"><Field label="Full address"><Textarea rows={2} value={draft.address} onChange={(e) => set("address", e.target.value)} /></Field></div></div></section>
 
-        <section className="rounded-xl border border-border bg-muted/10 p-4">
-          <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold">Location</h3><p className="text-[10px] text-muted-foreground">Fresh GPS can fill full address, city and locality automatically.</p></div><Button type="button" size="sm" variant="outline" disabled={gpsLoading} onClick={captureGps}><Navigation className="mr-1.5 h-3.5 w-3.5" />{gpsLoading ? "Capturing…" : "Capture GPS"}</Button></div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="City"><Input value={draft.city} onChange={(event) => set("city", event.target.value)} /></Field>
-            <Field label="Locality"><Input value={draft.locality} onChange={(event) => set("locality", event.target.value)} /></Field>
-            <Field label="Coordinates"><Input value={coordinates} onChange={(event) => updateCoordinates(event.target.value)} placeholder="26.8467, 80.9462" /></Field>
-            <div className="sm:col-span-2 lg:col-span-4"><Field label="Full address"><Textarea value={draft.address} onChange={(event) => set("address", event.target.value)} rows={2} /></Field></div>
-          </div>
-        </section>
+    <section className="rounded-xl border border-border bg-muted/10 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">Supply capability</h3><p className="text-[10px] text-muted-foreground">Article → optional Variants → brand → availability / lead time / MOQ.</p></div><div className="relative w-full max-w-sm"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-8" value={articleQuery} onChange={(e) => setArticleQuery(e.target.value)} placeholder="Search Article to add" />{filteredArticles.length > 0 && <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover p-1 shadow-lg">{filteredArticles.map((article) => <button key={article.id} type="button" onClick={() => addCapability(article.id)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted"><span>{article.name}</span><Plus className="h-3.5 w-3.5" /></button>)}</div>}</div></div><div className="mt-3 space-y-3">{capabilities.map((row, index) => { const article = db.master.articles.find((item) => item.id === row.article_id); const category = article?.category_id ? db.master.workCategories.find((item) => item.id === article.category_id) : undefined; const variants = db.master.articleVariants.filter((variant) => variant.article_id === row.article_id && variant.enabled !== false); return <div key={row.article_id} className="rounded-xl border border-border bg-background p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{category?.name || "Uncategorized"}</p></div><Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button></div><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Brand"><Input value={row.brand} onChange={(e) => updateCapability(index, { brand: e.target.value })} /></Field><Field label="Availability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={row.availability} onChange={(e) => updateCapability(index, { availability: e.target.value as VendorAvailability })}><option value="unknown">Unknown</option><option value="in_stock">In stock</option><option value="limited">Limited</option><option value="on_order">On order</option></select></Field><Field label="Typical lead days"><Input type="number" min="0" value={row.typical_lead_time_days} onChange={(e) => updateCapability(index, { typical_lead_time_days: e.target.value })} /></Field><Field label="MOQ"><Input type="number" min="0" value={row.moq} onChange={(e) => updateCapability(index, { moq: e.target.value })} /></Field><label className="flex h-9 items-center gap-2 self-end rounded-md border border-input px-3 text-xs"><input type="checkbox" checked={row.preferred} onChange={(e) => updateCapability(index, { preferred: e.target.checked })} /><Star className={cn("h-3.5 w-3.5", row.preferred && "fill-warning text-warning")} />Preferred</label></div>{variants.length > 0 && <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variants supplied</p><div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); return <button key={variant.id} type="button" onClick={() => updateCapability(index, { variant_ids: active ? row.variant_ids.filter((id) => id !== variant.id) : [...row.variant_ids, variant.id] })} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>{variant.name}</button>; })}</div></div>}<div className="mt-3"><Field label="Capability notes"><Input value={row.notes} onChange={(e) => updateCapability(index, { notes: e.target.value })} /></Field></div></div>; })}{!capabilities.length && <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">No supplied Articles added.</div>}</div></section>
 
-        <section className="rounded-xl border border-border bg-muted/10 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">Supply capability</h3><p className="text-[10px] text-muted-foreground">Article → optional variants → brand → availability / lead time / MOQ. This replaces the old flat article-id list.</p></div><div className="relative w-full max-w-sm"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={articleQuery} onChange={(event) => setArticleQuery(event.target.value)} placeholder="Search article to add" className="pl-8" />{filteredArticles.length > 0 && <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover p-1 shadow-lg">{filteredArticles.map((article) => <button key={article.id} type="button" onClick={() => addCapability(article.id)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted"><span>{article.name}</span><Plus className="h-3.5 w-3.5" /></button>)}</div>}</div></div>
-          <div className="mt-3 space-y-3">
-            {capabilities.map((row, index) => {
-              const article = db.master.articles.find((entry) => entry.id === row.article_id);
-              const category = article?.category_id ? db.master.workCategories.find((entry) => entry.id === article.category_id) : undefined;
-              const variants = db.master.articleVariants.filter((variant) => variant.article_id === row.article_id && variant.enabled !== false);
-              return <div key={row.article_id} className="rounded-xl border border-border bg-background p-3">
-                <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{category?.name || "Uncategorized"}</p></div><Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button></div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                  <Field label="Brand"><Input value={row.brand} onChange={(event) => updateCapability(index, { brand: event.target.value })} placeholder="Optional" /></Field>
-                  <Field label="Availability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={row.availability} onChange={(event) => updateCapability(index, { availability: event.target.value as VendorAvailability })}><option value="unknown">Unknown</option><option value="in_stock">In stock</option><option value="limited">Limited</option><option value="on_order">On order</option></select></Field>
-                  <Field label="Typical lead days"><Input type="number" min="0" value={row.typical_lead_time_days} onChange={(event) => updateCapability(index, { typical_lead_time_days: event.target.value })} /></Field>
-                  <Field label="MOQ"><Input type="number" min="0" value={row.moq} onChange={(event) => updateCapability(index, { moq: event.target.value })} /></Field>
-                  <label className="flex h-9 items-center gap-2 self-end rounded-md border border-input px-3 text-xs"><input type="checkbox" checked={row.preferred} onChange={(event) => updateCapability(index, { preferred: event.target.checked })} /><Star className={cn("h-3.5 w-3.5", row.preferred && "fill-warning text-warning")} />Preferred source</label>
-                </div>
-                {variants.length > 0 && <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variants supplied</p><div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); return <button key={variant.id} type="button" onClick={() => updateCapability(index, { variant_ids: active ? row.variant_ids.filter((id) => id !== variant.id) : [...row.variant_ids, variant.id] })} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>{variant.name}</button>; })}</div></div>}
-                <div className="mt-3"><Field label="Capability notes"><Input value={row.notes} onChange={(event) => updateCapability(index, { notes: event.target.value })} placeholder="Dealership, stocking condition, special ordering note…" /></Field></div>
-              </div>;
-            })}
-            {!capabilities.length && <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">No supplied articles added yet.</div>}
-          </div>
-        </section>
+    <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Relationship quality</h3><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Reliability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.reliability} onChange={(e) => set("reliability", e.target.value as Draft["reliability"])}><option value="very_good">Very good</option><option value="good">Good</option><option value="average">Average</option><option value="bad">Bad</option></select></Field><Field label="Delivery behaviour"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.delivery} onChange={(e) => set("delivery", e.target.value as Draft["delivery"])}><option value="very_good">Very good</option><option value="good">Good</option><option value="average">Average</option><option value="bad">Bad</option></select></Field><Field label="Return policy"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.returnPolicy} onChange={(e) => set("returnPolicy", e.target.value as Draft["returnPolicy"])}><option value="available">Available</option><option value="not_available">Not available</option></select></Field></div><div className="mt-3"><Field label="Notes"><Textarea rows={3} value={draft.notes} onChange={(e) => set("notes", e.target.value)} /></Field></div></section>
 
-        <section className="rounded-xl border border-border bg-muted/10 p-4">
-          <h3 className="text-sm font-bold">Relationship quality & notes</h3>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Field label="Reliability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.reliability} onChange={(event) => set("reliability", event.target.value as Draft["reliability"])}><option value="very_good">Very good</option><option value="good">Good</option><option value="average">Average</option><option value="bad">Bad</option></select></Field>
-            <Field label="Delivery behaviour"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.delivery} onChange={(event) => set("delivery", event.target.value as Draft["delivery"])}><option value="very_good">Very good</option><option value="good">Good</option><option value="average">Average</option><option value="bad">Bad</option></select></Field>
-            <Field label="Return policy"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.returnPolicy} onChange={(event) => set("returnPolicy", event.target.value as Draft["returnPolicy"])}><option value="available">Available</option><option value="not_available">Not available</option></select></Field>
-          </div>
-          <div className="mt-3"><Field label="Notes"><Textarea rows={3} value={draft.notes} onChange={(event) => set("notes", event.target.value)} /></Field></div>
-        </section>
+    <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Profile media</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between"><p className="text-xs font-semibold">Business card</p>{businessCard && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(businessCard, setBusinessCard)}><X className="h-3.5 w-3.5" /></Button>}</div>{businessFile ? <div className="mt-2"><FilePreview file={businessFile} compact /></div> : <label className="mt-2 flex cursor-pointer justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(e) => void uploadMedia(e, setBusinessCard, "business_card_attachment_id", "Vendor business card")} />Upload business card</label>}</div><div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between"><p className="text-xs font-semibold">Shop / warehouse</p>{shopPhoto && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(shopPhoto, setShopPhoto)}><X className="h-3.5 w-3.5" /></Button>}</div>{shopFile ? <div className="mt-2"><FilePreview file={shopFile} compact /></div> : <label className="mt-2 flex cursor-pointer justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(e) => void uploadMedia(e, setShopPhoto, "shop_attachment_id", "Vendor shop or warehouse")} />Upload shop / warehouse photo</label>}</div></div></section>
 
-        <section className="rounded-xl border border-border bg-muted/10 p-4">
-          <h3 className="text-sm font-bold">Profile media</h3>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
-            <div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold">Business card</p><p className="text-[10px] text-muted-foreground">Optional reference</p></div>{businessCard && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(businessCard, setBusinessCard)}><X className="h-3.5 w-3.5" /></Button>}</div>{businessFile ? <div className="mt-2"><FilePreview {...businessFile} /></div> : <label className="mt-2 flex cursor-pointer items-center justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground hover:bg-muted"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(event) => void uploadMedia(event, setBusinessCard, "business_card_attachment_id", "Vendor business card")} />Upload business card</label>}</div>
-            <div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-semibold">Shop / warehouse</p><p className="text-[10px] text-muted-foreground">Optional location proof</p></div>{shopPhoto && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(shopPhoto, setShopPhoto)}><X className="h-3.5 w-3.5" /></Button>}</div>{shopFile ? <div className="mt-2"><FilePreview {...shopFile} /></div> : <label className="mt-2 flex cursor-pointer items-center justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground hover:bg-muted"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(event) => void uploadMedia(event, setShopPhoto, "shop_attachment_id", "Vendor shop or warehouse")} />Upload shop / warehouse photo</label>}</div>
-          </div>
-        </section>
-
-        {duplicateConflicts.length > 0 && <section className={cn("rounded-xl border p-4", hardDuplicate ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><h3 className="text-sm font-bold">Duplicate check</h3><div className="mt-2 space-y-1 text-xs text-muted-foreground">{duplicateConflicts.slice(0, 3).map((conflict) => <p key={conflict.id}>• <strong>{conflict.name}</strong>: {conflict.reasons.join(", ")}</p>)}</div>{softDuplicate && !hardDuplicate && <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={softDuplicateAcknowledged} onChange={(event) => setSoftDuplicateAcknowledged(event.target.checked)} />I reviewed this possible duplicate and still want to save this Vendor.</label>}</section>}
-      </div>
-
-      <DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter>
-    </DialogContent>
-  </Dialog>;
+    {duplicateConflicts.length > 0 && <section className={cn("rounded-xl border p-4", hardDuplicate ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><h3 className="text-sm font-bold">Duplicate check</h3><div className="mt-2 space-y-1 text-xs text-muted-foreground">{duplicateConflicts.slice(0, 3).map((conflict) => <p key={conflict.id}>• <strong>{conflict.name}</strong>: {conflict.reasons.join(", ")}</p>)}</div>{softDuplicate && !hardDuplicate && <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={softDuplicateAcknowledged} onChange={(e) => setSoftDuplicateAcknowledged(e.target.checked)} />I reviewed this possible duplicate and still want to save this Vendor.</label>}</section>}
+  </div><DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter></DialogContent></Dialog>;
 }
