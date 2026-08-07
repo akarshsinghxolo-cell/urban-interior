@@ -128,14 +128,24 @@ describe("workspace bootstrap and scoped client reads", () => {
     const rendererIndex = router.indexOf("switch (route.renderer)");
 
     expect(router).toContain("workspaceReadLoadStateForTarget");
-    expect(router).toContain("workspaceReadTargetForPath(pathname)");
+    expect(router).toContain("workspaceReadTargetForActiveNavigation(pathname, currentActiveModuleId)");
     expect(router).toContain("workspaceReadTargetForModule(activeModuleId)");
+    expect(boundary).toContain("workspaceReadTargetForActiveNavigation(pathname, activeModuleId)");
     expect(gateIndex).toBeGreaterThan(-1);
     expect(rendererIndex).toBeGreaterThan(gateIndex);
     expect(boundary).toContain("workspaceReadState.beginRequest(requestedTarget)");
     expect(boundary).toContain("workspaceReadState.failRequest(");
     expect(boundary).toContain("workspaceReadState.clearRequest(requestedTarget)");
     expect(boundary).toContain("workspaceReadState.recordResponse(response, requestedTarget)");
+  });
+
+  test("does not present omitted scoped collections as real zero totals", async () => {
+    const app = await Bun.file("src/components/rdash/RDashApp.tsx").text();
+    expect(app).toContain("loadedWorkspaceCollections(db)");
+    expect(app).toContain('loadedCollections && !loadedCollections.has(collection) ? "—" : String(count)');
+    expect(app).toContain('collectionCount("customers", db.customers.length)');
+    expect(app).toContain('collectionCount("workOrders", db.workOrders.length)');
+    expect(app).toContain('collectionCount("purchaseOrders", db.purchaseOrders.length)');
   });
 
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {

@@ -54,16 +54,19 @@ describe("runtime efficiency hardening", () => {
     expect(source).not.toContain("function tokenFingerprint");
   });
 
-  test("workspace deduplication follows the canonical URL rather than a lagging module", async () => {
+  test("workspace deduplication follows canonical entity URLs while module reads follow active navigation", async () => {
     const client = await read("src/lib/rdash/client-auth.ts");
     expect(client).toContain("WORKSPACE_READ_DEDUPE_TTL_MS = 10_000");
     expect(client).toContain('headers.get("X-UC-Workspace-Path") || window.location.pathname');
     expect(client).not.toContain('headers.get("X-UC-Workspace-Module") || ""');
 
     const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
-    expect(boundary).toContain("workspaceReadTargetForPath(pathname)");
+    const resolver = await read("src/lib/rdash/workspace-active-read-target.ts");
+    expect(boundary).toContain("workspaceReadTargetForActiveNavigation(pathname, activeModuleId)");
     expect(boundary).toContain('"X-UC-Workspace-Module": requestedTarget.moduleId');
-    expect(boundary).not.toContain("workspaceReadTargetForModule");
+    expect(resolver).toContain("pathTarget.moduleId === activeTarget.moduleId ? pathTarget : activeTarget");
+    expect(resolver).toContain("workspaceReadTargetForPath(pathname)");
+    expect(resolver).toContain("workspaceReadTargetForModule(activeModuleId)");
   });
 
   test("hidden tabs reuse bounded stale health rather than polling the server", async () => {

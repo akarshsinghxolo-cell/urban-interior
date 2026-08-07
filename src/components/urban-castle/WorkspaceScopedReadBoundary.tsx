@@ -4,10 +4,8 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { AlertTriangle, Database, LoaderCircle, RotateCw } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
-import {
-  workspaceReadCoverageIsCompatible,
-  workspaceReadTargetForPath,
-} from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadCoverageIsCompatible } from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
 import {
   useWorkspaceReadState,
@@ -55,16 +53,21 @@ function applyOverlayStatus(overlay: Awaited<ReturnType<typeof restoreWorkspaceO
  * transfer only changed rows. A full scoped read remains the recovery path for
  * journal gaps, relationship-selected row graphs, limited collections, Staff
  * projection refreshes, or an unavailable/corrupt cache.
+ *
+ * Module navigation state is authoritative while the browser-history pathname
+ * catches up. This prevents a newly selected module from rendering against the
+ * previous module's scoped snapshot or skipping its required server read.
  */
 export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
+  const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
 
   const requestedTarget = React.useMemo(
-    () => workspaceReadTargetForPath(pathname),
-    [pathname],
+    () => workspaceReadTargetForActiveNavigation(pathname, activeModuleId),
+    [activeModuleId, pathname],
   );
   const endpoint = React.useMemo(
     () => workspaceReadEndpointForTarget(requestedTarget),
