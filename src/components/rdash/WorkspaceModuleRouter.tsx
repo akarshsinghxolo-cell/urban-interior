@@ -5,10 +5,8 @@ import { AlertTriangle, Database, LoaderCircle } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer } from "@/lib/rdash/modules";
 import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
-import {
-    workspaceReadTargetForModule,
-    workspaceReadTargetForPath,
-} from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadTargetForModule } from "@/lib/rdash/workspace-read-scope";
+import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 import {
     useWorkspaceReadState,
     workspaceReadLoadStateForTarget,
@@ -110,7 +108,7 @@ export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     const access = workspaceRouteAccessDecision(activeModuleId, role, rawPermissions);
     const isCurrentModule = resolveRenderer(currentActiveModuleId).id === activeModuleId;
     const requestedReadTarget = isCurrentModule
-        ? workspaceReadTargetForPath(pathname)
+        ? workspaceReadTargetForActiveNavigation(pathname, currentActiveModuleId)
         : workspaceReadTargetForModule(activeModuleId);
     const dataLoadState = workspaceReadLoadStateForTarget(readState, requestedReadTarget);
 
