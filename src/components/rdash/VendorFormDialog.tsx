@@ -31,7 +31,13 @@ import {
 } from "@/lib/rdash/vendor-profile";
 import { FilePreview } from "./FilePreview";
 
-export type VendorFormDialogProps = { open: boolean; onClose: () => void; onSaved?: (id: string) => void; editId?: string };
+export type VendorFormDialogProps = {
+  open: boolean;
+  onClose: () => void;
+  onSaved?: (id: string) => void;
+  editId?: string;
+};
+
 type PendingMedia = QueuedWorkflowFile & { url: string; file_name: string; mime_type: string };
 type ExistingMedia = { attachment_id: string };
 type MediaValue = "" | PendingMedia | ExistingMedia;
@@ -64,11 +70,16 @@ type Draft = {
   notes: string;
 };
 
-const EMPTY_DRAFT: Draft = { name: "", legalName: "", phone: "", whatsapp: "", alternatePhone: "", email: "", gstin: "", vendorType: "dealer", status: "onboarding", address: "", city: "", locality: "", reliability: "average", delivery: "average", returnPolicy: "available", notes: "" };
+const EMPTY_DRAFT: Draft = {
+  name: "", legalName: "", phone: "", whatsapp: "", alternatePhone: "", email: "", gstin: "",
+  vendorType: "dealer", status: "onboarding", address: "", city: "", locality: "",
+  reliability: "average", delivery: "average", returnPolicy: "available", notes: "",
+};
 const isPending = (value: MediaValue): value is PendingMedia => typeof value === "object" && value != null && "uploadItemId" in value;
 const isExisting = (value: MediaValue): value is ExistingMedia => typeof value === "object" && value != null && "attachment_id" in value;
 const attachmentId = (value: MediaValue) => isExisting(value) ? value.attachment_id : isPending(value) ? value.attachmentId : undefined;
 const optionalNumber = (value: string) => value.trim() === "" ? undefined : Number(value);
+
 function fingerprint(value: VendorProfileRecord) {
   const { created_at: _createdAt, updated_at: _updatedAt, ...stable } = value;
   return JSON.stringify(stable);
@@ -80,11 +91,35 @@ function mediaFile(value: MediaValue, db: any) {
 }
 function draftFromRecord(record: VendorProfileRecord): Draft {
   return {
-    name: String(record.name || ""), legalName: String(record.legal_name || ""), phone: String(record.phone || ""), whatsapp: String(record.whatsapp || ""), alternatePhone: String(record.alternate_phone || ""), email: String(record.email || ""), gstin: String(record.gstin || ""), vendorType: (record.vendor_type || "dealer") as VendorType, status: (record.status || "onboarding") as Draft["status"], address: String(record.address || ""), city: String(record.city || ""), locality: String(record.locality || ""), reliability: (record.reliability_rating || "average") as Draft["reliability"], delivery: (record.delivery_time_rating || "average") as Draft["delivery"], returnPolicy: (record.return_policy || "available") as Draft["returnPolicy"], notes: String(record.notes || ""),
+    name: String(record.name || ""),
+    legalName: String(record.legal_name || ""),
+    phone: String(record.phone || ""),
+    whatsapp: String(record.whatsapp || ""),
+    alternatePhone: String(record.alternate_phone || ""),
+    email: String(record.email || ""),
+    gstin: String(record.gstin || ""),
+    vendorType: (record.vendor_type || "dealer") as VendorType,
+    status: (record.status || "onboarding") as Draft["status"],
+    address: String(record.address || ""),
+    city: String(record.city || ""),
+    locality: String(record.locality || ""),
+    reliability: (record.reliability_rating || "average") as Draft["reliability"],
+    delivery: (record.delivery_time_rating || "average") as Draft["delivery"],
+    returnPolicy: (record.return_policy || "available") as Draft["returnPolicy"],
+    notes: String(record.notes || ""),
   };
 }
 function capabilityDrafts(rows: VendorSupplyCapability[]): CapabilityDraft[] {
-  return rows.map((row) => ({ article_id: row.article_id, variant_ids: row.variant_ids || [], brand: row.brand || "", availability: row.availability || "unknown", typical_lead_time_days: row.typical_lead_time_days == null ? "" : String(row.typical_lead_time_days), moq: row.moq == null ? "" : String(row.moq), preferred: Boolean(row.preferred), notes: row.notes || "" }));
+  return rows.map((row) => ({
+    article_id: row.article_id,
+    variant_ids: row.variant_ids || [],
+    brand: row.brand || "",
+    availability: row.availability || "unknown",
+    typical_lead_time_days: row.typical_lead_time_days == null ? "" : String(row.typical_lead_time_days),
+    moq: row.moq == null ? "" : String(row.moq),
+    preferred: Boolean(row.preferred),
+    notes: row.notes || "",
+  }));
 }
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return <label className="space-y-1.5 text-xs font-semibold text-foreground"><span>{label}</span>{children}{hint && <span className="block text-[10px] font-normal text-muted-foreground">{hint}</span>}</label>;
@@ -92,8 +127,9 @@ function Field({ label, children, hint }: { label: string; children: React.React
 
 export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormDialogProps) {
   const db = useRDashStore((state) => state.db);
-  const addVendor = useRDashStore((state) => state.addVendor);
-  const updateVendor = useRDashStore((state) => state.updateVendor);
+  const mutateMaster = useRDashStore((state) => state.mutateMaster);
+  const logAudit = useRDashStore((state) => state.logAudit);
+  const currentUser = useRDashStore((state) => state.currentUser);
   const awaitServerSync = useRDashStore((state) => state.awaitServerSync);
   const [reservedId, setReservedId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -138,7 +174,20 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     delivery_time_rating: draft.delivery,
     return_policy: draft.returnPolicy,
     notes: draft.notes,
-    supply_capabilities: capabilities.map((row) => ({ article_id: row.article_id, variant_ids: row.variant_ids, brand: row.brand, availability: row.availability, typical_lead_time_days: optionalNumber(row.typical_lead_time_days), moq: optionalNumber(row.moq), preferred: row.preferred, notes: row.notes, status: "active" })),
+    source_partner_id: baselineRef.current.source_partner_id,
+    source_partner_name: baselineRef.current.source_partner_name,
+    supply_capabilities: capabilities.map((row) => ({
+      article_id: row.article_id,
+      variant_ids: row.variant_ids,
+      brand: row.brand,
+      availability: row.availability,
+      typical_lead_time_days: optionalNumber(row.typical_lead_time_days),
+      moq: optionalNumber(row.moq),
+      preferred: row.preferred,
+      notes: row.notes,
+      status: "active",
+    })),
+    created_at: baselineRef.current.created_at,
   }, db, { id: editId || reservedId || undefined }), [businessCard, capabilities, db, draft, editId, latitude, longitude, reservedId, shopPhoto]);
 
   React.useEffect(() => {
@@ -158,7 +207,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setSoftDuplicateAcknowledged(false);
     baselineRef.current = normalized;
     setBaselineKey(fingerprint(normalized));
-    // Intentional: background sync must not reset an in-progress Vendor draft.
+    // Background sync must not reset an in-progress Vendor draft.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
@@ -167,7 +216,10 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const duplicateConflicts = vendorDuplicateConflicts(db, currentPayload, editId);
   const hardDuplicate = duplicateConflicts.find((row) => row.hard);
   const softDuplicate = duplicateConflicts.find((row) => !row.hard);
-  const validationError = vendorProfileValidationError(currentPayload) || coordinateInputError(coordinates) || (hardDuplicate ? `Duplicate Vendor blocked: ${hardDuplicate.name} has ${hardDuplicate.reasons.join(", ")}.` : null) || (softDuplicate && !softDuplicateAcknowledged ? `Review possible duplicate ${softDuplicate.name} before saving.` : null);
+  const validationError = vendorProfileValidationError(currentPayload)
+    || coordinateInputError(coordinates)
+    || (hardDuplicate ? `Duplicate Vendor blocked: ${hardDuplicate.name} has ${hardDuplicate.reasons.join(", ")}.` : null)
+    || (softDuplicate && !softDuplicateAcknowledged ? `Review possible duplicate ${softDuplicate.name} before saving.` : null);
 
   async function discard(): Promise<boolean> {
     await Promise.all([businessCard, shopPhoto].filter(isPending).map((value) => cancelQueuedWorkflowFile(value)));
@@ -189,18 +241,40 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     if (editId && !dirty) return true;
     setSaving(true);
     try {
-      let id = editId || reservedId;
-      if (editId) updateVendor(editId, currentPayload as any);
-      else {
-        id = addVendor({ ...(currentPayload as any), id: reservedId });
-        updateVendor(id, currentPayload as any);
-      }
+      const id = editId || reservedId;
+      const timestamp = new Date().toISOString();
+      const before = editId ? baselineRef.current : undefined;
+      const record: VendorProfileRecord = {
+        ...currentPayload,
+        id,
+        created_at: before?.created_at || timestamp,
+        updated_at: timestamp,
+      };
+      mutateMaster((master) => ({
+        ...master,
+        vendors: editId
+          ? master.vendors.map((vendor) => vendor.id === id ? record as any : vendor)
+          : [record as any, ...master.vendors],
+      }));
+      const actor = currentUser();
+      logAudit({
+        actor: actor.name,
+        actor_role: actor.role,
+        action: `${editId ? "Updated" : "Created"} Vendor \"${record.name || id}\"`,
+        entity_type: "vendor",
+        entity_id: id,
+        entity_label: record.name || id,
+        kind: editId ? "update" : "create",
+        source_module: "vendorPerformance",
+        before,
+        after: record,
+      });
       await awaitServerSync();
       commitBatches();
-      baselineRef.current = currentPayload;
-      setBaselineKey(fingerprint(currentPayload));
+      baselineRef.current = record;
+      setBaselineKey(fingerprint(record));
       dirtyFormRegistry.markClean(formId);
-      toast.success(`Vendor ${editId ? "updated" : "created"}`, { description: "Canonical profile and supply capability were confirmed by the workspace server." });
+      toast.success(`Vendor ${editId ? "updated" : "created"}`, { description: "The single canonical Vendor profile was confirmed by the workspace server." });
       onSaved?.(id);
       return true;
     } catch (error) {
@@ -235,21 +309,36 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     finally { if (!disposedRef.current) setGpsLoading(false); }
   }
   async function uploadMedia(event: React.ChangeEvent<HTMLInputElement>, setter: (value: MediaValue) => void, attachmentField: string, caption: string) {
-    const file = event.target.files?.[0]; event.currentTarget.value = ""; if (!file || !reservedId) return;
+    const file = event.target.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || !reservedId) return;
     try {
-      const queued = await enqueueWorkflowFiles({ sourceFlow: "vendor_form", sourceLabel: "Vendor form", targetEntityType: "vendor", targetEntityId: reservedId, targetLabel: draft.name.trim() || "New Vendor", purpose: "vendor_document", files: [{ file, ...classifyWorkflowFile(file), caption, attachmentField, attachmentFieldMode: "set" }] });
+      const queued = await enqueueWorkflowFiles({
+        sourceFlow: "vendor_form",
+        sourceLabel: "Vendor form",
+        targetEntityType: "vendor",
+        targetEntityId: reservedId,
+        targetLabel: draft.name.trim() || "New Vendor",
+        purpose: "vendor_document",
+        files: [{ file, ...classifyWorkflowFile(file), caption, attachmentField, attachmentFieldMode: "set" }],
+      });
       registerBatch(queued.batchId);
       const preview = withLocalPreview(queued.files[0], file);
       setter({ ...preview, url: preview.previewUrl, file_name: file.name, mime_type: file.type || "application/octet-stream" });
     } catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue the file."); }
   }
-  async function removeMedia(value: MediaValue, setter: (value: MediaValue) => void) { if (isPending(value)) await cancelQueuedWorkflowFile(value); setter(""); }
+  async function removeMedia(value: MediaValue, setter: (value: MediaValue) => void) {
+    if (isPending(value)) await cancelQueuedWorkflowFile(value);
+    setter("");
+  }
   function addCapability(articleId: string) {
     if (capabilities.some((row) => row.article_id === articleId)) return;
     setCapabilities((current) => [...current, { article_id: articleId, variant_ids: [], brand: "", availability: "unknown", typical_lead_time_days: "", moq: "", preferred: false, notes: "" }]);
     setArticleQuery("");
   }
-  function updateCapability(index: number, patch: Partial<CapabilityDraft>) { setCapabilities((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row)); }
+  function updateCapability(index: number, patch: Partial<CapabilityDraft>) {
+    setCapabilities((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
 
   const filteredArticles = React.useMemo(() => {
     const needle = articleQuery.trim().toLowerCase();
