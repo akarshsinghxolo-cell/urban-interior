@@ -1,9 +1,46 @@
 import { describe, expect, test } from "bun:test";
 import { aggregateWorkspaceChangeBatches } from "@/lib/rdash/server/workspace-changes";
+import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 
 const read = (path: string) => Bun.file(path).text();
 
 describe("workspace navigation freshness", () => {
+  test("active module wins while managed pathname catches up", () => {
+    const masterDuringWorkdeskUrl = workspaceReadTargetForActiveNavigation(
+      "/workspace/tasks",
+      "masterSetup",
+    );
+    expect(masterDuringWorkdeskUrl.moduleId).toBe("masterSetup");
+    expect(masterDuringWorkdeskUrl.scope).toBe("master");
+
+    const customerDuringMasterUrl = workspaceReadTargetForActiveNavigation(
+      "/workspace/masters",
+      "customerDesk",
+    );
+    expect(customerDuringMasterUrl.moduleId).toBe("customerDesk");
+    expect(customerDuringMasterUrl.scope).toBe("customer");
+  });
+
+  test("keeps matching entity paths row-scoped after navigation settles", () => {
+    const target = workspaceReadTargetForActiveNavigation(
+      "/workspace/customers/cust-123",
+      "customerDesk",
+    );
+    expect(target.moduleId).toBe("customerDesk");
+    expect(target.entity).toEqual({ kind: "customer", id: "cust-123" });
+  });
+
+  test("read boundary and module gate use the same active-navigation resolver", async () => {
+    const boundary = await read(
+      "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
+    );
+    const router = await read("src/components/rdash/WorkspaceModuleRouter.tsx");
+
+    expect(boundary).toContain("workspaceReadTargetForActiveNavigation(pathname, activeModuleId)");
+    expect(router).toContain("workspaceReadTargetForActiveNavigation(pathname, currentActiveModuleId)");
+    expect(boundary).not.toContain("workspaceReadTargetForPath(pathname)");
+  });
+
   test("revalidates a compatible scope when navigation enters another target", async () => {
     const source = await read(
       "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
