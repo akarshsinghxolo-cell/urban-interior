@@ -5,6 +5,7 @@ import {
   canReadFullStaffData,
 } from "@/lib/rdash/staff-directory";
 import { collectionsForWorkspaceReadTarget } from "@/lib/rdash/server/module-read-plans";
+import { deltaCollectionsForTarget } from "@/lib/rdash/server/workspace-delta-access";
 import { buildSeedDatabase } from "@/lib/rdash/seed";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import {
@@ -108,10 +109,29 @@ describe("Staff data minimization", () => {
     expect((workspaceCollectionFilterParam(db) || "").split(",")).toContain("master.staff");
   });
 
-  test("delta API strips master.staff for non-HR roles even without a client filter", async () => {
+  test("delta target policy exposes canonical Staff only when the module plan does", () => {
+    const tasks = deltaCollectionsForTarget(
+      workspaceReadTargetForModule("tasks"),
+      new Set(["tasks", "master.units", "master.staff"]),
+    );
+    expect(tasks.collections.has("tasks")).toBe(true);
+    expect(tasks.collections.has("master.units")).toBe(true);
+    expect(tasks.collections.has("master.staff")).toBe(false);
+    expect(tasks.droppedCollectionCount).toBe(1);
+
+    const salary = deltaCollectionsForTarget(
+      workspaceReadTargetForModule("staffSalary"),
+      new Set(["master.staff"]),
+    );
+    expect(salary.collections.has("master.staff")).toBe(true);
+  });
+
+  test("delta API keeps the role and target Staff boundaries server-side", async () => {
     const source = await Bun.file("src/app/api/changes/route.ts").text();
+    expect(source).toContain("authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)");
     expect(source).toContain("canReadFullStaffData(user.role)");
     expect(source).toContain('safe.delete("master.staff")');
-    expect(source).toContain("requested || new Set(Object.keys(COLLECTION_TO_TABLE))");
+    expect(source).toContain('headers.get("x-uc-delta-module")');
+    expect(source).not.toContain("requested || new Set(Object.keys(COLLECTION_TO_TABLE))");
   });
 });
