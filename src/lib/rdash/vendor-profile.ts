@@ -31,7 +31,6 @@ export type VendorProfileRecord = Partial<Vendor> & {
   status?: VendorLifecycleStatus;
   categories?: string[];
   brands?: string[];
-  article_ids?: string[];
   supply_capabilities?: VendorSupplyCapability[];
   created_at?: string;
   updated_at?: string;
@@ -171,29 +170,13 @@ function normalizeCapability(raw: VendorSupplyCapability, db: RDashDatabase): Ve
 
 export function canonicalVendorCapabilities(vendor: VendorProfileRecord, db: RDashDatabase): VendorSupplyCapability[] {
   const structured = Array.isArray(vendor.supply_capabilities) ? vendor.supply_capabilities : [];
-  const normalized = structured.map((row) => normalizeCapability(row, db)).filter((row): row is VendorSupplyCapability => Boolean(row));
-  if (normalized.length) return normalized;
-
-  return uniqueStrings((vendor.article_ids || []) as string[]).flatMap((articleId) => {
-    const article = db.master.articles.find((row) => row.id === articleId);
-    if (!article) return [];
-    const category = article.category_id ? db.master.workCategories.find((row) => row.id === article.category_id) : undefined;
-    return [{
-      id: `vendor-cap-${article.id}-legacy`,
-      article_id: article.id,
-      article_name: article.name,
-      category_id: article.category_id,
-      category_name: category?.name,
-      variant_ids: [],
-      availability: "unknown" as const,
-      status: "active" as const,
-    }];
-  });
+  return structured
+    .map((row) => normalizeCapability(row, db))
+    .filter((row): row is VendorSupplyCapability => Boolean(row));
 }
 
 export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDatabase, options: { id?: string } = {}): VendorProfileRecord {
   const capabilities = canonicalVendorCapabilities(input, db);
-  const articleIds = uniqueStrings(capabilities.filter((row) => row.status !== "inactive").map((row) => row.article_id));
   const categories = uniqueStrings([...(input.categories || []), ...capabilities.map((row) => row.category_name)]);
   const brands = uniqueStrings([...(input.brands || []), ...capabilities.map((row) => row.brand)]);
   return {
@@ -223,7 +206,6 @@ export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDat
     notes: compact(input.notes) || undefined,
     source_partner_id: input.source_partner_id,
     source_partner_name: compact(input.source_partner_name) || undefined,
-    article_ids: articleIds,
     supply_capabilities: capabilities,
     created_at: input.created_at,
     updated_at: new Date().toISOString(),
@@ -274,7 +256,7 @@ export function vendorDuplicateConflicts(db: RDashDatabase, candidate: VendorPro
 }
 
 export function vendorQuotedRate(rate: VendorRate | Record<string, unknown>) {
-  return Number((rate as any).quoted_rate ?? (rate as any).rate ?? 0);
+  return Number((rate as any).rate ?? 0);
 }
 
 function dateDiffDays(start?: string, end?: string) {
@@ -414,7 +396,7 @@ export function recommendVendorsForArticle(db: RDashDatabase, articleId: string,
     if (["inactive", "blacklisted"].includes(profile.status || "")) return [];
     const capability = capabilityForArticle(profile, db, articleId, variantId);
     const rate = relevantRates.find((row) => row.vendor_id === vendor.id);
-    if (!capability && !rate && !(profile.article_ids || []).includes(articleId)) return [];
+    if (!capability && !rate) return [];
     const performance = computeVendorPerformance(db, vendor.id);
     const quotedRate = rate ? vendorQuotedRate(rate) : undefined;
     const priceComponent = quotedRate && lowestRate ? Math.max(0, 100 - ((quotedRate - lowestRate) / lowestRate) * 100) : 55;
