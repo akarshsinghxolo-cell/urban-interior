@@ -5,7 +5,6 @@ import {
   deletedDeltaVersionKeys,
   expandedDeltaRowVersions,
   workspaceCollectionFilterParam,
-  WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS,
   type WorkspaceDeltaPayload,
 } from "./workspace-delta";
 import {
@@ -14,7 +13,6 @@ import {
 import type { WorkspaceReadCacheEntry } from "./workspace-read-cache";
 
 const MAX_DELTA_PAGES_PER_NAVIGATION = 5;
-const ROW_SAFE_COLLECTIONS = new Set<string>(WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS);
 
 export type WorkspaceNavigationRevalidationResult =
   | { kind: "fresh"; entry: WorkspaceReadCacheEntry }
@@ -64,17 +62,6 @@ function requiresScopedReload(
   for (const collection of touched) {
     if (limited.has(collection)) return `limited_collection:${collection}`;
   }
-
-  if (entry.readState.strategy === "row") {
-    for (const collection of touched) {
-      if (!ROW_SAFE_COLLECTIONS.has(collection)) {
-        // A row-scoped Customer/Site graph is selected by relationships, not
-        // just by collection. A changed row elsewhere in the same collection
-        // cannot be merged safely without re-evaluating that graph server-side.
-        return `row_graph_changed:${collection}`;
-      }
-    }
-  }
   return null;
 }
 
@@ -82,6 +69,14 @@ export async function revalidateWorkspaceReadCacheEntry(
   input: WorkspaceReadCacheEntry,
   signal: AbortSignal,
 ): Promise<WorkspaceNavigationRevalidationResult> {
+  // Customer/Site row snapshots are relationship-selected graphs, not complete
+  // collections. A collection-wide delta could expose unrelated rows before the
+  // client discovers that the graph must be rebuilt, so row graphs always go
+  // back through the authenticated entity-scoped reader.
+  if (input.readState.strategy === "row") {
+    return { kind: "reload", reason: "row_scope_requires_server_graph" };
+  }
+
   let entry: WorkspaceReadCacheEntry = {
     ...input,
     data: structuredClone(input.data),
@@ -105,6 +100,7 @@ export async function revalidateWorkspaceReadCacheEntry(
       headers: {
         Accept: "application/json",
         "X-UC-Delta-Client": "navigation-cache",
+        "X-UC-Delta-Module": entry.target.moduleId,
       },
     });
     if (response.status === 401) return { kind: "unauthorized" };
