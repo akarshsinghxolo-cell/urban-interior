@@ -33,35 +33,18 @@ function db() {
       vendors: [] as VendorProfileRecord[],
       vendorRates: [] as any[],
       vendorRateHistories: [] as any[],
-      contractors: [],
-      staff: [],
-      sourcePartners: [],
-      commissionRules: [],
-      contractorRates: [],
-      workOptionGroups: [],
-      workOptionValues: [],
-      customerRateSuggestions: [],
-      storageAccounts: [],
-      storageFolderTemplates: [],
-      storageFolderInstances: [],
-      fileAssets: [],
-      catalogues: [],
-      catalogueArticleVendorLinks: [],
-      pinterestBoards: [],
-      referenceMedia: [],
+      contractors: [], staff: [], sourcePartners: [], commissionRules: [], contractorRates: [],
+      workOptionGroups: [], workOptionValues: [], customerRateSuggestions: [], storageAccounts: [],
+      storageFolderTemplates: [], storageFolderInstances: [], fileAssets: [], catalogues: [],
+      catalogueArticleVendorLinks: [], pinterestBoards: [], referenceMedia: [],
     },
-    purchaseOrders: [] as any[],
-    vendorRfqs: [] as any[],
-    vendorBids: [] as any[],
-    grns: [] as any[],
-    vendorBills: [] as any[],
-    vendorPayments: [] as any[],
-    auditLog: [] as any[],
+    purchaseOrders: [] as any[], vendorRfqs: [] as any[], vendorBids: [] as any[], grns: [] as any[],
+    vendorBills: [] as any[], vendorPayments: [] as any[], auditLog: [] as any[],
   } as any;
 }
 
 describe("canonical Vendor profile", () => {
-  test("keeps only requested profile concerns and strips excluded business fields", () => {
+  test("keeps requested concerns while dropping explicitly excluded business fields", () => {
     const state = db();
     const normalized = normalizeVendorForWrite({
       id: "ven-1",
@@ -83,7 +66,7 @@ describe("canonical Vendor profile", () => {
       warranty_terms: "1 year",
       udyam_no: "UDYAM-1",
       verified_bank: true,
-    } as any, state, { id: "ven-1" }) as Record<string, unknown>;
+    } as any, state, { id: "ven-1" }) as unknown as Record<string, unknown>;
 
     expect(normalized.name).toBe("ABC Electricals");
     expect(normalized.legal_name).toBe("ABC Electricals Private Limited");
@@ -96,7 +79,7 @@ describe("canonical Vendor profile", () => {
     }
   });
 
-  test("structured capability owns brand, variants, availability, lead time and MOQ", () => {
+  test("structured capability owns Article variants, brand, availability, lead time and MOQ", () => {
     const state = db();
     const normalized = normalizeVendorForWrite({
       id: "ven-1",
@@ -128,7 +111,7 @@ describe("canonical Vendor profile", () => {
     });
   });
 
-  test("legacy flat article links migrate to structured capabilities", () => {
+  test("legacy flat Article links remain readable as structured capability", () => {
     const state = db();
     expect(canonicalVendorCapabilities({ id: "ven-legacy", name: "Legacy", article_ids: ["art-panel"] }, state)[0]).toMatchObject({
       article_id: "art-panel",
@@ -141,7 +124,7 @@ describe("canonical Vendor profile", () => {
 });
 
 describe("Vendor duplicate control", () => {
-  test("same phone or GSTIN is a hard duplicate while a similar local name is reviewable", () => {
+  test("same phone or GSTIN hard-blocks while a strongly similar local name is reviewable", () => {
     const state = db();
     state.master.vendors = [
       { id: "ven-1", name: "ABC Electricals", phone: "9876543210", gstin: "09ABCDE1234F1Z5", city: "Gorakhpur" },
@@ -159,7 +142,7 @@ describe("Vendor duplicate control", () => {
 });
 
 describe("Vendor commercial, performance and recommendation intelligence", () => {
-  test("commercial profile is computed from rates, POs, bills and payments", () => {
+  test("commercial profile is derived from rates, Purchase Orders, bills and payments", () => {
     const state = db();
     state.master.vendors = [{ id: "ven-1", name: "ABC", status: "active" }];
     state.master.vendorRates = [
@@ -171,21 +154,14 @@ describe("Vendor commercial, performance and recommendation intelligence", () =>
     state.vendorPayments = [{ id: "pay-1", vendor_id: "ven-1", amount: 6000 }];
 
     expect(buildVendorCommercialProfile(state, "ven-1")).toMatchObject({
-      rateCount: 2,
-      activeRateCount: 2,
-      lowestQuotedRate: 100,
-      averageQuotedRate: 150,
-      latestQuotedRate: 200,
-      purchaseOrderCount: 1,
-      totalOrderedValue: 10000,
-      totalBilledValue: 9000,
-      totalPaidValue: 6000,
-      outstandingValue: 3000,
+      rateCount: 2, activeRateCount: 2, lowestQuotedRate: 100, averageQuotedRate: 150,
+      latestQuotedRate: 200, purchaseOrderCount: 1, totalOrderedValue: 10000,
+      totalBilledValue: 9000, totalPaidValue: 6000, outstandingValue: 3000,
       averageActualDeliveryDays: 3,
     });
   });
 
-  test("performance uses observed delivery, GRN quality, price and relationship", () => {
+  test("performance combines observed delivery, GRN quality, current price and relationship", () => {
     const state = db();
     state.master.vendors = [
       { id: "ven-a", name: "A", status: "active", reliability_rating: "very_good", delivery_time_rating: "very_good" },
@@ -199,10 +175,7 @@ describe("Vendor commercial, performance and recommendation intelligence", () =>
       { id: "po-a", vendor_id: "ven-a", expected_delivery: "2026-08-05", actual_delivery: "2026-08-04", status: "received" },
       { id: "po-b", vendor_id: "ven-b", expected_delivery: "2026-08-05", actual_delivery: "2026-08-09", status: "received" },
     ];
-    state.grns = [
-      { id: "grn-a", po_id: "po-a", status: "accepted" },
-      { id: "grn-b", po_id: "po-b", status: "rejected" },
-    ];
+    state.grns = [{ id: "grn-a", po_id: "po-a", status: "accepted" }, { id: "grn-b", po_id: "po-b", status: "rejected" }];
 
     const a = computeVendorPerformance(state, "ven-a");
     const b = computeVendorPerformance(state, "ven-b");
@@ -231,7 +204,7 @@ describe("Vendor commercial, performance and recommendation intelligence", () =>
 });
 
 describe("Vendor relationship timeline", () => {
-  test("combines procurement and financial relationship events newest first", () => {
+  test("combines sourcing, receipt and financial events newest first", () => {
     const state = db();
     state.master.vendors = [{ id: "ven-1", name: "ABC", status: "active", created_at: "2026-07-01T00:00:00Z" }];
     state.vendorRfqs = [{ id: "rfq-1", rfq_no: "RFQ-1", vendor_ids: ["ven-1"], status: "sent", created_at: "2026-07-10T00:00:00Z" }];
@@ -241,13 +214,12 @@ describe("Vendor relationship timeline", () => {
     state.vendorBills = [{ id: "bill-1", bill_no: "VB-1", vendor_id: "ven-1", total_amount: 1000, created_at: "2026-07-25T00:00:00Z" }];
     state.vendorPayments = [{ id: "pay-1", payment_no: "VP-1", vendor_id: "ven-1", amount: 1000, paid_at: "2026-07-30T00:00:00Z" }];
 
-    const timeline = buildVendorRelationshipTimeline(state, "ven-1");
-    expect(timeline.map((row) => row.kind)).toEqual(["payment", "bill", "grn", "po", "bid", "rfq", "profile"]);
+    expect(buildVendorRelationshipTimeline(state, "ven-1").map((row) => row.kind)).toEqual(["payment", "bill", "grn", "po", "bid", "rfq", "profile"]);
   });
 });
 
 describe("canonical Vendor Rate", () => {
-  test("new writes keep the live rate minimal and never add validity or duplicated commercial fields", () => {
+  test("new live writes contain quote identity/status only and never add validity or duplicated commercial fields", () => {
     const state = db();
     const updated = applyVendorRateUpdates(state.master, [{
       vendorId: "ven-1",
@@ -260,7 +232,7 @@ describe("canonical Vendor Rate", () => {
       changedBy: "Tester",
     }], "2026-08-07T10:00:00Z");
 
-    const rate = updated.vendorRates[0] as Record<string, unknown>;
+    const rate = updated.vendorRates[0] as unknown as Record<string, unknown>;
     expect(vendorQuotedRate(rate as any)).toBe(125.5);
     expect(rate.quoted_rate).toBe(125.5);
     expect(rate.rate).toBe(125.5);
