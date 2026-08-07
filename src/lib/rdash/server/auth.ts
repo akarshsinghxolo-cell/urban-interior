@@ -103,6 +103,7 @@ export function verifySession(token?: string | null): AuthenticatedUser | null {
 // this bearer token for weeks or months.
 export const SESSION_TTL = 28800;
 const REFRESH_COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+const WORKSPACE_ID = process.env.UC_WORKSPACE_ID || "default";
 
 export const sessionCookie = (value: string) => ({
     name: AUTH_COOKIE,
@@ -173,34 +174,14 @@ async function authorizedUserFromSupabase(user: SupabaseAuthUser): Promise<Omit<
     }
 
     const admin = getSupabaseAdminClient();
-    let staffRow: unknown = null;
-    const { data: generatedRow, error: generatedLookupError } = await admin
+    const { data: staffRow, error: staffError } = await admin
         .from("entity_master_staff")
         .select("id,data")
+        .eq("workspace_id", WORKSPACE_ID)
         .eq("auth_user_id_gen" as never, user.id)
         .maybeSingle();
-
-    if (generatedLookupError) {
-        // Compatibility path for projects where the generated lookup column has
-        // not yet been deployed. Authentication still requires Supabase Auth.
-        const { data: staffRows, error: staffError } = await admin
-            .from("entity_master_staff")
-            .select("id,data")
-            .eq("workspace_id", "default");
-        if (staffError) {
-            throw new Error(`Urban Castle staff lookup failed: ${staffError.message}`);
-        }
-        staffRow = (staffRows || []).find((row: { data?: unknown }) => {
-            const staffData = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-            return Boolean(
-                staffData &&
-                typeof staffData === "object" &&
-                "auth_user_id" in staffData &&
-                staffData.auth_user_id === user.id,
-            );
-        }) || null;
-    } else {
-        staffRow = generatedRow;
+    if (staffError) {
+        throw new Error(`Urban Castle indexed staff lookup failed: ${staffError.message}`);
     }
 
     if (staffRow) {

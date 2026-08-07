@@ -7,6 +7,10 @@ const authSource = readFileSync(
   join(repositoryRoot, "src/lib/rdash/server/auth.ts"),
   "utf8",
 );
+const staffAuthMigration = readFileSync(
+  join(repositoryRoot, "supabase/migrations/20260808190000_add_staff_auth_user_lookup.sql"),
+  "utf8",
+);
 
 describe("server authentication source security", () => {
   test("contains no static owner credential bypass", () => {
@@ -22,6 +26,17 @@ describe("server authentication source security", () => {
   test("routes every non-empty credential attempt through Supabase Auth", () => {
     expect(authSource).toContain("return supabaseCredentials(email, password);");
     expect(authSource).toContain("auth.auth.signInWithPassword({ email, password })");
+  });
+
+  test("uses one workspace-scoped indexed Staff lookup", () => {
+    expect(authSource).toContain('const WORKSPACE_ID = process.env.UC_WORKSPACE_ID || "default";');
+    expect(authSource).toContain('.eq("workspace_id", WORKSPACE_ID)');
+    expect(authSource).toContain('.eq("auth_user_id_gen" as never, user.id)');
+    expect(authSource).not.toContain("generatedLookupError");
+    expect(authSource).not.toContain('eq("workspace_id", "default")');
+    expect(staffAuthMigration).toContain("generated always as (nullif(data ->> 'auth_user_id', '')) stored");
+    expect(staffAuthMigration).toContain("entity_master_staff_workspace_auth_user_idx");
+    expect(staffAuthMigration).toContain("(workspace_id, auth_user_id_gen)");
   });
 
   test("keeps the app bearer short-lived while Supabase refresh access is renewable", () => {
