@@ -7,6 +7,7 @@ import { updateGeofenceDwell, type GeofenceDwellState } from "@/lib/rdash/auto-g
 import { indiaDate } from "@/lib/rdash/date";
 import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 import type { Visit } from "@/lib/rdash/types";
+import { watchDevicePosition } from "@/lib/rdash/device-gps";
 function isStaffVisit(visit: Visit) {
     return visit.assignee_type !== "contractor" && !visit.contractor_id;
 }
@@ -150,13 +151,13 @@ export function AutoGeofenceMonitor() {
                 }
             }
         };
-        const watchId = navigator.geolocation.watchPosition(onPosition, () => {
+        const stopWatching = watchDevicePosition(onPosition, () => {
             if (!permissionNoticeShown.current) {
                 permissionNoticeShown.current = true;
                 toast.info("Automatic geofence is unavailable. Use Manual Check-in / Check-out with live GPS.");
             }
-        }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
-        return () => navigator.geolocation.clearWatch(watchId);
+        });
+        return stopWatching;
     }, []);
     return null;
 }
