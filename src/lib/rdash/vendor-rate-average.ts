@@ -31,10 +31,9 @@ export type VendorArticleRateCandidate = RateTimingFields & {
 
 export type SelectedVendorArticleRate = VendorArticleRateCandidate & {
   defaultUnitId?: string;
-  /** Compatibility name: for canonical rates this is the quoted rate before unit normalization. */
-  landedRate: number;
+  quotedRate: number;
   conversionFactor?: number;
-  normalizedLandedRate?: number;
+  normalizedQuotedRate?: number;
   active: boolean;
   conversionError?: string;
 };
@@ -78,8 +77,6 @@ function effectiveTime(candidate: VendorArticleRateCandidate): number {
 function isActiveCandidate(candidate: VendorArticleRateCandidate, at: Date): boolean {
   const status = String(candidate.status || "active").trim().toLowerCase();
   if (status !== "active") return false;
-  // Current Vendor Rates intentionally have no validity window. History may
-  // carry effective_from/effective_to solely to order/supersede audit records.
   if (candidate.sourceKind === "current") return true;
   const instant = at.getTime();
   const startsAt = dateTime(candidate.effective_from);
@@ -246,9 +243,9 @@ export function selectVendorArticleRates(
       ...selected,
       rawUnitId: configuredQuotedUnit(database, article, selected),
       defaultUnitId,
-      landedRate: quoted,
+      quotedRate: quoted,
       conversionFactor,
-      normalizedLandedRate: normalized,
+      normalizedQuotedRate: normalized,
       active: isActiveCandidate(selected, at),
       conversionError: conversionFactor
         ? undefined
@@ -264,10 +261,10 @@ export function articleVendorRateAverage(
 ): ArticleVendorRateAverage {
   const article = database.master.articles.find((row) => row.id === articleId);
   const selected = selectVendorArticleRates(database, articleId, at);
-  const included = selected.filter((row) => Number.isFinite(row.normalizedLandedRate));
-  const skipped = selected.filter((row) => !Number.isFinite(row.normalizedLandedRate));
+  const included = selected.filter((row) => Number.isFinite(row.normalizedQuotedRate));
+  const skipped = selected.filter((row) => !Number.isFinite(row.normalizedQuotedRate));
   const average = included.length
-    ? included.reduce((sum, row) => sum + (row.normalizedLandedRate as number), 0) / included.length
+    ? included.reduce((sum, row) => sum + (row.normalizedQuotedRate as number), 0) / included.length
     : undefined;
   return {
     articleId,
