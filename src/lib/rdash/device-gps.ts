@@ -3,7 +3,7 @@ import type { GpsCapture } from "./gps";
 
 export type DeviceGpsMode = "transaction" | "master-location" | "tracking";
 
-export const MASTER_LOCATION_MAX_ACCURACY_M = 100;
+export const MASTER_LOCATION_MAX_ACCURACY_M = 75;
 
 export const DEVICE_GPS_OPTIONS: Record<DeviceGpsMode, PositionOptions> = {
   transaction: {
