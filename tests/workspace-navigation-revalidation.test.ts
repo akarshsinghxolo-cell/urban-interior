@@ -41,20 +41,30 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain("structuredClone(input.data)");
   });
 
-  test("navigation delta uses cached collection coverage and changed rows only", async () => {
+  test("navigation delta uses cached collection coverage and an authorized module target", async () => {
     const source = await read("src/lib/rdash/workspace-navigation-delta.ts");
     expect(source).toContain("workspaceCollectionFilterParam(entry.data)");
     expect(source).toContain('fetch(`/api/changes?${params.toString()}`');
     expect(source).toContain('"X-UC-Delta-Client": "navigation-cache"');
+    expect(source).toContain('"X-UC-Delta-Module": entry.target.moduleId');
     expect(source).toContain("applyWorkspaceDelta(entry.data, delta)");
     expect(source).toContain("mergeWorkspaceRowVersions");
   });
 
-  test("relationship row graphs and bounded collections recover with a full scoped read", async () => {
+  test("relationship row graphs never request collection-wide delta row bodies", async () => {
     const source = await read("src/lib/rdash/workspace-navigation-delta.ts");
-    expect(source).toContain('entry.readState.strategy === "row"');
-    expect(source).toContain("ROW_SAFE_COLLECTIONS");
-    expect(source).toContain("row_graph_changed:");
+    const rowGuard = source.indexOf('input.readState.strategy === "row"');
+    const deltaFetch = source.indexOf('fetch(`/api/changes?${params.toString()}`');
+    expect(rowGuard).toBeGreaterThan(-1);
+    expect(deltaFetch).toBeGreaterThan(-1);
+    expect(rowGuard).toBeLessThan(deltaFetch);
+    expect(source).toContain('reason: "row_scope_requires_server_graph"');
+    expect(source).not.toContain("ROW_SAFE_COLLECTIONS");
+    expect(source).not.toContain("row_graph_changed:");
+  });
+
+  test("bounded collections recover with a full scoped read", async () => {
+    const source = await read("src/lib/rdash/workspace-navigation-delta.ts");
     expect(source).toContain("_workspace_read_limits");
     expect(source).toContain("limited_collection:");
   });

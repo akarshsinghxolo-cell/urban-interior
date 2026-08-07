@@ -163,18 +163,22 @@ describe("delta journal migration and API contract", () => {
     expect(revisionUpdate).toBeGreaterThan(journalInsert);
   });
 
-  test("exposes an authenticated, no-store changes endpoint", async () => {
+  test("exposes an authenticated, private no-store changes endpoint", async () => {
     const route = await Bun.file("src/app/api/changes/route.ts").text();
     expect(route).toContain("requireSession(request)");
     expect(route).toContain('searchParams.get("afterRevision")');
+    expect(route).toContain('headers.get("x-uc-delta-module")');
+    expect(route).toContain("authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)");
     expect(route).toContain("getWorkspaceChanges(");
     expect(route).toContain("DIRECTORY_PROJECTION_COLLECTIONS");
     expect(route).toContain("canReadFullStaff ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
-    expect(route).toContain('"Cache-Control": "no-store"');
-    expect(route).toContain("status: 400");
-    expect(route).toContain("status: 401");
-    expect(route).toContain("status: 503");
+    expect(route).toContain('"Cache-Control": "private, no-store, max-age=0"');
+    expect(route).toContain('"X-Content-Type-Options": "nosniff"');
+    expect(route).toContain('errorJson("afterRevision must be a non-negative integer.", 400)');
+    expect(route).toContain('errorJson("Your session is missing or expired.", 401)');
+    expect(route).toContain('errorJson(message.slice("FORBIDDEN:".length), 403)');
+    expect(route).toContain('errorJson("Workspace changes are temporarily unavailable.", 503');
   });
 
   test("bounds server reads and constrains batches to one coherent current revision", async () => {
