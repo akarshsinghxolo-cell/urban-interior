@@ -101,8 +101,10 @@ jobs:
         run: bun run test:auth-security
       - name: Test runtime efficiency hardening
         run: bun run test:runtime-efficiency
-      - name: Test vendor landed-rate averages
+      - name: Test vendor quoted-rate averages
         run: bun run test:vendor-rate-average
+      - name: Test canonical Vendor profile and intelligence
+        run: bun test tests/vendor-profile.test.ts
       - name: Test unified Customer and Sites saves
         run: bun run test:customer-sites-save
       - name: Test Sales Pipeline progression
