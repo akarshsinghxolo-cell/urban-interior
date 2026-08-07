@@ -77,8 +77,8 @@ jobs:
         run: bun test tests/staff-reference-integrity.test.ts
       - name: Test public Google Drive access
         run: bun test tests/google-drive-public-access.test.ts
-      - name: Test Google Drive transaction simplification
-        run: bun test tests/google-drive-transaction-simplification.test.ts
+      - name: Test Google Drive transaction simplification and folder naming
+        run: bun test tests/google-drive-transaction-simplification.test.ts tests/google-drive-folder-naming.test.ts
       - name: Test exact module read plans
         run: bun run test:module-read-plans
       - name: Test bootstrap and scoped client reads

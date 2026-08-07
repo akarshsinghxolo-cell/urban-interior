@@ -3,7 +3,6 @@ import { resolveEntityContext } from "../entity-context";
 import type { FileAttachmentEntityType, RDashDatabase } from "../types";
 import {
   practicalFolderName,
-  safeSegment,
   type FolderSegment as CoreFolderSegment,
 } from "./direct-upload-storage-core";
 import { currentDriveFolderRouting } from "./drive-folder-routing-context";
@@ -16,21 +15,18 @@ function targetNotReady(message: string): never {
   throw new Error(`TARGET_NOT_READY:${message}`);
 }
 
-function shortId(value: string | undefined): string {
-  return safeSegment((value || "unknown").replace(/[^a-zA-Z0-9]/g, "").slice(-8), "unknown");
-}
-
+/**
+ * Visible Google Drive names must come from labels people actually use in the app.
+ * Stable entity IDs stay only in the hidden canonical key/appProperties registry.
+ */
 function entityFolder(
-  prefix: "CUST" | "SITE" | "VEND" | "CONT" | "STAFF",
-  id: string,
   label: string | undefined,
   detail: string | undefined,
   fallback: string,
   key: string,
 ): CanonicalFolderSegment {
-  const display = practicalFolderName(label, detail, fallback);
   return {
-    name: `${prefix}-${shortId(id)} - ${display}`,
+    name: practicalFolderName(label, detail, fallback),
     key,
   };
 }
@@ -69,10 +65,10 @@ export function destinationSegments(
     return [leaf("Library", "root:library"), leaf("Reference Media", "library:reference")];
   }
   if (purpose === "import_source") {
-    return [leaf("_System", "root:system"), leaf("Imports", "system:imports")];
+    return [leaf("System", "root:system"), leaf("Imports", "system:imports")];
   }
   if (purpose === "diagnostic") {
-    return [leaf("_System", "root:system"), leaf("Diagnostics", "system:diagnostics")];
+    return [leaf("System", "root:system"), leaf("Diagnostics", "system:diagnostics")];
   }
 
   let context: ReturnType<typeof resolveEntityContext> | undefined;
@@ -105,7 +101,7 @@ export function destinationSegments(
     if (!customer) targetNotReady("The related Customer is not synchronized yet.");
     return [
       leaf("Customers", "root:customers"),
-      entityFolder("CUST", customer.id, customer.name, undefined, "Customer", `customer:${customer.id}`),
+      entityFolder(customer.name, undefined, "Customer", `customer:${customer.id}`),
     ];
   };
 
@@ -113,7 +109,7 @@ export function destinationSegments(
     if (!site) targetNotReady("The related Site is not synchronized yet.");
     return [
       ...customerRoot(),
-      entityFolder("SITE", site.id, site.name, site.locality || site.city, "Site", `site:${site.id}`),
+      entityFolder(site.name, site.locality || site.city, "Site", `site:${site.id}`),
     ];
   };
 
@@ -121,7 +117,7 @@ export function destinationSegments(
     if (!workOrder) targetNotReady("The related Work Order is not synchronized yet.");
     return [
       ...siteRoot(),
-      leaf(safeSegment(workOrder.work_order_no, `WO-${shortId(workOrder.id)}`), `work_order:${workOrder.id}`),
+      entityFolder(workOrder.title, workOrder.work_order_no, "Work Order", `work_order:${workOrder.id}`),
     ];
   };
 
@@ -129,7 +125,7 @@ export function destinationSegments(
     if (!purchaseOrder) targetNotReady("The related Purchase Order is not synchronized yet.");
     return [
       leaf("Procurement", "root:procurement"),
-      leaf(safeSegment(purchaseOrder.po_no, `PO-${shortId(purchaseOrder.id)}`), `purchase_order:${purchaseOrder.id}`),
+      entityFolder(purchaseOrder.po_no, purchaseOrder.vendor_name, "Purchase Order", `purchase_order:${purchaseOrder.id}`),
     ];
   };
 
@@ -232,7 +228,7 @@ export function destinationSegments(
         : leaf("Business Documents", `vendor:${vendor.id}:business-documents`);
     return [
       leaf("Vendors", "root:vendors"),
-      entityFolder("VEND", vendor.id, vendor.name, vendor.locality || vendor.city, "Vendor", `vendor:${vendor.id}`),
+      entityFolder(vendor.name, vendor.locality || vendor.city, "Vendor", `vendor:${vendor.id}`),
       category,
     ];
   }
@@ -247,8 +243,6 @@ export function destinationSegments(
     return [
       leaf("Contractors", "root:contractors"),
       entityFolder(
-        "CONT",
-        contractor.id,
         contractor.name,
         contractor.categories?.[0] || contractor.locality || contractor.city,
         "Contractor",
@@ -262,7 +256,7 @@ export function destinationSegments(
     if (!staff) targetNotReady("The related Staff record is not synchronized yet.");
     return [
       leaf("Staff", "root:staff"),
-      entityFolder("STAFF", staff.id, staff.name, undefined, "Staff", `staff:${staff.id}`),
+      entityFolder(staff.name, undefined, "Staff", `staff:${staff.id}`),
       leaf("Documents", `staff:${staff.id}:documents`),
     ];
   }
