@@ -332,7 +332,8 @@ function qualityScoreFromGrns(grns: any[]) {
     if (received > 0 && mismatch > 0) return Math.max(20, 100 - (mismatch / received) * 100);
     const status = lower(grn.status);
     if (["rejected", "failed"].includes(status)) return 20;
-    if (["accepted", "received", "completed", "verified", "matched", "closed"].includes(status)) return 90;
+    if (["accepted", "approved", "passed", "verified"].includes(status)) return 95;
+    if (["received", "completed", "matched", "closed"].includes(status)) return 90;
     return 75;
   });
   return clampScore(average(scores) || 70);
