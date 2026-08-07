@@ -10,12 +10,12 @@ import type {
 } from "./types";
 
 /**
- * A live Vendor Rate is intentionally small:
- * Vendor + Article + optional Variant + quoted rate + status + timestamps.
+ * A live Vendor Rate has one meaning and one amount field:
+ * Vendor + Article + optional Variant + `rate` (the quoted rate) + status/timestamps.
  *
  * Unit/conversion/GST belong to Article/Variant Master. Delivery/MOQ/brand and
  * availability belong to Vendor supply capability. Source/audit context lives
- * in VendorRateHistory. Validity dates are deliberately not part of this model.
+ * in VendorRateHistory. Validity dates are deliberately not part of live rates.
  */
 export interface VendorRateUpdateInput {
   vendorId: string;
@@ -49,7 +49,7 @@ function normalizeMoney(value: number) {
 }
 
 function quotedRate(rate: VendorRate) {
-  return normalizeMoney(rate.quoted_rate ?? rate.rate);
+  return normalizeMoney(rate.rate);
 }
 
 function resolveUnitId(master: Master, articleId: string, variantId?: string, fallback?: string) {
@@ -70,8 +70,8 @@ function ensureHistorySeed(master: Master, updatedAt: string): VendorRateHistory
   const histories = Array.isArray(master.vendorRateHistories) ? master.vendorRateHistories : [];
   if (histories.length) return histories;
   return master.vendorRates.flatMap((rate) => {
-    const unitId = resolveUnitId(master, rate.article_id, rate.variant_id, rate.unit_id);
-    const scopeId = rate.work_required_article_id || master.subcategoryArticleMap.find((scope) => scope.article_id === rate.article_id)?.id;
+    const unitId = resolveUnitId(master, rate.article_id, rate.variant_id);
+    const scopeId = master.subcategoryArticleMap.find((scope) => scope.article_id === rate.article_id)?.id;
     if (!unitId || !scopeId) return [];
     return [{
       id: `vrh-seed-${rate.id}`.replace(/[^a-zA-Z0-9_-]/g, "_"),
@@ -83,9 +83,7 @@ function ensureHistorySeed(master: Master, updatedAt: string): VendorRateHistory
       variant_id: rate.variant_id,
       unit_id: unitId,
       new_rate: quotedRate(rate),
-      source_type: rate.current_source_type || "SEED",
-      source_id: rate.current_source_id,
-      source_no: rate.current_source_no,
+      source_type: "SEED" as const,
       status: "active" as const,
       effective_from: (rate.updated_at || updatedAt).slice(0, 10),
       changed_by: "System Seed",
@@ -115,12 +113,7 @@ function canonicalLiveRate(input: {
     vendor_id: input.change.vendorId,
     article_id: input.change.scope.article_id,
     article_name: input.change.articleName,
-    // Compatibility scope link retained so existing procurement and navigation
-    // can resolve the Article context without duplicating configuration.
-    work_required_article_id: input.change.scope.id,
     variant_id: input.change.variantId,
-    quoted_rate: input.amount,
-    // Compatibility mirror. New code reads quoted_rate first.
     rate: input.amount,
     status: input.existing?.status || "active",
     created_at: createdAt,
