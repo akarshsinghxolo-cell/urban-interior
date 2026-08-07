@@ -1,0 +1,817 @@
+name: Agent centralize GPS acquisition
+
+on:
+  push:
+    branches:
+      - agent/centralize-gps-acquisition
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/centralize-gps-acquisition
+          fetch-depth: 0
+
+      - name: Apply GPS refactor
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              file = Path(path)
+              text = file.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}, found {count}: {old[:100]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          def insert_after(path: str, marker: str, addition: str):
+              replace_once(path, marker, marker + addition)
+
+          # Site form: fresh, accuracy-validated master GPS; preserve reverse-geocoded full address.
+          path = "src/components/rdash/SiteFormDialog.tsx"
+          insert_after(
+              path,
+              'import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";\n',
+              'import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''    const captureGps = () => {
+        if (!navigator.geolocation) {
+            toast.error("GPS is not available on this device");
+            return;
+        }
+        setGpsLoading(true);
+        navigator.geolocation.getCurrentPosition((position) => {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            applyCoordinates(latitude, longitude);
+            setGpsLoading(false);
+            toast.success("Site GPS captured");
+            reverseGeocodeWithNominatim(latitude, longitude)
+                .then((data) => {
+                const location = data?.address || {};
+                setDraft((current) => ({
+                    ...current,
+                    address: data?.display_name || current.address,
+                    city: location.city || location.town || location.village || current.city,
+                    locality: location.suburb || location.neighbourhood || current.locality,
+                }));
+            })
+                .catch(() => undefined);
+        }, (error) => {
+            setGpsLoading(false);
+            toast.error(`GPS error: ${error.message}`);
+        }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+    };
+''',
+              '''    const captureGps = async () => {
+        setGpsLoading(true);
+        try {
+            const capture = await captureDeviceGps({ mode: "master-location" });
+            const { latitude, longitude } = capture;
+            applyCoordinates(latitude, longitude);
+            setGpsLoading(false);
+            toast.success(`Site GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+            void reverseGeocodeWithNominatim(latitude, longitude)
+                .then((data) => {
+                const location = data?.address || {};
+                setDraft((current) => ({
+                    ...current,
+                    address: data?.display_name || current.address,
+                    city: location.city || location.town || location.village || current.city,
+                    locality: location.suburb || location.neighbourhood || current.locality,
+                }));
+                if (data?.display_name)
+                    setLocationSearch(data.display_name);
+            })
+                .catch(() => undefined);
+        }
+        catch (error) {
+            setGpsLoading(false);
+            toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+        }
+    };
+''',
+          )
+
+          # Customer Site card: same master-location capture and same address enrichment.
+          path = "src/components/rdash/CustomerSiteDraftCard.tsx"
+          insert_after(
+              path,
+              'import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";\n',
+              'import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''  const captureGps = () => {
+    if (!navigator.geolocation) return toast.error("GPS is not available on this device");
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition((position) => {
+      const { latitude, longitude } = position.coords;
+      applyCoordinates(latitude, longitude);
+      setGpsLoading(false);
+      reverseGeocodeWithNominatim(latitude, longitude).then((data) => {
+        const address = data?.address || {};
+        onChange({
+          address: data?.display_name || draft.address,
+          city: address.city || address.town || address.village || draft.city,
+          locality: address.suburb || address.neighbourhood || draft.locality,
+        });
+        if (data?.display_name) setLocationSearch(data.display_name);
+      }).catch(() => undefined);
+    }, (error) => {
+      setGpsLoading(false);
+      toast.error(`GPS error: ${error.message}`);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+  };
+''',
+              '''  const captureGps = async () => {
+    setGpsLoading(true);
+    try {
+      const capture = await captureDeviceGps({ mode: "master-location" });
+      const { latitude, longitude } = capture;
+      applyCoordinates(latitude, longitude);
+      setGpsLoading(false);
+      toast.success(`Site GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      void reverseGeocodeWithNominatim(latitude, longitude).then((data) => {
+        const address = data?.address || {};
+        onChange({
+          address: data?.display_name || draft.address,
+          city: address.city || address.town || address.village || draft.city,
+          locality: address.suburb || address.neighbourhood || draft.locality,
+        });
+        if (data?.display_name) setLocationSearch(data.display_name);
+      }).catch(() => undefined);
+    } catch (error) {
+      setGpsLoading(false);
+      toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+    }
+  };
+''',
+          )
+
+          # Contractor form: use the same master GPS source and keep reverse geocoding.
+          path = "src/components/rdash/ContractorFormDialog.tsx"
+          insert_after(
+              path,
+              'import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";\n',
+              'import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''  function captureGps() {
+    if (!navigator.geolocation) return toast.error("GPS is unavailable.");
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (disposedRef.current) return;
+        const next = { latitude: position.coords.latitude, longitude: position.coords.longitude };
+        setLatitude(next.latitude);
+        setLongitude(next.longitude);
+        setCoordinates(formatCoordinatePair(next));
+        setGpsLoading(false);
+        void reverseGeocodeWithNominatim(next.latitude, next.longitude).then((result) => {
+          if (!result?.display_name || disposedRef.current) return;
+          set("address", result.display_name);
+          set("city", result.address?.city || result.address?.town || result.address?.village || "");
+          set("locality", result.address?.suburb || result.address?.neighbourhood || "");
+        });
+      },
+      (error) => {
+        setGpsLoading(false);
+        toast.error(`GPS error: ${error.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+''',
+              '''  async function captureGps() {
+    setGpsLoading(true);
+    try {
+      const capture = await captureDeviceGps({ mode: "master-location" });
+      if (disposedRef.current) return;
+      const next = { latitude: capture.latitude, longitude: capture.longitude };
+      setLatitude(next.latitude);
+      setLongitude(next.longitude);
+      setCoordinates(formatCoordinatePair(next));
+      setGpsLoading(false);
+      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      void reverseGeocodeWithNominatim(next.latitude, next.longitude).then((result) => {
+        if (!result?.display_name || disposedRef.current) return;
+        set("address", result.display_name);
+        set("city", result.address?.city || result.address?.town || result.address?.village || "");
+        set("locality", result.address?.suburb || result.address?.neighbourhood || "");
+      });
+    } catch (error) {
+      if (disposedRef.current) return;
+      setGpsLoading(false);
+      toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+    }
+  }
+''',
+          )
+
+          # Unified vendor/contractor form: same master GPS behavior.
+          path = "src/components/rdash/UnifiedPartnerFormDialog.tsx"
+          insert_after(
+              path,
+              'import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";\n',
+              'import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''  function captureGps() {
+    if (!navigator.geolocation) return toast.error("GPS is unavailable.");
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (disposedRef.current) return;
+        const next = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+        setLatitude(next.latitude);
+        setLongitude(next.longitude);
+        setCoordinates(formatCoordinatePair(next));
+        setGpsLoading(false);
+        void reverseGeocodeWithNominatim(next.latitude, next.longitude).then(
+          (result) => {
+            if (!result?.display_name || disposedRef.current) return;
+            setAddress(result.display_name);
+            setCity(
+              result.address?.city ||
+                result.address?.town ||
+                result.address?.village ||
+                "",
+            );
+            setLocality(
+              result.address?.suburb || result.address?.neighbourhood || "",
+            );
+          },
+        );
+      },
+      (error) => {
+        setGpsLoading(false);
+        toast.error(`GPS error: ${error.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+''',
+              '''  async function captureGps() {
+    setGpsLoading(true);
+    try {
+      const capture = await captureDeviceGps({ mode: "master-location" });
+      if (disposedRef.current) return;
+      const next = {
+        latitude: capture.latitude,
+        longitude: capture.longitude,
+      };
+      setLatitude(next.latitude);
+      setLongitude(next.longitude);
+      setCoordinates(formatCoordinatePair(next));
+      setGpsLoading(false);
+      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      void reverseGeocodeWithNominatim(next.latitude, next.longitude).then(
+        (result) => {
+          if (!result?.display_name || disposedRef.current) return;
+          setAddress(result.display_name);
+          setCity(
+            result.address?.city ||
+              result.address?.town ||
+              result.address?.village ||
+              "",
+          );
+          setLocality(
+            result.address?.suburb || result.address?.neighbourhood || "",
+          );
+        },
+      );
+    } catch (error) {
+      if (disposedRef.current) return;
+      setGpsLoading(false);
+      toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+    }
+  }
+''',
+          )
+
+          # Attendance: transaction GPS for actions, master GPS for office setup.
+          path = "src/components/rdash/modules/AttendancePayrollModule.tsx"
+          insert_after(
+              path,
+              'import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";\n',
+              'import { captureDevicePosition, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''    const capturePosition = (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {
+        if (!navigator.geolocation) {
+            toast.error("Device GPS is required for this attendance action.");
+            return;
+        }
+        setCapturing(action);
+        navigator.geolocation.getCurrentPosition((position) => {
+        if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            try {
+                callback(position);
+            }
+            catch (error) {
+                toast.error(error instanceof Error ? error.message : "Attendance could not be verified.");
+            }
+            finally {
+                setCapturing(null);
+            }
+        }, (error) => {
+            setCapturing(null);
+            toast.error(`Device GPS is required: ${error.message}`);
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    };
+''',
+              '''    const capturePosition = async (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {
+        setCapturing(action);
+        try {
+            const position = await captureDevicePosition({
+                mode: action === "office" ? "master-location" : "transaction",
+            });
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            callback(position);
+        }
+        catch (error) {
+            if (!disposedRef.current)
+                toast.error(`Device GPS is required: ${deviceGpsErrorMessage(error)}`);
+        }
+        finally {
+            if (!disposedRef.current)
+                setCapturing(null);
+        }
+    };
+''',
+          )
+
+          # Field mode: shared transaction GPS, shared tracking watcher, common distance calculation.
+          path = "src/components/rdash/modules/FieldModeModule.tsx"
+          insert_after(
+              path,
+              'import { FilePreview } from "../FilePreview";\n',
+              'import { captureDeviceGps, deviceGpsErrorMessage, watchDevicePosition } from "@/lib/rdash/device-gps";\nimport { distanceMeters } from "@/lib/rdash/gps";\nimport { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";\n',
+          )
+          replace_once(
+              path,
+              '    const attendancePolicy = db.master.staff.find((staff) => staff.id === user.staffId)?.attendance_policy;\n',
+              '    const attendancePolicy = db.master.staff.find((staff) => staff.id === user.staffId)?.attendance_policy;\n    const normalizedAttendancePolicy = React.useMemo(() => normalizeAttendancePolicy(attendancePolicy), [attendancePolicy]);\n',
+          )
+          replace_once(
+              path,
+              '''    React.useEffect(() => {
+        if (!activeVisitId || !navigator.geolocation)
+            return;
+        const watchId = navigator.geolocation.watchPosition((position) => {
+            const now = Date.now();
+            if (now - lastTrackingPointAt.current < 30000)
+                return;
+            try {
+                recordTrackingPoint(activeVisitId, { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, captured_at: new Date().toISOString() });
+                lastTrackingPointAt.current = now;
+            }
+            catch { }
+        }, () => undefined, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+        return () => navigator.geolocation.clearWatch(watchId);
+    }, [activeVisitId, recordTrackingPoint]);  // STAGE-4-FIX: deps [activeVisitId, recordTrackingPoint]
+''',
+              '''    React.useEffect(() => {
+        if (!activeVisitId || typeof navigator === "undefined" || !navigator.geolocation)
+            return;
+        const stopWatching = watchDevicePosition((position) => {
+            const now = Date.now();
+            if (now - lastTrackingPointAt.current < 30000)
+                return;
+            if (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy <= 0 || position.coords.accuracy > normalizedAttendancePolicy.max_gps_accuracy_m)
+                return;
+            try {
+                recordTrackingPoint(activeVisitId, { latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy_m: position.coords.accuracy, captured_at: new Date(position.timestamp || Date.now()).toISOString() });
+                lastTrackingPointAt.current = now;
+            }
+            catch { }
+        }, () => undefined);
+        return stopWatching;
+    }, [activeVisitId, normalizedAttendancePolicy.max_gps_accuracy_m, recordTrackingPoint]);  // shared tracking policy + visit-specific accuracy
+''',
+          )
+          replace_once(
+              path,
+              '''    const handleCheckIn = (v: (typeof sorted)[number]) => {
+        if (v.planned_latitude == null || v.planned_longitude == null) {
+            toast.error("This Visit has no verified Site GPS. Add Site coordinates before check-in.");
+            return;
+        }
+        if (!navigator.geolocation) {
+            toast.error("Device GPS is required for field check-in.");
+            return;
+        }
+        setGpsStatus("capturing");
+        setCapturingVisitId(v.id);
+        navigator.geolocation.getCurrentPosition((position) => {
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            try {
+                checkIn(v.id, {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy_m: position.coords.accuracy,
+                    captured_at: new Date().toISOString(),
+                });
+                setGpsStatus("captured");
+                toast.success("Verified field check-in recorded");
+                setTimeout(() => setGpsStatus("idle"), 1500);
+            }
+            catch (error) {
+                toast.error(error instanceof Error
+                    ? error.message
+                    : "Field check-in could not be verified.");
+                setGpsStatus("idle");
+            }
+            finally {
+                setCapturingVisitId(null);
+            }
+        }, (error) => {
+            setGpsStatus("idle");
+            setCapturingVisitId(null);
+            toast.error(`Device GPS is required for check-in: ${error.message}`);
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    };
+''',
+              '''    const handleCheckIn = async (v: (typeof sorted)[number]) => {
+        if (v.planned_latitude == null || v.planned_longitude == null) {
+            toast.error("This Visit has no verified Site GPS. Add Site coordinates before check-in.");
+            return;
+        }
+        setGpsStatus("capturing");
+        setCapturingVisitId(v.id);
+        try {
+            const capture = await captureDeviceGps({ mode: "transaction" });
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            checkIn(v.id, capture);
+            setGpsStatus("captured");
+            toast.success("Verified field check-in recorded");
+            setTimeout(() => setGpsStatus("idle"), 1500);
+        }
+        catch (error) {
+            if (!disposedRef.current) {
+                toast.error(deviceGpsErrorMessage(error));
+                setGpsStatus("idle");
+            }
+        }
+        finally {
+            if (!disposedRef.current)
+                setCapturingVisitId(null);
+        }
+    };
+''',
+          )
+          replace_once(
+              path,
+              '''    const handleCheckOut = (v: (typeof sorted)[number]) => {
+        if (!navigator.geolocation) {
+            toast.error("Device GPS is required for field check-out.");
+            return;
+        }
+        setGpsStatus("capturing");
+        setCapturingVisitId(v.id);
+        navigator.geolocation.getCurrentPosition((position) => {
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            try {
+                checkOut(v.id, {
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracy_m: position.coords.accuracy,
+                    captured_at: new Date().toISOString(),
+                });
+                toast.success("Verified field check-out recorded — file report within 2h");
+                setReportingVisit(v.id);
+            }
+            catch (error) {
+                toast.error(error instanceof Error
+                    ? error.message
+                    : "Field check-out could not be verified.");
+            }
+            finally {
+                setGpsStatus("idle");
+                setCapturingVisitId(null);
+            }
+        }, (error) => {
+            setGpsStatus("idle");
+            setCapturingVisitId(null);
+            toast.error(`Device GPS is required for check-out: ${error.message}`);
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    };
+''',
+              '''    const handleCheckOut = async (v: (typeof sorted)[number]) => {
+        setGpsStatus("capturing");
+        setCapturingVisitId(v.id);
+        try {
+            const capture = await captureDeviceGps({ mode: "transaction" });
+            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard
+            checkOut(v.id, capture);
+            toast.success("Verified field check-out recorded — file report within 2h");
+            setReportingVisit(v.id);
+        }
+        catch (error) {
+            if (!disposedRef.current)
+                toast.error(deviceGpsErrorMessage(error));
+        }
+        finally {
+            if (!disposedRef.current) {
+                setGpsStatus("idle");
+                setCapturingVisitId(null);
+            }
+        }
+    };
+''',
+          )
+          replace_once(
+              path,
+              '''    /** Finds the nearest registered Site within 500m, creates a Visit, and checks it in with the captured GPS. */
+    const handleQuickCheckIn = () => {
+        if (!navigator.geolocation) {
+            toast.error("Device GPS is required for quick check-in.");
+            return;
+        }
+        if (!user.staffId) {
+            toast.error("Quick check-in requires a linked staff profile.");
+            return;
+        }
+        setQuickCheckInProgress(true);
+        navigator.geolocation.getCurrentPosition((position) => {
+            if (disposedRef.current) return;
+            const { latitude, longitude, accuracy } = position.coords;
+            const candidates = db.sites
+                .filter((site) => Number.isFinite(site.latitude) && Number.isFinite(site.longitude))
+                .map((site) => {
+                    const radiusM = 6371000;
+                    const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+                    const deltaLat = toRad(site.latitude! - latitude);
+                    const deltaLon = toRad(site.longitude! - longitude);
+                    const haversine = Math.sin(deltaLat / 2) ** 2 + Math.cos(toRad(latitude)) * Math.cos(toRad(site.latitude!)) * Math.sin(deltaLon / 2) ** 2;
+                    return { site, distanceM: 2 * radiusM * Math.asin(Math.sqrt(haversine)) };
+                })
+                .filter((candidate) => candidate.distanceM <= 500)
+                .sort((a, b) => a.distanceM - b.distanceM);
+            if (!candidates.length) {
+                toast.error("No site within 500m of your GPS. Schedule a visit first or move closer to a registered site.");
+                setQuickCheckInProgress(false);
+                return;
+            }
+            const nearest = candidates[0];
+            try {
+                const visitId = addVisit({
+                    customer_id: nearest.site.customer_id,
+                    site_id: nearest.site.id,
+                    staff_id: user.staffId,
+                    staff_name: user.name,
+                    assignee_type: "staff",
+                    visit_type: "site_visit",
+                    scheduled_at: new Date().toISOString(),
+                    scheduled_duration_minutes: 60,
+                    notes: `Quick check-in auto-created at ${new Date().toLocaleString("en-IN")} · ${Math.round(nearest.distanceM)}m from registered site.`,
+                });
+                checkIn(visitId, { latitude, longitude, accuracy_m: accuracy, captured_at: new Date().toISOString() });
+                toast.success(`Quick check-in at ${nearest.site.name}`, { description: `Auto-created visit · ${Math.round(nearest.distanceM)}m from registered GPS` });
+            } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Quick check-in failed.");
+            } finally {
+                setQuickCheckInProgress(false);
+            }
+        }, (error) => {
+            toast.error(`GPS required for quick check-in: ${error.message}`);
+            setQuickCheckInProgress(false);
+        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    };
+''',
+              '''    /** Finds the nearest registered Site inside the configured Visit geofence, creates a Visit, and checks it in. */
+    const handleQuickCheckIn = async () => {
+        if (!user.staffId) {
+            toast.error("Quick check-in requires a linked staff profile.");
+            return;
+        }
+        setQuickCheckInProgress(true);
+        try {
+            const capture = await captureDeviceGps({
+                mode: "transaction",
+                maxAccuracyM: normalizedAttendancePolicy.max_gps_accuracy_m,
+            });
+            if (disposedRef.current) return;
+            const { latitude, longitude } = capture;
+            const quickCheckInRadiusM = normalizedAttendancePolicy.visit_geofence_radius_m;
+            const candidates = db.sites
+                .filter((site) => Number.isFinite(site.latitude) && Number.isFinite(site.longitude))
+                .map((site) => ({
+                    site,
+                    distanceM: distanceMeters(latitude, longitude, site.latitude!, site.longitude!),
+                }))
+                .filter((candidate) => candidate.distanceM <= quickCheckInRadiusM)
+                .sort((a, b) => a.distanceM - b.distanceM);
+            if (!candidates.length) {
+                toast.error(`No site within ${quickCheckInRadiusM}m of your GPS. Schedule a visit first or move closer to a registered site.`);
+                return;
+            }
+            const nearest = candidates[0];
+            const visitId = addVisit({
+                customer_id: nearest.site.customer_id,
+                site_id: nearest.site.id,
+                staff_id: user.staffId,
+                staff_name: user.name,
+                assignee_type: "staff",
+                visit_type: "site_visit",
+                scheduled_at: new Date().toISOString(),
+                scheduled_duration_minutes: 60,
+                notes: `Quick check-in auto-created at ${new Date().toLocaleString("en-IN")} · ${Math.round(nearest.distanceM)}m from registered site.`,
+            });
+            checkIn(visitId, capture);
+            toast.success(`Quick check-in at ${nearest.site.name}`, { description: `Auto-created visit · ${Math.round(nearest.distanceM)}m from registered GPS` });
+        }
+        catch (error) {
+            if (!disposedRef.current)
+                toast.error(deviceGpsErrorMessage(error));
+        }
+        finally {
+            if (!disposedRef.current)
+                setQuickCheckInProgress(false);
+        }
+    };
+''',
+          )
+          replace_once(
+              path,
+              '        {/* H1: Quick check-in at current location — auto-creates a visit if the\n            staff is within 500m of a registered site. */}\n',
+              '        {/* Quick check-in uses the same configured Visit geofence radius and GPS accuracy policy as normal field actions. */}\n',
+          )
+          replace_once(
+              path,
+              'title="Find the nearest site from your GPS and auto-create + check in a visit"',
+              'title={`Find the nearest site within ${normalizedAttendancePolicy.visit_geofence_radius_m}m and auto-create + check in a visit`}',
+          )
+
+          # Auto geofence: use the shared tracking watcher/options.
+          path = "src/components/rdash/AutoGeofenceMonitor.tsx"
+          insert_after(
+              path,
+              'import type { Visit } from "@/lib/rdash/types";\n',
+              'import { watchDevicePosition } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''        const watchId = navigator.geolocation.watchPosition(onPosition, () => {
+            if (!permissionNoticeShown.current) {
+                permissionNoticeShown.current = true;
+                toast.info("Automatic geofence is unavailable. Use Manual Check-in / Check-out with live GPS.");
+            }
+        }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
+        return () => navigator.geolocation.clearWatch(watchId);
+''',
+              '''        const stopWatching = watchDevicePosition(onPosition, () => {
+            if (!permissionNoticeShown.current) {
+                permissionNoticeShown.current = true;
+                toast.info("Automatic geofence is unavailable. Use Manual Check-in / Check-out with live GPS.");
+            }
+        });
+        return stopWatching;
+''',
+          )
+
+          # Staff route tracker: shared tracking watcher + heartbeat acquisition + common GPS errors.
+          path = "src/components/rdash/StaffLocationTracker.tsx"
+          insert_after(
+              path,
+              '} from "@/lib/rdash/staff-route-client";\n',
+              'import { captureDevicePosition, deviceGpsErrorMessage, watchDevicePosition } from "@/lib/rdash/device-gps";\n',
+          )
+          replace_once(
+              path,
+              '''const POSITION_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  maximumAge: 15_000,
+  timeout: 20_000,
+};
+
+''',
+              '',
+          )
+          replace_once(
+              path,
+              '''function geolocationMessage(error: GeolocationPositionError) {
+  if (error.code === error.PERMISSION_DENIED) {
+    return "Location permission is blocked. Allow precise location in browser settings.";
+  }
+  if (error.code === error.POSITION_UNAVAILABLE) {
+    return "This device cannot determine a reliable GPS position.";
+  }
+  if (error.code === error.TIMEOUT) {
+    return "Location timed out. Frontend route capture will retry.";
+  }
+  return error.message || "Location capture failed.";
+}
+
+''',
+              '',
+          )
+          replace_once(
+              path,
+              '''    const onError = (error: GeolocationPositionError) => {
+      const denied = error.code === error.PERMISSION_DENIED;
+      publishLocationTrackingState({
+        status: denied ? "permission_denied" : "error",
+        permission: denied
+          ? "denied"
+          : readLocationTrackingState().permission,
+        message: geolocationMessage(error),
+      });
+    };
+
+    const requestCurrentPosition = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      navigator.geolocation.getCurrentPosition(
+        capture,
+        onError,
+        POSITION_OPTIONS,
+      );
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      capture,
+      onError,
+      POSITION_OPTIONS,
+    );
+''',
+              '''    const onError = (error: unknown) => {
+      const denied = (error as GeolocationPositionError | undefined)?.code === 1;
+      publishLocationTrackingState({
+        status: denied ? "permission_denied" : "error",
+        permission: denied
+          ? "denied"
+          : readLocationTrackingState().permission,
+        message: deviceGpsErrorMessage(error),
+      });
+    };
+
+    const requestCurrentPosition = () => {
+      if (disposed || document.visibilityState !== "visible") return;
+      void captureDevicePosition({ mode: "tracking" }).then(capture).catch(onError);
+    };
+
+    const stopWatching = watchDevicePosition(capture, onError);
+''',
+          )
+          replace_once(
+              path,
+              '      navigator.geolocation.clearWatch(watchId);\n',
+              '      stopWatching();\n',
+          )
+
+          # The patch workflow is intentionally self-removing so only product code remains on the branch.
+          Path(".github/workflows/agent-centralize-gps.yml").unlink()
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate changed TypeScript
+        id: validate
+        continue-on-error: true
+        shell: bash
+        run: |
+          npm ci --ignore-scripts
+          npx eslint \
+            src/lib/rdash/device-gps.ts \
+            src/components/rdash/SiteFormDialog.tsx \
+            src/components/rdash/CustomerSiteDraftCard.tsx \
+            src/components/rdash/ContractorFormDialog.tsx \
+            src/components/rdash/UnifiedPartnerFormDialog.tsx \
+            src/components/rdash/modules/AttendancePayrollModule.tsx \
+            src/components/rdash/modules/FieldModeModule.tsx \
+            src/components/rdash/AutoGeofenceMonitor.tsx \
+            src/components/rdash/StaffLocationTracker.tsx
+          npx tsc --noEmit
+
+      - name: Commit product changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if [ "${{ steps.validate.outcome }}" = "success" ]; then
+            message="use shared GPS acquisition (validation passed)"
+          else
+            message="use shared GPS acquisition (validation needs review)"
+          fi
+          git commit -m "$message"
+          git push origin HEAD:agent/centralize-gps-acquisition
