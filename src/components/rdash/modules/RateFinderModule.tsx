@@ -94,7 +94,7 @@ export function RateFinderModule() {
 
             for (const selected of summary.selected) {
                 const vendor = db.master.vendors.find((entry) => entry.id === selected.vendorId);
-                const vendorRate = selected.normalizedLandedRate ?? Number.NaN;
+                const vendorRate = selected.normalizedQuotedRate ?? Number.NaN;
                 const diff = baseRate != null && Number.isFinite(vendorRate) ? vendorRate - baseRate : undefined;
                 const diffPct = baseRate && diff != null ? (diff / baseRate) * 100 : undefined;
                 const rawUnit = unitById.get(selected.rawUnitId || "")?.symbol || selected.rawUnitId || defaultUnit;
@@ -163,7 +163,7 @@ export function RateFinderModule() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Search className="h-5 w-5"/></span>
           <div>
             <h2 className="text-lg font-bold tracking-tight">Rate Finder</h2>
-            <p className="text-xs text-muted-foreground">One landed rate per vendor, normalized to each article's default unit</p>
+            <p className="text-xs text-muted-foreground">One current quoted rate per Vendor, normalized to each Article&apos;s default unit</p>
           </div>
         </div>
       </div>
@@ -172,7 +172,7 @@ export function RateFinderModule() {
         <MetricCard label="Vendor prices" value={vendorRows.length} tone="primary" icon={<Package className="h-4 w-4"/>}/>
         <MetricCard label="Articles" value={db.master.articles.length} tone="default" icon={<Package className="h-4 w-4"/>}/>
         <MetricCard label="Vendors" value={db.master.vendors.length} tone="default" icon={<Building2 className="h-4 w-4"/>}/>
-        <MetricCard label="Avg landed rate" value={formatRateWithUnit(avgRate)} tone="success" icon={<TrendingUp className="h-4 w-4"/>}/>
+        <MetricCard label="Avg quoted rate" value={formatRateWithUnit(avgRate)} tone="success" icon={<TrendingUp className="h-4 w-4"/>}/>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -185,7 +185,7 @@ export function RateFinderModule() {
           {categories.map((category) => <option key={category} value={category}>{category}</option>)}
         </select>
         <select value={sortBy} onChange={(event) => setSortBy(event.target.value as typeof sortBy)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
-          <option value="rate">Sort: Lowest landed rate</option>
+          <option value="rate">Sort: Lowest quoted rate</option>
           <option value="reliability">Sort: Best reliability</option>
           <option value="diff">Sort: Biggest savings</option>
         </select>
@@ -201,7 +201,7 @@ export function RateFinderModule() {
 
       <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="grid grid-cols-[1.4fr_1fr_0.8fr_0.8fr_0.6fr_0.6fr_0.7fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          <span>Article</span><span>Vendor</span><span className="text-right">Base rate</span><span className="text-right">Vendor landed rate</span><span className="text-center">Diff</span><span className="text-center">Reliability</span><span className="text-center">Use</span>
+          <span>Article</span><span>Vendor</span><span className="text-right">Base rate</span><span className="text-right">Vendor quoted rate</span><span className="text-center">Diff</span><span className="text-center">Reliability</span><span className="text-center">Use</span>
         </div>
         {filtered.length === 0 ? (<div className="px-3 py-8 text-center text-xs text-muted-foreground">No rates found. Try a different search.</div>) : filtered.map((row) => {
             const usable = row.hasVendorRate && Number.isFinite(row.vendorRate);
@@ -219,7 +219,7 @@ export function RateFinderModule() {
         })}
       </div>
 
-      {filtered.length > 0 && <p className="text-[11px] text-muted-foreground">Base rate is the exact simple average of one selected landed rate per vendor. The latest active rate is preferred; otherwise that vendor's latest available rate is used.</p>}
+      {filtered.length > 0 && <p className="text-[11px] text-muted-foreground">Base rate is the exact simple average of one selected normalized quoted rate per Vendor. The latest active rate is preferred; otherwise that Vendor&apos;s latest available rate is used.</p>}
 
       {useInQuotation && <UseInQuotationDialog rate={useInQuotation} db={db} onClose={() => setUseInQuotation(null)} onApply={(quotationId, lineId, newRate) => {
           const quotation = db.quotations.find((entry) => entry.id === quotationId);
@@ -230,7 +230,7 @@ export function RateFinderModule() {
           try {
               updateQuotation(quotationId, { scope_lines: nextLines, items: nextLines });
               const actor = currentUser();
-              logAudit({ actor: actor.name, actor_role: actor.role, action: `Rate Finder: applied ${useInQuotation.vendorName} landed rate ${formatRateWithUnit(newRate, useInQuotation.unitName)} to line "${line.title}" on ${quotation.quotation_no}`, entity_type: "quotation", entity_id: quotationId, entity_label: quotation.quotation_no, kind: "update", source_module: "rateFinder", changes: [{ id: `ch-${Date.now()}`, field: "rate", before: line.rate, after: newRate }] });
+              logAudit({ actor: actor.name, actor_role: actor.role, action: `Rate Finder: applied ${useInQuotation.vendorName} quoted rate ${formatRateWithUnit(newRate, useInQuotation.unitName)} to line "${line.title}" on ${quotation.quotation_no}`, entity_type: "quotation", entity_id: quotationId, entity_label: quotation.quotation_no, kind: "update", source_module: "rateFinder", changes: [{ id: `ch-${Date.now()}`, field: "rate", before: line.rate, after: newRate }] });
               toast.success(`Rate applied to ${quotation.quotation_no} → ${line.title}`);
               setUseInQuotation(null);
           } catch (error) { toast.error(error instanceof Error ? error.message : "Could not apply rate"); }
@@ -238,7 +238,6 @@ export function RateFinderModule() {
     </div>);
 }
 
-// H: "Use in quotation" dialog — pick a draft quotation + line and apply the vendor rate.
 function UseInQuotationDialog({ rate, db, onClose, onApply, onOpenQuotations }: {
     rate: RateRow;
     db: import("@/lib/rdash/types").RDashDatabase;
@@ -246,33 +245,28 @@ function UseInQuotationDialog({ rate, db, onClose, onApply, onOpenQuotations }: 
     onApply: (quotationId: string, lineId: string, newRate: number) => void;
     onOpenQuotations: () => void;
 }) {
-    // Only draft quotations are editable (others would require a revision).
     const draftQuotations = db.quotations.filter((q) => q.status === "draft");
     const [quotationId, setQuotationId] = React.useState<string>(draftQuotations[0]?.id || "");
     const articleId = rate.articleId;
-    // Lines that match the rate's article (preferred) — fall back to all lines.
-    // Single useMemo so the React Compiler can preserve memoization cleanly.
     const { selectedQuotation, matchingLines } = React.useMemo(() => {
         const sq = draftQuotations.find((q) => q.id === quotationId);
-        if (!sq)
-            return { selectedQuotation: undefined, matchingLines: [] as QuotationItem[] };
+        if (!sq) return { selectedQuotation: undefined, matchingLines: [] as QuotationItem[] };
         const byArticle = sq.scope_lines.filter((l) => articleId && l.article_id === articleId);
         const lines = byArticle.length ? byArticle : sq.scope_lines;
         return { selectedQuotation: sq, matchingLines: lines };
     }, [draftQuotations, quotationId, articleId]);
     const [lineId, setLineId] = React.useState<string>(matchingLines[0]?.id || "");
     React.useEffect(() => {
-        if (matchingLines.length && !matchingLines.some((l) => l.id === lineId))
-            setLineId(matchingLines[0].id);
+        if (matchingLines.length && !matchingLines.some((l) => l.id === lineId)) setLineId(matchingLines[0].id);
     }, [matchingLines, lineId]);
     const hasDrafts = draftQuotations.length > 0;
     return (<Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <ArrowRight className="h-4 w-4 text-primary"/> Use vendor rate in quotation
+            <ArrowRight className="h-4 w-4 text-primary"/> Use Vendor rate in quotation
           </DialogTitle>
-          <DialogDescription className="text-xs">Apply <strong>{rate.vendorName}</strong>'s rate of <strong>{formatRateWithUnit(rate.vendorRate, rate.unitName)}</strong> for "{rate.articleName}" to a draft quotation line.</DialogDescription>
+          <DialogDescription className="text-xs">Apply <strong>{rate.vendorName}</strong>&apos;s quoted rate of <strong>{formatRateWithUnit(rate.vendorRate, rate.unitName)}</strong> for &quot;{rate.articleName}&quot; to a draft quotation line.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4 rd-scroll">
           {!hasDrafts ? (<div className="rounded-md border border-warning/40 bg-warning/[0.06] p-3 text-xs text-foreground/80">
@@ -294,13 +288,12 @@ function UseInQuotationDialog({ rate, db, onClose, onApply, onOpenQuotations }: 
               </div>
               {selectedQuotation && lineId && (() => {
                   const line = selectedQuotation.scope_lines.find((l) => l.id === lineId);
-                  if (!line)
-                      return null;
+                  if (!line) return null;
                   const diff = rate.vendorRate - line.rate;
                   const diffPct = line.rate > 0 ? Math.round((diff / line.rate) * 100) : 0;
                   return (<div className="rounded-md border border-border bg-muted/40 p-2 text-xs">
                     <div className="flex items-center justify-between"><span className="text-muted-foreground">Current rate</span><span className="font-mono font-semibold">{formatINR(line.rate)}</span></div>
-                    <div className="flex items-center justify-between"><span className="text-muted-foreground">New rate (vendor)</span><span className="font-mono font-semibold text-primary">{formatRateWithUnit(rate.vendorRate, rate.unitName)}</span></div>
+                    <div className="flex items-center justify-between"><span className="text-muted-foreground">New rate (Vendor)</span><span className="font-mono font-semibold text-primary">{formatRateWithUnit(rate.vendorRate, rate.unitName)}</span></div>
                     <div className="flex items-center justify-between"><span className="text-muted-foreground">Change</span><span className={cn("font-mono font-semibold", diff < 0 ? "text-success" : diff > 0 ? "text-destructive" : "text-muted-foreground")}>{diff > 0 ? "+" : ""}{formatINR(diff)} ({diffPct > 0 ? "+" : ""}{diffPct}%)</span></div>
                     <div className="mt-1 flex items-center justify-between border-t border-border pt-1"><span className="text-muted-foreground">New line amount</span><span className="font-mono font-bold">{formatINR(Math.round(line.quantity * rate.vendorRate))}</span></div>
                   </div>);

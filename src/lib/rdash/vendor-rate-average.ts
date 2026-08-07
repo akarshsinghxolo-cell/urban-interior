@@ -2,33 +2,23 @@ import type {
   Article,
   ArticleVariant,
   RDashDatabase,
-  TaxConfig,
   VendorRate,
   VendorRateHistory,
 } from "./types";
+import { vendorQuotedRate } from "./vendor-profile";
 
 const EPSILON = 1e-9;
 const PACKAGE_UNITS = new Set(["box", "roll", "bag", "tube"]);
 
-type LandedCostFields = {
+type RateTimingFields = {
   status?: string;
-  valid_from?: string;
-  valid_until?: string;
   effective_from?: string;
   effective_to?: string;
   updated_at?: string;
   created_at?: string;
-  gst_inclusive?: boolean;
-  gst_rate?: number;
-  discount_pct?: number;
-  discount_amount?: number;
-  freight_amount?: number;
-  loading_unloading_amount?: number;
-  other_charges?: number;
-  default_units_per_rate_unit?: number;
 };
 
-export type VendorArticleRateCandidate = LandedCostFields & {
+export type VendorArticleRateCandidate = RateTimingFields & {
   sourceKind: "current" | "history";
   sourceId: string;
   vendorRateId?: string;
@@ -41,9 +31,9 @@ export type VendorArticleRateCandidate = LandedCostFields & {
 
 export type SelectedVendorArticleRate = VendorArticleRateCandidate & {
   defaultUnitId?: string;
-  landedRate: number;
+  quotedRate: number;
   conversionFactor?: number;
-  normalizedLandedRate?: number;
+  normalizedQuotedRate?: number;
   active: boolean;
   conversionError?: string;
 };
@@ -80,7 +70,6 @@ function effectiveTime(candidate: VendorArticleRateCandidate): number {
   return Math.max(
     dateTime(candidate.updated_at),
     dateTime(candidate.effective_from),
-    dateTime(candidate.valid_from),
     dateTime(candidate.created_at),
   );
 }
@@ -88,39 +77,13 @@ function effectiveTime(candidate: VendorArticleRateCandidate): number {
 function isActiveCandidate(candidate: VendorArticleRateCandidate, at: Date): boolean {
   const status = String(candidate.status || "active").trim().toLowerCase();
   if (status !== "active") return false;
+  if (candidate.sourceKind === "current") return true;
   const instant = at.getTime();
-  const startsAt = dateTime(candidate.effective_from || candidate.valid_from);
-  const endsAt = dateTime(candidate.effective_to || candidate.valid_until);
+  const startsAt = dateTime(candidate.effective_from);
+  const endsAt = dateTime(candidate.effective_to);
   if (startsAt && startsAt > instant) return false;
   if (endsAt && endsAt < instant) return false;
   return true;
-}
-
-function configuredGstRate(configs: TaxConfig[]): number {
-  const enabled = (configs || []).filter((config) => config.enabled);
-  const direct = enabled.find((config) => config.type === "gst");
-  if (direct) return Math.max(0, finiteNumber(direct.rate));
-  const igst = enabled.find((config) => config.type === "igst");
-  if (igst) return Math.max(0, finiteNumber(igst.rate));
-  return enabled
-    .filter((config) => config.type === "cgst" || config.type === "sgst")
-    .reduce((sum, config) => sum + Math.max(0, finiteNumber(config.rate)), 0);
-}
-
-function landedRate(candidate: VendorArticleRateCandidate, taxConfigs: TaxConfig[]): number {
-  const rawRate = Math.max(0, finiteNumber(candidate.rawRate));
-  const discount = Math.max(0, finiteNumber(candidate.discount_amount))
-    + rawRate * Math.max(0, finiteNumber(candidate.discount_pct)) / 100;
-  const discounted = Math.max(0, rawRate - discount);
-  const preTaxLanded = discounted
-    + Math.max(0, finiteNumber(candidate.freight_amount))
-    + Math.max(0, finiteNumber(candidate.loading_unloading_amount))
-    + Math.max(0, finiteNumber(candidate.other_charges));
-  if (candidate.gst_inclusive) return preTaxLanded;
-  const gstRate = candidate.gst_rate == null
-    ? configuredGstRate(taxConfigs)
-    : Math.max(0, finiteNumber(candidate.gst_rate));
-  return preTaxLanded * (1 + gstRate / 100);
 }
 
 const COUNT_IN_PIECES: Record<string, number> = {
@@ -133,8 +96,19 @@ const COUNT_IN_PIECES: Record<string, number> = {
   unit: 1,
   pair: 2,
 };
-const LENGTH_IN_METRES: Record<string, number> = { mtr: 1, metre: 1, meter: 1, rft: 0.3048, ft: 0.3048 };
-const VOLUME_IN_LITRES: Record<string, number> = { ltr: 1, litre: 1, liter: 1, cft: 28.316846592 };
+const LENGTH_IN_METRES: Record<string, number> = {
+  mtr: 1,
+  metre: 1,
+  meter: 1,
+  rft: 0.3048,
+  ft: 0.3048,
+};
+const VOLUME_IN_LITRES: Record<string, number> = {
+  ltr: 1,
+  litre: 1,
+  liter: 1,
+  cft: 28.316846592,
+};
 
 function standardConversionFactor(rawUnitId: string, defaultUnitId: string): number | undefined {
   if (!rawUnitId || !defaultUnitId) return undefined;
@@ -162,50 +136,67 @@ function parsedPackFactor(
   return packedToDefault ? quantity * packedToDefault : undefined;
 }
 
+function configuredQuotedUnit(
+  database: RDashDatabase,
+  article: Article,
+  candidate: VendorArticleRateCandidate,
+) {
+  if (candidate.sourceKind === "history" && candidate.rawUnitId) return candidate.rawUnitId;
+  const variant = candidate.variantId
+    ? database.master.articleVariants.find((row) => row.id === candidate.variantId && row.article_id === article.id)
+    : undefined;
+  return variant?.unit_id || article.default_unit_id || article.unit_id;
+}
+
 export function defaultUnitsPerQuotedUnit(
   database: RDashDatabase,
   article: Article,
   candidate: VendorArticleRateCandidate,
 ): number | undefined {
-  const explicit = positiveNumber(candidate.default_units_per_rate_unit);
-  if (explicit) return explicit;
   const defaultUnitId = normalizedUnitId(article.default_unit_id || article.unit_id);
-  const rawUnitId = normalizedUnitId(candidate.rawUnitId || defaultUnitId);
+  const rawUnitId = normalizedUnitId(configuredQuotedUnit(database, article, candidate) || defaultUnitId);
   const standard = standardConversionFactor(rawUnitId, defaultUnitId);
   if (standard) return standard;
   const variant = candidate.variantId
-    ? database.master.articleVariants.find((row) => row.id === candidate.variantId)
+    ? database.master.articleVariants.find((row) => row.id === candidate.variantId && row.article_id === article.id)
     : undefined;
   return parsedPackFactor(variant, rawUnitId, defaultUnitId);
 }
 
-function currentCandidate(rate: VendorRate): VendorArticleRateCandidate {
-  const fields = rate as VendorRate & LandedCostFields;
+function currentCandidate(database: RDashDatabase, rate: VendorRate): VendorArticleRateCandidate {
+  const article = database.master.articles.find((row) => row.id === rate.article_id);
+  const variant = rate.variant_id
+    ? database.master.articleVariants.find((row) => row.id === rate.variant_id && row.article_id === rate.article_id)
+    : undefined;
   return {
-    ...fields,
     sourceKind: "current",
     sourceId: rate.id,
     vendorRateId: rate.id,
     vendorId: rate.vendor_id,
     articleId: rate.article_id,
     variantId: rate.variant_id,
-    rawRate: rate.rate,
-    rawUnitId: rate.unit_id,
+    rawRate: vendorQuotedRate(rate),
+    rawUnitId: variant?.unit_id || article?.default_unit_id || article?.unit_id,
+    status: rate.status,
+    updated_at: rate.updated_at,
+    created_at: rate.created_at,
   };
 }
 
 function historyCandidate(history: VendorRateHistory): VendorArticleRateCandidate {
-  const fields = history as VendorRateHistory & LandedCostFields;
   return {
-    ...fields,
     sourceKind: "history",
     sourceId: history.id,
     vendorRateId: history.vendor_rate_id,
     vendorId: history.vendor_id,
     articleId: history.article_id,
     variantId: history.variant_id,
-    rawRate: history.new_rate,
+    rawRate: finiteNumber(history.new_rate),
     rawUnitId: history.unit_id,
+    status: history.status,
+    effective_from: history.effective_from,
+    effective_to: history.effective_to,
+    created_at: history.created_at,
   };
 }
 
@@ -214,9 +205,13 @@ export function vendorRateCandidatesForArticle(
   articleId: string,
 ): VendorArticleRateCandidate[] {
   return [
-    ...database.master.vendorRates.filter((rate) => rate.article_id === articleId).map(currentCandidate),
-    ...database.master.vendorRateHistories.filter((rate) => rate.article_id === articleId).map(historyCandidate),
-  ].filter((candidate) => candidate.vendorId && Number.isFinite(Number(candidate.rawRate)));
+    ...database.master.vendorRates
+      .filter((rate) => rate.article_id === articleId)
+      .map((rate) => currentCandidate(database, rate)),
+    ...database.master.vendorRateHistories
+      .filter((rate) => rate.article_id === articleId)
+      .map(historyCandidate),
+  ].filter((candidate) => candidate.vendorId && Number.isFinite(Number(candidate.rawRate)) && candidate.rawRate > 0);
 }
 
 export function selectVendorArticleRates(
@@ -241,19 +236,20 @@ export function selectVendorArticleRates(
       return Number(right.sourceKind === "current") - Number(left.sourceKind === "current");
     });
     const selected = latestFirst.find((candidate) => isActiveCandidate(candidate, at)) || latestFirst[0];
-    const landed = landedRate(selected, database.taxConfigs || []);
+    const quoted = Math.max(0, finiteNumber(selected.rawRate));
     const conversionFactor = defaultUnitsPerQuotedUnit(database, article, selected);
-    const normalized = conversionFactor ? landed / conversionFactor : undefined;
+    const normalized = conversionFactor ? quoted / conversionFactor : undefined;
     return {
       ...selected,
+      rawUnitId: configuredQuotedUnit(database, article, selected),
       defaultUnitId,
-      landedRate: landed,
+      quotedRate: quoted,
       conversionFactor,
-      normalizedLandedRate: normalized,
+      normalizedQuotedRate: normalized,
       active: isActiveCandidate(selected, at),
       conversionError: conversionFactor
         ? undefined
-        : `Set how many ${defaultUnitId || "default units"} are contained in one ${selected.rawUnitId || "quoted unit"}.`,
+        : `Configure the Article/Variant unit or pack size so this quote can be converted to ${defaultUnitId || "the default unit"}.`,
     };
   });
 }
@@ -265,10 +261,10 @@ export function articleVendorRateAverage(
 ): ArticleVendorRateAverage {
   const article = database.master.articles.find((row) => row.id === articleId);
   const selected = selectVendorArticleRates(database, articleId, at);
-  const included = selected.filter((row) => Number.isFinite(row.normalizedLandedRate));
-  const skipped = selected.filter((row) => !Number.isFinite(row.normalizedLandedRate));
+  const included = selected.filter((row) => Number.isFinite(row.normalizedQuotedRate));
+  const skipped = selected.filter((row) => !Number.isFinite(row.normalizedQuotedRate));
   const average = included.length
-    ? included.reduce((sum, row) => sum + (row.normalizedLandedRate as number), 0) / included.length
+    ? included.reduce((sum, row) => sum + (row.normalizedQuotedRate as number), 0) / included.length
     : undefined;
   return {
     articleId,
