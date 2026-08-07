@@ -18,6 +18,11 @@ export interface WorkspaceDeltaAccess {
  * Returns the largest collection set the authenticated caller may use for a
  * delta request to one concrete module target. Client-provided collection
  * filters can only narrow this set; they can never expand it.
+ *
+ * Canonical master.staff is deliberately not part of the universal bootstrap
+ * delta set. Normal module snapshots carry a projected Staff directory, while
+ * full Staff rows are present only when the target's own read plan requests
+ * master.staff. This keeps the delta boundary aligned with the snapshot.
  */
 export function deltaCollectionsForTarget(
   target: WorkspaceReadTarget,
@@ -28,7 +33,9 @@ export function deltaCollectionsForTarget(
   }
 
   const allowed = new Set<string>([
-    ...WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS,
+    ...WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS.filter(
+      (collection) => collection !== "master.staff",
+    ),
     ...collectionsForWorkspaceReadTarget(target),
   ]);
 
