@@ -1,14 +1,11 @@
 "use client";
 
 import * as React from "react";
-import {
-  EntityFormDialog as UnifiedVendorForm,
-  type EntityType,
-} from "./UnifiedPartnerFormDialog";
 import { ContractorFormDialog } from "./ContractorFormDialog";
+import { VendorFormDialog } from "./VendorFormDialog";
 import { retainPartnerFormStoreBridge } from "@/lib/rdash/partner-form-store-bridge";
 
-export type { EntityType };
+export type EntityType = "vendor" | "contractor";
 
 export function EntityFormDialog(props: {
   type: EntityType;
@@ -33,5 +30,12 @@ export function EntityFormDialog(props: {
     );
   }
 
-  return <UnifiedVendorForm {...props} />;
+  return (
+    <VendorFormDialog
+      open={props.open}
+      onClose={props.onClose}
+      onSaved={props.onSaved}
+      editId={props.editId}
+    />
+  );
 }
