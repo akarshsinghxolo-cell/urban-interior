@@ -61,7 +61,7 @@ jobs:
             contractor: ContractorProfileRecord,
           ): RDashDatabase["master"]["contractorRates"] {''': '''export function contractorRateProjection(
             db: Pick<RDashDatabase, "master">,
-            contractor: Pick<ContractorProfileRecord, "id" | "work_capabilities">,
+            contractor: Pick<ContractorProfileRecord, "id" | "name" | "work_capabilities">,
           ): RDashDatabase["master"]["contractorRates"] {''',
           }
           for old, new in replacements.items():
