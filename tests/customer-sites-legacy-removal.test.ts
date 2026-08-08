@@ -42,17 +42,19 @@ test("legacy customer write APIs are removed from active store and UI paths", ()
 test("partner create and edit use guarded canonical workflows", () => {
   expect(partnerHost.includes("retainPartnerFormStoreBridge")).toBe(true);
   expect(partnerHost.includes("ContractorFormDialog")).toBe(true);
+  expect(partnerHost.includes("<UnifiedVendorForm")).toBe(true);
   expect(partnerDialog.includes("useDirtyFormRegistration")).toBe(true);
   expect(partnerDialog.includes("partnerChangedPatch")).toBe(true);
   expect(partnerDialog.includes("isEdit && !dirty")).toBe(true);
   expect(partnerDialog.includes("await awaitServerSync();")).toBe(true);
   expect(partnerDialog.indexOf("await awaitServerSync();")).toBeLessThan(partnerDialog.indexOf("commitBatches();"));
   expect(partnerDialog.includes("article_ids: [...vendorArticleIds]")).toBe(true);
-  expect(partnerDialog.includes("article_ids: [...row.article_ids]")).toBe(true);
+  expect(partnerDialog.includes("article_ids: [...row.article_ids]")).toBe(false);
   expect(partnerDialog.includes("Will save as an unlinked referrer name")).toBe(true);
   expect(partnerDialog.includes("combinedNotes")).toBe(false);
   expect(contractorEntry.includes("useDirtyFormRegistration")).toBe(true);
   expect(contractorEntry.includes("contractorFormProjection")).toBe(true);
+  expect(contractorEntry.includes("article_rates")).toBe(true);
 });
 
 test("partner patches contain only modified fields", () => {
@@ -162,7 +164,7 @@ test("partner updates emit one detailed audit instead of the generic edit audit"
 });
 
 test("Vendor create does not emit an empty or duplicate follow-up audit", () => {
-  expect(partnerBridge.includes('isActiveCreate("vendor")')).toBe(true);
+  expect(partnerBridge.includes("activeCreates > 0")).toBe(true);
   expect(partnerBridge.includes('suppliedFields[0] === "article_ids"')).toBe(true);
   expect(partnerBridge.includes("if (!articleIds.length) return;")).toBe(true);
   expect(partnerBridge.includes("withSuppressedGenericAudit")).toBe(true);
