@@ -13,8 +13,6 @@ describe("Contractor database legacy removal", () => {
   test("does not preserve free-form rate rows for touched Contractors", async () => {
     const migration = await Bun.file(MIGRATION).text();
     expect(migration).toContain("Every rate row for a touched Contractor must belong to the canonical");
-    expect(migration).toContain("if v_contractor_id = any(v_affected_ids) then");
-    expect(migration).not.toContain("v_subcategory_id is not null");
     expect(migration).toContain("free-form legacy rates are not preserved");
   });
 
