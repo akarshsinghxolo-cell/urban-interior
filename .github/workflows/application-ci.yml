@@ -44,6 +44,15 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/contractor-legacy-cleanup'
         run: |
           python scripts/apply-contractor-legacy-cleanup.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("src/lib/rdash/contractor-profile.ts")
+          text = path.read_text()
+          needle = "  [key: string]: unknown;\n"
+          if needle not in text:
+              raise SystemExit("ContractorProfileRecord index signature not found")
+          path.write_text(text.replace(needle, "", 1))
+          PY
           rm scripts/apply-contractor-legacy-cleanup.py
       # CONTRACTOR-CLEANUP-END
       - name: Apply Vendor cleanup
