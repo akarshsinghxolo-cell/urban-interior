@@ -49,6 +49,11 @@ replace_once(
 db_test = "tests/supabase-data-convergence-contractor-cleanup.test.ts"
 replace_once(
     db_test,
+    '    expect(migration).toContain("Every rate row for a touched Contractor must belong to the canonical");\n',
+    '',
+)
+replace_once(
+    db_test,
     '''    expect(migration).toContain("free-form legacy rates are not preserved");\n  });\n''',
     '''    expect(migration).toContain("CONTRACTOR_RATES_READ_ONLY");\n    expect(migration).toContain("v_has_rate_operation boolean := false");\n    expect(migration).not.toContain("v_preserved_rate_rows");\n    expect(migration).toContain("caller-supplied rate rows are discarded");\n  });\n''',
 )
