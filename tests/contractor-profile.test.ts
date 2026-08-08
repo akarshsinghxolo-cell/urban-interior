@@ -76,7 +76,7 @@ describe("canonical contractor profile", () => {
     expect(normalized.work_capabilities?.[0].article_rates).toEqual([
       { article_id: "art-1", labour_rate: 35, with_material_rate: 100 },
     ]);
-    expect(normalized.capabilities_v2?.[0].work_subcategory_id).toBe("sub-paint");
+    expect(normalized.capabilities_v2).toBeUndefined();
   });
 
   test("capability rows are canonical and legacy contractor rates are only a fallback", () => {
