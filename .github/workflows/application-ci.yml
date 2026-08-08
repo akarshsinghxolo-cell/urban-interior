@@ -22,14 +22,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      # GOVERNANCE-CLEANUP-CHECKOUT-BEGIN
-      - name: Check out Contractor governance cleanup head
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/contractor-legacy-cleanup'
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      # GOVERNANCE-CLEANUP-CHECKOUT-END
       - name: Check out Vendor cleanup branch head
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         uses: actions/checkout@v5
@@ -39,13 +31,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
-      # GOVERNANCE-CLEANUP-APPLY-BEGIN
-      - name: Apply final Contractor governance cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/contractor-legacy-cleanup'
-        run: |
-          python scripts/finalize-contractor-governance-cleanup.py
-          rm scripts/finalize-contractor-governance-cleanup.py
-      # GOVERNANCE-CLEANUP-APPLY-END
       - name: Apply Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |
@@ -139,20 +124,6 @@ jobs:
         run: bun run lint
       - name: Build application
         run: bun run build
-      # GOVERNANCE-CLEANUP-COMMIT-BEGIN
-      - name: Commit final verified Contractor governance cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'agent/contractor-legacy-cleanup'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No application changes to commit."
-            exit 0
-          fi
-          git commit -m "Finish Contractor governance legacy cleanup"
-          git push origin HEAD:agent/contractor-legacy-cleanup
-      # GOVERNANCE-CLEANUP-COMMIT-END
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |

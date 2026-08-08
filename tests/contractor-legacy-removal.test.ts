@@ -31,6 +31,9 @@ describe("Contractor legacy-path removal", () => {
     expect(policy).toContain("must be linked to a Work Subcategory");
     expect(governance).toContain("canonicalContractorCapabilities(selected, db)");
     expect(governance).not.toContain("capabilities_v2: contractorGovernanceCapabilityProjection");
+    expect(governance).not.toContain("else if (Array.isArray(patch.capabilities_v2))");
+    expect(governance).toContain("canonicalContractorCapabilities(partner, db).length");
+    expect(governance).toContain("OperationalMediaPanel entityType={mode}");
   });
 
   test("Contractor referrals and operations do not use the removed paths", async () => {
