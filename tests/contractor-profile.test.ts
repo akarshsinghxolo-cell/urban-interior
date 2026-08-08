@@ -76,32 +76,25 @@ describe("canonical contractor profile", () => {
     expect(normalized.work_capabilities?.[0].article_rates).toEqual([
       { article_id: "art-1", labour_rate: 35, with_material_rate: 100 },
     ]);
-    expect(normalized.capabilities_v2?.[0].work_subcategory_id).toBe("sub-paint");
+    expect(normalized.capabilities_v2).toBeUndefined();
   });
 
-  test("capability rows are canonical and legacy contractor rates are only a fallback", () => {
+  test("missing canonical capabilities does not resurrect legacy rate rows", () => {
     const state = db();
-    state.master.contractorRates = [
-      {
-        id: "rate-1",
-        contractor_id: "con-1",
-        trade: "Interior Painting",
-        rate: 30,
-        work_subcategory_id: "sub-paint",
-        work_subcategory_name: "Interior Painting",
-        labour_rate: 30,
-      },
-    ];
+    state.master.contractorRates = [{
+      id: "rate-1",
+      contractor_id: "con-1",
+      trade: "Interior Painting",
+      rate: 30,
+      work_subcategory_id: "sub-paint",
+      labour_rate: 30,
+    }];
 
-    expect(
-      canonicalContractorCapabilities({ id: "con-1" }, state)[0].labour_rate,
-    ).toBe(30);
-    expect(
-      canonicalContractorCapabilities(
-        { id: "con-1", work_capabilities: [] },
-        state,
-      ),
-    ).toEqual([]);
+    expect(canonicalContractorCapabilities({ id: "con-1" }, state)).toEqual([]);
+    expect(canonicalContractorCapabilities({
+      id: "con-1",
+      work_capabilities: [{ subcategory_id: "sub-paint", labour_rate: 40 }],
+    }, state)[0].labour_rate).toBe(40);
   });
 
   test("category names cannot drift from selected subcategories", () => {
@@ -140,40 +133,26 @@ describe("canonical contractor profile", () => {
     });
   });
 
-  test("material rate fallback does not overwrite the subcategory default", () => {
+  test("existing projected rows cannot become a second rate source", () => {
     const state = db();
-    state.master.contractorRates = [
-      {
-        id: "rate-default",
-        contractor_id: "con-1",
-        trade: "Interior Painting",
-        rate: 30,
-        work_subcategory_id: "sub-paint",
-        labour_rate: 30,
-        with_material_rate: 80,
-      },
-      {
-        id: "rate-material",
-        contractor_id: "con-1",
-        trade: "Interior Painting · Primer",
-        rate: 45,
-        work_subcategory_id: "sub-paint",
-        article_id: "art-1",
-        article_name: "Primer",
-        labour_rate: 45,
-        with_material_rate: 120,
-      },
-    ];
-
-    const capability = canonicalContractorCapabilities({ id: "con-1" }, state)[0];
-    expect(capability.labour_rate).toBe(30);
-    expect(capability.with_material_rate).toBe(80);
-    expect(capability.article_rates).toEqual([{
-      article_id: "art-1",
-      article_name: "Primer",
-      labour_rate: 45,
-      with_material_rate: 120,
-    }]);
+    state.master.contractorRates = [{
+      id: "rate-default",
+      contractor_id: "con-1",
+      trade: "Interior Painting",
+      rate: 30,
+      work_subcategory_id: "sub-paint",
+      labour_rate: 30,
+    }];
+    const capability = canonicalContractorCapabilities({
+      id: "con-1",
+      work_capabilities: [{
+        subcategory_id: "sub-paint",
+        labour_rate: 55,
+        with_material_rate: 125,
+      }],
+    }, state)[0];
+    expect(capability.labour_rate).toBe(55);
+    expect(capability.with_material_rate).toBe(125);
   });
 
   test("material-specific rates project as separate contractor rate rows", () => {
@@ -273,7 +252,7 @@ describe("contractor validation and duplicate prevention", () => {
     expect(conflicts[0].hard).toBe(false);
   });
 
-  test("referral ids must resolve to Source Partners", () => {
+  test("referrals require Source Partner ids and discard free-text compatibility", () => {
     const state = db();
     expect(() =>
       normalizeContractorForWrite(
@@ -282,6 +261,12 @@ describe("contractor validation and duplicate prevention", () => {
         { id: "con-1" },
       ),
     ).toThrow("Choose a valid Source Partner");
+    const normalized = normalizeContractorForWrite(
+      { id: "con-1", name: "Mr Das", source_partner_name: "Old free text" },
+      state,
+      { id: "con-1" },
+    );
+    expect(normalized.source_partner_name).toBeUndefined();
   });
 
   test("bank verification is derived from verified bank-proof evidence", () => {
@@ -335,7 +320,7 @@ describe("contractor create persistence and governance projection", () => {
       pf_no: "PF-42",
       notes: "Preferred for complex work",
     });
-    expect(record.capabilities_v2).toHaveLength(1);
+    expect(record.capabilities_v2).toBeUndefined();
     expect(record.compliance_documents).toHaveLength(1);
   });
 

@@ -227,7 +227,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [referralQuery, setReferralQuery] = React.useState("");
   const [referralId, setReferralId] = React.useState<string>();
   const [referralOpen, setReferralOpen] = React.useState(false);
-  const [legacyReferral, setLegacyReferral] = React.useState("");
   const [baselineStatus, setBaselineStatus] = React.useState<string | undefined>();
   const [baselineComplianceDocuments, setBaselineComplianceDocuments] = React.useState<ContractorProfileRecord["compliance_documents"]>();
   const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
@@ -277,7 +276,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       latitude,
       longitude,
       source_partner_id: sourcePartner?.id,
-      source_partner_name: sourcePartner?.name || (!referralId ? referralQuery.trim() || undefined : undefined),
+      source_partner_name: sourcePartner?.name,
       photo_attachment_id: attachmentId(contractorPhoto),
       business_card_attachment_id: attachmentId(businessCard),
       reliability_rating: draft.reliability,
@@ -390,8 +389,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
         : "",
     );
     setReferralId(normalized.source_partner_id as string | undefined);
-    setReferralQuery(String(normalized.source_partner_name || ""));
-    setLegacyReferral(normalized.source_partner_id ? "" : String(normalized.source_partner_name || ""));
+    setReferralQuery(normalized.source_partner_id ? String(normalized.source_partner_name || "") : "");
     setBaselineStatus(String(normalized.status || "onboarding"));
     setBaselineComplianceDocuments(normalized.compliance_documents);
     setReferralOpen(false);
@@ -414,7 +412,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   }
 
   const dirty = open && fingerprint(currentPayload, coordinates) !== baselineKey;
-  const referralError = referralQuery.trim() && !referralId && referralQuery.trim() !== legacyReferral
+  const referralError = referralQuery.trim() && !referralId
     ? "Choose an existing Source Partner from the referral search results."
     : null;
   const formatError = contractorProfileValidationError(currentPayload, {
@@ -755,7 +753,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                   </div>
                 ) : null}
               </div>
-              {referralError ? <p className="text-[10px] text-destructive">{referralError}</p> : <p className="text-[10px] text-muted-foreground">Only Source Partner records can be linked. Legacy free-text referrals are preserved until changed.</p>}
+              {referralError ? <p className="text-[10px] text-destructive">{referralError}</p> : <p className="text-[10px] text-muted-foreground">Only existing Source Partner records can be linked.</p>}
             </section>
 
             <section className="grid gap-3 sm:grid-cols-2">

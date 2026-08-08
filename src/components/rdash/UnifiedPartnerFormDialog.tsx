@@ -38,18 +38,13 @@ import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import {
   legacyVendorArticleNames,
-  optionalGstinError,
-  optionalIfscError,
   optionalIndianMobileError,
-  optionalPanError,
   partnerChangedPatch,
   partnerFormFingerprint,
   vendorNotesWithoutLegacyArticles,
 } from "@/lib/rdash/partner-form-consistency";
 import { FilePreview } from "./FilePreview";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
-
-export type EntityType = "vendor" | "contractor";
 
 type PendingMedia = QueuedWorkflowFile & {
   url: string;
@@ -58,17 +53,10 @@ type PendingMedia = QueuedWorkflowFile & {
 };
 type ExistingMedia = { attachment_id: string };
 type MediaValue = "" | PendingMedia | ExistingMedia;
-type CapabilityDraft = {
-  subcategory_id: string;
-  subcategory_name?: string;
-  labour_rate: string;
-  with_material_rate: string;
-  article_ids: string[];
-};
 type Payload = Record<string, unknown>;
 
 type Props = {
-  type: EntityType;
+  type: "vendor";
   open: boolean;
   onClose: () => void;
   onSaved?: (id: string) => void;
@@ -115,15 +103,13 @@ function commonPayload(input: {
   };
 }
 
-export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props) {
+export function EntityFormDialog({ open, onClose, onSaved, editId }: Props) {
   const db = useRDashStore((state) => state.db);
   const addVendor = useRDashStore((state) => state.addVendor);
-  const addContractor = useRDashStore((state) => state.addContractor);
   const updateVendor = useRDashStore((state) => state.updateVendor);
-  const updateContractor = useRDashStore((state) => state.updateContractor);
   const awaitServerSync = useRDashStore((state) => state.awaitServerSync);
   const isEdit = Boolean(editId);
-  const formId = `partner-form:${type}:${editId || "new"}`;
+  const formId = `partner-form:vendor:${editId || "new"}`;
   const [reservedId, setReservedId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const { registerBatch, commitBatches } = useUploadDraft(open);
@@ -151,18 +137,6 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
   const [vendorReturn, setVendorReturn] = React.useState("available");
   const [vendorNotes, setVendorNotes] = React.useState("");
   const [vendorArticleIds, setVendorArticleIds] = React.useState<string[]>([]);
-
-  const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
-  const [contractorReliability, setContractorReliability] = React.useState("average");
-  const [contractorPoliteness, setContractorPoliteness] = React.useState("moderate");
-  const [contractorWorkers, setContractorWorkers] = React.useState("1-3");
-  const [contractorDeadline, setContractorDeadline] = React.useState("usual");
-  const [gstin, setGstin] = React.useState("");
-  const [pan, setPan] = React.useState("");
-  const [bankAccount, setBankAccount] = React.useState("");
-  const [ifsc, setIfsc] = React.useState("");
-  const [categories, setCategories] = React.useState<string[]>([]);
-  const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
 
   const baselineRef = React.useRef<Payload>({});
   const [baselineKey, setBaselineKey] = React.useState("");
@@ -211,65 +185,28 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
       referralQuery,
       referralSelected,
     });
-    if (type === "vendor") {
-      return {
-        ...common,
-        business_card_attachment_id: attachmentId(businessCard),
-        shop_attachment_id: attachmentId(shopPhoto),
-        reliability_rating: vendorReliability,
-        delivery_time_rating: vendorDelivery,
-        return_policy: vendorReturn,
-        notes: vendorNotes.trim() || undefined,
-        article_ids: [...vendorArticleIds],
-      };
-    }
     return {
       ...common,
-      photo_attachment_id: attachmentId(contractorPhoto),
       business_card_attachment_id: attachmentId(businessCard),
-      reliability_rating: contractorReliability,
-      politeness_rating: contractorPoliteness,
-      worker_count_range: contractorWorkers,
-      deadline_commitment: contractorDeadline,
-      business_gst: gstin.trim() || undefined,
-      pan: pan.trim() || undefined,
-      bank_account: bankAccount.trim() || undefined,
-      ifsc: ifsc.trim() || undefined,
-      categories: [...categories],
-      work_capabilities: capabilities.map((row) => ({
-        subcategory_id: row.subcategory_id,
-        subcategory_name: row.subcategory_name,
-        labour_rate: row.labour_rate ? Number(row.labour_rate) : undefined,
-        with_material_rate: row.with_material_rate
-          ? Number(row.with_material_rate)
-          : undefined,
-        article_ids: [...row.article_ids],
-      })),
+      shop_attachment_id: attachmentId(shopPhoto),
+      reliability_rating: vendorReliability,
+      delivery_time_rating: vendorDelivery,
+      return_policy: vendorReturn,
+      notes: vendorNotes.trim() || undefined,
+      article_ids: [...vendorArticleIds],
     };
   }, [
     address,
-    bankAccount,
     businessCard,
-    capabilities,
-    categories,
     city,
-    contractorDeadline,
-    contractorPhoto,
-    contractorPoliteness,
-    contractorReliability,
-    contractorWorkers,
-    gstin,
-    ifsc,
     latitude,
     locality,
     longitude,
     name,
-    pan,
     phone,
     referralQuery,
     referralSelected,
     shopPhoto,
-    type,
     vendorArticleIds,
     vendorDelivery,
     vendorNotes,
@@ -277,134 +214,73 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
     vendorReturn,
   ]);
 
-  const applyPayload = React.useCallback(
-    (payload: Payload) => {
-      setName(String(payload.name || ""));
-      setPhone(String(payload.phone || ""));
-      setAddress(String(payload.address || ""));
-      setCity(String(payload.city || ""));
-      setLocality(String(payload.locality || ""));
-      setLatitude(payload.latitude as number | undefined);
-      setLongitude(payload.longitude as number | undefined);
-      setCoordinates(formatCoordinatePair(payload as any));
-      setReferralQuery(String(payload.source_partner_name || ""));
-      setReferralSelected(
-        payload.source_partner_id
-          ? {
-              id: String(payload.source_partner_id),
-              name: String(payload.source_partner_name || ""),
-            }
-          : null,
-      );
-      setBusinessCard(
-        payload.business_card_attachment_id
-          ? { attachment_id: String(payload.business_card_attachment_id) }
-          : "",
-      );
-      if (type === "vendor") {
-        setShopPhoto(
-          payload.shop_attachment_id
-            ? { attachment_id: String(payload.shop_attachment_id) }
-            : "",
-        );
-        setVendorReliability(String(payload.reliability_rating || "average"));
-        setVendorDelivery(String(payload.delivery_time_rating || "average"));
-        setVendorReturn(String(payload.return_policy || "available"));
-        setVendorNotes(String(payload.notes || ""));
-        setVendorArticleIds((payload.article_ids as string[]) || []);
-      } else {
-        setContractorPhoto(
-          payload.photo_attachment_id
-            ? { attachment_id: String(payload.photo_attachment_id) }
-            : "",
-        );
-        setContractorReliability(String(payload.reliability_rating || "average"));
-        setContractorPoliteness(String(payload.politeness_rating || "moderate"));
-        setContractorWorkers(String(payload.worker_count_range || "1-3"));
-        setContractorDeadline(String(payload.deadline_commitment || "usual"));
-        setGstin(String(payload.business_gst || ""));
-        setPan(String(payload.pan || ""));
-        setBankAccount(String(payload.bank_account || ""));
-        setIfsc(String(payload.ifsc || ""));
-        setCategories((payload.categories as string[]) || []);
-        setCapabilities(
-          ((payload.work_capabilities as Array<Record<string, unknown>>) || []).map(
-            (row) => ({
-              subcategory_id: String(row.subcategory_id || ""),
-              subcategory_name: String(row.subcategory_name || ""),
-              labour_rate:
-                row.labour_rate === undefined ? "" : String(row.labour_rate),
-              with_material_rate:
-                row.with_material_rate === undefined
-                  ? ""
-                  : String(row.with_material_rate),
-              article_ids: (row.article_ids as string[]) || [],
-            }),
-          ),
-        );
-      }
-    },
-    [type],
-  );
+  const applyPayload = React.useCallback((payload: Payload) => {
+    setName(String(payload.name || ""));
+    setPhone(String(payload.phone || ""));
+    setAddress(String(payload.address || ""));
+    setCity(String(payload.city || ""));
+    setLocality(String(payload.locality || ""));
+    setLatitude(payload.latitude as number | undefined);
+    setLongitude(payload.longitude as number | undefined);
+    setCoordinates(formatCoordinatePair(payload as any));
+    setReferralQuery(String(payload.source_partner_name || ""));
+    setReferralSelected(
+      payload.source_partner_id
+        ? {
+            id: String(payload.source_partner_id),
+            name: String(payload.source_partner_name || ""),
+          }
+        : null,
+    );
+    setBusinessCard(
+      payload.business_card_attachment_id
+        ? { attachment_id: String(payload.business_card_attachment_id) }
+        : "",
+    );
+    setShopPhoto(
+      payload.shop_attachment_id
+        ? { attachment_id: String(payload.shop_attachment_id) }
+        : "",
+    );
+    setVendorReliability(String(payload.reliability_rating || "average"));
+    setVendorDelivery(String(payload.delivery_time_rating || "average"));
+    setVendorReturn(String(payload.return_policy || "available"));
+    setVendorNotes(String(payload.notes || ""));
+    setVendorArticleIds((payload.article_ids as string[]) || []);
+  }, []);
 
   React.useEffect(() => {
     if (!open) return;
-    setReservedId(editId || reserveEntityId(type));
+    setReservedId(editId || reserveEntityId("vendor"));
+    const record = editId
+      ? db.master.vendors.find((row) => row.id === editId)
+      : undefined;
     let payload: Payload;
-    if (type === "vendor") {
-      const record = editId
-        ? db.master.vendors.find((row) => row.id === editId)
-        : undefined;
-      if (record) {
-        const structured = (record as any).article_ids as string[] | undefined;
-        const legacy = legacyVendorArticleNames(record.notes)
-          .map(
-            (articleName) =>
-              allArticles.find(
-                (article) =>
-                  article.name.toLowerCase() === articleName.toLowerCase(),
-              )?.id,
-          )
-          .filter((id): id is string => Boolean(id));
-        payload = {
-          ...record,
-          notes: vendorNotesWithoutLegacyArticles(record.notes) || undefined,
-          article_ids: structured?.length ? structured : legacy,
-        };
-      } else {
-        payload = {
-          name: "",
-          phone: "",
-          city: "",
-          reliability_rating: "average",
-          delivery_time_rating: "average",
-          return_policy: "available",
-          article_ids: [],
-        };
-      }
+    if (record) {
+      const structured = (record as any).article_ids as string[] | undefined;
+      const legacy = legacyVendorArticleNames(record.notes)
+        .map(
+          (articleName) =>
+            allArticles.find(
+              (article) => article.name.toLowerCase() === articleName.toLowerCase(),
+            )?.id,
+        )
+        .filter((id): id is string => Boolean(id));
+      payload = {
+        ...record,
+        notes: vendorNotesWithoutLegacyArticles(record.notes) || undefined,
+        article_ids: structured?.length ? structured : legacy,
+      };
     } else {
-      const record = editId
-        ? db.master.contractors.find((row) => row.id === editId)
-        : undefined;
-      payload = record
-        ? {
-            ...record,
-            work_capabilities: (record.work_capabilities || []).map((row) => ({
-              ...row,
-              article_ids: (row as any).article_ids || [],
-            })),
-          }
-        : {
-            name: "",
-            phone: "",
-            city: "",
-            reliability_rating: "average",
-            politeness_rating: "moderate",
-            worker_count_range: "1-3",
-            deadline_commitment: "usual",
-            categories: [],
-            work_capabilities: [],
-          };
+      payload = {
+        name: "",
+        phone: "",
+        city: "",
+        reliability_rating: "average",
+        delivery_time_rating: "average",
+        return_policy: "available",
+        article_ids: [],
+      };
     }
     applyPayload(payload);
     baselineRef.current = payload;
@@ -413,22 +289,17 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
     // Database dependencies are intentionally omitted: background sync must not
     // reset an in-progress form.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, type, editId]);
+  }, [open, editId]);
 
   const currentPayload = buildPayload();
   const dirty = open && partnerFormFingerprint(currentPayload) !== baselineKey;
   const validationError =
     (!String(currentPayload.name || "").trim() && "Name is required.") ||
     optionalIndianMobileError(String(currentPayload.phone || "")) ||
-    coordinateInputError(coordinates) ||
-    (type === "contractor"
-      ? optionalGstinError(String(currentPayload.business_gst || "")) ||
-        optionalPanError(String(currentPayload.pan || "")) ||
-        optionalIfscError(String(currentPayload.ifsc || ""))
-      : null);
+    coordinateInputError(coordinates);
 
   async function discard(): Promise<boolean> {
-    const pending = [businessCard, shopPhoto, contractorPhoto].filter(isPending);
+    const pending = [businessCard, shopPhoto].filter(isPending);
     await Promise.all(pending.map((value) => cancelQueuedWorkflowFile(value)));
     applyPayload(baselineRef.current);
     return true;
@@ -445,31 +316,20 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
     setSaving(true);
     try {
       let id = editId || reservedId;
-      if (type === "vendor") {
-        if (isEdit && editId) updateVendor(editId, patch as any);
-        else {
-          id = addVendor({ ...(currentPayload as any), id: reservedId });
-          updateVendor(id, { article_ids: currentPayload.article_ids } as any);
-        }
-      } else if (isEdit && editId) {
-        updateContractor(editId, patch as any);
-      } else {
-        id = addContractor({ ...(currentPayload as any), id: reservedId });
+      if (isEdit && editId) updateVendor(editId, patch as any);
+      else {
+        id = addVendor({ ...(currentPayload as any), id: reservedId });
+        updateVendor(id, { article_ids: currentPayload.article_ids } as any);
       }
       await awaitServerSync();
       commitBatches();
       baselineRef.current = currentPayload;
       setBaselineKey(partnerFormFingerprint(currentPayload));
       dirtyFormRegistry.markClean(formId);
-      toast.success(
-        `${type === "vendor" ? "Vendor" : "Contractor"} ${
-          isEdit ? "updated" : "created"
-        }`,
-        {
-          description:
-            "The workspace server confirmed the change. Pending files continue in Background Activity.",
-        },
-      );
+      toast.success(`Vendor ${isEdit ? "updated" : "created"}`, {
+        description:
+          "The workspace server confirmed the change. Pending files continue in Background Activity.",
+      });
       onSaved?.(id);
       return true;
     } catch (error) {
@@ -484,7 +344,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
 
   useDirtyFormRegistration({
     id: formId,
-    label: `${isEdit ? "Edit" : "Add"} ${type}`,
+    label: `${isEdit ? "Edit" : "Add"} vendor`,
     dirty,
     save,
     discard,
@@ -558,12 +418,12 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
     if (!file || !reservedId) return;
     try {
       const queued = await enqueueWorkflowFiles({
-        sourceFlow: `${type}_form`,
-        sourceLabel: `${type} form`,
-        targetEntityType: type,
+        sourceFlow: "vendor_form",
+        sourceLabel: "vendor form",
+        targetEntityType: "vendor",
         targetEntityId: reservedId,
-        targetLabel: name.trim() || `New ${type}`,
-        purpose: type === "vendor" ? "vendor_document" : "contractor_document",
+        targetLabel: name.trim() || "New vendor",
+        purpose: "vendor_document",
         files: [
           {
             file,
@@ -598,48 +458,14 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
     setVendorArticleIds((values) =>
       values.includes(id) ? values.filter((value) => value !== id) : [...values, id],
     );
-  const toggleCategory = (category: string) =>
-    setCategories((values) =>
-      values.includes(category)
-        ? values.filter((value) => value !== category)
-        : [...values, category],
-    );
-  const toggleCapability = (subcategoryId: string) => {
-    const row = allSubcategories.find((item) => item.id === subcategoryId);
-    if (!row) return;
-    setCapabilities((values) =>
-      values.some((value) => value.subcategory_id === subcategoryId)
-        ? values.filter((value) => value.subcategory_id !== subcategoryId)
-        : [
-            ...values,
-            {
-              subcategory_id: row.id,
-              subcategory_name: row.name,
-              labour_rate: "",
-              with_material_rate: "",
-              article_ids: [],
-            },
-          ],
-    );
-  };
-  const updateCapability = (
-    subcategoryId: string,
-    patch: Partial<CapabilityDraft>,
-  ) =>
-    setCapabilities((values) =>
-      values.map((value) =>
-        value.subcategory_id === subcategoryId ? { ...value, ...patch } : value,
-      ),
-    );
+
   const articlesForSubcategory = (subcategoryId: string) =>
     articleMap
       .filter((row) => row.work_required_id === subcategoryId)
       .map((row) => allArticles.find((article) => article.id === row.article_id))
       .filter(Boolean);
 
-  const title = `${isEdit ? "Edit" : "Add New"} ${
-    type === "vendor" ? "Vendor" : "Contractor"
-  }`;
+  const title = `${isEdit ? "Edit" : "Add New"} Vendor`;
 
   const photoField = (
     label: string,
@@ -788,248 +614,79 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
               ) : null}
             </div>
 
-            {type === "vendor" ? (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  {photoField(
-                    "Business card photo",
-                    businessCard,
-                    setBusinessCard,
-                    "business_card_attachment_id",
-                  )}
-                  {photoField("Shop photo", shopPhoto, setShopPhoto, "shop_attachment_id")}
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <select value={vendorReliability} onChange={(event) => setVendorReliability(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="very_good">Reliability: Very good</option>
-                    <option value="good">Reliability: Good</option>
-                    <option value="average">Reliability: Average</option>
-                    <option value="bad">Reliability: Bad</option>
-                  </select>
-                  <select value={vendorDelivery} onChange={(event) => setVendorDelivery(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="very_good">Delivery: Very good</option>
-                    <option value="good">Delivery: Good</option>
-                    <option value="average">Delivery: Average</option>
-                    <option value="bad">Delivery: Bad</option>
-                  </select>
-                  <select value={vendorReturn} onChange={(event) => setVendorReturn(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="available">Returns available</option>
-                    <option value="not_available">No returns</option>
-                  </select>
-                </div>
-                <Textarea value={vendorNotes} onChange={(event) => setVendorNotes(event.target.value)} placeholder="Payment terms and notes" />
-                <div className="rounded-lg border p-3">
-                  <p className="text-xs font-semibold">Articles supplied</p>
-                  <p className="mb-2 text-[10px] text-muted-foreground">
-                    Stored as structured article links, separate from Notes.
-                  </p>
-                  {allCategories.map((category) => (
-                    <details key={category.id} className="mb-1 rounded border">
-                      <summary className="cursor-pointer px-2 py-1 text-xs">
-                        {category.name}
-                      </summary>
-                      <div className="space-y-2 p-2">
-                        {allSubcategories
-                          .filter((row) => row.category_id === category.id)
-                          .map((subcategory) => {
-                            const articles = articlesForSubcategory(subcategory.id);
-                            return articles.length ? (
-                              <div key={subcategory.id}>
-                                <p className="text-[10px] font-semibold text-muted-foreground">
-                                  {subcategory.name}
-                                </p>
-                                <div className="flex flex-wrap gap-1">
-                                  {articles.map((article) => (
-                                    <button
-                                      key={article!.id}
-                                      type="button"
-                                      onClick={() => toggleVendorArticle(article!.id)}
-                                      className={cn(
-                                        "rounded border px-2 py-1 text-[10px]",
-                                        vendorArticleIds.includes(article!.id) &&
-                                          "border-primary bg-primary text-primary-foreground",
-                                      )}
-                                    >
-                                      {article!.name}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : null;
-                          })}
-                        <AddWorkSubcategoryAction categoryId={category.id} />
-                      </div>
-                    </details>
-                  ))}
-                  <AddWorkCategoryAction className="mt-2" />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-2 gap-3">
-                  {photoField(
-                    "Contractor photo",
-                    contractorPhoto,
-                    setContractorPhoto,
-                    "photo_attachment_id",
-                  )}
-                  {photoField(
-                    "Business card photo",
-                    businessCard,
-                    setBusinessCard,
-                    "business_card_attachment_id",
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <select value={contractorReliability} onChange={(event) => setContractorReliability(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="good">Reliability: Good</option>
-                    <option value="average">Reliability: Average</option>
-                    <option value="poor">Reliability: Poor</option>
-                  </select>
-                  <select value={contractorPoliteness} onChange={(event) => setContractorPoliteness(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="very">Politeness: Very</option>
-                    <option value="moderate">Politeness: Moderate</option>
-                    <option value="less">Politeness: Less</option>
-                  </select>
-                  <select value={contractorWorkers} onChange={(event) => setContractorWorkers(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="1-3">Workers: 1–3</option>
-                    <option value="4-8">Workers: 4–8</option>
-                    <option value="9-15">Workers: 9–15</option>
-                    <option value="16-40">Workers: 16–40</option>
-                  </select>
-                  <select value={contractorDeadline} onChange={(event) => setContractorDeadline(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
-                    <option value="strict">Deadline: Strict</option>
-                    <option value="usual">Deadline: Usual</option>
-                    <option value="lazy">Deadline: Lazy</option>
-                    <option value="very_lazy">Deadline: Very lazy</option>
-                  </select>
-                </div>
-                <div className="rounded-lg border p-3">
-                  <p className="mb-2 text-xs font-semibold">Work capabilities and rates</p>
-                  {allCategories.map((category) => (
-                    <details key={category.id} className="mb-1 rounded border">
-                      <summary className="cursor-pointer px-2 py-1 text-xs">
-                        {category.name}
-                      </summary>
-                      <div className="flex flex-wrap gap-1 p-2">
-                        {allSubcategories
-                          .filter((row) => row.category_id === category.id)
-                          .map((subcategory) => (
-                            <button
-                              key={subcategory.id}
-                              type="button"
-                              onClick={() => toggleCapability(subcategory.id)}
-                              className={cn(
-                                "rounded border px-2 py-1 text-[10px]",
-                                capabilities.some(
-                                  (row) => row.subcategory_id === subcategory.id,
-                                ) && "border-primary bg-primary text-primary-foreground",
-                              )}
-                            >
+            <div className="grid grid-cols-2 gap-3">
+              {photoField(
+                "Business card photo",
+                businessCard,
+                setBusinessCard,
+                "business_card_attachment_id",
+              )}
+              {photoField("Shop photo", shopPhoto, setShopPhoto, "shop_attachment_id")}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <select value={vendorReliability} onChange={(event) => setVendorReliability(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
+                <option value="very_good">Reliability: Very good</option>
+                <option value="good">Reliability: Good</option>
+                <option value="average">Reliability: Average</option>
+                <option value="bad">Reliability: Bad</option>
+              </select>
+              <select value={vendorDelivery} onChange={(event) => setVendorDelivery(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
+                <option value="very_good">Delivery: Very good</option>
+                <option value="good">Delivery: Good</option>
+                <option value="average">Delivery: Average</option>
+                <option value="bad">Delivery: Bad</option>
+              </select>
+              <select value={vendorReturn} onChange={(event) => setVendorReturn(event.target.value)} className="h-10 rounded-md border bg-card px-2 text-sm">
+                <option value="available">Returns available</option>
+                <option value="not_available">No returns</option>
+              </select>
+            </div>
+            <Textarea value={vendorNotes} onChange={(event) => setVendorNotes(event.target.value)} placeholder="Payment terms and notes" />
+            <div className="rounded-lg border p-3">
+              <p className="text-xs font-semibold">Articles supplied</p>
+              <p className="mb-2 text-[10px] text-muted-foreground">
+                Stored as structured article links, separate from Notes.
+              </p>
+              {allCategories.map((category) => (
+                <details key={category.id} className="mb-1 rounded border">
+                  <summary className="cursor-pointer px-2 py-1 text-xs">
+                    {category.name}
+                  </summary>
+                  <div className="space-y-2 p-2">
+                    {allSubcategories
+                      .filter((row) => row.category_id === category.id)
+                      .map((subcategory) => {
+                        const articles = articlesForSubcategory(subcategory.id);
+                        return articles.length ? (
+                          <div key={subcategory.id}>
+                            <p className="text-[10px] font-semibold text-muted-foreground">
                               {subcategory.name}
-                            </button>
-                          ))}
-                      </div>
-                    </details>
-                  ))}
-                  <div className="mt-2 space-y-2">
-                    {capabilities.map((capability) => {
-                      const articles = articlesForSubcategory(capability.subcategory_id);
-                      return (
-                        <div key={capability.subcategory_id} className="rounded border p-2">
-                          <div className="flex items-center gap-2">
-                            <span className="flex-1 text-xs font-medium">
-                              {capability.subcategory_name}
-                            </span>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={capability.labour_rate}
-                              onChange={(event) =>
-                                updateCapability(capability.subcategory_id, {
-                                  labour_rate: event.target.value,
-                                })
-                              }
-                              placeholder="Labour ₹"
-                              className="h-8 w-24"
-                            />
-                            <Input
-                              type="number"
-                              min={0}
-                              value={capability.with_material_rate}
-                              onChange={(event) =>
-                                updateCapability(capability.subcategory_id, {
-                                  with_material_rate: event.target.value,
-                                })
-                              }
-                              placeholder="Material ₹"
-                              className="h-8 w-28"
-                            />
-                            <button type="button" onClick={() => toggleCapability(capability.subcategory_id)} className="text-destructive">
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                          {articles.length ? (
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {articles.map((article) => {
-                                const selected = capability.article_ids.includes(article!.id);
-                                return (
-                                  <button
-                                    key={article!.id}
-                                    type="button"
-                                    onClick={() =>
-                                      updateCapability(capability.subcategory_id, {
-                                        article_ids: selected
-                                          ? capability.article_ids.filter(
-                                              (id) => id !== article!.id,
-                                            )
-                                          : [...capability.article_ids, article!.id],
-                                      })
-                                    }
-                                    className={cn(
-                                      "rounded border px-1.5 py-0.5 text-[10px]",
-                                      selected &&
-                                        "border-primary bg-primary text-primary-foreground",
-                                    )}
-                                  >
-                                    {article!.name}
-                                  </button>
-                                );
-                              })}
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {articles.map((article) => (
+                                <button
+                                  key={article!.id}
+                                  type="button"
+                                  onClick={() => toggleVendorArticle(article!.id)}
+                                  className={cn(
+                                    "rounded border px-2 py-1 text-[10px]",
+                                    vendorArticleIds.includes(article!.id) &&
+                                      "border-primary bg-primary text-primary-foreground",
+                                  )}
+                                >
+                                  {article!.name}
+                                </button>
+                              ))}
                             </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+                          </div>
+                        ) : null;
+                      })}
+                    <AddWorkSubcategoryAction categoryId={category.id} />
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/20 p-3">
-                  <Input value={gstin} onChange={(event) => setGstin(event.target.value.toUpperCase())} placeholder="GSTIN" maxLength={15} />
-                  <Input value={pan} onChange={(event) => setPan(event.target.value.toUpperCase())} placeholder="PAN" maxLength={10} />
-                  <Input value={bankAccount} onChange={(event) => setBankAccount(event.target.value)} placeholder="Bank account number" />
-                  <Input value={ifsc} onChange={(event) => setIfsc(event.target.value.toUpperCase())} placeholder="IFSC" maxLength={11} />
-                </div>
-                <div className="rounded-lg border p-3">
-                  <p className="mb-2 text-xs font-semibold">Work categories</p>
-                  <div className="flex flex-wrap gap-1">
-                    {allCategories.map((category) => (
-                      <button
-                        key={category.id}
-                        type="button"
-                        onClick={() => toggleCategory(category.name)}
-                        className={cn(
-                          "rounded border px-2 py-1 text-[10px]",
-                          categories.includes(category.name) &&
-                            "border-primary bg-primary text-primary-foreground",
-                        )}
-                      >
-                        {category.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+                </details>
+              ))}
+              <AddWorkCategoryAction className="mt-2" />
+            </div>
           </div>
         </div>
 
@@ -1040,9 +697,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
           <Button
             type="button"
             onClick={() => void save().then((saved) => saved && onClose())}
-            disabled={
-              saving || Boolean(validationError) || (isEdit && !dirty)
-            }
+            disabled={saving || Boolean(validationError) || (isEdit && !dirty)}
             title={validationError || undefined}
           >
             {saving ? (
@@ -1053,7 +708,7 @@ export function EntityFormDialog({ type, open, onClose, onSaved, editId }: Props
               </>
             ) : (
               <>
-                <Plus className="mr-1 h-3.5 w-3.5" /> Create {type}
+                <Plus className="mr-1 h-3.5 w-3.5" /> Create vendor
               </>
             )}
           </Button>

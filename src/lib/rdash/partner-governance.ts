@@ -143,26 +143,25 @@ export function partnerDocuments(partner: Record<string, unknown>): PartnerCompl
 }
 
 export function partnerCapabilities(partner: Record<string, unknown>): PartnerCapability[] {
-  const governed = Array.isArray(partner.capabilities_v2)
+  if (Array.isArray(partner.work_capabilities)) {
+    const partnerId = String(partner.id || "contractor");
+    return (partner.work_capabilities as Array<Record<string, unknown>>).flatMap((row) => {
+      const subcategoryId = String(row.subcategory_id || row.work_subcategory_id || "").trim();
+      if (!subcategoryId) return [];
+      return [{
+        ...row,
+        id: String(row.id || `ccap-${partnerId}-${subcategoryId}`),
+        work_subcategory_id: subcategoryId,
+        work_subcategory_name: row.subcategory_name || row.work_subcategory_name,
+        status: row.status === "inactive" ? "inactive" : "active",
+        created_at: String(row.created_at || new Date(0).toISOString()),
+        updated_at: String(row.updated_at || new Date(0).toISOString()),
+      } as PartnerCapability];
+    });
+  }
+  return Array.isArray(partner.capabilities_v2)
     ? (partner.capabilities_v2 as PartnerCapability[])
     : [];
-  if (governed.length) return governed;
-  if (!Array.isArray(partner.work_capabilities)) return [];
-
-  const partnerId = String(partner.id || "contractor");
-  return (partner.work_capabilities as Array<Record<string, unknown>>).flatMap((row) => {
-    const subcategoryId = String(row.subcategory_id || row.work_subcategory_id || "").trim();
-    if (!subcategoryId) return [];
-    return [{
-      ...row,
-      id: String(row.id || `ccap-${partnerId}-${subcategoryId}`),
-      work_subcategory_id: subcategoryId,
-      work_subcategory_name: row.subcategory_name || row.work_subcategory_name,
-      status: row.status === "inactive" ? "inactive" : "active",
-      created_at: String(row.created_at || new Date(0).toISOString()),
-      updated_at: String(row.updated_at || new Date(0).toISOString()),
-    } as PartnerCapability];
-  });
 }
 
 export function documentStatus(document: PartnerComplianceDocument, at = new Date()): PartnerDocumentStatus {

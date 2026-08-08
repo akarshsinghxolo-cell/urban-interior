@@ -149,32 +149,12 @@ function normalizeCapability(row: Record<string, unknown>): ContractorCapability
 }
 
 export function canonicalContractorCapabilities(
-  contractor: ContractorProfileRecord,
-  db?: Pick<RDashDatabase, "master">,
+  contractor: Pick<ContractorProfileRecord, "id" | "work_capabilities">,
+  _db?: Pick<RDashDatabase, "master">,
 ): ContractorCapability[] {
-  let rows: Array<Record<string, unknown>> = [];
-  if (Array.isArray(contractor.work_capabilities)) {
-    rows = contractor.work_capabilities as Array<Record<string, unknown>>;
-  } else if (Array.isArray(contractor.capabilities_v2)) {
-    rows = contractor.capabilities_v2;
-  } else if (contractor.id && db) {
-    rows = (db.master.contractorRates || [])
-      .filter((rate) => rate.contractor_id === contractor.id && rate.work_subcategory_id)
-      .map((rate) => ({
-        subcategory_id: rate.work_subcategory_id,
-        subcategory_name: rate.work_subcategory_name || rate.trade,
-        labour_rate: rate.article_id ? undefined : rate.labour_rate ?? rate.rate,
-        with_material_rate: rate.article_id ? undefined : rate.with_material_rate,
-        unit_id: rate.unit_id,
-        article_ids: rate.article_id ? [rate.article_id] : [],
-        article_rates: rate.article_id ? [{
-          article_id: rate.article_id,
-          article_name: rate.article_name,
-          labour_rate: rate.labour_rate ?? rate.rate,
-          with_material_rate: rate.with_material_rate,
-        }] : [],
-      }));
-  }
+  const rows = Array.isArray(contractor.work_capabilities)
+    ? contractor.work_capabilities as Array<Record<string, unknown>>
+    : [];
 
   const bySubcategory = new Map<string, ContractorCapability>();
   for (const source of rows) {
@@ -228,7 +208,9 @@ export function contractorGovernanceCapabilityProjection(
 export function contractorCapabilitiesFromGovernance(
   capabilities: Array<Record<string, unknown>>,
 ): ContractorCapability[] {
-  return canonicalContractorCapabilities({ capabilities_v2: capabilities });
+  return canonicalContractorCapabilities({
+    work_capabilities: capabilities as unknown as ContractorCapability[],
+  });
 }
 
 export function contractorProfileComplianceDocuments(
@@ -333,8 +315,10 @@ export function contractorMasterRecordForCreate(
   input: ContractorProfileRecord,
   id: string,
 ): ContractorProfileRecord {
+  const canonicalInput: ContractorProfileRecord = { ...input };
+  delete canonicalInput.capabilities_v2;
   return {
-    ...input,
+    ...canonicalInput,
     id,
     name: String(input.name || "New contractor"),
     active_jobs: Number.isFinite(Number(input.active_jobs)) ? Number(input.active_jobs) : 0,
@@ -342,10 +326,9 @@ export function contractorMasterRecordForCreate(
     past_jobs_count: Number.isFinite(Number(input.past_jobs_count)) ? Number(input.past_jobs_count) : 0,
     specializations: Array.isArray(input.specializations) ? input.specializations : [],
     work_capabilities: Array.isArray(input.work_capabilities) ? input.work_capabilities : [],
-    capabilities_v2: Array.isArray(input.capabilities_v2) ? input.capabilities_v2 : [],
     categories: Array.isArray(input.categories) ? input.categories : [],
     compliance_documents: Array.isArray(input.compliance_documents) ? input.compliance_documents : [],
-    status: input.status || "active",
+    status: input.status || "onboarding",
   };
 }
 
@@ -365,13 +348,10 @@ export function derivedContractorCategoryNames(
 
 export function contractorRateProjection(
   db: Pick<RDashDatabase, "master">,
-  contractor: ContractorProfileRecord,
+  contractor: Pick<ContractorProfileRecord, "id" | "name" | "work_capabilities">,
 ): RDashDatabase["master"]["contractorRates"] {
   if (!contractor.id) return db.master.contractorRates || [];
   const existing = db.master.contractorRates || [];
-  const legacyUnmapped = existing.filter(
-    (rate) => rate.contractor_id === contractor.id && !rate.work_subcategory_id,
-  );
   const otherContractors = existing.filter((rate) => rate.contractor_id !== contractor.id);
   const capabilities = canonicalContractorCapabilities(contractor, db);
   const projected = capabilities.flatMap((capability) => {
@@ -421,7 +401,7 @@ export function contractorRateProjection(
     const hasDefaultRate = capability.labour_rate !== undefined || capability.with_material_rate !== undefined;
     return hasDefaultRate || !materialRows.length ? [defaultRow, ...materialRows] : materialRows;
   });
-  return [...projected, ...legacyUnmapped, ...otherContractors];
+  return [...projected, ...otherContractors];
 }
 
 export function contractorDuplicateConflicts(
@@ -533,7 +513,7 @@ export function normalizeContractorForWrite(
     locality: String(input.locality || "").trim() || undefined,
     address: String(input.address || "").trim() || undefined,
     source_partner_id: sourcePartner?.id,
-    source_partner_name: sourcePartner?.name || (!input.source_partner_id ? String(input.source_partner_name || "").trim() || undefined : undefined),
+    source_partner_name: sourcePartner?.name,
     business_gst: upperId(input.business_gst) || undefined,
     pan: upperId(input.pan) || undefined,
     bank_account: bankDigits(input.bank_account) || undefined,
@@ -552,8 +532,8 @@ export function normalizeContractorForWrite(
     status: input.status || "onboarding",
     work_capabilities: capabilities,
     categories: derivedContractorCategoryNames(db, capabilities),
-    capabilities_v2: id ? contractorGovernanceCapabilityProjection(id, capabilities) : [],
   };
+  delete normalized.capabilities_v2;
   normalized.compliance_documents = contractorProfileComplianceDocuments(normalized);
   normalized.bank_verified = verifiedContractorBankProof(normalized);
   return normalized;

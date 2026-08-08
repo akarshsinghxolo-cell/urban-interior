@@ -55,10 +55,20 @@ function canonicalizeContractorRateOperations(
   operations: WorkspaceOperation[],
 ): WorkspaceOperation[] {
   const contractorOperation = operations.find((operation) => operation.collection === "master.contractors");
-  if (!contractorOperation) return operations;
+  const hasRateOperation = operations.some((operation) => operation.collection === "master.contractorRates");
+  if (!contractorOperation) {
+    if (hasRateOperation) {
+      throw new Error("INVALID:Contractor Rates are read-only projections. Update Contractor work capabilities instead.");
+    }
+    return operations;
+  }
 
-  const candidate = applyWorkspaceOperations(current, operations);
-  let contractorRates = candidate.master.contractorRates || [];
+  // Caller-supplied rate rows are never authoritative. Apply only the
+  // Contractor/profile operations, then rebuild rate rows from canonical
+  // work_capabilities for every touched Contractor.
+  const profileOperations = operations.filter((operation) => operation.collection !== "master.contractorRates");
+  const candidate = applyWorkspaceOperations(current, profileOperations);
+  let contractorRates = current.master.contractorRates || [];
   const touchedIds = new Set<string>();
   for (const row of contractorOperation.upsert || []) {
     const id = String(row.id || "").trim();
@@ -76,7 +86,7 @@ function canonicalizeContractorRateOperations(
     }
     contractorRates = contractorRateProjection(
       { master: { ...candidate.master, contractorRates } },
-      contractor as ContractorProfileRecord,
+      contractor,
     );
   }
 

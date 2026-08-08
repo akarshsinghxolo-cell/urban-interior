@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { formatDate, formatINR, titleCase } from "@/lib/rdash/format";
 import {
+  canonicalContractorCapabilities,
   contractorCapabilitiesFromGovernance,
   contractorGovernanceCapabilityProjection,
   derivedContractorCategoryNames,
@@ -122,7 +123,14 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
   }, [partners, query]);
   const duplicateCandidates = React.useMemo(() => detectPartnerDuplicates(partners), [partners]);
   const selectedDuplicates = selected ? duplicateCandidates.filter((candidate) => candidate.leftId === selected.id || candidate.rightId === selected.id) : [];
-  const capabilities = selected ? partnerCapabilities(selected) : [];
+  const capabilities = selected
+    ? mode === "contractor"
+      ? contractorGovernanceCapabilityProjection(
+          selected.id,
+          canonicalContractorCapabilities(selected, db),
+        )
+      : partnerCapabilities(selected)
+    : [];
   const documents = selected ? partnerDocuments(selected) : [];
   const readiness = mode === "vendor" && selected ? vendorPaymentReadiness(selected) : undefined;
   const expiringDocumentCount = documents.filter((document) => documentStatus(document) === "expiring").length;
@@ -130,18 +138,21 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
 
   const updatePartner = React.useCallback((id: string, patch: Record<string, unknown>) => {
     if (mode === "vendor") updateVendor(id, patch as any);
-    else if (Array.isArray(patch.capabilities_v2)) {
-      const workCapabilities = contractorCapabilitiesFromGovernance(
-        patch.capabilities_v2 as Array<Record<string, unknown>>,
-      );
-      updateContractor(id, {
-        ...patch,
-        work_capabilities: workCapabilities,
-        capabilities_v2: contractorGovernanceCapabilityProjection(id, workCapabilities),
-        categories: derivedContractorCategoryNames(db, workCapabilities),
-      } as any);
-    } else updateContractor(id, patch as any);
-  }, [db, mode, updateVendor, updateContractor]);
+    else updateContractor(id, patch as any);
+  }, [mode, updateVendor, updateContractor]);
+
+  const updateCapabilities = React.useCallback((next: Array<Record<string, unknown>>) => {
+    if (!selected) return;
+    if (mode === "vendor") {
+      updateVendor(selected.id, { capabilities_v2: next } as any);
+      return;
+    }
+    const workCapabilities = contractorCapabilitiesFromGovernance(next);
+    updateContractor(selected.id, {
+      work_capabilities: workCapabilities,
+      categories: derivedContractorCategoryNames(db, workCapabilities),
+    } as any);
+  }, [db, mode, selected, updateVendor, updateContractor]);
 
   const createExpiryTasks = () => {
     if (!selected) return;
@@ -204,7 +215,7 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
           <div className="rd-scroll max-h-[calc(100vh-230px)] space-y-2 overflow-y-auto pr-1">
             {filtered.map((partner) => {
               const partnerReadiness = mode === "vendor" ? vendorPaymentReadiness(partner) : undefined;
-              const capabilityCount = mode === "contractor" ? partnerCapabilities(partner).length : 0;
+              const capabilityCount = mode === "contractor" ? canonicalContractorCapabilities(partner, db).length : 0;
               const partnerDuplicates = duplicateCandidates.filter((candidate) => candidate.leftId === partner.id || candidate.rightId === partner.id).length;
               return <button key={partner.id} type="button" onClick={() => setSelectedId(partner.id)} className={cn("w-full rounded-xl border p-3 text-left transition-colors", selectedId === partner.id ? "border-primary bg-primary/[0.04] ring-2 ring-primary/10" : "border-border bg-background hover:bg-accent/20")}>
                 <div className="flex items-start gap-2.5"><Avatar name={partner.name} size={38} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{partner.name}</p><p className="mt-0.5 truncate text-[10px] text-muted-foreground">{partner.phone || "Phone pending"} · {partner.city || "City pending"}</p><div className="mt-2 flex items-center justify-between">{mode === "vendor" && partnerReadiness ? <StatusBadge label={partnerReadiness.ready ? "Payment ready" : `${partnerReadiness.blockers.length} blocker${partnerReadiness.blockers.length === 1 ? "" : "s"}`} className={partnerReadiness.ready ? statusClass("valid") : statusClass("expired")} /> : <StatusBadge label={`${capabilityCount} ${capabilityCount === 1 ? "capability" : "capabilities"}`} />}{partnerDuplicates > 0 && <span className="text-[10px] font-semibold text-warning">{partnerDuplicates} duplicate match</span>}</div></div></div>
@@ -215,7 +226,7 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
 
         <main className="min-w-0 space-y-4">
           <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-            <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-3"><Avatar name={selected.name} size={48} /><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold">{selected.name}</h2><StatusBadge label={titleCase(selected.status || "active")} /></div><p className="mt-0.5 text-xs text-muted-foreground">{selected.legal_name || (mode === "vendor" ? selected.category : selected.trade || selected.categories?.join(", ") || (capabilities[0] as any)?.work_subcategory_name) || "Legal identity not recorded"}</p></div></div>{mode === "vendor" && readiness && <StatusBadge label={readiness.ready ? "Payment release ready" : "Payment release blocked"} className={readiness.ready ? statusClass("valid") : statusClass("expired")} />}</div>
+            <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-center gap-3"><Avatar name={selected.name} size={48} /><div><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-bold">{selected.name}</h2><StatusBadge label={titleCase(selected.status || "active")} /></div><p className="mt-0.5 text-xs text-muted-foreground">{selected.legal_name || (mode === "vendor" ? selected.category : selected.categories?.join(", ") || (capabilities[0] as any)?.work_subcategory_name) || "Legal identity not recorded"}</p></div></div>{mode === "vendor" && readiness && <StatusBadge label={readiness.ready ? "Payment release ready" : "Payment release blocked"} className={readiness.ready ? statusClass("valid") : statusClass("expired")} />}</div>
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><MetricCard label="Capabilities" value={String(capabilities.length)} tone="primary" /><MetricCard label="Documents" value={String(documents.length)} tone="default" /><MetricCard label="Expiring / expired" value={String(expiringDocumentCount + expiredDocumentCount)} tone={expiredDocumentCount > 0 ? "destructive" : "warning"} /><MetricCard label="Duplicate matches" value={String(selectedDuplicates.length)} tone={selectedDuplicates.length ? "warning" : "success"} /></div>
           </section>
 
@@ -227,13 +238,13 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
             <TabButton active={tab === "duplicates"} onClick={() => setTab("duplicates")} icon={Users} label="Duplicate control" />
           </div>
 
-          {tab === "capabilities" && <CapabilitiesSection mode={mode} selected={selected} capabilities={capabilities} onAdd={() => setCapabilityDialog({ open: true })} onEdit={(editId) => setCapabilityDialog({ open: true, editId })} onToggle={(id) => updatePartner(selected.id, { capabilities_v2: capabilities.map((capability: any) => capability.id === id ? { ...capability, status: capability.status === "active" ? "inactive" : "active", updated_at: new Date().toISOString() } : capability) })} />}
+          {tab === "capabilities" && <CapabilitiesSection mode={mode} selected={selected} capabilities={capabilities} onAdd={() => setCapabilityDialog({ open: true })} onEdit={(editId) => setCapabilityDialog({ open: true, editId })} onToggle={(id) => updateCapabilities(capabilities.map((capability: any) => capability.id === id ? { ...capability, status: capability.status === "active" ? "inactive" : "active", updated_at: new Date().toISOString() } : capability))} />}
           {tab === "documents" && <DocumentsSection mode={mode} selected={selected} documents={documents} onAdd={() => setDocumentDialog({ open: true })} onEdit={(editId) => setDocumentDialog({ open: true, editId })} onVerify={(id) => updatePartner(selected.id, { compliance_documents: documents.map((document) => document.id === id ? { ...document, verified: !document.verified, verified_at: !document.verified ? new Date().toISOString() : undefined, verified_by: !document.verified ? "Current user" : undefined, updated_at: new Date().toISOString() } : document) })} onDelete={(id) => updatePartner(selected.id, { compliance_documents: documents.filter((document) => document.id !== id) })} />}
           {tab === "duplicates" && <DuplicateSection mode={mode} db={db as any} partners={partners} selected={selected} candidates={selectedDuplicates} onReview={(candidateId) => setDuplicateDialog({ open: true, candidateId })} />}
         </main>
       </div>
 
-      <CapabilityDialog mode={mode} partner={selected} open={capabilityDialog.open} editId={capabilityDialog.editId} onClose={() => setCapabilityDialog({ open: false })} onSave={(next) => { updatePartner(selected.id, { capabilities_v2: next }); setCapabilityDialog({ open: false }); }} />
+      <CapabilityDialog mode={mode} partner={selected} open={capabilityDialog.open} editId={capabilityDialog.editId} onClose={() => setCapabilityDialog({ open: false })} onSave={(next) => { updateCapabilities(next); setCapabilityDialog({ open: false }); }} />
       <DocumentDialog mode={mode} partner={selected} open={documentDialog.open} editId={documentDialog.editId} onClose={() => setDocumentDialog({ open: false })} onSave={(next) => { updatePartner(selected.id, { compliance_documents: next }); setDocumentDialog({ open: false }); }} />
       <DuplicateReviewDialog mode={mode} db={db as any} partners={partners} selected={selected} candidateId={duplicateDialog.candidateId} open={duplicateDialog.open} onClose={() => setDuplicateDialog({ open: false })} onQuarantine={quarantineDuplicate} />
     </div>
@@ -249,7 +260,7 @@ function CapabilitiesSection({ mode, selected, capabilities, onAdd, onEdit, onTo
 }
 
 function DocumentsSection({ mode, selected, documents, onAdd, onEdit, onVerify, onDelete }: any) {
-  return <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,.85fr)]"><section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><div className="flex flex-wrap items-center justify-between gap-3"><SectionHeader title="Typed document register" count={documents.length} /><Button size="sm" onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add document</Button></div><div className="mt-4 space-y-2">{documents.map((document: PartnerComplianceDocument) => { const status = documentStatus(document); const days = daysUntilExpiry(document); return <div key={document.id} className="rounded-xl border border-border bg-muted/10 p-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold">{document.label}</p><StatusBadge label={titleCase(status)} className={statusClass(status)} />{mode === "vendor" && document.mandatory && <StatusBadge label="Mandatory" />}</div><p className="mt-1 text-[10px] text-muted-foreground">{document.document_no || "Number not recorded"}{document.expiry_date ? ` · Expires ${formatDate(document.expiry_date)}${days != null ? ` (${days} days)` : ""}` : " · No expiry"}</p></div><div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => onEdit(document.id)}><Pencil className="h-3.5 w-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => onDelete(document.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button></div></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-muted-foreground">{document.attachment_id ? `Attachment ${document.attachment_id}` : "File can be attached in the evidence panel"}</span><Button size="sm" variant={document.verified ? "outline" : "default"} onClick={() => onVerify(document.id)}>{document.verified ? <><BadgeCheck className="mr-1 h-3.5 w-3.5" />Verified</> : <><ShieldCheck className="mr-1 h-3.5 w-3.5" />Verify</>}</Button></div></div>; })}{!documents.length && <EmptyState title={mode === "vendor" ? "No compliance documents" : "No documents"} description={mode === "vendor" ? "Add tax, bank, licence, insurance and agreement records with verification and expiry dates." : "Add any optional reference documents you want to keep with this contractor."} action={<Button onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add first document</Button>} />}</div></section><section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><SectionHeader title="Evidence files" /><div className="mt-3"><OperationalMediaPanel entityType={selected.business_gst != null || selected.trade != null ? "contractor" : "vendor"} entityId={selected.id} title="Compliance evidence and supporting files" /></div></section></div>;
+  return <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,.85fr)]"><section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><div className="flex flex-wrap items-center justify-between gap-3"><SectionHeader title="Typed document register" count={documents.length} /><Button size="sm" onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add document</Button></div><div className="mt-4 space-y-2">{documents.map((document: PartnerComplianceDocument) => { const status = documentStatus(document); const days = daysUntilExpiry(document); return <div key={document.id} className="rounded-xl border border-border bg-muted/10 p-3"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-bold">{document.label}</p><StatusBadge label={titleCase(status)} className={statusClass(status)} />{mode === "vendor" && document.mandatory && <StatusBadge label="Mandatory" />}</div><p className="mt-1 text-[10px] text-muted-foreground">{document.document_no || "Number not recorded"}{document.expiry_date ? ` · Expires ${formatDate(document.expiry_date)}${days != null ? ` (${days} days)` : ""}` : " · No expiry"}</p></div><div className="flex gap-1"><Button size="sm" variant="ghost" onClick={() => onEdit(document.id)}><Pencil className="h-3.5 w-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => onDelete(document.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button></div></div><div className="mt-3 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-muted-foreground">{document.attachment_id ? `Attachment ${document.attachment_id}` : "File can be attached in the evidence panel"}</span><Button size="sm" variant={document.verified ? "outline" : "default"} onClick={() => onVerify(document.id)}>{document.verified ? <><BadgeCheck className="mr-1 h-3.5 w-3.5" />Verified</> : <><ShieldCheck className="mr-1 h-3.5 w-3.5" />Verify</>}</Button></div></div>; })}{!documents.length && <EmptyState title={mode === "vendor" ? "No compliance documents" : "No documents"} description={mode === "vendor" ? "Add tax, bank, licence, insurance and agreement records with verification and expiry dates." : "Add any optional reference documents you want to keep with this contractor."} action={<Button onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add first document</Button>} />}</div></section><section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><SectionHeader title="Evidence files" /><div className="mt-3"><OperationalMediaPanel entityType={mode} entityId={selected.id} title="Compliance evidence and supporting files" /></div></section></div>;
 }
 
 function DuplicateSection({ mode, db, partners, selected, candidates, onReview }: any) {
@@ -262,7 +273,12 @@ function Value({ label, value }: { label: string; value: React.ReactNode }) {
 
 function CapabilityDialog({ mode, partner, open, editId, onClose, onSave }: { mode: PartnerGovernanceMode; partner: PartnerRecord; open: boolean; editId?: string; onClose: () => void; onSave: (next: any[]) => void }) {
   const db = useRDashStore((state) => state.db);
-  const current = partnerCapabilities(partner) as any[];
+  const current = (mode === "contractor"
+    ? contractorGovernanceCapabilityProjection(
+        partner.id,
+        canonicalContractorCapabilities(partner, db),
+      )
+    : partnerCapabilities(partner)) as any[];
   const editing = current.find((capability) => capability.id === editId);
   const [draft, setDraft] = React.useState<Record<string, any>>({});
   React.useEffect(() => { if (!open) return; setDraft(editing ? { ...editing } : { status: "active", preferred: false, supply_mode: "stocked" }); }, [open, editId]);
