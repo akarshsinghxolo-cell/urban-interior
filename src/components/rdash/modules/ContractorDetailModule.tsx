@@ -2,6 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore, contractorBids, contractorSettlements, contractorOutstanding } from "@/lib/rdash/store";
+import { contractorRateProjection } from "@/lib/rdash/contractor-profile";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
 import { HardHat, Star, Phone, MapPin, TrendingUp, CheckCircle2, AlertTriangle, ArrowRight, Wrench, DollarSign, X, XCircle, Gavel, HandCoins, Pencil, Plus, } from "lucide-react";
@@ -61,7 +62,6 @@ export function ContractorDetailModule() {
     const availableCategories = React.useMemo(() => {
         const cats = new Map<string, string>();
         for (const c of db.master.contractors) {
-            if (c.trade) cats.set(`trade:${c.trade}`, c.trade);
             if (c.work_capabilities) {
                 for (const cap of c.work_capabilities) {
                     const info = subToCategory[cap.subcategory_id];
@@ -78,10 +78,6 @@ export function ContractorDetailModule() {
         return db.master.contractors
             .filter((c) => {
                 if (categoryFilter === "all") return true;
-                if (categoryFilter.startsWith("trade:")) {
-                    const tradeVal = categoryFilter.slice(6);
-                    return c.trade === tradeVal || (c.work_capabilities?.some((cap) => cap.subcategory_name === tradeVal));
-                }
                 if (categoryFilter.startsWith("cat:")) {
                     const catId = categoryFilter.slice(4);
                     return c.work_capabilities?.some((cap) => subToCategory[cap.subcategory_id]?.categoryId === catId);
@@ -98,14 +94,13 @@ export function ContractorDetailModule() {
                 // was set to 0 at creation and never recomputed, so the module
                 // always showed ₹0 outstanding for every contractor).
                 const outstanding = contractorOutstanding(db, c.id);
-                const rates = db.master.contractorRates.filter((r) => r.contractor_id === c.id);
+                const rates = contractorRateProjection(db, c).filter((r) => r.contractor_id === c.id);
                 const bids = contractorBids(db, c.id);
                 const settlements = contractorSettlements(db, c.id);
                 const selectedBids = bids.filter((b) => b.status === "selected").length;
                 const abandonedSettlements = settlements.filter((s) => s.type === "abandonment").length;
                 // Resolve this contractor's work categories for display
                 const contractorCategories = new Set<string>();
-                if (c.trade) contractorCategories.add(c.trade);
                 if (c.work_capabilities) {
                     for (const cap of c.work_capabilities) {
                         const info = subToCategory[cap.subcategory_id];
@@ -188,12 +183,9 @@ export function ContractorDetailModule() {
                 <Avatar name={selected.name} size={48}/>
                 <div>
                   <p className="text-base font-bold">{selected.name}</p>
-                  <p className="text-xs text-muted-foreground">{selected.trade} · {selected.city}</p>
+                  <p className="text-xs text-muted-foreground">{selected.contractorCategories?.join(", ") || "Capabilities configured"} · {selected.city}</p>
                   {(selected as any).contractorCategories?.length > 0 && (<div className="mt-1 flex flex-wrap gap-1">
                       {(selected as any).contractorCategories.map((cat: string) => (<span key={cat} className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">{cat}</span>))}
-                    </div>)}
-                  {selected.specializations && selected.specializations.length > 0 && (<div className="mt-1 flex flex-wrap gap-1">
-                      {selected.specializations.map((s) => (<span key={s} className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{s}</span>))}
                     </div>)}
                 </div>
               </div>

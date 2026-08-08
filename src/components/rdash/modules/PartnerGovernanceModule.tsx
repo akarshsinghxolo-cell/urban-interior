@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { formatDate, formatINR, titleCase } from "@/lib/rdash/format";
 import {
+  canonicalContractorCapabilities,
   contractorCapabilitiesFromGovernance,
   contractorGovernanceCapabilityProjection,
   derivedContractorCategoryNames,
@@ -122,7 +123,14 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
   }, [partners, query]);
   const duplicateCandidates = React.useMemo(() => detectPartnerDuplicates(partners), [partners]);
   const selectedDuplicates = selected ? duplicateCandidates.filter((candidate) => candidate.leftId === selected.id || candidate.rightId === selected.id) : [];
-  const capabilities = selected ? partnerCapabilities(selected) : [];
+  const capabilities = selected
+    ? mode === "contractor"
+      ? contractorGovernanceCapabilityProjection(
+          selected.id,
+          canonicalContractorCapabilities(selected, db),
+        )
+      : partnerCapabilities(selected)
+    : [];
   const documents = selected ? partnerDocuments(selected) : [];
   const readiness = mode === "vendor" && selected ? vendorPaymentReadiness(selected) : undefined;
   const expiringDocumentCount = documents.filter((document) => documentStatus(document) === "expiring").length;
@@ -135,9 +143,7 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
         patch.capabilities_v2 as Array<Record<string, unknown>>,
       );
       updateContractor(id, {
-        ...patch,
         work_capabilities: workCapabilities,
-        capabilities_v2: contractorGovernanceCapabilityProjection(id, workCapabilities),
         categories: derivedContractorCategoryNames(db, workCapabilities),
       } as any);
     } else updateContractor(id, patch as any);
