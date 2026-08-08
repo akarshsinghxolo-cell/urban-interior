@@ -169,7 +169,6 @@ as $function$
 declare
   v_op jsonb;
   v_row jsonb;
-  v_rate_row jsonb;
   v_projected_row jsonb;
   v_id text;
   v_contractor_id text;
@@ -179,9 +178,9 @@ declare
   v_rate_delete_ids text[] := array[]::text[];
   v_projection_rows jsonb := '[]'::jsonb;
   v_contractor_projection jsonb;
-  v_preserved_rate_rows jsonb := '[]'::jsonb;
   v_output jsonb := '[]'::jsonb;
   v_existing_id text;
+  v_has_rate_operation boolean := false;
 begin
   if jsonb_typeof(p_operations) <> 'array' then
     raise exception using errcode = '22023', message = 'INVALID_OPERATIONS';
@@ -189,6 +188,10 @@ begin
 
   for v_op in select value from jsonb_array_elements(p_operations)
   loop
+    if v_op ->> 'collection' = 'master.contractorRates' then
+      v_has_rate_operation := true;
+      continue;
+    end if;
     if v_op ->> 'collection' <> 'master.contractors' then
       continue;
     end if;
@@ -215,8 +218,6 @@ begin
         end if;
       end loop;
 
-      -- Every rate row for a touched Contractor must belong to the canonical
-      -- projection. This deliberately removes historical free-form rows.
       for v_existing_id in
         select r.id
           from public."entity_master_contractorRates" r
@@ -255,37 +256,26 @@ begin
   end loop;
 
   if cardinality(v_affected_ids) = 0 then
+    if v_has_rate_operation then
+      raise exception using errcode = '22023', message = 'CONTRACTOR_RATES_READ_ONLY';
+    end if;
     return p_operations;
   end if;
 
+  -- Contractor Rates are projection output, never caller input. Preserve every
+  -- non-rate operation and discard any supplied rate upserts/deletes.
   for v_op in select value from jsonb_array_elements(p_operations)
   loop
-    if v_op ->> 'collection' <> 'master.contractorRates' then
-      v_output := v_output || jsonb_build_array(v_op);
+    if v_op ->> 'collection' = 'master.contractorRates' then
       continue;
     end if;
-
-    for v_rate_row in select value from jsonb_array_elements(coalesce(v_op -> 'upsert', '[]'::jsonb))
-    loop
-      v_contractor_id := nullif(btrim(coalesce(v_rate_row ->> 'contractor_id', '')), '');
-      if v_contractor_id = any(v_affected_ids) then
-        continue;
-      end if;
-      v_preserved_rate_rows := v_preserved_rate_rows || jsonb_build_array(v_rate_row);
-    end loop;
-
-    for v_id in select value #>> '{}' from jsonb_array_elements(coalesce(v_op -> 'deleteIds', '[]'::jsonb))
-    loop
-      if not (v_id = any(v_rate_delete_ids)) then
-        v_rate_delete_ids := array_append(v_rate_delete_ids, v_id);
-      end if;
-    end loop;
+    v_output := v_output || jsonb_build_array(v_op);
   end loop;
 
   v_output := v_output || jsonb_build_array(jsonb_build_object(
     'collection', 'master.contractorRates',
     'table', 'entity_master_contractorRates',
-    'upsert', v_preserved_rate_rows || v_projection_rows,
+    'upsert', v_projection_rows,
     'deleteIds', to_jsonb(v_rate_delete_ids)
   ));
 
@@ -352,6 +342,6 @@ $cleanup$;
 comment on function public.uc_contractor_rate_projection_rows(text, jsonb) is
   'Builds Contractor rate read rows exclusively from canonical work_capabilities.';
 comment on function public.uc_expand_contractor_rate_operations(text, jsonb) is
-  'Replaces every rate row for a touched Contractor with the canonical work_capabilities projection; free-form legacy rates are not preserved.';
+  'Makes Contractor Rates a read-only projection: direct rate operations are rejected unless accompanied by Contractor changes, and caller-supplied rate rows are discarded in favor of canonical work_capabilities.';
 
 commit;

@@ -43,4 +43,11 @@ describe("Contractor legacy-path removal", () => {
     expect(form).not.toContain("Legacy free-text referrals");
     expect(detail).toContain("contractorRateProjection(db, c)");
   });
+
+  test("Contractor Rates are read-only at the server commit boundary", async () => {
+    const server = await source("src/lib/rdash/server/authorized-commit.ts");
+    expect(server).toContain("Contractor Rates are read-only projections");
+    expect(server).toContain('operations.filter((operation) => operation.collection !== "master.contractorRates")');
+    expect(server).toContain("contractorRateProjection(");
+  });
 });
