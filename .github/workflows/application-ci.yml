@@ -48,10 +48,27 @@ jobs:
           from pathlib import Path
           path = Path("src/lib/rdash/contractor-profile.ts")
           text = path.read_text()
-          needle = "  [key: string]: unknown;\n"
-          if needle not in text:
-              raise SystemExit("ContractorProfileRecord index signature not found")
-          path.write_text(text.replace(needle, "", 1))
+          replacements = {
+              '''export function canonicalContractorCapabilities(
+            contractor: ContractorProfileRecord,
+            _db?: Pick<RDashDatabase, "master">,
+          ): ContractorCapability[] {''': '''export function canonicalContractorCapabilities(
+            contractor: Pick<ContractorProfileRecord, "id" | "work_capabilities">,
+            _db?: Pick<RDashDatabase, "master">,
+          ): ContractorCapability[] {''',
+              '''export function contractorRateProjection(
+            db: Pick<RDashDatabase, "master">,
+            contractor: ContractorProfileRecord,
+          ): RDashDatabase["master"]["contractorRates"] {''': '''export function contractorRateProjection(
+            db: Pick<RDashDatabase, "master">,
+            contractor: Pick<ContractorProfileRecord, "id" | "work_capabilities">,
+          ): RDashDatabase["master"]["contractorRates"] {''',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"Expected Contractor helper signature not found: {old.splitlines()[0]}")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
           PY
           rm scripts/apply-contractor-legacy-cleanup.py
       # CONTRACTOR-CLEANUP-END
