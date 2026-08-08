@@ -3,7 +3,6 @@ import type { RDashState } from "./store/types";
 import {
   canonicalContractorCapabilities,
   contractorDuplicateConflicts,
-  contractorGovernanceCapabilityProjection,
   contractorProfileValidationError,
   contractorRateProjection,
   normalizeContractorForWrite,
@@ -46,10 +45,8 @@ function synchronizeRateProjection(store: RDashStore, contractorId: string) {
 
 /**
  * Permanent contractor-domain guard installed at the public store boundary.
- * This replaces the old form-mounted contractor monkey patch: every normal
- * add/update/rate write now goes through the same normalization, duplicate,
- * permission, lifecycle and rate-projection rules regardless of which UI
- * initiated the change.
+ * Every normal add/update/rate write goes through the same canonical
+ * normalization, duplicate, permission, lifecycle and rate-projection rules.
  */
 export function installContractorStorePolicy(store: RDashStore): void {
   if (installedStores.has(store as object)) return;
@@ -58,7 +55,6 @@ export function installContractorStorePolicy(store: RDashStore): void {
   const initial = store.getState();
   const originalAddContractor = initial.addContractor;
   const originalUpdateContractor = initial.updateContractor;
-  const originalAddContractorRate = initial.addContractorRate;
 
   const addContractor: RDashState["addContractor"] = (input) => {
     const state = store.getState();
@@ -72,12 +68,6 @@ export function installContractorStorePolicy(store: RDashStore): void {
     if (duplicateError) throw new Error(duplicateError);
 
     const id = originalAddContractor(normalized as never);
-    const capabilities = canonicalContractorCapabilities(normalized, state.db);
-    if (!(normalized.capabilities_v2 || []).length && capabilities.length) {
-      originalUpdateContractor(id, {
-        capabilities_v2: contractorGovernanceCapabilityProjection(id, capabilities),
-      } as never);
-    }
     synchronizeRateProjection(store, id);
     return id;
   };
@@ -91,12 +81,7 @@ export function installContractorStorePolicy(store: RDashStore): void {
     const patch = suppliedPatch as ContractorProfileRecord;
     const merged: ContractorProfileRecord = { ...before, ...patch, id };
     let capabilitiesOverride: ContractorCapability[] | undefined;
-    if (Object.prototype.hasOwnProperty.call(patch, "capabilities_v2") && !Object.prototype.hasOwnProperty.call(patch, "work_capabilities")) {
-      capabilitiesOverride = canonicalContractorCapabilities(
-        { ...merged, work_capabilities: undefined, capabilities_v2: patch.capabilities_v2 },
-        state.db,
-      );
-    } else if (Object.prototype.hasOwnProperty.call(patch, "work_capabilities")) {
+    if (Object.prototype.hasOwnProperty.call(patch, "work_capabilities")) {
       capabilitiesOverride = canonicalContractorCapabilities(
         { ...merged, work_capabilities: patch.work_capabilities },
         state.db,
@@ -122,7 +107,9 @@ export function installContractorStorePolicy(store: RDashStore): void {
     assertContractorPermission(state, "edit contractor rates");
     const contractor = state.db.master.contractors.find((row) => row.id === rate.contractor_id) as ContractorProfileRecord | undefined;
     if (!contractor) throw new Error("Contractor not found.");
-    if (!rate.work_subcategory_id) return originalAddContractorRate(rate);
+    if (!rate.work_subcategory_id) {
+      throw new Error("Contractor rates must be linked to a Work Subcategory. Edit the contractor capability instead of creating a free-form rate.");
+    }
 
     const subcategory = state.db.master.workSubcategories.find((row) => row.id === rate.work_subcategory_id);
     const capabilities = canonicalContractorCapabilities(contractor, state.db);
