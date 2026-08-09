@@ -20,6 +20,7 @@ import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { attachedPreview } from "@/lib/rdash/file-attachments";
 import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
+import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import {
   coordinateInputError,
   formatCoordinatePair,
@@ -369,42 +370,40 @@ export function EntityFormDialog({ open, onClose, onSaved, editId }: Props) {
     }
   }
 
-  function captureGps() {
-    if (!navigator.geolocation) return toast.error("GPS is unavailable.");
+  async function captureGps() {
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        if (disposedRef.current) return;
-        const next = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        };
-        setLatitude(next.latitude);
-        setLongitude(next.longitude);
-        setCoordinates(formatCoordinatePair(next));
-        setGpsLoading(false);
-        void reverseGeocodeWithNominatim(next.latitude, next.longitude).then(
-          (result) => {
-            if (!result?.display_name || disposedRef.current) return;
-            setAddress(result.display_name);
-            setCity(
-              result.address?.city ||
-                result.address?.town ||
-                result.address?.village ||
-                "",
-            );
-            setLocality(
-              result.address?.suburb || result.address?.neighbourhood || "",
-            );
-          },
-        );
-      },
-      (error) => {
-        setGpsLoading(false);
-        toast.error(`GPS error: ${error.message}`);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+    try {
+      const capture = await captureDeviceGps({ mode: "master-location" });
+      if (disposedRef.current) return;
+      const next = {
+        latitude: capture.latitude,
+        longitude: capture.longitude,
+      };
+      setLatitude(next.latitude);
+      setLongitude(next.longitude);
+      setCoordinates(formatCoordinatePair(next));
+      setGpsLoading(false);
+      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      void reverseGeocodeWithNominatim(next.latitude, next.longitude).then(
+        (result) => {
+          if (!result?.display_name || disposedRef.current) return;
+          setAddress(result.display_name);
+          setCity(
+            result.address?.city ||
+              result.address?.town ||
+              result.address?.village ||
+              "",
+          );
+          setLocality(
+            result.address?.suburb || result.address?.neighbourhood || "",
+          );
+        },
+      );
+    } catch (error) {
+      if (disposedRef.current) return;
+      setGpsLoading(false);
+      toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+    }
   }
 
   async function uploadMedia(

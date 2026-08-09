@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import type { RDashDatabase, Site } from "@/lib/rdash/types";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";
+import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
 import {
@@ -85,14 +86,15 @@ export function CustomerSiteDraftCard({
     });
   };
 
-  const captureGps = () => {
-    if (!navigator.geolocation) return toast.error("GPS is not available on this device");
+  const captureGps = async () => {
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition((position) => {
-      const { latitude, longitude } = position.coords;
+    try {
+      const capture = await captureDeviceGps({ mode: "master-location" });
+      const { latitude, longitude } = capture;
       applyCoordinates(latitude, longitude);
       setGpsLoading(false);
-      reverseGeocodeWithNominatim(latitude, longitude).then((data) => {
+      toast.success(`Site GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      void reverseGeocodeWithNominatim(latitude, longitude).then((data) => {
         const address = data?.address || {};
         onChange({
           address: data?.display_name || draft.address,
@@ -101,10 +103,10 @@ export function CustomerSiteDraftCard({
         });
         if (data?.display_name) setLocationSearch(data.display_name);
       }).catch(() => undefined);
-    }, (error) => {
+    } catch (error) {
       setGpsLoading(false);
-      toast.error(`GPS error: ${error.message}`);
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+      toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+    }
   };
 
   const searchAddress = async () => {
