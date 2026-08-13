@@ -163,76 +163,16 @@ function seedArticleVariants(db: RDashDatabase) {
 }
 
 function ensureVendorRateCoverage(db: RDashDatabase) {
-  const vendorIds = db.master.vendors.map((vendor) => vendor.id);
-  if (!vendorIds.length) {
-    db.master.vendorRates = [];
-    return;
-  }
-  const normalizedExisting = db.master.vendorRates
-    .filter((rate) => rate.work_required_article_id && db.master.subcategoryArticleMap.some((material) => material.id === rate.work_required_article_id))
-    .map((rate) => {
-      const material = db.master.subcategoryArticleMap.find((row) => row.id === rate.work_required_article_id)!;
-      const variant = scopedVariantForMaterial(db, material.id);
-      const article = db.master.articles.find((row) => row.id === material.article_id);
-      return {
-        ...rate,
-        article_id: material.article_id,
-        article_name: article?.name || rate.article_name,
-        variant_id: rate.variant_id || variant?.id,
-        unit_id: material.unit_id,
-      };
-    });
-  const next = [...normalizedExisting];
-  const seen = new Set(next.map((rate) => `${rate.vendor_id}:${rate.work_required_article_id}:${rate.variant_id || "base"}`));
-  db.master.subcategoryArticleMap.forEach((material, materialIndex) => {
-    const article = db.master.articles.find((row) => row.id === material.article_id);
-    const variant = scopedVariantForMaterial(db, material.id);
-    const baseRate = Number(material.reference_rate || article?.base_rate || 1) || 1;
-    vendorIds.forEach((vendorId, vendorIndex) => {
-      const key = `${vendorId}:${material.id}:${variant?.id || "base"}`;
-      if (seen.has(key)) return;
-      const rateFactor = vendorIndex % 2 === 0 ? 0.96 : 1.04;
-      next.push({
-        id: `vr_${vendorId}_${material.id}`.replace(/[^a-zA-Z0-9_-]/g, "_"),
-        vendor_id: vendorId,
-        article_id: material.article_id,
-        article_name: article?.name || material.article_id,
-        work_required_article_id: material.id,
-        variant_id: variant?.id,
-        unit_id: material.unit_id,
-        rate: Math.max(1, Math.round(baseRate * rateFactor * 100) / 100),
-        delivery_days: 2 + ((materialIndex + vendorIndex) % 4),
-        moq: 1,
-        gst_inclusive: false,
-        preferred: vendorIndex === 0,
-        brand: vendorIndex % 2 === 0 ? "Standard Supply" : "Alternate Supply",
-        notes: material.reference_rate ? "Seeded from scoped material reference rate." : "Seeded fallback rate; replace with real vendor quote.",
-        valid_from: timestamp.slice(0, 10),
-        updated_at: timestamp,
-      });
-      seen.add(key);
-    });
+  const vendorIds = new Set(db.master.vendors.map((vendor) => vendor.id));
+  const articleIds = new Set(db.master.articles.map((article) => article.id));
+  const variants = new Map(db.master.articleVariants.map((variant) => [variant.id, variant]));
+  db.master.vendorRates = db.master.vendorRates.filter((rate) => {
+    if (!vendorIds.has(rate.vendor_id) || !articleIds.has(rate.article_id)) return false;
+    if (!rate.variant_id) return true;
+    return variants.get(rate.variant_id)?.article_id === rate.article_id;
   });
-  db.master.vendorRates = next;
-  if (!Array.isArray(db.master.vendorRateHistories) || !db.master.vendorRateHistories.length) {
-    db.master.vendorRateHistories = next.map((rate) => ({
-      id: `vrh-seed-${rate.id}`.replace(/[^a-zA-Z0-9_-]/g, "_"),
-      vendor_rate_id: rate.id,
-      vendor_id: rate.vendor_id,
-      article_id: rate.article_id,
-      article_name: rate.article_name,
-      work_required_article_id: rate.work_required_article_id!,
-      variant_id: rate.variant_id,
-      unit_id: rate.unit_id!,
-      new_rate: rate.rate,
-      source_type: "SEED" as const,
-      status: "active" as const,
-      effective_from: rate.valid_from || timestamp.slice(0, 10),
-      changed_by: "System Seed",
-      notes: rate.notes || "Initial seeded vendor rate.",
-      created_at: rate.updated_at || timestamp,
-    }));
-  }
+  const rateIds = new Set(db.master.vendorRates.map((rate) => rate.id));
+  db.master.vendorRateHistories = db.master.vendorRateHistories.filter((row) => !row.vendor_rate_id || rateIds.has(row.vendor_rate_id));
 }
 
 function repairInventoryAndMovements(db: RDashDatabase) {

@@ -267,11 +267,11 @@ const master: Master = {
     staff: createSeedStaffRecords(),
     sourcePartners: seedSourcePartners, commissionRules: [],
     vendorRates: [
-        { id: "vr-build-gypsum-board", vendor_id: "ven-build", article_id: "art-gypsum-board", article_name: "Gypsum Board (12.5mm)", rate: 44, unit_id: "unit-sft", brand: "USG Boral", grade: "Standard", preferred: true, current_source_type: "PO", current_source_id: "po-das-ceiling", current_source_no: "PO-2026-601", valid_from: at(-5), updated_at: at(-5), gst_inclusive: false },
-        { id: "vr-build-gypsum-channel", vendor_id: "ven-build", article_id: "art-gypsum-channel", article_name: "Gypsum Ceiling Channel", rate: 38, unit_id: "unit-sft", brand: "USG Boral", preferred: true, current_source_type: "SEED", valid_from: at(-30), updated_at: at(-30) },
-        { id: "vr-build-paint-royale", vendor_id: "ven-build", article_id: "art-paint-premium", article_name: "Asian Paints Royale (Premium Emulsion)", rate: 520, unit_id: "unit-ltr", brand: "Asian Paints", preferred: true, current_source_type: "PO", current_source_id: "po-das-paint-direct", current_source_no: "PO-2026-602", valid_from: at(-2), updated_at: at(-2), gst_inclusive: true },
-        { id: "vr-build-primer", vendor_id: "ven-build", article_id: "art-primer", article_name: "Asian Paints Primer", rate: 280, unit_id: "unit-ltr", brand: "Asian Paints", current_source_type: "PO", current_source_id: "po-das-paint-direct", current_source_no: "PO-2026-602", valid_from: at(-2), updated_at: at(-2) },
-        { id: "vr-ceiling-grid-tee", vendor_id: "ven-ceiling", article_id: "art-grid-tee", article_name: "Grid Ceiling Main Tee", rate: 85, unit_id: "unit-pcs", brand: "Armstrong", current_source_type: "SEED", valid_from: at(-20), updated_at: at(-20) },
+        { id: "vr-build-gypsum-board", vendor_id: "ven-build", article_id: "art-gypsum-board", quoted_rate: 44, status: "active", created_at: at(-5), updated_at: at(-5) },
+        { id: "vr-build-gypsum-channel", vendor_id: "ven-build", article_id: "art-gypsum-channel", quoted_rate: 38, status: "active", created_at: at(-30), updated_at: at(-30) },
+        { id: "vr-build-paint-royale", vendor_id: "ven-build", article_id: "art-paint-premium", quoted_rate: 520, status: "active", created_at: at(-2), updated_at: at(-2) },
+        { id: "vr-build-primer", vendor_id: "ven-build", article_id: "art-primer", quoted_rate: 280, status: "active", created_at: at(-2), updated_at: at(-2) },
+        { id: "vr-ceiling-grid-tee", vendor_id: "ven-ceiling", article_id: "art-grid-tee", quoted_rate: 85, status: "active", created_at: at(-20), updated_at: at(-20) },
     ],
     // vendorRateHistories: left empty — repairOperationalWorkspace.ensureVendorRateCoverage
     // auto-generates correct histories from the generated vendorRates with proper IDs.

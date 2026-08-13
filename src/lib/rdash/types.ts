@@ -1569,6 +1569,9 @@ export interface Article {
     category_id?: ID;
     unit_id?: ID;
     default_unit_id?: ID;
+    conversion_quantity?: number;
+    gst_inclusive?: boolean;
+    gst_percent?: number;
     base_rate?: number;
     variant_ids?: ID[];
     created_at?: string;
@@ -1592,6 +1595,9 @@ export interface ArticleVariant {
     name: string;
     sku?: string;
     unit_id?: ID;
+    conversion_quantity?: number;
+    gst_inclusive?: boolean;
+    gst_percent?: number;
     brand?: string;
     grade?: string;
     pack_size?: string;
@@ -1604,18 +1610,38 @@ export interface ArticleVariant {
     created_at?: string;
     updated_at?: string;
 }
+export type VendorStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
+export type VendorType = "manufacturer" | "distributor" | "dealer" | "retailer" | "service_provider" | "other";
+export type VendorAvailability = "in_stock" | "limited" | "on_order" | "unknown";
+export interface VendorSupplyCapability {
+    id?: ID;
+    article_id: ID;
+    article_name?: string;
+    category_id?: ID;
+    category_name?: string;
+    variant_ids?: ID[];
+    brand?: string;
+    availability?: VendorAvailability;
+    typical_lead_time_days?: number;
+    moq?: number;
+    preferred?: boolean;
+    status?: "active" | "inactive";
+    notes?: string;
+}
 export interface Vendor {
     id: ID;
     name: string;
+    legal_name?: string;
     phone?: string;
+    whatsapp?: string;
+    alternate_phone?: string;
+    email?: string;
     city?: string;
     locality?: string;
     address?: string;
-    category?: string;
-    outstanding?: number;
-    reliability_score?: number;
-    on_time_pct?: number;
-    rating?: number;
+    status?: VendorStatus;
+    vendor_type?: VendorType;
+    gstin?: string;
     latitude?: number;
     longitude?: number;
     business_card_attachment_id?: ID;
@@ -1626,6 +1652,16 @@ export interface Vendor {
     notes?: string;
     source_partner_id?: ID;
     source_partner_name?: string;
+    category?: string;
+    categories?: string[];
+    brands?: string[];
+    supply_capabilities?: VendorSupplyCapability[];
+    outstanding?: number;
+    reliability_score?: number;
+    on_time_pct?: number;
+    rating?: number;
+    created_at?: string;
+    updated_at?: string;
 }
 export interface Contractor {
     id: ID;
@@ -1778,59 +1814,29 @@ export interface CommissionRule {
     category_id?: ID;
 }
 export type VendorRateSourceType = "PO" | "VENDOR_BILL" | "MANUAL" | "SEED";
-export type VendorRateStatus = "active" | "inactive" | "expired" | "draft" | "unapproved" | "rejected" | "superseded";
-export type VendorRateHistoryStatus = VendorRateStatus;
+export type VendorRateStatus = "active" | "inactive";
+export type VendorRateHistoryStatus = "active" | "superseded";
 export interface VendorRate {
     id: ID;
     vendor_id: ID;
     article_id: ID;
-    article_name: string;
-    work_required_article_id?: ID;
     variant_id?: ID;
-    rate: number;
-    unit_id?: string;
-    delivery_days?: number;
-    moq?: number;
-    gst_inclusive?: boolean;
-    gst_rate?: number;
-    discount_pct?: number;
-    discount_amount?: number;
-    freight_amount?: number;
-    loading_unloading_amount?: number;
-    other_charges?: number;
-    /** Number of article-default units represented by one quoted unit. */
-    default_units_per_rate_unit?: number;
-    status?: VendorRateStatus;
-    preferred?: boolean;
-    brand?: string;
-    grade?: string;
-    notes?: string;
-    valid_from?: string;
-    valid_until?: string;
-    updated_at?: string;
-    current_source_type?: VendorRateSourceType;
-    current_source_id?: ID;
-    current_source_no?: string;
+    quoted_rate: number;
+    status: VendorRateStatus;
+    created_at: string;
+    updated_at: string;
 }
 export interface VendorRateHistory {
     id: ID;
     vendor_rate_id?: ID;
     vendor_id: ID;
     article_id: ID;
-    article_name: string;
-    work_required_article_id: ID;
+    article_name?: string;
+    work_required_article_id?: ID;
     variant_id?: ID;
-    unit_id: ID;
+    unit_id?: ID;
     old_rate?: number;
     new_rate: number;
-    gst_inclusive?: boolean;
-    gst_rate?: number;
-    discount_pct?: number;
-    discount_amount?: number;
-    freight_amount?: number;
-    loading_unloading_amount?: number;
-    other_charges?: number;
-    default_units_per_rate_unit?: number;
     source_type: VendorRateSourceType;
     source_id?: ID;
     source_no?: string;

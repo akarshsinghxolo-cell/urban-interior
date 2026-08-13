@@ -4,6 +4,7 @@ import { Package, TrendingUp, TrendingDown, Minus, ArrowRight, DollarSign, Histo
 import { useRDashStore } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { formatINR } from "@/lib/rdash/format";
+import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
 
 interface PriceTrend {
   id: string;
@@ -40,7 +41,7 @@ export function MaterialPriceTracker() {
       if (!existing || (h.new_rate > existing.currentRate)) {
         byArticle.set(key, {
           id: h.id,
-          articleName: h.article_name,
+          articleName: h.article_name || db.master.articles.find((article) => article.id === h.article_id)?.name || "Unknown Article",
           vendorName: vendor?.name || "Unknown",
           currentRate: h.new_rate,
           previousRate: h.old_rate,
@@ -55,17 +56,20 @@ export function MaterialPriceTracker() {
     // Also include current vendor rates (even without history)
     for (const vr of db.master.vendorRates) {
       const vendor = db.master.vendors.find((v) => v.id === vr.vendor_id);
+      const article = db.master.articles.find((row) => row.id === vr.article_id);
+      const variant = vr.variant_id ? db.master.articleVariants.find((row) => row.id === vr.variant_id) : undefined;
+      const config = resolveArticleRateConfig({ articleId: vr.article_id, variantId: vr.variant_id, articles: db.master.articles, variants: db.master.articleVariants });
       const key = `${vr.vendor_id}-${vr.article_id}`;
       if (!byArticle.has(key)) {
         byArticle.set(key, {
           id: vr.id,
-          articleName: vr.article_name,
+          articleName: article?.name || "Unknown Article",
           vendorName: vendor?.name || "Unknown",
-          currentRate: vr.rate,
+          currentRate: vr.quoted_rate,
           changePct: 0,
           trend: "stable",
-          unit: vr.unit_id,
-          brand: vr.brand,
+          unit: config.rateUnit,
+          brand: variant?.brand,
           lastUpdated: vr.updated_at,
         });
       }
@@ -75,7 +79,7 @@ export function MaterialPriceTracker() {
     trends.push(...byArticle.values());
     trends.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
     return trends.slice(0, 10);
-  }, [db.master.vendorRateHistories, db.master.vendorRates, db.master.vendors]);
+  }, [db.master.vendorRateHistories, db.master.vendorRates, db.master.vendors, db.master.articles, db.master.articleVariants]);
 
   // Summary stats
   const stats = React.useMemo(() => {

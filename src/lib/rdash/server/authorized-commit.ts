@@ -13,6 +13,7 @@ import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
+import { canonicalizeVendorRateMaster } from "../vendor-rate";
 import { contractorRateProjection } from "../contractor-profile";
 import type { ContractorProfileRecord } from "../contractor-profile";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
@@ -31,7 +32,8 @@ function canonicalizeVendorRateOperations(
     return operations;
   }
   const candidate = applyWorkspaceOperations(current, operations);
-  const canonical = applyVendorRateAverages(current, candidate);
+  const canonicalRates = { ...candidate, master: canonicalizeVendorRateMaster(candidate.master) };
+  const canonical = applyVendorRateAverages(current, canonicalRates);
   return diffWorkspaceOperations(current, canonical);
 }
 
