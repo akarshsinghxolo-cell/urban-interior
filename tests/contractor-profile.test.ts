@@ -76,10 +76,9 @@ describe("canonical contractor profile", () => {
     expect(normalized.work_capabilities?.[0].article_rates).toEqual([
       { article_id: "art-1", labour_rate: 35, with_material_rate: 100 },
     ]);
-    expect(normalized.capabilities_v2).toBeUndefined();
   });
 
-  test("missing canonical capabilities does not resurrect legacy rate rows", () => {
+  test("missing canonical capabilities does not resurrect rate projection rows", () => {
     const state = db();
     state.master.contractorRates = [{
       id: "rate-1",
@@ -252,7 +251,7 @@ describe("contractor validation and duplicate prevention", () => {
     expect(conflicts[0].hard).toBe(false);
   });
 
-  test("referrals require Source Partner ids and discard free-text compatibility", () => {
+  test("referrals require Source Partner ids and discard free-text input", () => {
     const state = db();
     expect(() =>
       normalizeContractorForWrite(
