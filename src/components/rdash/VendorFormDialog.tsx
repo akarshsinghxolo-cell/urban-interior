@@ -153,7 +153,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   React.useEffect(() => () => { disposedRef.current = true; }, []);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
-  const buildPayload = React.useCallback((): VendorProfileRecord => normalizeVendorForWrite({
+  const currentPayload = React.useMemo((): VendorProfileRecord => normalizeVendorForWrite({
     id: editId || reservedId || undefined,
     name: draft.name,
     legal_name: draft.legalName,
@@ -217,7 +217,6 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
-  const currentPayload = buildPayload();
   const dirty = open && fingerprint(currentPayload) !== baselineKey;
   const duplicateConflicts = vendorDuplicateConflicts(db, currentPayload, editId);
   const hardDuplicate = duplicateConflicts.find((row) => row.hard);
