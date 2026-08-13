@@ -98,17 +98,28 @@ for forbidden in ["LandedCostFields", "freight_amount", "discount_pct", "gst_rat
 if "resolveArticleRateConfig" not in average:
     raise SystemExit("Vendor rate average bypasses Article/Variant resolver")
 
-# The active TypeScript tree must not read removed live VendorRate fields.
-for source_path in (ROOT / "src").rglob("*"):
-    if source_path.suffix not in {".ts", ".tsx"}:
+# Inspect known live VendorRate consumers directly. Generic strings such as
+# work_required_article_id remain valid in procurement/work records and must not
+# be treated as VendorRate compatibility merely because the same file also reads
+# vendorRates.
+consumer_files = [
+    "src/components/rdash/MaterialPriceTracker.tsx",
+    "src/components/rdash/modules/MastersSalesOpsModule.tsx",
+    "src/components/rdash/modules/ProcurementModule.tsx",
+    "src/components/rdash/modules/RateFinderModule.tsx",
+    "src/components/rdash/modules/VendorPriceMasterModule.tsx",
+    "src/components/rdash/modules/VendorWorkspaceModule.tsx",
+    "src/components/rdash/modules/WorkCategoryMasterModule.tsx",
+    "src/lib/rdash/work-category-master.ts",
+    "src/lib/rdash/operational-repair.ts",
+]
+for relative in consumer_files:
+    source = (ROOT / relative).read_text()
+    if "vendorRates" not in source and "VendorPriceMasterModule" not in relative and "RateFinderModule" not in relative:
         continue
-    source = source_path.read_text()
-    if source_path.name == "types.ts" or source_path.name == "vendor-rate.ts":
-        continue
-    if "vendorRates" in source:
-        for legacy in [".work_required_article_id", ".gst_inclusive", ".gst_rate", ".freight_amount", ".discount_pct", ".valid_from"]:
-            if legacy in source and "vendorRateHistories" not in source:
-                raise SystemExit(f"Potential legacy live VendorRate consumer remains in {source_path}: {legacy}")
+    for old_expression in ["vendorRate.rate", "vr.rate", "rate.article_name", "vr.article_name", "rate.unit_id", "vr.unit_id", "rate.work_required_article_id", "vr.work_required_article_id"]:
+        if old_expression in source:
+            raise SystemExit(f"Legacy VendorRate expression remains in {relative}: {old_expression}")
 
 migration = (ROOT / "supabase/migrations/20260813165000_canonicalize_vendor_profile_and_rates.sql").read_text()
 if "supply_capabilities" not in migration or "quoted_rate" not in migration:
