@@ -1,6 +1,14 @@
 from pathlib import Path
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# After the primary Vendor domain transformation, migrate every remaining
+# current-source consumer away from the removed VendorRate compatibility fields.
+# This runs before the re-audit so hidden legacy readers cannot be masked by a
+# type alias or compatibility property.
+subprocess.check_call(["python", "scripts/fix-vendor-consumers.py"], cwd=ROOT)
+(ROOT / "scripts/fix-vendor-consumers.py").unlink()
 
 # Customer/Site regression used to import the shared Vendor form/bridge even
 # though those files were unrelated to Customer persistence. Keep this test
@@ -88,6 +96,20 @@ for forbidden in ["LandedCostFields", "freight_amount", "discount_pct", "gst_rat
         raise SystemExit(f"Legacy rate averaging behavior remains: {forbidden}")
 if "resolveArticleRateConfig" not in average:
     raise SystemExit("Vendor rate average bypasses Article/Variant resolver")
+
+# The active TypeScript tree must not read removed live VendorRate fields.
+for source_path in (ROOT / "src").rglob("*"):
+    if source_path.suffix not in {".ts", ".tsx"}:
+        continue
+    source = source_path.read_text()
+    # VendorRateHistory legitimately retains audit snapshots; live rate consumers
+    # are covered by typechecking plus the strict VendorRate declaration.
+    if source_path.name == "types.ts" or source_path.name == "vendor-rate.ts":
+        continue
+    if "vendorRates" in source:
+        for legacy in [".work_required_article_id", ".gst_inclusive", ".gst_rate", ".freight_amount", ".discount_pct", ".valid_from"]:
+            if legacy in source and "vendorRateHistories" not in source:
+                raise SystemExit(f"Potential legacy live VendorRate consumer remains in {source_path}: {legacy}")
 
 migration = (ROOT / "supabase/migrations/20260813165000_canonicalize_vendor_profile_and_rates.sql").read_text()
 if "supply_capabilities" not in migration or "quoted_rate" not in migration:
