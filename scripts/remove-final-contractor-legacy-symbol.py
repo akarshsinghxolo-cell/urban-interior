@@ -195,10 +195,13 @@ governance = governance.replace(old_partner_capabilities, new_vendor_capabilitie
 GOVERNANCE.write_text(governance)
 
 ui = GOVERNANCE_UI.read_text()
-if ui.count("partnerCapabilities") != 2:
+if ui.count("partnerCapabilities") != 3:
     raise SystemExit(f"Unexpected partnerCapabilities usage count in governance UI: {ui.count('partnerCapabilities')}")
 ui = ui.replace("partnerCapabilities,", "vendorCapabilities,", 1)
 ui = ui.replace("partnerCapabilities(selected)", "vendorCapabilities(selected)", 1)
+ui = ui.replace("partnerCapabilities(partner)", "vendorCapabilities(partner)", 1)
+if "partnerCapabilities" in ui:
+    raise SystemExit("Mixed partnerCapabilities helper still remains in governance UI")
 GOVERNANCE_UI.write_text(ui)
 
 # Update permanent regression coverage. Vendor capabilities_v2 remains a Vendor
@@ -227,6 +230,7 @@ new_test = '''  test("Contractor types and shared helpers expose no compatibilit
     expect(governance).not.toContain("export function partnerCapabilities");
     expect(governance).not.toContain("partner.work_capabilities");
     expect(governanceUi).toContain("vendorCapabilities(selected)");
+    expect(governanceUi).toContain("vendorCapabilities(partner)");
     expect(governanceUi).toContain("canonicalContractorCapabilities(selected, db)");
   });
 
