@@ -3,10 +3,11 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# After the primary Vendor domain transformation, migrate every remaining
-# current-source consumer away from the removed VendorRate compatibility fields.
-# This runs before the re-audit so hidden legacy readers cannot be masked by a
-# type alias or compatibility property.
+# Correct the temporary consumer transformer markers against the audited source
+# shape, then run the consumer cutover. Both helper scripts are deleted before
+# the verified tree is committed back to the PR branch.
+subprocess.check_call(["python", "scripts/prepare-vendor-consumer-fixer.py"], cwd=ROOT)
+(ROOT / "scripts/prepare-vendor-consumer-fixer.py").unlink()
 subprocess.check_call(["python", "scripts/fix-vendor-consumers.py"], cwd=ROOT)
 (ROOT / "scripts/fix-vendor-consumers.py").unlink()
 
@@ -102,8 +103,6 @@ for source_path in (ROOT / "src").rglob("*"):
     if source_path.suffix not in {".ts", ".tsx"}:
         continue
     source = source_path.read_text()
-    # VendorRateHistory legitimately retains audit snapshots; live rate consumers
-    # are covered by typechecking plus the strict VendorRate declaration.
     if source_path.name == "types.ts" or source_path.name == "vendor-rate.ts":
         continue
     if "vendorRates" in source:
