@@ -2,6 +2,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The generated regression must distinguish a removed `rate` field from the
+# canonical `quoted_rate` field instead of using a substring check.
+legacy_test = ROOT / "tests/vendor-legacy-removal.test.ts"
+legacy_text = legacy_test.read_text()
+legacy_text = legacy_text.replace(
+    '"valid_from", "current_source_type", "article_name", "rate:"])',
+    '"valid_from", "current_source_type", "article_name"])',
+)
+legacy_text = legacy_text.replace(
+    'expect(block).not.toContain(legacy);\n',
+    'expect(block).not.toContain(legacy);\n    expect(block).not.toContain("\\n    rate:");\n',
+    1,
+)
+legacy_test.write_text(legacy_text)
+
 required_absent = [
     "src/components/rdash/UnifiedPartnerFormDialog.tsx",
     "src/lib/rdash/partner-form-store-bridge.ts",
@@ -32,9 +47,11 @@ block = rate_types[start:end]
 for required in ["vendor_id", "article_id", "quoted_rate", "status", "created_at", "updated_at"]:
     if required not in block:
         raise SystemExit(f"Canonical VendorRate field missing: {required}")
-for forbidden in ["unit_id", "work_required_article_id", "gst_inclusive", "gst_rate", "discount_pct", "freight_amount", "valid_from", "article_name", "rate:"]:
+for forbidden in ["unit_id", "work_required_article_id", "gst_inclusive", "gst_rate", "discount_pct", "freight_amount", "valid_from", "article_name"]:
     if forbidden in block:
         raise SystemExit(f"Legacy VendorRate field remains: {forbidden}")
+if "\n    rate:" in block:
+    raise SystemExit("Legacy VendorRate field remains: rate")
 
 average = (ROOT / "src/lib/rdash/vendor-rate-average.ts").read_text()
 for forbidden in ["LandedCostFields", "freight_amount", "discount_pct", "gst_rate", "default_units_per_rate_unit", "vendorRateHistories"]:
