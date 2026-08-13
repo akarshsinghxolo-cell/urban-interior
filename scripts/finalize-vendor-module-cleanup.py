@@ -55,6 +55,66 @@ legacy_text = legacy_text.replace(
 )
 legacy_test.write_text(legacy_text)
 
+# React's refs rule correctly rejects calling buildPayload() during render while
+# that callback reads baselineRef.current. Keep the mutable baseline ref for
+# event-time save/discard behavior, but mirror the render-time metadata in state
+# so dirty/duplicate/validation calculations are pure during render.
+vendor_form_path = ROOT / "src/components/rdash/VendorFormDialog.tsx"
+vendor_form = vendor_form_path.read_text()
+old_state = '''  const baselineRef = React.useRef<VendorProfileRecord>({});
+  const [baselineKey, setBaselineKey] = React.useState("");'''
+new_state = '''  const baselineRef = React.useRef<VendorProfileRecord>({});
+  const [baselineMetadata, setBaselineMetadata] = React.useState<Pick<VendorProfileRecord, "source_partner_id" | "source_partner_name" | "created_at">>({});
+  const [baselineKey, setBaselineKey] = React.useState("");'''
+if old_state not in vendor_form:
+    raise SystemExit("Vendor form baseline state marker not found")
+vendor_form = vendor_form.replace(old_state, new_state, 1)
+
+old_metadata = '''    source_partner_id: baselineRef.current.source_partner_id,
+    source_partner_name: baselineRef.current.source_partner_name,
+    supply_capabilities: capabilities.map((row) => ({'''
+new_metadata = '''    source_partner_id: baselineMetadata.source_partner_id,
+    source_partner_name: baselineMetadata.source_partner_name,
+    supply_capabilities: capabilities.map((row) => ({'''
+if old_metadata not in vendor_form:
+    raise SystemExit("Vendor form source-partner baseline marker not found")
+vendor_form = vendor_form.replace(old_metadata, new_metadata, 1)
+
+old_created = '''    created_at: baselineRef.current.created_at,
+  }, db, { id: editId || reservedId || undefined }), [businessCard, capabilities, db, draft, editId, latitude, longitude, reservedId, shopPhoto]);'''
+new_created = '''    created_at: baselineMetadata.created_at,
+  }, db, { id: editId || reservedId || undefined }), [baselineMetadata, businessCard, capabilities, db, draft, editId, latitude, longitude, reservedId, shopPhoto]);'''
+if old_created not in vendor_form:
+    raise SystemExit("Vendor form created-at baseline marker not found")
+vendor_form = vendor_form.replace(old_created, new_created, 1)
+
+old_initialize = '''    baselineRef.current = normalized;
+    setBaselineKey(fingerprint(normalized));'''
+new_initialize = '''    baselineRef.current = normalized;
+    setBaselineMetadata({
+      source_partner_id: normalized.source_partner_id,
+      source_partner_name: normalized.source_partner_name,
+      created_at: normalized.created_at,
+    });
+    setBaselineKey(fingerprint(normalized));'''
+if old_initialize not in vendor_form:
+    raise SystemExit("Vendor form baseline initialization marker not found")
+vendor_form = vendor_form.replace(old_initialize, new_initialize, 1)
+
+old_save_baseline = '''      baselineRef.current = record;
+      setBaselineKey(fingerprint(record));'''
+new_save_baseline = '''      baselineRef.current = record;
+      setBaselineMetadata({
+        source_partner_id: record.source_partner_id,
+        source_partner_name: record.source_partner_name,
+        created_at: record.created_at,
+      });
+      setBaselineKey(fingerprint(record));'''
+if old_save_baseline not in vendor_form:
+    raise SystemExit("Vendor form saved baseline marker not found")
+vendor_form = vendor_form.replace(old_save_baseline, new_save_baseline, 1)
+vendor_form_path.write_text(vendor_form)
+
 required_absent = [
     "src/components/rdash/UnifiedPartnerFormDialog.tsx",
     "src/lib/rdash/partner-form-store-bridge.ts",
