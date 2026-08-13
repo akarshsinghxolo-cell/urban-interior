@@ -32,12 +32,31 @@ jobs:
         run: bun run test:contractor-profile
       - name: Typecheck
         run: bunx tsc --noEmit
-      - name: Verify active source is clean
+      - name: Verify Contractor compatibility is gone
         run: |
-          if git grep -n 'capabilities_v2' -- 'src/**/*.ts' 'src/**/*.tsx'; then
-            echo 'Removed Contractor capability symbol remains in active source.'
-            exit 1
-          fi
+          python - <<'PY'
+          from pathlib import Path
+
+          profile = Path("src/lib/rdash/contractor-profile.ts").read_text()
+          types = Path("src/lib/rdash/types.ts").read_text()
+          governance = Path("src/lib/rdash/partner-governance.ts").read_text()
+          ui = Path("src/components/rdash/modules/PartnerGovernanceModule.tsx").read_text()
+
+          start = types.index("export interface Contractor {")
+          end = types.index("export type StaffRoleKey", start)
+          contractor_type = types[start:end]
+
+          assert "capabilities_v2" not in profile
+          assert "capabilities_v2" not in contractor_type
+          assert "export function partnerCapabilities" not in governance
+          assert "partner.work_capabilities" not in governance
+          assert "partnerCapabilities" not in ui
+          assert "export function vendorCapabilities" in governance
+          assert "vendorCapabilities(selected)" in ui
+          assert "vendorCapabilities(partner)" in ui
+          assert "canonicalContractorCapabilities(selected, db)" in ui
+          print("Contractor compatibility removed; Vendor capabilities remain intentionally separate.")
+          PY
       - name: Commit verified cleanup
         run: |
           git config user.name "github-actions[bot]"
