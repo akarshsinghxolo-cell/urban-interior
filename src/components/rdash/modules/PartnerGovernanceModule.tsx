@@ -35,7 +35,7 @@ import {
   detectPartnerDuplicates,
   documentStatus,
   governanceId,
-  partnerCapabilities,
+  vendorCapabilities,
   partnerDocuments,
   partnerMergePlan,
   vendorPaymentReadiness,
@@ -129,7 +129,7 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
           selected.id,
           canonicalContractorCapabilities(selected, db),
         )
-      : partnerCapabilities(selected)
+      : vendorCapabilities(selected)
     : [];
   const documents = selected ? partnerDocuments(selected) : [];
   const readiness = mode === "vendor" && selected ? vendorPaymentReadiness(selected) : undefined;
@@ -278,7 +278,7 @@ function CapabilityDialog({ mode, partner, open, editId, onClose, onSave }: { mo
         partner.id,
         canonicalContractorCapabilities(partner, db),
       )
-    : partnerCapabilities(partner)) as any[];
+    : vendorCapabilities(partner)) as any[];
   const editing = current.find((capability) => capability.id === editId);
   const [draft, setDraft] = React.useState<Record<string, any>>({});
   React.useEffect(() => { if (!open) return; setDraft(editing ? { ...editing } : { status: "active", preferred: false, supply_mode: "stocked" }); }, [open, editId]);

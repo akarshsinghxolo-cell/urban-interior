@@ -26,7 +26,7 @@ describe("Contractor legacy-path removal", () => {
     const governance = await source("src/components/rdash/modules/PartnerGovernanceModule.tsx");
     expect(profile).toContain("const rows = Array.isArray(contractor.work_capabilities)");
     expect(profile).not.toContain("const legacyUnmapped");
-    expect(profile).toContain("delete normalized.capabilities_v2");
+    expect(profile).not.toContain("capabilities_v2");
     expect(policy).not.toContain("capabilities_v2");
     expect(policy).toContain("must be linked to a Work Subcategory");
     expect(governance).toContain("canonicalContractorCapabilities(selected, db)");
@@ -34,6 +34,25 @@ describe("Contractor legacy-path removal", () => {
     expect(governance).not.toContain("else if (Array.isArray(patch.capabilities_v2))");
     expect(governance).toContain("canonicalContractorCapabilities(partner, db).length");
     expect(governance).toContain("OperationalMediaPanel entityType={mode}");
+  });
+
+  test("Contractor types and shared helpers expose no compatibility fallback", async () => {
+    const types = await source("src/lib/rdash/types.ts");
+    const contractorStart = types.indexOf("export interface Contractor {");
+    const contractorEnd = types.indexOf("export type StaffRoleKey", contractorStart);
+    const contractorType = types.slice(contractorStart, contractorEnd);
+    const governance = await source("src/lib/rdash/partner-governance.ts");
+    const governanceUi = await source("src/components/rdash/modules/PartnerGovernanceModule.tsx");
+
+    expect(contractorStart).toBeGreaterThanOrEqual(0);
+    expect(contractorEnd).toBeGreaterThan(contractorStart);
+    expect(contractorType).not.toContain("capabilities_v2");
+    expect(governance).toContain("export function vendorCapabilities");
+    expect(governance).not.toContain("export function partnerCapabilities");
+    expect(governance).not.toContain("partner.work_capabilities");
+    expect(governanceUi).toContain("vendorCapabilities(selected)");
+    expect(governanceUi).toContain("vendorCapabilities(partner)");
+    expect(governanceUi).toContain("canonicalContractorCapabilities(selected, db)");
   });
 
   test("Contractor referrals and operations do not use the removed paths", async () => {
