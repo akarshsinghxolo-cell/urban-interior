@@ -1675,29 +1675,6 @@ export interface Contractor {
         status?: "active" | "inactive";
         notes?: string;
     }>;
-    /** Compatibility projection for the governance UI. `work_capabilities` is canonical. */
-    capabilities_v2?: Array<{
-        id: ID;
-        work_subcategory_id: ID;
-        work_subcategory_name?: string;
-        unit_id?: ID;
-        labour_rate?: number;
-        with_material_rate?: number;
-        article_ids?: ID[];
-        article_rates?: Array<{
-            article_id: ID;
-            article_name?: string;
-            labour_rate?: number;
-            with_material_rate?: number;
-        }>;
-        crew_required?: number;
-        max_daily_capacity?: number;
-        preferred?: boolean;
-        status: "active" | "inactive";
-        notes?: string;
-        created_at?: string;
-        updated_at?: string;
-    }>;
     // FIX-CONTRACTOR-BATCH2 / F.6: Business / tax / banking fields, previously
     // declared-but-never-populated dead fields. Now captured in the
     // EntityFormDialog contractor branch and persisted on the master record.

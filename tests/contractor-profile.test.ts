@@ -3,6 +3,7 @@ import {
   canonicalContractorCapabilities,
   contractorMasterRecordForCreate,
   contractorDuplicateConflicts,
+  contractorGovernanceCapabilityProjection,
   contractorProfileValidationError,
   contractorRateProjection,
   derivedContractorCategoryNames,
@@ -10,7 +11,6 @@ import {
   verifiedContractorBankProof,
   type ContractorProfileRecord,
 } from "../src/lib/rdash/contractor-profile";
-import { partnerCapabilities } from "../src/lib/rdash/partner-governance";
 
 function db() {
   return {
@@ -76,10 +76,9 @@ describe("canonical contractor profile", () => {
     expect(normalized.work_capabilities?.[0].article_rates).toEqual([
       { article_id: "art-1", labour_rate: 35, with_material_rate: 100 },
     ]);
-    expect(normalized.capabilities_v2).toBeUndefined();
   });
 
-  test("missing canonical capabilities does not resurrect legacy rate rows", () => {
+  test("missing canonical capabilities does not resurrect rate projection rows", () => {
     const state = db();
     state.master.contractorRates = [{
       id: "rate-1",
@@ -252,7 +251,7 @@ describe("contractor validation and duplicate prevention", () => {
     expect(conflicts[0].hard).toBe(false);
   });
 
-  test("referrals require Source Partner ids and discard free-text compatibility", () => {
+  test("referrals require Source Partner ids and discard free-text input", () => {
     const state = db();
     expect(() =>
       normalizeContractorForWrite(
@@ -306,7 +305,7 @@ describe("contractor create persistence and governance projection", () => {
       esi_no: "ESI-42",
       notes: "Preferred for complex work",
       work_capabilities: [{ subcategory_id: "sub-paint", labour_rate: 40 }],
-      capabilities_v2: [{ id: "ccap-1", work_subcategory_id: "sub-paint" }],
+      obsolete_payload_field: "discard-me",
       compliance_documents: [{ id: "doc-1", kind: "insurance", verified: false }],
     }, "con-42");
 
@@ -320,7 +319,7 @@ describe("contractor create persistence and governance projection", () => {
       pf_no: "PF-42",
       notes: "Preferred for complex work",
     });
-    expect(record.capabilities_v2).toBeUndefined();
+    expect((record as Record<string, unknown>).obsolete_payload_field).toBeUndefined();
     expect(record.compliance_documents).toHaveLength(1);
   });
 
@@ -350,8 +349,9 @@ describe("contractor create persistence and governance projection", () => {
     expect(normalized.bank_verified).toBe(false);
   });
 
-  test("governance reads canonical work capabilities when the legacy projection is missing", () => {
-    const capabilities = partnerCapabilities({
+  test("governance projects canonical work capabilities directly", () => {
+    const state = db();
+    const canonical = canonicalContractorCapabilities({
       id: "con-1",
       work_capabilities: [{
         subcategory_id: "sub-paint",
@@ -359,7 +359,8 @@ describe("contractor create persistence and governance projection", () => {
         labour_rate: 40,
         with_material_rate: 110,
       }],
-    });
+    }, state);
+    const capabilities = contractorGovernanceCapabilityProjection("con-1", canonical);
 
     expect(capabilities).toHaveLength(1);
     expect(capabilities[0]).toMatchObject({

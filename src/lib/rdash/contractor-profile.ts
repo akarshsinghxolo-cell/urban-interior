@@ -57,7 +57,6 @@ export type ContractorProfileRecord = {
   status?: ContractorLifecycleStatus | string;
   categories?: string[];
   work_capabilities?: ContractorCapability[];
-  capabilities_v2?: Array<Record<string, unknown>>;
   supervisor_name?: string;
   supervisor_phone?: string;
   available_workers?: number;
@@ -80,6 +79,70 @@ export type ContractorDuplicateConflict = {
   reasons: string[];
   hard: boolean;
 };
+
+// Only current Contractor-domain fields are allowed to survive normalization.
+// Unknown payload keys are discarded rather than maintained as compatibility
+// fields. Operational/performance fields remain explicitly preserved.
+const CONTRACTOR_PROFILE_KEYS = new Set([
+  "id",
+  "name",
+  "legal_name",
+  "phone",
+  "whatsapp",
+  "alternate_phone",
+  "email",
+  "city",
+  "locality",
+  "address",
+  "trade",
+  "rating",
+  "active_jobs",
+  "outstanding",
+  "reliability_score",
+  "on_time_pct",
+  "past_jobs_count",
+  "specializations",
+  "latitude",
+  "longitude",
+  "photo_attachment_id",
+  "business_card_attachment_id",
+  "reliability_rating",
+  "politeness_rating",
+  "worker_count_range",
+  "deadline_commitment",
+  "source_partner_id",
+  "source_partner_name",
+  "work_capabilities",
+  "business_gst",
+  "pan",
+  "bank_account",
+  "ifsc",
+  "categories",
+  "supervisor_name",
+  "supervisor_phone",
+  "available_workers",
+  "concurrent_site_limit",
+  "earliest_mobilisation_date",
+  "service_radius_km",
+  "labour_registration_no",
+  "insurance_expiry",
+  "pf_no",
+  "esi_no",
+  "notes",
+  "bank_verified",
+  "compliance_documents",
+  "duplicate_of_id",
+  "duplicate_resolved_at",
+  "duplicate_resolution_note",
+  "status",
+  "performance_recomputed_at",
+]);
+
+function canonicalContractorInput(input: ContractorProfileRecord): ContractorProfileRecord {
+  return Object.fromEntries(
+    Object.entries(input).filter(([key]) => CONTRACTOR_PROFILE_KEYS.has(key)),
+  ) as ContractorProfileRecord;
+}
 
 const PROFILE_DOCUMENT_SOURCE = "contractor_profile";
 const PROFILE_DOCUMENT_TIMESTAMP = new Date(0).toISOString();
@@ -315,8 +378,7 @@ export function contractorMasterRecordForCreate(
   input: ContractorProfileRecord,
   id: string,
 ): ContractorProfileRecord {
-  const canonicalInput: ContractorProfileRecord = { ...input };
-  delete canonicalInput.capabilities_v2;
+  const canonicalInput = canonicalContractorInput(input);
   return {
     ...canonicalInput,
     id,
@@ -501,7 +563,7 @@ export function normalizeContractorForWrite(
     throw new Error("Choose a valid Source Partner for the contractor referral.");
   }
   const normalized: ContractorProfileRecord = {
-    ...input,
+    ...canonicalContractorInput(input),
     id,
     name: String(input.name || "").trim(),
     legal_name: String(input.legal_name || "").trim() || undefined,
@@ -533,7 +595,6 @@ export function normalizeContractorForWrite(
     work_capabilities: capabilities,
     categories: derivedContractorCategoryNames(db, capabilities),
   };
-  delete normalized.capabilities_v2;
   normalized.compliance_documents = contractorProfileComplianceDocuments(normalized);
   normalized.bank_verified = verifiedContractorBankProof(normalized);
   return normalized;
