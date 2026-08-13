@@ -8,7 +8,7 @@ export interface WorkspaceTab {
 }
 export type DetailPanelKind = "quotation" | "workOrder" | "task" | "followup" | "visit" | "payment" | "invoice" | "po" | "grn" | "dispatch" | "boq" | "vendorBill" | "commission" | "blocked" | "customer" | "site" | "area" | "workRequired" | "inventory" | "vendor" | "vendorRate" | "contractor" | "contractorBill" | "contractorPayment" | "staff" | "audit" | "media" | null;
 export type ContextCustomerTab = "overview" | "sites" | "tasks" | "quotations" | "payments" | "invoices" | "advances" | "liabilities" | "visits" | "activity";
-export type ContextDetailTab = "overview" | "thread" | "history";
+export type ContextDetailTab = "overview" | "files" | "thread" | "history";
 export interface ContextHistoryEntry {
     kind: Exclude<DetailPanelKind, null>;
     recordId: string;

@@ -1,5 +1,5 @@
 /** Shared picker constraints for the durable direct-to-Drive upload queue. */
-export const MANAGED_FILE_ACCEPT = "image/*,video/*,application/pdf,.pdf";
+export const MANAGED_FILE_ACCEPT = "image/*,video/*,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.zip,.rar,.7z";
 
 /** Detect temporary browser-only previews that must never be persisted. */
 export function looksLikeEmbeddedBinary(value?: string) {

@@ -22,6 +22,42 @@ export function entityFiles(db: RDashDatabase, entityType: FileAttachmentEntityT
         .filter((value): value is AttachedFile => Boolean(value))
         .sort((a, b) => a.attachment.created_at.localeCompare(b.attachment.created_at));
 }
+function dedupeAttachedFiles(items: AttachedFile[]): AttachedFile[] {
+    const seen = new Set<ID>();
+    return items.filter((item) => {
+        if (seen.has(item.asset.id))
+            return false;
+        seen.add(item.asset.id);
+        return true;
+    }).sort((a, b) => a.attachment.created_at.localeCompare(b.attachment.created_at));
+}
+/**
+ * Files shown in the record Files tab. Ownership stays exact; this helper only
+ * surfaces three intentionally small parent roll-ups without copying or moving
+ * attachments.
+ */
+export function entityFilesForPanel(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: ID): AttachedFile[] {
+    const files: AttachedFile[] = [...entityFiles(db, entityType, entityId)];
+    const add = (type: FileAttachmentEntityType, ids: ID[]) => {
+        for (const id of ids)
+            files.push(...entityFiles(db, type, id));
+    };
+    if (entityType === "customer") {
+        add("site", db.sites.filter((site) => site.customer_id === entityId).map((site) => site.id));
+    }
+    else if (entityType === "site") {
+        add("workOrder", db.workOrders.filter((order) => order.site_id === entityId).map((order) => order.id));
+        add("visit", db.visits.filter((visit) => visit.site_id === entityId).map((visit) => visit.id));
+        add("drawing", db.drawings.filter((drawing) => drawing.site_id === entityId).map((drawing) => drawing.id));
+    }
+    else if (entityType === "workOrder") {
+        add("drawing", db.drawings.filter((drawing) => drawing.work_order_id === entityId).map((drawing) => drawing.id));
+        add("execution_log", (db.executionLogs || []).filter((entry) => entry.work_order_id === entityId).map((entry) => entry.id));
+        const poIds = new Set(db.purchaseOrders.filter((po) => po.work_order_id === entityId).map((po) => po.id));
+        add("grn", db.grns.filter((grn) => grn.work_order_id === entityId || poIds.has(grn.po_id)).map((grn) => grn.id));
+    }
+    return dedupeAttachedFiles(files);
+}
 export function attachedFileById(db: RDashDatabase, attachmentId?: ID): AttachedFile | undefined {
     if (!attachmentId)
         return undefined;
@@ -39,6 +75,7 @@ export function assetPreview(asset: FileAsset): FilePreviewSource {
         googleFileId: managedDriveFile ? asset.google_file_id : undefined,
         url: asset.web_view_link,
         thumbnailUrl: asset.thumbnail_url,
+        sizeBytes: asset.file_size_bytes,
     };
 }
 export function attachedPreview(db: RDashDatabase, attachmentId?: ID): FilePreviewSource | undefined {

@@ -5,7 +5,7 @@ import type { ContextDetailTab, DetailPanelKind } from "./store/ui-types";
  * in the internal navigation type for future use but is deliberately excluded
  * here until a dedicated history body exists.
  */
-const DETAIL_TABS = new Set<ContextDetailTab>(["overview", "thread"]);
+const DETAIL_TABS = new Set<ContextDetailTab>(["overview", "files", "thread"]);
 
 export interface WorkspaceDetailTabRequest {
   tab: ContextDetailTab;
