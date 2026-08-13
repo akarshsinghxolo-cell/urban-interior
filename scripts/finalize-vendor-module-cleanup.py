@@ -1,0 +1,50 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+required_absent = [
+    "src/components/rdash/UnifiedPartnerFormDialog.tsx",
+    "src/lib/rdash/partner-form-store-bridge.ts",
+    "src/lib/rdash/partner-form-consistency.ts",
+    "src/lib/rdash/partner-form-types.d.ts",
+]
+for path in required_absent:
+    if (ROOT / path).exists():
+        raise SystemExit(f"Obsolete Vendor path still exists: {path}")
+
+router = (ROOT / "src/components/rdash/PartnerFormDialog.tsx").read_text()
+if "VendorFormDialog" not in router or "ContractorFormDialog" not in router:
+    raise SystemExit("Partner router does not use the dedicated Vendor and Contractor forms")
+
+performance = (ROOT / "src/components/rdash/modules/VendorPerformanceModule.tsx").read_text()
+if "VendorWorkspaceModule" not in performance or "Partner360Phase2Workspace" in performance:
+    raise SystemExit("Vendor module is still routed through old shared governance")
+
+profile = (ROOT / "src/lib/rdash/vendor-profile.ts").read_text()
+for token in ["capabilities_v2", "article_ids", "verified_bank", "payment_terms", "credit_limit"]:
+    if token in profile:
+        raise SystemExit(f"Vendor profile still contains removed compatibility token: {token}")
+
+rate_types = (ROOT / "src/lib/rdash/types.ts").read_text()
+start = rate_types.index("export interface VendorRate {")
+end = rate_types.index("export interface VendorRateHistory", start)
+block = rate_types[start:end]
+for required in ["vendor_id", "article_id", "quoted_rate", "status", "created_at", "updated_at"]:
+    if required not in block:
+        raise SystemExit(f"Canonical VendorRate field missing: {required}")
+for forbidden in ["unit_id", "work_required_article_id", "gst_inclusive", "gst_rate", "discount_pct", "freight_amount", "valid_from", "article_name", "rate:"]:
+    if forbidden in block:
+        raise SystemExit(f"Legacy VendorRate field remains: {forbidden}")
+
+average = (ROOT / "src/lib/rdash/vendor-rate-average.ts").read_text()
+for forbidden in ["LandedCostFields", "freight_amount", "discount_pct", "gst_rate", "default_units_per_rate_unit", "vendorRateHistories"]:
+    if forbidden in average:
+        raise SystemExit(f"Legacy rate averaging behavior remains: {forbidden}")
+if "resolveArticleRateConfig" not in average:
+    raise SystemExit("Vendor rate average bypasses Article/Variant resolver")
+
+migration = (ROOT / "supabase/migrations/20260813165000_canonicalize_vendor_profile_and_rates.sql").read_text()
+if "supply_capabilities" not in migration or "quoted_rate" not in migration:
+    raise SystemExit("Vendor cutover migration is incomplete")
+
+print("Vendor re-audit gate passed.")
