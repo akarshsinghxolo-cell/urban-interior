@@ -204,7 +204,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                 workCategories: current.workCategories.filter((entry) => entry.id !== categoryId),
                 workSubcategories: current.workSubcategories.filter((entry) => !workIds.has(entry.id)),
                 subcategoryArticleMap: remainingScopes,
-                vendorRates: current.vendorRates.filter((rate) => !scopeIds.has(rate.work_required_article_id || "") && !removedArticleIds.has(rate.article_id)),
+                vendorRates: current.vendorRates.filter((rate) => !removedArticleIds.has(rate.article_id)),
                 articleVariants: current.articleVariants.filter((variant) => !removedArticleIds.has(variant.article_id)),
                 articles: current.articles.filter((article) => !removedArticleIds.has(article.id)),
             };
@@ -295,7 +295,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                 ...current,
                 workSubcategories: current.workSubcategories.filter((item) => item.id !== workId),
                 subcategoryArticleMap: remainingScopes,
-                vendorRates: current.vendorRates.filter((rate) => !scopeIds.has(rate.work_required_article_id || "") && !removedArticleIds.has(rate.article_id)),
+                vendorRates: current.vendorRates.filter((rate) => !removedArticleIds.has(rate.article_id)),
                 articleVariants: current.articleVariants.filter((variant) => !removedArticleIds.has(variant.article_id)),
                 articles: current.articles.filter((article) => !removedArticleIds.has(article.id)),
             };
@@ -367,7 +367,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             return {
                 ...current,
                 subcategoryArticleMap: current.subcategoryArticleMap.map((row) => row.id === scopeId ? { ...row, ...patch, updated_at: iso() } : row),
-                vendorRates: patch.unit_id ? current.vendorRates.map((rate) => rate.work_required_article_id === scopeId && !rate.variant_id ? { ...rate, unit_id: patch.unit_id, updated_at: iso() } : rate) : current.vendorRates,
+                vendorRates: current.vendorRates,
             };
         });
         // Audit log for reference rate edits — financial
@@ -401,7 +401,6 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             ...current,
             subcategoryArticleMap: current.subcategoryArticleMap.filter((row) => row.id !== scopeId),
             workSubcategories: current.workSubcategories.map((item) => item.id === scope.work_required_id ? { ...item, work_required_article_ids: (item.work_required_article_ids || []).filter((rowId) => rowId !== scopeId), updated_at: iso() } : item),
-            vendorRates: current.vendorRates.filter((rate) => rate.work_required_article_id !== scopeId),
         }));
         toast.success("Scoped material link removed.");
     }
@@ -504,12 +503,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             return {
                 ...current,
                 articleVariants: nextVariants,
-                vendorRates: patch.unit_id !== undefined && selected ? current.vendorRates.map((rate) => {
-                    if (rate.variant_id !== variantId)
-                        return rate;
-                    const scope = scopeFor(current, rate.work_required_article_id);
-                    return { ...rate, unit_id: selected.unit_id || scope?.unit_id || "pcs", updated_at: iso() };
-                }) : current.vendorRates,
+                vendorRates: current.vendorRates,
             };
         });
     }
@@ -527,12 +521,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             ...current,
             articleVariants: current.articleVariants.filter((entry) => entry.id !== variantId),
             articles: current.articles.map((article) => article.id === variant.article_id ? { ...article, variant_ids: (article.variant_ids || []).filter((entry) => entry !== variantId), updated_at: iso() } : article),
-            vendorRates: current.vendorRates.map((rate) => {
-                if (rate.variant_id !== variantId)
-                    return rate;
-                const scope = scopeFor(current, rate.work_required_article_id);
-                return { ...rate, variant_id: undefined, unit_id: scope?.unit_id || rate.unit_id, updated_at: iso() };
-            }),
+            vendorRates: current.vendorRates.map((rate) => rate.variant_id === variantId ? { ...rate, variant_id: undefined, updated_at: iso() } : rate),
         }));
         toast.success("Variant removed and vendor rate units repaired.");
     }
@@ -564,7 +553,6 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             master.articles.filter((article) => article.default_unit_id === unitId).length,
             master.subcategoryArticleMap.filter((row) => row.unit_id === unitId).length,
             master.articleVariants.filter((variant) => variant.unit_id === unitId).length,
-            master.vendorRates.filter((rate) => rate.unit_id === unitId).length,
         ].reduce((sum, value) => sum + value, 0);
         if (references)
             return toast.error(`${unit.symbol} is used by ${references} linked records and cannot be removed.`);
@@ -618,11 +606,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                     variant_ids: cleanVariants.filter((variant) => variant.article_id === article.id).map((variant) => variant.id),
                     updated_at: iso(),
                 })),
-                vendorRates: current.vendorRates.filter((rate) => validArticles.has(rate.article_id) && (!rate.work_required_article_id || validScopes.has(rate.work_required_article_id)) && (!rate.variant_id || validVariants.has(rate.variant_id))).map((rate) => {
-                    const scope = scopeFor({ ...current, subcategoryArticleMap: cleanScopes }, rate.work_required_article_id);
-                    const variant = cleanVariants.find((entry) => entry.id === rate.variant_id);
-                    return { ...rate, unit_id: variant?.unit_id || scope?.unit_id || rate.unit_id, updated_at: iso() };
-                }),
+                vendorRates: current.vendorRates.filter((rate) => validArticles.has(rate.article_id) && (!rate.variant_id || validVariants.has(rate.variant_id))),
             };
         });
         toast.success("Safe catalogue repair completed.");
@@ -881,7 +865,7 @@ function UnitsView({ master, query, setQuery, updateUnit, removeUnit }: {
     removeUnit: (id: string) => void;
 }) {
     const rows = master.units.filter((unit) => !query || normalizeCatalogName(`${unit.symbol} ${unit.name} ${unit.family}`).includes(normalizeCatalogName(query))).sort((a, b) => a.symbol.localeCompare(b.symbol));
-    const countUsage = (unitId: string) => master.workSubcategories.filter((work) => work.unit_id === unitId).length + master.articles.filter((article) => article.default_unit_id === unitId).length + master.subcategoryArticleMap.filter((scope) => scope.unit_id === unitId).length + master.articleVariants.filter((variant) => variant.unit_id === unitId).length + master.vendorRates.filter((rate) => rate.unit_id === unitId).length;
+    const countUsage = (unitId: string) => master.workSubcategories.filter((work) => work.unit_id === unitId).length + master.articles.filter((article) => article.default_unit_id === unitId).length + master.subcategoryArticleMap.filter((scope) => scope.unit_id === unitId).length + master.articleVariants.filter((variant) => variant.unit_id === unitId).length;
     return <div className="flex flex-col gap-3"><div className="flex flex-wrap items-center gap-2"><div className="relative w-full max-w-md"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shared units…" className="pl-8"/></div><span className="text-xs text-muted-foreground">Stable IDs prevent unit text conflicts in quotations, vendors and materials.</span></div><div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card"><div className="overflow-x-auto"><table className="min-w-[720px] w-full text-left text-xs"><thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2">Symbol</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Family</th><th className="px-3 py-2">Linked records</th><th className="px-3 py-2"></th></tr></thead><tbody>{rows.map((unit) => <tr key={unit.id} className="border-t border-border hover:bg-accent/20"><td className="px-3 py-2"><Input defaultValue={unit.symbol} onBlur={(event) => event.target.value !== unit.symbol && updateUnit(unit.id, { symbol: event.target.value })} className="h-8 w-28 font-mono"/></td><td className="px-3 py-2"><Input defaultValue={unit.name} onBlur={(event) => event.target.value !== unit.name && updateUnit(unit.id, { name: event.target.value })} className="h-8 min-w-56"/></td><td className="px-3 py-2"><NativeSelect value={unit.family || "other"} onChange={(event) => updateUnit(unit.id, { family: event.target.value as MasterUnit["family"] })} className="h-8 min-w-32"><option value="area">Area</option><option value="length">Length</option><option value="count">Count</option><option value="weight">Weight</option><option value="volume">Volume</option><option value="package">Package</option><option value="other">Other</option></NativeSelect></td><td className="px-3 py-2"><span className="rounded-full bg-muted px-2 py-1 font-semibold">{countUsage(unit.id)}</span></td><td className="px-3 py-2"><Button size="icon" variant="ghost" onClick={() => removeUnit(unit.id)} aria-label={`Delete ${unit.symbol}`}><Trash2 className="h-4 w-4 text-destructive"/></Button></td></tr>)}</tbody></table></div></div></div>;
 }
 function IntegrityView({ master, issues, onRepair }: {

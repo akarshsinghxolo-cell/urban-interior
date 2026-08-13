@@ -19,6 +19,7 @@ import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermissionRecord, type StaffRoleKey } from "@/lib/rdash/staff-operations";
 import type { StaffDocument } from "@/lib/rdash/types";
 import { latestQuotationRevisions } from "@/lib/rdash/metrics";
+import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
 export function MastersModule({ submodule }: {
     submodule: string;
 }) {
@@ -115,7 +116,7 @@ export function MastersModule({ submodule }: {
                   <div className="rounded-md bg-muted/40 p-2"><p className="text-[10px] uppercase text-muted-foreground">Outstanding</p><p className={cn("font-mono font-bold", v.outstanding ? "text-destructive" : "text-success")}>{formatINRShort(v.outstanding || 0)}</p></div>
                   <div className="rounded-md bg-muted/40 p-2"><p className="text-[10px] uppercase text-muted-foreground">On-time</p><p className="font-bold">{v.on_time_pct || 0}%</p></div>
                 </div>
-                {rates.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{rates.map((r) => <span key={r.id} className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px]">{r.article_name}: {formatINR(r.rate)}</span>)}</div>}
+                {rates.length > 0 && <div className="mt-2 flex flex-wrap gap-1">{rates.map((r) => <span key={r.id} className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px]">{db.master.articles.find((article) => article.id === r.article_id)?.name || "Unknown Article"}: {formatINR(r.quoted_rate)}</span>)}</div>}
                 <div className="mt-3 border-t border-border pt-3">
                   <OperationalMediaPanel entityType="vendor" entityId={v.id} title="Vendor files, catalogues & boards" compact/>
                 </div>
@@ -338,7 +339,9 @@ export function MastersModule({ submodule }: {
         <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
           {isVendor && db.master.vendorRates.map((r) => {
                 const v = db.master.vendors.find((x) => x.id === r.vendor_id);
-                return <button key={r.id} type="button" onClick={() => openDetail("vendorRate" as any, r.id)} className="flex w-full items-center justify-between border-b border-border px-4 py-2.5 text-left text-sm transition-colors last:border-0 hover:bg-accent/20 focus-visible:bg-accent/30 focus-visible:outline-none"><div><p className="font-medium">{r.article_name}</p><p className="text-[11px] text-muted-foreground">{v?.name} · {r.unit_id} · click for rate context</p></div><span className="font-mono font-bold">{formatINR(r.rate)}</span></button>;
+                const article = db.master.articles.find((row) => row.id === r.article_id);
+                const config = resolveArticleRateConfig({ articleId: r.article_id, variantId: r.variant_id, articles: db.master.articles, variants: db.master.articleVariants });
+                return <button key={r.id} type="button" onClick={() => openDetail("vendorRate" as any, r.id)} className="flex w-full items-center justify-between border-b border-border px-4 py-2.5 text-left text-sm transition-colors last:border-0 hover:bg-accent/20 focus-visible:bg-accent/30 focus-visible:outline-none"><div><p className="font-medium">{article?.name || "Unknown Article"}</p><p className="text-[11px] text-muted-foreground">{v?.name} · {config.rateUnit || "Unit not configured"} · click for rate context</p></div><span className="font-mono font-bold">{formatINR(r.quoted_rate)}</span></button>;
             })}
           {isContractor && db.master.contractorRates.map((r) => {
                 const c = db.master.contractors.find((x) => x.id === r.contractor_id);

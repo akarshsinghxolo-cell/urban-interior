@@ -153,38 +153,22 @@ export function buildWorkCategoryCatalog(): CatalogCore {
         workOptionValues: [],
     };
 }
-const firstValidMapForArticle = (master: Master, articleId: string) => master.subcategoryArticleMap.find((row) => row.article_id === articleId);
 export function buildCatalogDemoVendorRates(master: Master): VendorRate[] {
     const vendorIds = master.vendors.map((vendor) => vendor.id);
-    if (!vendorIds.length)
-        return [];
-    const rates: VendorRate[] = [];
-    master.subcategoryArticleMap.forEach((row, materialIndex) => {
-        const article = master.articles.find((entry) => entry.id === row.article_id)!;
-        const variant = master.articleVariants.find((entry) => (entry as ArticleVariant & { work_required_article_id?: string }).work_required_article_id === row.id);
-        const baseRate = Number(row.reference_rate || article?.base_rate || 1) || 1;
-        vendorIds.forEach((vendorId, vendorIndex) => {
-            const factor = vendorIndex % 2 === 0 ? 0.96 : 1.04;
-            rates.push({
-                id: `catalog-vr-${vendorId}-${row.id}`.replace(/[^a-zA-Z0-9_-]/g, "_"),
-                vendor_id: vendorId,
-                article_id: article.id,
-                article_name: article.name,
-                work_required_article_id: row.id,
-                variant_id: variant?.id,
-                unit_id: row.unit_id,
-                rate: Math.max(1, Math.round(baseRate * factor * 100) / 100),
-                delivery_days: 2 + ((materialIndex + vendorIndex) % 4),
-                moq: 1,
-                gst_inclusive: false,
-                preferred: vendorIndex === 0,
-                notes: row.reference_rate ? "Seeded from scoped material reference rate." : "Seeded fallback rate; replace with real vendor quote.",
-                valid_from: timestamp.slice(0, 10),
-                updated_at: timestamp,
-            });
-        });
+    if (!vendorIds.length) return [];
+    return master.articles.flatMap((article, articleIndex) => {
+        const reference = master.subcategoryArticleMap.find((row) => row.article_id === article.id)?.reference_rate;
+        const baseRate = Number(reference || article.base_rate || 1) || 1;
+        return vendorIds.map((vendorId, vendorIndex) => ({
+            id: `catalog-vr-${vendorId}-${article.id}`.replace(/[^a-zA-Z0-9_-]/g, "_"),
+            vendor_id: vendorId,
+            article_id: article.id,
+            quoted_rate: Math.max(1, Math.round(baseRate * (vendorIndex % 2 === 0 ? 0.96 : 1.04) * 100) / 100),
+            status: "active" as const,
+            created_at: timestamp,
+            updated_at: timestamp,
+        }));
     });
-    return rates;
 }
 function ensureMediaCollections(input: Master): Master {
     return {
@@ -225,38 +209,17 @@ export function normalizeCatalogMaster(input: Master): Master {
         vendorRateHistories: normalizedInput.vendorRateHistories || [],
     };
     const validArticleIds = new Set(fresh.articles.map((article) => article.id));
-    const validMapIds = new Set(fresh.subcategoryArticleMap.map((row) => row.id));
     const validVariantIds = new Set(fresh.articleVariants.map((variant) => variant.id));
-    const validUnits = new Set(fresh.units.map((unit) => unit.id));
-    const reconciled = (normalizedInput.vendorRates || []).flatMap((rate) => {
-        let article = fresh.articles.find((entry) => entry.id === rate.article_id);
-        if (!article && rate.article_name) {
-            article = fresh.articles.find((entry) => entry.normalized_name === normalizeCatalogName(rate.article_name));
-        }
-        if (!article || !validArticleIds.has(article.id))
-            return [];
-        let map = rate.work_required_article_id && validMapIds.has(rate.work_required_article_id)
-            ? fresh.subcategoryArticleMap.find((entry) => entry.id === rate.work_required_article_id)
-            : firstValidMapForArticle(fresh, article.id);
-        if (!map || map.article_id !== article.id)
-            return [];
-        const variant = rate.variant_id && validVariantIds.has(rate.variant_id)
-            ? fresh.articleVariants.find((entry) => entry.id === rate.variant_id)
-            : undefined;
-        const fallbackUnit = variant?.unit_id || map.unit_id;
-        const quotedUnit = rate.unit_id && validUnits.has(rate.unit_id)
-            ? rate.unit_id
-            : fallbackUnit;
-        return [{
-                ...rate,
-                article_id: article.id,
-                article_name: article.name,
-                work_required_article_id: map.id,
-                variant_id: variant?.id,
-                unit_id: quotedUnit,
-                updated_at: rate.updated_at || timestamp,
-            }];
-    });
+    const reconciled = (normalizedInput.vendorRates || []).filter((rate) =>
+        validArticleIds.has(rate.article_id)
+        && (!rate.variant_id || validVariantIds.has(rate.variant_id))
+        && (!rate.variant_id || fresh.articleVariants.some((variant) => variant.id === rate.variant_id && variant.article_id === rate.article_id))
+    ).map((rate) => ({
+        ...rate,
+        status: rate.status === "inactive" ? "inactive" as const : "active" as const,
+        created_at: rate.created_at || rate.updated_at || timestamp,
+        updated_at: rate.updated_at || timestamp,
+    }));
     fresh.vendorRates = reconciled;
     return fresh;
 }
@@ -393,16 +356,13 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
     master.vendorRates.forEach((rate) => {
         if (!articles.has(rate.article_id))
             issues.push({ severity: "error", message: `Vendor rate ${rate.id} points to a missing article.` });
-        if (rate.work_required_article_id && !maps.has(rate.work_required_article_id))
-            issues.push({ severity: "error", message: `Vendor rate ${rate.id} points to a missing submodule material.` });
         if (rate.variant_id && !variants.has(rate.variant_id))
             issues.push({ severity: "error", message: `Vendor rate ${rate.id} points to a missing variant.` });
-        if (rate.unit_id && !units.has(rate.unit_id))
-            issues.push({ severity: "error", message: `Vendor rate ${rate.id} has an invalid unit.` });
-        const row = rate.work_required_article_id ? master.subcategoryArticleMap.find((entry) => entry.id === rate.work_required_article_id) : undefined;
-        const variant = rate.variant_id ? master.articleVariants.find((entry) => entry.id === rate.variant_id) : undefined;
-        if (row && rate.unit_id && rate.unit_id !== (variant?.unit_id || row.unit_id))
-            issues.push({ severity: "error", message: `Vendor rate ${rate.id} uses a unit that conflicts with its exact material context.` });
+        if (rate.variant_id) {
+            const variant = master.articleVariants.find((row) => row.id === rate.variant_id);
+            if (variant && variant.article_id !== rate.article_id)
+                issues.push({ severity: "error", message: `Vendor rate ${rate.id} variant belongs to a different article.` });
+        }
     });
     return issues;
 }

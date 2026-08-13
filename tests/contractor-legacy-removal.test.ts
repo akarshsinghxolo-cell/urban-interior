@@ -4,20 +4,14 @@ const source = async (path: string) => Bun.file(path).text();
 
 describe("Contractor legacy-path removal", () => {
   test("the shared partner form is Vendor-only", async () => {
-    const form = await source("src/components/rdash/UnifiedPartnerFormDialog.tsx");
     const router = await source("src/components/rdash/PartnerFormDialog.tsx");
-    expect(form).not.toContain("addContractor");
-    expect(form).not.toContain("updateContractor");
-    expect(form).not.toContain("contractorPhoto");
-    expect(form).not.toContain('type: "contractor"');
     expect(router).toContain("<ContractorFormDialog");
-    expect(router).toContain('<UnifiedVendorForm\n      type="vendor"');
+    expect(router).toContain("<VendorFormDialog");
   });
 
-  test("the form store bridge is Vendor-only", async () => {
-    const bridge = await source("src/lib/rdash/partner-form-store-bridge.ts");
-    expect(bridge).not.toContain("updateContractor");
-    expect(bridge).not.toContain('"contractor"');
+  test("the obsolete shared form bridge is removed", async () => {
+    expect(await Bun.file("src/lib/rdash/partner-form-store-bridge.ts").exists()).toBe(false);
+    expect(await Bun.file("src/components/rdash/UnifiedPartnerFormDialog.tsx").exists()).toBe(false);
   });
 
   test("Contractor writes expose one canonical capability model", async () => {

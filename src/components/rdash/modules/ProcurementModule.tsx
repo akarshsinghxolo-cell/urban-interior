@@ -3,9 +3,10 @@ import * as React from "react";
 import { ShoppingCart, CheckCircle2, Send, Plus, Trash2, AlertTriangle, FileText, Clock, Search, Zap, Trophy, Gavel, } from "lucide-react";
 import { toast } from "sonner";
 import { useRDashStore } from "@/lib/rdash/store";
-import type { LineItem, VendorBidLine } from "@/lib/rdash/types";
+import type { LineItem, Master, VendorBidLine } from "@/lib/rdash/types";
 import { searchCatalogOptions, type CatalogSearchOption } from "@/lib/rdash/catalog-search";
 import { applyVendorRateUpdates } from "@/lib/rdash/vendor-rate";
+import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
 import { OperationsWorkspace, type MetricSpec, type QueueSpec, type RecordRow, type FilterChip, } from "../OperationsWorkspace";
 import type { ContextAction } from "../ContextMenuHost";
 import { LineItemTable } from "../ThreadPanel";
@@ -38,6 +39,9 @@ function newBuilderRow(): BuilderRow {
         quantity: 1,
         rate: null,
     };
+}
+function procurementArticleId(master: Master, line: Pick<LineItem, "article_id" | "work_required_article_id">) {
+    return line.article_id || (line.work_required_article_id ? master.subcategoryArticleMap.find((row) => row.id === line.work_required_article_id)?.article_id : undefined);
 }
 export function ProcurementModule() {
     const db = useRDashStore((s) => s.db);
@@ -365,10 +369,9 @@ export function ProcurementModule() {
                 const boqItem = boq.items.find((it) => it.id === itemId);
                 if (!boqItem)
                     continue;
-                const vendorRate = db.master.vendorRates.find((vr) => vr.vendor_id === firstVendor &&
-                    (vr.work_required_article_id === boqItem.work_required_article_id ||
-                        vr.article_id === boqItem.article_id));
-                prefilledRates[itemId] = vendorRate ? String(vendorRate.rate) : "";
+                const articleId = procurementArticleId(db.master, boqItem);
+                const vendorRate = articleId ? db.master.vendorRates.find((vr) => vr.vendor_id === firstVendor && vr.article_id === articleId && (vr.variant_id || "") === (boqItem.variant_id || "")) : undefined;
+                prefilledRates[itemId] = vendorRate ? String(vendorRate.quoted_rate) : "";
             }
         }
         setBidRfqId(rfqId);
@@ -389,10 +392,9 @@ export function ProcurementModule() {
                 const boqItem = boq.items.find((it) => it.id === itemId);
                 if (!boqItem)
                     continue;
-                const vendorRate = db.master.vendorRates.find((vr) => vr.vendor_id === vendorId &&
-                    (vr.work_required_article_id === boqItem.work_required_article_id ||
-                        vr.article_id === boqItem.article_id));
-                prefilledRates[itemId] = vendorRate ? String(vendorRate.rate) : "";
+                const articleId = procurementArticleId(db.master, boqItem);
+                const vendorRate = articleId ? db.master.vendorRates.find((vr) => vr.vendor_id === vendorId && vr.article_id === articleId && (vr.variant_id || "") === (boqItem.variant_id || "")) : undefined;
+                prefilledRates[itemId] = vendorRate ? String(vendorRate.quoted_rate) : "";
             }
         }
         setBidVendorId(vendorId);
@@ -569,9 +571,10 @@ export function ProcurementModule() {
             const article = scope ? db.master.articles.find((entry) => entry.id === scope.article_id) : undefined;
             const work = scope ? db.master.workSubcategories.find((entry) => entry.id === scope.work_required_id) : undefined;
             const category = work ? db.master.workCategories.find((entry) => entry.id === work.category_id) : undefined;
-            const vendorRate = scope ? vendorRates.find((rate) => rate.work_required_article_id === scope.id) : undefined;
-            const unitId = vendorRate?.unit_id || scope?.unit_id || article?.default_unit_id || article?.unit_id;
-            const rate = row.rate ?? vendorRate?.rate ?? 0;
+            const vendorRate = article ? vendorRates.find((rate) => rate.article_id === article.id && !rate.variant_id) : undefined;
+            const rateConfig = article ? resolveArticleRateConfig({ articleId: article.id, variantId: vendorRate?.variant_id, articles: db.master.articles, variants: db.master.articleVariants }) : undefined;
+            const unitId = rateConfig?.rateUnit || scope?.unit_id || article?.default_unit_id || article?.unit_id;
+            const rate = row.rate ?? vendorRate?.quoted_rate ?? 0;
             const unit = db.master.units.find((entry) => entry.id === unitId)?.name || unitId || "";
             return {
                 row,
@@ -585,7 +588,7 @@ export function ProcurementModule() {
                 unit,
                 amount: Math.round((row.quantity || 0) * rate),
                 missingVendorRate: !!scope && rate <= 0,
-                willUpdateVendorRate: !!scope && !!form.vendor_id && row.rate !== null && row.rate > 0 && row.rate !== vendorRate?.rate,
+                willUpdateVendorRate: !!scope && !!form.vendor_id && row.rate !== null && row.rate > 0 && row.rate !== vendorRate?.quoted_rate,
             };
         });
     }, [form, db.master]);
@@ -668,11 +671,11 @@ export function ProcurementModule() {
             .filter((row) => row.scope && row.article && row.willUpdateVendorRate)
             .map((row) => ({
             vendorId: vendor.id,
-            scope: row.scope!,
+            articleId: row.article!.id,
             articleName: row.article!.name,
-            unitId: row.unitId,
-            variantId: row.vendorRate?.variant_id || db.master.articleVariants.find((variant) => (variant as { work_required_article_id?: string }).work_required_article_id === row.scope!.id)?.id,
-            rate: row.rate,
+            workRequiredArticleId: row.scope!.id,
+            variantId: row.vendorRate?.variant_id,
+            quotedRate: row.rate,
             sourceType: "PO" as const,
             sourceId: id,
             sourceNo: id,
@@ -779,19 +782,18 @@ function VendorBidDialog({ open, onOpenChange, rfqId, vendorId, onVendorChange, 
               <span className="text-right">Amount</span>
             </div>
             {bidItems.map((item: any) => {
-                    const vendorRate = vendorId
-                        ? db.master.vendorRates.find((vr: any) => vr.vendor_id === vendorId &&
-                            (vr.work_required_article_id === item.work_required_article_id ||
-                                vr.article_id === item.article_id))
+                    const itemArticleId = procurementArticleId(db.master, item);
+                    const vendorRate = vendorId && itemArticleId
+                        ? db.master.vendorRates.find((vr) => vr.vendor_id === vendorId && vr.article_id === itemArticleId && (vr.variant_id || "") === (item.variant_id || ""))
                         : undefined;
                     const rate = Number(rates[item.id]) || 0;
                     return (<div key={item.id} className="grid grid-cols-[1fr_72px_92px_92px_120px] items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-0">
                       <span className="truncate font-medium">{item.title}</span>
                       <span className="text-right font-mono">{item.quantity} {item.unit_name || ""}</span>
-                      <span className="text-right font-mono text-muted-foreground" title={vendorRate ? `Last rate: ${vendorRate.rate} (updated ${vendorRate.updated_at?.slice(0, 10) || "—"})` : "No prior rate on file"}>
-                        {vendorRate ? formatINR(vendorRate.rate) : "—"}
+                      <span className="text-right font-mono text-muted-foreground" title={vendorRate ? `Last rate: ${vendorRate.quoted_rate} (updated ${vendorRate.updated_at.slice(0, 10) || "—"})` : "No prior rate on file"}>
+                        {vendorRate ? formatINR(vendorRate.quoted_rate) : "—"}
                       </span>
-                      <Input inputMode="decimal" value={rates[item.id] || ""} onChange={(e) => onRatesChange({ ...rates, [item.id]: e.target.value })} placeholder={vendorRate ? String(vendorRate.rate) : "0"} className="h-8 text-right font-mono"/>
+                      <Input inputMode="decimal" value={rates[item.id] || ""} onChange={(e) => onRatesChange({ ...rates, [item.id]: e.target.value })} placeholder={vendorRate ? String(vendorRate.quoted_rate) : "0"} className="h-8 text-right font-mono"/>
                       <span className="text-right font-mono font-semibold">{formatINR(rate * item.quantity)}</span>
                     </div>);
                 })}
@@ -1023,7 +1025,7 @@ function CreatePODialog(props: CreatePODialogProps) {
                 <input type="number" min={0} step="any" value={r.row.quantity} onChange={(e) => onUpdateRow(r.row.id, {
                 quantity: Number(e.target.value) || 0,
             })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-right font-mono text-xs outline-none ring-ring focus-visible:ring-2"/>
-                <input aria-label={`${r.article?.name || "Material"} exact vendor rate`} type="number" min={0} step="0.01" disabled={!form.vendor_id || !r.scope} value={r.row.rate ?? (r.vendorRate?.rate ?? "")} onChange={(event) => {
+                <input aria-label={`${r.article?.name || "Material"} exact vendor rate`} type="number" min={0} step="0.01" disabled={!form.vendor_id || !r.scope} value={r.row.rate ?? (r.vendorRate?.quoted_rate ?? "")} onChange={(event) => {
                 const input = event.target.value;
                 const next = Number(input);
                 onUpdateRow(r.row.id, {

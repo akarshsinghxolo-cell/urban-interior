@@ -6,6 +6,7 @@ import {
 import type { RDashDatabase, Thread, ThreadKind } from "../types";
 import { applyWorkspaceOperations, diffWorkspaceOperations, type WorkspaceOperation } from "../workspace-operations";
 import { applyVendorRateAverages } from "../vendor-rate-average";
+import { canonicalizeVendorRateMaster } from "../vendor-rate";
 import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import {
@@ -162,8 +163,6 @@ function collectDirectDependencies(
   } else if (collection === "master.vendorRates" || collection === "master.vendorRateHistories") {
     addId(plan, "master.vendors", row.vendor_id);
     addId(plan, "master.articles", row.article_id);
-    addId(plan, "master.units", row.unit_id);
-    addId(plan, "master.subcategoryArticleMap", row.work_required_article_id);
     addId(plan, "master.articleVariants", row.variant_id);
   }
 
@@ -240,8 +239,8 @@ function initialReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation
   const hasVendorRateMutation = operations.some((operation) => VENDOR_RATE_COLLECTIONS.has(operation.collection));
   if (hasVendorRateMutation) {
     for (const collection of [
-      "master.vendorRates", "master.vendorRateHistories", "master.subcategoryArticleMap",
-      "master.units", "master.articleVariants", "master.vendors", "taxConfigs",
+      "master.vendorRates", "master.vendorRateHistories", "master.articles",
+      "master.units", "master.articleVariants", "master.vendors",
     ]) addFullCollection(plan, collection);
   }
 
@@ -476,7 +475,8 @@ export async function prepareTargetedCommit(
 
   assertWorkspaceMutationAllowed(user, operations, current.data);
   const rawCandidate = applyWorkspaceOperations(current.data, operations);
-  const canonicalCandidate = applyVendorRateAverages(current.data, rawCandidate);
+  const canonicalRates = { ...rawCandidate, master: canonicalizeVendorRateMaster(rawCandidate.master) };
+  const canonicalCandidate = applyVendorRateAverages(current.data, canonicalRates);
   const preparedOperations = diffWorkspaceOperations(current.data, canonicalCandidate);
   validateTouchedRows(canonicalCandidate, preparedOperations);
   const validatedAt = Date.now();
