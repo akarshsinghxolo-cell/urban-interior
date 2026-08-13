@@ -4,7 +4,8 @@ PROFILE = Path("src/lib/rdash/contractor-profile.ts")
 GOVERNANCE = Path("src/lib/rdash/partner-governance.ts")
 GOVERNANCE_UI = Path("src/components/rdash/modules/PartnerGovernanceModule.tsx")
 TYPES = Path("src/lib/rdash/types.ts")
-TEST = Path("tests/contractor-legacy-removal.test.ts")
+LEGACY_TEST = Path("tests/contractor-legacy-removal.test.ts")
+PROFILE_TEST = Path("tests/contractor-profile.test.ts")
 
 profile = PROFILE.read_text()
 
@@ -204,9 +205,9 @@ if "partnerCapabilities" in ui:
     raise SystemExit("Mixed partnerCapabilities helper still remains in governance UI")
 GOVERNANCE_UI.write_text(ui)
 
-# Update permanent regression coverage. Vendor capabilities_v2 remains a Vendor
-# field; the regression isolates the Contractor interface/runtime surfaces.
-test = TEST.read_text()
+# Update permanent legacy-removal regression coverage. Vendor capabilities_v2
+# remains a Vendor field; assertions isolate Contractor runtime/type surfaces.
+test = LEGACY_TEST.read_text()
 old_expectation = '    expect(profile).toContain("delete normalized.capabilities_v2");\n'
 new_expectation = '    expect(profile).not.toContain("capabilities_v2");\n'
 if old_expectation not in test:
@@ -239,7 +240,84 @@ new_test = '''  test("Contractor types and shared helpers expose no compatibilit
 if insert_before not in test:
     raise SystemExit("Contractor referral test marker not found")
 test = test.replace(insert_before, new_test, 1)
-TEST.write_text(test)
+LEGACY_TEST.write_text(test)
+
+# Convert the functional Contractor test away from the removed mixed helper and
+# prove generic obsolete payload keys are dropped without naming old fields.
+profile_test = PROFILE_TEST.read_text()
+profile_test = profile_test.replace(
+  '  contractorDuplicateConflicts,\n',
+  '  contractorDuplicateConflicts,\n  contractorGovernanceCapabilityProjection,\n',
+  1,
+)
+old_import = 'import { partnerCapabilities } from "../src/lib/rdash/partner-governance";\n'
+if old_import not in profile_test:
+    raise SystemExit("Expected old governance helper import was not found in Contractor tests")
+profile_test = profile_test.replace(old_import, "", 1)
+
+old_fixture = '      capabilities_v2: [{ id: "ccap-1", work_subcategory_id: "sub-paint" }],\n'
+if old_fixture not in profile_test:
+    raise SystemExit("Expected old Contractor compatibility fixture was not found")
+profile_test = profile_test.replace(old_fixture, '      obsolete_payload_field: "discard-me",\n', 1)
+old_assertion = '    expect(record.capabilities_v2).toBeUndefined();\n'
+if old_assertion not in profile_test:
+    raise SystemExit("Expected old Contractor compatibility assertion was not found")
+profile_test = profile_test.replace(
+  old_assertion,
+  '    expect((record as Record<string, unknown>).obsolete_payload_field).toBeUndefined();\n',
+  1,
+)
+
+old_governance_test = '''  test("governance reads canonical work capabilities when the legacy projection is missing", () => {
+    const capabilities = partnerCapabilities({
+      id: "con-1",
+      work_capabilities: [{
+        subcategory_id: "sub-paint",
+        subcategory_name: "Interior Painting",
+        labour_rate: 40,
+        with_material_rate: 110,
+      }],
+    });
+
+    expect(capabilities).toHaveLength(1);
+    expect(capabilities[0]).toMatchObject({
+      id: "ccap-con-1-sub-paint",
+      work_subcategory_id: "sub-paint",
+      work_subcategory_name: "Interior Painting",
+      labour_rate: 40,
+      with_material_rate: 110,
+      status: "active",
+    });
+  });
+'''
+new_governance_test = '''  test("governance projects canonical work capabilities directly", () => {
+    const state = db();
+    const canonical = canonicalContractorCapabilities({
+      id: "con-1",
+      work_capabilities: [{
+        subcategory_id: "sub-paint",
+        subcategory_name: "Interior Painting",
+        labour_rate: 40,
+        with_material_rate: 110,
+      }],
+    }, state);
+    const capabilities = contractorGovernanceCapabilityProjection("con-1", canonical);
+
+    expect(capabilities).toHaveLength(1);
+    expect(capabilities[0]).toMatchObject({
+      id: "ccap-con-1-sub-paint",
+      work_subcategory_id: "sub-paint",
+      work_subcategory_name: "Interior Painting",
+      labour_rate: 40,
+      with_material_rate: 110,
+      status: "active",
+    });
+  });
+'''
+if old_governance_test not in profile_test:
+    raise SystemExit("Expected old Contractor governance projection test was not found")
+profile_test = profile_test.replace(old_governance_test, new_governance_test, 1)
+PROFILE_TEST.write_text(profile_test)
 
 # Final targeted audit: Vendor may legitimately keep capabilities_v2, but none of
 # the Contractor type/profile paths or generic governance helper may use it.
@@ -249,7 +327,8 @@ contractor_start = types.index("export interface Contractor {")
 contractor_end = types.index("export type StaffRoleKey", contractor_start)
 contractor_type = types[contractor_start:contractor_end]
 governance = GOVERNANCE.read_text()
-ui = GOVERNANCE_UI.read_text()
+ui = GOVERNERNANCE_UI.read_text() if False else GOVERNANCE_UI.read_text()
+profile_test = PROFILE_TEST.read_text()
 
 problems = []
 if "capabilities_v2" in profile:
@@ -260,6 +339,8 @@ if "partner.work_capabilities" in governance or "function partnerCapabilities" i
     problems.append("shared governance helper still accepts Contractor capability data")
 if "partnerCapabilities" in ui:
     problems.append("governance UI still imports/calls mixed partnerCapabilities")
+if "partnerCapabilities" in profile_test:
+    problems.append("Contractor functional tests still depend on mixed partnerCapabilities")
 if problems:
     raise SystemExit("; ".join(problems))
 
