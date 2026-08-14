@@ -7,8 +7,8 @@
   },
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
+    "build": "next build",
+    "start": "next start",
     "lint": "eslint .",
     "test:phase2b": "vitest run tests/phase2b-targeted-commit.test.ts",
     "test:routing": "vitest run tests/workspace-route-registry.test.ts",
