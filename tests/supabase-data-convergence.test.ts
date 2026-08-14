@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
 const MIGRATION = "supabase/migrations/20260801143000_converge_workspace_persistence.sql";
 const STAFF_MIRROR_MIGRATION = "supabase/migrations/20260801144500_sync_workspace_staff_mirrors.sql";
@@ -9,9 +10,9 @@ const WORK_CATALOG_MIGRATION = "supabase/migrations/20260801153000_persist_work_
 
 describe("Supabase persistence convergence", () => {
   test("removes obsolete workspace writers without removing active GenericRecord", async () => {
-    const migration = await Bun.file(MIGRATION).text();
-    const server = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
-    const drive = await Bun.file("src/lib/rdash/server/drive-connections.ts").text();
+    const migration = await testFile(MIGRATION).text();
+    const server = await testFile("src/lib/rdash/server/commit-rest.ts").text();
+    const drive = await testFile("src/lib/rdash/server/drive-connections.ts").text();
 
     expect(migration).toContain("drop function if exists public.commit_operations");
     expect(migration).toContain("drop function if exists public.write_workspace_snapshot");
@@ -25,7 +26,7 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("binds every workspace collection to its canonical entity table", async () => {
-    const migration = await Bun.file(MIGRATION).text();
+    const migration = await testFile(MIGRATION).text();
 
     expect(migration).toContain("rename to commit_workspace_operations_internal");
     expect(migration).toContain("v_expected_table := 'entity_' || replace(v_collection, '.', '_')");
@@ -38,9 +39,9 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("sanitizes Staff credentials before response, persistence and journaling", async () => {
-    const tableGuard = await Bun.file(STAFF_MIRROR_MIGRATION).text();
-    const operationGuard = await Bun.file(OPERATION_SANITIZE_MIGRATION).text();
-    const authorized = await Bun.file("src/lib/rdash/server/authorized-commit.ts").text();
+    const tableGuard = await testFile(STAFF_MIRROR_MIGRATION).text();
+    const operationGuard = await testFile(OPERATION_SANITIZE_MIGRATION).text();
+    const authorized = await testFile("src/lib/rdash/server/authorized-commit.ts").text();
 
     expect(tableGuard).toContain("new.data := coalesce(new.data, '{}'::jsonb)");
     expect(tableGuard).toContain("- 'temporary_password'");
@@ -58,8 +59,8 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("journals auth-driven master staff synchronization exactly once", async () => {
-    const migration = await Bun.file(MIGRATION).text();
-    const staffIdentity = await Bun.file(
+    const migration = await testFile(MIGRATION).text();
+    const staffIdentity = await testFile(
       "supabase/migrations/20260724054622_staff_identity_atomic_sync.sql",
     ).text();
 
@@ -77,7 +78,7 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("keeps workspace Staff and auth/profile mirrors on explicit ownership boundaries", async () => {
-    const migration = await Bun.file(STAFF_MIRROR_MIGRATION).text();
+    const migration = await testFile(STAFF_MIRROR_MIGRATION).text();
 
     expect(migration).toContain("create or replace function public.uc_sanitize_workspace_staff_auth_fields()");
     expect(migration).toContain("create trigger entity_master_staff_workspace_auth_sanitize");
@@ -98,8 +99,8 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("routes Staff login changes to User Approvals and declares the persisted auth link", async () => {
-    const dialog = await Bun.file("src/components/rdash/StaffEditDialog.tsx").text();
-    const types = await Bun.file("src/lib/rdash/types.ts").text();
+    const dialog = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
+    const types = await testFile("src/lib/rdash/types.ts").text();
 
     expect(dialog).toContain("Login access is managed in User Approvals");
     expect(dialog).toContain("Passwords are never stored in Staff workspace data");
@@ -111,10 +112,10 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("makes Contractor Rates an atomic projection visible to server and database", async () => {
-    const migration = await Bun.file(CONTRACTOR_RATE_MIGRATION).text();
-    const revisionFix = await Bun.file(CONTRACTOR_RATE_REVISION_MIGRATION).text();
-    const authorized = await Bun.file("src/lib/rdash/server/authorized-commit.ts").text();
-    const profile = await Bun.file("src/lib/rdash/contractor-profile.ts").text();
+    const migration = await testFile(CONTRACTOR_RATE_MIGRATION).text();
+    const revisionFix = await testFile(CONTRACTOR_RATE_REVISION_MIGRATION).text();
+    const authorized = await testFile("src/lib/rdash/server/authorized-commit.ts").text();
+    const profile = await testFile("src/lib/rdash/contractor-profile.ts").text();
 
     expect(migration).toContain("create or replace function public.uc_contractor_rate_projection_rows");
     expect(migration).toContain("p_contractor -> 'work_capabilities'");
@@ -144,8 +145,8 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("persists the work catalog in Supabase and stops runtime JSON replacement", async () => {
-    const migration = await Bun.file(WORK_CATALOG_MIGRATION).text();
-    const commitRest = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
+    const migration = await testFile(WORK_CATALOG_MIGRATION).text();
+    const commitRest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
 
     expect(migration).toContain('insert into public."entity_master_units"');
     expect(migration).toContain('insert into public."entity_master_workCategories"');
@@ -161,8 +162,8 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("establishes a fresh journal baseline after historical gaps", async () => {
-    const migration = await Bun.file(MIGRATION).text();
-    const delta = await Bun.file("src/lib/rdash/server/workspace-changes.ts").text();
+    const migration = await testFile(MIGRATION).text();
+    const delta = await testFile("src/lib/rdash/server/workspace-changes.ts").text();
 
     expect(migration).toContain("from public.entity_workspace_revision r");
     expect(migration).toContain("on conflict (workspace_id, revision) do update");
@@ -173,8 +174,8 @@ describe("Supabase persistence convergence", () => {
   });
 
   test("keeps the current application on one workspace commit RPC", async () => {
-    const workspace = await Bun.file("src/lib/rdash/server/workspace.ts").text();
-    const commit = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
+    const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();
+    const commit = await testFile("src/lib/rdash/server/commit-rest.ts").text();
 
     expect(workspace).toContain("commitRestOperations");
     expect(commit).toContain('admin.rpc("commit_workspace_operations"');

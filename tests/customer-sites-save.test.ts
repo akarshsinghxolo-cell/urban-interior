@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { applyCustomerWithSitesSave } from "../src/lib/rdash/customer-sites-save";
 import type { RDashDatabase } from "../src/lib/rdash/types";
@@ -200,6 +200,45 @@ describe("canonical customer and Sites save", () => {
     expect(result.db.entityFileAttachments).toHaveLength(0);
     expect(result.db.sites[0].photo_attachment_ids).toEqual([]);
     expect(result.detachedAttachmentIds).toEqual(["attachment-1"]);
+  });
+
+
+  test("detaches a direct Customer file in the same save", () => {
+    const db = database();
+    db.entityFileAttachments.push({
+      ...db.entityFileAttachments[0],
+      id: "attachment-customer",
+      entity_type: "customer",
+      entity_id: "customer-1",
+      entity_label: "Existing Customer",
+      role: "document",
+    });
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      detachAttachmentIds: ["attachment-customer"],
+    }, options);
+    expect(result.db.entityFileAttachments.some((row) => row.id === "attachment-customer")).toBe(false);
+    expect(result.detachedAttachmentIds).toEqual(["attachment-customer"]);
+  });
+
+  test("rejects detaching a direct Customer file owned by another Customer", () => {
+    const db = database();
+    db.entityFileAttachments.push({
+      ...db.entityFileAttachments[0],
+      id: "attachment-other-customer",
+      entity_type: "customer",
+      entity_id: "customer-2",
+      entity_label: "Other Customer",
+      role: "document",
+    });
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      detachAttachmentIds: ["attachment-other-customer"],
+    }, options)).toThrow(/another Customer/i);
   });
 
   test("rejects duplicate customer identity", () => {

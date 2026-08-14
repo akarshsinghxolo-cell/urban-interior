@@ -274,6 +274,7 @@ export const FINANCE_SCOPE_COLLECTIONS = Object.freeze([
   "followups",
   "actions",
   "threads",
+  "entityFileAttachments",
   "commercialTerms",
   "paymentTermTemplates",
   "taxConfigs",
@@ -384,11 +385,13 @@ export const REPORTS_SCOPE_COLLECTIONS = Object.freeze([
   "payrollPeriods",
   "payrollLines",
   "salaryAdjustments",
+  "entityFileAttachments",
   "auditLog",
   "master.vendors",
   "master.contractors",
   "master.sourcePartners",
   "master.commissionRules",
+  "master.fileAssets",
 ] as const);
 
 export const SYSTEM_SCOPE_COLLECTIONS = Object.freeze([

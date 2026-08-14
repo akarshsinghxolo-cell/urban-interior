@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { articleVendorRateAverage, selectVendorArticleRates } from "../src/lib/rdash/vendor-rate-average";
 import { resolveArticleRateConfig } from "../src/lib/rdash/article-rate-config";
 

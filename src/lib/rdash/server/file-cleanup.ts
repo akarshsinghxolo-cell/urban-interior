@@ -28,8 +28,8 @@ function threadReferencesFileAsset(db: RDashDatabase, fileAssetId: string): bool
 
 export function fileAssetHasReferences(db: RDashDatabase, fileAssetId: string): boolean {
   if ((db.entityFileAttachments || []).some((row) => row.file_asset_id === fileAssetId)) return true;
-  if ((db.master.catalogues || []).some((row) => row.drive_asset_id === fileAssetId && row.status !== "archived")) return true;
-  if ((db.master.referenceMedia || []).some((row) => row.drive_asset_id === fileAssetId && row.status !== "archived")) return true;
+  if ((db.master.catalogues || []).some((row) => row.drive_asset_id === fileAssetId)) return true;
+  if ((db.master.referenceMedia || []).some((row) => row.drive_asset_id === fileAssetId)) return true;
   if ((db.staffDocuments || []).some((row) => row.file_asset_id === fileAssetId)) return true;
   if (threadReferencesFileAsset(db, fileAssetId)) return true;
   return false;

@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
-const app = await Bun.file("src/components/rdash/RDashApp.tsx").text();
-const targeted = await Bun.file("src/lib/rdash/server/targeted-commit.ts").text();
-const healthRoute = await Bun.file("src/app/api/health/summary/route.ts").text();
-const workspaceRoute = await Bun.file("src/app/api/workspace/route.ts").text();
+const app = await testFile("src/components/rdash/RDashApp.tsx").text();
+const targeted = await testFile("src/lib/rdash/server/targeted-commit.ts").text();
+const healthRoute = await testFile("src/app/api/health/summary/route.ts").text();
+const workspaceRoute = await testFile("src/app/api/workspace/route.ts").text();
 
 describe("deferred egress guardrails", () => {
   test("login welcome shares the health request", () => {

@@ -1,11 +1,12 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { readdir } from "node:fs/promises";
 
 const MIGRATION_PATH =
   "supabase/migrations/20260804060639_canonicalize_staff_identity_storage.sql";
 
 async function migrationSource() {
-  return Bun.file(MIGRATION_PATH).text();
+  return testFile(MIGRATION_PATH).text();
 }
 
 describe("canonical Staff storage convergence", () => {

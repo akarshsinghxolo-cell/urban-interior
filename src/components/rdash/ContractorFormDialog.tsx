@@ -548,6 +548,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     try {
       const queued = await enqueueWorkflowFiles({
         sourceFlow: "contractor_form",
+                deferProcessing: true,
         sourceLabel: "contractor form",
         targetEntityType: "contractor",
         targetEntityId: reservedId,

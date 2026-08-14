@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { destinationSegments } from "@/lib/rdash/server/drive-folder-hierarchy";
 import type { RDashDatabase } from "@/lib/rdash/types";
 
@@ -45,6 +45,7 @@ function namingFixture(): RDashDatabase {
       id: "purchase-order-internal-eec19321",
       po_no: "PO-2026-118",
       site_id: "site-internal-739a2b11",
+      work_order_id: "work-order-internal-80f2ce91",
       vendor_id: "vendor-internal-d51f9981",
       vendor_name: "Shree Plywood",
       status: "sent",

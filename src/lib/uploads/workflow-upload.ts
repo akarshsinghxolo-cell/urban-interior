@@ -10,8 +10,8 @@ import type {
   UploadItemId,
   UploadItemRecord,
 } from "./upload-types";
-import type { FileAssetKind, FileAttachmentEntityType, FileAttachmentRole } from "@/lib/rdash/types";
-import type { UploadPurpose } from "./upload-types";
+import type { FileAssetKind, FileAttachmentRole } from "@/lib/rdash/types";
+export { uploadPurposeForEntity } from "./upload-purpose";
 
 export interface WorkflowUploadFile extends EnqueueUploadFileOptions {
   file: File;
@@ -40,33 +40,6 @@ type QueueWorkflowInput = Omit<EnqueueUploadBatchInput, "files" | "fileOptions">
 
 function normalizeFile(value: File | WorkflowUploadFile): WorkflowUploadFile {
   return value instanceof File ? { file: value } : value;
-}
-
-export function uploadPurposeForEntity(entityType: FileAttachmentEntityType): UploadPurpose {
-  switch (entityType) {
-    case "site": return "site_evidence";
-    case "visit": return "visit_evidence";
-    case "drawing": return "drawing";
-    case "execution_log": return "execution_evidence";
-    case "quotation":
-    case "quotation_item": return "quotation_document";
-    case "workOrder":
-    case "boq":
-    case "boq_item": return "work_order_document";
-    case "purchase_order": return "purchase_order";
-    case "grn": return "grn_evidence";
-    case "vendor_bill": return "vendor_bill";
-    case "invoice":
-    case "payment": return "customer_invoice";
-    case "vendor":
-    case "vendor_rate": return "vendor_document";
-    case "contractor":
-    case "contractor_bid":
-    case "contractor_settlement": return "contractor_document";
-    case "communication": return "communication_attachment";
-    case "customer": return "customer_document";
-    default: return "customer_document";
-  }
 }
 
 export function classifyWorkflowFile(file: File): { kind: FileAssetKind; role: FileAttachmentRole } {

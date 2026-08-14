@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { hydrateStaffReferenceLabels } from "@/lib/rdash/staff-reference-labels";

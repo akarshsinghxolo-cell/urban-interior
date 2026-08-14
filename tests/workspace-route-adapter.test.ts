@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { selectWorkspaceRoute } from "../src/lib/rdash/workspace-route-adapter";
 
 describe("workspace route adapter", () => {

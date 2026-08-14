@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
 import {
   workspaceReadLoadStateForTarget,
@@ -92,7 +93,7 @@ describe("workspace bootstrap and scoped client reads", () => {
   });
 
   test("keeps foundational taxonomy loaded in every scoped snapshot", async () => {
-    const projectedBootstrap = await Bun.file("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
+    const projectedBootstrap = await testFile("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
     expect(projectedBootstrap).toContain('"master.units"');
     expect(projectedBootstrap).toContain('"master.workCategories"');
     expect(projectedBootstrap).toContain('"master.workSubcategories"');
@@ -109,8 +110,8 @@ describe("workspace bootstrap and scoped client reads", () => {
   });
 
   test("starts with the minimal bootstrap and never hydrates the full workspace", async () => {
-    const app = await Bun.file("src/components/rdash/RDashApp.tsx").text();
-    const bootstrap = await Bun.file("src/app/api/bootstrap/route.ts").text();
+    const app = await testFile("src/components/rdash/RDashApp.tsx").text();
+    const bootstrap = await testFile("src/app/api/bootstrap/route.ts").text();
     expect(app).toContain('fetch("/api/bootstrap"');
     expect(app).not.toContain('fetch("/api/workspace"');
     expect(bootstrap).toContain("getWorkspaceSubset({})");
@@ -122,8 +123,8 @@ describe("workspace bootstrap and scoped client reads", () => {
   });
 
   test("prevents modules from rendering unloaded arrays as authoritative zero values", async () => {
-    const router = await Bun.file("src/components/rdash/WorkspaceModuleRouter.tsx").text();
-    const boundary = await Bun.file("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
+    const router = await testFile("src/components/rdash/WorkspaceModuleRouter.tsx").text();
+    const boundary = await testFile("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
     const gateIndex = router.indexOf('if (dataLoadState.status !== "loaded")');
     const rendererIndex = router.indexOf("switch (route.renderer)");
 
@@ -140,7 +141,7 @@ describe("workspace bootstrap and scoped client reads", () => {
   });
 
   test("does not present omitted scoped collections as real zero totals", async () => {
-    const app = await Bun.file("src/components/rdash/RDashApp.tsx").text();
+    const app = await testFile("src/components/rdash/RDashApp.tsx").text();
     expect(app).toContain("loadedWorkspaceCollections(db)");
     expect(app).toContain('loadedCollections && !loadedCollections.has(collection) ? "—" : String(count)');
     expect(app).toContain('collectionCount("customers", db.customers.length)');
@@ -149,7 +150,7 @@ describe("workspace bootstrap and scoped client reads", () => {
   });
 
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {
-    const helper = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
+    const helper = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain('request.headers.get("x-uc-workspace-module")');
     expect(helper).toContain("tryWorkspaceReadTargetForModule(requestedModule)");
     expect(helper).toContain("target?.scope === endpointTarget.scope");
@@ -159,14 +160,14 @@ describe("workspace bootstrap and scoped client reads", () => {
   });
 
   test("blocks expensive full-workspace fallback unless explicitly enabled", async () => {
-    const route = await Bun.file("src/app/api/workspace/route.ts").text();
+    const route = await testFile("src/app/api/workspace/route.ts").text();
     expect(route).toContain('process.env.UC_FULL_WORKSPACE_FALLBACK === "1"');
     expect(route).toContain('"X-UC-Full-Fallback": "blocked"');
     expect(route).toContain("A full-workspace fallback was not attempted.");
   });
 
   test("keeps delta recovery on the same scoped data path", async () => {
-    const source = await Bun.file("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
+    const source = await testFile("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
     expect(source).toContain("workspaceReadEndpointForTarget(target)");
     expect(source).not.toContain('fetch("/api/workspace"');
   });

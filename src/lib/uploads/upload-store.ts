@@ -1,3 +1,4 @@
+import { uploadPurposeAllowedForEntity } from "./upload-purpose";
 import { uploadIndexedDb } from "./upload-indexed-db";
 import { fingerprintUploadBlob } from "./upload-fingerprint";
 import {
@@ -64,6 +65,7 @@ async function persistBatch(batch: UploadBatchRecord): Promise<UploadBatchRecord
 }
 
 function itemIsProcessable(item: UploadItemRecord): boolean {
+  if (item.deferred) return false;
   if (["completed", "cancelled", "failed_permanent", "cleanup_pending"].includes(item.status)) return false;
   if (item.retryAt && Date.parse(item.retryAt) > Date.now()) return false;
   return true;
@@ -93,12 +95,36 @@ export const uploadQueueStore = {
           uploadIndexedDb.readBatches(),
           uploadIndexedDb.readItems(),
         ]);
+
+        // Deferred batches belong to an in-memory Save/Cancel draft. If the page
+        // was reloaded, that draft no longer exists, so keeping its private file
+        // bytes would create uploads the user never committed. Discard them.
+        const staleDraftItems = items.filter((item) => item.deferred);
+        const staleDraftIds = new Set(staleDraftItems.map((item) => item.id));
+        const restoredItems = items.filter((item) => !staleDraftIds.has(item.id));
+        if (staleDraftItems.length) {
+          await Promise.all(staleDraftItems.flatMap((item) => [
+            uploadIndexedDb.deleteBlob(item.id),
+            uploadIndexedDb.deleteItem(item.id),
+          ]));
+        }
+        const restoredBatchIds = new Set(restoredItems.map((item) => item.batchId));
+        const staleDraftBatches = batches.filter((batch) =>
+          items.some((item) => item.batchId === batch.id && item.deferred) &&
+          !restoredBatchIds.has(batch.id),
+        );
+        if (staleDraftBatches.length) {
+          await Promise.all(staleDraftBatches.map((batch) => uploadIndexedDb.deleteBatch(batch.id)));
+        }
+        const staleBatchIds = new Set(staleDraftBatches.map((batch) => batch.id));
+        const restoredBatches = batches.filter((batch) => !staleBatchIds.has(batch.id));
+
         emit({
           ready: true,
           online: typeof navigator === "undefined" ? true : navigator.onLine,
           processing: false,
-          batches: batches.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-          items: items.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+          batches: restoredBatches.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+          items: restoredItems.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
         });
       } catch (error) {
         hydratePromise = null;
@@ -121,6 +147,9 @@ export const uploadQueueStore = {
   },
   async enqueueBatch(input: EnqueueUploadBatchInput): Promise<UploadBatchId> {
     validateFiles(input.files);
+    if (!uploadPurposeAllowedForEntity(input.targetEntityType, input.purpose)) {
+      throw new Error(`Upload purpose "${input.purpose}" does not belong to ${input.targetEntityType}.`);
+    }
     await this.hydrate();
     const createdAt = new Date().toISOString();
     const batchId = makeUploadBatchId();
@@ -134,7 +163,7 @@ export const uploadQueueStore = {
       targetEntityId: input.targetEntityId,
       targetLabel: input.targetLabel,
       purpose: input.purpose,
-      status: online ? "open" : "waiting",
+      status: input.deferProcessing ? "waiting" : online ? "open" : "waiting",
       requiredEvidence: Boolean(input.requiredEvidence),
       createdAt,
       updatedAt: createdAt,
@@ -182,12 +211,13 @@ export const uploadQueueStore = {
           attachmentField: itemOptions?.attachmentField ?? input.attachmentField,
           attachmentFieldMode: itemOptions?.attachmentFieldMode ?? input.attachmentFieldMode,
           requiredEvidence: batch.requiredEvidence,
-          status: online ? "queued" : "paused",
+          deferred: Boolean(input.deferProcessing),
+          status: input.deferProcessing ? "paused" : online ? "queued" : "paused",
           confirmedBytes: 0,
           progress: 0,
           retryCount: 0,
-          lastErrorCode: online ? undefined : NETWORK_ERROR_CODE,
-          lastErrorMessage: online ? undefined : "Upload paused until the network is available.",
+          lastErrorCode: input.deferProcessing ? undefined : online ? undefined : NETWORK_ERROR_CODE,
+          lastErrorMessage: input.deferProcessing ? undefined : online ? undefined : "Upload paused until the network is available.",
           createdAt,
           updatedAt: createdAt,
         };
@@ -258,9 +288,55 @@ export const uploadQueueStore = {
     }
     emit({ ...snapshot, items: remainingItems, batches: remainingBatches });
   },
+  async releaseDeferredBatch(uploadBatchId: UploadBatchId): Promise<void> {
+    await this.hydrate();
+    const batch = this.getBatch(uploadBatchId);
+    if (!batch) return;
+    const deferredItems = snapshot.items.filter((item) => item.batchId === uploadBatchId && item.deferred);
+    if (!deferredItems.length) return;
+    const online = typeof navigator === "undefined" ? true : navigator.onLine;
+    await this.patchBatch(uploadBatchId, { status: online ? "open" : "waiting" });
+    for (const item of deferredItems) {
+      await this.patchItem(item.id, {
+        deferred: false,
+        status: online ? "queued" : "paused",
+        retryAt: undefined,
+        lastErrorCode: online ? undefined : NETWORK_ERROR_CODE,
+        lastErrorMessage: online ? undefined : "Upload paused until the network is available.",
+      });
+    }
+  },
+  async discardDeferredBatch(uploadBatchId: UploadBatchId): Promise<void> {
+    await this.hydrate();
+    const batchItems = snapshot.items.filter((item) => item.batchId === uploadBatchId);
+    const deferredItems = batchItems.filter((item) => item.deferred);
+    for (const item of deferredItems) {
+      await uploadIndexedDb.deleteBlob(item.id).catch(() => undefined);
+      await uploadIndexedDb.deleteItem(item.id).catch(() => undefined);
+    }
+
+    const deferredIds = new Set(deferredItems.map((item) => item.id));
+    const remainingItems = snapshot.items.filter((item) => !deferredIds.has(item.id));
+    const remainingInBatch = remainingItems.filter((item) => item.batchId === uploadBatchId);
+    if (!remainingInBatch.length) {
+      await uploadIndexedDb.deleteBatch(uploadBatchId).catch(() => undefined);
+      emit({
+        ...snapshot,
+        items: remainingItems,
+        batches: snapshot.batches.filter((batch) => batch.id !== uploadBatchId),
+      });
+      return;
+    }
+
+    // Defensive fallback for an unexpected mixed batch: locally discard only
+    // draft-held items and cancel any already-released items through the normal
+    // cleanup path.
+    emit({ ...snapshot, items: remainingItems });
+    await this.cancelBatch(uploadBatchId);
+  },
   async retryItem(uploadItemId: UploadItemId): Promise<void> {
     const item = this.getItem(uploadItemId);
-    if (!item) return;
+    if (!item || item.deferred) return;
     const online = typeof navigator === "undefined" ? true : navigator.onLine;
     await this.patchItem(uploadItemId, {
       status: online ? "queued" : "paused",
@@ -270,12 +346,24 @@ export const uploadQueueStore = {
     });
   },
   async retryAll(): Promise<void> {
-    const retryable = snapshot.items.filter((item) => item.status === "paused" || item.status === "failed_permanent");
+    const retryable = snapshot.items.filter((item) => !item.deferred && (item.status === "paused" || item.status === "failed_permanent"));
     for (const item of retryable) await this.retryItem(item.id);
   },
   async cancelItem(uploadItemId: UploadItemId): Promise<void> {
     const item = this.getItem(uploadItemId);
     if (!item || item.status === "completed") return;
+    if (item.deferred) {
+      await uploadIndexedDb.deleteBlob(uploadItemId).catch(() => undefined);
+      await uploadIndexedDb.deleteItem(uploadItemId).catch(() => undefined);
+      const remainingItems = snapshot.items.filter((entry) => entry.id !== uploadItemId);
+      let remainingBatches = snapshot.batches;
+      if (!remainingItems.some((entry) => entry.batchId === item.batchId)) {
+        await uploadIndexedDb.deleteBatch(item.batchId).catch(() => undefined);
+        remainingBatches = snapshot.batches.filter((batch) => batch.id !== item.batchId);
+      }
+      emit({ ...snapshot, items: remainingItems, batches: remainingBatches });
+      return;
+    }
     await this.patchItem(uploadItemId, { status: "cancel_requested", retryAt: undefined });
   },
   async cancelBatch(uploadBatchId: UploadBatchId): Promise<void> {
@@ -285,7 +373,7 @@ export const uploadQueueStore = {
     if (batch) await this.patchBatch(uploadBatchId, { status: "cancelled" });
   },
   async resumeNetworkPausedItems(): Promise<void> {
-    const paused = snapshot.items.filter((item) => item.status === "paused" && item.lastErrorCode === NETWORK_ERROR_CODE);
+    const paused = snapshot.items.filter((item) => !item.deferred && item.status === "paused" && item.lastErrorCode === NETWORK_ERROR_CODE);
     for (const item of paused) {
       await this.patchItem(item.id, {
         status: "queued",
@@ -297,7 +385,7 @@ export const uploadQueueStore = {
   },
   async pauseTransfersForNetwork(): Promise<void> {
     const transferStates = new Set(["queued", "preparing", "starting_session", "uploading"]);
-    const affected = snapshot.items.filter((item) => transferStates.has(item.status));
+    const affected = snapshot.items.filter((item) => !item.deferred && transferStates.has(item.status));
     for (const item of affected) {
       await this.patchItem(item.id, {
         status: "paused",

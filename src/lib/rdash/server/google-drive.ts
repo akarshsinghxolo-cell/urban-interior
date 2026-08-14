@@ -19,8 +19,8 @@ export function canReadManagedFileAsset(user: AuthenticatedUser, db: RDashDataba
   if (user.role === "Owner" || user.role === "Operations Manager") return true;
   const attachments = (db.entityFileAttachments || []).filter((row) => row.file_asset_id === file.id);
   if (!attachments.length) return false;
-  if (user.role === "Finance") return attachments.some((row) => ["payment", "invoice", "vendor_bill"].includes(row.entity_type));
-  if (user.role === "Procurement Staff") return attachments.some((row) => ["vendor", "purchase_order", "grn", "dispatch", "inventory"].includes(row.entity_type));
+  if (user.role === "Finance") return attachments.some((row) => ["payment", "invoice", "customer_receipt", "vendor_bill", "vendor_payment", "contractor_bill", "contractor_payment"].includes(row.entity_type));
+  if (user.role === "Procurement Staff") return attachments.some((row) => ["vendor", "vendor_rfq", "vendor_bid", "purchase_order", "grn", "stock_movement", "dispatch", "inventory", "vendor_bill"].includes(row.entity_type));
   if (user.role === "Field Staff") {
     return attachments.some((row) => {
       if (row.entity_type === "visit") return db.visits.find((visit) => visit.id === row.entity_id)?.staff_id === user.staffId;

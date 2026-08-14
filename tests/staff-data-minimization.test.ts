@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import {
   CURRENT_STAFF_RUNTIME_FIELDS,
   STAFF_DIRECTORY_FIELDS,
@@ -127,7 +128,7 @@ describe("Staff data minimization", () => {
   });
 
   test("delta API keeps the role and target Staff boundaries server-side", async () => {
-    const source = await Bun.file("src/app/api/changes/route.ts").text();
+    const source = await testFile("src/app/api/changes/route.ts").text();
     expect(source).toContain("authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)");
     expect(source).toContain("canReadFullStaffData(user.role)");
     expect(source).toContain('safe.delete("master.staff")');

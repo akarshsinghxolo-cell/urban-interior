@@ -37,19 +37,10 @@ function linkedRecordEntityType(recordType?: string): FileAttachmentEntityType |
     if (recordType === "payment")
         return "payment";
     if (recordType === "contractor_payment")
-        return undefined;
+        return "contractor_payment";
     return undefined;
 }
 function linkedRecordCustomerId(db: RDashDatabase, recordId: ID, recordType: string | undefined, context: string): ID | undefined {
-    if (recordType === "contractor_payment") {
-        const payment = db.contractorPayments.find((row) => row.id === recordId);
-        if (!payment)
-            missing(context, "Contractor Payment", recordId);
-        const bill = db.contractorBills.find((row) => row.id === payment.contractor_bill_id);
-        if (!bill)
-            missing(context, "Contractor Bill", payment.contractor_bill_id);
-        return bill.customer_id;
-    }
     const entityType = linkedRecordEntityType(recordType);
     return entityType ? entityCustomerId(db, entityType, recordId, context) : undefined;
 }

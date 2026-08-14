@@ -28,9 +28,10 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: 1.3.14
+          node-version-file: .nvmrc
+          cache: npm
       - name: Apply Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy' && hashFiles('scripts/apply-vendor-module-cleanup.py') != ''
         run: |
@@ -41,89 +42,89 @@ jobs:
           rm scripts/.vendor-cleanup-trigger
           rm .github/workflows/vendor-module-cleanup-runner.yml
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
       - name: Test Vendor module cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
-        run: bun run test:vendor-module
+        run: npm run test:vendor-module
       - name: Test Phase 2B commit policy
-        run: bun run test:phase2b
+        run: npm run test:phase2b
       - name: Test workspace route registry
-        run: bun run test:routing
+        run: npm run test:routing
       - name: Test workspace route adapter
-        run: bun run test:route-adapter
+        run: npm run test:route-adapter
       - name: Test core entity routes
-        run: bun run test:entity-routes
+        run: npm run test:entity-routes
       - name: Test workspace history URLs
-        run: bun run test:history-urls
+        run: npm run test:history-urls
       - name: Test workspace detail tabs
-        run: bun run test:detail-tabs
+        run: npm run test:detail-tabs
       - name: Test workspace customer tabs
-        run: bun run test:customer-tabs
+        run: npm run test:customer-tabs
       - name: Test workspace task scope
-        run: bun run test:task-scope
+        run: npm run test:task-scope
       - name: Test workspace location presentation
-        run: bun run test:location-presentation
+        run: npm run test:location-presentation
       - name: Test workspace share links
-        run: bun run test:share-links
+        run: npm run test:share-links
       - name: Test workspace exit guard
-        run: bun run test:exit-guard
+        run: npm run test:exit-guard
       - name: Test dirty form navigation guard
-        run: bun run test:dirty-form-guard
+        run: npm run test:dirty-form-guard
       - name: Test module-scoped workspace reads
-        run: bun run test:module-scoped-reads
+        run: npm run test:module-scoped-reads
       - name: Test Staff data minimization
-        run: bun test tests/staff-data-minimization.test.ts
+        run: npx vitest run tests/staff-data-minimization.test.ts
       - name: Test Staff reference integrity
-        run: bun test tests/staff-reference-integrity.test.ts
+        run: npx vitest run tests/staff-reference-integrity.test.ts
       - name: Test public Google Drive access
-        run: bun test tests/google-drive-public-access.test.ts
+        run: npx vitest run tests/google-drive-public-access.test.ts
       - name: Test Google Drive transaction simplification and folder naming
-        run: bun test tests/google-drive-transaction-simplification.test.ts tests/google-drive-folder-naming.test.ts
+        run: npx vitest run tests/google-drive-transaction-simplification.test.ts tests/google-drive-folder-naming.test.ts
       - name: Test exact module read plans
-        run: bun run test:module-read-plans
+        run: npm run test:module-read-plans
       - name: Test bootstrap and scoped client reads
-        run: bun run test:bootstrap-scoped-flow
+        run: npm run test:bootstrap-scoped-flow
       - name: Test workspace navigation freshness
-        run: bun test tests/workspace-navigation-revalidation.test.ts
+        run: npx vitest run tests/workspace-navigation-revalidation.test.ts
       - name: Test entity-scoped workspace reads
-        run: bun run test:entity-scoped-reads
+        run: npm run test:entity-scoped-reads
       - name: Test workspace revision delta synchronization
-        run: bun run test:delta-sync
+        run: npm run test:delta-sync
       - name: Test Supabase persistence convergence
-        run: bun test tests/supabase-data-convergence*.test.ts
+        run: npx vitest run tests/supabase-data-convergence*.test.ts
       - name: Test client workspace delta synchronization
-        run: bun run test:client-delta-sync
+        run: npm run test:client-delta-sync
       - name: Test workspace auth return paths
-        run: bun run test:auth-return
+        run: npm run test:auth-return
       - name: Test workspace route access
-        run: bun run test:route-access
+        run: npm run test:route-access
       - name: Test authentication source security
-        run: bun run test:auth-security
+        run: npm run test:auth-security
       - name: Test runtime efficiency hardening
-        run: bun run test:runtime-efficiency
+        run: npm run test:runtime-efficiency
       - name: Test vendor landed-rate averages
-        run: bun run test:vendor-rate-average
+        run: npm run test:vendor-rate-average
       - name: Test unified Customer and Sites saves
-        run: bun run test:customer-sites-save
+        run: npm run test:customer-sites-save
       - name: Test Sales Pipeline progression
-        run: bun test tests/sales-pipeline-progress.test.ts
+        run: npx vitest run tests/sales-pipeline-progress.test.ts
       - name: Test legacy Customer and Site path removal
-        run: bun run test:customer-sites-legacy
+        run: npm run test:customer-sites-legacy
       - name: Test canonical Contractor profile
-        run: bun run test:contractor-profile
+        run: npm run test:contractor-profile
       - name: Test frontend staff route bundles
-        run: bun test tests/staff-route-bundles.test.ts
+        run: npx vitest run tests/staff-route-bundles.test.ts
       - name: Test bug hunt regressions
-        run: bun run test:bug-hunt
+        run: npm run test:bug-hunt
       - name: Test field staff UI visibility
-        run: bun test tests/field-staff-visibility.test.ts
+        run: npx vitest run tests/field-staff-visibility.test.ts
       # TypeScript errors are blocking: this gate must stay green before lint/build.
       - name: Typecheck application
-        run: bunx tsc --noEmit
+        run: npx tsc --noEmit
       - name: Lint application
-        run: bun run lint
+        run: npm run lint
       - name: Build application
-        run: bun run build
+        run: npm run build
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |

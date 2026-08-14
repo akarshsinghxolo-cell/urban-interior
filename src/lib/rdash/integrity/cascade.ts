@@ -13,8 +13,27 @@
 
 import type { RDashDatabase, Master, CascadeResult } from "../types";
 import { fksTargetingCollection } from "./fk-registry";
+import { validateBusinessData } from "../business-rules";
 
 type GenericRow = { id: string } & Record<string, unknown>;
+
+const THREAD_KINDS_BY_COLLECTION: Record<string, string[]> = {
+    customers: ["generic"], sites: ["site"], areas: ["generic"], workRequired: ["workRequired"], measurementRevisions: ["generic"],
+    quotations: ["quotation"], acceptedScopes: ["generic"], workOrders: ["workOrder"], boqs: ["generic"], variationRequests: ["generic"],
+    vendorRfqs: ["po"], vendorBids: ["po"], purchaseOrders: ["po"], grns: ["grn"], stockMovements: ["generic"], vendorBills: ["vendor_bill"],
+    vendorPayments: ["vendor_bill"], dispatches: ["dispatch"], inventory: ["inventory"], drawings: ["drawing"], executionLogs: ["execution_log"],
+    visits: ["visit"], tasks: ["task"], followups: ["followup"], actions: ["approval"], payments: ["payment"], invoices: ["invoice"],
+    customerReceipts: ["generic"], contractorBids: ["bid"], contractorBills: ["bid"], contractorPayments: ["bid"], contractorSettlements: ["settlement"],
+    commissions: ["commission"], blocked: ["blocked"], "master.vendors": ["generic"], "master.vendorRates": ["generic"], "master.contractors": ["generic"],
+    "master.staff": ["generic"],
+};
+
+const APPROVAL_LINK_TYPE_BY_COLLECTION: Record<string, string> = {
+    quotations: "quotation",
+    purchaseOrders: "po",
+    payments: "payment",
+    contractorPayments: "contractor_payment",
+};
 
 function resolveCollection(db: RDashDatabase, name: string): GenericRow[] {
     if (name.startsWith("master.")) {
@@ -105,6 +124,67 @@ function nullifyField(db: RDashDatabase, collection: string, id: string, field: 
     return replaceCollection(db, collection, nextRows);
 }
 
+function blockNestedHistoryReference(ctx: CascadeContext, collection: string, id: string): boolean {
+    const blocked = (childCollection: string, childId: string, reason: string) => {
+        ctx.result.success = false;
+        ctx.result.blocked.push({
+            collection: childCollection,
+            id: childId,
+            reason,
+            rule: { collection: childCollection, field: "nested", targetCollection: collection, onDelete: "restrict", nullable: false, label: "Nested historical reference" },
+        });
+        return true;
+    };
+    if (collection === "workRequired") {
+        const quotation = ctx.db.quotations.find((row) => (row.coverage || []).some((coverage) => coverage.work_required_id === id));
+        if (quotation) return blocked("quotations", quotation.id, `Quotation ${quotation.quotation_no} still includes Work Required "${id}" in its coverage.`);
+    }
+    if (collection === "measurementRevisions") {
+        const quotation = ctx.db.quotations.find((row) => (row.coverage || []).some((coverage) => (coverage.measurement_revision_ids || []).includes(id)));
+        if (quotation) return blocked("quotations", quotation.id, `Quotation ${quotation.quotation_no} still includes Measurement Revision "${id}".`);
+        const scope = ctx.db.acceptedScopes.find((row) => (row.measurement_revision_ids || []).includes(id));
+        if (scope) return blocked("acceptedScopes", scope.id, `Accepted Scope "${scope.label}" still includes Measurement Revision "${id}".`);
+    }
+    return false;
+}
+
+function nullifyNestedDrawingLinks(ctx: CascadeContext, drawingId: string): void {
+    let changed = false;
+    const boqs = ctx.db.boqs.map((boq) => {
+        let itemChanged = false;
+        const items = boq.items.map((item) => {
+            if (item.drawing_id !== drawingId) return item;
+            itemChanged = true;
+            changed = true;
+            ctx.result.nullified.push({ collection: "boqs", id: boq.id, field: `items.${item.id}.drawing_id` });
+            return { ...item, drawing_id: undefined, drawing_no: undefined };
+        });
+        return itemChanged ? { ...boq, items } : boq;
+    });
+    if (changed) ctx.db = { ...ctx.db, boqs };
+}
+
+function deletePolymorphicDependents(ctx: CascadeContext, collection: string, id: string): void {
+    if (collection !== "threads") {
+        const kinds = THREAD_KINDS_BY_COLLECTION[collection] || [];
+        const threads = ctx.db.threads.filter((thread) => thread.record_id === id && kinds.includes(thread.kind));
+        for (const thread of threads) {
+            ctx.depth += 1;
+            try { deleteRecursive(ctx, "threads", thread.id, thread.title); } finally { ctx.depth -= 1; }
+            if (!ctx.result.success) return;
+        }
+    }
+    const approvalType = APPROVAL_LINK_TYPE_BY_COLLECTION[collection];
+    if (approvalType) {
+        const actions = ctx.db.actions.filter((action) => action.linked_record_type === approvalType && action.linked_record_id === id);
+        for (const action of actions) {
+            ctx.depth += 1;
+            try { deleteRecursive(ctx, "actions", action.id, action.title); } finally { ctx.depth -= 1; }
+            if (!ctx.result.success) return;
+        }
+    }
+}
+
 /** Recursively delete a row, applying cascade/restrict/nullify rules to
  *  every child collection that references it. Mutates `ctx.result`. */
 function deleteRecursive(ctx: CascadeContext, collection: string, id: string, label?: string): void {
@@ -128,6 +208,9 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
         });
         return;
     }
+
+    if (blockNestedHistoryReference(ctx, collection, id)) return;
+    if (collection === "drawings") nullifyNestedDrawingLinks(ctx, id);
 
     // Find every FK rule whose targetCollection === collection — these are
     // the child relationships that depend on this row.
@@ -190,6 +273,9 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
         }
     }
 
+    deletePolymorphicDependents(ctx, collection, id);
+    if (!ctx.result.success) return;
+
     // ── FIX-ANALYSIS-001 #8: Polymorphic-entity sweep ──────────────────────
     // entityFileAttachments and entityReferenceAssignments reference their
     // parent via (entity_type, entity_id) — a polymorphic link that the FK
@@ -201,8 +287,34 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
     // Solution: after processing all typed FK rules, scan these two
     // polymorphic collections for rows where entity_id === id AND entity_type
     // matches the collection being deleted. Cascade-delete the matching file
-    // attachments (which in turn cascades to the file asset via the typed
-    // file_asset_id FK).
+    // attachment/reference rows. The underlying FileAsset is intentionally not
+    // deleted here because one Drive file may be shared by multiple entities;
+    // unreferenced managed-file cleanup is handled separately.
+    const ATTACHMENT_ENTITY_TYPES_BY_COLLECTION: Record<string, string[]> = {
+        customers: ["customer"], sites: ["site"], areas: ["room"], workRequired: ["workRequired"], measurementRevisions: ["measurement_revision"],
+        quotations: ["quotation"], acceptedScopes: ["accepted_scope"], workOrders: ["workOrder"], boqs: ["boq"], variationRequests: ["variation_request"],
+        vendorRfqs: ["vendor_rfq"], vendorBids: ["vendor_bid"], purchaseOrders: ["purchase_order"], grns: ["grn"], stockMovements: ["stock_movement"],
+        vendorBills: ["vendor_bill"], vendorPayments: ["vendor_payment"], dispatches: ["dispatch"], inventory: ["inventory"], drawings: ["drawing"],
+        executionLogs: ["execution_log"], visits: ["visit"], tasks: ["task"], followups: ["followup"], payments: ["payment"], invoices: ["invoice"],
+        customerReceipts: ["customer_receipt"], contractorBids: ["contractor_bid"], contractorBills: ["contractor_bill"], contractorPayments: ["contractor_payment"],
+        contractorSettlements: ["contractor_settlement"], commissions: ["commission"], blocked: ["blocked"], commSends: ["communication"],
+        "master.vendors": ["vendor"], "master.vendorRates": ["vendor_rate"], "master.contractors": ["contractor"],
+    };
+    const attachmentEntityTypes = ATTACHMENT_ENTITY_TYPES_BY_COLLECTION[collection] || [collection];
+    const parentRow = resolveCollection(ctx.db, collection).find((row) => row.id === id);
+    const nestedEntityIds = new Map<string, Set<string>>();
+    if (collection === "quotations" && parentRow) {
+        const items = [...(Array.isArray(parentRow.scope_lines) ? parentRow.scope_lines : []), ...(Array.isArray(parentRow.items) ? parentRow.items : [])] as Array<Record<string, unknown>>;
+        nestedEntityIds.set("quotation_item", new Set(items.map((item) => String(item.id || "")).filter(Boolean)));
+    }
+    if (collection === "boqs" && parentRow) {
+        const items = (Array.isArray(parentRow.items) ? parentRow.items : []) as Array<Record<string, unknown>>;
+        nestedEntityIds.set("boq_item", new Set(items.map((item) => String(item.id || "")).filter(Boolean)));
+    }
+    if (collection === "threads" && parentRow) {
+        const messages = (Array.isArray(parentRow.messages) ? parentRow.messages : []) as Array<Record<string, unknown>>;
+        nestedEntityIds.set("thread_message", new Set(messages.map((message) => String(message.id || "")).filter(Boolean)));
+    }
     const POLYMORPHIC_ENTITY_COLLECTIONS: Array<{
         collection: string;
         entityField: string;
@@ -216,8 +328,9 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
         const matching = polyRows.filter((row) => {
             const entityId = row[poly.entityField];
             const entityType = row[poly.typeField];
-            return typeof entityId === "string" && entityId === id
-                && typeof entityType === "string" && entityType === collection;
+            if (typeof entityId !== "string" || typeof entityType !== "string") return false;
+            if (entityId === id && attachmentEntityTypes.includes(entityType)) return true;
+            return nestedEntityIds.get(entityType)?.has(entityId) === true;
         });
         for (const child of matching) {
             const childLabel = labelForRow(child);
@@ -333,11 +446,23 @@ export function cascadeDelete(
     };
 
     deleteRecursive(ctx, collection, id, labelForRow(target));
-    // STAGE-5-FIX (5.1): If the operation was blocked by a restrict rule,
-    // return the ORIGINAL db (not the partially-mutated ctx.db). The
-    // docstring promises "db returned unchanged" on restrict-block, but
-    // nullify/cascade mutations that ran before the restrict was hit were
-    // already applied to ctx.db. Returning inputDb honors the contract.
+    if (result.success) {
+        const beforeFailures = new Set(validateBusinessData(inputDb));
+        const introduced = validateBusinessData(ctx.db).filter((failure) => !beforeFailures.has(failure));
+        if (introduced.length) {
+            result.success = false;
+            for (const failure of introduced.slice(0, 10)) {
+                result.blocked.push({
+                    collection,
+                    id,
+                    reason: `Delete would introduce an invalid workspace state: ${failure}`,
+                    rule: { collection, field: "business_integrity", targetCollection: collection, onDelete: "restrict", nullable: false, label: "Business integrity guard" },
+                });
+            }
+        }
+    }
+    // If the operation was blocked by a restrict rule or by the final business
+    // integrity guard, return the ORIGINAL db rather than a partially-mutated clone.
     return { db: result.success ? ctx.db : inputDb, result };
 }
 

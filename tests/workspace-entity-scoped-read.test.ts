@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
 import {
   CUSTOMER_RELATION_COLLECTIONS,
@@ -98,7 +99,7 @@ describe("entity-scoped collection policy", () => {
   });
 
   test("REST selector validates fields and combines one table's JSONB paths", async () => {
-    const source = await Bun.file("src/lib/rdash/server/entity-scoped-rest.ts").text();
+    const source = await testFile("src/lib/rdash/server/entity-scoped-rest.ts").text();
     expect(source).toContain("SAFE_JSON_FIELD");
     expect(source).toContain("data->>");
     expect(source).toContain("slice(0, 500)");
@@ -108,7 +109,7 @@ describe("entity-scoped collection policy", () => {
   });
 
   test("entity reader has revision restart, rollback, and plural proof coverage", async () => {
-    const source = await Bun.file("src/lib/rdash/server/entity-scoped-read.ts").text();
+    const source = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
     expect(source).toContain('UC_ENTITY_SCOPED_READS !== "0"');
     expect(source).toContain('error.message !== "READ_CONFLICT"');
     expect(source).toContain("getWorkspaceBootstrap(user)");

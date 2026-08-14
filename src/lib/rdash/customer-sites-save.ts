@@ -243,8 +243,14 @@ export function applyCustomerWithSitesSave(
   const suppliedSiteIds = new Set(siteIds);
   for (const attachmentId of detachedSet) {
     const attachment = (database.entityFileAttachments || []).find((row) => row.id === attachmentId);
-    if (!attachment || attachment.entity_type !== "site") {
-      throw new Error(`Site attachment \"${attachmentId}\" does not exist.`);
+    if (!attachment || (attachment.entity_type !== "site" && attachment.entity_type !== "customer")) {
+      throw new Error(`Customer/Site attachment \"${attachmentId}\" does not exist.`);
+    }
+    if (attachment.entity_type === "customer") {
+      if (attachment.entity_id !== customerId) {
+        throw new Error("A Customer file cannot be detached from another Customer.");
+      }
+      continue;
     }
     const attachmentSite = siteById.get(attachment.entity_id);
     if (!attachmentSite || attachmentSite.customer_id !== customerId) {
@@ -253,15 +259,12 @@ export function applyCustomerWithSitesSave(
     if (!suppliedSiteIds.has(attachmentSite.id)) {
       throw new Error(`Include Site \"${attachmentSite.name}\" in the save before detaching its file.`);
     }
-    if (!(attachmentSite.photo_attachment_ids || []).includes(attachmentId)) {
-      throw new Error("The selected file is not attached through this Site's photo/file field.");
-    }
   }
 
   let attachmentChanged = false;
   const resultingAttachments = detachedSet.size
     ? (database.entityFileAttachments || []).filter((attachment: EntityFileAttachment) => {
-        const remove = detachedSet.has(attachment.id) && attachment.entity_type === "site";
+        const remove = detachedSet.has(attachment.id) && (attachment.entity_type === "site" || attachment.entity_type === "customer");
         attachmentChanged ||= remove;
         return !remove;
       })

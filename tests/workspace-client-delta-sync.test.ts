@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { buildSeedDatabase } from "@/lib/rdash/seed";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import {
@@ -203,7 +204,7 @@ describe("delta synchronization safety policy", () => {
   });
 
   test("browser orchestrator rechecks safety and stays disabled by default", async () => {
-    const source = await Bun.file("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
+    const source = await testFile("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
     expect(source).toContain("awaitServerSync()");
     expect(source).toContain("currentRunIsSafe(pathname)");
     expect(source).toContain("workspaceSyncStatus");
@@ -230,8 +231,8 @@ describe("delta synchronization safety policy", () => {
   });
 
   test("row-version bridge installs before passive workspace hydration", async () => {
-    const source = await Bun.file("src/lib/rdash/use-workspace-row-version-bridge.ts").text();
-    const app = await Bun.file("src/components/urban-castle/UrbanCastleApp.tsx").text();
+    const source = await testFile("src/lib/rdash/use-workspace-row-version-bridge.ts").text();
+    const app = await testFile("src/components/urban-castle/UrbanCastleApp.tsx").text();
     expect(source).toContain("React.useLayoutEffect");
     expect(source).toContain("workspaceRowVersionState.replace(input.rowVersions)");
     expect(source).toContain("hydrateSecureWorkspace: wrapped");
@@ -241,7 +242,7 @@ describe("delta synchronization safety policy", () => {
   });
 
   test("changes API validates collection filters", async () => {
-    const source = await Bun.file("src/app/api/changes/route.ts").text();
+    const source = await testFile("src/app/api/changes/route.ts").text();
     expect(source).toContain('searchParams.get("collections")');
     expect(source).toContain("MAX_COLLECTION_FILTERS");
     expect(source).toContain("knownWorkspaceCollection");

@@ -110,6 +110,7 @@ export function FieldModeModule() {
         try {
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "field_visit_report",
+                deferProcessing: true,
                 sourceLabel: "Field Visit report",
                 targetEntityType: "visit",
                 targetEntityId: reportingVisit,

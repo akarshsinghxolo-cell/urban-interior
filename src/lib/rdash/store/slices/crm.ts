@@ -33,6 +33,7 @@ import {
     areaDependencySummary, replaceAreaId,
 } from "../../business-rules";
 import { applyCustomerWithSitesSave } from "../../customer-sites-save";
+import { requestFileAssetCleanupAfterSync } from "./files";
 
 export function createCrmSlice(ctx: StoreContext): CrmState {
     const { commitState, get } = ctx;
@@ -155,7 +156,13 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     changed: false,
                 };
             }
+            const detachedFileAssetIds = [...new Set(result.detachedAttachmentIds
+                .map((attachmentId) => beforeDatabase.entityFileAttachments.find((row) => row.id === attachmentId)?.file_asset_id)
+                .filter((fileAssetId): fileAssetId is string => Boolean(fileAssetId)))];
             commitState({ db: result.db });
+            for (const fileAssetId of detachedFileAssetIds) {
+                requestFileAssetCleanupAfterSync(get, fileAssetId);
+            }
             const actor = get().currentUser();
             const customer = result.db.customers.find((row: Customer) => row.id === result.customerId)!;
             get().logAudit({

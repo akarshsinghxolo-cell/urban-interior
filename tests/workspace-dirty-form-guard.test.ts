@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 
 beforeEach(() => {
@@ -88,10 +89,10 @@ describe("dirty form registry", () => {
 
 describe("dirty form integration boundaries", () => {
   test("the persistent shell, browser history and document exit guard are wired", async () => {
-    const app = await Bun.file("src/components/urban-castle/UrbanCastleApp.tsx").text();
-    const history = await Bun.file("src/lib/rdash/use-browser-history-sync.ts").text();
-    const exitGuard = await Bun.file("src/lib/uploads/use-workspace-exit-guard.ts").text();
-    const header = await Bun.file("src/components/rdash/WorkspaceHeader.tsx").text();
+    const app = await testFile("src/components/urban-castle/UrbanCastleApp.tsx").text();
+    const history = await testFile("src/lib/rdash/use-browser-history-sync.ts").text();
+    const exitGuard = await testFile("src/lib/uploads/use-workspace-exit-guard.ts").text();
+    const header = await testFile("src/components/rdash/WorkspaceHeader.tsx").text();
 
     expect(app).toContain("useInstallDirtyFormNavigationGuards");
     expect(app).toContain("DirtyFormNavigationGuard");
@@ -104,7 +105,7 @@ describe("dirty form integration boundaries", () => {
   });
 
   test("the shared edit dialog registers Save and Discard callbacks", async () => {
-    const source = await Bun.file("src/components/rdash/EditDetailsDialog.tsx").text();
+    const source = await testFile("src/components/rdash/EditDetailsDialog.tsx").text();
     expect(source).toContain("useDirtyFormRegistration");
     expect(source).toContain("save: persistChanges");
     expect(source).toContain("discard: () =>");
@@ -112,7 +113,7 @@ describe("dirty form integration boundaries", () => {
   });
 
   test("legacy high-risk dialogs use the compatibility registry adapter", async () => {
-    const source = await Bun.file("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").text();
+    const source = await testFile("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").text();
 
     for (const title of [
       "New quotation",

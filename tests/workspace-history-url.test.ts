@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { navigationLayers } from "../src/lib/rdash/navigation-history";
 import type {
   ContextCustomerTab,

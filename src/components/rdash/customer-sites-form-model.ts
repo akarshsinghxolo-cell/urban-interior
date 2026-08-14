@@ -237,7 +237,7 @@ export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSa
     notes: draft.notes.trim() || undefined,
     photo_attachment_ids: [...new Set([
       ...draft.photoAttachmentIds,
-      ...draft.pendingPhotos.map((photo) => photo.attachmentId),
+      ...draft.pendingPhotos.filter((file) => file.mimeType.startsWith("image/")).map((file) => file.attachmentId),
     ])],
     ...(draft.archiveRequested ? {
       is_archived: true,

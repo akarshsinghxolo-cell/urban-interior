@@ -14,7 +14,7 @@ export function PendingUploadsPanel() {
   const queue = useUploadQueue();
   const role = useRDashStore((state) => state.authUser?.role || "Unauthenticated");
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const pendingItems = queue.items.filter((item) => item.status !== "completed" && item.status !== "cancelled");
+  const pendingItems = queue.items.filter((item) => !item.deferred && item.status !== "completed" && item.status !== "cancelled");
   const batchMap = new Map(queue.batches.map((batch) => [batch.id, batch]));
 
   const queueDiagnosticUpload = async (files: FileList | null) => {
@@ -24,7 +24,7 @@ export function PendingUploadsPanel() {
       await uploadQueueStore.enqueueBatch({
         sourceFlow: "direct_upload_diagnostic",
         sourceLabel: "Direct Drive diagnostic",
-        targetEntityType: "communication",
+        targetEntityType: "general",
         targetEntityId: reserveEntityId("diagnostic"),
         targetLabel: "_System/Diagnostics",
         purpose: "diagnostic",

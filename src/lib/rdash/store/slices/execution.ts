@@ -110,26 +110,10 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
             },
         })),
         removeDrawing: (id) => {
-            commitState((s: any) => ({
-                db: {
-                    ...s.db,
-                    drawings: s.db.drawings.filter((d: any) => d.id !== id),
-                    boqs: s.db.boqs.map((b: any) => ({
-                        ...b,
-                        items: b.items.map((it: any) => it.drawing_id === id
-                            ? { ...it, drawing_id: undefined, drawing_no: undefined }
-                            : it),
-                    })),
-                },
-            }));
-            get().logAudit({
-                actor: get().currentUser().name,
-                actor_role: get().currentUser().role,
-                action: `Deleted drawing ${id}`,
-                entity_type: "drawing",
-                entity_id: id,
-                kind: "delete",
-            });
+            const result = get().cascadeDeleteRecord("drawings", id);
+            if (!result.success) {
+                throw new Error(result.blocked[0]?.reason || `Could not delete drawing ${id}.`);
+            }
         },
         approveDrawing: (id, approver) => {
             const now = nowIso();

@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { aggregateWorkspaceChangeBatches } from "@/lib/rdash/server/workspace-changes";
 import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 
-const read = (path: string) => Bun.file(path).text();
+const read = (path: string) => testFile(path).text();
 
 describe("workspace navigation freshness", () => {
   test("active module wins while managed pathname catches up", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { createDefaultStaffPermissions } from "../src/lib/rdash/staff-operations";
 import { workspaceRouteAccessDecision } from "../src/lib/rdash/workspace-route-access";
 

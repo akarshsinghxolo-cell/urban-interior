@@ -1,5 +1,6 @@
-import type { FileAsset, FileAttachmentEntityType, FileAttachmentRole, FileAssetKind, Master, RDashDatabase, StorageAccount, StorageFolderInstance, StorageFolderPurpose, StorageFolderTemplate, } from "./types";
+import type { FileAttachmentEntityType, FileAttachmentRole, FileAssetKind, Master, RDashDatabase, StorageAccount, StorageFolderPurpose, StorageFolderTemplate } from "./types";
 import { resolveEntityContext } from "./entity-context";
+import { uploadPurposeForEntity } from "../uploads/upload-purpose";
 const DEFAULT_STORAGE_TEMPLATE_TIMESTAMP = "2026-07-07T00:00:00.000Z";
 export const STORAGE_FOLDER_TEMPLATES: Array<Pick<StorageFolderTemplate, "id" | "purpose" | "label" | "path_template">> = [
     { id: "storage-template-catalogue", purpose: "catalogue", label: "Catalogues", path_template: "Catalogues/{category}/{subcategory}/{article}" },
@@ -89,34 +90,13 @@ export function templateForPurpose(master: Pick<Master, "storageFolderTemplates"
     return undefined;
 }
 export function inferStoragePurpose(entityType: FileAttachmentEntityType, kind?: FileAssetKind, role?: FileAttachmentRole): StorageFolderPurpose {
-    if (kind === "catalogue" || role === "catalogue")
-        return "catalogue";
-    if (entityType === "quotation" || entityType === "quotation_item" || entityType === "drawing" || kind === "drawing")
-        return "quotation";
-    if (entityType === "purchase_order")
-        return "purchase_order";
-    if (entityType === "grn" || role === "delivery")
-        return "grn";
-    if (entityType === "vendor_bill" || role === "bill")
-        return "vendor_bill";
-    if (entityType === "invoice" || entityType === "payment" || role === "invoice")
-        return "invoice";
-    if (entityType === "vendor" || entityType === "vendor_rate")
-        return "vendor_document";
-    if (["contractor", "contractor_bid", "contractor_settlement"].includes(entityType))
-        return "contractor_document";
-    if (entityType === "customer")
-        return "customer_document";
-    if (role === "measurement" || entityType === "visit" && kind === "site_proof")
-        return "measurement";
-    if (["site", "room", "visit", "execution_log", "dispatch"].includes(entityType) || kind === "site_proof" || role === "proof")
-        return "site_proof";
-    if (["workOrder", "boq", "boq_item", "workRequired", "task", "followup"].includes(entityType))
-        return "job_document";
-    if (kind === "media")
-        return "reference_media";
-    return "general";
+    if (kind === "catalogue" || role === "catalogue") return "catalogue";
+    if (kind === "drawing") return "drawing";
+    if (entityType === "visit" && role === "measurement") return "measurement";
+    if (entityType === "general" && kind === "media") return "reference_media";
+    return uploadPurposeForEntity(entityType);
 }
+
 function segment(value: string | undefined, fallback: string) {
     const clean = (value || "").trim().replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").slice(0, 80);
     return clean || fallback;

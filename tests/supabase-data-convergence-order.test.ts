@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { buildWorkCategoryCatalog } from "../src/lib/rdash/work-category-master";
 
 const CATALOG_MIGRATION = "supabase/migrations/20260801153000_persist_work_catalog_master.sql";
@@ -6,7 +7,7 @@ const RATE_REFRESH_MIGRATION = "supabase/migrations/20260801154000_refresh_contr
 
 describe("Supabase convergence rollout ordering", () => {
   test("persists every bundled catalog identity before the final Contractor Rate refresh", async () => {
-    const catalogSql = await Bun.file(CATALOG_MIGRATION).text();
+    const catalogSql = await testFile(CATALOG_MIGRATION).text();
     const catalog = buildWorkCategoryCatalog();
 
     for (const row of catalog.units) expect(catalogSql).toContain(`('${row.id}',`);
@@ -19,7 +20,7 @@ describe("Supabase convergence rollout ordering", () => {
   });
 
   test("reprojects Contractor Rates after catalog persistence without churning unchanged row versions", async () => {
-    const refresh = await Bun.file(RATE_REFRESH_MIGRATION).text();
+    const refresh = await testFile(RATE_REFRESH_MIGRATION).text();
 
     expect(refresh).toContain("uc_contractor_rate_projection_rows");
     expect(refresh).toContain("entity_master_contractor_rates_lookup_idx");
@@ -32,15 +33,15 @@ describe("Supabase convergence rollout ordering", () => {
   });
 
   test("keeps Contractor capability and lifecycle statuses separate", async () => {
-    const types = await Bun.file("src/lib/rdash/types.ts").text();
+    const types = await testFile("src/lib/rdash/types.ts").text();
 
     expect(types).toContain('status?: "active" | "inactive";');
     expect(types).toContain('status?: "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";');
   });
 
   test("keeps auth-owned pending Staff access out of normal Staff edits", async () => {
-    const types = await Bun.file("src/lib/rdash/types.ts").text();
-    const dialog = await Bun.file("src/components/rdash/StaffEditDialog.tsx").text();
+    const types = await testFile("src/lib/rdash/types.ts").text();
+    const dialog = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
 
     expect(types).toContain('status?: EntityStatus | "pending" | "blacklisted" | "exited";');
     expect(dialog).toContain('disabled={Boolean(staff?.auth_user_id)}');

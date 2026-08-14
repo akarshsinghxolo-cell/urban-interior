@@ -872,8 +872,8 @@ export interface VendorPayment {
     vendor_bill_id: ID;
     vendor_id: ID;
     vendor_name: string;
-    site_id: ID;
-    work_order_id: ID;
+    site_id?: ID;
+    work_order_id?: ID;
     amount: number;
     mode: PaymentMode | string;
     reference: string;
@@ -1887,7 +1887,7 @@ export interface StorageAccount {
     created_at: string;
     updated_at: string;
 }
-export type StorageFolderPurpose = "catalogue" | "reference_media" | "customer_document" | "site_proof" | "measurement" | "quotation" | "job_document" | "purchase_order" | "grn" | "vendor_bill" | "invoice" | "vendor_document" | "contractor_document" | "general";
+export type StorageFolderPurpose = "site_evidence" | "visit_evidence" | "measurement" | "drawing" | "work_required_document" | "quotation_document" | "accepted_scope_document" | "work_order_document" | "variation_document" | "execution_evidence" | "vendor_rfq" | "vendor_bid" | "purchase_order" | "grn_evidence" | "inventory_evidence" | "stock_movement_evidence" | "dispatch_evidence" | "vendor_bill" | "vendor_payment" | "customer_payment" | "customer_invoice" | "customer_receipt" | "customer_document" | "vendor_document" | "vendor_rate_document" | "contractor_document" | "contractor_bid" | "contractor_bill" | "contractor_payment" | "contractor_settlement" | "task_evidence" | "followup_attachment" | "commission_document" | "blocked_evidence" | "thread_attachment" | "general_document" | "staff_document" | "communication_attachment" | "import_source" | "catalogue" | "reference_media" | "diagnostic" | "site_proof" | "quotation" | "job_document" | "grn" | "invoice" | "general";
 export interface StorageFolderTemplate {
     id: ID;
     purpose: StorageFolderPurpose;
@@ -2011,7 +2011,7 @@ export interface ReferenceMediaAsset {
     created_at: string;
     updated_at: string;
 }
-export type FileAttachmentEntityType = "customer" | "site" | "room" | "workRequired" | "quotation" | "quotation_item" | "workOrder" | "boq" | "boq_item" | "purchase_order" | "grn" | "vendor_bill" | "dispatch" | "inventory" | "drawing" | "execution_log" | "visit" | "task" | "followup" | "payment" | "invoice" | "vendor" | "vendor_rate" | "contractor" | "contractor_bid" | "contractor_settlement" | "commission" | "blocked" | "thread_message" | "communication" | "general";
+export type FileAttachmentEntityType = "customer" | "site" | "room" | "workRequired" | "measurement_revision" | "quotation" | "quotation_item" | "accepted_scope" | "workOrder" | "boq" | "boq_item" | "variation_request" | "vendor_rfq" | "vendor_bid" | "purchase_order" | "grn" | "stock_movement" | "vendor_bill" | "vendor_payment" | "dispatch" | "inventory" | "drawing" | "execution_log" | "visit" | "task" | "followup" | "payment" | "invoice" | "customer_receipt" | "vendor" | "vendor_rate" | "contractor" | "contractor_bid" | "contractor_bill" | "contractor_payment" | "contractor_settlement" | "commission" | "blocked" | "thread_message" | "communication" | "general";
 export type FileAttachmentRole = "document" | "photo" | "video" | "drawing" | "catalogue" | "invoice" | "proof" | "approval" | "measurement" | "delivery" | "bill" | "other";
 export interface EntityFileAttachment {
     id: ID;

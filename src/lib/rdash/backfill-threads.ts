@@ -22,6 +22,7 @@
 import type { RDashDatabase, Thread, ThreadKind, ThreadMessage, ThreadMessageMention, Drawing, DailyExecutionLog, DrawingKind, DrawingStatus } from "./types";
 import { genId, nowIso } from "./store/helpers";
 import { mapEntityTypeToThreadKind } from "./entity-thread-map";
+import { threadParentExists } from "./business-rules";
 import { parseMentions, mentionThreadKindForEntityType } from "./mentions";
 
 /**
@@ -301,17 +302,16 @@ export function backfillSeedThreads(input: RDashDatabase): RDashDatabase {
         appendSystemMessage(thread, "Contractor onboarded", stagger(ts, 60_000));
     }
 
-    // 14. Backfill existing audit-log entries: link each one to its entity's
-    // thread (creating the thread if needed), append a system message with
-    // `related_audit_id` set, and set the audit entry's `thread_id`. This
-    // mirrors exactly what `logAudit` does at runtime.
+    // 14. Backfill existing audit-log entries into operational threads only
+    // when the referenced business record still exists. Audit history can
+    // legitimately outlive a deleted/repaired record; in that case preserve
+    // the audit entry but do not manufacture an orphan thread around it.
     const auditLog = db.auditLog.map((entry) => {
         if (!entry.entity_id) return entry;
-        const mapped = mapEntityTypeToThreadKind(entry.entity_type);
-        // If the entity_type isn't in the map (e.g. snake_case "vendor_rate"
-        // which the runtime map only knows as camelCase "vendorRate"), fall
-        // back to "generic" so the audit entry still gets linked to a thread.
-        const kind: ThreadKind = (mapped as ThreadKind | null) || "generic";
+        const kind = mapEntityTypeToThreadKind(entry.entity_type);
+        if (!kind || !threadParentExists(db, kind, entry.entity_id)) {
+            return { ...entry, thread_id: undefined };
+        }
         const title = entry.entity_label || entry.entity_id;
         // If we end up creating a new thread here, back-date its "opened"
         // timestamp by 60s so the lifecycle ordering is preserved.
@@ -509,21 +509,22 @@ function seedConversationMessages(ctx: BackfillContext, db: RDashDatabase): void
         const visitThread = find("visit", v.id);
         if (visitThread) {
             const base = visitThread.created_at || nowIso();
-            appendMessage(visitThread, "Site measurement photos uploaded — 4 images of master bedroom dimensions.", "proof", stagger(base, 5_400_000), field, "Field Staff", {
-                proof_attachment_id: db.entityFileAttachments[0]?.id,
-            });
-            appendMessage(visitThread, "Ceiling progress photos — framing layout and runner installation.", "proof", stagger(base, 90_000_000), field, "Field Staff", {
-                proof_attachment_id: db.entityFileAttachments[1]?.id || db.entityFileAttachments[0]?.id,
-            });
+            appendMessage(visitThread, "Site measurement photos uploaded — 4 images of master bedroom dimensions.", "proof", stagger(base, 5_400_000), field, "Field Staff");
+            appendMessage(visitThread, "Ceiling progress photos — framing layout and runner installation.", "proof", stagger(base, 90_000_000), field, "Field Staff");
         }
     }
     for (const po of db.purchaseOrders.slice(0, 1)) {
         const poThread = find("po", po.id);
         if (poThread) {
             const base = poThread.created_at || nowIso();
-            appendMessage(poThread, "GRN photos — 20 sheets of gypsum board received, condition verified.", "proof", stagger(base, 86_400_000), field, "Field Staff", {
-                proof_attachment_id: db.entityFileAttachments[2]?.id || db.entityFileAttachments[0]?.id,
-            });
+            appendMessage(
+                poThread,
+                "GRN photos — 20 sheets of gypsum board received, condition verified.",
+                "proof",
+                stagger(base, 86_400_000),
+                field,
+                "Field Staff",
+            );
         }
     }
 

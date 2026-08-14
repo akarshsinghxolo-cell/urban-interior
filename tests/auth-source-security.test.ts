@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const repositoryRoot = join(import.meta.dir, "..");
+const repositoryRoot = process.cwd();
 const authSource = readFileSync(
   join(repositoryRoot, "src/lib/rdash/server/auth.ts"),
   "utf8",

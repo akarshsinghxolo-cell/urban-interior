@@ -4,6 +4,7 @@ import type {
 import type { FilesState } from "../types";
 import type { StoreContext } from "../context";
 import { genId, nowIso, googleFileIdFromUrl } from "../helpers";
+import { resolveAttachmentEntityLabel, resolveEntityContext } from "../../entity-context";
 
 function inferAttachmentRole(kind: FileAsset["kind"]): EntityFileAttachment["role"] {
     if (kind === "drawing")
@@ -17,52 +18,97 @@ function inferAttachmentRole(kind: FileAsset["kind"]): EntityFileAttachment["rol
     return "document";
 }
 
-function resolveAttachmentEntityLabel(db: RDashDatabase, type: EntityFileAttachment["entity_type"], id: string): string {
-    const lookup: Record<string, Array<{ id: string; [key: string]: unknown }>> = {
-        customer: db.customers as any,
-        site: db.sites as any,
-        room: db.areas as any,
-        workRequired: db.workRequired as any,
-        quotation: db.quotations as any,
-        workOrder: db.workOrders as any,
-        boq: db.boqs as any,
-        purchase_order: db.purchaseOrders as any,
-        grn: db.grns as any,
-        vendor_bill: db.vendorBills as any,
-        dispatch: db.dispatches as any,
-        inventory: db.inventory as any,
-        drawing: db.drawings as any,
-        execution_log: db.executionLogs as any,
-        visit: db.visits as any,
-        task: db.tasks as any,
-        followup: db.followups as any,
-        payment: db.payments as any,
-        invoice: db.invoices as any,
-        vendor: db.master.vendors as any,
-        contractor: db.master.contractors as any,
-        commission: db.commissions as any,
-        blocked: db.blocked as any,
-    };
-    const row = lookup[type]?.find((item) => item.id === id) as Record<string, unknown> | undefined;
-    if (!row)
-        return `${type.replace(/_/g, " ")} · ${id}`;
-    return String(row.name ||
-        row.title ||
-        row.invoice_no ||
-        row.quotation_no ||
-        row.work_order_no ||
-        row.po_no ||
-        row.grn_no ||
-        row.bill_no ||
-        row.dispatch_no ||
-        row.drawing_no ||
-        row.log_no ||
-        row.location_name ||
-        row.customer_name ||
-        id);
+function clearArrayAttachmentReference<T extends object>(
+    row: T,
+    field: keyof T,
+    attachmentId: string,
+    updatedAt?: string,
+): T {
+    const values = row[field];
+    if (!Array.isArray(values) || !values.includes(attachmentId)) return row;
+    return {
+        ...row,
+        [field]: values.filter((value: unknown) => value !== attachmentId),
+        ...(updatedAt && "updated_at" in row ? { updated_at: updatedAt } : {}),
+    } as T;
 }
 
-function requestCleanupAfterSync(get: () => any, fileAssetId: string) {
+function clearSingleAttachmentReference<T extends object>(
+    row: T,
+    field: keyof T,
+    attachmentId: string,
+    updatedAt?: string,
+): T {
+    if (row[field] !== attachmentId) return row;
+    return {
+        ...row,
+        [field]: undefined,
+        ...(updatedAt && "updated_at" in row ? { updated_at: updatedAt } : {}),
+    } as T;
+}
+
+function clearAttachmentReferences(db: RDashDatabase, attachmentId: string): RDashDatabase {
+    const updatedAt = nowIso();
+    return {
+        ...db,
+        sites: db.sites.map((site) => clearArrayAttachmentReference(site, "photo_attachment_ids", attachmentId, updatedAt)),
+        visits: db.visits.map((visit) => clearArrayAttachmentReference(visit, "proof_attachment_ids", attachmentId, updatedAt)),
+        tasks: db.tasks.map((task) => clearArrayAttachmentReference(task, "completion_proof_attachment_ids", attachmentId, updatedAt)),
+        grns: db.grns.map((grn) => {
+            const withoutProof = clearArrayAttachmentReference(grn, "receiving_proof_attachment_ids", attachmentId, updatedAt);
+            return clearSingleAttachmentReference(withoutProof, "delivery_challan_attachment_id", attachmentId, updatedAt);
+        }),
+        drawings: db.drawings.map((drawing) => clearSingleAttachmentReference(drawing, "primary_file_attachment_id", attachmentId, updatedAt)),
+        executionLogs: db.executionLogs.map((log) => {
+            const withoutPhoto = clearArrayAttachmentReference(log, "photo_attachment_ids", attachmentId, updatedAt);
+            return clearSingleAttachmentReference(withoutPhoto, "contractor_confirmation_attachment_id", attachmentId, updatedAt);
+        }),
+        commSends: db.commSends.map((send) => clearArrayAttachmentReference(send, "attachment_ids", attachmentId)),
+        threads: db.threads.map((thread) => {
+            let changed = false;
+            const messages = thread.messages.map((message) => {
+                const next = clearSingleAttachmentReference(message, "proof_attachment_id", attachmentId);
+                if (next !== message) changed = true;
+                if (!Array.isArray(next.attachments)) return next;
+                let attachmentChanged = false;
+                const attachments = next.attachments.map((item) => {
+                    if (item.entity_file_attachment_id !== attachmentId) return item;
+                    attachmentChanged = true;
+                    return { ...item, entity_file_attachment_id: undefined };
+                });
+                if (!attachmentChanged) return next;
+                changed = true;
+                return { ...next, attachments };
+            });
+            return changed ? { ...thread, messages, updated_at: updatedAt } : thread;
+        }),
+        master: {
+            ...db.master,
+            vendors: db.master.vendors.map((vendor) => {
+                const withoutCard = clearSingleAttachmentReference(vendor, "business_card_attachment_id", attachmentId, updatedAt);
+                return clearSingleAttachmentReference(withoutCard, "shop_attachment_id", attachmentId, updatedAt);
+            }),
+            contractors: db.master.contractors.map((contractor) => {
+                let next = clearSingleAttachmentReference(contractor, "photo_attachment_id", attachmentId, updatedAt);
+                next = clearSingleAttachmentReference(next, "business_card_attachment_id", attachmentId, updatedAt);
+                if (!Array.isArray(next.compliance_documents)) return next;
+                let changed = false;
+                const complianceDocuments = next.compliance_documents.map((document) => {
+                    if (document.attachment_id !== attachmentId) return document;
+                    changed = true;
+                    return { ...document, attachment_id: undefined, updated_at: updatedAt };
+                });
+                return changed ? { ...next, compliance_documents: complianceDocuments, updated_at: updatedAt } : next;
+            }),
+        },
+    };
+}
+
+type FileCleanupStore = {
+    awaitServerSync?: () => Promise<unknown>;
+};
+
+export function requestFileAssetCleanupAfterSync(get: () => FileCleanupStore, fileAssetId: string) {
     if (typeof window === "undefined") return;
     queueMicrotask(() => {
         const awaitServerSync = get().awaitServerSync;
@@ -117,6 +163,7 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
             if (/^(data:|blob:)/i.test(linkValue)) {
                 throw new Error("Embedded or temporary file data cannot be saved. Upload the file first.");
             }
+            resolveEntityContext(get().db, link.entity_type, link.entity_id, "File attachment");
             const existingFile = get().db.master.fileAssets.find((candidate: FileAsset) => candidate.status === "active" &&
                 ((file.google_file_id && candidate.google_file_id === file.google_file_id) ||
                     (!file.google_file_id && candidate.web_view_link === file.web_view_link)));
@@ -210,6 +257,7 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
         attachFileAsset: (link: Partial<EntityFileAttachment> & {
             file_asset_id: string; entity_type: EntityFileAttachment["entity_type"]; entity_id: string;
         }) => {
+            resolveEntityContext(get().db, link.entity_type, link.entity_id, "File attachment");
             const timestamp = nowIso();
             const attachmentId = genId("attach");
             const source = get().db.master.fileAssets.find((file: FileAsset) => file.id === link.file_asset_id);
@@ -256,22 +304,37 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
             return attachmentId;
         },
 
-        updateEntityFileAttachment: (id, patch) => commitState((s: any) => ({
-            db: {
-                ...s.db,
-                entityFileAttachments: (s.db.entityFileAttachments || []).map((attachment: EntityFileAttachment) => attachment.id === id
-                    ? { ...attachment, ...patch, updated_at: nowIso() }
-                    : attachment),
-            },
-        })),
+        updateEntityFileAttachment: (id, patch) => {
+            const current = get().db.entityFileAttachments.find((attachment: EntityFileAttachment) => attachment.id === id);
+            if (!current) return;
+            const entityType = patch.entity_type || current.entity_type;
+            const entityId = patch.entity_id || current.entity_id;
+            resolveEntityContext(get().db, entityType, entityId, "File attachment");
+            const targetChanged = entityType !== current.entity_type || entityId !== current.entity_id;
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    entityFileAttachments: (s.db.entityFileAttachments || []).map((attachment: EntityFileAttachment) => attachment.id === id
+                        ? {
+                            ...attachment,
+                            ...patch,
+                            entity_label: patch.entity_label || (targetChanged
+                                ? resolveAttachmentEntityLabel(s.db, entityType, entityId)
+                                : attachment.entity_label),
+                            updated_at: nowIso(),
+                        }
+                        : attachment),
+                },
+            }));
+        },
 
         detachEntityFileAttachment: (id) => {
             const attachment = get().db.entityFileAttachments?.find((row: EntityFileAttachment) => row.id === id);
             commitState((s: any) => ({
-                db: {
+                db: clearAttachmentReferences({
                     ...s.db,
                     entityFileAttachments: (s.db.entityFileAttachments || []).filter((row: EntityFileAttachment) => row.id !== id),
-                },
+                }, id),
             }));
             if (attachment) {
                 get().logAudit({
@@ -283,7 +346,7 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
                     entity_label: attachment.entity_label,
                     kind: "update",
                 });
-                requestCleanupAfterSync(get, attachment.file_asset_id);
+                requestFileAssetCleanupAfterSync(get, attachment.file_asset_id);
             }
         },
 

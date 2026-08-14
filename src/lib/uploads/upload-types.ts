@@ -19,16 +19,38 @@ export type UploadPurpose =
   | "visit_evidence"
   | "measurement"
   | "drawing"
+  | "work_required_document"
   | "quotation_document"
+  | "accepted_scope_document"
   | "work_order_document"
+  | "variation_document"
   | "execution_evidence"
+  | "vendor_rfq"
+  | "vendor_bid"
   | "purchase_order"
   | "grn_evidence"
+  | "inventory_evidence"
+  | "stock_movement_evidence"
+  | "dispatch_evidence"
   | "vendor_bill"
+  | "vendor_payment"
+  | "customer_payment"
   | "customer_invoice"
+  | "customer_receipt"
   | "customer_document"
   | "vendor_document"
+  | "vendor_rate_document"
   | "contractor_document"
+  | "contractor_bid"
+  | "contractor_bill"
+  | "contractor_payment"
+  | "contractor_settlement"
+  | "task_evidence"
+  | "followup_attachment"
+  | "commission_document"
+  | "blocked_evidence"
+  | "thread_attachment"
+  | "general_document"
   | "staff_document"
   | "communication_attachment"
   | "import_source"
@@ -100,6 +122,8 @@ export interface UploadItemRecord {
   attachmentField?: string;
   attachmentFieldMode?: "set" | "append";
   requiredEvidence: boolean;
+  /** Held locally until the owning Save/Confirm action succeeds. */
+  deferred?: boolean;
   status: UploadItemStatus;
   confirmedBytes: number;
   progress: number;
@@ -146,6 +170,8 @@ export interface EnqueueUploadBatchInput {
   targetLabel?: string;
   purpose: UploadPurpose;
   requiredEvidence?: boolean;
+  /** Keep file bytes local until a draft Save/Confirm explicitly releases the batch. */
+  deferProcessing?: boolean;
   desiredTargetEntityType?: FileAttachmentEntityType;
   kind?: FileAssetKind;
   role?: FileAttachmentRole;

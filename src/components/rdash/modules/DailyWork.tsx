@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Clock, Package, ArrowRight, } from "lucide-react";
+import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Package, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
 import { addDays } from "@/lib/rdash/store/helpers";
@@ -337,7 +337,7 @@ export function DailyWork() {
             openDetail("payment", approval.linked_record_id);
         }
         if (approval.linked_record_type === "contractor_payment") {
-            openDetail("workOrder", approval.linked_record_id);
+            openDetail("contractorPayment", approval.linked_record_id);
         }
     };
     const openRiskContext = (risk: (typeof risks)[number]) => {
@@ -473,7 +473,7 @@ export function DailyWork() {
             });
         });
         return out;
-    }, [db.tasks, db.visits, db.followups, db.customers, db.sites, openDetail]);
+    }, [db.tasks, db.visits, db.followups, db.customers, db.sites, openDetail, taskDispatch, followupDispatch]);
     const todaysPriorities: PriorityItem[] = React.useMemo(() => {
         const todayPrefix = indiaDate();
         const items: PriorityItem[] = [];

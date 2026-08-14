@@ -17,6 +17,7 @@ export function detailRecordExists(db: RDashDatabase, kind: Exclude<DetailPanelK
         dispatch: db.dispatches,
         boq: db.boqs,
         vendorBill: db.vendorBills,
+        vendorPayment: db.vendorPayments,
         commission: db.commissions,
         blocked: db.blocked,
         customer: db.customers,
@@ -79,7 +80,13 @@ export function detailRecordCustomerId(db: RDashDatabase, kind: Exclude<DetailPa
     }
     if (kind === "vendorBill") {
         const bill = db.vendorBills.find((row) => row.id === recordId);
-        return bill ? db.workOrders.find((row) => row.id === bill.work_order_id)?.customer_id : undefined;
+        return bill?.work_order_id ? db.workOrders.find((row) => row.id === bill.work_order_id)?.customer_id : undefined;
+    }
+    if (kind === "vendorPayment") {
+        const payment = db.vendorPayments.find((row) => row.id === recordId);
+        const bill = payment ? db.vendorBills.find((row) => row.id === payment.vendor_bill_id) : undefined;
+        const workOrderId = payment?.work_order_id || bill?.work_order_id;
+        return workOrderId ? db.workOrders.find((row) => row.id === workOrderId)?.customer_id : undefined;
     }
     if (kind === "blocked")
         return db.blocked.find((row) => row.id === recordId)?.customer_id;

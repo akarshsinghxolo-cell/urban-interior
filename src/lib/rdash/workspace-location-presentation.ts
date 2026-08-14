@@ -14,6 +14,7 @@ export function workspaceRecordKindLabel(kind: PresentableDetailKind): string {
     workOrder: "Work Order",
     workRequired: "Work Required",
     vendorBill: "Vendor Bill",
+    vendorPayment: "Vendor Payment",
     vendorRate: "Vendor Rate",
     contractorBill: "Contractor Bill",
     contractorPayment: "Contractor Payment",
@@ -42,6 +43,7 @@ export function workspaceRecordForPresentation(
     case "dispatch": return db.dispatches.find((row) => row.id === id);
     case "boq": return db.boqs.find((row) => row.id === id);
     case "vendorBill": return db.vendorBills.find((row) => row.id === id);
+    case "vendorPayment": return db.vendorPayments.find((row) => row.id === id);
     case "commission": return db.commissions.find((row) => row.id === id);
     case "blocked": return db.blocked.find((row) => row.id === id);
     case "customer": return db.customers.find((row) => row.id === id);
@@ -86,6 +88,7 @@ export function workspaceRecordTitle(
     case "dispatch": return [record.dispatch_no || "Dispatch", record.customer_name || "Customer"].join(" · ");
     case "boq": return ["BOQ", record.title].filter(Boolean).join(" · ");
     case "vendorBill": return [record.bill_no || "Vendor Bill", record.vendor_name || "Vendor"].join(" · ");
+    case "vendorPayment": return [record.payment_no || "Vendor Payment", record.vendor_name || "Vendor"].join(" · ");
     case "commission": return [record.commission_no || "Commission", record.source_partner_name || "Partner"].join(" · ");
     case "blocked": return record.title || "Blocked Item";
     case "customer": return record.name || "Customer";

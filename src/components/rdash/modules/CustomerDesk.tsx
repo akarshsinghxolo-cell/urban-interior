@@ -9,6 +9,8 @@ import { buildCustomerActions, buildTaskActions, buildQuotationActions, buildPay
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
 import { SiteFormDialog } from "../SiteFormDialog";
 import { FilePreview } from "../FilePreview";
+import { EntityFilesCard } from "../EntityFilesCard";
+import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
 import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, workByCustomerFallback, } from "@/lib/rdash/format";
@@ -512,6 +514,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
               <MetricCard label="Quotations" value={quotations.length}/>
               <MetricCard label="Budget" value={budget ? formatINR(budget) : "—"} tone="success"/>
             </div>
+            <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" />
             {/* Customer Financial Summary — 360-degree financial view */}
             {(() => {
                 const customerWorkOrders = db.workOrders.filter((wo: any) => wo.customer_id === customerId);
@@ -849,9 +852,11 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                         captureStructuredWorkRequired(work.id, lines);
                         toast.success(`Captured ${lines.length} structured work line(s) for ${work.title}`);
                         setCaptureWorkRequiredId(null);
+                        return true;
                     }
                     catch (error) {
                         toast.error(error instanceof Error ? error.message : "Structured work could not be captured.");
+                        return false;
                     }
                 }}/>) : null;
         })()}
@@ -1234,9 +1239,10 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         quantity: number;
         unit_id: string;
         notes?: string;
-    }>) => void;
+    }>) => boolean;
 }) {
     const db = useRDashStore((state) => state.db);
+    const { registerBatch, commitBatches } = useUploadDraft(true);
     type DraftLine = {
         area_id?: string;
         area_name?: string;
@@ -1347,8 +1353,8 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     return (<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
       <div className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture structured work</h3><p className="text-[11px] text-muted-foreground">{site.name} · {workRequired.title}</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">This capture is locked to <strong>{site.name}</strong>. Area, Category, Subcategory, Article, Quantity, and Unit are required. Choose an existing Area or explicitly create one.</p><div className="space-y-2">{lines.map(renderLine)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5"/> Add line</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, article_id: line.article_id!, variant_id: line.variant_id, quantity: Number(line.quantity), unit_id: line.unit_id!, notes: line.notes?.trim() || undefined })))}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">This capture is locked to <strong>{site.name}</strong>. Area, Category, Subcategory, Article, Quantity, and Unit are required. Choose an existing Area or explicitly create one.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{lines.map(renderLine)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5"/> Add line</Button></div>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const saved = onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, article_id: line.article_id!, variant_id: line.variant_id, quantity: Number(line.quantity), unit_id: line.unit_id!, notes: line.notes?.trim() || undefined }))); if (saved) commitBatches(); }}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
       </div>
     </div>);
 }

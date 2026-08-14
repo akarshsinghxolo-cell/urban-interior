@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { MODULE_ROUTE_REGISTRY } from "../src/lib/rdash/modules";
 import {
   WORKSPACE_ROUTE_DEFINITIONS,

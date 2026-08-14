@@ -77,7 +77,11 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
     const { registerBatch, commitBatches } = useUploadDraft(open);
     const [draft, setDraft] = React.useState<SiteDraft>(() => emptyDraft(customerId));
     const [pendingPhotos, setPendingPhotos] = React.useState<PendingSiteFile[]>([]);
-    const existingFiles = React.useMemo(() => siteId ? entityFiles(db, "site", siteId) : [], [db, siteId]);
+    const [detachAttachmentIds, setDetachAttachmentIds] = React.useState<string[]>([]);
+    const existingFiles = React.useMemo(
+        () => siteId ? entityFiles(db, "site", siteId).filter(({ attachment }) => !detachAttachmentIds.includes(attachment.id)) : [],
+        [db, detachAttachmentIds, siteId],
+    );
     const [gpsLoading, setGpsLoading] = React.useState(false);
     const [coordinateInput, setCoordinateInput] = React.useState("");
     const [locationSearch, setLocationSearch] = React.useState("");
@@ -118,6 +122,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         setLocationSearch(existing?.address || "");
         setSearchResults([]);
         setPendingPhotos([]);
+        setDetachAttachmentIds([]);
     }, [open, siteId, customerId, db.sites]);
     const set = <K extends keyof SiteDraft>(key: K, value: SiteDraft[K]) => {
         setDraft((current) => ({ ...current, [key]: value }));
@@ -207,14 +212,21 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         try {
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "site_form",
+                deferProcessing: true,
                 sourceLabel: siteId ? "Edit Site" : "Add Site",
                 targetEntityType: "site",
                 targetEntityId: reservedSiteId,
                 targetLabel: draft.name.trim() || "New Site",
                 purpose: "site_evidence",
-                attachmentField: "photo_attachment_ids",
-                attachmentFieldMode: "append",
-                files: files.map((file) => ({ file, ...classifyWorkflowFile(file), caption: "Site file" })),
+                files: files.map((file) => {
+                    const classified = classifyWorkflowFile(file);
+                    return {
+                        file,
+                        ...classified,
+                        caption: "Site file",
+                        ...(classified.role === "photo" ? { attachmentField: "photo_attachment_ids", attachmentFieldMode: "append" as const } : {}),
+                    };
+                }),
             });
             registerBatch(queued.batchId);
             const photos = queued.files.map((item, index) => {
@@ -263,7 +275,10 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         try {
             setSaving(true);
             const existingAttachmentIds = siteId ? (db.sites.find((site) => site.id === siteId)?.photo_attachment_ids || []) : [];
-            const photoAttachmentIds = [...new Set([...existingAttachmentIds, ...pendingPhotos.map((photo) => photo.attachmentId)])];
+            const photoAttachmentIds = [...new Set([
+                ...existingAttachmentIds.filter((id) => !detachAttachmentIds.includes(id)),
+                ...pendingPhotos.filter((file) => file.mimeType.startsWith("image/")).map((file) => file.attachmentId),
+            ])];
             const customer = db.customers.find((row) => row.id === draft.customerId);
             if (!customer) throw new Error("Customer not found.");
             const id = siteId || reservedSiteId;
@@ -271,6 +286,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
                 customerId: customer.id,
                 customer: { ...customer },
                 sites: [{ ...payload, id, photo_attachment_ids: photoAttachmentIds }],
+                detachAttachmentIds,
             });
             commitBatches();
             await awaitServerSync();
@@ -292,7 +308,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
             {isEdit ? <Pencil className="h-4 w-4 text-primary"/> : <Building2 className="h-4 w-4 text-primary"/>}
             {isEdit ? "Edit Site" : "Add Site"}
           </DialogTitle>
-          <DialogDescription className="text-xs">Site address, GPS, property information and photos belong here—not on the Customer record.</DialogDescription>
+          <DialogDescription className="text-xs">Site address, GPS, property information and files belong here—not on the Customer record.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[66vh] space-y-4 overflow-y-auto px-5 py-4 rd-scroll">
           {!lockedCustomer && (<Field label="Customer">
@@ -326,10 +342,10 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
             </div>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos</label>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos & files</label>
             <Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={addPhotos} className="mt-1 h-9 text-sm"/>
             {(existingFiles.length > 0 || pendingPhotos.length > 0) && <div className="mt-2 grid grid-cols-4 gap-2">
-              {existingFiles.map(({ attachment, asset }) => <div key={attachment.id}><FilePreview file={assetPreview(asset)} compact controls/></div>)}
+              {existingFiles.map(({ attachment, asset }) => <div key={attachment.id} className="group relative"><FilePreview file={assetPreview(asset)} compact controls/><button type="button" onClick={() => setDetachAttachmentIds((current) => [...new Set([...current, attachment.id])])} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Detach ${asset.file_name}`}><X className="h-3 w-3"/></button></div>)}
               {pendingPhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => void removePendingPhoto(photo)} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}
             </div>}
           </div>

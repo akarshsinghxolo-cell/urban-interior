@@ -205,6 +205,7 @@ function DrawingUploadDialog({ onClose, onSave }: {
             if (queuedFile) await cancelQueuedWorkflowFile(queuedFile);
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "drawing_create",
+                deferProcessing: true,
                 sourceLabel: "New drawing",
                 targetEntityType: "drawing",
                 targetEntityId: drawingId,
@@ -259,7 +260,7 @@ function DrawingVersionDialog({ parent, onClose, onSave }: {
         if (!file) return;
         try {
             if (queuedFile) await cancelQueuedWorkflowFile(queuedFile);
-            const queued = await enqueueWorkflowFiles({ sourceFlow: "drawing_revision", sourceLabel: "Drawing revision", targetEntityType: "drawing", targetEntityId: drawingId, targetLabel: `${parent.drawing_no} v${parent.version + 1}`, purpose: "drawing", kind: "drawing", role: "drawing", visibility: "internal", attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set", files: [{ file, kind: "drawing", role: "drawing", caption: "Drawing revision", attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set" }] });
+            const queued = await enqueueWorkflowFiles({ sourceFlow: "drawing_revision", deferProcessing: true, sourceLabel: "Drawing revision", targetEntityType: "drawing", targetEntityId: drawingId, targetLabel: `${parent.drawing_no} v${parent.version + 1}`, purpose: "drawing", kind: "drawing", role: "drawing", visibility: "internal", attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set", files: [{ file, kind: "drawing", role: "drawing", caption: "Drawing revision", attachmentField: "primary_file_attachment_id", attachmentFieldMode: "set" }] });
             registerBatch(queued.batchId);
             setQueuedFile(withLocalPreview(queued.files[0], file));
         } catch (error) { toast.error(error instanceof Error ? error.message : "Revision file could not be queued."); }
@@ -477,7 +478,7 @@ function ConfirmMaterialReceiptDialog({ logId, onClose, onConfirm }: {
         if (!file) return;
         try {
             if (queuedFile) await cancelQueuedWorkflowFile(queuedFile);
-            const queued = await enqueueWorkflowFiles({ sourceFlow: "contractor_material_receipt", sourceLabel: "Contractor material confirmation", targetEntityType: "execution_log", targetEntityId: logId, targetLabel: log?.log_no || "Execution log", purpose: "execution_evidence", kind: "site_proof", role: "proof", visibility: "internal", attachmentField: "contractor_confirmation_attachment_id", attachmentFieldMode: "set", requiredEvidence: true, files: [{ file, kind: "site_proof", role: "proof", caption: "Contractor material receipt confirmation", attachmentField: "contractor_confirmation_attachment_id", attachmentFieldMode: "set" }] });
+            const queued = await enqueueWorkflowFiles({ sourceFlow: "contractor_material_receipt", deferProcessing: true, sourceLabel: "Contractor material confirmation", targetEntityType: "execution_log", targetEntityId: logId, targetLabel: log?.log_no || "Execution log", purpose: "execution_evidence", kind: "site_proof", role: "proof", visibility: "internal", attachmentField: "contractor_confirmation_attachment_id", attachmentFieldMode: "set", requiredEvidence: true, files: [{ file, kind: "site_proof", role: "proof", caption: "Contractor material receipt confirmation", attachmentField: "contractor_confirmation_attachment_id", attachmentFieldMode: "set" }] });
             registerBatch(queued.batchId);
             setQueuedFile(withLocalPreview(queued.files[0], file));
         } catch (error) { toast.error(error instanceof Error ? error.message : "Confirmation photo could not be queued."); }
@@ -523,7 +524,7 @@ function ExecutionLogDialog({ onClose, onSave }: {
         if (!files.length) return;
         if (!workOrderId) { toast.error("Select a Work Order before choosing progress files."); event.currentTarget.value = ""; return; }
         try {
-            const queued = await enqueueWorkflowFiles({ sourceFlow: "daily_execution_log", sourceLabel: "Daily execution progress", targetEntityType: "execution_log", targetEntityId: logId, targetLabel: workOrder?.work_order_no || "Execution log", purpose: "execution_evidence", kind: "media", role: "photo", visibility: "internal", attachmentField: "photo_attachment_ids", attachmentFieldMode: "append", files: files.map((file) => ({ file, kind: "media", role: "photo", caption: "Daily execution progress file", attachmentField: "photo_attachment_ids", attachmentFieldMode: "append" })) });
+            const queued = await enqueueWorkflowFiles({ sourceFlow: "daily_execution_log", deferProcessing: true, sourceLabel: "Daily execution progress", targetEntityType: "execution_log", targetEntityId: logId, targetLabel: workOrder?.work_order_no || "Execution log", purpose: "execution_evidence", kind: "media", role: "photo", visibility: "internal", attachmentField: "photo_attachment_ids", attachmentFieldMode: "append", files: files.map((file) => ({ file, kind: "media", role: "photo", caption: "Daily execution progress file", attachmentField: "photo_attachment_ids", attachmentFieldMode: "append" })) });
             registerBatch(queued.batchId);
             setPhotos((current) => [...current, ...queued.files.map((item, index) => withLocalPreview(item, files[index]))]);
         } catch (error) { toast.error(error instanceof Error ? error.message : "Progress files could not be queued."); }

@@ -31,7 +31,7 @@ import type { StoreContext } from "../context";
 import type { StaffLocationPing } from "../../staff-location";
 import { mergeStaffLocationPings } from "../../staff-location";
 import { prepareWorkspaceData } from "../../work-category-master";
-import { validateBusinessData } from "../../business-rules";
+import { threadParentExists, validateBusinessData } from "../../business-rules";
 import { genId, nowIso, contractorPaymentProofStatus } from "../helpers";
 import { mapEntityTypeToThreadKind } from "../../entity-thread-map";
 import { checkWorkspaceIntegrity } from "../../integrity/checker";
@@ -253,7 +253,7 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             const threadMessageBody = entry.action + (entry.reason ? ` — Reason: "${entry.reason}"` : "");
             // Collect all thread IDs to post to: the primary entity + cross-posts.
             const threadTargets: Array<{ kind: any; recordId: string; title: string; }> = [];
-            if (threadKind && entityId) {
+            if (threadKind && entityId && threadParentExists(get().db, threadKind, entityId)) {
                 threadTargets.push({
                     kind: threadKind,
                     recordId: entityId,
@@ -264,7 +264,7 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             if (entry.cross_post) {
                 for (const cp of entry.cross_post) {
                     const cpKind = mapEntityTypeToThreadKind(cp.entity_type);
-                    if (cpKind && cp.entity_id) {
+                    if (cpKind && cp.entity_id && threadParentExists(get().db, cpKind, cp.entity_id)) {
                         threadTargets.push({
                             kind: cpKind,
                             recordId: cp.entity_id,

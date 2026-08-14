@@ -9,7 +9,7 @@ import { ACTIVE_UPLOAD_STATUSES } from "@/lib/uploads/upload-types";
 export function UploadStatusIndicator() {
   const queue = useUploadQueue();
   const outbox = useWorkspaceOutbox();
-  const pendingUploads = queue.items.filter((item) => item.status !== "completed" && item.status !== "cancelled");
+  const pendingUploads = queue.items.filter((item) => !item.deferred && item.status !== "completed" && item.status !== "cancelled");
   const activeUploads = pendingUploads.filter((item) => ACTIVE_UPLOAD_STATUSES.has(item.status)).length;
   const activeChanges = outbox.items.filter((item) => item.status === "syncing").length;
   const needsAttention = pendingUploads.some((item) => item.status === "failed_permanent" || item.status === "cleanup_pending") ||

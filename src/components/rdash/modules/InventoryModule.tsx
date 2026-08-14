@@ -6,6 +6,8 @@ import type { StockMovementType } from "@/lib/rdash/types";
 import { OperationsWorkspace, type MetricSpec, type QueueSpec, type RecordRow, type FilterChip, } from "../OperationsWorkspace";
 import { formatINR, formatINRShort, formatDate, titleCase } from "@/lib/rdash/format";
 import { toast } from "sonner";
+import { EntityFilesCard } from "../EntityFilesCard";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 const movementStatusStyle: Record<StockMovementType, {
     label: string;
     className: string;
@@ -35,6 +37,7 @@ export function InventoryModule() {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const [filter, setFilter] = React.useState<"all" | "in_stock" | "exhausted">("all");
+    const [movementFilesId, setMovementFilesId] = React.useState<string | null>(null);
     const stockItems = db.inventory.length;
     const stockValue = inventoryValuation(db);
     const exhausted = db.inventory.filter((i) => i.quantity <= 0).length;
@@ -142,6 +145,7 @@ export function InventoryModule() {
         status: movementStatusStyle[m.type],
         meta: `${m.quantity > 0 ? "+" : ""}${m.quantity} ${m.unit_name || ""} · ${formatDate(m.created_at)}`,
         detailKind: (m.grn_id ? "grn" : "dispatch") as "grn" | "dispatch",
+        contextActions: [{ label: "Movement evidence", onClick: () => setMovementFilesId(m.id) }],
     }));
     const queues: QueueSpec[] = [
         {
@@ -159,5 +163,12 @@ export function InventoryModule() {
             defaultOpen: true,
         },
     ];
-    return (<OperationsWorkspace title="Inventory / Stock" description="Live stock by workOrder — built from GRNs, reduced by site dispatch" icon={<Package className="h-5 w-5"/>} workflow={["GRN", "Stock-in", "Reserve", "Dispatch", "Consume", "Reconcile"]} metrics={metrics} filterChips={filterChips} onFilterChange={onFilterChange} queues={queues} searchPlaceholder="Search stock / movements…"/>);
+    return (<><OperationsWorkspace title="Inventory / Stock" description="Live stock by workOrder — built from GRNs, reduced by site dispatch" icon={<Package className="h-5 w-5"/>} workflow={["GRN", "Stock-in", "Reserve", "Dispatch", "Consume", "Reconcile"]} metrics={metrics} filterChips={filterChips} onFilterChange={onFilterChange} queues={queues} searchPlaceholder="Search stock / movements…"/>
+      <Dialog open={Boolean(movementFilesId)} onOpenChange={(open) => { if (!open) setMovementFilesId(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Stock movement evidence</DialogTitle></DialogHeader>
+          {movementFilesId ? <EntityFilesCard entityType="stock_movement" entityId={movementFilesId} title="Movement evidence" manage showEmpty /> : null}
+        </DialogContent>
+      </Dialog>
+    </>);
 }

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 
 const crm = readFileSync("src/lib/rdash/store/slices/crm.ts", "utf8");

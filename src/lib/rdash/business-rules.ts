@@ -35,7 +35,8 @@ export function threadParentExists(db: RDashDatabase, kind: ThreadKind, recordId
         case "vendor_bill": return db.vendorBills.some((row) => row.id === recordId) ||
             db.vendorPayments.some((row) => row.id === recordId);
         case "inventory": return db.inventory.some((row) => row.id === recordId);
-        case "po": return db.purchaseOrders.some((row) => row.id === recordId);
+        case "po": return db.purchaseOrders.some((row) => row.id === recordId) ||
+            db.vendorRfqs.some((row) => row.id === recordId) || db.vendorBids.some((row) => row.id === recordId);
         case "grn": return db.grns.some((row) => row.id === recordId);
         case "dispatch": return db.dispatches.some((row) => row.id === recordId);
         case "blocked": return db.blocked.some((row) => row.id === recordId);
@@ -60,8 +61,12 @@ export function threadParentExists(db: RDashDatabase, kind: ThreadKind, recordId
             // orders, GRNs, dispatches, vendor bills, invoices, payments, etc.
             return (db.customers.some((row) => row.id === recordId) ||
                 db.areas.some((row) => row.id === recordId) ||
+                db.measurementRevisions.some((row) => row.id === recordId) ||
+                db.acceptedScopes.some((row) => row.id === recordId) ||
                 db.boqs.some((row) => row.id === recordId) ||
                 db.variationRequests.some((row) => row.id === recordId) ||
+                db.stockMovements.some((row) => row.id === recordId) ||
+                db.customerReceipts.some((row) => row.id === recordId) ||
                 db.attendance.some((row) => row.id === recordId) ||
                 db.purchaseOrders.some((row) => row.id === recordId) ||
                 db.grns.some((row) => row.id === recordId) ||
@@ -428,6 +433,19 @@ export function validateBusinessData(db: RDashDatabase) {
             failures.push(`${label}: ${error instanceof Error ? error.message : "Relationship validation failed."}`);
         }
     };
+    const assertAttachmentOwnedBy = (attachmentId: ID | undefined, entityType: RDashDatabase["entityFileAttachments"][number]["entity_type"], entityId: ID, context: string) => {
+        if (!attachmentId) return;
+        const attachment = db.entityFileAttachments.find((row) => row.id === attachmentId);
+        if (!attachment) fail(context, `attachment "${attachmentId}" does not exist.`);
+        if (attachment.entity_type !== entityType || attachment.entity_id !== entityId) {
+            fail(context, `attachment "${attachmentId}" belongs to ${attachment.entity_type} "${attachment.entity_id}", not this ${entityType}.`);
+        }
+    };
+    const assertAttachmentListOwnedBy = (attachmentIds: ID[] | undefined, entityType: RDashDatabase["entityFileAttachments"][number]["entity_type"], entityId: ID, context: string) => {
+        for (const attachmentId of unique(attachmentIds || [])) {
+            assertAttachmentOwnedBy(attachmentId, entityType, entityId, context);
+        }
+    };
     db.customers.forEach((customer) => capture(`Customer ${customer.id}`, () => assertCustomerCatalogRelations(db, customer, "Customer")));
     db.customers.forEach((customer) => {
         const duplicate = findCustomerIdentityMatches(db.customers, customer, { excludeCustomerId: customer.id })[0];
@@ -448,6 +466,26 @@ export function validateBusinessData(db: RDashDatabase) {
     db.acceptedScopes.forEach((scope) => capture(`Accepted Scope ${scope.id}`, () => {
         assertWorkRequiredMatchesContext(db, scope.work_required_id, scope.customer_id, scope.site_id, "Accepted Scope", { allowArchived: true });
         assertAreasBelongToSite(db, scope.area_ids, scope.site_id, "Accepted Scope", { allowArchived: true });
+        const quotation = db.quotations.find((row) => row.id === scope.quotation_id);
+        if (!quotation || quotation.customer_id !== scope.customer_id || quotation.site_id !== scope.site_id)
+            fail("Accepted Scope", "Quotation belongs to a different Customer or Site.");
+        for (const measurementId of unique(scope.measurement_revision_ids || [])) {
+            const measurement = db.measurementRevisions.find((row) => row.id === measurementId);
+            if (!measurement || measurement.site_id !== scope.site_id || !scope.area_ids.includes(measurement.area_id))
+                fail("Accepted Scope", "Measurement Revision is outside the accepted Site/Areas.");
+            if (measurement.work_required_id && measurement.work_required_id !== scope.work_required_id)
+                fail("Accepted Scope", "Measurement Revision belongs to a different Work Required record.");
+        }
+        if (scope.contractor_bid_id) {
+            const bid = db.contractorBids.find((row) => row.id === scope.contractor_bid_id);
+            if (!bid || (bid.accepted_scope_id && bid.accepted_scope_id !== scope.id))
+                fail("Accepted Scope", "Contractor Bid does not belong to this Accepted Scope.");
+        }
+        if (scope.work_order_id) {
+            const workOrder = db.workOrders.find((row) => row.id === scope.work_order_id);
+            if (!workOrder || workOrder.customer_id !== scope.customer_id || workOrder.site_id !== scope.site_id)
+                fail("Accepted Scope", "Work Order belongs to a different Customer or Site.");
+        }
     }));
     db.workOrders.forEach((workOrder) => capture(`Work Order ${workOrder.id}`, () => assertWorkOrderRelations(db, workOrder, "Work Order", { allowArchived: true })));
     db.tasks.forEach((task) => capture(`Task ${task.id}`, () => assertCustomerRelation(db, task, "Task")));
@@ -458,7 +496,21 @@ export function validateBusinessData(db: RDashDatabase) {
     db.commSends.forEach((send) => capture(`Communication ${send.id}`, () => assertCustomerRelation(db, send, "Communication")));
     db.payments.forEach((payment) => capture(`Payment ${payment.id}`, () => assertFinanceContext(db, payment, "Payment", { allowArchived: true })));
     db.invoices.forEach((invoice) => capture(`Invoice ${invoice.id}`, () => assertFinanceContext(db, invoice, "Invoice", { allowArchived: true })));
-    db.customerReceipts.forEach((receipt) => capture(`Receipt ${receipt.id}`, () => assertFinanceContext(db, receipt, "Receipt", { allowArchived: true })));
+    db.customerReceipts.forEach((receipt) => capture(`Receipt ${receipt.id}`, () => {
+        assertFinanceContext(db, receipt, "Receipt", { allowArchived: true });
+        const invoice = db.invoices.find((row) => row.id === receipt.invoice_id);
+        if (!invoice || invoice.customer_id !== receipt.customer_id)
+            fail("Receipt", "Invoice does not belong to the receipt Customer.");
+        if (invoice.site_id && receipt.site_id && invoice.site_id !== receipt.site_id)
+            fail("Receipt", "Invoice and receipt Sites do not match.");
+        if (receipt.payment_id) {
+            const payment = db.payments.find((row) => row.id === receipt.payment_id);
+            if (!payment || payment.customer_id !== receipt.customer_id)
+                fail("Receipt", "Payment does not belong to the receipt Customer.");
+            if (payment.invoice_id && payment.invoice_id !== receipt.invoice_id)
+                fail("Receipt", "Payment belongs to a different Invoice.");
+        }
+    }));
     db.contractorBills.forEach((bill) => capture(`Contractor Bill ${bill.id}`, () => {
         const workOrder = db.workOrders.find((row) => row.id === bill.work_order_id);
         if (!workOrder || workOrder.customer_id !== bill.customer_id || workOrder.site_id !== bill.site_id) {
@@ -516,6 +568,31 @@ export function validateBusinessData(db: RDashDatabase) {
         }
         if (movement.article_id !== inventory.article_id || movement.work_required_article_id !== inventory.work_required_article_id) {
             fail("Stock Movement", "does not match its inventory material context.");
+        }
+        const effectiveWorkOrderId = movement.work_order_id || inventory.work_order_id;
+        if (movement.work_order_id) {
+            const workOrder = db.workOrders.find((row) => row.id === movement.work_order_id);
+            if (!workOrder) fail("Stock Movement", "Work Order does not exist.");
+            if (inventory.work_order_id && inventory.work_order_id !== movement.work_order_id)
+                fail("Stock Movement", "Work Order does not match its Inventory item.");
+        }
+        if (movement.po_id) {
+            const po = db.purchaseOrders.find((row) => row.id === movement.po_id);
+            if (!po) fail("Stock Movement", "Purchase Order does not exist.");
+            if (effectiveWorkOrderId && po.work_order_id && po.work_order_id !== effectiveWorkOrderId)
+                fail("Stock Movement", "Purchase Order belongs to a different Work Order.");
+        }
+        if (movement.grn_id) {
+            const grn = db.grns.find((row) => row.id === movement.grn_id);
+            if (!grn) fail("Stock Movement", "GRN does not exist.");
+            if (effectiveWorkOrderId && grn.work_order_id && grn.work_order_id !== effectiveWorkOrderId)
+                fail("Stock Movement", "GRN belongs to a different Work Order.");
+        }
+        if (movement.dispatch_id) {
+            const dispatch = db.dispatches.find((row) => row.id === movement.dispatch_id);
+            if (!dispatch) fail("Stock Movement", "Dispatch does not exist.");
+            if (effectiveWorkOrderId && dispatch.work_order_id !== effectiveWorkOrderId)
+                fail("Stock Movement", "Dispatch belongs to a different Work Order.");
         }
     }));
     db.vendorBills.forEach((bill) => capture(`Vendor Bill ${bill.id}`, () => {
@@ -624,6 +701,37 @@ export function validateBusinessData(db: RDashDatabase) {
         if (file.sync_status !== "uploaded")
             fail("Drive attachment", "references a file that is not uploaded to Google Drive.");
     }));
+    db.sites.forEach((site) => capture(`Site attachment fields ${site.id}`, () => {
+        assertAttachmentListOwnedBy(site.photo_attachment_ids, "site", site.id, "Site attachment field");
+    }));
+    db.visits.forEach((visit) => capture(`Visit attachment fields ${visit.id}`, () => {
+        assertAttachmentListOwnedBy(visit.proof_attachment_ids, "visit", visit.id, "Visit proof attachment");
+    }));
+    db.tasks.forEach((task) => capture(`Task attachment fields ${task.id}`, () => {
+        assertAttachmentListOwnedBy(task.completion_proof_attachment_ids, "task", task.id, "Task completion proof");
+    }));
+    db.grns.forEach((grn) => capture(`GRN attachment fields ${grn.id}`, () => {
+        assertAttachmentListOwnedBy(grn.receiving_proof_attachment_ids, "grn", grn.id, "GRN receiving proof");
+        assertAttachmentOwnedBy(grn.delivery_challan_attachment_id, "grn", grn.id, "GRN delivery challan");
+    }));
+    db.drawings.forEach((drawing) => capture(`Drawing attachment fields ${drawing.id}`, () => {
+        assertAttachmentOwnedBy(drawing.primary_file_attachment_id, "drawing", drawing.id, "Drawing primary file");
+    }));
+    db.executionLogs.forEach((log) => capture(`Execution attachment fields ${log.id}`, () => {
+        assertAttachmentListOwnedBy(log.photo_attachment_ids, "execution_log", log.id, "Execution photo");
+        assertAttachmentOwnedBy(log.contractor_confirmation_attachment_id, "execution_log", log.id, "Execution contractor confirmation");
+    }));
+    db.master.vendors.forEach((vendor) => capture(`Vendor attachment fields ${vendor.id}`, () => {
+        assertAttachmentOwnedBy(vendor.business_card_attachment_id, "vendor", vendor.id, "Vendor business card");
+        assertAttachmentOwnedBy(vendor.shop_attachment_id, "vendor", vendor.id, "Vendor shop photo");
+    }));
+    db.master.contractors.forEach((contractor) => capture(`Contractor attachment fields ${contractor.id}`, () => {
+        assertAttachmentOwnedBy(contractor.photo_attachment_id, "contractor", contractor.id, "Contractor photo");
+        assertAttachmentOwnedBy(contractor.business_card_attachment_id, "contractor", contractor.id, "Contractor business card");
+        for (const document of contractor.compliance_documents || []) {
+            assertAttachmentOwnedBy(document.attachment_id, "contractor", contractor.id, "Contractor compliance document");
+        }
+    }));
     db.entityReferenceAssignments.forEach((assignment) => capture(`Reference assignment ${assignment.id}`, () => {
         assertCustomerRelation(db, assignment, "Reference assignment");
         if (assignment.site_id)
@@ -648,6 +756,30 @@ export function validateBusinessData(db: RDashDatabase) {
             }
         });
     }));
+    (db.vendorRfqs || []).forEach((rfq) => capture(`Vendor RFQ ${rfq.id}`, () => {
+        const workOrder = db.workOrders.find((row) => row.id === rfq.work_order_id);
+        if (!workOrder) fail("Vendor RFQ", "Work Order not found.");
+        else if (workOrder.site_id !== rfq.site_id) fail("Vendor RFQ", "Site does not match the Work Order.");
+        const boq = db.boqs.find((row) => row.id === rfq.boq_id);
+        if (!boq || boq.work_order_id !== rfq.work_order_id) fail("Vendor RFQ", "BOQ does not match the Work Order.");
+        const boqItemIds = new Set((boq?.items || []).map((item) => item.id));
+        for (const itemId of unique(rfq.item_ids || [])) {
+            if (!boqItemIds.has(itemId)) fail("Vendor RFQ", "contains an Item outside its BOQ.");
+        }
+        for (const vendorId of unique(rfq.vendor_ids || [])) {
+            if (!db.master.vendors.some((vendor) => vendor.id === vendorId)) fail("Vendor RFQ", "references a missing Vendor.");
+        }
+    }));
+    (db.vendorBids || []).forEach((bid) => capture(`Vendor Bid ${bid.id}`, () => {
+        const rfq = db.vendorRfqs.find((row) => row.id === bid.rfq_id);
+        if (!rfq) fail("Vendor Bid", "RFQ not found.");
+        if (!db.master.vendors.some((vendor) => vendor.id === bid.vendor_id)) fail("Vendor Bid", "Vendor not found.");
+        if (rfq && !rfq.vendor_ids.includes(bid.vendor_id)) fail("Vendor Bid", "Vendor was not invited on its RFQ.");
+        const allowedItems = new Set(rfq?.item_ids || []);
+        for (const line of bid.lines || []) {
+            if (!allowedItems.has(line.boq_item_id)) fail("Vendor Bid", "contains a line outside its RFQ Items.");
+        }
+    }));
     // FIX-ANALYSIS-003 Group C: Add validation for entities that previously had
     // NO standalone validation in validateBusinessData. These 9 entity types
     // were persisted without any integrity checks — now they validate that
@@ -657,8 +789,14 @@ export function validateBusinessData(db: RDashDatabase) {
     (db.vendorPayments || []).forEach((payment) => capture(`Vendor Payment ${payment.id}`, () => {
         const bill = db.vendorBills.find((row) => row.id === payment.vendor_bill_id);
         if (!bill) fail("Vendor Payment", "Vendor Bill not found.");
-        else if (bill.vendor_id !== payment.vendor_id)
-            fail("Vendor Payment", "Vendor does not match the bill.");
+        else {
+            if (bill.vendor_id !== payment.vendor_id)
+                fail("Vendor Payment", "Vendor does not match the bill.");
+            if (bill.work_order_id !== payment.work_order_id)
+                fail("Vendor Payment", "Work Order does not match the bill.");
+            if (bill.site_id && bill.site_id !== payment.site_id)
+                fail("Vendor Payment", "Site does not match the bill.");
+        }
     }));
     (db.contractorPayments || []).forEach((payment) => capture(`Contractor Payment ${payment.id}`, () => {
         const bill = db.contractorBills.find((row) => row.id === payment.contractor_bill_id);
@@ -668,6 +806,8 @@ export function validateBusinessData(db: RDashDatabase) {
                 fail("Contractor Payment", "Contractor does not match the bill.");
             if (bill.work_order_id !== payment.work_order_id)
                 fail("Contractor Payment", "Work Order does not match the bill.");
+            if (bill.site_id !== payment.site_id)
+                fail("Contractor Payment", "Site does not match the bill.");
         }
     }));
     (db.contractorBids || []).forEach((bid) => capture(`Contractor Bid ${bid.id}`, () => {

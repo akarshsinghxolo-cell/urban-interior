@@ -309,7 +309,7 @@ export function SiteMeasurementModule() {
                 </Button>}
               </div>)}
             <div className="mt-3 border-t border-border pt-3">
-              <OperationalMediaPanel entityType="visit" entityId={r.visitId} title="Measurement files & references" compact/>
+              <OperationalMediaPanel entityType="visit" entityId={r.visitId} title="Measurement visit evidence & references" compact/>
             </div>
           </div>))}
       </div>
@@ -408,6 +408,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
             try {
                 const queued = await enqueueWorkflowFiles({
                     sourceFlow: "site_measurement",
+                deferProcessing: true,
                     sourceLabel: "Site Measurement",
                     targetEntityType: "visit",
                     targetEntityId: visitId,

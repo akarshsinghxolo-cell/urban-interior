@@ -3,6 +3,8 @@ import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
 import type { FileAttachmentEntityType, RDashDatabase } from "../types";
+import { resolveEntityContext } from "../entity-context";
+import { uploadPurposeAllowedForEntity } from "@/lib/uploads/upload-purpose";
 import type { BindUploadRequest, GoogleFileId, InitiateUploadRequest, InitiateUploadResponse, UploadPurpose } from "@/lib/uploads/upload-types";
 import {
   DRIVE_API,
@@ -16,67 +18,38 @@ import {
   selectUploadAccount,
 } from "./direct-upload-storage";
 
-function hasId(rows: Array<{ id?: string }>, id: string): boolean {
-  return rows.some((row) => String(row.id || "") === id);
-}
-
-function uploadTargetExists(db: RDashDatabase, targetEntityType: FileAttachmentEntityType, targetEntityId: string): boolean {
-  switch (targetEntityType) {
-    case "customer": return hasId(db.customers, targetEntityId);
-    case "site": return hasId(db.sites, targetEntityId);
-    case "room": return hasId(db.areas, targetEntityId);
-    case "workRequired": return hasId(db.workRequired, targetEntityId);
-    case "quotation": return hasId(db.quotations, targetEntityId);
-    case "quotation_item":
-      return db.quotations.some((quotation) =>
-        [...(quotation.scope_lines || []), ...(quotation.items || [])].some((item) => item.id === targetEntityId),
-      );
-    case "workOrder": return hasId(db.workOrders, targetEntityId);
-    case "boq": return hasId(db.boqs, targetEntityId);
-    case "boq_item": return db.boqs.some((boq) => (boq.items || []).some((item) => item.id === targetEntityId));
-    case "purchase_order": return hasId(db.purchaseOrders, targetEntityId);
-    case "grn": return hasId(db.grns, targetEntityId);
-    case "vendor_bill": return hasId(db.vendorBills, targetEntityId);
-    case "dispatch": return hasId(db.dispatches, targetEntityId);
-    case "inventory": return hasId(db.inventory, targetEntityId);
-    case "drawing": return hasId(db.drawings, targetEntityId);
-    case "execution_log": return hasId(db.executionLogs, targetEntityId);
-    case "visit": return hasId(db.visits, targetEntityId);
-    case "task": return hasId(db.tasks, targetEntityId);
-    case "followup": return hasId(db.followups, targetEntityId);
-    case "payment": return hasId(db.payments, targetEntityId);
-    case "invoice": return hasId(db.invoices, targetEntityId);
-    case "vendor": return hasId(db.master.vendors, targetEntityId);
-    case "vendor_rate": return hasId(db.master.vendorRates, targetEntityId);
-    case "contractor": return hasId(db.master.contractors, targetEntityId);
-    case "contractor_bid": return hasId(db.contractorBids, targetEntityId);
-    case "contractor_settlement": return hasId(db.contractorSettlements, targetEntityId);
-    case "commission": return hasId(db.commissions, targetEntityId);
-    case "blocked": return hasId(db.blocked, targetEntityId);
-    case "thread_message":
-      return (db.threads || []).some((thread) => (thread.messages || []).some((message) => message.id === targetEntityId));
-    case "communication": return hasId(db.commSends, targetEntityId);
-    case "general": return false;
-  }
-  const exhaustive: never = targetEntityType;
-  return exhaustive;
-}
-
 function assertUploadTargetReady(
   db: RDashDatabase,
   targetEntityType: FileAttachmentEntityType,
   targetEntityId: string,
   purpose: UploadPurpose,
 ) {
-  // Diagnostics and import-source retention intentionally use synthetic targets.
-  if (purpose === "diagnostic" || purpose === "import_source") return;
-  if (targetEntityType === "general" || !uploadTargetExists(db, targetEntityType, targetEntityId)) {
-    throw new Error("TARGET_NOT_READY:Save the related record before its Drive upload starts.");
+  if (!uploadPurposeAllowedForEntity(targetEntityType, purpose)) {
+    throw new Error(`TARGET_NOT_READY:Upload purpose "${purpose}" does not belong to ${targetEntityType}.`);
+  }
+  if (targetEntityType === "general") {
+    if (purpose === "staff_document") {
+      if (!db.master.staff.some((row) => row.id === targetEntityId)) {
+        throw new Error("TARGET_NOT_READY:The related Staff record is not synchronized yet.");
+      }
+    }
+    return;
+  }
+  // The canonical resolver validates both existence and parent relationships.
+  // Keep upload ownership in one place rather than duplicating a second 41-case
+  // entity switch here.
+  try {
+    resolveEntityContext(db, targetEntityType, targetEntityId, "Upload target");
+  } catch (error) {
+    const message = error instanceof Error ? error.message.replace(/^Upload target:\s*/, "") : "Save the related record before its Drive upload starts.";
+    throw new Error(`TARGET_NOT_READY:${message}`);
   }
 }
 
 export async function bindDirectUpload(_user: AuthenticatedUser, input: BindUploadRequest): Promise<void> {
   if (!input.uploadItemId) throw new Error("Upload item identity is required.");
+  const workspace = await getWorkspace();
+  assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose);
   const admin = getSupabaseAdminClient();
   const { data: item, error } = await admin.from("uc_upload_items").update({
     target_entity_type: input.targetEntityType,

@@ -73,6 +73,9 @@ const quotationDomainFks: ForeignKeyRule[] = [
     { collection: "acceptedScopes", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Accepted Scope → Site" },
     { collection: "acceptedScopes", field: "work_required_id", targetCollection: "workRequired", onDelete: "restrict", nullable: false, label: "Accepted Scope → Work Required" },
     { collection: "acceptedScopes", field: "quotation_id", targetCollection: "quotations", onDelete: "restrict", nullable: false, label: "Accepted Scope → Quotation" },
+    { collection: "acceptedScopes", field: "area_ids", targetCollection: "areas", onDelete: "restrict", nullable: false, isArray: true, label: "Accepted Scope → Areas" },
+    { collection: "acceptedScopes", field: "measurement_revision_ids", targetCollection: "measurementRevisions", onDelete: "restrict", nullable: false, isArray: true, label: "Accepted Scope → Measurement Revisions" },
+    { collection: "acceptedScopes", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Accepted Scope → Work Order" },
     // WorkOrders: all parent links required (restrict); arrays of quotation/scope/work_required ids
     { collection: "workOrders", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Work Order → Customer" },
     { collection: "workOrders", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Work Order → Site" },
@@ -89,7 +92,7 @@ const quotationDomainFks: ForeignKeyRule[] = [
 // ─────────────────────────────────────────────────────────────────────────
 const procurementFks: ForeignKeyRule[] = [
     { collection: "vendorRfqs", field: "work_order_id", targetCollection: "workOrders", onDelete: "cascade", nullable: false, label: "Vendor RFQ → Work Order" },
-    { collection: "vendorRfqs", field: "boq_id", targetCollection: "boqs", onDelete: "nullify", nullable: true, label: "Vendor RFQ → BOQ" },
+    { collection: "vendorRfqs", field: "boq_id", targetCollection: "boqs", onDelete: "restrict", nullable: false, label: "Vendor RFQ → BOQ" },
     { collection: "vendorRfqs", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Vendor RFQ → Site" },
     // VendorBid: meaningless without its RFQ → cascade
     { collection: "vendorBids", field: "rfq_id", targetCollection: "vendorRfqs", onDelete: "cascade", nullable: false, label: "Vendor Bid → RFQ" },
@@ -248,6 +251,9 @@ const financeFks: ForeignKeyRule[] = [
     { collection: "customerReceipts", field: "payment_id", targetCollection: "payments", onDelete: "nullify", nullable: true, label: "Receipt → Payment" },
     { collection: "customerReceipts", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Receipt → Work Order" },
     { collection: "customerReceipts", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Receipt → Site" },
+    { collection: "customerReceipts", field: "quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Receipt → Quotation" },
+    { collection: "customerReceipts", field: "work_required_id", targetCollection: "workRequired", onDelete: "nullify", nullable: true, label: "Receipt → Work Required" },
+    { collection: "customerReceipts", field: "area_ids", targetCollection: "areas", onDelete: "nullify", nullable: true, isArray: true, label: "Receipt → Areas" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────

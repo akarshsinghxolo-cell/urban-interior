@@ -38,6 +38,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "blocked",
     "risks",
     "threads",
+    "entityFileAttachments",
   ]),
   approvals: Object.freeze([
     "customers",
@@ -50,14 +51,20 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "actions",
     "approvalPolicies",
     "threads",
+    "entityFileAttachments",
   ]),
   calendarRecurring: Object.freeze([
     "customers",
     "sites",
+    "workOrders",
     "tasks",
     "recurringTasks",
     "visits",
+    "payments",
+    "purchaseOrders",
     "attendance",
+    "entityFileAttachments",
+    "master.vendors",
   ]),
   quotationConfig: Object.freeze([
     "commercialTerms",
@@ -100,7 +107,12 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "entityFileAttachments",
   ]),
   gpsTracking: Object.freeze([
+    "customers",
+    "sites",
+    "visits",
     "attendance",
+    "entityFileAttachments",
+    "master.vendors",
   ]),
   grn: Object.freeze([
     "customers",
@@ -122,6 +134,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "grns",
     "dispatches",
     "purchaseOrders",
+    "entityFileAttachments",
     "master.articles",
     "master.vendors",
   ]),
@@ -133,8 +146,10 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "stockMovements",
     "dispatches",
     "threads",
+    "entityFileAttachments",
   ]),
   vendorRates: Object.freeze([
+    "entityFileAttachments",
     "master.units",
     "master.articles",
     "master.articleVariants",
@@ -143,6 +158,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "master.vendorRateHistories",
   ]),
   rateFinder: Object.freeze([
+    "entityFileAttachments",
     "master.units",
     "master.articles",
     "master.articleVariants",
@@ -159,6 +175,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "customerReceipts",
     "followups",
     "threads",
+    "entityFileAttachments",
     "commercialTerms",
     "paymentTermTemplates",
   ]),
@@ -170,6 +187,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "invoices",
     "customerReceipts",
     "threads",
+    "entityFileAttachments",
     "taxConfigs",
   ]),
   vendorBills: Object.freeze([
@@ -178,6 +196,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "vendorBills",
     "vendorPayments",
     "threads",
+    "entityFileAttachments",
     "master.vendors",
   ]),
   contractorPayments: Object.freeze([
@@ -186,6 +205,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "contractorPayments",
     "contractorSettlements",
     "threads",
+    "entityFileAttachments",
     "master.contractors",
   ]),
   commissions: Object.freeze([
@@ -193,6 +213,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "workOrders",
     "commissions",
     "threads",
+    "entityFileAttachments",
     "master.sourcePartners",
     "master.commissionRules",
   ]),
@@ -205,6 +226,8 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "master.vendors",
   ]),
   driveManager: Object.freeze([
+    "entityFileAttachments",
+    "staffDocuments",
     "master.storageAccounts",
     "master.storageFolderTemplates",
     "master.storageFolderInstances",

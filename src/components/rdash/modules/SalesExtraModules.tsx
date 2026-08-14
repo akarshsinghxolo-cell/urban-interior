@@ -3,8 +3,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
-import { formatINR, formatINRShort, formatDate, relativeDay, titleCase } from "@/lib/rdash/format";
-import { Users, HandCoins, Percent, Phone, Building2, TrendingUp, CheckCircle2, AlertTriangle, FileText, ArrowRight, } from "lucide-react";
+import { formatINR, formatINRShort, relativeDay, titleCase } from "@/lib/rdash/format";
+import { Users, HandCoins, Percent, Building2, TrendingUp, CheckCircle2, AlertTriangle, FileText, ArrowRight, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 export function SourceReferralModule() {
@@ -200,8 +200,11 @@ export function GstReturnsModule() {
     // and "accepted" quotations represent actual outward supplies.
     // STAGE-3-FIX: GST output tax arises on INVOICES (actual supply), not quotations.
     // The old code filtered quotations by sent/accepted, overstating output tax.
-    const gstInvoices = (db.invoices || []).filter((i: any) => i.status !== "cancelled" && i.status !== "draft");
-    const gstCollected = gstInvoices.reduce((n: number, i: any) => n + (i.tax_amount || 0), 0);
+    const gstInvoices = React.useMemo(
+        () => (db.invoices || []).filter((invoice) => invoice.status !== "cancelled" && invoice.status !== "draft"),
+        [db.invoices],
+    );
+    const gstCollected = gstInvoices.reduce((n, invoice) => n + (invoice.tax_amount || 0), 0);
     const gstPaid = db.vendorBills.filter((b) => b.status === "paid").reduce((n, b) => n + (b.tax_amount || 0), 0);
     const netGst = gstCollected - gstPaid;
     const outputCount = gstInvoices.length;
@@ -212,8 +215,10 @@ export function GstReturnsModule() {
             paid: number;
         }>();
         // STAGE-3-FIX: monthly breakdown also uses invoices (not quotations)
-        gstInvoices.forEach((q: any) => {
-            const month = new Date(q.created_at || q.issued_at).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+        gstInvoices.forEach((q) => {
+            const issuedAt = q.issued_at || q.created_at;
+            if (!issuedAt) return;
+            const month = new Date(issuedAt).toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
             const e = m.get(month) || { collected: 0, paid: 0 };
             e.collected += q.tax_amount || 0;
             m.set(month, e);
@@ -225,7 +230,7 @@ export function GstReturnsModule() {
             m.set(month, e);
         });
         return Array.from(m.entries()).map(([month, v]) => ({ month, ...v, net: v.collected - v.paid }));
-    }, [db.quotations, db.vendorBills]);
+    }, [gstInvoices, db.vendorBills]);
     return (<div className="flex flex-col gap-5">
       <div className="flex items-center gap-2.5">
         <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><FileText className="h-5 w-5"/></span>

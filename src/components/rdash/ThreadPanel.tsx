@@ -18,6 +18,7 @@ import { FilePreview, fileKind, managedPreviewUrl, managedOpenUrl } from "./File
 import type { FilePreviewSource } from "./FilePreview";
 import { attachedPreview, attachedFileById, assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
 import { renderMentions, MENTION_ENTITY_TYPES, buildMentionableEntities, filterMentionableEntities, type MentionableEntity } from "@/lib/rdash/mentions";
+import { resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
 export function ThreadView({ threadId }: {
     threadId: string;
 }) {
@@ -60,7 +61,7 @@ export function ThreadView({ threadId }: {
       </div>);
     }
     const user = currentUser();
-    const entityType = threadEntityType(thread.kind);
+    const entityType = resolveThreadRecordEntityType(db, thread.record_type, thread.record_id) || "general";
     const existingFiles = entityFiles(db, entityType, thread.record_id);
     const onSend = () => {
         if (!reply.trim() && !pickedAttachmentIds.length)
@@ -365,12 +366,6 @@ function filterThreadMessages(messages: ThreadMessage[], search: string, filter:
     const roots = byParent.get(undefined) || [];
     roots.forEach(walk);
     return messages.filter((m) => keep.has(m.id));
-}
-function threadEntityType(kind: Thread["kind"]): import("@/lib/rdash/types").FileAttachmentEntityType {
-    const map: Partial<Record<Thread["kind"], import("@/lib/rdash/types").FileAttachmentEntityType>> = {
-        quotation: "quotation", workOrder: "workOrder", task: "task", followup: "followup", visit: "visit", payment: "payment", invoice: "invoice", vendor_bill: "vendor_bill", inventory: "inventory", po: "purchase_order", grn: "grn", dispatch: "dispatch", blocked: "blocked", commission: "commission", site: "site", drawing: "drawing", execution_log: "execution_log",
-    };
-    return map[kind] || "general";
 }
 function ThreadTree({ messages, onReply }: {
     messages: ThreadMessage[];

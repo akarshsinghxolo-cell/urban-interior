@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { REGISTERED_MODULE_IDS } from "@/lib/rdash/modules";
 import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
 import {
@@ -252,12 +253,12 @@ describe("dedicated scoped read endpoints", () => {
       "src/app/api/procurement/route.ts",
       "src/app/api/finance/route.ts",
     ]) {
-      const source = await Bun.file(path).text();
+      const source = await testFile(path).text();
       expect(source).toContain("handleModuleScopedRead");
       expect(source).toContain("export async function GET");
     }
 
-    const helper = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
+    const helper = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain("requireSession(request)");
     expect(helper).toContain("tryWorkspaceReadTargetForModule");
     expect(helper).toContain('"X-UC-Read-Mode"');

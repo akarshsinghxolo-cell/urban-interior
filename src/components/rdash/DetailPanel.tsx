@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { useFavorites } from "./FavoritesBar";
 import { FilePreview } from "./FilePreview";
+import { EntityFilesCard } from "./EntityFilesCard";
 import { attachedFilesForIds, assetPreview } from "@/lib/rdash/file-attachments";
 import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
@@ -11,7 +12,7 @@ import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
-import { X, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, } from "lucide-react";
+import { X, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ import { visitToMapPoints } from "./visitMap";
 import { promptDialog } from "./PromptDialog";
 import { CustomerPortfolioDrawerContent } from "./modules/CustomerDesk";
 import { resolveRenderer } from "@/lib/rdash/modules";
+import { resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
 type Tab = "overview" | "thread";
 export function DetailPanel() {
     const detail = useRDashStore((s) => s.detailPanel);
@@ -145,6 +147,7 @@ function PanelHeader({ tab, setTab }: {
             case "workRequired": return <Wrench className="h-4 w-4"/>;
             case "boq": return <FileText className="h-4 w-4"/>;
             case "vendorBill": return <Receipt className="h-4 w-4"/>;
+            case "vendorPayment": return <Wallet className="h-4 w-4"/>;
             case "commission": return <HandCoins className="h-4 w-4"/>;
             case "blocked": return <AlertCircle className="h-4 w-4"/>;
             case "inventory": return <Package className="h-4 w-4"/>;
@@ -259,6 +262,7 @@ function mapDetailKindToThreadKind(kind: string): string | null {
         dispatch: "dispatch",
         boq: "generic",
         vendorBill: "vendor_bill",
+        vendorPayment: "vendor_bill",
         commission: "commission",
         blocked: "blocked",
         customer: "generic",
@@ -317,6 +321,8 @@ function OverviewBody({ kind, id }: {
             return <BOQOverview b={rec as any}/>;
         case "vendorBill":
             return <VendorBillOverview b={rec as any}/>;
+        case "vendorPayment":
+            return <VendorPaymentEntityOverview payment={rec as any}/>;
         case "commission":
             return <CommissionOverview c={rec as any}/>;
         case "blocked":
@@ -363,6 +369,7 @@ function findRecord(kind: string, id: string, db: any): any {
         case "workRequired": return db.workRequired.find((x: any) => x.id === id);
         case "boq": return db.boqs.find((x: any) => x.id === id);
         case "vendorBill": return db.vendorBills.find((x: any) => x.id === id);
+        case "vendorPayment": return db.vendorPayments.find((x: any) => x.id === id);
         case "commission": return db.commissions.find((x: any) => x.id === id);
         case "blocked": return db.blocked.find((x: any) => x.id === id);
         case "inventory": return db.inventory.find((x: any) => x.id === id);
@@ -400,6 +407,7 @@ function resolveTitle(kind: string, id: string, db: any): string {
         case "workRequired": return r.title;
         case "boq": return `BOQ · ${r.title}`;
         case "vendorBill": return `${r.bill_no} · ${r.vendor_name}`;
+        case "vendorPayment": return `${r.payment_no || "Vendor payment"} · ${r.vendor_name || "Vendor"}`;
         case "commission": return `${r.commission_no} · ${r.source_partner_name}`;
         case "blocked": return r.title;
         case "inventory": return `${r.article_name || "Inventory"} · ${r.location_name || "Stock"}`;
@@ -435,6 +443,10 @@ function entityTypeToPanelKind(entityType?: string): any {
         inventory: "inventory",
         vendor_bill: "vendorBill",
         vendorBill: "vendorBill",
+        vendor_payment: "vendorPayment",
+        vendorPayment: "vendorPayment",
+        contractor_bill: "contractorBill",
+        contractor_payment: "contractorPayment",
         payment: "payment",
         invoice: "invoice",
         task: "task",
@@ -453,6 +465,86 @@ function entityTypeToPanelKind(entityType?: string): any {
     };
     return map[entityType || ""] || map[normalized];
 }
+type AttachmentOwnerPanelTarget = { kind: Exclude<import("@/lib/rdash/store/ui-types").DetailPanelKind, null>; id: string };
+
+function attachmentOwnerPanelTarget(db: any, entityType?: string, entityId?: string): AttachmentOwnerPanelTarget | undefined {
+    if (!entityType || !entityId) return undefined;
+    const direct = entityTypeToPanelKind(entityType);
+    if (direct && findRecord(direct, entityId, db)) return { kind: direct, id: entityId };
+    const normalized = entityType.replaceAll("-", "_");
+    switch (normalized) {
+        case "measurement_revision": {
+            const row = db.measurementRevisions.find((item: any) => item.id === entityId);
+            return row?.area_id ? { kind: "area", id: row.area_id } : undefined;
+        }
+        case "quotation_item": {
+            const quotation = db.quotations.find((row: any) => row.scope_lines?.some((item: any) => item.id === entityId));
+            return quotation ? { kind: "quotation", id: quotation.id } : undefined;
+        }
+        case "accepted_scope": {
+            const scope = db.acceptedScopes.find((row: any) => row.id === entityId);
+            return scope?.quotation_id ? { kind: "quotation", id: scope.quotation_id } : undefined;
+        }
+        case "variation_request": {
+            const variation = db.variationRequests.find((row: any) => row.id === entityId);
+            return variation?.work_order_id ? { kind: "workOrder", id: variation.work_order_id } : undefined;
+        }
+        case "vendor_rfq": {
+            const rfq = db.vendorRfqs.find((row: any) => row.id === entityId);
+            return rfq?.work_order_id ? { kind: "workOrder", id: rfq.work_order_id } : undefined;
+        }
+        case "vendor_bid": {
+            const bid = db.vendorBids.find((row: any) => row.id === entityId);
+            const rfq = bid ? db.vendorRfqs.find((row: any) => row.id === bid.rfq_id) : undefined;
+            return rfq?.work_order_id ? { kind: "workOrder", id: rfq.work_order_id } : undefined;
+        }
+        case "stock_movement": {
+            const movement = db.stockMovements.find((row: any) => row.id === entityId);
+            return movement?.inventory_id ? { kind: "inventory", id: movement.inventory_id } : undefined;
+        }
+        case "customer_receipt": {
+            const receipt = db.customerReceipts.find((row: any) => row.id === entityId);
+            return receipt?.invoice_id ? { kind: "invoice", id: receipt.invoice_id } : undefined;
+        }
+        case "contractor_bid": {
+            const bid = db.contractorBids.find((row: any) => row.id === entityId);
+            if (bid?.work_order_id) return { kind: "workOrder", id: bid.work_order_id };
+            return bid?.contractor_id ? { kind: "contractor", id: bid.contractor_id } : undefined;
+        }
+        case "contractor_settlement": {
+            const settlement = db.contractorSettlements.find((row: any) => row.id === entityId);
+            return settlement?.work_order_id ? { kind: "workOrder", id: settlement.work_order_id } : undefined;
+        }
+        case "drawing": {
+            const drawing = db.drawings.find((row: any) => row.id === entityId);
+            if (drawing?.work_order_id) return { kind: "workOrder", id: drawing.work_order_id };
+            return drawing?.site_id ? { kind: "site", id: drawing.site_id } : undefined;
+        }
+        case "execution_log": {
+            const log = db.executionLogs.find((row: any) => row.id === entityId);
+            return log?.work_order_id ? { kind: "workOrder", id: log.work_order_id } : undefined;
+        }
+        case "boq_item": {
+            const boq = db.boqs.find((row: any) => row.items?.some((item: any) => item.id === entityId));
+            return boq ? { kind: "boq", id: boq.id } : undefined;
+        }
+        case "communication": {
+            const send = db.commSends.find((row: any) => row.id === entityId);
+            if (send?.quotation_id) return { kind: "quotation", id: send.quotation_id };
+            if (send?.work_order_id) return { kind: "workOrder", id: send.work_order_id };
+            return send?.customer_id ? { kind: "customer", id: send.customer_id } : undefined;
+        }
+        case "thread_message": {
+            const thread = db.threads.find((row: any) => row.messages?.some((message: any) => message.id === entityId));
+            if (!thread) return undefined;
+            const ownerType = resolveThreadRecordEntityType(db, thread.record_type, thread.record_id);
+            return ownerType ? attachmentOwnerPanelTarget(db, ownerType, thread.record_id) : undefined;
+        }
+        default:
+            return undefined;
+    }
+}
+
 function asUnitLabel(db: any, unitId?: string) {
     const unit = db.master.units.find((entry: any) => entry.id === unitId);
     return unit ? `${unit.symbol} · ${unit.name}` : unitId || "—";
@@ -493,7 +585,6 @@ function VendorEntityOverview({ vendor }: { vendor: any }) {
     const bills = db.vendorBills.filter((bill: any) => bill.vendor_id === vendor.id);
     const payments = db.vendorPayments.filter((payment: any) => payment.vendor_id === vendor.id);
     const unpaidBills = bills.filter((bill: any) => bill.status !== "paid");
-    const files = (db.entityFileAttachments || []).filter((row: any) => row.entity_type === "vendor" && row.entity_id === vendor.id);
     const categories = new Set(rates.map((rate: any) => {
         const scope = db.master.subcategoryArticleMap.find((row: any) => row.id === rate.work_required_article_id);
         const work = db.master.workSubcategories.find((row: any) => row.id === scope?.work_required_id);
@@ -504,11 +595,12 @@ function VendorEntityOverview({ vendor }: { vendor: any }) {
       {entityTab === "overview" && <>
         <div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Rate coverage" value={rates.length}/><EntityStat label="Open POs" value={pos.filter((po: any) => po.status !== "cancelled" && po.status !== "received").length}/><EntityStat label="Unpaid bills" value={unpaidBills.length}/></div>
         <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{vendor.name}</p><p className="mt-1 text-muted-foreground">{vendor.phone || "No phone"} · {vendor.locality || "—"} · {vendor.city || "—"}</p><p className="mt-1 text-muted-foreground">Reliability {vendor.reliability_score || "—"}/100 · On-time {vendor.on_time_pct || "—"}% · Supplies {categories.size || "—"} categories</p>{vendor.address ? <p className="mt-2 text-muted-foreground">{vendor.address}</p> : null}</div>
+        <EntityFilesCard entityType="vendor" entityId={vendor.id} title="Vendor documents" />
       </>}
       {entityTab === "rates" && <><SectionTitle label="Current vendor rates" count={rates.length}/><div className="space-y-2">{rates.slice(0, 25).map((rate: any) => <LinkedRow key={rate.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={rate.article_name} value={`${formatINR(rate.rate)} · ${asUnitLabel(db, rate.unit_id)}`} onClick={() => { openDetail("vendorRate" as any, rate.id); }}/>)}{!rates.length ? <EmptyContext label="No vendor prices are linked to this vendor yet."/> : null}</div><SectionTitle label="Rate history" count={histories.length}/><div className="space-y-2">{histories.slice(0, 10).map((history: any) => <div key={history.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between gap-2"><span className="font-semibold">{history.article_name}</span><span className="font-mono">{formatINR(history.new_rate)}</span></div><p className="mt-1 text-[10px] text-muted-foreground">{history.source_type} · {history.source_no || history.source_id || "Manual"} · {formatDate(history.created_at)}</p></div>)}</div></>}
       {entityTab === "po/grn" && <div className="space-y-2">{pos.map((po: any) => <LinkedRow key={po.id} icon={<Package className="h-3.5 w-3.5"/>} label={po.po_no} value={`${titleCase(po.status)} · ${formatINR(po.total_amount || 0)}`} onClick={() => { openDetail("po", po.id); }}/>)}{grns.map((grn: any) => <LinkedRow key={grn.id} icon={<Truck className="h-3.5 w-3.5"/>} label={grn.grn_no} value={`${titleCase(grn.status)} · ${formatDate(grn.received_at || grn.date || grn.created_at)}`} onClick={() => { openDetail("grn", grn.id); }}/>)}{!pos.length && !grns.length ? <EmptyContext label="No PO or GRN trail for this vendor yet."/> : null}</div>}
-      {entityTab === "bills" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no} value={`${titleCase(bill.status)} · ${formatINR(bill.total_amount || 0)}`} onClick={() => { openDetail("vendorBill", bill.id); }}/>)}{payments.map((payment: any) => <div key={payment.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between"><span className="font-semibold">{payment.payment_no}</span><span className="font-mono">{formatINR(payment.amount || 0)}</span></div><p className="mt-1 text-[10px] text-muted-foreground">{titleCase(payment.status || "pending")}</p></div>)}{!bills.length && !payments.length ? <EmptyContext label="No vendor bill/payment trail yet."/> : null}</div>}
-      {entityTab === "files" && <div className="space-y-2">{files.map((link: any) => { const file = db.master.fileAssets.find((row: any) => row.id === link.file_asset_id); return <LinkedRow key={link.id} icon={<FileText className="h-3.5 w-3.5"/>} label={file?.file_name || link.entity_label || "Vendor file"} value={`${titleCase(link.role)} · ${titleCase(link.visibility)}`} onClick={file?.id ? () => { openDetail("media" as any, file.id); } : undefined}/>; })}{!files.length ? <EmptyContext label="No files are linked to this vendor."/> : null}</div>}
+      {entityTab === "bills" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no} value={`${titleCase(bill.status)} · ${formatINR(bill.total_amount || 0)}`} onClick={() => { openDetail("vendorBill", bill.id); }}/>)}{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Vendor payment"} value={`${titleCase(payment.status || "pending")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("vendorPayment", payment.id)}/>)}{!bills.length && !payments.length ? <EmptyContext label="No vendor bill/payment trail yet."/> : null}</div>}
+      {entityTab === "files" && <EntityFilesCard entityType="vendor" entityId={vendor.id} title="Vendor documents" manage showEmpty />}
       {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("procurementInventory")}><Package className="mr-1.5 h-3.5 w-3.5"/>Create PO</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("vendorRates")}><Wallet className="mr-1.5 h-3.5 w-3.5"/>Update rate matrix</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("vendorBills")}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bills/payment</Button><Button size="sm" variant="outline" onClick={() => { updateVendor(vendor.id, { status: vendor.status === "blacklisted" ? "active" : "blacklisted" } as any); toast.success(vendor.status === "blacklisted" ? "Vendor restored" : "Vendor blacklisted/held"); }}><XCircle className="mr-1.5 h-3.5 w-3.5"/>{vendor.status === "blacklisted" ? "Restore vendor" : "Blacklist / hold"}</Button></div>}
     </div>;
 }
@@ -527,7 +619,7 @@ function VendorRateEntityOverview({ rate }: { rate: any }) {
     const sourceKind = entityTypeToPanelKind(rate.current_source_type === "PO" ? "po" : rate.current_source_type === "VENDOR_BILL" ? "vendorBill" : undefined);
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
       <EntityTabs tabs={["overview", "history", "source", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Active rate" value={formatINR(rate.rate || 0)}/><EntityStat label="Reference" value={formatINR(scope?.reference_rate || 0)}/><EntityStat label="History" value={history.length}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{rate.article_name}</p><p className="mt-1 text-muted-foreground">{category?.name || "Category"} · {work?.name || "Work item"} · {variant?.name || "Standard"}</p><p className="mt-1 text-muted-foreground">Unit: {asUnitLabel(db, rate.unit_id || scope?.unit_id)} · MOQ {rate.moq || 0} · Delivery {rate.delivery_days || 0} days</p></div>{vendor ? <LinkedRow icon={<Truck className="h-3.5 w-3.5"/>} label="Vendor profile" value={`${vendor.name} · ${vendor.city || "—"}`} onClick={() => openDetail("vendor" as any, vendor.id)}/> : null}</>}
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Active rate" value={formatINR(rate.rate || 0)}/><EntityStat label="Reference" value={formatINR(scope?.reference_rate || 0)}/><EntityStat label="History" value={history.length}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{rate.article_name}</p><p className="mt-1 text-muted-foreground">{category?.name || "Category"} · {work?.name || "Work item"} · {variant?.name || "Standard"}</p><p className="mt-1 text-muted-foreground">Unit: {asUnitLabel(db, rate.unit_id || scope?.unit_id)} · MOQ {rate.moq || 0} · Delivery {rate.delivery_days || 0} days</p></div>{vendor ? <LinkedRow icon={<Truck className="h-3.5 w-3.5"/>} label="Vendor profile" value={`${vendor.name} · ${vendor.city || "—"}`} onClick={() => openDetail("vendor" as any, vendor.id)}/> : null}<EntityFilesCard entityType="vendor_rate" entityId={rate.id} title="Rate source files" manage showEmpty /></>}
       {entityTab === "history" && <div className="space-y-2">{history.map((row: any) => <div key={row.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between gap-2"><span className="font-semibold">{row.source_type} · {row.status}</span><span className="font-mono">{row.old_rate ? `${formatINR(row.old_rate)} → ` : ""}{formatINR(row.new_rate)}</span></div><p className="mt-1 text-[10px] text-muted-foreground">{row.changed_by || "System"} · {formatDate(row.created_at)} · {row.notes || "No notes"}</p></div>)}{!history.length ? <EmptyContext label="No rate history found."/> : null}</div>}
       {entityTab === "source" && <div className="space-y-2">{sourceKind && rate.current_source_id ? <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Last source" value={`${rate.current_source_type} · ${rate.current_source_no || rate.current_source_id}`} onClick={() => openDetail(sourceKind, rate.current_source_id)}/> : <EmptyContext label="This rate was not created from a PO or vendor bill."/>}</div>}
       {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("procurementInventory")}><Package className="mr-1.5 h-3.5 w-3.5"/>Create PO using rate</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("vendorRates")}><Wallet className="mr-1.5 h-3.5 w-3.5"/>Update rate</Button>{vendor ? <Button size="sm" variant="outline" onClick={() => openDetail("vendor" as any, vendor.id)}><Truck className="mr-1.5 h-3.5 w-3.5"/>Open vendor</Button> : null}</div>}
@@ -567,12 +659,29 @@ function ContractorEntityOverview({ contractor }: { contractor: any }) {
         }
     };
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
-      <EntityTabs tabs={["overview", "work", "rates", "finance", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Work orders" value={workOrders.length}/><EntityStat label="Bills" value={bills.length}/><EntityStat label="Outstanding" value={formatINRShort(contractor.outstanding || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{contractor.name}{contractorStatus !== "active" ? <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{contractorStatus}</span> : null}</p><p className="mt-1 text-muted-foreground">{contractor.phone || "No phone"} · {contractor.trade || "Trade"} · {contractor.city || "—"}</p><p className="mt-1 text-muted-foreground">Rating {contractor.rating || "—"} · Reliability {contractor.reliability_score || "—"}/100 · Worker range {contractor.worker_count_range || "—"}</p>{(contractor.business_gst || contractor.pan || contractor.bank_account) && <p className="mt-1 text-muted-foreground">GST {contractor.business_gst || "—"} · PAN {contractor.pan || "—"} · Bank {contractor.bank_account || "—"}{contractor.ifsc ? ` (${contractor.ifsc})` : ""}</p>}</div></>}
+      <EntityTabs tabs={["overview", "work", "rates", "finance", "files", "actions"]} active={entityTab} onChange={setEntityTab}/>
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Work orders" value={workOrders.length}/><EntityStat label="Bills" value={bills.length}/><EntityStat label="Outstanding" value={formatINRShort(contractor.outstanding || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{contractor.name}{contractorStatus !== "active" ? <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{contractorStatus}</span> : null}</p><p className="mt-1 text-muted-foreground">{contractor.phone || "No phone"} · {contractor.trade || "Trade"} · {contractor.city || "—"}</p><p className="mt-1 text-muted-foreground">Rating {contractor.rating || "—"} · Reliability {contractor.reliability_score || "—"}/100 · Worker range {contractor.worker_count_range || "—"}</p>{(contractor.business_gst || contractor.pan || contractor.bank_account) && <p className="mt-1 text-muted-foreground">GST {contractor.business_gst || "—"} · PAN {contractor.pan || "—"} · Bank {contractor.bank_account || "—"}{contractor.ifsc ? ` (${contractor.ifsc})` : ""}</p>}</div><EntityFilesCard entityType="contractor" entityId={contractor.id} title="Contractor documents" /></>}
       {entityTab === "work" && <div className="space-y-2">{workOrders.map((job: any) => <LinkedRow key={job.id} icon={<Building2 className="h-3.5 w-3.5"/>} label={job.work_order_no} value={`${titleCase(job.status)} · ${formatINR(job.value || 0)}`} onClick={() => openDetail("workOrder", job.id)}/>)}{!workOrders.length ? <EmptyContext label="No work order has been assigned to this contractor."/> : null}</div>}
       {entityTab === "rates" && <div className="space-y-2">{rates.map((row: any) => <div key={row.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between"><span>{row.trade}</span><span className="font-mono">{formatINR(row.rate)}</span></div></div>)}{!rates.length ? <EmptyContext label="No contractor rates recorded."/> : null}</div>}
       {entityTab === "finance" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no || "Contractor bill"} value={`${titleCase(bill.status || "pending")} · ${formatINR(bill.total_amount || bill.amount || 0)}`} onClick={() => openDetail("contractorBill" as any, bill.id)}/>)}{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Contractor payment"} value={`${titleCase(payment.status || "pending")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("contractorPayment" as any, payment.id)}/>)}{!bills.length && !payments.length ? <EmptyContext label="No contractor bill/payment trail."/> : null}</div>}
+      {entityTab === "files" && <EntityFilesCard entityType="contractor" entityId={contractor.id} title="Contractor documents" manage showEmpty />}
       {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("siteExecution")}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Assign / match contractor</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("contractorPayments")}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bills/payment</Button><Button size="sm" variant={contractorStatus === "active" ? "destructive" : "outline"} onClick={handleToggleStatus} title={contractorStatus === "active" ? "Deactivate this contractor — they will be hidden from bid/direct-award dropdowns but their historical records are preserved." : "Re-activate this contractor"}>{contractorStatus === "active" ? <><XCircle className="mr-1.5 h-3.5 w-3.5"/>Deactivate</> : <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Activate</>}</Button></div>}
+    </div>;
+}
+
+function VendorPaymentEntityOverview({ payment }: { payment: import("@/lib/rdash/types").VendorPayment }) {
+    const db = useRDashStore((s) => s.db);
+    const openDetail = useRDashStore((s) => s.openDetail);
+    const bill = db.vendorBills.find((row) => row.id === payment.vendor_bill_id);
+    const po = bill?.po_id ? db.purchaseOrders.find((row) => row.id === bill.po_id) : undefined;
+    const workOrderId = payment.work_order_id || bill?.work_order_id;
+    const workOrder = workOrderId ? db.workOrders.find((row) => row.id === workOrderId) : undefined;
+    const vendor = db.master.vendors.find((row) => row.id === payment.vendor_id);
+    return <div className="h-full overflow-y-auto p-4 rd-scroll">
+      <div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Amount" value={formatINR(payment.amount || 0)}/><EntityStat label="Mode" value={titleCase(String(payment.mode || "—").replaceAll("_", " "))}/><EntityStat label="Status" value={titleCase(payment.status || "—")}/></div>
+      <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{payment.payment_no}</p><p className="mt-1 text-muted-foreground">{payment.vendor_name || vendor?.name || "Vendor"}{po ? ` · ${po.po_no}` : ""}{workOrder ? ` · ${workOrder.work_order_no}` : ""}</p><p className="mt-1 text-muted-foreground">Reference: <span className="font-mono">{payment.reference || "—"}</span></p>{payment.paid_at ? <p className="mt-1 text-muted-foreground">Paid {formatDate(payment.paid_at)}</p> : null}{payment.approved_by ? <p className="mt-1 text-muted-foreground">Approved by {payment.approved_by}</p> : null}</div>
+      <EntityFilesCard entityType="vendor_payment" entityId={payment.id} title="Payment proof" manage showEmpty />
+      <div className="mt-4 flex flex-wrap gap-2">{bill ? <Button size="sm" variant="outline" onClick={() => openDetail("vendorBill", bill.id)}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bill</Button> : null}{workOrder ? <Button size="sm" variant="outline" onClick={() => openDetail("workOrder", workOrder.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/>Open work order</Button> : null}{vendor ? <Button size="sm" variant="outline" onClick={() => openDetail("vendor", vendor.id)}><Truck className="mr-1.5 h-3.5 w-3.5"/>Open vendor</Button> : null}</div>
     </div>;
 }
 
@@ -618,7 +727,7 @@ function ContractorBillEntityOverview({ bill }: { bill: any }) {
     };
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
       <EntityTabs tabs={["overview", "payments", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Bill amount" value={formatINR(bill.amount || 0)}/><EntityStat label="Paid" value={formatINR(bill.paid_amount || 0)}/><EntityStat label="Balance" value={formatINR(bill.balance_amount || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{bill.bill_no}{bill.ra_no ? ` · ${bill.ra_no}` : ""}</p><p className="mt-1 text-muted-foreground">{bill.contractor_name || "Contractor"} · {workOrder?.work_order_no || "—"} · {site?.name || "—"}</p><p className="mt-1 text-muted-foreground">Status: <span className="font-semibold">{titleCase(bill.status || "—")}</span> · Progress {bill.progress_pct ?? "—"}% · Due {bill.due_date ? formatDate(bill.due_date) : "—"}</p>{bill.verified_at && <p className="mt-1 text-muted-foreground">Verified {formatDate(bill.verified_at)} by {bill.verified_by || "—"}</p>}{bill.status === "disputed" && bill.disputed_at && <p className="mt-1 text-destructive">Disputed {formatDate(bill.disputed_at)} by {bill.disputed_by || "—"}{bill.dispute_reason ? ` — ${bill.dispute_reason}` : ""}</p>}{bill.description && <p className="mt-2 text-foreground/80">{bill.description}</p>}</div></>}
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Bill amount" value={formatINR(bill.amount || 0)}/><EntityStat label="Paid" value={formatINR(bill.paid_amount || 0)}/><EntityStat label="Balance" value={formatINR(bill.balance_amount || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{bill.bill_no}{bill.ra_no ? ` · ${bill.ra_no}` : ""}</p><p className="mt-1 text-muted-foreground">{bill.contractor_name || "Contractor"} · {workOrder?.work_order_no || "—"} · {site?.name || "—"}</p><p className="mt-1 text-muted-foreground">Status: <span className="font-semibold">{titleCase(bill.status || "—")}</span> · Progress {bill.progress_pct ?? "—"}% · Due {bill.due_date ? formatDate(bill.due_date) : "—"}</p>{bill.verified_at && <p className="mt-1 text-muted-foreground">Verified {formatDate(bill.verified_at)} by {bill.verified_by || "—"}</p>}{bill.status === "disputed" && bill.disputed_at && <p className="mt-1 text-destructive">Disputed {formatDate(bill.disputed_at)} by {bill.disputed_by || "—"}{bill.dispute_reason ? ` — ${bill.dispute_reason}` : ""}</p>}{bill.description && <p className="mt-2 text-foreground/80">{bill.description}</p>}</div><EntityFilesCard entityType="contractor_bill" entityId={bill.id} title="Contractor bill files" manage showEmpty /></>}
       {entityTab === "payments" && <div className="space-y-2">{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Payment"} value={`${titleCase(payment.status || "—")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("contractorPayment" as any, payment.id)}/>)}{!payments.length ? <EmptyContext label="No payments recorded against this bill yet."/> : null}</div>}
       {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2">{customer && <Button size="sm" variant="outline" onClick={() => openDetail("customer" as any, customer.id)}><User className="mr-1.5 h-3.5 w-3.5"/>Open customer</Button>}{workOrder && <Button size="sm" variant="outline" onClick={() => openDetail("workOrder", workOrder.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/>Open work order</Button>}{contractor && <Button size="sm" variant="outline" onClick={() => openDetail("contractor" as any, contractor.id)}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Open contractor</Button>}{bill.status === "disputed" ? <Button size="sm" variant="outline" onClick={handleResolve} title="Restore the bill to verified status so it can re-enter the payment release flow."><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Resolve dispute</Button> : <Button size="sm" variant="destructive" onClick={() => setDisputeOpen((v) => !v)} title="Mark this bill as disputed — payment release will be frozen until the dispute is resolved."><AlertCircle className="mr-1.5 h-3.5 w-3.5"/>Dispute bill</Button>}{disputeOpen && bill.status !== "disputed" && <div className="sm:col-span-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-2"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Dispute reason</label><Input value={disputeReason} onChange={(e) => setDisputeReason(e.target.value)} placeholder="e.g. Rate mismatch on line 3 — re-measurement required." className="h-8 text-xs"/><div className="mt-1 flex gap-2"><Button size="sm" variant="destructive" className="h-7 text-xs" onClick={handleDispute}>Confirm dispute</Button></div></div>}</div>}
     </div>;
@@ -665,7 +774,7 @@ function ContractorPaymentEntityOverview({ payment }: { payment: any }) {
     };
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
       <EntityTabs tabs={["overview", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Amount" value={formatINR(payment.amount || 0)}/><EntityStat label="Mode" value={titleCase(String(payment.mode || "—").replaceAll("_", " "))}/><EntityStat label="Status" value={titleCase(payment.status || "—")}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{payment.payment_no}</p><p className="mt-1 text-muted-foreground">{payment.contractor_name || "Contractor"} · {workOrder?.work_order_no || "—"} · {site?.name || "—"}</p><p className="mt-1 text-muted-foreground">Reference: <span className="font-mono">{payment.reference || "—"}</span></p>{payment.approved_at && <p className="mt-1 text-muted-foreground">Approved {formatDate(payment.approved_at)} by {payment.approved_by || "—"}</p>}{payment.paid_at && <p className="mt-1 text-muted-foreground">Paid {formatDate(payment.paid_at)}</p>}{payment.status === "held" && payment.held_at && <p className="mt-1 text-warning">Held {formatDate(payment.held_at)} by {payment.held_by || "—"}{payment.hold_reason ? ` — ${payment.hold_reason}` : ""}</p>}{payment.status === "cancelled" && payment.cancelled_at && <p className="mt-1 text-destructive">Cancelled {formatDate(payment.cancelled_at)} by {payment.cancelled_by || "—"}{payment.cancel_reason ? ` — ${payment.cancel_reason}` : ""}</p>}</div></>}
+      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Amount" value={formatINR(payment.amount || 0)}/><EntityStat label="Mode" value={titleCase(String(payment.mode || "—").replaceAll("_", " "))}/><EntityStat label="Status" value={titleCase(payment.status || "—")}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{payment.payment_no}</p><p className="mt-1 text-muted-foreground">{payment.contractor_name || "Contractor"} · {workOrder?.work_order_no || "—"} · {site?.name || "—"}</p><p className="mt-1 text-muted-foreground">Reference: <span className="font-mono">{payment.reference || "—"}</span></p>{payment.approved_at && <p className="mt-1 text-muted-foreground">Approved {formatDate(payment.approved_at)} by {payment.approved_by || "—"}</p>}{payment.paid_at && <p className="mt-1 text-muted-foreground">Paid {formatDate(payment.paid_at)}</p>}{payment.status === "held" && payment.held_at && <p className="mt-1 text-warning">Held {formatDate(payment.held_at)} by {payment.held_by || "—"}{payment.hold_reason ? ` — ${payment.hold_reason}` : ""}</p>}{payment.status === "cancelled" && payment.cancelled_at && <p className="mt-1 text-destructive">Cancelled {formatDate(payment.cancelled_at)} by {payment.cancelled_by || "—"}{payment.cancel_reason ? ` — ${payment.cancel_reason}` : ""}</p>}</div><EntityFilesCard entityType="contractor_payment" entityId={payment.id} title="Payment proof" manage showEmpty /></>}
       {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2">{bill && <Button size="sm" variant="outline" onClick={() => openDetail("contractorBill" as any, bill.id)}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bill</Button>}{workOrder && <Button size="sm" variant="outline" onClick={() => openDetail("workOrder", workOrder.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/>Open work order</Button>}{contractor && <Button size="sm" variant="outline" onClick={() => openDetail("contractor" as any, contractor.id)}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Open contractor</Button>}{canActOnPayment && <Button size="sm" variant="outline" onClick={() => setActionOpen(actionOpen === "hold" ? null : "hold")} title="Freeze this payment pending investigation."><AlertCircle className="mr-1.5 h-3.5 w-3.5"/>Hold payment</Button>}{canActOnPayment && <Button size="sm" variant="destructive" onClick={() => setActionOpen(actionOpen === "cancel" ? null : "cancel")} title="Void this payment entirely."><XCircle className="mr-1.5 h-3.5 w-3.5"/>Cancel payment</Button>}{actionOpen && <div className="sm:col-span-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-2"><label className="text-[10px] font-semibold uppercase text-muted-foreground">{actionOpen === "hold" ? "Hold reason" : "Cancel reason"}</label><Input value={actionReason} onChange={(e) => setActionReason(e.target.value)} placeholder={actionOpen === "hold" ? "e.g. Awaiting invoice reconciliation." : "e.g. Duplicate payment — entered in error."} className="h-8 text-xs"/><div className="mt-1 flex gap-2"><Button size="sm" variant={actionOpen === "hold" ? "outline" : "destructive"} className="h-7 text-xs" onClick={actionOpen === "hold" ? handleHold : handleCancel}>Confirm {actionOpen}</Button></div></div>}{!canActOnPayment && <EmptyContext label={`No hold/cancel actions available — payment is already ${payment.status}.`}/>}</div>}
     </div>;
 }
@@ -697,9 +806,10 @@ function StaffEntityOverview({ staff }: { staff: any }) {
 }
 
 function AuditEntityOverview({ event }: { event: any }) {
+    const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const [entityTab, setEntityTab] = React.useState("summary");
-    const targetKind = entityTypeToPanelKind(event.entity_type);
+    const target = attachmentOwnerPanelTarget(db, event.entity_type, event.entity_id);
     const changes = Array.isArray(event.changes) ? event.changes : [];
     const beforeAfter = !changes.length && (event.before !== undefined || event.after !== undefined)
       ? [{ field_path: "record", before: event.before, after: event.after }]
@@ -708,7 +818,7 @@ function AuditEntityOverview({ event }: { event: any }) {
       <EntityTabs tabs={["summary", "before/after", "linked record", "actor", "recovery"]} active={entityTab} onChange={setEntityTab}/>
       {entityTab === "summary" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Kind" value={titleCase(event.kind)}/><EntityStat label="Actor" value={event.actor}/><EntityStat label="Changes" value={beforeAfter.length}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{event.action}</p><p className="mt-1 text-muted-foreground">{event.actor_role || "System"} · {formatDate(event.timestamp)} · {event.source_module || "unknown module"}</p><p className="mt-2 text-muted-foreground">Entity: {event.entity_label || event.entity_type || "—"}</p>{event.reason ? <p className="mt-2 text-muted-foreground">Reason: {event.reason}</p> : null}</div></>}
       {entityTab === "before/after" && <AuditChangeRows changes={beforeAfter}/>}      
-      {entityTab === "linked record" && (targetKind && event.entity_id ? <LinkedRow icon={<ArrowRight className="h-3.5 w-3.5"/>} label="Open affected record" value={`${titleCase(String(targetKind))} · ${event.entity_label || event.entity_id}`} onClick={() => openDetail(targetKind, event.entity_id)}/> : <EmptyContext label="This audit event does not point to an openable record."/>)}
+      {entityTab === "linked record" && (target ? <LinkedRow icon={<ArrowRight className="h-3.5 w-3.5"/>} label="Open affected record" value={`${titleCase(String(target.kind))} · ${event.entity_label || event.entity_id}`} onClick={() => openDetail(target.kind, target.id)}/> : <EmptyContext label="This audit event does not point to an openable record."/>)}
       {entityTab === "actor" && <div className="rounded-lg border border-border bg-background p-3 text-xs"><p className="font-bold">{event.actor}</p><p className="mt-1 text-muted-foreground">Role: {event.actor_role || "System"}</p><p className="mt-1 text-muted-foreground">Thread: {event.thread_id || "—"}</p><p className="mt-1 text-muted-foreground">Source module: {event.source_module || "—"}</p></div>}
       {entityTab === "recovery" && <div className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-xs"><p className="font-bold text-warning">Recovery / reversal</p><p className="mt-1 text-muted-foreground">This panel shows exactly what changed. Safe rollback should be implemented per domain action, not as a blind JSON restore.</p><Button size="sm" variant="outline" className="mt-3" disabled>Rollback requires domain-specific approval</Button></div>}
     </div>;
@@ -726,7 +836,7 @@ function MediaEntityOverview({ file }: { file: any }) {
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
       <EntityTabs tabs={["preview", "links", "catalogue", "actions"]} active={entityTab} onChange={setEntityTab}/>
       {entityTab === "preview" && <><FilePreview file={{ fileName: file.file_name, mimeType: file.mime_type, googleFileId: file.google_file_id, url: file.web_view_link, thumbnailUrl: file.thumbnail_url }} controls className="mb-3"/><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Business links" value={usageCount}/><EntityStat label="Kind" value={titleCase(file.kind || "file")}/><EntityStat label="Status" value={titleCase(file.status || "active")}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{file.file_name}</p><p className="mt-1 text-muted-foreground">{file.storage_mode?.replaceAll("_", " ")} · {file.mime_type || "unknown type"} · {file.tags?.join(", ") || "no tags"}</p>{file.web_view_link ? <a className="mt-2 inline-flex text-primary hover:underline" href={file.web_view_link} target="_blank" rel="noreferrer">Open original Drive file</a> : null}</div></>}
-      {entityTab === "links" && <div className="space-y-2">{attachments.map((link: any) => { const kind = entityTypeToPanelKind(link.entity_type); return <LinkedRow key={link.id} icon={<FileText className="h-3.5 w-3.5"/>} label={link.entity_label || titleCase(link.entity_type)} value={`${titleCase(link.role)} · ${titleCase(link.visibility)}`} onClick={kind && link.entity_id ? () => { openDetail(kind, link.entity_id); } : undefined}/>; })}{staffDocs.map((doc: any) => { const staff = db.master.staff.find((row: any) => row.id === doc.staff_id); return <LinkedRow key={doc.id} icon={<User className="h-3.5 w-3.5"/>} label={`${staff?.name || doc.staff_id} · ${titleCase(doc.document_type.replaceAll("_", " "))}`} value={titleCase(doc.status)} onClick={() => { openDetail("staff" as any, doc.staff_id); }}/>; })}{!attachments.length && !staffDocs.length ? <EmptyContext label="No direct entity attachments found."/> : null}</div>}
+      {entityTab === "links" && <div className="space-y-2">{attachments.map((link: any) => { const target = attachmentOwnerPanelTarget(db, link.entity_type, link.entity_id); return <LinkedRow key={link.id} icon={<FileText className="h-3.5 w-3.5"/>} label={link.entity_label || titleCase(link.entity_type)} value={`${titleCase(link.role)} · ${titleCase(link.visibility)}`} onClick={target ? () => { openDetail(target.kind, target.id); } : undefined}/>; })}{staffDocs.map((doc: any) => { const staff = db.master.staff.find((row: any) => row.id === doc.staff_id); return <LinkedRow key={doc.id} icon={<User className="h-3.5 w-3.5"/>} label={`${staff?.name || doc.staff_id} · ${titleCase(doc.document_type.replaceAll("_", " "))}`} value={titleCase(doc.status)} onClick={() => { openDetail("staff" as any, doc.staff_id); }}/>; })}{!attachments.length && !staffDocs.length ? <EmptyContext label="No direct entity attachments found."/> : null}</div>}
       {entityTab === "catalogue" && <div className="space-y-2">{catalogue ? <div className="rounded-md border border-border bg-muted/20 p-2 text-xs"><p className="font-semibold">Catalogue: {catalogue.title}</p><p className="mt-1 text-[10px] text-muted-foreground">{catalogue.catalog_type || "catalogue"} · customer sendable {catalogue.sendable_to_customer ? "yes" : "no"}</p></div> : null}{reference ? <div className="rounded-md border border-border bg-muted/20 p-2 text-xs"><p className="font-semibold">Reference media: {reference.title}</p><p className="mt-1 text-[10px] text-muted-foreground">{reference.tags?.join(", ") || "No tags"}</p></div> : null}{!catalogue && !reference ? <EmptyContext label="This media is not registered as a catalogue/reference resource."/> : null}</div>}
       {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" variant="outline" onClick={() => window.open(file.web_view_link, "_blank", "noopener,noreferrer")}><FileText className="mr-1.5 h-3.5 w-3.5"/>Open Drive file</Button><Button size="sm" variant="outline" onClick={() => toast.info("Verification/archival should be done from the owning media module") }><Check className="mr-1.5 h-3.5 w-3.5"/>Verify usage</Button></div>}
     </div>;
@@ -822,6 +932,7 @@ function QuotationOverview({ q }: {
               </span>))}
           </div>)}
       </div>
+      <EntityFilesCard entityType="quotation" entityId={q.id} title="Quotation files & approvals" manage showEmpty />
       <div className="mt-5 flex flex-wrap gap-2">
         {q.status === "draft" && (<Button size="sm" onClick={() => { updateQuotation(q.id, { status: "sent" }); toast.success("Quotation sent to customer"); }}>
             <Send className="mr-1.5 h-3.5 w-3.5"/> Mark as Sent
@@ -930,6 +1041,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     const [newUnit, setNewUnit] = React.useState("nos");
     const [suggestIdx, setSuggestIdx] = React.useState(-1);
     const [showSuggest, setShowSuggest] = React.useState(false);
+    const [itemFilesId, setItemFilesId] = React.useState<string | null>(null);
     const titleWrapRef = React.useRef<HTMLDivElement>(null);
     const total = items.reduce((n, i) => n + i.amount, 0);
     const suggestions = React.useMemo(() => {
@@ -1020,9 +1132,12 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             <input type="number" defaultValue={it.rate} min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
             updateQuotationItem(quotationId, it.id, { rate: v }); }} className="rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono text-muted-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
             <span className="py-0.5 text-right font-mono font-semibold text-foreground">{formatINR(it.amount)}</span>
-            <button type="button" onClick={() => { removeQuotationItem(quotationId, it.id); toast.success("Item removed"); }} className="flex items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${it.title}`}>
-              <Trash2 className="h-3.5 w-3.5"/>
-            </button>
+            <div className="flex items-center justify-center gap-0.5">
+              <button type="button" onClick={() => setItemFilesId(it.id)} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Files for ${it.title}`} title="Line-item files"><Paperclip className="h-3 w-3"/></button>
+              <button type="button" onClick={() => { removeQuotationItem(quotationId, it.id); toast.success("Item removed"); }} className="flex items-center justify-center rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${it.title}`}>
+                <Trash2 className="h-3.5 w-3.5"/>
+              </button>
+            </div>
           </div>)))}
 
       <div className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr] gap-2 bg-muted/30 px-3 py-2 text-xs font-bold">
@@ -1089,6 +1204,12 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         </div>) : (<button type="button" onClick={() => setAdding(true)} className="flex w-full items-center justify-center gap-1.5 border-t border-dashed border-border py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground">
           <Plus className="h-3.5 w-3.5"/> Add item
         </button>)}
+      <Dialog open={Boolean(itemFilesId)} onOpenChange={(open) => { if (!open) setItemFilesId(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Quotation line files</DialogTitle><DialogDescription>Attach only documents or approvals that apply specifically to this line item.</DialogDescription></DialogHeader>
+          {itemFilesId ? <EntityFilesCard entityType="quotation_item" entityId={itemFilesId} title="Line-item files" manage showEmpty /> : null}
+        </DialogContent>
+      </Dialog>
     </div>);
 }
 const DUE_EVENTS = [
@@ -1234,6 +1355,8 @@ function JobOverviewBody({ j }: {
     const pos = db.purchaseOrders.filter((p) => p.work_order_id === j.id);
     const grns = db.grns.filter((g) => g.work_order_id === j.id);
     const dispatches = db.dispatches.filter((d) => d.work_order_id === j.id);
+    const drawings = db.drawings.filter((d) => d.work_order_id === j.id);
+    const executionLogs = db.executionLogs.filter((log) => log.work_order_id === j.id);
     const costLines = db.workOrderCostLines.filter((c) => c.work_order_id === j.id);
     const site = j.site_id ? db.sites.find((s) => s.id === j.site_id) : undefined;
     const customer = db.customers.find((p) => p.id === j.customer_id || p.id === j.customer_id);
@@ -1292,6 +1415,7 @@ function JobOverviewBody({ j }: {
       <div className={cn("mt-3 rounded-md border p-2.5 text-[11px]", materialResponsibility === "company" ? "border-primary/30 bg-primary/[0.05] text-primary" : materialResponsibility === "contractor" ? "border-warning/30 bg-warning/[0.05] text-warning" : materialResponsibility === "customer" ? "border-success/30 bg-success/[0.05] text-success" : "border-border bg-muted/30 text-muted-foreground")}>
         <span className="font-semibold">Procurement: </span>{modeHint}
       </div>
+      <EntityFilesCard entityType="workOrder" entityId={j.id} title="Work Order files" manage showEmpty />
       {j.status === "abandoned" && (<div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/[0.05] p-3">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 text-destructive"/>
@@ -1321,6 +1445,9 @@ function JobOverviewBody({ j }: {
         <LinkedRow icon={<Package className="h-3.5 w-3.5"/>} label="Purchase Orders" value={`${pos.length} POs`} onClick={() => setActiveModule("procurementInventory")}/>
         <LinkedRow icon={<Truck className="h-3.5 w-3.5"/>} label="GRNs" value={`${grns.length} receipts`} onClick={() => setActiveModule("grn")}/>
         <LinkedRow icon={<Wrench className="h-3.5 w-3.5"/>} label="Site dispatches" value={`${dispatches.length} issues`} onClick={() => setActiveModule("dispatch")}/>
+        <LinkedRow icon={<FileText className="h-3.5 w-3.5"/>} label="Drawings" value={`${drawings.length} drawing${drawings.length === 1 ? "" : "s"}`} onClick={() => setActiveModule("drawings")}/>
+        <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Execution logs" value={`${executionLogs.length} log${executionLogs.length === 1 ? "" : "s"}`} onClick={() => setActiveModule("executionLogs")}/>
+
         <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Cost lines" value={`${costLines.length} entries · ${formatINRShort(costLines.reduce((n, c) => n + c.amount, 0))}`} onClick={() => setActiveModule("workOrderPnl")}/>
         <LinkedRow icon={<AlertCircle className="h-3.5 w-3.5"/>} label="Obstacles" value={`${db.blocked.filter((b) => b.linked_work_order_id === j.id).length} blocked`} onClick={() => setActiveModule("blockedRisks")}/>
       </div>
@@ -1339,6 +1466,7 @@ function JobBiddingBody({ j }: {
     const [amount, setAmount] = React.useState("");
     const [days, setDays] = React.useState("");
     const [withMaterial, setWithMaterial] = React.useState(true);
+    const [bidFilesId, setBidFilesId] = React.useState<string | null>(null);
     const bids = db.contractorBids
         .filter((b) => b.work_order_id === j.id)
         .sort((a, b) => (a.quote_amount || 0) - (b.quote_amount || 0));
@@ -1472,14 +1600,23 @@ function JobBiddingBody({ j }: {
                     <StatusBadge label={b.status === "selected" ? "Selected" : b.status === "rejected" ? "Rejected" : b.status === "withdrawn" ? "Withdrawn" : "Submitted"} className={b.status === "selected" ? "bg-success/10 text-success border-success/20" : b.status === "rejected" || b.status === "withdrawn" ? "bg-muted text-muted-foreground border-border" : "bg-primary/10 text-primary border-primary/20"}/>
                   </td>
                   <td className="px-2.5 py-2 text-right">
-                    {(b.status === "submitted") && (<Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => { selectContractorBid(b.id); toast.success(`${b.contractor_name} awarded ${j.work_order_no}`); }}>
-                        Award
-                      </Button>)}
+                    <div className="flex justify-end gap-1">
+                      <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => setBidFilesId(b.id)}>Files</Button>
+                      {(b.status === "submitted") && (<Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => { selectContractorBid(b.id); toast.success(`${b.contractor_name} awarded ${j.work_order_no}`); }}>
+                          Award
+                        </Button>)}
+                    </div>
                   </td>
                 </tr>))}
             </tbody>
           </table>
         </div>)}
+      <Dialog open={Boolean(bidFilesId)} onOpenChange={(open) => { if (!open) setBidFilesId(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Contractor bid files</DialogTitle><DialogDescription>Keep the contractor's quotation and bid-specific documents with the bid itself.</DialogDescription></DialogHeader>
+          {bidFilesId ? <EntityFilesCard entityType="contractor_bid" entityId={bidFilesId} title="Bid files" manage showEmpty /> : null}
+        </DialogContent>
+      </Dialog>
     </div>);
 }
 function JobSettlementBody({ j }: {
@@ -1565,6 +1702,7 @@ function JobSettlementBody({ j }: {
                 </div>
               </div>
               <p className="mt-2 text-[11px] text-foreground/80">{s.reason}</p>
+              <EntityFilesCard entityType="contractor_settlement" entityId={s.id} title="Settlement files" manage showEmpty />
               {s.replacement_work_order_id && (<p className="mt-1.5 text-[11px] text-primary">
                   → Replacement workOrder: <strong>{db.workOrders.find((x) => x.id === s.replacement_work_order_id)?.work_order_no || s.replacement_work_order_id}</strong> (open the Bidding tab on that workOrder to view the new bidding round)
                 </p>)}
@@ -1646,6 +1784,7 @@ function POOverview({ po }: {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">PO items</p>
         <LineItemTable items={po.items}/>
       </div>
+      <EntityFilesCard entityType="purchase_order" entityId={po.id} title="Purchase Order files" manage showEmpty />
       {po.grn_ids.length > 0 && (<div className="mt-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linked GRNs</p>
           <div className="space-y-1.5">
@@ -1701,6 +1840,7 @@ function GRNOverview({ grn }: {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Received items</p>
         <LineItemTable items={grn.items}/>
       </div>
+      <EntityFilesCard entityType="grn" entityId={grn.id} title="Delivery challan & receiving evidence" manage showEmpty />
       <div className="mt-4">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Linked records</p>
         <div className="space-y-1.5">
@@ -1733,6 +1873,7 @@ function DispatchOverview({ d }: {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Issued items</p>
         <LineItemTable items={d.items}/>
       </div>
+      <EntityFilesCard entityType="dispatch" entityId={d.id} title="Dispatch proof" manage showEmpty />
       {d.status === "issued" && (<div className="mt-5">
           <Button size="sm" onClick={() => { ack(d.id); toast.success("Dispatch acknowledged by contractor"); }}>
             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/> Acknowledge Receipt
@@ -1756,6 +1897,7 @@ function PaymentOverview({ p }: {
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
       <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><Avatar name={(p.customer_name || "Customer")} size={42}/><div><p className="text-base font-bold">{formatINR(p.amount)}</p><p className="text-xs text-muted-foreground">{(p.customer_name || "Customer")} · {p.milestone_label || "Collection milestone"}</p></div></div><div className="flex items-center gap-1.5">{p.provisional && <span title={p.reconciled_at ? `Reconciled at ${formatDate(p.reconciled_at)}` : "Created against provisional (unverified) data"} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold", p.reconciled_at ? "border-success/30 bg-success/10 text-success" : "border-warning/30 bg-warning/10 text-warning")}>{p.reconciled_at ? "Reconciled" : "Provisional"}</span>}<StatusBadge label={st.label} className={st.className}/></div></div>
       <div className="mt-4 grid grid-cols-2 gap-3"><Field label="Due date" value={formatDate(p.due_date)}/><Field label="Received" value={formatINR(received)}/><Field label="Open balance" value={formatINR(balance)}/><Field label="Invoice" value={invoice ? invoice.invoice_no : "Not issued"}/></div>
+      <EntityFilesCard entityType="payment" entityId={p.id} title="Collection milestone files" manage showEmpty />
       <div className="mt-4 rounded-lg border border-primary/25 bg-primary/[0.04] p-3">
         {invoice ? <><p className="text-xs font-semibold text-primary">Invoice issued</p><p className="mt-1 text-xs text-muted-foreground">Receipts are recorded against the invoice so partial collections stay auditable.</p><Button size="sm" className="mt-2" onClick={() => openDetail("invoice", invoice.id)}><FileText className="mr-1.5 h-3.5 w-3.5"/> Open invoice & record receipt</Button></> : <><p className="text-xs font-semibold text-primary">Issue customer invoice</p><p className="mt-1 text-xs text-muted-foreground">A planned collection milestone is not an invoice. Issue the invoice before recording money received.</p><Button size="sm" className="mt-2" onClick={() => { const id = issueInvoice(p.id); if (id) {
         toast.success("Customer invoice issued");
@@ -1773,6 +1915,7 @@ function PaymentOverview({ p }: {
 function InvoiceOverview({ invoice }: {
     invoice: import("@/lib/rdash/types").CustomerInvoice;
 }) {
+    const db = useRDashStore((s) => s.db);
     const recordCustomerReceipt = useRDashStore((s) => s.recordCustomerReceipt);
     const reconcileInvoice = useRDashStore((s) => s.reconcileInvoice);
     const openDetail = useRDashStore((s) => s.openDetail);
@@ -1781,6 +1924,7 @@ function InvoiceOverview({ invoice }: {
     const [receiptAmount, setReceiptAmount] = React.useState(String(invoice.balance_amount));
     const st = invoiceStatusStyle(invoice.status);
     const canCollect = invoice.status === "issued" || invoice.status === "partial" || invoice.status === "overdue";
+    const receipts = db.customerReceipts.filter((receipt) => receipt.invoice_id === invoice.id);
     const recordReceipt = () => {
         const amount = Number(receiptAmount);
         if (!Number.isFinite(amount) || amount <= 0 || amount > invoice.balance_amount + 0.01) {
@@ -1803,9 +1947,11 @@ function InvoiceOverview({ invoice }: {
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
       <div className="flex items-start justify-between gap-3"><div className="flex items-center gap-3"><Avatar name={(invoice.customer_name || "Customer")} size={42}/><div><p className="text-base font-bold">{invoice.invoice_no}</p><p className="text-xs text-muted-foreground">{(invoice.customer_name || "Customer")} - {invoice.title}</p></div></div><div className="flex items-center gap-1.5">{invoice.provisional && <span title={invoice.reconciled_at ? `Reconciled at ${formatDate(invoice.reconciled_at)}` : "Issued against provisional (unverified) data"} className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold", invoice.reconciled_at ? "border-success/30 bg-success/10 text-success" : "border-warning/30 bg-warning/10 text-warning")}>{invoice.reconciled_at ? "Reconciled" : "Provisional"}</span>}<StatusBadge label={st.label} className={st.className}/></div></div>
       <div className="mt-4 grid grid-cols-2 gap-3"><Field label="Invoice total" value={formatINR(invoice.total_amount)} mono/><Field label="Balance" value={formatINR(invoice.balance_amount)} mono/><Field label="Issued" value={invoice.issued_at ? formatDate(invoice.issued_at) : "-"}/><Field label="Due date" value={formatDate(invoice.due_date)}/><Field label="Paid" value={invoice.paid_at ? formatDate(invoice.paid_at) : "-"}/><Field label="Paid amount" value={formatINR(invoice.paid_amount)} mono/></div>
+      <EntityFilesCard entityType="invoice" entityId={invoice.id} title="Invoice files" manage showEmpty />
       {invoice.notes && <p className="mt-3 rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">{invoice.notes}</p>}
       {canCollect && <div className="mt-4 rounded-lg border border-success/25 bg-success/[0.05] p-3"><p className="mb-2 text-xs font-semibold text-success">Record customer receipt</p><div className="grid gap-2 sm:grid-cols-[0.8fr_1fr_1.2fr_auto]"><Input type="number" min="0" max={invoice.balance_amount} step="0.01" value={receiptAmount} onChange={(e) => setReceiptAmount(e.target.value)} placeholder="Amount" className="h-8 text-xs"/><select value={mode} onChange={(e) => setMode(e.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs"><option value="upi">UPI</option><option value="bank_transfer">Bank Transfer</option><option value="cash">Cash</option><option value="cheque">Cheque</option></select><Input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Reference no." className="h-8 text-xs"/><Button size="sm" onClick={recordReceipt}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/> Record</Button></div><p className="mt-2 text-[11px] text-muted-foreground">Partial receipts reduce only the recorded amount; the remaining invoice balance stays open.</p></div>}
       {invoice.provisional && !invoice.reconciled_at && <div className="mt-4 rounded-lg border border-success/25 bg-success/[0.05] p-3"><p className="text-xs font-semibold text-success">Reconcile provisional invoice</p><p className="mt-1 text-xs text-muted-foreground">This invoice was issued against provisional (unverified) data. Reconcile it now that the underlying BOQ/measurements are verified.</p><Button size="sm" className="mt-2" onClick={() => { try { reconcileInvoice(invoice.id); toast.success("Invoice reconciled — provisional flag cleared."); } catch (error) { toast.error(error instanceof Error ? error.message : "Reconciliation failed."); } }}><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/> Reconcile now</Button></div>}
+      {receipts.length > 0 && <div className="mt-4 space-y-2"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Receipts & payment proof</p>{receipts.map((receipt) => <div key={receipt.id} className="rounded-md border border-border bg-muted/20 p-2"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold">{receipt.receipt_no}</span><span className="font-mono">{formatINR(receipt.amount)}</span></div><EntityFilesCard entityType="customer_receipt" entityId={receipt.id} title="Receipt proof" manage showEmpty /></div>)}</div>}
       <div className="mt-4 space-y-1.5">{invoice.payment_id && <LinkedRow icon={<Wallet className="h-3.5 w-3.5"/>} label="Collection milestone" value="Open milestone" onClick={() => openDetail("payment", invoice.payment_id!)}/>}{invoice.quotation_id && <LinkedRow icon={<FileText className="h-3.5 w-3.5"/>} label="Quotation" value="Open quotation" onClick={() => openDetail("quotation", invoice.quotation_id!)}/>}{invoice.work_order_id && <LinkedRow icon={<Building2 className="h-3.5 w-3.5"/>} label="Work Order" value="Open work order" onClick={() => openDetail("workOrder", invoice.work_order_id!)}/>}</div>
     </div>);
 }
@@ -1829,9 +1975,10 @@ function TaskOverview({ t }: {
         <Field label="Type" value={titleCase(t.task_type || "general")}/>
       </div>
       {t.description && <p className="mt-3 text-sm text-foreground/80">{t.description}</p>}
+      <EntityFilesCard entityType="task" entityId={t.id} title="Task files & completion proof" manage showEmpty />
       {(t.status === "todo" || t.status === "in_progress") && (<div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Completion record</p>
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What was done? Add Drive proof in the Thread tab before completion when needed." className="mb-2 text-sm" rows={3}/>
+          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What was done? Add task-specific proof above when needed." className="mb-2 text-sm" rows={3}/>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => { try {
             completeTask(t.id, { note: notes.trim() });
@@ -2019,6 +2166,7 @@ function SiteOverview({ site }: {
         <Field label="Address" value={site.address || site.locality || site.city || "Not added"}/>
         <Field label="Measurement snapshots" value={`${verifiedMeasurements.length} verified`}/>
       </div>
+      <EntityFilesCard entityType="site" entityId={site.id} title="Site photos & files" />
       <ContextSection title={`Areas (${areas.length})`}>
         {areas.length ? areas.map((area) => {
             const revision = [...db.measurementRevisions].filter((row) => row.area_id === area.id && row.status === "verified").sort((a, b) => b.revision_no - a.revision_no)[0];
@@ -2088,11 +2236,12 @@ function AreaOverview({ area }: {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <EntityFilesCard entityType="room" entityId={area.id} title="Area photos & files" manage={!area.is_archived} showEmpty={!area.is_archived} />
       <ContextSection title={`Work Required in this Area (${works.length})`}>
         {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={work.title} value={`${titleCase(work.status)} · ${work.system_name || "Specification pending"}`} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="Add area-specific work required before customer quotation or contractor bidding."/>}
       </ContextSection>
       <ContextSection title={`Measurement Revisions (${measurements.length})`}>
-        {measurements.length ? measurements.map((revision) => <div key={revision.id} className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"><div className="flex items-center justify-between gap-2"><span className="font-semibold">Revision {revision.revision_no}</span><StatusPill label={titleCase(revision.status)} tone={revision.status === "verified" ? "success" : revision.status === "superseded" ? "default" : "warning"}/></div><p className="mt-1 text-muted-foreground">{revision.length || 0} × {revision.width || 0}{revision.height ? ` × ${revision.height}` : ""} {revision.unit} · {revision.calculated_area || 0} sq ft</p></div>) : <EmptyContext label="No measurement revision has been captured."/>}
+        {measurements.length ? measurements.map((revision) => <div key={revision.id} className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"><div className="flex items-center justify-between gap-2"><span className="font-semibold">Revision {revision.revision_no}</span><StatusPill label={titleCase(revision.status)} tone={revision.status === "verified" ? "success" : revision.status === "superseded" ? "default" : "warning"}/></div><p className="mt-1 text-muted-foreground">{revision.length || 0} × {revision.width || 0}{revision.height ? ` × ${revision.height}` : ""} {revision.unit} · {revision.calculated_area || 0} sq ft</p><EntityFilesCard entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id && revision.status !== "superseded"} showEmpty={!area.is_archived && revision.id === latest?.id && revision.status !== "superseded"} /></div>) : <EmptyContext label="No measurement revision has been captured."/>}
       </ContextSection>
     </div>);
 }
@@ -2122,6 +2271,7 @@ function WorkRequiredOverview({ work }: {
         {site && <Button size="sm" variant="outline" onClick={() => openDetail("site", site.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/> {site.name}</Button>}
         <Button size="sm" onClick={() => setActiveModule("siteExecution")}><Wrench className="mr-1.5 h-3.5 w-3.5"/> Open execution flow</Button>
       </div>
+      <EntityFilesCard entityType="workRequired" entityId={work.id} title="Requirement files" manage showEmpty />
       <ContextSection title={`Covered Areas (${areas.length})`}>
         {areas.length ? areas.map((area) => <LinkedRow key={area.id} icon={<MapPin className="h-3.5 w-3.5"/>} label={area.name} value={titleCase(area.stage)} onClick={() => openDetail("area", area.id)}/>) : <EmptyContext label="No areas are linked."/>}
       </ContextSection>
@@ -2129,7 +2279,7 @@ function WorkRequiredOverview({ work }: {
         {quotes.length ? quotes.map((quote) => <LinkedRow key={quote.id} icon={<FileText className="h-3.5 w-3.5"/>} label={quote.quotation_no} value={`${titleCase(quote.status)} · ${formatINRShort(quote.total_amount)}`} onClick={() => openDetail("quotation", quote.id)}/>) : <EmptyContext label="Measure the covered areas, then prepare a customer quotation."/>}
       </ContextSection>
       <ContextSection title={`Award Path (${acceptedScopes.length})`}>
-        {acceptedScopes.length ? acceptedScopes.map((scope) => { const order = scope.work_order_id ? db.workOrders.find((row) => row.id === scope.work_order_id) : undefined; return <LinkedRow key={scope.id} icon={<Gavel className="h-3.5 w-3.5"/>} label={scope.label} value={order ? `${order.work_order_no} · ${titleCase(order.status)}` : titleCase(scope.status)} onClick={() => { if (order) openDetail("workOrder", order.id); else setActiveModule("siteExecution"); }}/>; }) : <EmptyContext label="After customer acceptance, invite contractor bids before a work order can be created."/>}
+        {acceptedScopes.length ? acceptedScopes.map((scope) => { const order = scope.work_order_id ? db.workOrders.find((row) => row.id === scope.work_order_id) : undefined; return <div key={scope.id} className="rounded-md border border-border bg-muted/20 p-2"><LinkedRow icon={<Gavel className="h-3.5 w-3.5"/>} label={scope.label} value={order ? `${order.work_order_no} · ${titleCase(order.status)}` : titleCase(scope.status)} onClick={() => { if (order) openDetail("workOrder", order.id); else setActiveModule("siteExecution"); }}/><EntityFilesCard entityType="accepted_scope" entityId={scope.id} title="Acceptance files" manage showEmpty /></div>; }) : <EmptyContext label="After customer acceptance, invite contractor bids before a work order can be created."/>}
       </ContextSection>
     </div>);
 }
@@ -2156,6 +2306,7 @@ function BOQOverview({ b }: {
     const approve = useRDashStore((s) => s.approveBOQ);
     const db = useRDashStore((s) => s.db);
     const linkBOQItemToDrawing = useRDashStore((s) => s.linkBOQItemToDrawing);
+    const [boqItemFilesId, setBoqItemFilesId] = React.useState<string | null>(null);
     const jobDrawings = db.drawings.filter((d) => d.work_order_id === b.work_order_id);
     const itemsWithDrawings = b.items.filter((i) => i.drawing_id);
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
@@ -2186,24 +2337,33 @@ function BOQOverview({ b }: {
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Material plan</p>
         <LineItemTable items={b.items}/>
       </div>
-      {jobDrawings.length > 0 && (<div className="mt-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Link items to drawings (BOQ-from-drawing take-off)</p>
-          <div className="space-y-1">
-            {b.items.map((it) => (<div key={it.id} className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-xs">
-                <span className="flex-1 truncate">{it.title}</span>
-                {it.drawing_no && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{it.drawing_no}</span>}
-                <select value={it.drawing_id || ""} onChange={(e) => {
-                    if (e.target.value) {
-                        linkBOQItemToDrawing(b.id, it.id, e.target.value);
-                        toast.success(`Linked "${it.title}" to ${db.drawings.find((d) => d.id === e.target.value)?.drawing_no}`);
-                    }
-                }} className="h-7 rounded-md border border-input bg-card px-1.5 text-[11px]">
-                  <option value="">— link drawing —</option>
-                  {jobDrawings.map((d) => (<option key={d.id} value={d.id}>{d.drawing_no} · {d.title.slice(0, 30)}</option>))}
-                </select>
-              </div>))}
-          </div>
-        </div>)}
+      <EntityFilesCard entityType="boq" entityId={b.id} title="BOQ files" manage showEmpty />
+      <div className="mt-4">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">BOQ item files{jobDrawings.length ? " & drawing links" : ""}</p>
+        <div className="space-y-1">
+          {b.items.map((it) => (<div key={it.id} className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-xs">
+              <span className="flex-1 truncate">{it.title}</span>
+              {it.drawing_no && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{it.drawing_no}</span>}
+              {jobDrawings.length ? <select value={it.drawing_id || ""} onChange={(e) => {
+                  if (e.target.value) {
+                      linkBOQItemToDrawing(b.id, it.id, e.target.value);
+                      toast.success(`Linked "${it.title}" to ${db.drawings.find((d) => d.id === e.target.value)?.drawing_no}`);
+                  }
+              }} className="h-7 rounded-md border border-input bg-card px-1.5 text-[11px]">
+                <option value="">— link drawing —</option>
+                {jobDrawings.map((d) => (<option key={d.id} value={d.id}>{d.drawing_no} · {d.title.slice(0, 30)}</option>))}
+              </select> : null}
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-[11px]" onClick={() => setBoqItemFilesId(it.id)}><Paperclip className="mr-1 h-3 w-3"/>Files</Button>
+            </div>))}
+        </div>
+      </div>
+
+      <Dialog open={Boolean(boqItemFilesId)} onOpenChange={(open) => { if (!open) setBoqItemFilesId(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>BOQ line files</DialogTitle><DialogDescription>Attach only documents or evidence that apply specifically to this BOQ line.</DialogDescription></DialogHeader>
+          {boqItemFilesId ? <EntityFilesCard entityType="boq_item" entityId={boqItemFilesId} title="BOQ line files" manage showEmpty /> : null}
+        </DialogContent>
+      </Dialog>
 
       {b.status === "draft" && (<div className="mt-5">
           <Button size="sm" onClick={() => { approve(b.id); toast.success("BOQ approved"); }}>
@@ -2228,6 +2388,7 @@ function VendorBillOverview({ b }: {
     const [resolveNotes, setResolveNotes] = React.useState("");
     const po = b.po_id ? db.purchaseOrders.find((p) => p.id === b.po_id) : undefined;
     const grn = b.grn_id ? db.grns.find((g) => g.id === b.grn_id) : undefined;
+    const vendorPayments = db.vendorPayments.filter((payment) => payment.vendor_bill_id === b.id);
     const match = b.three_way_match;
     const handleMatch = () => {
         const amt = parseFloat(invoiceAmt);
@@ -2309,6 +2470,8 @@ function VendorBillOverview({ b }: {
         {b.vendor_invoice_no && <Field label="Vendor invoice no" value={b.vendor_invoice_no}/>}
         {b.vendor_invoice_date && <Field label="Vendor invoice date" value={formatDate(b.vendor_invoice_date)}/>}
       </div>
+      <EntityFilesCard entityType="vendor_bill" entityId={b.id} title="Vendor invoice & bill files" manage showEmpty />
+      {vendorPayments.length > 0 && <div className="mt-4 space-y-2"><p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Vendor payment proof</p>{vendorPayments.map((payment) => <div key={payment.id} className="rounded-md border border-border bg-muted/20 p-2"><div className="flex items-center justify-between gap-2 text-xs"><span className="font-semibold">{payment.payment_no}</span><span className="font-mono">{formatINR(payment.amount)}</span></div><EntityFilesCard entityType="vendor_payment" entityId={payment.id} title="Payment proof" manage showEmpty /></div>)}</div>}
       {po && (<div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
           <p className="text-[10px] font-semibold uppercase text-muted-foreground">PO reference ({po.po_no})</p>
           <p className="mt-1 text-xs">Vendor: {po.vendor_name} · Status: {po.status}</p>
@@ -2402,6 +2565,7 @@ function CommissionOverview({ c }: {
         <Field label="Accrued" value={formatDate(c.accrued_at)}/>
       </div>
       {c.notes && <p className="mt-3 text-sm text-foreground/80">{c.notes}</p>}
+      <EntityFilesCard entityType="commission" entityId={c.id} title="Commission files" manage showEmpty />
       {c.status === "accrued" && (<div className="mt-5">
           <Button size="sm" onClick={() => { pay(c.id); toast.success("Commission paid"); }}>
             <CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/> Mark Paid
@@ -2421,6 +2585,7 @@ function BlockedOverview({ b }: {
         <Field label="Customer" value={b.customer_name || "—"}/>
         <Field label="Resolved" value={b.resolved ? "Yes" : "No"}/>
       </div>
+      <EntityFilesCard entityType="blocked" entityId={b.id} title="Obstacle evidence" manage={!b.resolved} showEmpty={!b.resolved} />
       <div className="mt-4 space-y-1.5">
         {b.linked_work_order_id && <LinkedRow icon={<Building2 className="h-3.5 w-3.5"/>} label="WorkOrder" value="Open" onClick={() => openDetail("workOrder", b.linked_work_order_id!)}/>}
         {b.linked_po_id && <LinkedRow icon={<Package className="h-3.5 w-3.5"/>} label="PO" value="Open" onClick={() => openDetail("po", b.linked_po_id!)}/>}
@@ -2467,6 +2632,7 @@ function FollowupOverview({ f }: {
       {f.notes && (<div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
           <p className="text-xs text-foreground/80">{f.notes}</p>
         </div>)}
+      <EntityFilesCard entityType="followup" entityId={f.id} title="Follow-up files" manage showEmpty />
     </div>);
 }
 function InventoryOverview({ inv }: {
@@ -2487,5 +2653,6 @@ function InventoryOverview({ inv }: {
         <Field label="Received" value={`${inv.received_qty || 0}`} mono/>
         <Field label="Min qty" value={`${inv.min_qty || 0}`} mono/>
       </div>
+      <EntityFilesCard entityType="inventory" entityId={inv.id} title="Inventory evidence" manage showEmpty />
     </div>);
 }

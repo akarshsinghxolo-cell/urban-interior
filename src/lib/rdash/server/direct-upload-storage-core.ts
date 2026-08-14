@@ -1,8 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
-import { resolveEntityContext } from "../entity-context";
-import type { FileAttachmentEntityType, RDashDatabase, StorageAccount } from "../types";
-import type { UploadPurpose } from "@/lib/uploads/upload-types";
+import type { RDashDatabase, StorageAccount } from "../types";
 
 export const DRIVE_API = "https://www.googleapis.com/drive/v3";
 export const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
@@ -39,14 +37,6 @@ export function practicalFolderName(
   const context = safeSegment(detail, "");
   if (!context || primary.toLocaleLowerCase().includes(context.toLocaleLowerCase())) return primary;
   return safeSegment(`${primary} - ${context}`, primary);
-}
-
-function shortId(value: string | undefined): string {
-  return safeSegment((value || "unknown").replace(/[^a-zA-Z0-9]/g, "").slice(-8), "unknown");
-}
-
-function targetNotReady(message: string): never {
-  throw new Error(`TARGET_NOT_READY:${message}`);
 }
 
 export async function driveFetch(accessToken: string, url: string, init?: RequestInit): Promise<Response> {
@@ -408,81 +398,4 @@ export async function ensureFolderPath(
     parentFolderKey = segment.key;
   }
   return { id: parentId, webViewLink, key: segments.at(-1)?.key || "root" };
-}
-
-export function destinationSegments(
-  db: RDashDatabase,
-  purpose: UploadPurpose,
-  entityType: FileAttachmentEntityType,
-  entityId: string,
-): FolderSegment[] {
-  if (purpose === "catalogue") return [{ name: "Library", key: "root:library" }, { name: "Catalogues", key: "library:catalogues" }];
-  if (purpose === "reference_media") return [{ name: "Library", key: "root:library" }, { name: "Reference", key: "library:reference" }];
-  if (purpose === "import_source") return [{ name: "_System", key: "root:system" }, { name: "Imports", key: "system:imports" }];
-  if (purpose === "diagnostic") return [{ name: "_System", key: "root:system" }, { name: "Diagnostics", key: "system:diagnostics" }];
-
-  let context: ReturnType<typeof resolveEntityContext> | undefined;
-  try {
-    context = resolveEntityContext(db, entityType, entityId, "Direct upload destination");
-  } catch {
-    context = undefined;
-  }
-
-  const customer = db.customers.find((row) => row.id === context?.customerId || (entityType === "customer" ? row.id === entityId : false));
-  const site = db.sites.find((row) => row.id === context?.siteId || (entityType === "site" ? row.id === entityId : false));
-  const workOrder = db.workOrders.find((row) => row.id === context?.workOrderId || (entityType === "workOrder" ? row.id === entityId : false));
-  const vendor = db.master.vendors.find((row) => row.id === context?.vendorId || (entityType === "vendor" ? row.id === entityId : false));
-  const contractor = db.master.contractors.find((row) => row.id === context?.contractorId || (entityType === "contractor" ? row.id === entityId : false));
-  const po = db.purchaseOrders.find((row) => row.id === context?.purchaseOrderId || (entityType === "purchase_order" ? row.id === entityId : false));
-  const grn = db.grns.find((row) => row.id === context?.grnId || (entityType === "grn" ? row.id === entityId : false));
-  const bill = db.vendorBills.find((row) => row.id === entityId);
-
-  const customerRoot = (): FolderSegment[] => {
-    if (!customer) targetNotReady("The related Customer is not synchronized yet.");
-    return [
-      { name: "Customers", key: "root:customers" },
-      { name: practicalFolderName(customer.name, undefined, "Customer"), key: `customer:${customer.id}` },
-    ];
-  };
-
-  if (["site_evidence", "visit_evidence", "measurement", "drawing"].includes(purpose)) {
-    if (!site) targetNotReady("The related Site is not synchronized yet.");
-    return [...customerRoot(), { name: practicalFolderName(site.name, site.locality || site.city, "Site"), key: `site:${site.id}` }];
-  }
-  if (["work_order_document", "execution_evidence"].includes(purpose)) {
-    if (!workOrder) targetNotReady("The related Work Order is not synchronized yet.");
-    return [...customerRoot(), { name: `WO-${safeSegment(workOrder.work_order_no, shortId(workOrder.id))}`, key: `work_order:${workOrder.id}` }];
-  }
-  if (["quotation_document", "customer_document", "customer_invoice", "communication_attachment"].includes(purpose)) {
-    return [...customerRoot(), { name: "Commercial", key: `customer:${customer!.id}:commercial` }];
-  }
-  if (purpose === "purchase_order") {
-    if (!po) targetNotReady("The related Purchase Order is not synchronized yet.");
-    const year = String(new Date(po.created_at || Date.now()).getFullYear());
-    return [{ name: "Procurement", key: "root:procurement" }, { name: year, key: `procurement:${year}` }, { name: safeSegment(po.po_no, `PO-${shortId(po.id)}`), key: `purchase_order:${po.id}` }];
-  }
-  if (purpose === "grn_evidence") {
-    if (!grn) targetNotReady("The related GRN is not synchronized yet.");
-    const year = String(new Date(grn.received_at || Date.now()).getFullYear());
-    return [{ name: "Procurement", key: "root:procurement" }, { name: year, key: `procurement:${year}` }, { name: safeSegment(grn.grn_no, `GRN-${shortId(grn.id)}`), key: `grn:${grn.id}` }];
-  }
-  if (purpose === "vendor_bill") {
-    if (!bill) targetNotReady("The related Vendor Bill is not synchronized yet.");
-    const year = String(new Date(bill.created_at || Date.now()).getFullYear());
-    return [{ name: "Procurement", key: "root:procurement" }, { name: year, key: `procurement:${year}` }, { name: safeSegment(bill.bill_no, `BILL-${shortId(bill.id)}`), key: `vendor_bill:${bill.id}` }];
-  }
-  if (purpose === "vendor_document") {
-    if (!vendor) targetNotReady("The related Vendor is not synchronized yet.");
-    return [{ name: "Vendors", key: "root:vendors" }, { name: practicalFolderName(vendor.name, vendor.locality || vendor.city, "Vendor"), key: `vendor:${vendor.id}` }];
-  }
-  if (purpose === "contractor_document") {
-    if (!contractor) targetNotReady("The related Contractor is not synchronized yet.");
-    return [{ name: "Contractors", key: "root:contractors" }, { name: practicalFolderName(contractor.name, contractor.categories?.[0] || contractor.locality || contractor.city, "Contractor"), key: `contractor:${contractor.id}` }];
-  }
-  if (purpose === "staff_document") {
-    const staff = db.master.staff.find((row) => row.id === entityId);
-    if (!staff) targetNotReady("The related Staff record is not synchronized yet.");
-    return [{ name: "Staff", key: "root:staff" }, { name: practicalFolderName(staff.name, undefined, "Staff"), key: `staff:${staff.id}` }];
-  }
-  throw new Error(`No Drive destination is configured for upload purpose ${purpose}.`);
 }

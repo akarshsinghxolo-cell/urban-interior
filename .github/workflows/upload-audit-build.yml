@@ -21,16 +21,17 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
         with:
-          bun-version: 1.3.14
-      - run: bun install --frozen-lockfile
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
       - name: Build application
         id: build
         shell: bash
         run: |
           set +e
-          bun run build > build.log 2>&1
+          npm run build > build.log 2>&1
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0

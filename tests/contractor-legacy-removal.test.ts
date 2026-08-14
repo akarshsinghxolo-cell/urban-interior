@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
-const source = async (path: string) => Bun.file(path).text();
+const source = async (path: string) => testFile(path).text();
 
 describe("Contractor legacy-path removal", () => {
   test("the shared partner form is Vendor-only", async () => {
@@ -10,8 +11,8 @@ describe("Contractor legacy-path removal", () => {
   });
 
   test("the obsolete shared form bridge is removed", async () => {
-    expect(await Bun.file("src/lib/rdash/partner-form-store-bridge.ts").exists()).toBe(false);
-    expect(await Bun.file("src/components/rdash/UnifiedPartnerFormDialog.tsx").exists()).toBe(false);
+    expect(await testFile("src/lib/rdash/partner-form-store-bridge.ts").exists()).toBe(false);
+    expect(await testFile("src/components/rdash/UnifiedPartnerFormDialog.tsx").exists()).toBe(false);
   });
 
   test("Contractor writes expose one canonical capability model", async () => {

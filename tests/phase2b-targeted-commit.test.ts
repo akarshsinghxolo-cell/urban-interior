@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "vitest";
 import { canUseTargetedCommit } from "../src/lib/rdash/server/targeted-commit";
 import type { WorkspaceOperation } from "../src/lib/rdash/workspace-operations";
 

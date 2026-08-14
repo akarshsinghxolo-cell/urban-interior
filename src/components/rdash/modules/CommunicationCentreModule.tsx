@@ -232,6 +232,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
         try {
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "communication_compose",
+                deferProcessing: true,
                 sourceLabel: `Communication · ${meta.label}`,
                 targetEntityType: "customer",
                 targetEntityId: customerId,

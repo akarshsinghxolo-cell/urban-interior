@@ -227,6 +227,7 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
             if (target === "challan" && challanProof) await cancelQueuedWorkflowFile(challanProof);
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "grn_form",
+                deferProcessing: true,
                 sourceLabel: target === "receiving" ? "GRN receiving proof" : "GRN delivery challan",
                 targetEntityType: "grn",
                 targetEntityId: reservedGrnId,

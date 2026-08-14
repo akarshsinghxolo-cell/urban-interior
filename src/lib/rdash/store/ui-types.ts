@@ -6,7 +6,7 @@ export interface WorkspaceTab {
     label: string;
     icon?: string;
 }
-export type DetailPanelKind = "quotation" | "workOrder" | "task" | "followup" | "visit" | "payment" | "invoice" | "po" | "grn" | "dispatch" | "boq" | "vendorBill" | "commission" | "blocked" | "customer" | "site" | "area" | "workRequired" | "inventory" | "vendor" | "vendorRate" | "contractor" | "contractorBill" | "contractorPayment" | "staff" | "audit" | "media" | null;
+export type DetailPanelKind = "quotation" | "workOrder" | "task" | "followup" | "visit" | "payment" | "invoice" | "po" | "grn" | "dispatch" | "boq" | "vendorBill" | "vendorPayment" | "commission" | "blocked" | "customer" | "site" | "area" | "workRequired" | "inventory" | "vendor" | "vendorRate" | "contractor" | "contractorBill" | "contractorPayment" | "staff" | "audit" | "media" | null;
 export type ContextCustomerTab = "overview" | "sites" | "tasks" | "quotations" | "payments" | "invoices" | "advances" | "liabilities" | "visits" | "activity";
 export type ContextDetailTab = "overview" | "thread" | "history";
 export interface ContextHistoryEntry {
@@ -24,7 +24,7 @@ export interface DetailPanelState {
     fromModule?: string;
 }
 export interface ContextRecord {
-    recordType: "task" | "followup" | "visit" | "quotation" | "payment" | "invoice" | "approval" | "risk" | "blocked" | "customer" | "site" | "area" | "workRequired" | "workOrder" | "po" | "grn" | "dispatch" | "boq" | "vendorBill" | "commission" | "inventory" | "vendor" | "vendorRate" | "contractor" | "contractorBill" | "contractorPayment" | "staff" | "audit" | "media" | "generic";
+    recordType: "task" | "followup" | "visit" | "quotation" | "payment" | "invoice" | "approval" | "risk" | "blocked" | "customer" | "site" | "area" | "workRequired" | "workOrder" | "po" | "grn" | "dispatch" | "boq" | "vendorBill" | "vendorPayment" | "commission" | "inventory" | "vendor" | "vendorRate" | "contractor" | "contractorBill" | "contractorPayment" | "staff" | "audit" | "media" | "generic";
     record: Record<string, unknown>;
     customer?: Customer;
 }

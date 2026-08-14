@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
 
 describe("Google Drive transaction simplification", () => {
@@ -37,16 +37,12 @@ describe("Google Drive transaction simplification", () => {
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
 
     expect(initiate).toContain("assertUploadTargetReady");
-    expect(initiate).toContain("TARGET_NOT_READY:Save the related record before its Drive upload starts.");
-    expect(initiate).toContain('purpose === "diagnostic" || purpose === "import_source"');
-    expect(initiate).toContain('case "quotation_item"');
-    expect(initiate).toContain('case "boq"');
-    expect(initiate).toContain('case "boq_item"');
-    expect(initiate).toContain('case "commission"');
-    expect(initiate).toContain('case "thread_message"');
-    expect(initiate).toContain('case "communication"');
-    expect(initiate).toContain("const exhaustive: never = targetEntityType");
-    expect(initiate).toContain('targetEntityType === "general" || !uploadTargetExists');
+    expect(initiate).toContain("uploadPurposeAllowedForEntity(targetEntityType, purpose)");
+    expect(initiate).toContain('targetEntityType === "general"');
+    expect(initiate).toContain('resolveEntityContext(db, targetEntityType, targetEntityId, "Upload target")');
+    expect(initiate).not.toContain("function uploadTargetExists");
+    expect(initiate).toContain('targetEntityType === "general"');
+    expect(initiate).toContain("assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose)");
     expect(transfer).toContain("targetReadyRetryDelayMs");
     expect(transfer).toContain('status: "paused"');
     expect(transfer).toContain('lastErrorCode: "TARGET_NOT_READY"');
@@ -57,6 +53,15 @@ describe("Google Drive transaction simplification", () => {
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
     expect(store).toContain("snapshot.items.find((entry) => entry.batchId === batch.id && itemIsProcessable(entry))");
     expect(store).not.toContain("firstItemByBatch");
+  });
+
+  test("rejects invalid purpose-owner pairs before they enter the durable queue", async () => {
+    const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
+    const pendingPanel = await readFile("src/components/uploads/PendingUploadsPanel.tsx", "utf8");
+    expect(store).toContain("uploadPurposeAllowedForEntity(input.targetEntityType, input.purpose)");
+    expect(pendingPanel).toContain('targetEntityType: "general"');
+    expect(pendingPanel).toContain('purpose: "diagnostic"');
+    expect(pendingPanel).not.toContain('targetEntityType: "communication",\n        targetEntityId: reserveEntityId("diagnostic")');
   });
 
   test("scopes pending-file deduplication to the same record and purpose", async () => {
@@ -85,11 +90,34 @@ describe("Google Drive transaction simplification", () => {
     expect(persistence).toContain('"master.storageFolderInstances"');
     expect(persistence).toContain('"master.fileAssets"');
     expect(persistence).toContain('"entityFileAttachments"');
+    for (const collection of [
+      'measurement_revision: "measurementRevisions"', 'accepted_scope: "acceptedScopes"', 'variation_request: "variationRequests"',
+      'vendor_rfq: "vendorRfqs"', 'vendor_bid: "vendorBids"', 'stock_movement: "stockMovements"', 'vendor_payment: "vendorPayments"',
+      'contractor_bill: "contractorBills"', 'contractor_payment: "contractorPayments"', 'customer_receipt: "customerReceipts"',
+    ]) expect(persistence).toContain(collection);
     expect(persistence).not.toContain("enterWith");
     expect(persistence).not.toContain('rpc("uc_bump_workspace_revision"');
     expect(persistence).not.toContain("getSupabaseAdminClient");
+    expect(finalizer).toContain("uploadPurposeAllowedForEntity(serverTargetType, serverPurpose)");
+    expect(finalizer).toContain("existingFolderInstance?.template_id || `canonical-${serverPurpose}`");
+    expect(finalizer).toContain('upsertEntityRow("entity_master_storageFolderTemplates"');
     expect(finalizer).toContain("withUploadCommitContext(async () =>");
     expect(finalizer).toContain("await bumpWorkspaceRevision()");
+  });
+
+  test("preserves contextual attachment labels and Work Required thread routing", async () => {
+    const finalizer = await readFile("src/lib/rdash/server/direct-upload-finalize-core.ts", "utf8");
+    const entityContext = await readFile("src/lib/rdash/entity-context.ts", "utf8");
+    const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
+    const threadPanel = await readFile("src/components/rdash/ThreadPanel.tsx", "utf8");
+
+    expect(entityContext).toContain("export function resolveAttachmentEntityLabel");
+    expect(files).toContain('import { resolveAttachmentEntityLabel, resolveEntityContext } from "../../entity-context"');
+    expect(finalizer).toContain("entity_label: resolveAttachmentEntityLabel(workspace.data, serverTargetType, serverTargetId)");
+    expect(finalizer).toContain('resolveEntityContext(workspace.data, serverTargetType, serverTargetId, "Upload finalization")');
+    expect(finalizer).not.toContain("context = undefined");
+    expect(threadPanel).toContain("resolveThreadRecordEntityType");
+    expect(entityContext).toContain('recordType === "workRequired"');
   });
 
   test("recovers when workspace persistence succeeded before the upload job status update", async () => {
@@ -155,7 +183,7 @@ describe("Google Drive transaction simplification", () => {
     const cleanup = await readFile("src/lib/rdash/server/file-cleanup.ts", "utf8");
     const cleanupRoute = await readFile("src/app/api/google-drive/cleanup/route.ts", "utf8");
 
-    expect(files).toContain("requestCleanupAfterSync(get, attachment.file_asset_id)");
+    expect(files).toContain("requestFileAssetCleanupAfterSync(get, attachment.file_asset_id)");
     expect(cleanup).toContain("fileAssetHasReferences");
     expect(cleanup).toContain("entityFileAttachments");
     expect(cleanup).toContain("drive_asset_id === fileAssetId");
@@ -187,9 +215,9 @@ describe("Google Drive transaction simplification", () => {
     const migration = await readFile("supabase/migrations/20260805113000_simplify_upload_retry_states.sql", "utf8");
 
     for (const removedStatus of ["waiting_for_network", "waiting_for_entity", "failed_retryable"]) {
-      expect(types).not.toContain(`| \"${removedStatus}\"`);
-      expect(store).not.toContain(`status: \"${removedStatus}\"`);
-      expect(transfer).not.toContain(`status: \"${removedStatus}\"`);
+      expect(types).not.toContain(`| "${removedStatus}"`);
+      expect(store).not.toContain(`status: "${removedStatus}"`);
+      expect(transfer).not.toContain(`status: "${removedStatus}"`);
     }
 
     expect(store).toContain('status: online ? "queued" : "paused"');

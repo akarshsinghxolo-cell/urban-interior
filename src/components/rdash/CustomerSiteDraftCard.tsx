@@ -58,10 +58,8 @@ export function CustomerSiteDraftCard({
   }>>([]);
 
   const existingFiles = React.useMemo(
-    () => draft.existing
-      ? entityFiles(db, "site", draft.id).filter(({ attachment }) => draft.photoAttachmentIds.includes(attachment.id))
-      : [],
-    [db, draft.existing, draft.id, draft.photoAttachmentIds],
+    () => draft.existing ? entityFiles(db, "site", draft.id) : [],
+    [db, draft.existing, draft.id],
   );
 
   const applyCoordinates = (latitude: number, longitude: number) => onChange({
@@ -142,14 +140,21 @@ export function CustomerSiteDraftCard({
     try {
       const queued = await enqueueWorkflowFiles({
         sourceFlow: "customer_sites_form",
+      deferProcessing: true,
         sourceLabel: draft.existing ? "Edit Customer Site" : "Add Customer Site",
         targetEntityType: "site",
         targetEntityId: draft.id,
         targetLabel: draft.name.trim() || `Site ${index + 1}`,
         purpose: "site_evidence",
-        attachmentField: "photo_attachment_ids",
-        attachmentFieldMode: "append",
-        files: files.map((file) => ({ file, ...classifyWorkflowFile(file), caption: "Site file" })),
+        files: files.map((file) => {
+          const classified = classifyWorkflowFile(file);
+          return {
+            file,
+            ...classified,
+            caption: "Site file",
+            ...(classified.role === "photo" ? { attachmentField: "photo_attachment_ids", attachmentFieldMode: "append" as const } : {}),
+          };
+        }),
       });
       registerBatch(queued.batchId);
       const pendingPhotos = queued.files.map((item, fileIndex) => {

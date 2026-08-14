@@ -325,6 +325,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     try {
       const queued = await enqueueWorkflowFiles({
         sourceFlow: "vendor_form",
+                deferProcessing: true,
         sourceLabel: "Vendor form",
         targetEntityType: "vendor",
         targetEntityId: reservedId,

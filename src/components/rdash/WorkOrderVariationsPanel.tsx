@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, formatINR, titleCase } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import { VariationRequestDialog } from "./VariationRequestDialog";
+import { EntityFilesCard } from "./EntityFilesCard";
 
 function statusClasses(status: string) {
   if (status === "approved") return "border-success/30 bg-success/10 text-success";
@@ -86,6 +87,7 @@ export function WorkOrderVariationsPanel({ workOrderId }: { workOrderId: string 
                   Decision note: {variation.decision_note}
                 </p>
               ) : null}
+              <EntityFilesCard entityType="variation_request" entityId={variation.id} title="Variation files & approval" manage showEmpty />
             </div>
           ))}
         </div>

@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
-const source = await Bun.file("src/components/rdash/modules/WorkCategoryMasterModule.tsx").text();
+const source = await testFile("src/components/rdash/modules/WorkCategoryMasterModule.tsx").text();
 
 describe("Work & Rate Master category controls", () => {
   test("uses the Sub category label consistently", () => {

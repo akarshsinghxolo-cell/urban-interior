@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import {
   reconcilePartnerPerformance,
   deriveContractorPerformance,
@@ -167,7 +168,7 @@ describe("bug hunt: partner performance correctness", () => {
 
 describe("bug hunt: source-level race and validation guards", () => {
   test("aborts stale scoped reads and validates the request target", async () => {
-    const source = await Bun.file("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
+    const source = await testFile("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
     expect(source).toContain("new AbortController()");
     expect(source).toContain("const requestStillCurrent = () =>");
     expect(source).toContain("requestSequenceRef.current === requestId");
@@ -177,7 +178,7 @@ describe("bug hunt: source-level race and validation guards", () => {
   });
 
   test("delta sync detects non-advancing journals and redirects expired sessions", async () => {
-    const source = await Bun.file("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
+    const source = await testFile("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
     expect(source).toContain("delta.revision === afterRevision");
     expect(source).toContain("Delta journal did not advance");
     expect(source).toContain("clearSessionToken()");
@@ -185,7 +186,7 @@ describe("bug hunt: source-level race and validation guards", () => {
   });
 
   test("variation dialog blocks invalid links, precision, and duplicate submissions", async () => {
-    const source = await Bun.file("src/components/rdash/VariationRequestDialog.tsx").text();
+    const source = await testFile("src/components/rdash/VariationRequestDialog.tsx").text();
     expect(source).toContain("selectedExecutionLog.work_order_id !== targetWorkOrderId");
     expect(source).toContain("if (submitting) return");
     expect(source).toContain("no more than two decimal places");
@@ -194,8 +195,8 @@ describe("bug hunt: source-level race and validation guards", () => {
   });
 
   test("API routes distinguish authentication failures from service failures", async () => {
-    const scoped = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
-    const bootstrap = await Bun.file("src/app/api/bootstrap/route.ts").text();
+    const scoped = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
+    const bootstrap = await testFile("src/app/api/bootstrap/route.ts").text();
     for (const source of [scoped, bootstrap]) {
       expect(source).toContain('error.message === "UNAUTHORIZED"');
       expect(source).toContain("authentication service is temporarily unavailable");

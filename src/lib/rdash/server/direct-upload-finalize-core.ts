@@ -2,9 +2,10 @@ import type { AuthenticatedUser } from "./auth";
 import { getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
-import { resolveEntityContext } from "../entity-context";
-import type { EntityFileAttachment, FileAsset, FileAttachmentEntityType, StorageFolderInstance } from "../types";
+import { resolveAttachmentEntityLabel, resolveEntityContext } from "../entity-context";
+import type { EntityFileAttachment, FileAsset, FileAttachmentEntityType, StorageFolderInstance, StorageFolderTemplate } from "../types";
 import type { FinalizeUploadRequest, FinalizedUploadResult, GoogleFileId, UploadPurpose } from "@/lib/uploads/upload-types";
+import { uploadPurposeAllowedForEntity } from "@/lib/uploads/upload-purpose";
 import { DRIVE_API, destinationSegments, driveFetch, ensureFolderPath, nowIso } from "./direct-upload-storage";
 import { bumpWorkspaceRevision, updateAttachmentField, upsertEntityRow, withUploadCommitContext } from "./direct-upload-persistence";
 
@@ -174,6 +175,15 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
   }
 
   const workspace = await getWorkspace();
+  if (!uploadPurposeAllowedForEntity(serverTargetType, serverPurpose)) {
+    throw new Error(`Upload purpose "${serverPurpose}" does not belong to ${serverTargetType}.`);
+  }
+  // Re-validate ownership at finalization because the business record may have
+  // changed after the resumable upload session was created. Synthetic import
+  // and diagnostic uploads intentionally do not belong to a business entity.
+  const context = serverTargetType === "general"
+    ? undefined
+    : resolveEntityContext(workspace.data, serverTargetType, serverTargetId, "Upload finalization");
   const account = workspace.data.master.storageAccounts.find((row) => row.id === String(item.storage_account_id));
   if (!account) throw new Error("The Drive account used for this upload is no longer connected.");
   const accessToken = await getGoogleDriveAccessToken(account);
@@ -222,16 +232,27 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
   await makeDriveFilePublic(accessToken, file.id);
 
   const timestamp = nowIso();
-  let context: ReturnType<typeof resolveEntityContext> | undefined;
-  try {
-    context = resolveEntityContext(workspace.data, serverTargetType, serverTargetId, "Upload finalization");
-  } catch {
-    context = undefined;
-  }
+  const folderInstanceId = `storage-folder-${account.id}-${destination.id}`;
+  const existingFolderInstance = workspace.data.master.storageFolderInstances.find((row) => row.id === folderInstanceId);
+  // A physical Drive folder can intentionally receive more than one upload purpose
+  // (for example execution evidence and a variation document both land in Variations).
+  // Preserve its original logical template instead of flipping metadata on every upload.
+  const templateId = existingFolderInstance?.template_id || `canonical-${serverPurpose}`;
+  const storageTemplate: StorageFolderTemplate | undefined = workspace.data.master.storageFolderTemplates.some((row) => row.id === templateId)
+    ? undefined
+    : {
+        id: templateId,
+        purpose: serverPurpose,
+        label: serverPurpose.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        path_template: `Managed Uploads/${serverPurpose.replace(/_/g, " ")}`,
+        status: "active",
+        created_at: timestamp,
+        updated_at: timestamp,
+      };
   const folderInstance: StorageFolderInstance = {
-    id: `storage-folder-${account.id}-${destination.id}`,
+    id: folderInstanceId,
     storage_account_id: account.id,
-    template_id: `canonical-${serverPurpose}`,
+    template_id: templateId,
     google_folder_id: destination.id,
     folder_path: destinationSegmentsForFile.map((segment) => segment.name).join("/"),
     web_view_link: destination.webViewLink,
@@ -239,7 +260,7 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
     site_id: context?.siteId,
     work_order_id: context?.workOrderId,
     status: "active",
-    created_at: timestamp,
+    created_at: existingFolderInstance?.created_at || timestamp,
     updated_at: timestamp,
   };
   const asset: FileAsset = {
@@ -268,6 +289,7 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
     file_asset_id: asset.id,
     entity_type: serverTargetType,
     entity_id: serverTargetId,
+    entity_label: resolveAttachmentEntityLabel(workspace.data, serverTargetType, serverTargetId),
     role: String(item.role || "document") as EntityFileAttachment["role"],
     caption: item.caption ? String(item.caption) : undefined,
     visibility: String(item.visibility || "internal") as EntityFileAttachment["visibility"],
@@ -278,6 +300,9 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
   };
 
   await withUploadCommitContext(async () => {
+    if (storageTemplate) {
+      await upsertEntityRow("entity_master_storageFolderTemplates", storageTemplate.id, storageTemplate, user);
+    }
     await upsertEntityRow("entity_master_storageFolderInstances", folderInstance.id, folderInstance, user);
     await upsertEntityRow("entity_master_fileAssets", asset.id, asset, user);
     await upsertEntityRow("entity_entityFileAttachments", attachment.id, attachment, user);

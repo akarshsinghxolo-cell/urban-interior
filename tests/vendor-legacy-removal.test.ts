@@ -1,13 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
-const source = async (path: string) => Bun.file(path).text();
+const source = async (path: string) => testFile(path).text();
 
 describe("Vendor canonical architecture", () => {
   test("Vendor has one dedicated form and no shared legacy bridge", async () => {
     const router = await source("src/components/rdash/PartnerFormDialog.tsx");
     expect(router).toContain("VendorFormDialog");
-    expect(await Bun.file("src/components/rdash/UnifiedPartnerFormDialog.tsx").exists()).toBe(false);
-    expect(await Bun.file("src/lib/rdash/partner-form-store-bridge.ts").exists()).toBe(false);
+    expect(await testFile("src/components/rdash/UnifiedPartnerFormDialog.tsx").exists()).toBe(false);
+    expect(await testFile("src/lib/rdash/partner-form-store-bridge.ts").exists()).toBe(false);
   });
   test("Vendor profile uses supply_capabilities only", async () => {
     const profile = await source("src/lib/rdash/vendor-profile.ts");

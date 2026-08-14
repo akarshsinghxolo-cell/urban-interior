@@ -1,12 +1,13 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
-const healthWidget = await Bun.file("src/components/rdash/WorkspaceHealthWidget.tsx").text();
-const pulse = await Bun.file("src/components/rdash/WorkspacePulseStrip.tsx").text();
-const healthServer = await Bun.file("src/lib/rdash/server/workspace-health.ts").text();
-const targeted = await Bun.file("src/lib/rdash/server/targeted-commit.ts").text();
-const scopes = await Bun.file("src/lib/rdash/server/module-scoped-collections.ts").text();
-const outbox = await Bun.file("src/lib/uploads/workspace-outbox.ts").text();
-const rest = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
+const healthWidget = await testFile("src/components/rdash/WorkspaceHealthWidget.tsx").text();
+const pulse = await testFile("src/components/rdash/WorkspacePulseStrip.tsx").text();
+const healthServer = await testFile("src/lib/rdash/server/workspace-health.ts").text();
+const targeted = await testFile("src/lib/rdash/server/targeted-commit.ts").text();
+const scopes = await testFile("src/lib/rdash/server/module-scoped-collections.ts").text();
+const outbox = await testFile("src/lib/uploads/workspace-outbox.ts").text();
+const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
 
  describe("PostgREST egress guardrails", () => {
   test("dashboard health consumers do not install polling timers", () => {
@@ -18,9 +19,10 @@ const rest = await Bun.file("src/lib/rdash/server/commit-rest.ts").text();
 
   // These objects were removed from the live database; health must stay on the bounded read path.
   test("health avoids removed database fast paths", () => {
+    expect(healthServer).toContain('admin.rpc("get_workspace_health_summary_v2"');
     expect(healthServer).not.toContain('.rpc("get_workspace_health_summary"');
     expect(healthServer).not.toContain('.from("workspace_health_snapshot")');
-    expect(healthServer).toContain("getWorkspaceSubset");
+    expect(healthServer).not.toContain("getWorkspaceSubset");
   });
 
   test("Work & Rate Master edits use targeted validation", () => {

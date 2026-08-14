@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { ShoppingCart, CheckCircle2, Send, Plus, Trash2, AlertTriangle, FileText, Clock, Search, Zap, Trophy, Gavel, } from "lucide-react";
+import { ShoppingCart, CheckCircle2, Send, Plus, Trash2, AlertTriangle, FileText, Clock, Search, Zap, Trophy, Gavel, Paperclip, } from "lucide-react";
 import { toast } from "sonner";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { LineItem, Master, VendorBidLine } from "@/lib/rdash/types";
@@ -10,6 +10,7 @@ import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
 import { OperationsWorkspace, type MetricSpec, type QueueSpec, type RecordRow, type FilterChip, } from "../OperationsWorkspace";
 import type { ContextAction } from "../ContextMenuHost";
 import { LineItemTable } from "../ThreadPanel";
+import { EntityFilesCard } from "../EntityFilesCard";
 import { formatINR, formatINRShort, formatDate, poStatusStyle, } from "@/lib/rdash/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, } from "@/components/ui/dialog";
@@ -57,6 +58,7 @@ export function ProcurementModule() {
     const addVendorBid = useRDashStore((s) => s.addVendorBid);
     const createPOFromLowestBid = useRDashStore((s) => s.createPOFromLowestBid);
     const [bidRfqId, setBidRfqId] = React.useState<string | null>(null);
+    const [rfqFilesId, setRfqFilesId] = React.useState<string | null>(null);
     const [bidVendorId, setBidVendorId] = React.useState<string>("");
     const [bidRates, setBidRates] = React.useState<Record<string, string>>({});
     const [bidDeliveryDays, setBidDeliveryDays] = React.useState<string>("");
@@ -309,6 +311,11 @@ export function ProcurementModule() {
                     label: "Record bid",
                     icon: <Gavel className="h-3.5 w-3.5"/>,
                     onClick: () => openBidDialog(rfq.id),
+                },
+                {
+                    label: "RFQ & bid files",
+                    icon: <Paperclip className="h-3.5 w-3.5"/>,
+                    onClick: () => setRfqFilesId(rfq.id),
                 },
             ];
             // E-3: Lowest bid → PO quick action. Only enabled when at least one
@@ -725,6 +732,24 @@ export function ProcurementModule() {
       {/* E: Vendor Bid dialog — pre-fills the bid rate with the vendor's
           existing vendorRate for each requested BOQ article. */}
       <VendorBidDialog open={bidRfqId !== null} onOpenChange={(v) => { if (!v) setBidRfqId(null); }} rfqId={bidRfqId} vendorId={bidVendorId} onVendorChange={onBidVendorChange} rates={bidRates} onRatesChange={setBidRates} deliveryDays={bidDeliveryDays} onDeliveryDaysChange={setBidDeliveryDays} db={db} onSave={saveVendorBid}/>
+      <Dialog open={Boolean(rfqFilesId)} onOpenChange={(open) => { if (!open) setRfqFilesId(null); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader><DialogTitle>RFQ & vendor bid files</DialogTitle></DialogHeader>
+          {rfqFilesId && (() => {
+            const rfq = db.vendorRfqs.find((row) => row.id === rfqFilesId);
+            if (!rfq) return <p className="text-xs text-muted-foreground">RFQ not found.</p>;
+            const bids = db.vendorBids.filter((row) => row.rfq_id === rfq.id);
+            return <div className="max-h-[65vh] space-y-3 overflow-y-auto rd-scroll">
+              <EntityFilesCard entityType="vendor_rfq" entityId={rfq.id} title={`${rfq.rfq_no} files`} manage showEmpty />
+              {bids.map((bid) => <div key={bid.id} className="rounded-lg border border-border bg-muted/10 p-3">
+                <p className="text-xs font-semibold">{bid.vendor_name} · {formatINRShort(bid.quoted_amount || 0)}</p>
+                <EntityFilesCard entityType="vendor_bid" entityId={bid.id} title="Vendor quotation / bid files" manage showEmpty />
+              </div>)}
+              {!bids.length ? <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">No vendor bids recorded yet.</p> : null}
+            </div>;
+          })()}
+        </DialogContent>
+      </Dialog>
     </>);
 }
 

@@ -28,11 +28,15 @@ const ENTITY_TYPE_TO_THREAD_KIND: Record<string, ThreadKind> = {
     customer: "generic",
     site: "site",
     area: "generic",
+    room: "generic",
 
     // Sales / quotation domain
     workRequired: "workRequired",
     quotation: "quotation",
-    acceptedScope: "quotation",
+    acceptedScope: "generic",
+    accepted_scope: "generic",
+    measurementRevision: "generic",
+    measurement_revision: "generic",
 
     // Execution domain
     workOrder: "workOrder",
@@ -41,28 +45,43 @@ const ENTITY_TYPE_TO_THREAD_KIND: Record<string, ThreadKind> = {
     executionLog: "execution_log",
     execution_log: "execution_log",
     variationRequest: "generic",
+    variation_request: "generic",
 
     // Procurement domain
     vendorRfq: "po",
+    vendor_rfq: "po",
     vendorBid: "po",
+    vendor_bid: "po",
     po: "po",
     purchaseOrder: "po",
+    purchase_order: "po",
     grn: "grn",
     dispatch: "dispatch",
     inventory: "inventory",
+    stockMovement: "generic",
+    stock_movement: "generic",
 
     // Finance domain
     vendorBill: "vendor_bill",
+    vendor_bill: "vendor_bill",
     vendorPayment: "vendor_bill",
+    vendor_payment: "vendor_bill",
     contractorBill: "bid",
+    contractor_bill: "bid",
     contractorPayment: "bid",
+    contractor_payment: "bid",
+    customerReceipt: "generic",
+    customer_receipt: "generic",
     commission: "commission",
     settlement: "settlement",
+    contractorSettlement: "settlement",
+    contractor_settlement: "settlement",
     payment: "payment",
     invoice: "invoice",
 
     // Contractor domain
     contractorBid: "bid",
+    contractor_bid: "bid",
     bid: "bid",
 
     // Operations domain
@@ -80,6 +99,7 @@ const ENTITY_TYPE_TO_THREAD_KIND: Record<string, ThreadKind> = {
     staff: "generic",
     staffRate: "generic",
     vendorRate: "generic",
+    vendor_rate: "generic",
     attendance: "generic",
 
     // System / misc

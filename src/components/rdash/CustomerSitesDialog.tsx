@@ -14,6 +14,7 @@ import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { CustomerDetailsFields } from "./CustomerDetailsFields";
 import { CustomerSiteDraftCard } from "./CustomerSiteDraftCard";
+import { EntityFilesCard } from "./EntityFilesCard";
 import {
   customerPayload,
   defaultSiteName,
@@ -295,6 +296,17 @@ export function CustomerSitesDialog({
               setSameNameAcknowledged={setSameNameAcknowledged}
               openExistingCustomer={openExistingCustomer}
             />
+
+            {isEdit && editId ? <EntityFilesCard
+              entityType="customer"
+              entityId={editId}
+              title="Customer documents"
+              manage
+              showEmpty
+              hiddenAttachmentIds={detachAttachmentIds}
+              registerBatch={registerBatch}
+              onDetach={(attachmentId) => setDetachAttachmentIds((current) => [...new Set([...current, attachmentId])])}
+            /> : null}
 
             <section className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-3">

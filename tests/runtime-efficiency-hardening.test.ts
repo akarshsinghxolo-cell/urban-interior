@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 
-const read = (path: string) => Bun.file(path).text();
+const read = (path: string) => testFile(path).text();
 
 describe("runtime efficiency hardening", () => {
   test("health summary uses one aggregate PostgreSQL RPC", async () => {

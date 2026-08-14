@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
 import { COLLECTIONS_BY_SCOPE } from "@/lib/rdash/server/module-scoped-collections";
 import {
@@ -109,7 +110,7 @@ describe("bootstrap JSON projections", () => {
   });
 
   test("builds JSON selectors and preserves a bounded taxonomy foundation", async () => {
-    const projected = await Bun.file("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
+    const projected = await testFile("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
     expect(projected).toContain("data->${field}");
     expect(WORKSPACE_FOUNDATION_COLLECTIONS).toEqual([
       "master.units",
@@ -122,14 +123,14 @@ describe("bootstrap JSON projections", () => {
   });
 
   test("exposes plan and page-limit telemetry", async () => {
-    const route = await Bun.file("src/lib/rdash/server/module-scoped-route.ts").text();
+    const route = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(route).toContain('"X-UC-Read-Strategy"');
     expect(route).toContain('"X-UC-Read-Scope-Collections"');
     expect(route).toContain('"X-UC-Read-Limited-Collections"');
   });
 
   test("keeps runtime verification preview-only and token protected", async () => {
-    const route = await Bun.file("src/app/api/internal/preview-read-plans/route.ts").text();
+    const route = await testFile("src/app/api/internal/preview-read-plans/route.ts").text();
     expect(route).toContain('process.env.VERCEL_ENV !== "preview"');
     expect(route).toContain("UC_PREVIEW_VERIFY_TOKEN");
     expect(route).toContain('request.headers.get("x-uc-preview-verifier")');

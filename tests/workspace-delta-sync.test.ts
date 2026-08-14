@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vitest";
+import { testFile } from "./test-file";
 import {
   aggregateWorkspaceChangeBatches,
   MAX_WORKSPACE_DELTA_BATCHES,
@@ -146,7 +147,7 @@ describe("workspace delta aggregation", () => {
 
 describe("delta journal migration and API contract", () => {
   test("writes the journal batch inside the atomic commit transaction", async () => {
-    const migration = await Bun.file(
+    const migration = await testFile(
       "supabase/migrations/20260728055820_workspace_revision_change_journal.sql",
     ).text();
 
@@ -164,7 +165,7 @@ describe("delta journal migration and API contract", () => {
   });
 
   test("exposes an authenticated, private no-store changes endpoint", async () => {
-    const route = await Bun.file("src/app/api/changes/route.ts").text();
+    const route = await testFile("src/app/api/changes/route.ts").text();
     expect(route).toContain("requireSession(request)");
     expect(route).toContain('searchParams.get("afterRevision")');
     expect(route).toContain('headers.get("x-uc-delta-module")');
@@ -182,7 +183,7 @@ describe("delta journal migration and API contract", () => {
   });
 
   test("bounds server reads and constrains batches to one coherent current revision", async () => {
-    const source = await Bun.file("src/lib/rdash/server/workspace-changes.ts").text();
+    const source = await testFile("src/lib/rdash/server/workspace-changes.ts").text();
     expect(source).toContain("MAX_WORKSPACE_DELTA_BATCHES + 1");
     expect(source).toContain('.lte("revision", currentRevision)');
     expect(source).toContain('.eq("is_baseline", false)');
@@ -195,8 +196,8 @@ describe("delta journal migration and API contract", () => {
   });
 
   test("resets journal history before revision numbers restart", async () => {
-    const reset = await Bun.file("src/lib/rdash/server/workspace-change-reset.ts").text();
-    const workspace = await Bun.file("src/lib/rdash/server/workspace.ts").text();
+    const reset = await testFile("src/lib/rdash/server/workspace-change-reset.ts").text();
+    const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();
     expect(reset).toContain('from("entity_workspace_change_batches")');
     expect(reset).toContain("revision: 0");
     expect(reset).toContain("is_baseline: true");
