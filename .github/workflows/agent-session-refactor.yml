@@ -23,6 +23,18 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Correct duplicate-safe patch helper
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('.github/agent-session-refactor.py')
+          text = p.read_text(encoding='utf-8')
+          old = """    count = text.count(old)\n    if count != 1:\n        raise SystemExit(f'{path}: expected one occurrence, found {count}: {old[:100]!r}')\n    write(path, text.replace(old, new, 1))\n"""
+          new = """    count = text.count(old)\n    if count < 1:\n        raise SystemExit(f'{path}: expected an occurrence, found {count}: {old[:100]!r}')\n    write(path, text.replace(old, new, 1))\n"""
+          if old not in text:
+              raise SystemExit('replace_once helper shape changed unexpectedly')
+          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Apply foundation-first session refactor
         run: python .github/agent-session-refactor.py
       - name: Install dependencies
