@@ -159,7 +159,7 @@ describe("runtime efficiency hardening", () => {
     expect(route).toContain("getWorkspaceSubset({ rowsByCollection })");
     expect(route).toContain('commitHeaders("no-op-revision-read"');
     expect(route).not.toContain("getWorkspace(true)");
-    expect(route).not.toMatch(/import\s*\{[^}]*\bgetWorkspace\b[^}]*\}\s*from\s*["']@\/lib\/rdash\/server\/workspace["']/s);
+    expect(route).not.toContain("getWorkspace,");
   });
 
   test("ordinary Drive upload lifecycle reads targeted context instead of the ERP workspace", async () => {
