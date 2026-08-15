@@ -37,6 +37,33 @@ jobs:
           PY
       - name: Apply foundation-first session refactor
         run: python .github/agent-session-refactor.py
+      - name: Correct refactor integration details
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          store_path = Path('src/lib/rdash/raw-store.ts')
+          store = store_path.read_text(encoding='utf-8')
+          store = store.replace(
+              'restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.", payload);',
+              'restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.");',
+          )
+          store = store.replace(
+              'const accepted = normalizeWorkspaceSession(payload.data));',
+              'const accepted = normalizeWorkspaceSession(payload.data);',
+          )
+          if 'prepareWorkspaceDatabase(' in store or 'buildSeedDatabase' in store:
+              raise SystemExit('impure/seed hydration path still exists in raw-store')
+          store_path.write_text(store, encoding='utf-8')
+
+          test_path = Path('tests/runtime-efficiency-hardening.test.ts')
+          test = test_path.read_text(encoding='utf-8')
+          old = '''    const rawStore = await read("src/lib/rdash/raw-store.ts");\n    const outbox = await read("src/lib/uploads/workspace-outbox.ts");\n    expect(workCategory).toContain("...(db as RDashDatabase)");\n    expect(rawStore).toContain("prepareWorkspaceData({ ...input })");\n    expect(rawStore).toContain("...base");\n'''
+          new = '''    const rawStore = await read("src/lib/rdash/raw-store.ts");\n    const sessionMerge = await read("src/lib/rdash/workspace-session-merge.ts");\n    const outbox = await read("src/lib/uploads/workspace-outbox.ts");\n    expect(workCategory).toContain("...(db as RDashDatabase)");\n    expect(rawStore).toContain("mergeWorkspaceSnapshot(current.db, db)");\n    expect(sessionMerge).toContain("prepareWorkspaceData(structuredClone(input) as RDashDatabase)");\n    expect(sessionMerge).toContain("structuredClone(current || createEmptyWorkspaceDatabase())");\n'''
+          if old not in test:
+              raise SystemExit('pagination metadata regression test shape changed unexpectedly')
+          test_path.write_text(test.replace(old, new, 1), encoding='utf-8')
+          PY
       - name: Install dependencies
         run: npm ci
       - name: Run focused lifecycle regressions
