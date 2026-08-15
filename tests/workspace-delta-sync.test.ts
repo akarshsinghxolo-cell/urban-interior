@@ -197,18 +197,19 @@ describe("delta journal migration and API contract", () => {
     expect(source).toContain("PostgreSQL deletes every collection");
   });
 
-  test("resets journal history before revision numbers restart and canonicalizes reset data", async () => {
-    const reset = await testFile("src/lib/rdash/server/workspace-change-reset.ts").text();
+  test("runs destructive reset through the same atomic revision-CAS transaction", async () => {
+    const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();
-    expect(reset).toContain('from("entity_workspace_change_batches")');
-    expect(reset).toContain("revision: 0");
-    expect(reset).toContain("is_baseline: true");
-    expect(workspace).toContain("await resetWorkspaceChangeJournal()");
-    expect(workspace).toContain("const reset = await resetRestWorkspace()");
-    expect(workspace).toContain("return canonicalizeResetCustomerThreads(reset)");
-    expect(workspace.indexOf("await resetWorkspaceChangeJournal()"))
-      .toBeLessThan(workspace.indexOf("const reset = await resetRestWorkspace()"));
-    expect(workspace.indexOf("const reset = await resetRestWorkspace()"))
-      .toBeLessThan(workspace.indexOf("return canonicalizeResetCustomerThreads(reset)"));
+
+    expect(rest).toContain("const current = await getRestWorkspace()");
+    expect(rest).toContain("diffWorkspaceOperations(current.data, seedData)");
+    expect(rest).toContain("commitRestOperations(operations, current.revision, {})");
+    expect(rest).toContain("customer-conversation:${thread.record_id}");
+    expect(rest).toContain("Could not read workspace collection ${collection}");
+    expect(rest).not.toContain("Existing reset behavior is intentionally preserved for now");
+    expect(rest).not.toContain('revision: 0,\n      updated_at: new Date().toISOString()');
+    expect(workspace).not.toContain("resetWorkspaceChangeJournal");
+    expect(workspace).not.toContain("canonicalizeResetCustomerThreads");
+    expect(workspace).toContain("return resetRestWorkspace()");
   });
 });

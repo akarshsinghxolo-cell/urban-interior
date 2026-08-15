@@ -290,12 +290,17 @@ describe("runtime efficiency hardening", () => {
     const authorized = await read("src/lib/rdash/server/authorized-commit.ts");
     const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
     const workspace = await read("src/lib/rdash/server/workspace.ts");
+    const resetPersistence = await read("src/lib/rdash/server/commit-rest.ts");
     expect(targeted).toContain('recordId.startsWith("customer-conversation:")');
     expect(targeted).not.toContain('recordId.startsWith("cust-")');
     expect(authorized).toContain('recordId.startsWith("cust-")');
     expect(authorized).toContain("must use customer-conversation:<customer_id>");
     expect(entityRead).toContain("canonicalThreadRecordIds");
-    expect(workspace).toContain("canonicalizeResetCustomerThreads");
+    expect(workspace).not.toContain("canonicalizeResetCustomerThreads");
+    const resetCanonicalization = resetPersistence.indexOf("customer-conversation:${thread.record_id}");
+    const resetDiff = resetPersistence.indexOf("diffWorkspaceOperations(current.data, seedData)");
+    expect(resetCanonicalization).toBeGreaterThan(0);
+    expect(resetDiff).toBeGreaterThan(resetCanonicalization);
   });
 
   test("report families narrow complete inputs without paginating business totals", () => {

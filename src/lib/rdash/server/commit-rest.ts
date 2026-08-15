@@ -301,8 +301,10 @@ export async function getRestWorkspace(): Promise<{
       .from(table)
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
-    if (error || !data) return { collection, rows: [] };
-    return { collection, rows: data as RestEntityRow[] };
+    if (error) {
+      throw new Error(`Could not read workspace collection ${collection}: ${error.message}`);
+    }
+    return { collection, rows: (data || []) as RestEntityRow[] };
   };
 
   const results = await Promise.all(Object.keys(COLLECTION_TO_TABLE).map(readCollection));
@@ -392,45 +394,29 @@ export async function resetRestWorkspace(): Promise<{
   data: RDashDatabase;
   updatedAt: string;
 }> {
-  const admin = getSupabaseAdminClient();
-  const tables = Object.values(COLLECTION_TO_TABLE);
-  await Promise.all(
-    tables.map(async (table) => {
-      try {
-        await admin.from(table).delete().eq("workspace_id", workspaceId);
-      } catch {
-        // Existing reset behavior is intentionally preserved for now.
-      }
-    }),
-  );
-
-  await admin.from("entity_workspace_revision").upsert(
-    {
-      id: workspaceId,
-      workspace_id: workspaceId,
-      revision: 0,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
-
+  // RESET is a normal canonical workspace transaction with a larger operation
+  // set. Reading first and committing against that exact revision means the
+  // existing PostgreSQL revision-row lock serializes RESET with every normal
+  // commit. If anything changes while the snapshot is being assembled, the
+  // atomic commit fails with CONFLICT instead of producing a mixed workspace.
+  const current = await getRestWorkspace();
   const { buildSeedDatabase } = await import("../seed");
   const { diffWorkspaceOperations } = await import("../workspace-operations");
   const seedData = buildSeedDatabase() as RDashDatabase;
-  const emptyDb = structuredClone(seedData) as any;
-  for (const key of Object.keys(emptyDb)) {
-    if (Array.isArray(emptyDb[key])) emptyDb[key] = [];
-  }
-  if (emptyDb.master) {
-    for (const key of Object.keys(emptyDb.master)) {
-      if (Array.isArray(emptyDb.master[key])) emptyDb.master[key] = [];
-    }
-  }
 
-  const operations = diffWorkspaceOperations(emptyDb, seedData);
-  if (operations.length > 0) {
-    await commitRestOperations(operations, 0, {});
-  }
+  // Reset data must already use the one canonical Customer conversation ID.
+  // Doing this before the atomic diff avoids a second post-reset transaction.
+  const customerIds = new Set(seedData.customers.map((customer) => customer.id));
+  seedData.threads = seedData.threads.map((thread) => (
+    thread.kind === "generic" && customerIds.has(thread.record_id)
+      ? { ...thread, record_id: `customer-conversation:${thread.record_id}` }
+      : thread
+  ));
+
+  const operations = diffWorkspaceOperations(current.data, seedData);
+  if (!operations.length) return current;
+
+  await commitRestOperations(operations, current.revision, {});
   return getRestWorkspace();
 }
 
