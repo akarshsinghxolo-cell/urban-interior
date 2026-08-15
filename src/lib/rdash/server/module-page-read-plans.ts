@@ -1,15 +1,12 @@
 import type { WorkspaceReadTarget } from "../workspace-read-scope";
 
 /**
- * Exact screen-level collection plans for the broad module families that used
- * to fall back to an entire scope. These are intentionally conservative: each
- * screen still receives the related records it currently renders, but unrelated
- * ERP areas are no longer transferred merely because they share a scope.
+ * Exact page-level plans are limited to focused screens whose UI can explicitly
+ * expose additional pages. Aggregate dashboards intentionally remain on their
+ * complete scope plans until their totals are replaced by server aggregates;
+ * silently paging those arrays would make business metrics incorrect.
  */
 export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  customerDesk: Object.freeze([
-    "customers", "sites", "workRequired", "quotations", "workOrders", "invoices",
-  ]),
   customerTimeline: Object.freeze([
     "customers", "sites", "areas", "workRequired", "quotations", "workOrders",
     "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
@@ -28,14 +25,6 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
   lostClosedReview: Object.freeze([
     "customers", "sites", "workRequired", "quotations", "workOrders", "followups", "tasks",
     "threads", "auditLog",
-  ]),
-  siteExecution: Object.freeze([
-    "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
-    "acceptedScopes", "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders",
-    "grns", "payments", "invoices", "customerReceipts", "contractorBills", "contractorBids",
-    "visits", "tasks", "threads", "entityFileAttachments", "master.units",
-    "master.workCategories", "master.workSubcategories", "master.articles", "master.vendors",
-    "master.contractors", "master.fileAssets",
   ]),
   drawings: Object.freeze([
     "customers", "sites", "workOrders", "drawings", "entityFileAttachments", "master.fileAssets",
@@ -62,26 +51,6 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
     "customers", "sites", "quotations", "workOrders", "tasks", "followups", "visits", "payments",
     "invoices", "threads", "commSends", "entityFileAttachments", "master.fileAssets",
   ]),
-  quotationDesk: Object.freeze([
-    "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
-    "acceptedScopes", "workOrders", "tasks", "followups", "actions", "payments", "invoices",
-    "threads", "commercialTerms", "paymentTermTemplates", "taxConfigs", "validityConfigs",
-    "entityFileAttachments", "master.units", "master.workCategories", "master.workSubcategories",
-    "master.articles", "master.articleVariants", "master.subcategoryArticleMap",
-    "master.workOptionGroups", "master.workOptionValues", "master.customerRateSuggestions",
-    "master.fileAssets",
-  ]),
-  fieldOperations: Object.freeze([
-    "customers", "sites", "workRequired", "workOrders", "visits", "tasks", "followups", "attendance",
-    "blocked", "risks", "threads", "entityFileAttachments", "master.staff", "master.vendors",
-    "master.contractors", "master.fileAssets",
-  ]),
-  procurementInventory: Object.freeze([
-    "customers", "sites", "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders",
-    "grns", "inventory", "stockMovements", "dispatches", "vendorBills", "vendorPayments", "tasks",
-    "threads", "entityFileAttachments", "taxConfigs", "master.units", "master.articles",
-    "master.articleVariants", "master.vendors", "master.vendorRates", "master.fileAssets",
-  ]),
   boqControlCentre: Object.freeze([
     "customers", "sites", "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders",
     "entityFileAttachments", "master.units", "master.articles", "master.vendors", "master.fileAssets",
@@ -91,41 +60,12 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
     "master.articles", "master.articleVariants", "master.subcategoryArticleMap", "master.vendors",
     "master.vendorRates", "master.fileAssets",
   ]),
-  financeDesk: Object.freeze([
-    "customers", "sites", "workOrders", "payments", "invoices", "customerReceipts", "vendorBills",
-    "vendorPayments", "contractorBills", "contractorPayments", "contractorSettlements", "commissions",
-    "workOrderCostLines", "tasks", "followups", "threads", "entityFileAttachments", "commercialTerms",
-    "paymentTermTemplates", "taxConfigs", "master.vendors", "master.contractors", "master.sourcePartners",
-    "master.fileAssets",
-  ]),
-  profitability: Object.freeze([
-    "customers", "sites", "workOrders", "boqs", "purchaseOrders", "grns", "inventory", "stockMovements",
-    "dispatches", "vendorBills", "vendorPayments", "contractorBills", "contractorPayments", "commissions",
-    "workOrderCostLines", "contractorSettlements", "payments", "invoices", "customerReceipts",
-    "master.vendors", "master.contractors", "master.sourcePartners",
-  ]),
-  mediaCommunication: Object.freeze([
-    "customers", "sites", "quotations", "tasks", "followups", "threads", "commSends",
-    "entityFileAttachments", "entityReferenceAssignments", "master.storageAccounts",
-    "master.storageFolderTemplates", "master.storageFolderInstances", "master.fileAssets",
-    "master.catalogues", "master.catalogueArticleVendorLinks", "master.pinterestBoards", "master.referenceMedia",
-  ]),
-  hrStaff: Object.freeze([
-    "customers", "sites", "workOrders", "visits", "tasks", "followups", "threads", "attendance",
-    "leaveRequests", "payrollPeriods", "payrollLines", "salaryAdjustments", "staffDocuments",
-    "approvalPolicies", "entityFileAttachments", "master.contractors", "master.staff", "master.fileAssets",
-  ]),
-  systemSettings: Object.freeze([
-    "staffRolePermissions", "approvalPolicies", "automationRules", "recurringTasks", "taxConfigs",
-    "paymentTermTemplates", "validityConfigs", "master.storageAccounts", "master.storageFolderTemplates",
-  ]),
 });
 
 /**
- * Operational/history tables grow without a practical upper bound. Normal
- * module reads therefore page them instead of mirroring the complete table.
- * Small taxonomy/config tables deliberately remain unbounded because they are
- * required as complete reference sets by forms and are slow-changing.
+ * Operational/history tables grow without a practical upper bound. Focused
+ * module reads page these collections. Slow-changing taxonomy/config tables are
+ * deliberately not bounded because forms require those reference sets in full.
  */
 export const DEFAULT_PAGE_LIMITS: Readonly<Record<string, number>> = Object.freeze({
   customers: 50,
@@ -199,7 +139,7 @@ export function boundedPageLimits(
     const limit = DEFAULT_PAGE_LIMITS[collection];
     if (limit) limits[collection] = limit;
   }
-  if (moduleId === "auditLog") limits.auditLog = 100;
+  if (moduleId === "auditLog") limits.auditLog = 250;
   if (moduleId === "executionLogs") limits.executionLogs = 100;
   return Object.freeze(limits);
 }
