@@ -243,7 +243,8 @@ describe("runtime efficiency hardening", () => {
     const migration = await read("supabase/migrations/20260815163500_canonical_customer_thread_identity.sql");
     expect(migration).toContain("customer-conversation:");
     expect(migration).toContain("data->>'record_id' like 'cust-%'");
-    expect(migration).toContain("revision = revision + 1");
+    expect(migration).toContain('from public."entity_customers" as customer');
+    expect(migration).toContain("revision = thread.revision + 1");
 
     const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
     const authorized = await read("src/lib/rdash/server/authorized-commit.ts");
