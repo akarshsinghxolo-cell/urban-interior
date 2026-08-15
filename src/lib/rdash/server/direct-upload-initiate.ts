@@ -1,5 +1,5 @@
 import type { AuthenticatedUser } from "./auth";
-import { getWorkspace } from "./workspace";
+import { getDirectUploadWorkspace } from "./direct-upload-workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
 import type { FileAttachmentEntityType, RDashDatabase } from "../types";
@@ -48,7 +48,7 @@ function assertUploadTargetReady(
 
 export async function bindDirectUpload(_user: AuthenticatedUser, input: BindUploadRequest): Promise<void> {
   if (!input.uploadItemId) throw new Error("Upload item identity is required.");
-  const workspace = await getWorkspace();
+  const workspace = await getDirectUploadWorkspace(input.targetEntityType, input.targetEntityId, input.purpose);
   assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose);
   const admin = getSupabaseAdminClient();
   const { data: item, error } = await admin.from("uc_upload_items").update({
@@ -140,7 +140,7 @@ export async function initiateDirectUpload(
   // Do not create or resume a Drive session for a client-reserved entity ID until
   // the corresponding business row has reached Supabase. The blob stays durable
   // in IndexedDB and the client retries automatically after Save completes.
-  const workspace = await getWorkspace();
+  const workspace = await getDirectUploadWorkspace(input.targetEntityType, input.targetEntityId, input.purpose);
   assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose);
 
   if (existing) {
