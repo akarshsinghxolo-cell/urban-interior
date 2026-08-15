@@ -152,6 +152,17 @@ describe("runtime efficiency hardening", () => {
     expect(outbox).toContain("let db = structuredClone(base) as RDashDatabase");
   });
 
+  test("server workspace persistence is Supabase-only with no in-memory fallback backend", async () => {
+    const workspace = await read("src/lib/rdash/server/workspace.ts");
+    const env = await read(".env.example");
+    expect(workspace).toContain("Supabase/PostgreSQL is the single server workspace persistence system");
+    expect(workspace).toContain("assertSupabaseSchemaReady");
+    expect(workspace).not.toContain("UC_ALLOW_IN_MEMORY_WORKSPACE_FALLBACK");
+    expect(workspace).not.toContain("memorySnapshot");
+    expect(workspace).not.toContain("memoryRowRevisions");
+    expect(env).not.toContain("UC_ALLOW_IN_MEMORY_WORKSPACE_FALLBACK");
+  });
+
   test("commit retry and repair paths never reconstruct the complete workspace", async () => {
     const route = await read("src/app/api/operations/commit/route.ts");
     expect(route).toContain("loadOperationSubset");
@@ -170,6 +181,7 @@ describe("runtime efficiency hardening", () => {
     expect(authorized).toContain("validationReadPlan");
     expect(authorized).toContain("getWorkspaceSubset(validationReadPlan");
     expect(authorized).toContain('CommitMode = "row-targeted" | "domain-targeted"');
+    expect(authorized).toContain("assertCanonicalThreadOperations");
     expect(authorized).not.toContain("getWorkspace(");
     expect(authorized).not.toContain("phase2-single-read");
     expect(targeted).not.toContain("UC_PHASE2B_TARGETED_COMMITS");
@@ -234,10 +246,15 @@ describe("runtime efficiency hardening", () => {
     expect(migration).toContain("revision = revision + 1");
 
     const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
+    const authorized = await read("src/lib/rdash/server/authorized-commit.ts");
     const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
+    const workspace = await read("src/lib/rdash/server/workspace.ts");
     expect(targeted).toContain('recordId.startsWith("customer-conversation:")');
     expect(targeted).not.toContain('recordId.startsWith("cust-")');
+    expect(authorized).toContain('recordId.startsWith("cust-")');
+    expect(authorized).toContain("must use customer-conversation:<customer_id>");
     expect(entityRead).toContain("canonicalThreadRecordIds");
+    expect(workspace).toContain("canonicalizeResetCustomerThreads");
   });
 
   test("report families narrow complete inputs without paginating business totals", () => {
