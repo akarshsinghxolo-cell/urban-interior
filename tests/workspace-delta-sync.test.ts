@@ -147,9 +147,9 @@ describe("workspace delta aggregation", () => {
 
 describe("delta journal migration and API contract", () => {
   test("writes the journal batch inside the atomic commit transaction", async () => {
-    const migration = await testFile(
+    const migration = (await testFile(
       "supabase/migrations/20260728055820_workspace_revision_change_journal.sql",
-    ).text();
+    ).text()).replace(/\r\n/g, "\n");
 
     expect(migration).toContain("create table if not exists public.entity_workspace_change_batches");
     expect(migration).toContain("alter table public.entity_workspace_change_batches enable row level security");

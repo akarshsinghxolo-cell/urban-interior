@@ -18,6 +18,7 @@ export interface WorkspaceOutboxSummary {
 export interface WorkspaceCommitOutboxRecord {
   operationId: string;
   workspaceId: string;
+  ownerUserId: string;
   revision: number;
   operations: WorkspaceOperation[];
   expectedRevisions?: Record<string, number>;

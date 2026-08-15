@@ -15,6 +15,7 @@ function item(status: WorkspaceOutboxStatus, id: string = status): WorkspaceComm
   return {
     operationId: id,
     workspaceId: "default",
+    ownerUserId: "user-test",
     revision: 1,
     operations: [],
     uploadBatchIds: [],

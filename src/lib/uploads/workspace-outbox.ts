@@ -19,6 +19,7 @@ let hydratePromise: Promise<void> | null = null;
 let flushPromise: Promise<WorkspaceOutboxFlushResult> | null = null;
 let acceptedWorkspace: RDashDatabase | null = null;
 let acceptedRevision = 0;
+let activeScope: { workspaceId: string; ownerUserId: string } | null = null;
 const listeners = new Set<() => void>();
 
 export interface WorkspaceOutboxFlushResult {
@@ -60,8 +61,43 @@ function emit(items: WorkspaceCommitOutboxRecord[], ready = true): void {
   }
 }
 
+export function workspaceOutboxRecordMatchesScope(
+  item: Pick<WorkspaceCommitOutboxRecord, "workspaceId" | "ownerUserId">,
+  scope: { workspaceId: string; ownerUserId: string } | null,
+): boolean {
+  return Boolean(scope)
+    && item.workspaceId === scope?.workspaceId
+    && item.ownerUserId === scope?.ownerUserId;
+}
+
+function belongsToActiveScope(item: WorkspaceCommitOutboxRecord): boolean {
+  return workspaceOutboxRecordMatchesScope(item, activeScope);
+}
+
+async function readScopedWorkspaceOutbox(): Promise<WorkspaceCommitOutboxRecord[]> {
+  if (!activeScope) return [];
+  return (await uploadIndexedDb.readWorkspaceOutbox()).filter(belongsToActiveScope);
+}
+
 async function refresh(): Promise<void> {
-  emit(await uploadIndexedDb.readWorkspaceOutbox());
+  emit(await readScopedWorkspaceOutbox());
+}
+
+export function configureWorkspaceOutboxScope(scope: { workspaceId: string; ownerUserId: string }): void {
+  if (activeScope?.workspaceId === scope.workspaceId && activeScope.ownerUserId === scope.ownerUserId) return;
+  activeScope = { workspaceId: scope.workspaceId, ownerUserId: scope.ownerUserId };
+  acceptedWorkspace = null;
+  acceptedRevision = 0;
+  hydratePromise = null;
+  void refresh().catch((error) => console.error("[WorkspaceOutbox] Could not switch account scope", error));
+}
+
+export function clearWorkspaceOutboxScope(): void {
+  activeScope = null;
+  acceptedWorkspace = null;
+  acceptedRevision = 0;
+  hydratePromise = null;
+  emit([], true);
 }
 
 function summarizeOperations(operations: NonNullable<WorkspaceCommitPayload["operations"]>) {
@@ -124,7 +160,7 @@ async function patchRecord(
   patch: Partial<WorkspaceCommitOutboxRecord>,
 ): Promise<WorkspaceCommitOutboxRecord | null> {
   const current = await uploadIndexedDb.getWorkspaceOutbox(operationId);
-  if (!current) return null;
+  if (!current || !belongsToActiveScope(current)) return null;
   const next = { ...current, ...patch, updatedAt: nowIso() };
   await uploadIndexedDb.putWorkspaceOutbox(next);
   await refresh();
@@ -132,7 +168,7 @@ async function patchRecord(
 }
 
 async function rebaseRemainingItems(base: RDashDatabase, revision: number): Promise<void> {
-  const remaining = (await uploadIndexedDb.readWorkspaceOutbox())
+  const remaining = (await readScopedWorkspaceOutbox())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   if (!remaining.length) return;
 
@@ -205,15 +241,17 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
   if (typeof parsed.revision !== "number" || !Array.isArray(parsed.operations) || !parsed.operations.length) {
     return { body };
   }
+  if (!activeScope) return { body };
 
   const timestamp = nowIso();
   const operationId = parsed.operationId || makeOperationId();
-  const existingItems = await uploadIndexedDb.readWorkspaceOutbox();
+  const existingItems = await readScopedWorkspaceOutbox();
   const syncingItems = existingItems.filter((item) => item.status === "syncing");
   const previousSame = existingItems.find((item) => item.operationId === operationId);
   const record: WorkspaceCommitOutboxRecord = {
     operationId,
-    workspaceId: "default",
+    workspaceId: activeScope.workspaceId,
+    ownerUserId: activeScope.ownerUserId,
     revision: parsed.revision,
     operations: parsed.operations,
     expectedRevisions: parsed.expectedRevisions,
@@ -228,7 +266,7 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
   };
 
   if (!syncingItems.length) {
-    await uploadIndexedDb.clearWorkspaceOutbox();
+    for (const item of existingItems) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
   } else {
     for (const item of existingItems) {
       if (item.status !== "syncing") await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
@@ -245,7 +283,7 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
 
 export async function markWorkspaceCommitNetworkFailure(operationId: string, error: unknown): Promise<void> {
   const current = await uploadIndexedDb.getWorkspaceOutbox(operationId);
-  if (!current) return;
+  if (!current || !belongsToActiveScope(current)) return;
   const retryCount = current.retryCount + 1;
   await patchRecord(operationId, {
     status: "waiting_for_network",
@@ -258,7 +296,7 @@ export async function markWorkspaceCommitNetworkFailure(operationId: string, err
 
 export async function markWorkspaceCommitResponse(operationId: string, response: Response): Promise<Response> {
   const current = await uploadIndexedDb.getWorkspaceOutbox(operationId);
-  if (!current) return response;
+  if (!current || !belongsToActiveScope(current)) return response;
   const payload = await response.clone().json().catch(() => ({})) as WorkspaceCommitResponsePayload;
 
   if (response.status === 202 || payload.status === "processing") {
@@ -307,7 +345,7 @@ export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promis
 }> {
   acceptedWorkspace = structuredClone(base) as RDashDatabase;
   await workspaceOutboxStore.hydrate();
-  const items = (await uploadIndexedDb.readWorkspaceOutbox())
+  const items = (await readScopedWorkspaceOutbox())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   let db = structuredClone(base) as RDashDatabase;
   for (const item of items) db = applyWorkspaceOperations(db, item.operations);
@@ -351,7 +389,7 @@ async function rebaseConflict(item: WorkspaceCommitOutboxRecord): Promise<void> 
 
 export async function retryWorkspaceOutbox(operationId: string): Promise<void> {
   const item = await uploadIndexedDb.getWorkspaceOutbox(operationId);
-  if (!item) return;
+  if (!item || !belongsToActiveScope(item)) return;
   if (item.status === "conflict") {
     await rebaseConflict(item);
   } else {
@@ -366,7 +404,8 @@ export async function retryWorkspaceOutbox(operationId: string): Promise<void> {
 }
 
 export async function discardWorkspaceOutbox(): Promise<void> {
-  await uploadIndexedDb.clearWorkspaceOutbox();
+  const items = await readScopedWorkspaceOutbox();
+  for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
   await refresh();
 }
 
@@ -377,7 +416,7 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       return { replayed: false, conflict: false };
     }
-    const items = (await uploadIndexedDb.readWorkspaceOutbox()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const items = (await readScopedWorkspaceOutbox()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const item = items.find((entry) => {
       if (entry.status === "conflict" || entry.status === "failed_permanent") return false;
       if (entry.retryAt && Date.parse(entry.retryAt) > Date.now()) return false;
