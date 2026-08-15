@@ -189,11 +189,34 @@ export function assertWorkspaceResetRequest(user: AuthenticatedUser, confirmatio
   if (confirmation.trim() !== "RESET WORKSPACE") throw new Error('INVALID:Type "RESET WORKSPACE" exactly to confirm the reset.');
 }
 
+async function canonicalizeResetCustomerThreads(snapshot: WorkspaceSnapshot): Promise<WorkspaceSnapshot> {
+  const customerIds = new Set(snapshot.data.customers.map((customer) => customer.id));
+  const changed = snapshot.data.threads.flatMap((thread) => {
+    if (thread.kind !== "generic" || !customerIds.has(thread.record_id)) return [];
+    return [{ ...thread, record_id: `customer-conversation:${thread.record_id}` }];
+  });
+  if (!changed.length) return snapshot;
+
+  const committed = await commitWorkspaceOperations(snapshot.revision, [
+    {
+      collection: "threads",
+      upsert: changed as unknown as Array<Record<string, unknown>>,
+    },
+  ]);
+  const saved = await getWorkspace();
+  return {
+    ...saved,
+    revision: committed.revision,
+    bumpedRowVersions: committed.bumpedRowVersions,
+  };
+}
+
 export async function resetWorkspace(user: AuthenticatedUser, confirmation: string): Promise<WorkspaceSnapshot> {
   assertWorkspaceResetRequest(user, confirmation);
   await assertSupabaseSchemaReady();
   const { resetWorkspaceChangeJournal } = await import("./workspace-change-reset");
   const { resetRestWorkspace } = await getRestModule();
   await resetWorkspaceChangeJournal();
-  return resetRestWorkspace();
+  const reset = await resetRestWorkspace();
+  return canonicalizeResetCustomerThreads(reset);
 }
