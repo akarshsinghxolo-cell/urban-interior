@@ -44,7 +44,7 @@ function addIds(target: Record<string, Set<string>>, collection: string, values:
 }
 
 export function canUseSimpleTargetedCommit(operations: WorkspaceOperation[]): boolean {
-  if (process.env.UC_PHASE2B_TARGETED_COMMITS === "0" || !operations.length) return false;
+  if (!operations.length) return false;
 
   let rowCount = 0;
   let hasBusinessMutation = false;
@@ -73,7 +73,7 @@ function buildReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]
   for (const operation of operations) {
     if (operation.collection === "customers") {
       // Identity uniqueness is workspace-wide. Reading the Customer table is
-      // still far cheaper than reconstructing dozens of unrelated ERP tables.
+      // still far cheaper than reconstructing unrelated ERP domains.
       fullCollections.add("customers");
     }
 
@@ -87,7 +87,7 @@ function buildReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]
       } else if (operation.collection === "attendance") {
         // The mutation policy uses the signed-in Staff row to block inactive
         // field users. Target Staff rows are intentionally not made a stronger
-        // requirement than the existing full-workspace validator.
+        // requirement than the authoritative domain validator.
         if (user.staffId) addId(rows, "master.staff", user.staffId);
       }
     }
@@ -139,9 +139,8 @@ function validateCandidate(database: RDashDatabase, operations: WorkspaceOperati
 
 /**
  * Customer, Site and attendance saves are common, small mutations whose server
- * rules can be proven from a narrow dependency set. Keeping them out of the
- * old full-workspace fallback removes one of the most frequent sources of
- * database egress while preserving the existing permission and identity rules.
+ * rules can be proven from a narrow dependency set. They use the same subset
+ * architecture as every other commit; there is no alternate legacy path.
  */
 export async function prepareSimpleTargetedCommit(
   user: AuthenticatedUser,
@@ -156,7 +155,7 @@ export async function prepareSimpleTargetedCommit(
   const loadedAt = Date.now();
 
   // This may bind a Field Staff record to the session's staff identity, exactly
-  // as the existing full-workspace commit path does.
+  // as the authoritative domain commit path does.
   assertWorkspaceMutationAllowed(user, operations, current.data);
   const candidate = applyWorkspaceOperations(current.data, operations);
   const preparedOperations = diffWorkspaceOperations(current.data, candidate);
