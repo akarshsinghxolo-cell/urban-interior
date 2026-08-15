@@ -141,6 +141,17 @@ describe("runtime efficiency hardening", () => {
     expect(boundary).toContain("workspaceReadCache.store");
   });
 
+  test("pagination metadata survives normalization and offline overlays", async () => {
+    const workCategory = await read("src/lib/rdash/work-category-master.ts");
+    const rawStore = await read("src/lib/rdash/raw-store.ts");
+    const outbox = await read("src/lib/uploads/workspace-outbox.ts");
+    expect(workCategory).toContain("...(db as RDashDatabase)");
+    expect(rawStore).toContain("prepareWorkspaceData({ ...input })");
+    expect(rawStore).toContain("...base");
+    expect(outbox).toContain("acceptedWorkspace = structuredClone(base) as RDashDatabase");
+    expect(outbox).toContain("let db = structuredClone(base) as RDashDatabase");
+  });
+
   test("commit retry and repair paths never reconstruct the complete workspace", async () => {
     const route = await read("src/app/api/operations/commit/route.ts");
     expect(route).toContain("loadOperationSubset");
@@ -149,6 +160,25 @@ describe("runtime efficiency hardening", () => {
     expect(route).toContain('commitHeaders("no-op-revision-read"');
     expect(route).not.toContain("getWorkspace(true)");
     expect(route).not.toMatch(/import\s*\{[^}]*\bgetWorkspace\b[^}]*\}\s*from\s*["']@\/lib\/rdash\/server\/workspace["']/s);
+  });
+
+  test("ordinary Drive upload lifecycle reads targeted context instead of the ERP workspace", async () => {
+    const initiate = await read("src/lib/rdash/server/direct-upload-initiate.ts");
+    const finalize = await read("src/lib/rdash/server/direct-upload-finalize-core.ts");
+    const context = await read("src/lib/rdash/server/direct-upload-workspace.ts");
+
+    expect(initiate).toContain("getDirectUploadWorkspace");
+    expect(initiate).not.toContain("getWorkspace(");
+    expect(finalize).toContain("getDirectUploadWorkspace");
+    expect(finalize).toContain("getWorkspaceSubset");
+    expect(finalize).not.toContain("getWorkspace(");
+    expect(context).toContain("COMPATIBILITY_NESTED_TARGETS");
+    expect(context).toContain('"quotation_item"');
+    expect(context).toContain('"boq_item"');
+    expect(context).toContain('"thread_message"');
+    expect(context).toContain("getWorkspaceSubset");
+    expect(context).toContain("TARGET_COLLECTION");
+    expect(context).toContain("[upload-context] targeted context incomplete; using compatibility full read");
   });
 
   test("report families narrow complete inputs without paginating business totals", () => {
