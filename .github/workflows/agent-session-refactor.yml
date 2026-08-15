@@ -63,6 +63,18 @@ jobs:
           if old not in test:
               raise SystemExit('pagination metadata regression test shape changed unexpectedly')
           test_path.write_text(test.replace(old, new, 1), encoding='utf-8')
+
+          merge_test_path = Path('tests/workspace-session-merge.test.ts')
+          merge_test = merge_test_path.read_text(encoding='utf-8')
+          merge_test = merge_test.replace(
+              '] as RDashDatabase["tasks"];',
+              '] as unknown as RDashDatabase["tasks"];',
+          )
+          merge_test = merge_test.replace(
+              '] as RDashDatabase["customers"];',
+              '] as unknown as RDashDatabase["customers"];',
+          )
+          merge_test_path.write_text(merge_test, encoding='utf-8')
           PY
       - name: Install dependencies
         run: npm ci
