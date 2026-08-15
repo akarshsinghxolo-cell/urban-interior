@@ -59,6 +59,7 @@ function scopedDatabase(): RDashDatabase {
   const metadata = database as unknown as Record<string, unknown>;
   metadata._workspace_read_scope = "workdesk";
   metadata._workspace_read_collections = ["tasks", "followups", "master.staff"];
+  metadata._workspace_foundation_embedded = true;
   return database;
 }
 
@@ -234,7 +235,7 @@ describe("delta synchronization safety policy", () => {
     const source = await testFile("src/lib/rdash/use-workspace-row-version-bridge.ts").text();
     const app = await testFile("src/components/urban-castle/UrbanCastleApp.tsx").text();
     expect(source).toContain("React.useLayoutEffect");
-    expect(source).toContain("workspaceRowVersionState.replace(input.rowVersions)");
+    expect(source).toContain("workspaceRowVersionState.merge(input.rowVersions)");
     expect(source).toContain("hydrateSecureWorkspace: wrapped");
     expect(app).toContain("useInstallWorkspaceRowVersionBridge()");
     expect(app.indexOf("useInstallWorkspaceRowVersionBridge()"))
