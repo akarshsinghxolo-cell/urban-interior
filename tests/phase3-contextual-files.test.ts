@@ -58,18 +58,23 @@ describe("Phase 3 contextual files", () => {
     expect(wrapper).toContain('id: "variations" as const');
   });
 
-  test("site files keep the legacy photo field image-only while all direct files remain visible", async () => {
+  test("site files attach only after the Site mutation is confirmed", async () => {
     const site = await read("src/components/rdash/SiteFormDialog.tsx");
     const draft = await read("src/components/rdash/CustomerSiteDraftCard.tsx");
     const model = await read("src/components/rdash/customer-sites-form-model.ts");
     const save = await read("src/lib/rdash/customer-sites-save.ts");
     expect(site).toContain('classified.role === "photo" ? { attachmentField: "photo_attachment_ids"');
-    expect(site).toContain('pendingPhotos.filter((file) => file.mimeType.startsWith("image/"))');
+    expect(site).toContain("confirmedPhotoAttachmentIds(existingAttachmentIds, detachAttachmentIds)");
+    const siteSaveStart = site.indexOf("saveCustomerWithSites({");
+    expect(siteSaveStart).toBeGreaterThanOrEqual(0);
+    expect(site.indexOf("await awaitServerSync();", siteSaveStart))
+      .toBeLessThan(site.indexOf("commitBatches();", siteSaveStart));
     expect(site).toContain("detachAttachmentIds,");
     expect(site).toContain("setDetachAttachmentIds");
     expect(draft).toContain('draft.existing ? entityFiles(db, "site", draft.id) : []');
     expect(draft).toContain('classified.role === "photo" ? { attachmentField: "photo_attachment_ids"');
-    expect(model).toContain('draft.pendingPhotos.filter((file) => file.mimeType.startsWith("image/"))');
+    expect(model).toContain("photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds)");
+    expect(model).not.toContain('draft.pendingPhotos.filter((file) => file.mimeType.startsWith("image/"))');
     expect(save).not.toContain("The selected file is not attached through this Site's photo/file field.");
   });
 

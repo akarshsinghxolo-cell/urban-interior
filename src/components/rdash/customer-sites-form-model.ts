@@ -203,6 +203,19 @@ export function validEmail(value: string): boolean {
   return !value.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+/**
+ * Only attachment rows already confirmed by PostgreSQL belong in the Site
+ * mutation. Deferred uploads append their attachment IDs atomically after the
+ * Site itself has been accepted by the server.
+ */
+export function confirmedPhotoAttachmentIds(
+  attachmentIds: string[],
+  detachAttachmentIds: string[] = [],
+): string[] {
+  const detached = new Set(detachAttachmentIds);
+  return [...new Set(attachmentIds)].filter((id) => !detached.has(id));
+}
+
 export function customerPayload(draft: CustomerDraft): Partial<Customer> {
   return {
     name: draft.name.trim(),
@@ -235,10 +248,7 @@ export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSa
     longitude: draft.longitude,
     map_url: draft.mapUrl.trim() || undefined,
     notes: draft.notes.trim() || undefined,
-    photo_attachment_ids: [...new Set([
-      ...draft.photoAttachmentIds,
-      ...draft.pendingPhotos.filter((file) => file.mimeType.startsWith("image/")).map((file) => file.attachmentId),
-    ])],
+    photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds),
     ...(draft.archiveRequested ? {
       is_archived: true,
       archived_at: new Date().toISOString(),

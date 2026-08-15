@@ -2,7 +2,14 @@ import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { applyCustomerWithSitesSave } from "../src/lib/rdash/customer-sites-save";
 import type { RDashDatabase } from "../src/lib/rdash/types";
-import { defaultSiteName, newSiteDraft, siteNameFollowsCustomer } from "../src/components/rdash/customer-sites-form-model";
+import {
+  confirmedPhotoAttachmentIds,
+  defaultSiteName,
+  newSiteDraft,
+  siteNameFollowsCustomer,
+  sitePayload,
+  type SiteDraft,
+} from "../src/components/rdash/customer-sites-form-model";
 
 function database(): RDashDatabase {
   const db = structuredClone(buildSeedDatabase());
@@ -56,6 +63,23 @@ describe("customer Site form defaults", () => {
     expect(defaultSiteName("  Mr Das  ")).toBe("Mr Das Site");
     expect(newSiteDraft("Mr Das").name).toBe("Mr Das Site");
     expect(newSiteDraft("").name).toBe("");
+  });
+
+  test("keeps deferred upload IDs out of the initial Site mutation", () => {
+    const draft = newSiteDraft("Mr Das");
+    draft.pendingPhotos = [{
+      attachmentId: "attachment-pending",
+      mimeType: "image/png",
+    } as SiteDraft["pendingPhotos"][number]];
+
+    expect(sitePayload(draft, "Owner").photo_attachment_ids).toEqual([]);
+  });
+
+  test("keeps only confirmed, non-detached attachment IDs", () => {
+    expect(confirmedPhotoAttachmentIds(
+      ["attachment-1", "attachment-1", "attachment-2"],
+      ["attachment-1"],
+    )).toEqual(["attachment-2"]);
   });
 
   test("automatic Site names follow customer renames until manually changed", () => {

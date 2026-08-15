@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";
 import { MapView } from "@/components/rdash/MapView";
+import { confirmedPhotoAttachmentIds } from "./customer-sites-form-model";
 const SITE_TYPES: Array<{
     value: Site["site_type"];
     label: string;
@@ -275,10 +276,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
         try {
             setSaving(true);
             const existingAttachmentIds = siteId ? (db.sites.find((site) => site.id === siteId)?.photo_attachment_ids || []) : [];
-            const photoAttachmentIds = [...new Set([
-                ...existingAttachmentIds.filter((id) => !detachAttachmentIds.includes(id)),
-                ...pendingPhotos.filter((file) => file.mimeType.startsWith("image/")).map((file) => file.attachmentId),
-            ])];
+            const photoAttachmentIds = confirmedPhotoAttachmentIds(existingAttachmentIds, detachAttachmentIds);
             const customer = db.customers.find((row) => row.id === draft.customerId);
             if (!customer) throw new Error("Customer not found.");
             const id = siteId || reservedSiteId;
@@ -288,8 +286,8 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
                 sites: [{ ...payload, id, photo_attachment_ids: photoAttachmentIds }],
                 detachAttachmentIds,
             });
-            commitBatches();
             await awaitServerSync();
+            commitBatches();
             toast.success(`Site "${payload.name}" ${siteId ? "updated" : "added"}. Pending files continue in Background Activity.`);
             onSaved?.(id);
             onClose();
