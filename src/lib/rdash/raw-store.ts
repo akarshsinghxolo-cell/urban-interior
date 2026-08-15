@@ -397,6 +397,24 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         //     canReleaseContractorPayment, mutateMaster, dataIssues, logAudit.
         //     hydrateSecureWorkspace + resetDatabase stay inline (closure vars). ──
         ...coreSlice,
+        acceptWorkspaceServerRevision: ({ revision, rowVersions }) => {
+            const current = get();
+            const nextRevision = Math.max(
+                revision,
+                current.serverRevision,
+                serverRevisionForQueue,
+                lastAcceptedServerRevision,
+            );
+            serverRevisionForQueue = nextRevision;
+            lastAcceptedServerRevision = nextRevision;
+            lastAcceptedServerDb = structuredClone(current.db) as RDashDatabase;
+            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);
+            setBase({
+                serverRevision: nextRevision,
+                workspaceSyncStatus: "saved",
+                workspaceSyncError: null,
+            });
+        },
         hydrateSecureWorkspace: ({ db, revision, user, rowVersions }) => {
             const current = get();
             const accepted = mergeWorkspaceSnapshot(current.db, db);

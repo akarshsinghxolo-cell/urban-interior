@@ -295,4 +295,19 @@ describe("runtime efficiency hardening", () => {
     expect(appShell).not.toContain('scope === "full"');
   });
 
+  test("does not rehydrate unchanged cached modules or auto-rebase conflicts through workspace reads", async () => {
+    const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
+    const outbox = await read("src/lib/uploads/workspace-outbox.ts");
+    const cache = await read("src/lib/rdash/workspace-read-cache.ts");
+    const coreTypes = await read("src/lib/rdash/store/types.ts");
+    expect(boundary).not.toContain("db: cachedTarget.data");
+    expect(boundary).toContain("if (!result.changed)");
+    expect(boundary).toContain("acceptWorkspaceServerRevision");
+    expect(outbox).not.toContain('fetch("/api/workspace"');
+    expect(outbox).not.toContain("expectedRevisions");
+    expect(outbox).not.toContain("bumpedAggregateRevisions");
+    expect(cache).not.toContain("aggregateRevisions");
+    expect(coreTypes).not.toContain("aggregateRevisions");
+  });
+
 });

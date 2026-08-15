@@ -15,7 +15,7 @@ import type { WorkspaceReadCacheEntry } from "./workspace-read-cache";
 const MAX_DELTA_PAGES_PER_NAVIGATION = 5;
 
 export type WorkspaceNavigationRevalidationResult =
-  | { kind: "fresh"; entry: WorkspaceReadCacheEntry }
+  | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean }
   | { kind: "reload"; reason: string }
   | { kind: "unauthorized" };
 
@@ -81,10 +81,10 @@ export async function revalidateWorkspaceReadCacheEntry(
     ...input,
     data: structuredClone(input.data),
     rowVersions: input.rowVersions ? { ...input.rowVersions } : undefined,
-    aggregateRevisions: input.aggregateRevisions ? { ...input.aggregateRevisions } : undefined,
     readState: { ...input.readState },
   };
   let afterRevision = entry.revision;
+  let changed = false;
 
   for (let page = 0; page < MAX_DELTA_PAGES_PER_NAVIGATION; page += 1) {
     if (signal.aborted) throw new DOMException("Navigation delta aborted", "AbortError");
@@ -118,12 +118,14 @@ export async function revalidateWorkspaceReadCacheEntry(
     if (delta.revision === afterRevision) {
       return delta.hasMore
         ? { kind: "reload", reason: "delta_did_not_advance" }
-        : { kind: "fresh", entry };
+        : { kind: "fresh", entry, changed };
     }
 
     const reloadReason = requiresScopedReload(entry, delta);
     if (reloadReason) return { kind: "reload", reason: reloadReason };
 
+    const deltaChanged = touchedCollections(delta).size > 0;
+    changed = changed || deltaChanged;
     const applied = applyWorkspaceDelta(entry.data, delta);
     const rowVersions = mergeWorkspaceRowVersions(
       entry.rowVersions || {},
@@ -138,7 +140,7 @@ export async function revalidateWorkspaceReadCacheEntry(
       cachedAt: Date.now(),
     };
     afterRevision = delta.revision;
-    if (!delta.hasMore) return { kind: "fresh", entry };
+    if (!delta.hasMore) return { kind: "fresh", entry, changed };
   }
 
   return { kind: "reload", reason: "delta_page_limit" };

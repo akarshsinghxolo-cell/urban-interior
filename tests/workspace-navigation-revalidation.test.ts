@@ -72,6 +72,9 @@ describe("workspace navigation freshness", () => {
     // advertise another page.
     expect(source).toContain("if (!needsExpansion) {");
     expect(source).toContain("workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState)");
+    expect(source).not.toContain("db: cachedTarget.data");
+    expect(source).toContain("if (!result.changed)");
+    expect(source).toContain("acceptWorkspaceServerRevision");
     expect(source).toContain("if (!pageCursors.length && !pageError) return null");
     expect(source).toContain("More records are available");
     expect(source).not.toContain("if (!needsExpansion && !enteredNewTarget) return null");
@@ -94,6 +97,8 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain('"X-UC-Delta-Module": entry.target.moduleId');
     expect(source).toContain("applyWorkspaceDelta(entry.data, delta)");
     expect(source).toContain("mergeWorkspaceRowVersions");
+    expect(source).toContain("changed: boolean");
+    expect(source).toContain("changed = changed || deltaChanged");
   });
 
   test("relationship row graphs never request collection-wide delta row bodies", async () => {

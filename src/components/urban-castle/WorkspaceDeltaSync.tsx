@@ -40,7 +40,6 @@ interface WorkspaceReadPayload {
   revision?: number;
   data?: import("@/lib/rdash/types").RDashDatabase;
   rowVersions?: Record<string, number>;
-  aggregateRevisions?: Record<string, number>;
   user?: import("@/lib/rdash/store").AuthenticatedWorkspaceUser;
   error?: string;
 }
@@ -111,7 +110,6 @@ async function reloadCurrentWorkspace(
     db: overlay.db,
     revision: payload.revision,
     user: hydrationUser,
-    aggregateRevisions: payload.aggregateRevisions,
     rowVersions: payload.rowVersions,
   });
   workspaceReadState.recordResponse(response);

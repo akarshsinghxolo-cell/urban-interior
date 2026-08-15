@@ -60,13 +60,10 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
     const resume = async () => {
       const result = await flushWorkspaceOutbox();
       if (!active) return;
-      if (result.replayed && result.payload?.data && typeof result.payload.revision === "number") {
-        useRDashStore.getState().hydrateSecureWorkspace({
-          db: result.payload.data,
+      if (result.replayed && typeof result.payload?.revision === "number") {
+        useRDashStore.getState().acceptWorkspaceServerRevision({
           revision: result.payload.revision,
-          user: authUser,
           rowVersions: result.payload.rowVersions,
-          aggregateRevisions: result.payload.bumpedAggregateRevisions,
         });
         restoredSessionRef.current = null;
         await applyPendingOverlay();

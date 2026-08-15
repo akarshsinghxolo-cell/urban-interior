@@ -23,14 +23,13 @@ import {
   mergeWorkspaceRowVersions,
   workspaceRowVersionState,
 } from "@/lib/rdash/workspace-row-version-state";
-import { restoreWorkspaceOutboxOverlay, workspaceOutboxStore } from "@/lib/uploads/workspace-outbox";
+import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
 interface WorkspaceReadPayload {
   error?: string;
   revision?: number;
   data?: import("@/lib/rdash/types").RDashDatabase;
-  aggregateRevisions?: Record<string, number>;
   rowVersions?: Record<string, number>;
   user?: {
     name: string;
@@ -122,14 +121,9 @@ export function WorkspaceScopedReadBoundary() {
   React.useLayoutEffect(() => {
     if (!authUser || currentCoverageCompatible || !cachedTarget || !cachedCoverageAvailable) return;
 
-    if (workspaceOutboxStore.getSnapshot().items.length === 0) {
-      useRDashStore.getState().hydrateSecureWorkspace({
-        db: cachedTarget.data,
-        revision: cachedTarget.revision,
-        user: authUser,
-        rowVersions: cachedTarget.rowVersions,
-      });
-    }
+    // The long-lived session already retains previously visited module rows.
+    // Cache is a server revalidation baseline only; copying it back into Zustand
+    // would re-render every `s.db` subscriber and could restore older rows.
     workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState);
   }, [
     authUser,
@@ -208,7 +202,6 @@ export function WorkspaceScopedReadBoundary() {
         db: overlay.db,
         revision: payload.revision,
         user: hydrationUser,
-        aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
       });
       workspaceReadState.recordResponse(response, requestedTarget);
@@ -217,7 +210,6 @@ export function WorkspaceScopedReadBoundary() {
         user: hydrationUser,
         revision: payload.revision,
         data: payload.data,
-        aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
         readState: workspaceReadState.getSnapshot(),
       });
@@ -250,18 +242,26 @@ export function WorkspaceScopedReadBoundary() {
         return;
       }
 
+      if (!requestStillCurrent()) return;
+      workspaceReadCache.put(result.entry);
+      workspaceReadState.restoreCached(requestedTarget, result.entry.readState);
+
+      if (!result.changed) {
+        useRDashStore.getState().acceptWorkspaceServerRevision({
+          revision: result.entry.revision,
+          rowVersions: result.entry.rowVersions,
+        });
+        return;
+      }
+
       const overlay = await restoreWorkspaceOutboxOverlay(result.entry.data);
       if (!requestStillCurrent()) return;
-
       hydrateSecureWorkspace({
         db: overlay.db,
         revision: result.entry.revision,
         user: authUser,
-        aggregateRevisions: result.entry.aggregateRevisions,
         rowVersions: result.entry.rowVersions,
       });
-      workspaceReadCache.put(result.entry);
-      workspaceReadState.restoreCached(requestedTarget, result.entry.readState);
       applyOverlayStatus(overlay);
     };
 
@@ -354,7 +354,6 @@ export function WorkspaceScopedReadBoundary() {
         revision: payload.revision,
         data: mergedCacheData,
         rowVersions: mergedRowVersions,
-        aggregateRevisions: cached?.aggregateRevisions,
         readState: workspaceReadState.getSnapshot(),
       });
       applyOverlayStatus(overlay);

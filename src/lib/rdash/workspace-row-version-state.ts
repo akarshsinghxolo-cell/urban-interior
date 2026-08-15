@@ -36,6 +36,9 @@ export const workspaceRowVersionState = {
   replace(input: WorkspaceRowVersions | undefined): void {
     snapshot = normalizedRowVersions(input);
   },
+  merge(input: WorkspaceRowVersions | undefined): void {
+    snapshot = mergeWorkspaceRowVersions(snapshot, input || {});
+  },
   resetForTests(): void {
     snapshot = {};
   },
