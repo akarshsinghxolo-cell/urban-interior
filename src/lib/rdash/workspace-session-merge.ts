@@ -171,6 +171,23 @@ export function mergeWorkspaceVersionMap(
 }
 
 /**
+ * A normal hydration may merge another partial snapshot at the same revision,
+ * or advance to a newer revision. It must never apply rows from an older
+ * response after the live session/commit queue has already advanced.
+ */
+export function workspaceHydrationRevisionIsCurrent(
+  incomingRevision: number,
+  ...knownRevisions: number[]
+): boolean {
+  if (!Number.isSafeInteger(incomingRevision) || incomingRevision < 0) return false;
+  const floor = knownRevisions.reduce((current, raw) => {
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value >= 0 ? Math.max(current, value) : current;
+  }, 0);
+  return incomingRevision >= floor;
+}
+
+/**
  * Merge one authoritative server payload into the long-lived browser session.
  * Complete module collections replace their prior rows; entity/page payloads
  * merge by row ID because they are intentionally partial. The bootstrap Master

@@ -79,12 +79,13 @@ async function reloadFoundation(signal: AbortSignal): Promise<boolean> {
   }
   if (signal.aborted || !foundationSyncIsSafe()) return false;
 
-  useRDashStore.getState().hydrateSecureWorkspace({
+  const hydrated = useRDashStore.getState().hydrateSecureWorkspace({
     db: payload.data,
     revision: payload.revision,
     user: payload.user,
     rowVersions: payload.rowVersions,
   });
+  if (!hydrated) return false;
   workspaceFoundationRevisionState.replace(payload.revision);
   return true;
 }
@@ -174,12 +175,13 @@ export function WorkspaceFoundationSync(): null {
 
           if (deltaHasRows(delta)) {
             const applied = applyWorkspaceDelta(latest.db, delta);
-            latest.hydrateSecureWorkspace({
+            const hydrated = latest.hydrateSecureWorkspace({
               db: applied.database,
               revision: delta.revision,
               user: latest.authUser!,
               rowVersions,
             });
+            if (!hydrated) return;
           } else {
             latest.acceptWorkspaceServerRevision({
               revision: delta.revision,

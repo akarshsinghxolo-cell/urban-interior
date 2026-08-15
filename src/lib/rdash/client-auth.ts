@@ -121,6 +121,14 @@ function invalidateReadCaches() {
   }
 }
 
+export function clearWorkspaceReadRequestCache(): void {
+  workspaceReadRequests.clear();
+}
+
+export function invalidateWorkspaceClientCaches(): void {
+  invalidateReadCaches();
+}
+
 function responseFromStored(stored: StoredHealthResponse) {
   return new Response(stored.body, {
     status: stored.status,
@@ -370,8 +378,8 @@ export function initAuthFetch(): void {
       }
       responseReceived = true;
 
-      if (isWorkspaceRead) {
-        if (response.ok && !deferReadState) workspaceReadState.recordResponse(response);
+      if (isWorkspaceRead && !deferReadState) {
+        if (response.ok) workspaceReadState.recordResponse(response);
         try {
           await rememberWorkspaceResponse(response.clone());
         } catch (error) {

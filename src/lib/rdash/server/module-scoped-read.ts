@@ -190,6 +190,8 @@ async function readAuthorizedScope(
     limitsByCollection: { ...(plan.limitsByCollection || {}) },
   });
   if (scoped.revision !== authorization.revision) throw new Error("READ_CONFLICT");
+  const revisionFence = await getWorkspaceSubset({});
+  if (revisionFence.revision !== scoped.revision) throw new Error("READ_CONFLICT");
   const savings = moduleReadPlanSavings(target);
   const limitedCollections = Object.fromEntries(
     Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
@@ -213,7 +215,7 @@ async function readAuthorizedScope(
 
   return {
     ...scoped,
-    queryCount: scoped.queryCount + authorization.queryCount,
+    queryCount: scoped.queryCount + authorization.queryCount + revisionFence.queryCount,
     scope: target.scope,
     collectionCount: readCollections.length,
     scopeCollectionCount: savings.scope,
@@ -267,6 +269,8 @@ async function readAuthorizedPage(
     offsetsByCollection: offsets,
   });
   if (page.revision !== authorization.revision) throw new Error("READ_CONFLICT");
+  const revisionFence = await getWorkspaceSubset({});
+  if (revisionFence.revision !== page.revision) throw new Error("READ_CONFLICT");
 
   const savings = moduleReadPlanSavings(target);
   moduleMetadata({
@@ -283,7 +287,7 @@ async function readAuthorizedPage(
 
   return {
     ...page,
-    queryCount: page.queryCount + authorization.queryCount,
+    queryCount: page.queryCount + authorization.queryCount + revisionFence.queryCount,
     scope: target.scope,
     collectionCount: pageCollections.length,
     scopeCollectionCount: savings.scope,

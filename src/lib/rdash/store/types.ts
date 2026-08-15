@@ -37,7 +37,7 @@ export interface CoreState {
     revision: number;
     user: AuthenticatedWorkspaceUser;
     rowVersions?: Record<string, number>;
-  }) => void;
+  }) => boolean;
   acceptWorkspaceServerRevision: (input: {
     revision: number;
     rowVersions?: Record<string, number>;

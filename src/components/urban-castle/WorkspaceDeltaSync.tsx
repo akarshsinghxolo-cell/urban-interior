@@ -24,6 +24,7 @@ import {
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import {
+  clearWorkspaceAcceptedBaseline,
   restoreWorkspaceOutboxOverlay,
   workspaceOutboxStore,
 } from "@/lib/uploads/workspace-outbox";
@@ -94,6 +95,7 @@ async function reloadCurrentWorkspace(
       "X-UC-Workspace-Path": pathname,
       "X-UC-Workspace-Module": target.moduleId,
       "X-UC-Delta-Fallback": "1",
+      "X-UC-Read-State-Deferred": "1",
     },
   });
   if (response.status === 401) await redirectToSignin();
@@ -104,14 +106,19 @@ async function reloadCurrentWorkspace(
     return false;
   }
 
+  if (payload.revision < useRDashStore.getState().serverRevision) return false;
   const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
   if (signal.aborted || !currentRunIsSafe(pathname)) return false;
-  useRDashStore.getState().hydrateSecureWorkspace({
+  const hydrated = useRDashStore.getState().hydrateSecureWorkspace({
     db: overlay.db,
     revision: payload.revision,
     user: hydrationUser,
     rowVersions: payload.rowVersions,
   });
+  if (!hydrated) {
+    clearWorkspaceAcceptedBaseline();
+    return false;
+  }
   workspaceReadState.recordResponse(response);
   if (overlay.pendingCount) {
     useRDashStore.setState({
@@ -198,6 +205,10 @@ export function WorkspaceDeltaSync(): null {
           if (!response.ok) throw new Error(`Delta request failed with ${response.status}.`);
 
           const delta = await response.json() as WorkspaceDeltaPayload;
+          if (delta.requiresFullReload && delta.reason === "client_ahead") {
+            window.location.reload();
+            return;
+          }
           if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
             if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
               throw new Error("Delta recovery reload failed.");
@@ -221,12 +232,13 @@ export function WorkspaceDeltaSync(): null {
             expandedDeltaRowVersions(delta),
             deletedDeltaVersionKeys(delta),
           );
-          latest.hydrateSecureWorkspace({
+          const hydrated = latest.hydrateSecureWorkspace({
             db: applied.database,
             revision: delta.revision,
             user: latest.authUser,
             rowVersions: mergedRowVersions,
           });
+          if (!hydrated) return;
           afterRevision = delta.revision;
           advanced = true;
           if (!delta.hasMore) return;

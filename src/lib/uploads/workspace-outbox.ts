@@ -100,6 +100,34 @@ export function clearWorkspaceOutboxScope(): void {
   emit([], true);
 }
 
+export function clearWorkspaceAcceptedBaseline(): void {
+  acceptedWorkspace = null;
+  acceptedRevision = 0;
+}
+
+export async function awaitWorkspaceOutboxIdle(): Promise<void> {
+  const pending = flushPromise;
+  if (!pending) return;
+  try {
+    await pending;
+  } catch {
+    // Reset is authoritative; a failed replay must not prevent the Owner from resetting.
+  }
+}
+
+export async function resetWorkspaceOutboxAfterWorkspaceReset(
+  base: RDashDatabase,
+  revision: number,
+): Promise<void> {
+  acceptedWorkspace = structuredClone(base) as RDashDatabase;
+  acceptedRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+  hydratePromise = null;
+  emit([], true);
+  const items = await readScopedWorkspaceOutbox();
+  for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
+  await refresh();
+}
+
 function summarizeOperations(operations: NonNullable<WorkspaceCommitPayload["operations"]>) {
   return operations.map((operation) => ({
     collection: operation.collection,

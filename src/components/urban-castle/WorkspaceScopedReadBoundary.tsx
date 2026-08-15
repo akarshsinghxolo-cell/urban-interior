@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { AlertTriangle, Database, LoaderCircle, RotateCw } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
+import { clearWorkspaceReadRequestCache } from "@/lib/rdash/client-auth";
 import { workspaceReadCoverageIsCompatible } from "@/lib/rdash/workspace-read-scope";
 import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
@@ -23,7 +24,7 @@ import {
   mergeWorkspaceRowVersions,
   workspaceRowVersionState,
 } from "@/lib/rdash/workspace-row-version-state";
-import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
+import { clearWorkspaceAcceptedBaseline, restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
 interface WorkspaceReadPayload {
@@ -172,7 +173,7 @@ export function WorkspaceScopedReadBoundary() {
       if (requestStillCurrent()) workspaceReadState.beginRequest(requestedTarget);
     });
 
-    const loadFullScope = async (): Promise<void> => {
+    const loadFullScope = async (staleRetry = 0): Promise<void> => {
       const response = await fetch(endpoint, {
         credentials: "same-origin",
         cache: "no-store",
@@ -195,15 +196,31 @@ export function WorkspaceScopedReadBoundary() {
         throw new Error(payload.error || "The requested workspace data could not be loaded.");
       }
 
+      if (payload.revision < useRDashStore.getState().serverRevision) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        if (staleRetry < 1 && requestStillCurrent()) return loadFullScope(staleRetry + 1);
+        if (requestStillCurrent()) window.location.reload();
+        return;
+      }
+
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
       if (!requestStillCurrent()) return;
 
-      hydrateSecureWorkspace({
+      const hydrated = hydrateSecureWorkspace({
         db: overlay.db,
         revision: payload.revision,
         user: hydrationUser,
         rowVersions: payload.rowVersions,
       });
+      if (!hydrated) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        workspaceReadCache.clear();
+        if (staleRetry < 1 && requestStillCurrent()) return loadFullScope(staleRetry + 1);
+        if (requestStillCurrent()) window.location.reload();
+        return;
+      }
       workspaceReadState.recordResponse(response, requestedTarget);
       workspaceReadCache.store({
         target: requestedTarget,
@@ -238,11 +255,22 @@ export function WorkspaceScopedReadBoundary() {
         return;
       }
       if (result.kind === "reload") {
+        if (result.reason === "client_ahead") {
+          clearWorkspaceAcceptedBaseline();
+          clearWorkspaceReadRequestCache();
+          window.location.reload();
+          return;
+        }
         await loadFullScope();
         return;
       }
 
       if (!requestStillCurrent()) return;
+      if (result.entry.revision < useRDashStore.getState().serverRevision) {
+        clearWorkspaceReadRequestCache();
+        await loadFullScope();
+        return;
+      }
       workspaceReadCache.put(result.entry);
       workspaceReadState.restoreCached(requestedTarget, result.entry.readState);
 
@@ -256,12 +284,19 @@ export function WorkspaceScopedReadBoundary() {
 
       const overlay = await restoreWorkspaceOutboxOverlay(result.entry.data);
       if (!requestStillCurrent()) return;
-      hydrateSecureWorkspace({
+      const hydrated = hydrateSecureWorkspace({
         db: overlay.db,
         revision: result.entry.revision,
         user: authUser,
         rowVersions: result.entry.rowVersions,
       });
+      if (!hydrated) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        workspaceReadCache.clear();
+        await loadFullScope();
+        return;
+      }
       applyOverlayStatus(overlay);
     };
 
@@ -341,13 +376,26 @@ export function WorkspaceScopedReadBoundary() {
       const overlay = await restoreWorkspaceOutboxOverlay(mergedUiData);
 
       const latestAfterOverlay = useRDashStore.getState();
-      if (!latestAfterOverlay.authUser || latestAfterOverlay.serverRevision !== payload.revision) return;
-      latestAfterOverlay.hydrateSecureWorkspace({
+      if (!latestAfterOverlay.authUser || latestAfterOverlay.serverRevision !== payload.revision) {
+        clearWorkspaceAcceptedBaseline();
+        workspaceReadState.reset();
+        setRetryNonce((value) => value + 1);
+        return;
+      }
+      const hydrated = latestAfterOverlay.hydrateSecureWorkspace({
         db: overlay.db,
         revision: payload.revision,
         user: authUser,
         rowVersions: mergedRowVersions,
       });
+      if (!hydrated) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        workspaceReadCache.clear();
+        workspaceReadState.reset();
+        setRetryNonce((value) => value + 1);
+        return;
+      }
       workspaceReadCache.store({
         target: requestedTarget,
         user: authUser,

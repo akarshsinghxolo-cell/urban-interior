@@ -9,7 +9,12 @@ import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyO
 import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, replaceAreaId, validateBusinessData, } from "./business-rules";
 import { resolveCustomerIdFromLinks } from "./customer-relations";
 import { diffWorkspaceOperations } from "./workspace-operations";
-import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession } from "./workspace-session-merge";
+import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent } from "./workspace-session-merge";
+import { workspaceFoundationRevisionState } from "./workspace-foundation-revision-state";
+import { workspaceReadCache } from "./workspace-read-cache";
+import { workspaceRowVersionState } from "./workspace-row-version-state";
+import { invalidateWorkspaceClientCaches } from "./client-auth";
+import { awaitWorkspaceOutboxIdle, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";
 import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
 import { attendancePolicyForStaff, attendancePolicyForVisit, createDefaultAttendancePolicy } from "./attendance-policy";
@@ -191,6 +196,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
             }
             catch (error) {
+                if (saveEpoch !== syncEpoch) return;
                 const message = error instanceof Error && error.message
                     ? error.message
                     : "Could not reach the PostgreSQL operation server. Your change is saved locally and will retry after connectivity is restored.";
@@ -200,6 +206,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
                 throw new Error(message, { cause: error });
             }
+            if (saveEpoch !== syncEpoch) return;
             const payload = (await response.json().catch(() => ({}))) as {
                 status?: "applied" | "processing";
                 error?: string;
@@ -417,13 +424,16 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         },
         hydrateSecureWorkspace: ({ db, revision, user, rowVersions }) => {
             const current = get();
-            const accepted = mergeWorkspaceSnapshot(current.db, db);
-            const nextRevision = Math.max(
+            if (!workspaceHydrationRevisionIsCurrent(
                 revision,
                 current.serverRevision,
                 serverRevisionForQueue,
                 lastAcceptedServerRevision,
-            );
+            )) {
+                return false;
+            }
+            const accepted = mergeWorkspaceSnapshot(current.db, db);
+            const nextRevision = revision;
             serverRevisionForQueue = nextRevision;
             lastAcceptedServerRevision = nextRevision;
             lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
@@ -440,6 +450,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 workspaceSyncStatus: "saved",
                 workspaceSyncError: null,
             });
+            return true;
         },
         // currentUser, canReleaseContractorPayment moved to core slice (Phase 3o)
         taskPriorityOrder: [],
@@ -532,6 +543,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             if (typeof window === "undefined") {
                 throw new Error("Workspace reset can only be requested from an authenticated browser session.");
             }
+            await serverSyncQueue.catch(() => undefined);
+            await awaitWorkspaceOutboxIdle();
             syncEpoch += 1;
             setBase({ workspaceSyncStatus: "saving", workspaceSyncError: null });
             let response: Response;
@@ -560,12 +573,24 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             serverRevisionForQueue = payload.revision;
             lastAcceptedServerRevision = payload.revision;
             lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
+            rowVersionsCache = null;
+            workspaceRowVersionState.replace(undefined);
+            workspaceFoundationRevisionState.replace(payload.revision);
+            workspaceReadCache.clear();
+            invalidateWorkspaceClientCaches();
+            try {
+                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);
+            } catch (error) {
+                console.error("[workspace-reset] Could not clear local pending changes after reset.", error);
+            }
+            serverSyncQueue = Promise.resolve();
             setBase({
                 db: accepted,
                 serverRevision: payload.revision,
                 workspaceSyncStatus: "saved",
                 workspaceSyncError: null,
             });
+            window.location.reload();
         },
         // ── mutateMaster moved to core slice (Phase 3o) ──
         // ── Files slice (Phase 3c) ──

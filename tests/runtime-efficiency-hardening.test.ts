@@ -141,6 +141,42 @@ describe("runtime efficiency hardening", () => {
     expect(boundary).toContain("workspaceReadCache.store");
   });
 
+  test("stale scoped responses and workspace reset epochs cannot overwrite newer session data", async () => {
+    const rawStore = await read("src/lib/rdash/raw-store.ts");
+    const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
+    const bridge = await read("src/lib/rdash/use-workspace-row-version-bridge.ts");
+    const outbox = await read("src/lib/uploads/workspace-outbox.ts");
+    const clientAuth = await read("src/lib/rdash/client-auth.ts");
+    expect(rawStore).toContain("workspaceHydrationRevisionIsCurrent(");
+    expect(rawStore).toContain("if (saveEpoch !== syncEpoch) return;");
+    expect(rawStore).toContain("await serverSyncQueue.catch(() => undefined)");
+    expect(rawStore).toContain("await awaitWorkspaceOutboxIdle()");
+    expect(rawStore).toContain("rowVersionsCache = null");
+    expect(rawStore).toContain("workspaceRowVersionState.replace(undefined)");
+    expect(rawStore).toContain("workspaceFoundationRevisionState.replace(payload.revision)");
+    expect(rawStore).toContain("workspaceReadCache.clear()");
+    expect(rawStore).toContain("resetWorkspaceOutboxAfterWorkspaceReset");
+    expect(rawStore).toContain("invalidateWorkspaceClientCaches()");
+    expect(rawStore).toContain("window.location.reload()");
+    expect(boundary).toContain("clearWorkspaceReadRequestCache()");
+    expect(boundary).toContain("result.reason === \"client_ahead\"");
+    expect(boundary).toContain("if (!hydrated)");
+    expect(bridge.indexOf("const accepted = original(input)")).toBeLessThan(bridge.indexOf("workspaceRowVersionState.merge(input.rowVersions)"));
+    expect(outbox).toContain("resetWorkspaceOutboxAfterWorkspaceReset");
+    expect(outbox).toContain("await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId)");
+    expect(clientAuth).toContain("if (isWorkspaceRead && !deferReadState)");
+  });
+
+  test("module, bounded page and entity reads finish behind a revision fence", async () => {
+    const moduleRead = await read("src/lib/rdash/server/module-scoped-read.ts");
+    const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
+    expect(moduleRead).toContain("const revisionFence = await getWorkspaceSubset({})");
+    expect(moduleRead).toContain("revisionFence.revision !== scoped.revision");
+    expect(moduleRead).toContain("revisionFence.revision !== page.revision");
+    expect(entityRead).toContain("const revisionFence = await getWorkspaceSubset({})");
+    expect(entityRead).toContain("revisionFence.revision !== merged.revision");
+  });
+
   test("pagination metadata survives normalization and offline overlays", async () => {
     const workCategory = await read("src/lib/rdash/work-category-master.ts");
     const rawStore = await read("src/lib/rdash/raw-store.ts");

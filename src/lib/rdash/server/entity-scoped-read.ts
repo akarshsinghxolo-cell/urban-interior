@@ -12,7 +12,7 @@ import {
 } from "./entity-scoped-rest";
 import { mergeWorkspaceSubsets } from "./module-scoped-read";
 import { getProjectedWorkspacePermissions } from "./projected-workspace-bootstrap";
-import type { WorkspaceSubset } from "./workspace";
+import { getWorkspaceSubset, type WorkspaceSubset } from "./workspace";
 
 // Entity-scoped reads are the authoritative Customer/Site detail architecture.
 export const ENTITY_SCOPED_READS_ENABLED = true;
@@ -329,6 +329,9 @@ async function readEntityScope(
   requestedCollections(fourth).forEach((collection) => touchedCollections.add(collection));
   merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(fourth));
 
+  const revisionFence = await getWorkspaceSubset({});
+  if (revisionFence.revision !== merged.revision) throw new Error("READ_CONFLICT");
+
   const mode = `${entity.kind}-row` as const;
   const metadata = merged.data as unknown as Record<string, unknown>;
   metadata._workspace_read_scope = target.scope;
@@ -340,7 +343,7 @@ async function readEntityScope(
 
   return {
     ...merged,
-    queryCount: merged.queryCount + authorization.queryCount,
+    queryCount: merged.queryCount + authorization.queryCount + revisionFence.queryCount,
     scope: target.scope as "customer" | "site",
     mode,
     entityKind: entity.kind,

@@ -13,8 +13,9 @@ export function useInstallWorkspaceRowVersionBridge(): void {
   React.useLayoutEffect(() => {
     const original = useRDashStore.getState().hydrateSecureWorkspace;
     const wrapped: typeof original = (input) => {
-      workspaceRowVersionState.merge(input.rowVersions);
-      original(input);
+      const accepted = original(input);
+      if (accepted) workspaceRowVersionState.merge(input.rowVersions);
+      return accepted;
     };
 
     useRDashStore.setState({ hydrateSecureWorkspace: wrapped });

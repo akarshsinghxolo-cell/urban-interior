@@ -3,6 +3,7 @@ import {
   createEmptyWorkspaceDatabase,
   mergeWorkspaceSnapshot,
   normalizeWorkspaceSession,
+  workspaceHydrationRevisionIsCurrent,
   WORKSPACE_SESSION_FOUNDATION_COLLECTIONS,
 } from "@/lib/rdash/workspace-session-merge";
 import type { RDashDatabase } from "@/lib/rdash/types";
@@ -55,6 +56,13 @@ describe("workspace session merge", () => {
     expect(rowMerged.customers.map((customer) => customer.id).sort()).toEqual(["c1", "c2"]);
     const page = scoped(["customers"], (db) => { db.customers = [{ id: "c3", name: "Three", status: "active", customer_segments: [], created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"]; }, { pageOnly: true });
     expect(mergeWorkspaceSnapshot(rowMerged, page).customers.map((customer) => customer.id).sort()).toEqual(["c1", "c2", "c3"]);
+  });
+
+  test("rejects older hydration revisions while allowing equal-revision partial merges", () => {
+    expect(workspaceHydrationRevisionIsCurrent(10, 11, 10, 9)).toBe(false);
+    expect(workspaceHydrationRevisionIsCurrent(11, 11, 10, 9)).toBe(true);
+    expect(workspaceHydrationRevisionIsCurrent(12, 11, 10, 9)).toBe(true);
+    expect(workspaceHydrationRevisionIsCurrent(Number.NaN, 11)).toBe(false);
   });
 
   test("normalization does not synthesize threads or follow-ups", () => {
