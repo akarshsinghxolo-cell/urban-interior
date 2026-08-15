@@ -67,4 +67,3 @@ describe("Vendor capability taxonomy", () => {
     });
   });
 });
-

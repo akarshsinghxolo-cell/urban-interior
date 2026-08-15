@@ -99,4 +99,3 @@ export function vendorArticleTaxonomyLabels(
     subcategoryNames: subcategories.map((row) => row.name),
   };
 }
-
