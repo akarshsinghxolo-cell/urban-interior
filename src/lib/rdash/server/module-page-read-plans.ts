@@ -63,6 +63,34 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
 });
 
 /**
+ * Report-family screens need complete inputs for correct sums/rates, but each
+ * family uses only a small subset of the old Reports scope. These plans are
+ * exact but intentionally unpaginated. They reduce egress without turning a
+ * partial page into a false business total.
+ */
+export const MODULE_COMPLETE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  salesAnalytics: Object.freeze([
+    "customers", "sites", "workRequired", "quotations", "workOrders", "payments",
+    "customerReceipts",
+  ]),
+  collectionAnalytics: Object.freeze([
+    "customers", "sites", "workOrders", "payments", "invoices", "customerReceipts",
+  ]),
+  operationsAnalytics: Object.freeze([
+    "customers", "sites", "workOrders", "tasks", "visits", "attendance", "master.staff",
+  ]),
+  financialAnalytics: Object.freeze([
+    "customers", "sites", "workOrders", "quotations", "payments", "invoices", "customerReceipts",
+    "vendorBills", "vendorPayments", "contractorBills", "contractorPayments", "contractorSettlements",
+    "workOrderCostLines", "master.vendors",
+  ]),
+  reportsDesk: Object.freeze([
+    "customers", "workOrders", "quotations", "payments", "invoices", "customerReceipts",
+    "workOrderCostLines",
+  ]),
+});
+
+/**
  * Operational/history tables grow without a practical upper bound. Focused
  * module reads page these collections. Slow-changing taxonomy/config tables are
  * deliberately not bounded because forms require those reference sets in full.
@@ -128,6 +156,11 @@ export const DEFAULT_PAGE_LIMITS: Readonly<Record<string, number>> = Object.free
 export function pageCollectionsForTarget(target: WorkspaceReadTarget): readonly string[] | undefined {
   if (target.scope === "bootstrap" || target.scope === "full") return undefined;
   return MODULE_PAGE_COLLECTIONS[target.moduleId];
+}
+
+export function completeCollectionsForTarget(target: WorkspaceReadTarget): readonly string[] | undefined {
+  if (target.scope === "bootstrap" || target.scope === "full") return undefined;
+  return MODULE_COMPLETE_COLLECTIONS[target.moduleId];
 }
 
 export function boundedPageLimits(
