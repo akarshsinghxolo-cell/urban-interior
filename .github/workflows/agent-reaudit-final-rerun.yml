@@ -1,0 +1,76 @@
+name: Agent final audit rerun
+
+on:
+  push:
+    branches: [agent/page-entity-egress-architecture]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'Rerun final audit corrections'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/page-entity-egress-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply corrected final audit patch
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/agent-reaudit-final-corrections.yml').read_text()
+          start_marker = "          python <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          script = workflow[start:end]
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in script.splitlines())
+
+          # Remove only the ambiguous reset-cleanup patch from the original script.
+          ambiguous = '''patch(\n    'src/lib/uploads/workspace-outbox.ts',\n    \'''  const items = await readScopedWorkspaceOutbox();\\n  for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);\\n  await refresh();\\n}\''',\n    \'''  const items = await readScopedWorkspaceOutbox();\\n  try {\\n    for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);\\n  } catch {\\n    // The outbox belongs to local recovery only. If scoped cleanup itself fails\\n    // after a destructive workspace reset, prefer clearing the local outbox to\\n    // ever replaying pre-reset operations into the new revision epoch.\\n    await uploadIndexedDb.clearWorkspaceOutbox();\\n  }\\n  await refresh();\\n  const remaining = await readScopedWorkspaceOutbox();\\n  if (remaining.length) throw new Error("Old workspace outbox entries survived reset cleanup.");\\n}\'''\n)'''
+          if script.count(ambiguous) != 1:
+              raise SystemExit('Could not isolate the ambiguous reset cleanup patch.')
+          script = script.replace(ambiguous, '', 1)
+
+          # Apply the reset cleanup with the function signature in the match so the
+          # ordinary conflict-cleanup loop elsewhere in the outbox is untouched.
+          path = Path('src/lib/uploads/workspace-outbox.ts')
+          text = path.read_text()
+          old = '''export async function resetWorkspaceOutboxAfterWorkspaceReset(\n  base: RDashDatabase,\n  revision: number,\n): Promise<void> {\n  acceptedWorkspace = structuredClone(base) as RDashDatabase;\n  acceptedRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;\n  hydratePromise = null;\n  emit([], true);\n  const items = await readScopedWorkspaceOutbox();\n  for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);\n  await refresh();\n}'''
+          new = '''export async function resetWorkspaceOutboxAfterWorkspaceReset(\n  base: RDashDatabase,\n  revision: number,\n): Promise<void> {\n  acceptedWorkspace = structuredClone(base) as RDashDatabase;\n  acceptedRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;\n  hydratePromise = null;\n  emit([], true);\n  const items = await readScopedWorkspaceOutbox();\n  try {\n    for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);\n  } catch {\n    // The outbox belongs to local recovery only. If scoped cleanup itself fails\n    // after a destructive workspace reset, prefer clearing the local outbox to\n    // ever replaying pre-reset operations into the new revision epoch.\n    await uploadIndexedDb.clearWorkspaceOutbox();\n  }\n  await refresh();\n  const remaining = await readScopedWorkspaceOutbox();\n  if (remaining.length) throw new Error("Old workspace outbox entries survived reset cleanup.");\n}'''
+          if text.count(old) != 1:
+              raise SystemExit('Reset-specific outbox cleanup function did not match exactly once.')
+          path.write_text(text.replace(old, new, 1))
+
+          exec(compile(script, 'final-audit-corrections.py', 'exec'), {})
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused regressions
+        run: npx vitest run tests/workspace-session-merge.test.ts tests/runtime-efficiency-hardening.test.ts tests/workspace-navigation-revalidation.test.ts tests/workspace-client-delta-sync.test.ts tests/workspace-delta-sync.test.ts tests/workspace-entity-scoped-read.test.ts tests/workspace-module-scoped-read.test.ts tests/workspace-bootstrap-scoped-flow.test.ts tests/phase2b-targeted-commit.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Commit validated corrections
+        shell: bash
+        run: |
+          git config user.name "akarshsinghxolo-cell"
+          git config user.email "akarshsinghxolo@gmail.com"
+          git add src tests
+          if git diff --cached --quiet; then
+            echo "No application changes to commit"
+            exit 0
+          fi
+          git commit -m "Close final workspace lifecycle audit gaps"
+          git push origin HEAD:agent/page-entity-egress-architecture
