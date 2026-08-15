@@ -176,6 +176,22 @@ describe("runtime efficiency hardening", () => {
     expect(simple).not.toContain("UC_PHASE2B_TARGETED_COMMITS");
   });
 
+  test("workspace, module and entity reads have no old-system feature switch", async () => {
+    const workspace = await read("src/app/api/workspace/route.ts");
+    const moduleRead = await read("src/lib/rdash/server/module-scoped-read.ts");
+    const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
+    const readState = await read("src/lib/rdash/workspace-read-state.ts");
+
+    expect(workspace).not.toContain("UC_FULL_WORKSPACE_FALLBACK");
+    expect(workspace).not.toContain("getWorkspace(");
+    expect(workspace).toContain('"X-UC-Read-Architecture": "scoped-only"');
+    expect(moduleRead).not.toContain("UC_MODULE_SCOPED_READS");
+    expect(moduleRead).toContain("MODULE_SCOPED_READS_ENABLED = true");
+    expect(entityRead).not.toContain("UC_ENTITY_SCOPED_READS");
+    expect(entityRead).toContain("ENTITY_SCOPED_READS_ENABLED = true");
+    expect(readState).not.toContain('mode === "full"\n          ? "full"');
+  });
+
   test("ordinary and nested Drive uploads use one targeted context architecture", async () => {
     const initiate = await read("src/lib/rdash/server/direct-upload-initiate.ts");
     const finalize = await read("src/lib/rdash/server/direct-upload-finalize-core.ts");
@@ -190,11 +206,25 @@ describe("runtime efficiency hardening", () => {
     expect(context).toContain('quotation_item: "quotations"');
     expect(context).toContain('boq_item: "boqs"');
     expect(context).toContain('thread_message: "threads"');
+    expect(context).toContain("prepareNestedResolverProjection");
     expect(context).toContain("getWorkspaceSubset");
     expect(context).toContain("invalidUploadContext");
     expect(context).not.toContain("getWorkspace(");
     expect(context).not.toContain("COMPATIBILITY_NESTED_TARGETS");
     expect(context).not.toContain("compatibility full read");
+  });
+
+  test("normal file cleanup and Drive account maintenance never load or save the whole workspace", async () => {
+    const cleanup = await read("src/lib/rdash/server/file-cleanup.ts");
+    const refresh = await read("src/app/api/google-drive/refresh-account/route.ts");
+    const callback = await read("src/app/api/google-drive/oauth/callback/route.ts");
+
+    for (const source of [cleanup, refresh, callback]) {
+      expect(source).not.toContain("getWorkspace(");
+      expect(source).not.toContain("saveWorkspace(");
+      expect(source).toContain("getWorkspaceSubset");
+      expect(source).toContain("commitWorkspaceOperations");
+    }
   });
 
   test("canonical Customer thread migration removes the old bare identity", async () => {
@@ -204,8 +234,10 @@ describe("runtime efficiency hardening", () => {
     expect(migration).toContain("revision = revision + 1");
 
     const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
+    const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
     expect(targeted).toContain('recordId.startsWith("customer-conversation:")');
     expect(targeted).not.toContain('recordId.startsWith("cust-")');
+    expect(entityRead).toContain("canonicalThreadRecordIds");
   });
 
   test("report families narrow complete inputs without paginating business totals", () => {
