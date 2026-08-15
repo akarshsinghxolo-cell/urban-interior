@@ -10,10 +10,8 @@ import {
   getRestWorkspaceBySelectors,
   type EntityScopedReadPlan,
 } from "./entity-scoped-rest";
-import {
-  getWorkspaceBootstrap,
-  mergeWorkspaceSubsets,
-} from "./module-scoped-read";
+import { mergeWorkspaceSubsets } from "./module-scoped-read";
+import { getProjectedWorkspacePermissions } from "./projected-workspace-bootstrap";
 import type { WorkspaceSubset } from "./workspace";
 
 // Entity-scoped reads are the authoritative Customer/Site detail architecture.
@@ -25,14 +23,6 @@ export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([
   "paymentTermTemplates",
   "taxConfigs",
   "validityConfigs",
-  "master.units",
-  "master.workCategories",
-  "master.workSubcategories",
-  "master.articles",
-  "master.articleVariants",
-  "master.subcategoryArticleMap",
-  "master.workOptionGroups",
-  "master.workOptionValues",
 ] as const);
 
 export const CUSTOMER_RELATION_COLLECTIONS = Object.freeze([
@@ -311,11 +301,11 @@ async function readEntityScope(
   const startedAt = performance.now();
   const touchedCollections = new Set<string>();
 
-  let merged = await getWorkspaceBootstrap(user);
+  const authorization = await getProjectedWorkspacePermissions();
   const access = workspaceRouteAccessDecision(
     target.moduleId,
     user.role,
-    merged.data.staffRolePermissions as unknown[],
+    authorization.data.staffRolePermissions as unknown[],
     target.permissionModule,
   );
   if (access.status !== "allowed") {
@@ -324,7 +314,8 @@ async function readEntityScope(
 
   const first = relationPlan(entity.kind, entity.id);
   requestedCollections(first).forEach((collection) => touchedCollections.add(collection));
-  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(first));
+  let merged = await getRestWorkspaceBySelectors(first);
+  if (merged.revision !== authorization.revision) throw new Error("READ_CONFLICT");
 
   const second = downstreamPlan(entity.kind, merged.data);
   requestedCollections(second).forEach((collection) => touchedCollections.add(collection));
@@ -344,9 +335,11 @@ async function readEntityScope(
   metadata._workspace_read_mode = mode;
   metadata._workspace_read_entity = { kind: entity.kind, id: entity.id };
   metadata._workspace_read_collections = [...touchedCollections];
+  metadata._workspace_foundation_embedded = false;
 
   return {
     ...merged,
+    queryCount: merged.queryCount + authorization.queryCount,
     scope: target.scope as "customer" | "site",
     mode,
     entityKind: entity.kind,

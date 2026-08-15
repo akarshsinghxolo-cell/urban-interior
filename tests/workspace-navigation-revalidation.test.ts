@@ -56,6 +56,7 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain(
       "if (!needsExpansion && !enteredNewTarget)",
     );
+    expect(source).toContain("workspaceReadCache.peek(requestedTarget, authUser)");
     expect(source).toContain("workspaceReadCache.get(requestedTarget, authUser)");
     expect(source).toContain("revalidateWorkspaceReadCacheEntry");
     expect(source).toContain('"X-UC-Read-Revalidate": enteredNewTarget ? "navigation-full" : "coverage"');
@@ -70,6 +71,7 @@ describe("workspace navigation freshness", () => {
     // A small non-blocking Load-more card is allowed when bounded collections
     // advertise another page.
     expect(source).toContain("if (!needsExpansion) {");
+    expect(source).toContain("workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState)");
     expect(source).toContain("if (!pageCursors.length && !pageError) return null");
     expect(source).toContain("More records are available");
     expect(source).not.toContain("if (!needsExpansion && !enteredNewTarget) return null");

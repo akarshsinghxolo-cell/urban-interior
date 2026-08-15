@@ -144,10 +144,12 @@ describe("runtime efficiency hardening", () => {
   test("pagination metadata survives normalization and offline overlays", async () => {
     const workCategory = await read("src/lib/rdash/work-category-master.ts");
     const rawStore = await read("src/lib/rdash/raw-store.ts");
+    const sessionMerge = await read("src/lib/rdash/workspace-session-merge.ts");
     const outbox = await read("src/lib/uploads/workspace-outbox.ts");
     expect(workCategory).toContain("...(db as RDashDatabase)");
-    expect(rawStore).toContain("prepareWorkspaceData({ ...input })");
-    expect(rawStore).toContain("...base");
+    expect(rawStore).toContain("mergeWorkspaceSnapshot(current.db, db)");
+    expect(sessionMerge).toContain("prepareWorkspaceData(structuredClone(input) as RDashDatabase)");
+    expect(sessionMerge).toContain("structuredClone(current || createEmptyWorkspaceDatabase())");
     expect(outbox).toContain("acceptedWorkspace = structuredClone(base) as RDashDatabase");
     expect(outbox).toContain("let db = structuredClone(base) as RDashDatabase");
   });
@@ -276,4 +278,18 @@ describe("runtime efficiency hardening", () => {
       }
     }
   });
+  test("uses one foundation-first client hydration lifecycle", async () => {
+    const store = await read("src/lib/rdash/raw-store.ts");
+    const bootstrap = await read("src/app/api/bootstrap/route.ts");
+    const projected = await read("src/lib/rdash/server/projected-workspace-bootstrap.ts");
+    expect(store).not.toContain('import { buildSeedDatabase } from "./seed"');
+    expect(store).not.toContain("prepareWorkspaceDatabase(");
+    expect(store).not.toContain('selectedCustomerId: "cust-das"');
+    expect(store).toContain("db: createEmptyWorkspaceDatabase()");
+    expect(store).toContain("mergeWorkspaceSnapshot(current.db, db)");
+    expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
+    expect(projected).toContain("getProjectedWorkspacePermissions");
+    expect(projected).not.toContain("compatibility read");
+  });
+
 });

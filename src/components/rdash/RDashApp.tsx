@@ -65,6 +65,8 @@ export function RDashApp() {
                 error?: string;
                 revision?: number;
                 workspaceId?: string;
+                data?: import("@/lib/rdash/types").RDashDatabase;
+                rowVersions?: Record<string, number>;
                 user?: {
                     userId: string;
                     name: string;
@@ -79,7 +81,7 @@ export function RDashApp() {
                 window.location.replace("/signin");
                 return;
             }
-            if (!response.ok || typeof payload.revision !== "number" || !payload.user)
+            if (!response.ok || typeof payload.revision !== "number" || !payload.user || !payload.data)
                 throw new Error(payload.error || "The secure workspace session could not be initialized.");
             if (!active)
                 return;
@@ -87,11 +89,11 @@ export function RDashApp() {
                 workspaceId: payload.workspaceId || "default",
                 ownerUserId: payload.user.userId,
             });
-            useRDashStore.setState({
-                authUser: payload.user,
-                serverRevision: payload.revision,
-                workspaceSyncStatus: "idle",
-                workspaceSyncError: null,
+            useRDashStore.getState().hydrateSecureWorkspace({
+                db: payload.data,
+                revision: payload.revision,
+                user: payload.user,
+                rowVersions: payload.rowVersions,
             });
             workspaceReadState.recordResponse(response);
             setSecureBootstrapReady(true);

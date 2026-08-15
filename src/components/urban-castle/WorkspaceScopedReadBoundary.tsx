@@ -23,7 +23,7 @@ import {
   mergeWorkspaceRowVersions,
   workspaceRowVersionState,
 } from "@/lib/rdash/workspace-row-version-state";
-import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
+import { restoreWorkspaceOutboxOverlay, workspaceOutboxStore } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
 interface WorkspaceReadPayload {
@@ -91,7 +91,17 @@ export function WorkspaceScopedReadBoundary() {
     [requestedTarget],
   );
   const targetKey = workspaceReadTargetKey(requestedTarget);
-  const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
+  const currentCoverageCompatible = workspaceReadCoverageIsCompatible(readState, requestedTarget);
+  const cachedTarget = React.useMemo(
+    () => authUser ? workspaceReadCache.peek(requestedTarget, authUser) : null,
+    [authUser, requestedTarget, targetKey],
+  );
+  const cachedCoverageAvailable = Boolean(
+    cachedTarget && workspaceReadCoverageIsCompatible(cachedTarget.readState, requestedTarget),
+  );
+  const needsExpansion = Boolean(authUser)
+    && !currentCoverageCompatible
+    && !cachedCoverageAvailable;
   const loadState = workspaceReadLoadStateForTarget(readState, requestedTarget);
   const pageState = React.useMemo(() => workspacePageState(db), [db]);
   const pageCursors = React.useMemo(
@@ -108,6 +118,27 @@ export function WorkspaceScopedReadBoundary() {
   React.useLayoutEffect(() => {
     latestTargetKeyRef.current = targetKey;
   }, [targetKey]);
+
+  React.useLayoutEffect(() => {
+    if (!authUser || currentCoverageCompatible || !cachedTarget || !cachedCoverageAvailable) return;
+
+    if (workspaceOutboxStore.getSnapshot().items.length === 0) {
+      useRDashStore.getState().hydrateSecureWorkspace({
+        db: cachedTarget.data,
+        revision: cachedTarget.revision,
+        user: authUser,
+        rowVersions: cachedTarget.rowVersions,
+      });
+    }
+    workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState);
+  }, [
+    authUser,
+    cachedCoverageAvailable,
+    cachedTarget,
+    currentCoverageCompatible,
+    requestedTarget,
+    targetKey,
+  ]);
 
   React.useEffect(() => {
     setPageError(undefined);

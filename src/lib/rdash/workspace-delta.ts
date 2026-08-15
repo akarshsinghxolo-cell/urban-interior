@@ -1,5 +1,6 @@
 import { hydrateStaffReferenceLabels } from "./staff-reference-labels";
 import type { RDashDatabase } from "./types";
+import { WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS } from "./workspace-session-merge";
 import {
   applyWorkspaceOperations,
   masterCollections,
@@ -30,13 +31,8 @@ const KNOWN_COLLECTIONS = new Set<string>([
   ...topLevelCollections.map(String),
   ...masterCollections.map((key) => `master.${String(key)}`),
 ]);
-export const WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS = Object.freeze([
-  "staffRolePermissions",
-  "master.staff",
-  "master.units",
-  "master.workCategories",
-  "master.workSubcategories",
-] as const);
+export const WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS =
+  WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS;
 
 export function knownWorkspaceCollection(collection: string): boolean {
   return KNOWN_COLLECTIONS.has(collection);
@@ -64,8 +60,11 @@ export function loadedWorkspaceCollections(database: RDashDatabase): Set<string>
   const scope = String(metadata._workspace_read_scope || "full");
   const raw = metadata._workspace_read_collections;
   if (scope === "full" || !Array.isArray(raw)) return null;
+  const foundation = metadata._workspace_foundation_embedded === true
+    ? WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS
+    : [];
   return new Set([
-    ...WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS,
+    ...foundation,
     ...raw.map((value) => String(value || "").trim()).filter(knownWorkspaceCollection),
   ]);
 }

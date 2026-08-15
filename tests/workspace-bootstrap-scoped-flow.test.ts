@@ -92,34 +92,26 @@ describe("workspace bootstrap and scoped client reads", () => {
     )).toBe("/api/workspace");
   });
 
-  test("keeps foundational taxonomy loaded in every scoped snapshot", async () => {
+  test("loads the reusable Master foundation once in bootstrap", async () => {
     const projectedBootstrap = await testFile("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
-    expect(projectedBootstrap).toContain('"master.units"');
-    expect(projectedBootstrap).toContain('"master.workCategories"');
-    expect(projectedBootstrap).toContain('"master.workSubcategories"');
+    const moduleReader = await testFile("src/lib/rdash/server/module-scoped-read.ts").text();
+    for (const collection of ["master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups", "master.workOptionValues"]) {
+      expect(projectedBootstrap).toContain(`"${collection}"`);
+    }
     expect(projectedBootstrap).toContain("fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]");
-
-    const scoped = {
-      _workspace_read_scope: "workdesk",
-      _workspace_read_collections: ["tasks", "followups"],
-    } as unknown as import("@/lib/rdash/types").RDashDatabase;
-    const collections = loadedWorkspaceCollections(scoped);
-    expect(collections?.has("master.units")).toBe(true);
-    expect(collections?.has("master.workCategories")).toBe(true);
-    expect(collections?.has("master.workSubcategories")).toBe(true);
+    expect(projectedBootstrap).not.toContain("bounded compatibility read");
+    expect(moduleReader).toContain("!FOUNDATION_COLLECTIONS.has(collection)");
   });
 
-  test("starts with the minimal bootstrap and never hydrates the full workspace", async () => {
+  test("hydrates the foundation bootstrap without loading operational workspace tables", async () => {
     const app = await testFile("src/components/rdash/RDashApp.tsx").text();
     const bootstrap = await testFile("src/app/api/bootstrap/route.ts").text();
     expect(app).toContain('fetch("/api/bootstrap"');
     expect(app).not.toContain('fetch("/api/workspace"');
-    expect(bootstrap).toContain("getWorkspaceSubset({})");
-    expect(bootstrap).not.toContain("getWorkspaceBootstrap");
-    expect(bootstrap).not.toContain("data: workspace.data");
-    expect(bootstrap).toContain('readStrategy: "module-scoped"');
-    expect(bootstrap).toContain('"X-UC-Read-Strategy": "bootstrap"');
-    expect(bootstrap).toContain('"X-UC-Response-Bytes"');
+    expect(app).toContain("hydrateSecureWorkspace({");
+    expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
+    expect(bootstrap).toContain("data: workspace.data");
+    expect(bootstrap).toContain('readStrategy: "foundation-first"');
   });
 
   test("prevents modules from rendering unloaded arrays as authoritative zero values", async () => {

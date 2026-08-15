@@ -7,16 +7,17 @@ import type {
   WorkspaceReadTarget,
 } from "../workspace-read-scope";
 import type { AuthenticatedUser } from "./auth";
-import {
-  COLLECTIONS_BY_SCOPE,
-  WORKSPACE_BOOTSTRAP_COLLECTIONS,
-} from "./module-scoped-collections";
+import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
   collectionsForWorkspaceReadTarget,
   moduleReadPlanSavings,
   workspaceModuleReadPlan,
 } from "./module-read-plans";
-import { getProjectedWorkspaceBootstrap } from "./projected-workspace-bootstrap";
+import {
+  getProjectedWorkspaceBootstrap,
+  getProjectedWorkspacePermissions,
+  WORKSPACE_FOUNDATION_COLLECTIONS,
+} from "./projected-workspace-bootstrap";
 import {
   getWorkspaceSubset,
   type WorkspacePagination,
@@ -29,6 +30,7 @@ export * from "./projected-workspace-bootstrap";
 
 // Scoped reads are the runtime architecture, not an optional rollout mode.
 export const MODULE_SCOPED_READS_ENABLED = true;
+const FOUNDATION_COLLECTIONS = new Set<string>(WORKSPACE_FOUNDATION_COLLECTIONS);
 
 export interface ModuleScopedWorkspace extends WorkspaceSubset {
   scope: ModuleWorkspaceReadScope;
@@ -142,27 +144,28 @@ function moduleMetadata(input: {
   metadata._workspace_read_collections = [...input.readCollections];
   metadata._workspace_read_limits = { ...input.limitedCollections };
   metadata._workspace_pagination = { ...(input.pagination || {}) };
+  metadata._workspace_foundation_embedded = false;
   if (input.pageOnly) metadata._workspace_page_only = true;
   if (typeof input.fullStaffAllowed === "boolean") {
     metadata._workspace_staff_projection = input.fullStaffAllowed ? "full" : "directory";
   }
 }
 
-async function authorizedBootstrap(
+async function authorizeModuleTarget(
   user: AuthenticatedUser,
   target: WorkspaceReadTarget & { scope: ModuleWorkspaceReadScope },
 ): Promise<WorkspaceSubset> {
-  const bootstrap = await getWorkspaceBootstrap(user);
+  const authorization = await getProjectedWorkspacePermissions();
   const access = workspaceRouteAccessDecision(
     target.moduleId,
     user.role,
-    bootstrap.data.staffRolePermissions as unknown[],
+    authorization.data.staffRolePermissions as unknown[],
     target.permissionModule,
   );
   if (access.status !== "allowed") {
     throw new Error(`FORBIDDEN:Your role cannot open ${access.moduleLabel}.`);
   }
-  return bootstrap;
+  return authorization;
 }
 
 async function readAuthorizedScope(
@@ -172,14 +175,17 @@ async function readAuthorizedScope(
   assertModuleTarget(target);
 
   const startedAt = performance.now();
-  const bootstrap = await authorizedBootstrap(user, target);
+  const authorization = await authorizeModuleTarget(user, target);
   const plan = workspaceModuleReadPlan(target);
   const plannedCollections = collectionsForWorkspaceReadTarget(target);
   const plannedFullStaff = plannedCollections.includes("master.staff");
   const fullStaffAllowed = plannedFullStaff && canReadFullStaffData(user.role);
+  const transmittedCollections = plannedCollections.filter(
+    (collection) => !FOUNDATION_COLLECTIONS.has(collection),
+  );
   const fullCollections = fullStaffAllowed
-    ? [...plannedCollections]
-    : plannedCollections.filter((collection) => collection !== "master.staff");
+    ? [...transmittedCollections]
+    : transmittedCollections.filter((collection) => collection !== "master.staff");
   const scoped = await getWorkspaceSubset({
     fullCollections,
     rowsByCollection:
@@ -188,7 +194,7 @@ async function readAuthorizedScope(
         : undefined,
     limitsByCollection: { ...(plan.limitsByCollection || {}) },
   });
-  const merged = mergeWorkspaceSubsets(bootstrap, scoped);
+  if (scoped.revision !== authorization.revision) throw new Error("READ_CONFLICT");
   const savings = moduleReadPlanSavings(target);
   const limitedCollections = Object.fromEntries(
     Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
@@ -196,25 +202,26 @@ async function readAuthorizedScope(
     ),
   );
   const readCollections = [...new Set([
-    ...WORKSPACE_BOOTSTRAP_COLLECTIONS,
-    ...plannedCollections,
+    ...fullCollections,
+    ...(plannedFullStaff && !fullStaffAllowed && user.staffId ? ["master.staff"] : []),
   ])];
 
   moduleMetadata({
-    database: merged.data,
+    database: scoped.data,
     target,
     readStrategy: plan.strategy,
     readCollections,
     limitedCollections,
-    pagination: merged.pagination,
+    pagination: scoped.pagination,
     fullStaffAllowed,
   });
 
   return {
-    ...merged,
+    ...scoped,
+    queryCount: scoped.queryCount + authorization.queryCount,
     scope: target.scope,
     collectionCount: readCollections.length,
-    scopeCollectionCount: savings.scope + WORKSPACE_BOOTSTRAP_COLLECTIONS.length,
+    scopeCollectionCount: savings.scope,
     readStrategy: plan.strategy,
     limitedCollections,
     loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
@@ -243,7 +250,7 @@ async function readAuthorizedPage(
   assertModuleTarget(target);
 
   const startedAt = performance.now();
-  const bootstrap = await authorizedBootstrap(user, target);
+  const authorization = await authorizeModuleTarget(user, target);
   const plan = workspaceModuleReadPlan(target);
   const plannedCollections = collectionsForWorkspaceReadTarget(target);
   const limitedCollections = Object.fromEntries(
@@ -264,7 +271,7 @@ async function readAuthorizedPage(
     ),
     offsetsByCollection: offsets,
   });
-  if (page.revision !== bootstrap.revision) throw new Error("READ_CONFLICT");
+  if (page.revision !== authorization.revision) throw new Error("READ_CONFLICT");
 
   const savings = moduleReadPlanSavings(target);
   moduleMetadata({
@@ -281,9 +288,10 @@ async function readAuthorizedPage(
 
   return {
     ...page,
+    queryCount: page.queryCount + authorization.queryCount,
     scope: target.scope,
     collectionCount: pageCollections.length,
-    scopeCollectionCount: savings.scope + WORKSPACE_BOOTSTRAP_COLLECTIONS.length,
+    scopeCollectionCount: savings.scope,
     readStrategy: plan.strategy,
     limitedCollections: Object.fromEntries(
       pageCollections.map((collection) => [collection, limitedCollections[collection]]),

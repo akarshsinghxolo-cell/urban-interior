@@ -76,6 +76,14 @@ export const workspaceReadCache = {
     return cloneEntry(entry);
   },
 
+  peek(
+    target: WorkspaceReadTarget,
+    user: AuthenticatedWorkspaceUser,
+  ): WorkspaceReadCacheEntry | null {
+    const entry = entries.get(cacheKey(target, user));
+    return entry ? cloneEntry(entry) : null;
+  },
+
   put(entry: WorkspaceReadCacheEntry): void {
     putEntry(entry);
   },
