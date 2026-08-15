@@ -333,6 +333,7 @@ async function readEntityScope(
   const metadata = merged.data as unknown as Record<string, unknown>;
   metadata._workspace_read_scope = target.scope;
   metadata._workspace_read_mode = mode;
+  metadata._workspace_read_strategy = "row";
   metadata._workspace_read_entity = { kind: entity.kind, id: entity.id };
   metadata._workspace_read_collections = [...touchedCollections];
   metadata._workspace_foundation_embedded = false;

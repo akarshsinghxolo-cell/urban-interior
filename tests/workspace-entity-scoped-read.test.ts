@@ -80,7 +80,7 @@ describe("entity-scoped collection policy", () => {
 
   test("uses known global references without unrelated HR or system collections", () => {
     assertKnownUnique(ENTITY_REFERENCE_COLLECTIONS);
-    expect(ENTITY_REFERENCE_COLLECTIONS).toContain("master.workCategories");
+    expect(ENTITY_REFERENCE_COLLECTIONS).not.toContain("master.workCategories");
     expect(ENTITY_REFERENCE_COLLECTIONS).toContain("commercialTerms");
     expect(ENTITY_REFERENCE_COLLECTIONS).not.toContain("payrollLines");
     expect(ENTITY_REFERENCE_COLLECTIONS).not.toContain("attendance");
@@ -113,8 +113,9 @@ describe("entity-scoped collection policy", () => {
     expect(source).toContain("ENTITY_SCOPED_READS_ENABLED = true");
     expect(source).not.toContain("UC_ENTITY_SCOPED_READS");
     expect(source).toContain('error.message !== "READ_CONFLICT"');
-    expect(source).toContain("getWorkspaceBootstrap(user)");
+    expect(source).toContain("getProjectedWorkspacePermissions()");
     expect(source).toContain("workspaceRouteAccessDecision");
+    expect(source).toContain('metadata._workspace_read_strategy = "row"');
     expect(source).toContain('"proof_attachment_ids"');
     expect(source).toContain("canonicalThreadRecordIds");
     expect(source).toContain("customer-conversation:");

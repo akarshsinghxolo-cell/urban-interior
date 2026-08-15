@@ -282,6 +282,7 @@ describe("runtime efficiency hardening", () => {
     const store = await read("src/lib/rdash/raw-store.ts");
     const bootstrap = await read("src/app/api/bootstrap/route.ts");
     const projected = await read("src/lib/rdash/server/projected-workspace-bootstrap.ts");
+    const appShell = await read("src/components/urban-castle/UrbanCastleApp.tsx");
     expect(store).not.toContain('import { buildSeedDatabase } from "./seed"');
     expect(store).not.toContain("prepareWorkspaceDatabase(");
     expect(store).not.toContain('selectedCustomerId: "cust-das"');
@@ -290,6 +291,8 @@ describe("runtime efficiency hardening", () => {
     expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
     expect(projected).toContain("getProjectedWorkspacePermissions");
     expect(projected).not.toContain("compatibility read");
+    expect(appShell).toContain('return scope === "workdesk";');
+    expect(appShell).not.toContain('scope === "full"');
   });
 
 });

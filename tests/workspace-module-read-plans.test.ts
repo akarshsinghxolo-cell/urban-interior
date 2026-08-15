@@ -145,10 +145,22 @@ describe("bootstrap JSON projections", () => {
       "master.units",
       "master.workCategories",
       "master.workSubcategories",
+      "master.articles",
+      "master.articleVariants",
+      "master.subcategoryArticleMap",
+      "master.workOptionGroups",
+      "master.workOptionValues",
     ]);
     expect(projected).toContain("fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]");
-    expect(projected).toContain('"staffRolePermissions",\n        ...WORKSPACE_FOUNDATION_COLLECTIONS');
+    expect(projected).toContain("WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS");
+    expect(projected).toContain("...WORKSPACE_FOUNDATION_COLLECTIONS,");
     expect(projected).not.toContain("select(\"id,revision,data\")");
+  });
+
+  test("marks entity graphs as partial row reads", async () => {
+    const entityRead = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
+    expect(entityRead).toContain('metadata._workspace_read_strategy = "row"');
+    expect(entityRead).toContain('metadata._workspace_foundation_embedded = false');
   });
 
   test("exposes plan and page-limit telemetry", async () => {

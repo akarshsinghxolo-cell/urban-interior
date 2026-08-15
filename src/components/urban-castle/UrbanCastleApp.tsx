@@ -23,7 +23,7 @@ const AUTH_REFRESH_RECENT_MS = 5 * 60 * 1000;
 const AUTH_REFRESH_STORAGE_KEY = "uc_last_auth_refresh";
 
 function scopeSupportsReconciliation(scope: WorkspaceReadScope): boolean {
-  return scope === "full" || scope === "workdesk";
+  return scope === "workdesk";
 }
 
 async function renewBrowserSession(force = false) {
@@ -133,7 +133,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
   React.useEffect(() => {
     // The bounded Workdesk scope contains every attendance, follow-up, Visit and
     // recurring-task dependency required by reconciliation. Other narrow scopes
-    // wait until Workdesk or a full compatibility module is opened.
+    // wait until the complete Workdesk reconciliation scope is opened.
     if (!scopeSupportsReconciliation(readState.scope)) return;
     if (!authSessionKey || reconciledSessionRef.current === authSessionKey) return;
     let cancelled = false;
