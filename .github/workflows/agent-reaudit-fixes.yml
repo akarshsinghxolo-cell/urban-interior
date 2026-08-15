@@ -1,0 +1,66 @@
+name: Agent hydration re-audit fixes
+
+on:
+  push:
+    branches:
+      - agent/page-entity-egress-architecture
+    paths:
+      - .github/workflows/agent-reaudit-fixes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/page-entity-egress-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply audited fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          entity_path = Path('src/lib/rdash/server/entity-scoped-read.ts')
+          entity = entity_path.read_text(encoding='utf-8')
+          old = '''  metadata._workspace_read_scope = target.scope;\n  metadata._workspace_read_mode = mode;\n  metadata._workspace_read_entity = { kind: entity.kind, id: entity.id };\n'''
+          new = '''  metadata._workspace_read_scope = target.scope;\n  metadata._workspace_read_mode = mode;\n  metadata._workspace_read_strategy = "row";\n  metadata._workspace_read_entity = { kind: entity.kind, id: entity.id };\n'''
+          if entity.count(old) != 1:
+              raise SystemExit('entity metadata shape changed unexpectedly')
+          entity_path.write_text(entity.replace(old, new, 1), encoding='utf-8')
+
+          test_path = Path('tests/workspace-module-read-plans.test.ts')
+          test = test_path.read_text(encoding='utf-8')
+          old_foundation = '''    expect(WORKSPACE_FOUNDATION_COLLECTIONS).toEqual([\n      "master.units",\n      "master.workCategories",\n      "master.workSubcategories",\n    ]);\n'''
+          new_foundation = '''    expect(WORKSPACE_FOUNDATION_COLLECTIONS).toEqual([\n      "master.units",\n      "master.workCategories",\n      "master.workSubcategories",\n      "master.articles",\n      "master.articleVariants",\n      "master.subcategoryArticleMap",\n      "master.workOptionGroups",\n      "master.workOptionValues",\n    ]);\n'''
+          if test.count(old_foundation) != 1:
+              raise SystemExit('foundation expectation shape changed unexpectedly')
+          test = test.replace(old_foundation, new_foundation, 1)
+
+          anchor = '''  test("exposes plan and page-limit telemetry", async () => {\n'''
+          guard = '''  test("marks entity graphs as partial row reads", async () => {\n    const entityRead = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();\n    expect(entityRead).toContain('metadata._workspace_read_strategy = "row"');\n    expect(entityRead).toContain('metadata._workspace_foundation_embedded = false');\n  });\n\n'''
+          if anchor not in test:
+              raise SystemExit('module read-plan test insertion anchor missing')
+          test_path.write_text(test.replace(anchor, guard + anchor, 1), encoding='utf-8')
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused regressions
+        run: npx vitest run tests/workspace-module-read-plans.test.ts tests/workspace-session-merge.test.ts tests/workspace-entity-scoped-read.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Commit fixes and remove temporary workflow
+        run: |
+          git config user.name "akarshsinghxolo-cell"
+          git config user.email "akarshsinghxolo@gmail.com"
+          git rm .github/workflows/agent-reaudit-fixes.yml
+          git add src tests
+          git commit -m "Fix partial entity session merge and foundation guard"
+          git push origin HEAD:agent/page-entity-egress-architecture
