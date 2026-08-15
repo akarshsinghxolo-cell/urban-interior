@@ -3,6 +3,10 @@ import type {
   WorkspaceReadTarget,
 } from "../workspace-read-scope";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
+import {
+  boundedPageLimits,
+  pageCollectionsForTarget,
+} from "./module-page-read-plans";
 
 export interface WorkspaceModuleReadPlan {
   collections: readonly string[];
@@ -12,7 +16,7 @@ export interface WorkspaceModuleReadPlan {
 
 const HISTORY_LIMITS = Object.freeze({
   auditLog: 100,
-  executionLogs: 200,
+  executionLogs: 100,
   commSends: 100,
   "master.vendorRateHistories": 100,
 } as const);
@@ -290,9 +294,15 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   ]),
 });
 
-function limitsForModule(moduleId: string): Readonly<Record<string, number>> {
-  if (moduleId === "auditLog") return Object.freeze({ ...HISTORY_LIMITS, auditLog: 250 });
-  return HISTORY_LIMITS;
+function limitsForModule(
+  moduleId: string,
+  collections: readonly string[],
+): Readonly<Record<string, number>> {
+  const limits = {
+    ...HISTORY_LIMITS,
+    ...boundedPageLimits(collections, moduleId),
+  };
+  return Object.freeze(limits);
 }
 
 function completeFileJoin(collections: readonly string[]): readonly string[] {
@@ -305,11 +315,15 @@ function completeFileJoin(collections: readonly string[]): readonly string[] {
   return Object.freeze(joined);
 }
 
+function exactCollections(target: WorkspaceReadTarget): readonly string[] | undefined {
+  return pageCollectionsForTarget(target) || EXACT_MODULE_COLLECTIONS[target.moduleId];
+}
+
 export function collectionsForWorkspaceReadTarget(
   target: WorkspaceReadTarget,
 ): readonly string[] {
   if (target.scope === "bootstrap" || target.scope === "full") return [];
-  const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  const exact = exactCollections(target);
   return exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope];
 }
 
@@ -319,10 +333,11 @@ export function workspaceModuleReadPlan(
   if (target.scope === "bootstrap" || target.scope === "full") {
     throw new Error("INVALID:Bootstrap and full reads do not use module read plans.");
   }
-  const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  const exact = exactCollections(target);
+  const collections = exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope];
   return Object.freeze({
-    collections: exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope],
-    limitsByCollection: limitsForModule(target.moduleId),
+    collections,
+    limitsByCollection: limitsForModule(target.moduleId, collections),
     strategy: exact ? "module" : "scope",
   });
 }
