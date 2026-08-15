@@ -1,0 +1,48 @@
+name: Agent session hydration refactor
+
+on:
+  push:
+    branches:
+      - agent/page-entity-egress-architecture
+    paths:
+      - .github/workflows/agent-session-refactor.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/page-entity-egress-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Apply foundation-first session refactor
+        run: python .github/agent-session-refactor.py
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused lifecycle regressions
+        run: npx vitest run tests/workspace-session-merge.test.ts tests/workspace-bootstrap-scoped-flow.test.ts tests/workspace-navigation-revalidation.test.ts tests/runtime-efficiency-hardening.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Commit validated application changes
+        run: |
+          git config user.name "akarshsinghxolo-cell"
+          git config user.email "akarshsinghxolo@gmail.com"
+          git add src tests
+          if git diff --cached --quiet; then
+            echo "No application changes to commit."
+            exit 0
+          fi
+          git commit -m "Make workspace hydration foundation-first and persistent"
+          git push origin HEAD:agent/page-entity-egress-architecture
