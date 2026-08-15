@@ -1,0 +1,67 @@
+name: Agent atomic workspace reset rerun
+
+on:
+  push:
+    branches: [agent/page-entity-egress-architecture]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'Rerun atomic workspace reset fix'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/page-entity-egress-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply the audited atomic reset patch
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/agent-atomic-reset-audit.yml').read_text()
+          start_marker = "          python <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          script = workflow[start:end]
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in script.splitlines())
+          exec(compile(script, 'atomic-reset-patch.py', 'exec'), {})
+
+          path = Path('tests/runtime-efficiency-hardening.test.ts')
+          text = path.read_text()
+          old = '''    const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");\n    const workspace = await read("src/lib/rdash/server/workspace.ts");\n    expect(targeted).toContain('recordId.startsWith("customer-conversation:")');\n    expect(targeted).not.toContain('recordId.startsWith("cust-")');\n    expect(authorized).toContain('recordId.startsWith("cust-")');\n    expect(authorized).toContain("must use customer-conversation:<customer_id>");\n    expect(entityRead).toContain("canonicalThreadRecordIds");\n    expect(workspace).toContain("canonicalizeResetCustomerThreads");'''
+          new = '''    const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");\n    const workspace = await read("src/lib/rdash/server/workspace.ts");\n    const resetPersistence = await read("src/lib/rdash/server/commit-rest.ts");\n    expect(targeted).toContain('recordId.startsWith("customer-conversation:")');\n    expect(targeted).not.toContain('recordId.startsWith("cust-")');\n    expect(authorized).toContain('recordId.startsWith("cust-")');\n    expect(authorized).toContain("must use customer-conversation:<customer_id>");\n    expect(entityRead).toContain("canonicalThreadRecordIds");\n    expect(workspace).not.toContain("canonicalizeResetCustomerThreads");\n    const resetCanonicalization = resetPersistence.indexOf("customer-conversation:${thread.record_id}");\n    const resetDiff = resetPersistence.indexOf("diffWorkspaceOperations(current.data, seedData)");\n    expect(resetCanonicalization).toBeGreaterThan(0);\n    expect(resetDiff).toBeGreaterThan(resetCanonicalization);'''
+          if text.count(old) != 1:
+              raise SystemExit(f'Expected stale Customer reset assertion exactly once, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused reset and lifecycle regressions
+        run: npx vitest run tests/workspace-delta-sync.test.ts tests/runtime-efficiency-hardening.test.ts tests/workspace-client-delta-sync.test.ts tests/workspace-session-merge.test.ts tests/phase2b-targeted-commit.test.ts tests/workspace-module-scoped-read.test.ts tests/workspace-entity-scoped-read.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Commit validated reset fix
+        shell: bash
+        run: |
+          git config user.name "akarshsinghxolo-cell"
+          git config user.email "akarshsinghxolo@gmail.com"
+          git add src tests
+          if git diff --cached --quiet; then
+            echo "No application changes to commit"
+            exit 0
+          fi
+          git commit -m "Make workspace reset atomic and monotonic"
+          git push origin HEAD:agent/page-entity-egress-architecture
