@@ -15,6 +15,14 @@ import {
 } from "@/lib/rdash/workspace-read-state";
 import { workspaceReadCache } from "@/lib/rdash/workspace-read-cache";
 import { revalidateWorkspaceReadCacheEntry } from "@/lib/rdash/workspace-navigation-delta";
+import {
+  mergeWorkspacePage,
+  workspacePageState,
+} from "@/lib/rdash/workspace-page-merge";
+import {
+  mergeWorkspaceRowVersions,
+  workspaceRowVersionState,
+} from "@/lib/rdash/workspace-row-version-state";
 import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
@@ -32,6 +40,8 @@ interface WorkspaceReadPayload {
     expiresAt: number;
   };
 }
+
+const MAX_COLLECTION_PAGES_PER_REQUEST = 4;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -54,6 +64,11 @@ function applyOverlayStatus(overlay: Awaited<ReturnType<typeof restoreWorkspaceO
  * journal gaps, relationship-selected row graphs, limited collections, Staff
  * projection refreshes, or an unavailable/corrupt cache.
  *
+ * Bounded list collections expose page cursors in workspace metadata. The
+ * non-blocking Load more control requests only the next page (at most four
+ * collections per click) and merges rows into the current Zustand snapshot.
+ * It never replaces the module or refetches already-loaded collections.
+ *
  * Module navigation state is authoritative while the browser-history pathname
  * catches up. This prevents a newly selected module from rendering against the
  * previous module's scoped snapshot or skipping its required server read.
@@ -62,6 +77,8 @@ export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
   const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
+  const db = useRDashStore((state) => state.db);
+  const serverRevision = useRDashStore((state) => state.serverRevision);
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
 
@@ -76,13 +93,24 @@ export function WorkspaceScopedReadBoundary() {
   const targetKey = workspaceReadTargetKey(requestedTarget);
   const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
   const loadState = workspaceReadLoadStateForTarget(readState, requestedTarget);
+  const pageState = React.useMemo(() => workspacePageState(db), [db]);
+  const pageCursors = React.useMemo(
+    () => Object.entries(pageState).filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null),
+    [pageState],
+  );
   const [retryNonce, setRetryNonce] = React.useState(0);
+  const [pageLoading, setPageLoading] = React.useState(false);
+  const [pageError, setPageError] = React.useState<string | undefined>();
   const requestSequenceRef = React.useRef(0);
   const latestTargetKeyRef = React.useRef(targetKey);
   const previousEffectTargetKeyRef = React.useRef(targetKey);
 
   React.useLayoutEffect(() => {
     latestTargetKeyRef.current = targetKey;
+  }, [targetKey]);
+
+  React.useEffect(() => {
+    setPageError(undefined);
   }, [targetKey]);
 
   React.useEffect(() => {
@@ -220,7 +248,115 @@ export function WorkspaceScopedReadBoundary() {
     };
   }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget, retryNonce, targetKey]);
 
-  if (!needsExpansion) return null;
+  const loadMore = React.useCallback(async () => {
+    if (!authUser || pageLoading || needsExpansion) return;
+    const cursors = Object.entries(workspacePageState(useRDashStore.getState().db))
+      .filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null)
+      .slice(0, MAX_COLLECTION_PAGES_PER_REQUEST);
+    if (!cursors.length) return;
+
+    setPageLoading(true);
+    setPageError(undefined);
+    try {
+      const params = new URLSearchParams();
+      for (const [collection, cursor] of cursors) {
+        params.append("page", `${collection}:${cursor.nextOffset}`);
+      }
+      const response = await fetch(`${endpoint}?${params.toString()}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          "X-UC-Workspace-Path": pathname,
+          "X-UC-Workspace-Module": requestedTarget.moduleId,
+          "X-UC-Read-Page": "1",
+        },
+      });
+      if (response.status === 401) {
+        workspaceReadCache.clear();
+        workspaceReadState.reset();
+        window.location.replace("/signin");
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
+      if (
+        !response.ok ||
+        response.headers.get("X-UC-Read-Page-Only") !== "1" ||
+        !payload.data ||
+        typeof payload.revision !== "number"
+      ) {
+        throw new Error(payload.error || "The next page could not be loaded.");
+      }
+
+      const latest = useRDashStore.getState();
+      if (!latest.authUser || latest.authUser.email !== authUser.email) return;
+      if (payload.revision !== latest.serverRevision || latest.serverRevision !== serverRevision) {
+        // A concurrent commit means page offsets no longer describe the same
+        // snapshot. Restart the normal scoped read rather than merging stale rows.
+        workspaceReadState.reset();
+        setRetryNonce((value) => value + 1);
+        return;
+      }
+
+      const cached = workspaceReadCache.get(requestedTarget, authUser);
+      const cacheBase = cached?.data || latest.db;
+      const mergedCacheData = mergeWorkspacePage(cacheBase, payload.data);
+      const mergedUiData = mergeWorkspacePage(latest.db, payload.data);
+      const mergedRowVersions = mergeWorkspaceRowVersions(
+        workspaceRowVersionState.getSnapshot(),
+        payload.rowVersions || {},
+      );
+      const overlay = await restoreWorkspaceOutboxOverlay(mergedUiData);
+
+      const latestAfterOverlay = useRDashStore.getState();
+      if (!latestAfterOverlay.authUser || latestAfterOverlay.serverRevision !== payload.revision) return;
+      latestAfterOverlay.hydrateSecureWorkspace({
+        db: overlay.db,
+        revision: payload.revision,
+        user: authUser,
+        rowVersions: mergedRowVersions,
+      });
+      workspaceReadCache.store({
+        target: requestedTarget,
+        user: authUser,
+        revision: payload.revision,
+        data: mergedCacheData,
+        rowVersions: mergedRowVersions,
+        aggregateRevisions: cached?.aggregateRevisions,
+        readState: workspaceReadState.getSnapshot(),
+      });
+      applyOverlayStatus(overlay);
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "The next page could not be loaded.");
+    } finally {
+      setPageLoading(false);
+    }
+  }, [authUser, endpoint, needsExpansion, pageLoading, pathname, requestedTarget, serverRevision]);
+
+  if (!needsExpansion) {
+    if (!pageCursors.length && !pageError) return null;
+    return (
+      <div className="fixed bottom-4 right-4 z-[70] w-[min(92vw,360px)] rounded-xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur-sm">
+        <div className="flex items-start gap-2.5">
+          <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">{pageError ? "More records could not be loaded" : "More records are available"}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {pageError || `${pageCursors.length} bounded data ${pageCursors.length === 1 ? "set has" : "sets have"} another page.`}
+            </p>
+          </div>
+          {pageCursors.length ? (
+            <Button type="button" size="sm" variant="outline" disabled={pageLoading} onClick={() => void loadMore()}>
+              {pageLoading ? <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RotateCw className="mr-1 h-3.5 w-3.5" />}
+              Load more
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   const error = loadState.status === "error" ? loadState.error : undefined;
   const loading = loadState.status === "not_loaded" || loadState.status === "loading";
   return (
