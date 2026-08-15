@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
+import { workspaceModuleReadPlan } from "@/lib/rdash/server/module-read-plans";
+import { workspaceReadTargetForModule } from "@/lib/rdash/workspace-read-scope";
 
 const read = (path: string) => testFile(path).text();
 
@@ -112,5 +114,59 @@ describe("runtime efficiency hardening", () => {
     expect(dropIndex).toBeGreaterThan(createIndex);
     expect(migration).toContain('"StaffRouteBundle_staffId_startedAt_idx"');
     expect(migration).toContain('"StaffRouteBundle_endedAt_idx"');
+  });
+
+  test("bounded module pages use limit-plus-one without a count query", async () => {
+    const rest = await read("src/lib/rdash/server/commit-rest.ts");
+    expect(rest).toContain("offsetsByCollection");
+    expect(rest).toContain(".range(offset, offset + configuredLimit)");
+    expect(rest).toContain("rawRows.slice(0, configuredLimit)");
+    expect(rest).toContain("rawRows.length > configuredLimit");
+    expect(rest).not.toContain('count: "exact"');
+
+    const route = await read("src/lib/rdash/server/module-scoped-route.ts");
+    expect(route).toContain('request.nextUrl.searchParams.getAll("page")');
+    expect(route).toContain("getModuleScopedWorkspacePage");
+    expect(route).toContain('"X-UC-Read-Page-Only"');
+    expect(route).toContain('"X-UC-Read-Has-More"');
+    expect(route).toContain("MODULE_RESPONSE_WARN_BYTES = 512 * 1024");
+  });
+
+  test("browser merges next pages instead of replacing the scoped workspace", async () => {
+    const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
+    expect(boundary).toContain("mergeWorkspacePage");
+    expect(boundary).toContain("MAX_COLLECTION_PAGES_PER_REQUEST = 4");
+    expect(boundary).toContain('response.headers.get("X-UC-Read-Page-Only") !== "1"');
+    expect(boundary).toContain("payload.revision !== latest.serverRevision");
+    expect(boundary).toContain("workspaceReadCache.store");
+  });
+
+  test("commit retry and repair paths never reconstruct the complete workspace", async () => {
+    const route = await read("src/app/api/operations/commit/route.ts");
+    expect(route).toContain("loadOperationSubset");
+    expect(route).toContain("operationRowsByCollection");
+    expect(route).toContain("getWorkspaceSubset({ rowsByCollection })");
+    expect(route).toContain('commitHeaders("no-op-revision-read"');
+    expect(route).not.toContain("getWorkspace(true)");
+    expect(route).not.toMatch(/import\s*\{[^}]*\bgetWorkspace\b[^}]*\}\s*from\s*["']@\/lib\/rdash\/server\/workspace["']/s);
+  });
+
+  test("report families narrow complete inputs without paginating business totals", () => {
+    for (const moduleId of [
+      "salesAnalytics",
+      "collectionAnalytics",
+      "operationsAnalytics",
+      "financialAnalytics",
+    ]) {
+      const target = workspaceReadTargetForModule(moduleId);
+      const plan = workspaceModuleReadPlan(target);
+      expect(plan.strategy).toBe("module");
+      expect(plan.collections.length).toBeLessThan(
+        workspaceModuleReadPlan(workspaceReadTargetForModule("reportsDesk")).collections.length,
+      );
+      for (const collection of plan.collections) {
+        expect(plan.limitsByCollection?.[collection]).toBeUndefined();
+      }
+    }
   });
 });
