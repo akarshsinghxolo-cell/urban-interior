@@ -5,7 +5,10 @@ import {
   type WorkspaceReadTarget,
 } from "../workspace-read-scope";
 import { requireSession } from "./auth";
-import { getModuleScopedWorkspace } from "./module-scoped-read";
+import {
+  getModuleScopedWorkspace,
+  getModuleScopedWorkspacePage,
+} from "./module-scoped-read";
 
 export interface ModuleScopedRouteOptions {
   moduleId: string;
@@ -18,6 +21,8 @@ const PRIVATE_JSON_HEADERS = Object.freeze({
   Pragma: "no-cache",
   "X-Content-Type-Options": "nosniff",
 });
+const MODULE_RESPONSE_WARN_BYTES = 512 * 1024;
+const MAX_PAGE_COLLECTIONS = 24;
 
 function requestedTarget(
   request: NextRequest,
@@ -32,19 +37,44 @@ function requestedTarget(
   return target?.scope === endpointTarget.scope ? target : null;
 }
 
+function requestedPageOffsets(request: NextRequest): Record<string, number> {
+  const offsets: Record<string, number> = {};
+  for (const raw of request.nextUrl.searchParams.getAll("page").slice(0, MAX_PAGE_COLLECTIONS)) {
+    const separator = raw.lastIndexOf(":");
+    if (separator <= 0) continue;
+    const collection = raw.slice(0, separator).trim();
+    const offset = Number(raw.slice(separator + 1));
+    if (!collection || collection.length > 120) continue;
+    if (!Number.isSafeInteger(offset) || offset <= 0 || offset > 1_000_000) continue;
+    offsets[collection] = offset;
+  }
+  return offsets;
+}
+
 function measuredJson(
   payload: Record<string, unknown>,
   headers: Record<string, string>,
   status = 200,
 ): NextResponse {
   const body = JSON.stringify(payload);
+  const responseBytes = Buffer.byteLength(body);
+  if (responseBytes > MODULE_RESPONSE_WARN_BYTES) {
+    console.warn("[workspace-egress] module response exceeded target budget", {
+      responseBytes,
+      warnBytes: MODULE_RESPONSE_WARN_BYTES,
+      mode: headers["X-UC-Read-Mode"],
+      moduleId: headers["X-UC-Read-Module"],
+      collections: headers["X-UC-Read-Collections"],
+    });
+  }
   return new NextResponse(body, {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
       ...PRIVATE_JSON_HEADERS,
       ...headers,
-      "X-UC-Response-Bytes": String(Buffer.byteLength(body)),
+      "X-UC-Response-Bytes": String(responseBytes),
+      "X-UC-Response-Budget": String(MODULE_RESPONSE_WARN_BYTES),
     },
   });
 }
@@ -86,7 +116,13 @@ export async function handleModuleScopedRead(
   }
 
   try {
-    const workspace = await getModuleScopedWorkspace(user, target);
+    const pageOffsets = requestedPageOffsets(request);
+    const pageOnly = Object.keys(pageOffsets).length > 0;
+    const workspace = pageOnly
+      ? await getModuleScopedWorkspacePage(user, target, pageOffsets)
+      : await getModuleScopedWorkspace(user, target);
+    const hasMore = Object.values(workspace.pagination || {}).some((entry) => entry.hasMore);
+
     return measuredJson({
       revision: workspace.revision,
       updatedAt: workspace.updatedAt,
@@ -103,6 +139,8 @@ export async function handleModuleScopedRead(
       "X-UC-Read-Limited-Collections": Object.entries(workspace.limitedCollections)
         .map(([collection, limit]) => `${collection}:${limit}`)
         .join(","),
+      "X-UC-Read-Page-Only": pageOnly ? "1" : "0",
+      "X-UC-Read-Has-More": hasMore ? "1" : "0",
       "Server-Timing": `${options.timingLabel};dur=${workspace.loadMs.toFixed(2)}`,
     });
   } catch (error) {
