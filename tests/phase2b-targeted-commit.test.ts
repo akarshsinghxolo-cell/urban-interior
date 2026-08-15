@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { canUseTargetedCommit } from "../src/lib/rdash/server/targeted-commit";
+import { canUseSimpleTargetedCommit } from "../src/lib/rdash/server/simple-targeted-commit";
 import type { WorkspaceOperation } from "../src/lib/rdash/workspace-operations";
 
 const originalKillSwitch = process.env.UC_PHASE2B_TARGETED_COMMITS;
@@ -72,9 +73,8 @@ describe("Phase 2B targeted commit eligibility", () => {
     ])).toBe(true);
   });
 
-  test("rejects mixed unsupported collections", () => {
+  test("keeps simple entity writes outside the dependency-heavy Phase 2B planner", () => {
     expect(canUseTargetedCommit([
-      operation("tasks", [{ id: "task-1" }]),
       operation("attendance", [{ id: "attendance-1" }]),
     ])).toBe(false);
   });
@@ -101,6 +101,41 @@ describe("Phase 2B targeted commit eligibility", () => {
     process.env.UC_PHASE2B_TARGETED_COMMITS = "0";
     expect(canUseTargetedCommit([
       operation("tasks", [{ id: "task-1" }]),
+    ])).toBe(false);
+  });
+});
+
+describe("Phase 2C simple entity targeted eligibility", () => {
+  test("accepts Customer plus Site saves as one bounded business mutation", () => {
+    expect(canUseSimpleTargetedCommit([
+      operation("customers", [{ id: "cust-1", name: "Customer", phone: "9000000000" }]),
+      operation("sites", [{ id: "site-1", customer_id: "cust-1", name: "Home" }]),
+    ])).toBe(true);
+  });
+
+  test("accepts an attendance upsert", () => {
+    expect(canUseSimpleTargetedCommit([
+      operation("attendance", [{ id: "att-1", staff_id: "staff-1", date: "2026-08-15" }]),
+    ])).toBe(true);
+  });
+
+  test("rejects deletes so relationship cleanup remains on the full validator", () => {
+    expect(canUseSimpleTargetedCommit([
+      operation("sites", [], ["site-1"]),
+    ])).toBe(false);
+  });
+
+  test("rejects unrelated and mixed complex collections", () => {
+    expect(canUseSimpleTargetedCommit([
+      operation("customers", [{ id: "cust-1" }]),
+      operation("master.vendors", [{ id: "vendor-1" }]),
+    ])).toBe(false);
+  });
+
+  test("uses the same emergency kill switch", () => {
+    process.env.UC_PHASE2B_TARGETED_COMMITS = "0";
+    expect(canUseSimpleTargetedCommit([
+      operation("attendance", [{ id: "att-1" }]),
     ])).toBe(false);
   });
 });
