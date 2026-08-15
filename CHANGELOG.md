@@ -11,6 +11,10 @@ The format follows a simplified Keep-a-Changelog convention:
 
 ---
 
+## v0.4.3 — Aug 2026
+
+- **FIX** — Site photo uploads now wait for confirmed customer/Site persistence before attachment records are committed. Pending browser upload placeholders are excluded from Site payloads, preventing the “attachment does not exist” validation failure.
+
 ## v0.4.2 — Jul 2026
 
 - **FEATURE** — "Copy summary" button in the health badge popover. Copies a formatted text summary of workspace health (badge, integrity, attention breakdown, cash, revenue) to the clipboard. Useful for support/debugging/reporting.
