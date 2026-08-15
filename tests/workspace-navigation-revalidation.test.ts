@@ -66,7 +66,12 @@ describe("workspace navigation freshness", () => {
       "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
     );
 
-    expect(source).toContain("if (!needsExpansion) return null");
+    // Compatible module data must never be covered by the blocking refresh UI.
+    // A small non-blocking Load-more card is allowed when bounded collections
+    // advertise another page.
+    expect(source).toContain("if (!needsExpansion) {");
+    expect(source).toContain("if (!pageCursors.length && !pageError) return null");
+    expect(source).toContain("More records are available");
     expect(source).not.toContain("if (!needsExpansion && !enteredNewTarget) return null");
   });
 
