@@ -29,6 +29,11 @@ import {
   type VendorSupplyCapability,
   type VendorType,
 } from "@/lib/rdash/vendor-profile";
+import {
+  deriveVendorCapabilityTaxonomySelection,
+  vendorArticleTaxonomyLabels,
+  vendorArticlesForTaxonomy,
+} from "@/lib/rdash/vendor-capability-taxonomy";
 import { FilePreview } from "./FilePreview";
 
 export type VendorFormDialogProps = {
@@ -142,6 +147,8 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const [shopPhoto, setShopPhoto] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
   const [articleQuery, setArticleQuery] = React.useState("");
+  const [taxonomyCategoryIds, setTaxonomyCategoryIds] = React.useState<string[]>([]);
+  const [taxonomySubcategoryIds, setTaxonomySubcategoryIds] = React.useState<string[]>([]);
   const [softDuplicateAcknowledged, setSoftDuplicateAcknowledged] = React.useState(false);
   const baselineRef = React.useRef<VendorProfileRecord>({});
   const [baselineMetadata, setBaselineMetadata] = React.useState<Pick<VendorProfileRecord, "source_partner_id" | "source_partner_name" | "created_at">>({});
@@ -203,7 +210,11 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setCoordinates(formatCoordinatePair(normalized as any));
     setBusinessCard(normalized.business_card_attachment_id ? { attachment_id: String(normalized.business_card_attachment_id) } : "");
     setShopPhoto(normalized.shop_attachment_id ? { attachment_id: String(normalized.shop_attachment_id) } : "");
-    setCapabilities(capabilityDrafts(canonicalVendorCapabilities(normalized, db)));
+    const capabilityRows = canonicalVendorCapabilities(normalized, db);
+    const taxonomySelection = deriveVendorCapabilityTaxonomySelection(db.master, capabilityRows.map((row) => row.article_id));
+    setCapabilities(capabilityDrafts(capabilityRows));
+    setTaxonomyCategoryIds(taxonomySelection.categoryIds);
+    setTaxonomySubcategoryIds(taxonomySelection.subcategoryIds);
     setArticleQuery("");
     setSoftDuplicateAcknowledged(false);
     baselineRef.current = normalized;
@@ -235,7 +246,12 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setCoordinates(formatCoordinatePair(baseline as any));
     setBusinessCard(baseline.business_card_attachment_id ? { attachment_id: String(baseline.business_card_attachment_id) } : "");
     setShopPhoto(baseline.shop_attachment_id ? { attachment_id: String(baseline.shop_attachment_id) } : "");
-    setCapabilities(capabilityDrafts(canonicalVendorCapabilities(baseline, db)));
+    const capabilityRows = canonicalVendorCapabilities(baseline, db);
+    const taxonomySelection = deriveVendorCapabilityTaxonomySelection(db.master, capabilityRows.map((row) => row.article_id));
+    setCapabilities(capabilityDrafts(capabilityRows));
+    setTaxonomyCategoryIds(taxonomySelection.categoryIds);
+    setTaxonomySubcategoryIds(taxonomySelection.subcategoryIds);
+    setArticleQuery("");
     setSoftDuplicateAcknowledged(false);
     return true;
   }
@@ -351,11 +367,37 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setCapabilities((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
   }
 
+  function toggleTaxonomyCategory(categoryId: string) {
+    const removing = taxonomyCategoryIds.includes(categoryId);
+    if (removing) {
+      const childSubcategoryIds = new Set(
+        db.master.workSubcategories.filter((row) => row.category_id === categoryId).map((row) => row.id),
+      );
+      setTaxonomySubcategoryIds((selected) => selected.filter((id) => !childSubcategoryIds.has(id)));
+    }
+    setTaxonomyCategoryIds((current) => removing
+      ? current.filter((id) => id !== categoryId)
+      : [...current, categoryId]);
+    setArticleQuery("");
+  }
+
+  function toggleTaxonomySubcategory(categoryId: string, subcategoryId: string) {
+    setTaxonomyCategoryIds((current) => current.includes(categoryId) ? current : [...current, categoryId]);
+    setTaxonomySubcategoryIds((current) => current.includes(subcategoryId)
+      ? current.filter((id) => id !== subcategoryId)
+      : [...current, subcategoryId]);
+    setArticleQuery("");
+  }
+
   const filteredArticles = React.useMemo(() => {
-    const needle = articleQuery.trim().toLowerCase();
-    if (!needle) return [];
-    return db.master.articles.filter((article) => !capabilities.some((row) => row.article_id === article.id) && article.name.toLowerCase().includes(needle)).slice(0, 8);
-  }, [articleQuery, capabilities, db.master.articles]);
+    return vendorArticlesForTaxonomy(db.master, {
+      selectedCategoryIds: taxonomyCategoryIds,
+      selectedSubcategoryIds: taxonomySubcategoryIds,
+      excludedArticleIds: capabilities.map((row) => row.article_id),
+      query: articleQuery,
+      limit: 8,
+    });
+  }, [articleQuery, capabilities, db.master, taxonomyCategoryIds, taxonomySubcategoryIds]);
   const businessFile = mediaFile(businessCard, db);
   const shopFile = mediaFile(shopPhoto, db);
 
@@ -364,7 +406,113 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
 
     <section className="rounded-xl border border-border bg-muted/10 p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold">Location</h3><p className="text-[10px] text-muted-foreground">Fresh master-location GPS also reverse-geocodes full address, city and locality.</p></div><Button type="button" size="sm" variant="outline" disabled={gpsLoading} onClick={() => void captureGps()}><Navigation className="mr-1.5 h-3.5 w-3.5" />{gpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="City"><Input value={draft.city} onChange={(e) => set("city", e.target.value)} /></Field><Field label="Locality"><Input value={draft.locality} onChange={(e) => set("locality", e.target.value)} /></Field><Field label="Coordinates"><Input value={coordinates} onChange={(e) => updateCoordinates(e.target.value)} placeholder="26.8467, 80.9462" /></Field><div className="sm:col-span-3"><Field label="Full address"><Textarea rows={2} value={draft.address} onChange={(e) => set("address", e.target.value)} /></Field></div></div></section>
 
-    <section className="rounded-xl border border-border bg-muted/10 p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-bold">Supply capability</h3><p className="text-[10px] text-muted-foreground">Article → optional Variants → brand → availability / lead time / MOQ.</p></div><div className="relative w-full max-w-sm"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-8" value={articleQuery} onChange={(e) => setArticleQuery(e.target.value)} placeholder="Search Article to add" />{filteredArticles.length > 0 && <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover p-1 shadow-lg">{filteredArticles.map((article) => <button key={article.id} type="button" onClick={() => addCapability(article.id)} className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-xs hover:bg-muted"><span>{article.name}</span><Plus className="h-3.5 w-3.5" /></button>)}</div>}</div></div><div className="mt-3 space-y-3">{capabilities.map((row, index) => { const article = db.master.articles.find((item) => item.id === row.article_id); const category = article?.category_id ? db.master.workCategories.find((item) => item.id === article.category_id) : undefined; const variants = db.master.articleVariants.filter((variant) => variant.article_id === row.article_id && variant.enabled !== false); return <div key={row.article_id} className="rounded-xl border border-border bg-background p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{category?.name || "Uncategorized"}</p></div><Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button></div><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"><Field label="Brand"><Input value={row.brand} onChange={(e) => updateCapability(index, { brand: e.target.value })} /></Field><Field label="Availability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={row.availability} onChange={(e) => updateCapability(index, { availability: e.target.value as VendorAvailability })}><option value="unknown">Unknown</option><option value="in_stock">In stock</option><option value="limited">Limited</option><option value="on_order">On order</option></select></Field><Field label="Typical lead days"><Input type="number" min="0" value={row.typical_lead_time_days} onChange={(e) => updateCapability(index, { typical_lead_time_days: e.target.value })} /></Field><Field label="MOQ"><Input type="number" min="0" value={row.moq} onChange={(e) => updateCapability(index, { moq: e.target.value })} /></Field><label className="flex h-9 items-center gap-2 self-end rounded-md border border-input px-3 text-xs"><input type="checkbox" checked={row.preferred} onChange={(e) => updateCapability(index, { preferred: e.target.checked })} /><Star className={cn("h-3.5 w-3.5", row.preferred && "fill-warning text-warning")} />Preferred</label></div>{variants.length > 0 && <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variants supplied</p><div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); return <button key={variant.id} type="button" onClick={() => updateCapability(index, { variant_ids: active ? row.variant_ids.filter((id) => id !== variant.id) : [...row.variant_ids, variant.id] })} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>{variant.name}</button>; })}</div></div>}<div className="mt-3"><Field label="Capability notes"><Input value={row.notes} onChange={(e) => updateCapability(index, { notes: e.target.value })} /></Field></div></div>; })}{!capabilities.length && <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">No supplied Articles added.</div>}</div></section>
+    <section className="rounded-xl border border-border bg-muted/10 p-4">
+      <div>
+        <h3 className="text-sm font-bold">Supply capability</h3>
+        <p className="text-[10px] text-muted-foreground">Category → Subcategory → Article → optional Variants → brand → availability / lead time / MOQ.</p>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-border bg-background p-3">
+        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Supply categories</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">Choose broad Categories, then the specific Subcategories this Vendor supplies.</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {db.master.workCategories.map((category) => {
+            const selected = taxonomyCategoryIds.includes(category.id);
+            return (
+              <button
+                key={category.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => toggleTaxonomyCategory(category.id)}
+                className={cn("rounded-md border px-2 py-1 text-[11px]", selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}
+              >
+                {category.name}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 space-y-1">
+          {db.master.workCategories.filter((category) => taxonomyCategoryIds.includes(category.id)).map((category) => {
+            const subcategories = db.master.workSubcategories.filter((subcategory) => subcategory.category_id === category.id);
+            return (
+              <details key={category.id} className="rounded-md border border-border bg-muted/10">
+                <summary className="cursor-pointer px-2.5 py-1 text-xs font-medium">Specific {category.name} supply</summary>
+                <div className="flex flex-wrap gap-1 p-2">
+                  {subcategories.map((subcategory) => {
+                    const selected = taxonomySubcategoryIds.includes(subcategory.id);
+                    return (
+                      <button
+                        key={subcategory.id}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => toggleTaxonomySubcategory(category.id, subcategory.id)}
+                        className={cn("rounded-md border px-2 py-0.5 text-[10px]", selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}
+                      >
+                        {subcategory.name}
+                      </button>
+                    );
+                  })}
+                  {!subcategories.length && <span className="text-[10px] text-muted-foreground">No Subcategories are configured for this Category.</span>}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="relative mt-3 w-full max-w-sm">
+        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-8"
+          value={articleQuery}
+          onChange={(event) => setArticleQuery(event.target.value)}
+          placeholder={taxonomySubcategoryIds.length ? "Search Article to add" : "Select a Category and Subcategory first"}
+          disabled={!taxonomySubcategoryIds.length}
+        />
+        {filteredArticles.length > 0 && (
+          <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover p-1 shadow-lg">
+            {filteredArticles.map((article) => {
+              const taxonomy = vendorArticleTaxonomyLabels(db.master, article.id);
+              return (
+                <button key={article.id} type="button" onClick={() => addCapability(article.id)} className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left hover:bg-muted">
+                  <span className="min-w-0"><span className="block truncate text-xs font-medium">{article.name}</span><span className="block truncate text-[10px] text-muted-foreground">{taxonomy.categoryName}{taxonomy.subcategoryNames.length ? ` → ${taxonomy.subcategoryNames.join(", ")}` : ""}</span></span>
+                  <Plus className="h-3.5 w-3.5 shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {taxonomySubcategoryIds.length > 0 && articleQuery.trim() && filteredArticles.length === 0 && (
+          <p className="mt-1 text-[10px] text-muted-foreground">No unselected Articles linked to the chosen Subcategories match this search.</p>
+        )}
+      </div>
+
+      <div className="mt-3 space-y-3">
+        {capabilities.map((row, index) => {
+          const article = db.master.articles.find((item) => item.id === row.article_id);
+          const taxonomy = vendorArticleTaxonomyLabels(db.master, row.article_id);
+          const variants = db.master.articleVariants.filter((variant) => variant.article_id === row.article_id && variant.enabled !== false);
+          return (
+            <div key={row.article_id} className="rounded-xl border border-border bg-background p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{taxonomy.categoryName}{taxonomy.subcategoryNames.length ? ` → ${taxonomy.subcategoryNames.join(", ")}` : ""}</p></div>
+                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <Field label="Brand"><Input value={row.brand} onChange={(event) => updateCapability(index, { brand: event.target.value })} /></Field>
+                <Field label="Availability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={row.availability} onChange={(event) => updateCapability(index, { availability: event.target.value as VendorAvailability })}><option value="unknown">Unknown</option><option value="in_stock">In stock</option><option value="limited">Limited</option><option value="on_order">On order</option></select></Field>
+                <Field label="Typical lead days"><Input type="number" min="0" value={row.typical_lead_time_days} onChange={(event) => updateCapability(index, { typical_lead_time_days: event.target.value })} /></Field>
+                <Field label="MOQ"><Input type="number" min="0" value={row.moq} onChange={(event) => updateCapability(index, { moq: event.target.value })} /></Field>
+                <label className="flex h-9 items-center gap-2 self-end rounded-md border border-input px-3 text-xs"><input type="checkbox" checked={row.preferred} onChange={(event) => updateCapability(index, { preferred: event.target.checked })} /><Star className={cn("h-3.5 w-3.5", row.preferred && "fill-warning text-warning")} />Preferred</label>
+              </div>
+              {variants.length > 0 && <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variants supplied</p><div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); return <button key={variant.id} type="button" onClick={() => updateCapability(index, { variant_ids: active ? row.variant_ids.filter((id) => id !== variant.id) : [...row.variant_ids, variant.id] })} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>{variant.name}</button>; })}</div></div>}
+              <div className="mt-3"><Field label="Capability notes"><Input value={row.notes} onChange={(event) => updateCapability(index, { notes: event.target.value })} /></Field></div>
+            </div>
+          );
+        })}
+        {!capabilities.length && <div className="rounded-lg border border-dashed border-border py-8 text-center text-xs text-muted-foreground">No supplied Articles added.</div>}
+      </div>
+    </section>
 
     <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Relationship quality</h3><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="Reliability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.reliability} onChange={(e) => set("reliability", e.target.value as Draft["reliability"])}><option value="very_good">Very good</option><option value="good">Good</option><option value="average">Average</option><option value="bad">Bad</option></select></Field><Field label="Delivery behaviour"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.delivery} onChange={(e) => set("delivery", e.target.value as Draft["delivery"])}><option value="very_good">Very good</option><option value="good">Good</option><option value="average">Average</option><option value="bad">Bad</option></select></Field><Field label="Return policy"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.returnPolicy} onChange={(e) => set("returnPolicy", e.target.value as Draft["returnPolicy"])}><option value="available">Available</option><option value="not_available">Not available</option></select></Field></div><div className="mt-3"><Field label="Notes"><Textarea rows={3} value={draft.notes} onChange={(e) => set("notes", e.target.value)} /></Field></div></section>
 
@@ -373,3 +521,4 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     {duplicateConflicts.length > 0 && <section className={cn("rounded-xl border p-4", hardDuplicate ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><h3 className="text-sm font-bold">Duplicate check</h3><div className="mt-2 space-y-1 text-xs text-muted-foreground">{duplicateConflicts.slice(0, 3).map((conflict) => <p key={conflict.id}>• <strong>{conflict.name}</strong>: {conflict.reasons.join(", ")}</p>)}</div>{softDuplicate && !hardDuplicate && <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={softDuplicateAcknowledged} onChange={(e) => setSoftDuplicateAcknowledged(e.target.checked)} />I reviewed this possible duplicate and still want to save this Vendor.</label>}</section>}
   </div><DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter></DialogContent></Dialog>;
 }
+
