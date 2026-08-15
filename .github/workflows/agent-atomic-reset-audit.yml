@@ -1,0 +1,81 @@
+name: Agent atomic workspace reset audit
+
+on:
+  push:
+    branches: [agent/page-entity-egress-architecture]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'Validate atomic workspace reset fix'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/page-entity-egress-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply atomic reset correction
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def patch(path: str, old: str, new: str, count: int = 1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrence(s), found {actual}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, count))
+
+          patch(
+              'src/lib/rdash/server/commit-rest.ts',
+              '''    const { data, error } = await admin\n      .from(table)\n      .select("id,revision,data")\n      .eq("workspace_id", workspaceId);\n    if (error || !data) return { collection, rows: [] };\n    return { collection, rows: data as RestEntityRow[] };''',
+              '''    const { data, error } = await admin\n      .from(table)\n      .select("id,revision,data")\n      .eq("workspace_id", workspaceId);\n    if (error) {\n      throw new Error(`Could not read workspace collection ${collection}: ${error.message}`);\n    }\n    return { collection, rows: (data || []) as RestEntityRow[] };'''
+          )
+
+          old_reset = '''export async function resetRestWorkspace(): Promise<{\n  revision: number;\n  data: RDashDatabase;\n  updatedAt: string;\n}> {\n  const admin = getSupabaseAdminClient();\n  const tables = Object.values(COLLECTION_TO_TABLE);\n  await Promise.all(\n    tables.map(async (table) => {\n      try {\n        await admin.from(table).delete().eq("workspace_id", workspaceId);\n      } catch {\n        // Existing reset behavior is intentionally preserved for now.\n      }\n    }),\n  );\n\n  await admin.from("entity_workspace_revision").upsert(\n    {\n      id: workspaceId,\n      workspace_id: workspaceId,\n      revision: 0,\n      updated_at: new Date().toISOString(),\n    },\n    { onConflict: "id" },\n  );\n\n  const { buildSeedDatabase } = await import("../seed");\n  const { diffWorkspaceOperations } = await import("../workspace-operations");\n  const seedData = buildSeedDatabase() as RDashDatabase;\n  const emptyDb = structuredClone(seedData) as any;\n  for (const key of Object.keys(emptyDb)) {\n    if (Array.isArray(emptyDb[key])) emptyDb[key] = [];\n  }\n  if (emptyDb.master) {\n    for (const key of Object.keys(emptyDb.master)) {\n      if (Array.isArray(emptyDb.master[key])) emptyDb.master[key] = [];\n    }\n  }\n\n  const operations = diffWorkspaceOperations(emptyDb, seedData);\n  if (operations.length > 0) {\n    await commitRestOperations(operations, 0, {});\n  }\n  return getRestWorkspace();\n}'''
+          new_reset = '''export async function resetRestWorkspace(): Promise<{\n  revision: number;\n  data: RDashDatabase;\n  updatedAt: string;\n}> {\n  // RESET is a normal canonical workspace transaction with a larger operation\n  // set. Reading first and committing against that exact revision means the\n  // existing PostgreSQL revision-row lock serializes RESET with every normal\n  // commit. If anything changes while the snapshot is being assembled, the\n  // atomic commit fails with CONFLICT instead of producing a mixed workspace.\n  const current = await getRestWorkspace();\n  const { buildSeedDatabase } = await import("../seed");\n  const { diffWorkspaceOperations } = await import("../workspace-operations");\n  const seedData = buildSeedDatabase() as RDashDatabase;\n\n  // Reset data must already use the one canonical Customer conversation ID.\n  // Doing this before the atomic diff avoids a second post-reset transaction.\n  const customerIds = new Set(seedData.customers.map((customer) => customer.id));\n  seedData.threads = seedData.threads.map((thread) => (\n    thread.kind === "generic" && customerIds.has(thread.record_id)\n      ? { ...thread, record_id: `customer-conversation:${thread.record_id}` }\n      : thread\n  ));\n\n  const operations = diffWorkspaceOperations(current.data, seedData);\n  if (!operations.length) return current;\n\n  await commitRestOperations(operations, current.revision, {});\n  return getRestWorkspace();\n}'''
+          patch('src/lib/rdash/server/commit-rest.ts', old_reset, new_reset)
+
+          old_workspace = '''async function canonicalizeResetCustomerThreads(snapshot: WorkspaceSnapshot): Promise<WorkspaceSnapshot> {\n  const customerIds = new Set(snapshot.data.customers.map((customer) => customer.id));\n  const changed = snapshot.data.threads.flatMap((thread) => {\n    if (thread.kind !== "generic" || !customerIds.has(thread.record_id)) return [];\n    return [{ ...thread, record_id: `customer-conversation:${thread.record_id}` }];\n  });\n  if (!changed.length) return snapshot;\n\n  const committed = await commitWorkspaceOperations(snapshot.revision, [\n    {\n      collection: "threads",\n      upsert: changed as unknown as Array<Record<string, unknown>>,\n    },\n  ]);\n  const saved = await getWorkspace();\n  return {\n    ...saved,\n    revision: committed.revision,\n    bumpedRowVersions: committed.bumpedRowVersions,\n  };\n}\n\nexport async function resetWorkspace(user: AuthenticatedUser, confirmation: string): Promise<WorkspaceSnapshot> {\n  assertWorkspaceResetRequest(user, confirmation);\n  await assertSupabaseSchemaReady();\n  const { resetWorkspaceChangeJournal } = await import("./workspace-change-reset");\n  const { resetRestWorkspace } = await getRestModule();\n  await resetWorkspaceChangeJournal();\n  const reset = await resetRestWorkspace();\n  return canonicalizeResetCustomerThreads(reset);\n}'''
+          new_workspace = '''export async function resetWorkspace(user: AuthenticatedUser, confirmation: string): Promise<WorkspaceSnapshot> {\n  assertWorkspaceResetRequest(user, confirmation);\n  await assertSupabaseSchemaReady();\n  const { resetRestWorkspace } = await getRestModule();\n  return resetRestWorkspace();\n}'''
+          patch('src/lib/rdash/server/workspace.ts', old_workspace, new_workspace)
+
+          reset_helper = Path('src/lib/rdash/server/workspace-change-reset.ts')
+          if not reset_helper.exists():
+              raise SystemExit('Expected obsolete workspace-change-reset.ts to exist before removal.')
+          reset_helper.unlink()
+
+          old_test = '''  test("resets journal history before revision numbers restart and canonicalizes reset data", async () => {\n    const reset = await testFile("src/lib/rdash/server/workspace-change-reset.ts").text();\n    const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();\n    expect(reset).toContain('from("entity_workspace_change_batches")');\n    expect(reset).toContain("revision: 0");\n    expect(reset).toContain("is_baseline: true");\n    expect(workspace).toContain("await resetWorkspaceChangeJournal()");\n    expect(workspace).toContain("const reset = await resetRestWorkspace()");\n    expect(workspace).toContain("return canonicalizeResetCustomerThreads(reset)");\n    expect(workspace.indexOf("await resetWorkspaceChangeJournal()"))\n      .toBeLessThan(workspace.indexOf("const reset = await resetRestWorkspace()"));\n    expect(workspace.indexOf("const reset = await resetRestWorkspace()"))\n      .toBeLessThan(workspace.indexOf("return canonicalizeResetCustomerThreads(reset)"));\n  });'''
+          new_test = '''  test("runs destructive reset through the same atomic revision-CAS transaction", async () => {\n    const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();\n    const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();\n\n    expect(rest).toContain("const current = await getRestWorkspace()");\n    expect(rest).toContain("diffWorkspaceOperations(current.data, seedData)");\n    expect(rest).toContain("commitRestOperations(operations, current.revision, {})");\n    expect(rest).toContain("customer-conversation:${thread.record_id}");\n    expect(rest).toContain("Could not read workspace collection ${collection}");\n    expect(rest).not.toContain("Existing reset behavior is intentionally preserved for now");\n    expect(rest).not.toContain('revision: 0,\\n      updated_at: new Date().toISOString()');\n    expect(workspace).not.toContain("resetWorkspaceChangeJournal");\n    expect(workspace).not.toContain("canonicalizeResetCustomerThreads");\n    expect(workspace).toContain("return resetRestWorkspace()");\n  });'''
+          patch('tests/workspace-delta-sync.test.ts', old_test, new_test)
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused reset and lifecycle regressions
+        run: npx vitest run tests/workspace-delta-sync.test.ts tests/runtime-efficiency-hardening.test.ts tests/workspace-client-delta-sync.test.ts tests/workspace-session-merge.test.ts tests/phase2b-targeted-commit.test.ts tests/workspace-module-scoped-read.test.ts tests/workspace-entity-scoped-read.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Commit validated reset fix
+        shell: bash
+        run: |
+          git config user.name "akarshsinghxolo-cell"
+          git config user.email "akarshsinghxolo@gmail.com"
+          git add src tests
+          if git diff --cached --quiet; then
+            echo "No application changes to commit"
+            exit 0
+          fi
+          git commit -m "Make workspace reset atomic and monotonic"
+          git push origin HEAD:agent/page-entity-egress-architecture
