@@ -1,0 +1,318 @@
+name: Agent final audit corrections
+
+on:
+  push:
+    branches: [agent/page-entity-egress-architecture]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.head_commit.message == 'Validate final audit corrections'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/page-entity-egress-architecture
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Apply final audited corrections
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def patch(path: str, old: str, new: str, count: int = 1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrence(s), found {actual}: {old[:120]!r}')
+              p.write_text(text.replace(old, new, count))
+
+          # Row-version state needs explicit tombstones; max-merge alone revives
+          # deleted keys and breaks delete->recreate CAS.
+          patch(
+              'src/lib/rdash/workspace-row-version-state.ts',
+              '''export function mergeWorkspaceRowVersions(\n  current: WorkspaceRowVersions,\n  changed: WorkspaceRowVersions,\n  deletedKeys: readonly string[] = [],\n): WorkspaceRowVersions {\n  const next = {\n    ...normalizedRowVersions(current),\n    ...normalizedRowVersions(changed),\n  };\n  for (const key of deletedKeys) delete next[key];\n  return next;\n}\n''',
+              '''export function mergeWorkspaceRowVersions(\n  current: WorkspaceRowVersions,\n  changed: WorkspaceRowVersions,\n  deletedKeys: readonly string[] = [],\n): WorkspaceRowVersions {\n  const next = {\n    ...normalizedRowVersions(current),\n    ...normalizedRowVersions(changed),\n  };\n  for (const key of deletedKeys) delete next[key];\n  return next;\n}\n\nexport function deletedWorkspaceOperationVersionKeys(\n  operations: ReadonlyArray<{ collection: string; deleteIds?: readonly string[] }>,\n): string[] {\n  const keys = new Set<string>();\n  for (const operation of operations) {\n    for (const rawId of operation.deleteIds || []) {\n      const id = String(rawId || "").trim();\n      if (!id) continue;\n      keys.add(id);\n      keys.add(`${operation.collection}:${id}`);\n    }\n  }\n  return [...keys];\n}\n'''
+          )
+          patch(
+              'src/lib/rdash/workspace-row-version-state.ts',
+              '''  merge(input: WorkspaceRowVersions | undefined): void {\n    snapshot = mergeWorkspaceRowVersions(snapshot, input || {});\n  },\n  resetForTests(): void {''',
+              '''  merge(input: WorkspaceRowVersions | undefined): void {\n    snapshot = mergeWorkspaceRowVersions(snapshot, input || {});\n  },\n  remove(keys: readonly string[]): void {\n    snapshot = mergeWorkspaceRowVersions(snapshot, {}, keys);\n  },\n  resetForTests(): void {'''
+          )
+
+          # Keep tombstone derivation exactly aligned with the session merge rule.
+          patch(
+              'src/lib/rdash/workspace-session-merge.ts',
+              '''function copyReadMetadata(target: RDashDatabase, source: RDashDatabase): void {''',
+              '''function collectionMergesPartially(database: RDashDatabase, collection: string): boolean {\n  const incomingMeta = metadata(database);\n  const strategy = String(incomingMeta._workspace_read_strategy || "");\n  const scope = String(incomingMeta._workspace_read_scope || "");\n  const mode = String(incomingMeta._workspace_read_mode || "");\n  const pageOnly = incomingMeta._workspace_page_only === true;\n  const bootstrap = scope === "bootstrap" || mode === "bootstrap";\n  const staffProjection = String(incomingMeta._workspace_staff_projection || "");\n  return pageOnly\n    || strategy === "row"\n    || (\n      collection === "master.staff"\n      && !bootstrap\n      && staffProjection !== "full"\n    );\n}\n\nexport function workspaceSnapshotRemovedRowVersionKeys(\n  current: RDashDatabase,\n  incoming: RDashDatabase,\n): string[] {\n  const removed = new Set<string>();\n  for (const collection of representedCollections(incoming)) {\n    if (collectionMergesPartially(incoming, collection)) continue;\n    const incomingIds = new Set(\n      rowsFor(incoming, collection)\n        .map((row) => String(row.id || "").trim())\n        .filter(Boolean),\n    );\n    for (const row of rowsFor(current, collection)) {\n      const id = String(row.id || "").trim();\n      if (!id || incomingIds.has(id)) continue;\n      removed.add(id);\n      removed.add(`${collection}:${id}`);\n    }\n  }\n  return [...removed];\n}\n\nfunction copyReadMetadata(target: RDashDatabase, source: RDashDatabase): void {'''
+          )
+          patch(
+              'src/lib/rdash/workspace-session-merge.ts',
+              '''  const incomingMeta = metadata(incoming);\n  const strategy = String(incomingMeta._workspace_read_strategy || "");\n  const scope = String(incomingMeta._workspace_read_scope || "");\n  const mode = String(incomingMeta._workspace_read_mode || "");\n  const pageOnly = incomingMeta._workspace_page_only === true;\n  const bootstrap = scope === "bootstrap" || mode === "bootstrap";\n  const staffProjection = String(incomingMeta._workspace_staff_projection || "");\n  const represented = representedCollections(incoming);\n\n  for (const collection of represented) {\n    const incomingRows = rowsFor(incoming, collection);\n    const mergePartial =\n      pageOnly\n      || strategy === "row"\n      || (\n        collection === "master.staff"\n        && !bootstrap\n        && staffProjection !== "full"\n      );''',
+              '''  const incomingMeta = metadata(incoming);\n  const represented = representedCollections(incoming);\n\n  for (const collection of represented) {\n    const incomingRows = rowsFor(incoming, collection);\n    const mergePartial = collectionMergesPartially(incoming, collection);'''
+          )
+
+          patch(
+              'src/lib/rdash/store/types.ts',
+              '''    user: AuthenticatedWorkspaceUser;\n    rowVersions?: Record<string, number>;\n  }) => boolean;\n  acceptWorkspaceServerRevision: (input: {\n    revision: number;\n    rowVersions?: Record<string, number>;\n  }) => void;''',
+              '''    user: AuthenticatedWorkspaceUser;\n    rowVersions?: Record<string, number>;\n    deletedRowVersionKeys?: string[];\n  }) => boolean;\n  acceptWorkspaceServerRevision: (input: {\n    revision: number;\n    rowVersions?: Record<string, number>;\n    deletedRowVersionKeys?: string[];\n  }) => void;'''
+          )
+
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent } from "./workspace-session-merge";''',
+              '''import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent, workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''import { workspaceRowVersionState } from "./workspace-row-version-state";''',
+              '''import { deletedWorkspaceOperationVersionKeys, workspaceRowVersionState } from "./workspace-row-version-state";'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''import { awaitWorkspaceOutboxIdle, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";''',
+              '''import { beginWorkspaceOutboxResetBarrier, cancelWorkspaceOutboxResetBarrier, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''                rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, payload.rowVersions);\n                setBase({''',
+              '''                const acceptedOperations = Array.isArray(payload.patches) ? payload.patches : operations;\n                const deletedVersionKeys = deletedWorkspaceOperationVersionKeys(acceptedOperations);\n                rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, payload.rowVersions);\n                for (const key of deletedVersionKeys) {\n                    if (rowVersionsCache) delete rowVersionsCache[key];\n                }\n                workspaceRowVersionState.merge(payload.rowVersions);\n                workspaceRowVersionState.remove(deletedVersionKeys);\n                setBase({'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''        acceptWorkspaceServerRevision: ({ revision, rowVersions }) => {\n            const current = get();''',
+              '''        acceptWorkspaceServerRevision: ({ revision, rowVersions, deletedRowVersionKeys }) => {\n            const current = get();'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);\n            setBase({''',
+              '''            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);\n            for (const key of deletedRowVersionKeys || []) {\n                if (rowVersionsCache) delete rowVersionsCache[key];\n            }\n            workspaceRowVersionState.merge(rowVersions);\n            workspaceRowVersionState.remove(deletedRowVersionKeys || []);\n            setBase({''',
+              1,
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''        hydrateSecureWorkspace: ({ db, revision, user, rowVersions }) => {\n            const current = get();''',
+              '''        hydrateSecureWorkspace: ({ db, revision, user, rowVersions, deletedRowVersionKeys }) => {\n            const current = get();'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            const accepted = mergeWorkspaceSnapshot(current.db, db);\n            const nextRevision = revision;''',
+              '''            const removedVersionKeys = [\n                ...workspaceSnapshotRemovedRowVersionKeys(current.db, db),\n                ...(deletedRowVersionKeys || []),\n            ];\n            const accepted = mergeWorkspaceSnapshot(current.db, db);\n            const nextRevision = revision;'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);\n            const selectedCustomerId = current.selectedCustomerId;''',
+              '''            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);\n            for (const key of removedVersionKeys) {\n                if (rowVersionsCache) delete rowVersionsCache[key];\n            }\n            const selectedCustomerId = current.selectedCustomerId;'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            await serverSyncQueue.catch(() => undefined);\n            await awaitWorkspaceOutboxIdle();\n            syncEpoch += 1;''',
+              '''            await beginWorkspaceOutboxResetBarrier();\n            await serverSyncQueue.catch(() => undefined);\n            syncEpoch += 1;'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            catch {\n                restoreAcceptedWorkspace("Could not reach the server. The workspace was not reset.");\n                throw new Error("Could not reach the server. The workspace was not reset.");\n            }''',
+              '''            catch {\n                cancelWorkspaceOutboxResetBarrier();\n                restoreAcceptedWorkspace("Could not reach the server. The workspace was not reset.");\n                throw new Error("Could not reach the server. The workspace was not reset.");\n            }'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            if (!response.ok || !payload.data || typeof payload.revision !== "number") {\n                restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.");''',
+              '''            if (!response.ok || !payload.data || typeof payload.revision !== "number") {\n                cancelWorkspaceOutboxResetBarrier();\n                restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.");'''
+          )
+          patch(
+              'src/lib/rdash/raw-store.ts',
+              '''            try {\n                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);\n            } catch (error) {\n                console.error("[workspace-reset] Could not clear local pending changes after reset.", error);\n            }\n            serverSyncQueue = Promise.resolve();\n            setBase({\n                db: accepted,\n                serverRevision: payload.revision,\n                workspaceSyncStatus: "saved",\n                workspaceSyncError: null,\n            });\n            window.location.reload();''',
+              '''            serverSyncQueue = Promise.resolve();\n            setBase({\n                db: accepted,\n                serverRevision: payload.revision,\n                workspaceSyncStatus: "saved",\n                workspaceSyncError: null,\n            });\n            try {\n                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);\n            } catch (error) {\n                const message = "The workspace was reset on the server, but old local pending changes could not be cleared. This tab has paused background replay; keep it open and retry after closing other Urban Castle tabs.";\n                console.error("[workspace-reset] Local cleanup failed after server reset.", error);\n                setBase({ workspaceSyncStatus: "error", workspaceSyncError: message });\n                throw new Error(message, { cause: error });\n            }\n            window.location.reload();'''
+          )
+
+          # The bridge mirrors both authoritative versions and tombstones only
+          # after the store accepts the same snapshot revision.
+          patch(
+              'src/lib/rdash/use-workspace-row-version-bridge.ts',
+              '''import { workspaceRowVersionState } from "./workspace-row-version-state";''',
+              '''import { workspaceRowVersionState } from "./workspace-row-version-state";\nimport { workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";'''
+          )
+          patch(
+              'src/lib/rdash/use-workspace-row-version-bridge.ts',
+              '''    const wrapped: typeof original = (input) => {\n      const accepted = original(input);\n      if (accepted) workspaceRowVersionState.merge(input.rowVersions);\n      return accepted;\n    };''',
+              '''    const wrapped: typeof original = (input) => {\n      const removedVersionKeys = [\n        ...workspaceSnapshotRemovedRowVersionKeys(useRDashStore.getState().db, input.db),\n        ...(input.deletedRowVersionKeys || []),\n      ];\n      const accepted = original(input);\n      if (accepted) {\n        workspaceRowVersionState.merge(input.rowVersions);\n        workspaceRowVersionState.remove(removedVersionKeys);\n      }\n      return accepted;\n    };'''
+          )
+
+          # Reset barrier prevents a new timer/focus replay from starting while
+          # the destructive reset request is in flight.
+          patch(
+              'src/lib/uploads/workspace-outbox.ts',
+              '''let acceptedRevision = 0;\nlet activeScope: { workspaceId: string; ownerUserId: string } | null = null;''',
+              '''let acceptedRevision = 0;\nlet resetBarrier = false;\nlet activeScope: { workspaceId: string; ownerUserId: string } | null = null;'''
+          )
+          patch(
+              'src/lib/uploads/workspace-outbox.ts',
+              '''export async function awaitWorkspaceOutboxIdle(): Promise<void> {\n  const pending = flushPromise;\n  if (!pending) return;\n  try {\n    await pending;\n  } catch {\n    // Reset is authoritative; a failed replay must not prevent the Owner from resetting.\n  }\n}\n''',
+              '''export async function beginWorkspaceOutboxResetBarrier(): Promise<void> {\n  resetBarrier = true;\n  const pending = flushPromise;\n  if (!pending) return;\n  try {\n    await pending;\n  } catch {\n    // Reset is authoritative; a failed replay must not prevent the Owner from resetting.\n  }\n}\n\nexport function cancelWorkspaceOutboxResetBarrier(): void {\n  if (!resetBarrier) return;\n  resetBarrier = false;\n  if (typeof window !== "undefined") {\n    window.dispatchEvent(new CustomEvent("uc-workspace-outbox-kick"));\n  }\n}\n'''
+          )
+          patch(
+              'src/lib/uploads/workspace-outbox.ts',
+              '''  const items = await readScopedWorkspaceOutbox();\n  for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);\n  await refresh();\n}''',
+              '''  const items = await readScopedWorkspaceOutbox();\n  try {\n    for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);\n  } catch {\n    // The outbox belongs to local recovery only. If scoped cleanup itself fails\n    // after a destructive workspace reset, prefer clearing the local outbox to\n    // ever replaying pre-reset operations into the new revision epoch.\n    await uploadIndexedDb.clearWorkspaceOutbox();\n  }\n  await refresh();\n  const remaining = await readScopedWorkspaceOutbox();\n  if (remaining.length) throw new Error("Old workspace outbox entries survived reset cleanup.");\n}'''
+          )
+          patch(
+              'src/lib/uploads/workspace-outbox.ts',
+              '''export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult> {\n  if (flushPromise) return flushPromise;''',
+              '''export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult> {\n  if (resetBarrier) return { replayed: false, conflict: false };\n  if (flushPromise) return flushPromise;'''
+          )
+
+          # Navigation must not revalidate an old server revision while an
+          # optimistic local save is still queued.
+          patch(
+              'src/components/urban-castle/WorkspaceScopedReadBoundary.tsx',
+              '''    const revalidateCachedScope = async (): Promise<void> => {\n      const cached = workspaceReadCache.get(requestedTarget, authUser);''',
+              '''    const revalidateCachedScope = async (): Promise<void> => {\n      await useRDashStore.getState().awaitServerSync().catch(() => undefined);\n      if (!requestStillCurrent()) return;\n      const cached = workspaceReadCache.get(requestedTarget, authUser);'''
+          )
+          patch(
+              'src/components/urban-castle/WorkspaceScopedReadBoundary.tsx',
+              '''        useRDashStore.getState().acceptWorkspaceServerRevision({\n          revision: result.entry.revision,\n          rowVersions: result.entry.rowVersions,\n        });''',
+              '''        useRDashStore.getState().acceptWorkspaceServerRevision({\n          revision: result.entry.revision,\n          rowVersions: result.entry.rowVersions,\n          deletedRowVersionKeys: result.deletedRowVersionKeys,\n        });'''
+          )
+          patch(
+              'src/components/urban-castle/WorkspaceScopedReadBoundary.tsx',
+              '''        rowVersions: result.entry.rowVersions,\n      });\n      if (!hydrated) {''',
+              '''        rowVersions: result.entry.rowVersions,\n        deletedRowVersionKeys: result.deletedRowVersionKeys,\n      });\n      if (!hydrated) {''',
+              1,
+          )
+          patch(
+              'src/components/urban-castle/WorkspaceScopedReadBoundary.tsx',
+              '''  const loadMore = React.useCallback(async () => {\n    if (!authUser || pageLoading || needsExpansion) return;\n    const cursors = Object.entries(workspacePageState(useRDashStore.getState().db))\n      .filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null)\n      .slice(0, MAX_COLLECTION_PAGES_PER_REQUEST);\n    if (!cursors.length) return;\n\n    setPageLoading(true);\n    setPageError(undefined);\n    try {\n      const params = new URLSearchParams();''',
+              '''  const loadMore = React.useCallback(async () => {\n    if (!authUser || pageLoading || needsExpansion) return;\n\n    setPageLoading(true);\n    setPageError(undefined);\n    try {\n      await useRDashStore.getState().awaitServerSync().catch(() => undefined);\n      const pageBaseRevision = useRDashStore.getState().serverRevision;\n      const cursors = Object.entries(workspacePageState(useRDashStore.getState().db))\n        .filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null)\n        .slice(0, MAX_COLLECTION_PAGES_PER_REQUEST);\n      if (!cursors.length) return;\n\n      const params = new URLSearchParams();'''
+          )
+          patch(
+              'src/components/urban-castle/WorkspaceScopedReadBoundary.tsx',
+              '''      if (payload.revision !== latest.serverRevision || latest.serverRevision !== serverRevision) {''',
+              '''      if (payload.revision !== latest.serverRevision || latest.serverRevision !== pageBaseRevision) {'''
+          )
+
+          # Navigation delta carries tombstones across multiple delta pages.
+          patch(
+              'src/lib/rdash/workspace-navigation-delta.ts',
+              '''export type WorkspaceNavigationRevalidationResult =\n  | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean }''',
+              '''export type WorkspaceNavigationRevalidationResult =\n  | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean; deletedRowVersionKeys: string[] }'''
+          )
+          patch(
+              'src/lib/rdash/workspace-navigation-delta.ts',
+              '''  let afterRevision = entry.revision;\n  let changed = false;''',
+              '''  let afterRevision = entry.revision;\n  let changed = false;\n  const deletedRowVersionKeys = new Set<string>();'''
+          )
+          patch(
+              'src/lib/rdash/workspace-navigation-delta.ts',
+              '''        ? { kind: "reload", reason: "delta_did_not_advance" }\n        : { kind: "fresh", entry, changed };''',
+              '''        ? { kind: "reload", reason: "delta_did_not_advance" }\n        : { kind: "fresh", entry, changed, deletedRowVersionKeys: [...deletedRowVersionKeys] };'''
+          )
+          patch(
+              'src/lib/rdash/workspace-navigation-delta.ts',
+              '''    const applied = applyWorkspaceDelta(entry.data, delta);\n    const rowVersions = mergeWorkspaceRowVersions(\n      entry.rowVersions || {},\n      expandedDeltaRowVersions(delta),\n      deletedDeltaVersionKeys(delta),\n    );''',
+              '''    const applied = applyWorkspaceDelta(entry.data, delta);\n    const changedRowVersions = expandedDeltaRowVersions(delta);\n    const deletedKeys = deletedDeltaVersionKeys(delta);\n    for (const key of Object.keys(changedRowVersions)) deletedRowVersionKeys.delete(key);\n    for (const key of deletedKeys) deletedRowVersionKeys.add(key);\n    const rowVersions = mergeWorkspaceRowVersions(\n      entry.rowVersions || {},\n      changedRowVersions,\n      deletedKeys,\n    );'''
+          )
+          patch(
+              'src/lib/rdash/workspace-navigation-delta.ts',
+              '''    if (!delta.hasMore) return { kind: "fresh", entry, changed };''',
+              '''    if (!delta.hasMore) return { kind: "fresh", entry, changed, deletedRowVersionKeys: [...deletedRowVersionKeys] };'''
+          )
+
+          # Direct shell/foundation deltas pass their tombstones to hydration.
+          patch(
+              'src/components/urban-castle/WorkspaceDeltaSync.tsx',
+              '''            rowVersions: mergedRowVersions,\n          });''',
+              '''            rowVersions: mergedRowVersions,\n            deletedRowVersionKeys: deletedDeltaVersionKeys(delta),\n          });''',
+              1,
+          )
+          patch(
+              'src/components/urban-castle/WorkspaceFoundationSync.tsx',
+              '''              rowVersions,\n            });\n            if (!hydrated) return;''',
+              '''              rowVersions,\n              deletedRowVersionKeys: deletedDeltaVersionKeys(delta),\n            });\n            if (!hydrated) return;'''
+          )
+          patch(
+              'src/components/urban-castle/WorkspaceFoundationSync.tsx',
+              '''          if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {\n            await reloadFoundation(controller.signal);''',
+              '''          if (delta.requiresFullReload && delta.reason === "client_ahead") {\n            window.location.reload();\n            return;\n          }\n          if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {\n            await reloadFoundation(controller.signal);'''
+          )
+
+          # Outbox replay commit acceptance must update/delete CAS metadata too.
+          patch(
+              'src/components/uploads/UploadManagerProvider.tsx',
+              '''import { useRDashStore } from "@/lib/rdash/store";''',
+              '''import { useRDashStore } from "@/lib/rdash/store";\nimport { deletedWorkspaceOperationVersionKeys } from "@/lib/rdash/workspace-row-version-state";'''
+          )
+          patch(
+              'src/components/uploads/UploadManagerProvider.tsx',
+              '''          rowVersions: result.payload.rowVersions,\n        });''',
+              '''          rowVersions: result.payload.rowVersions,\n          deletedRowVersionKeys: deletedWorkspaceOperationVersionKeys(result.payload.patches || []),\n        });'''
+          )
+
+          # Bootstrap must not mark the shell ready if hydration rejects it.
+          patch(
+              'src/components/rdash/RDashApp.tsx',
+              '''            useRDashStore.getState().hydrateSecureWorkspace({\n                db: payload.data,\n                revision: payload.revision,\n                user: payload.user,\n                rowVersions: payload.rowVersions,\n            });\n            workspaceFoundationRevisionState.replace(payload.revision);''',
+              '''            const hydrated = useRDashStore.getState().hydrateSecureWorkspace({\n                db: payload.data,\n                revision: payload.revision,\n                user: payload.user,\n                rowVersions: payload.rowVersions,\n            });\n            if (!hydrated)\n                throw new Error("The workspace bootstrap was older than the active browser session. Reload to establish a clean revision epoch.");\n            workspaceFoundationRevisionState.replace(payload.revision);'''
+          )
+
+          # Focused regression coverage.
+          patch(
+              'tests/workspace-session-merge.test.ts',
+              '''  workspaceHydrationRevisionIsCurrent,\n  WORKSPACE_SESSION_FOUNDATION_COLLECTIONS,''',
+              '''  workspaceHydrationRevisionIsCurrent,\n  workspaceSnapshotRemovedRowVersionKeys,\n  WORKSPACE_SESSION_FOUNDATION_COLLECTIONS,'''
+          )
+          patch(
+              'tests/workspace-session-merge.test.ts',
+              '''  test("normalization does not synthesize threads or follow-ups", () => {''',
+              '''  test("derives CAS tombstones only for authoritative collection replacement", () => {\n    const current = empty();\n    current.tasks = [\n      { id: "task-keep", title: "Keep" },\n      { id: "task-remove", title: "Remove" },\n    ] as never;\n\n    const complete = empty();\n    complete.tasks = [{ id: "task-keep", title: "Keep" }] as never;\n    Object.assign(complete as unknown as Record<string, unknown>, {\n      _workspace_read_scope: "workdesk",\n      _workspace_read_mode: "workdesk",\n      _workspace_read_strategy: "full",\n      _workspace_read_collections: ["tasks"],\n    });\n    expect(workspaceSnapshotRemovedRowVersionKeys(current, complete)).toEqual(\n      expect.arrayContaining(["task-remove", "tasks:task-remove"]),\n    );\n\n    const partial = structuredClone(complete);\n    Object.assign(partial as unknown as Record<string, unknown>, {\n      _workspace_read_strategy: "row",\n    });\n    expect(workspaceSnapshotRemovedRowVersionKeys(current, partial)).toEqual([]);\n  });\n\n  test("normalization does not synthesize threads or follow-ups", () => {'''
+          )
+
+          patch(
+              'tests/runtime-efficiency-hardening.test.ts',
+              '''    expect(rawStore).toContain("await serverSyncQueue.catch(() => undefined)");\n    expect(rawStore).toContain("await awaitWorkspaceOutboxIdle()");''',
+              '''    expect(rawStore).toContain("await beginWorkspaceOutboxResetBarrier()");\n    expect(rawStore).toContain("await serverSyncQueue.catch(() => undefined)");'''
+          )
+          patch(
+              'tests/runtime-efficiency-hardening.test.ts',
+              '''    expect(outbox).toContain("resetWorkspaceOutboxAfterWorkspaceReset");\n    expect(outbox).toContain("await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId)");''',
+              '''    expect(outbox).toContain("beginWorkspaceOutboxResetBarrier");\n    expect(outbox).toContain("if (resetBarrier) return { replayed: false, conflict: false }");\n    expect(outbox).toContain("resetWorkspaceOutboxAfterWorkspaceReset");\n    expect(outbox).toContain("await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId)");'''
+          )
+          patch(
+              'tests/workspace-navigation-revalidation.test.ts',
+              '''    expect(source).toContain("revalidateWorkspaceReadCacheEntry");''',
+              '''    expect(source).toContain("revalidateWorkspaceReadCacheEntry");\n    expect(source).toContain("await useRDashStore.getState().awaitServerSync().catch(() => undefined)");'''
+          )
+          patch(
+              'tests/workspace-navigation-revalidation.test.ts',
+              '''    expect(source).toContain("changed = changed || deltaChanged");''',
+              '''    expect(source).toContain("changed = changed || deltaChanged");\n    expect(source).toContain("deletedRowVersionKeys");\n    expect(source).toContain("deletedDeltaVersionKeys(delta)");'''
+          )
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused regressions
+        run: npx vitest run tests/workspace-session-merge.test.ts tests/runtime-efficiency-hardening.test.ts tests/workspace-navigation-revalidation.test.ts tests/workspace-client-delta-sync.test.ts tests/workspace-delta-sync.test.ts tests/workspace-entity-scoped-read.test.ts tests/workspace-module-scoped-read.test.ts tests/workspace-bootstrap-scoped-flow.test.ts tests/phase2b-targeted-commit.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+      - name: Commit validated corrections
+        shell: bash
+        run: |
+          git config user.name "akarshsinghxolo-cell"
+          git config user.email "akarshsinghxolo@gmail.com"
+          git add src tests
+          if git diff --cached --quiet; then
+            echo "No application changes to commit"
+            exit 0
+          fi
+          git commit -m "Close final workspace lifecycle audit gaps"
+          git push origin HEAD:agent/page-entity-egress-architecture
