@@ -156,6 +156,10 @@ export function WorkspaceFoundationSync(): null {
           if (!response.ok) return;
 
           const delta = await response.json() as WorkspaceDeltaPayload;
+          if (delta.requiresFullReload && delta.reason === "client_ahead") {
+            window.location.reload();
+            return;
+          }
           if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
             await reloadFoundation(controller.signal);
             return;
@@ -180,6 +184,7 @@ export function WorkspaceFoundationSync(): null {
               revision: delta.revision,
               user: latest.authUser!,
               rowVersions,
+              deletedRowVersionKeys: deletedDeltaVersionKeys(delta),
             });
             if (!hydrated) return;
           } else {

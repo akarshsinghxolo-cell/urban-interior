@@ -4,6 +4,7 @@ import {
   mergeWorkspaceSnapshot,
   normalizeWorkspaceSession,
   workspaceHydrationRevisionIsCurrent,
+  workspaceSnapshotRemovedRowVersionKeys,
   WORKSPACE_SESSION_FOUNDATION_COLLECTIONS,
 } from "@/lib/rdash/workspace-session-merge";
 import type { RDashDatabase } from "@/lib/rdash/types";
@@ -63,6 +64,32 @@ describe("workspace session merge", () => {
     expect(workspaceHydrationRevisionIsCurrent(11, 11, 10, 9)).toBe(true);
     expect(workspaceHydrationRevisionIsCurrent(12, 11, 10, 9)).toBe(true);
     expect(workspaceHydrationRevisionIsCurrent(Number.NaN, 11)).toBe(false);
+  });
+
+  test("derives CAS tombstones only for authoritative collection replacement", () => {
+    const current = createEmptyWorkspaceDatabase();
+    current.tasks = [
+      { id: "task-keep", title: "Keep" },
+      { id: "task-remove", title: "Remove" },
+    ] as never;
+
+    const complete = createEmptyWorkspaceDatabase();
+    complete.tasks = [{ id: "task-keep", title: "Keep" }] as never;
+    Object.assign(complete as unknown as Record<string, unknown>, {
+      _workspace_read_scope: "workdesk",
+      _workspace_read_mode: "workdesk",
+      _workspace_read_strategy: "full",
+      _workspace_read_collections: ["tasks"],
+    });
+    expect(workspaceSnapshotRemovedRowVersionKeys(current, complete)).toEqual(
+      expect.arrayContaining(["task-remove", "tasks:task-remove"]),
+    );
+
+    const partial = structuredClone(complete);
+    Object.assign(partial as unknown as Record<string, unknown>, {
+      _workspace_read_strategy: "row",
+    });
+    expect(workspaceSnapshotRemovedRowVersionKeys(current, partial)).toEqual([]);
   });
 
   test("normalization does not synthesize threads or follow-ups", () => {

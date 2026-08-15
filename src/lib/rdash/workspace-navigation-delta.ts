@@ -15,7 +15,7 @@ import type { WorkspaceReadCacheEntry } from "./workspace-read-cache";
 const MAX_DELTA_PAGES_PER_NAVIGATION = 5;
 
 export type WorkspaceNavigationRevalidationResult =
-  | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean }
+  | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean; deletedRowVersionKeys: string[] }
   | { kind: "reload"; reason: string }
   | { kind: "unauthorized" };
 
@@ -85,6 +85,7 @@ export async function revalidateWorkspaceReadCacheEntry(
   };
   let afterRevision = entry.revision;
   let changed = false;
+  const deletedRowVersionKeys = new Set<string>();
 
   for (let page = 0; page < MAX_DELTA_PAGES_PER_NAVIGATION; page += 1) {
     if (signal.aborted) throw new DOMException("Navigation delta aborted", "AbortError");
@@ -118,7 +119,7 @@ export async function revalidateWorkspaceReadCacheEntry(
     if (delta.revision === afterRevision) {
       return delta.hasMore
         ? { kind: "reload", reason: "delta_did_not_advance" }
-        : { kind: "fresh", entry, changed };
+        : { kind: "fresh", entry, changed, deletedRowVersionKeys: [...deletedRowVersionKeys] };
     }
 
     const reloadReason = requiresScopedReload(entry, delta);
@@ -127,10 +128,14 @@ export async function revalidateWorkspaceReadCacheEntry(
     const deltaChanged = touchedCollections(delta).size > 0;
     changed = changed || deltaChanged;
     const applied = applyWorkspaceDelta(entry.data, delta);
+    const changedRowVersions = expandedDeltaRowVersions(delta);
+    const deletedKeys = deletedDeltaVersionKeys(delta);
+    for (const key of Object.keys(changedRowVersions)) deletedRowVersionKeys.delete(key);
+    for (const key of deletedKeys) deletedRowVersionKeys.add(key);
     const rowVersions = mergeWorkspaceRowVersions(
       entry.rowVersions || {},
-      expandedDeltaRowVersions(delta),
-      deletedDeltaVersionKeys(delta),
+      changedRowVersions,
+      deletedKeys,
     );
     entry = {
       ...entry,
@@ -140,7 +145,7 @@ export async function revalidateWorkspaceReadCacheEntry(
       cachedAt: Date.now(),
     };
     afterRevision = delta.revision;
-    if (!delta.hasMore) return { kind: "fresh", entry, changed };
+    if (!delta.hasMore) return { kind: "fresh", entry, changed, deletedRowVersionKeys: [...deletedRowVersionKeys] };
   }
 
   return { kind: "reload", reason: "delta_page_limit" };

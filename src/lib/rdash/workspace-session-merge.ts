@@ -97,6 +97,45 @@ function representedCollections(database: RDashDatabase): string[] {
   return [...ALL_COLLECTIONS];
 }
 
+function collectionMergesPartially(database: RDashDatabase, collection: string): boolean {
+  const incomingMeta = metadata(database);
+  const strategy = String(incomingMeta._workspace_read_strategy || "");
+  const scope = String(incomingMeta._workspace_read_scope || "");
+  const mode = String(incomingMeta._workspace_read_mode || "");
+  const pageOnly = incomingMeta._workspace_page_only === true;
+  const bootstrap = scope === "bootstrap" || mode === "bootstrap";
+  const staffProjection = String(incomingMeta._workspace_staff_projection || "");
+  return pageOnly
+    || strategy === "row"
+    || (
+      collection === "master.staff"
+      && !bootstrap
+      && staffProjection !== "full"
+    );
+}
+
+export function workspaceSnapshotRemovedRowVersionKeys(
+  current: RDashDatabase,
+  incoming: RDashDatabase,
+): string[] {
+  const removed = new Set<string>();
+  for (const collection of representedCollections(incoming)) {
+    if (collectionMergesPartially(incoming, collection)) continue;
+    const incomingIds = new Set(
+      rowsFor(incoming, collection)
+        .map((row) => String(row.id || "").trim())
+        .filter(Boolean),
+    );
+    for (const row of rowsFor(current, collection)) {
+      const id = String(row.id || "").trim();
+      if (!id || incomingIds.has(id)) continue;
+      removed.add(id);
+      removed.add(`${collection}:${id}`);
+    }
+  }
+  return [...removed];
+}
+
 function copyReadMetadata(target: RDashDatabase, source: RDashDatabase): void {
   const targetMeta = metadata(target);
   const sourceMeta = metadata(source);
@@ -199,24 +238,14 @@ export function mergeWorkspaceSnapshot(
 ): RDashDatabase {
   const next = structuredClone(current || createEmptyWorkspaceDatabase()) as RDashDatabase;
   const incomingMeta = metadata(incoming);
-  const strategy = String(incomingMeta._workspace_read_strategy || "");
   const scope = String(incomingMeta._workspace_read_scope || "");
   const mode = String(incomingMeta._workspace_read_mode || "");
-  const pageOnly = incomingMeta._workspace_page_only === true;
   const bootstrap = scope === "bootstrap" || mode === "bootstrap";
-  const staffProjection = String(incomingMeta._workspace_staff_projection || "");
   const represented = representedCollections(incoming);
 
   for (const collection of represented) {
     const incomingRows = rowsFor(incoming, collection);
-    const mergePartial =
-      pageOnly
-      || strategy === "row"
-      || (
-        collection === "master.staff"
-        && !bootstrap
-        && staffProjection !== "full"
-      );
+    const mergePartial = collectionMergesPartially(incoming, collection);
 
     setRows(
       next,

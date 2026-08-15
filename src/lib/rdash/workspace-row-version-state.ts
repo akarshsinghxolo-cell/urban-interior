@@ -25,6 +25,21 @@ export function mergeWorkspaceRowVersions(
   return next;
 }
 
+export function deletedWorkspaceOperationVersionKeys(
+  operations: ReadonlyArray<{ collection: string; deleteIds?: readonly string[] }>,
+): string[] {
+  const keys = new Set<string>();
+  for (const operation of operations) {
+    for (const rawId of operation.deleteIds || []) {
+      const id = String(rawId || "").trim();
+      if (!id) continue;
+      keys.add(id);
+      keys.add(`${operation.collection}:${id}`);
+    }
+  }
+  return [...keys];
+}
+
 /**
  * Mirrors the store's private per-row CAS cache so remote delta hydration can
  * pass a complete version map instead of replacing it with changed rows only.
@@ -38,6 +53,9 @@ export const workspaceRowVersionState = {
   },
   merge(input: WorkspaceRowVersions | undefined): void {
     snapshot = mergeWorkspaceRowVersions(snapshot, input || {});
+  },
+  remove(keys: readonly string[]): void {
+    snapshot = mergeWorkspaceRowVersions(snapshot, {}, keys);
   },
   resetForTests(): void {
     snapshot = {};

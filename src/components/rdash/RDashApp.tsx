@@ -90,12 +90,14 @@ export function RDashApp() {
                 workspaceId: payload.workspaceId || "default",
                 ownerUserId: payload.user.userId,
             });
-            useRDashStore.getState().hydrateSecureWorkspace({
+            const hydrated = useRDashStore.getState().hydrateSecureWorkspace({
                 db: payload.data,
                 revision: payload.revision,
                 user: payload.user,
                 rowVersions: payload.rowVersions,
             });
+            if (!hydrated)
+                throw new Error("The workspace bootstrap was older than the active browser session. Reload to establish a clean revision epoch.");
             workspaceFoundationRevisionState.replace(payload.revision);
             workspaceReadState.recordResponse(response);
             setSecureBootstrapReady(true);

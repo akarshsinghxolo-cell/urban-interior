@@ -37,10 +37,12 @@ export interface CoreState {
     revision: number;
     user: AuthenticatedWorkspaceUser;
     rowVersions?: Record<string, number>;
+    deletedRowVersionKeys?: string[];
   }) => boolean;
   acceptWorkspaceServerRevision: (input: {
     revision: number;
     rowVersions?: Record<string, number>;
+    deletedRowVersionKeys?: string[];
   }) => void;
   currentUser: () => CurrentUserContext;
   updateAuthUser: (patch: { name?: string }) => void;

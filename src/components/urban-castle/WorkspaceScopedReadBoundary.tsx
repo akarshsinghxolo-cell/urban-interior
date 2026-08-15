@@ -234,6 +234,8 @@ export function WorkspaceScopedReadBoundary() {
     };
 
     const revalidateCachedScope = async (): Promise<void> => {
+      await useRDashStore.getState().awaitServerSync().catch(() => undefined);
+      if (!requestStillCurrent()) return;
       const cached = workspaceReadCache.get(requestedTarget, authUser);
       if (!cached) {
         await loadFullScope();
@@ -278,6 +280,7 @@ export function WorkspaceScopedReadBoundary() {
         useRDashStore.getState().acceptWorkspaceServerRevision({
           revision: result.entry.revision,
           rowVersions: result.entry.rowVersions,
+          deletedRowVersionKeys: result.deletedRowVersionKeys,
         });
         return;
       }
@@ -289,6 +292,7 @@ export function WorkspaceScopedReadBoundary() {
         revision: result.entry.revision,
         user: authUser,
         rowVersions: result.entry.rowVersions,
+        deletedRowVersionKeys: result.deletedRowVersionKeys,
       });
       if (!hydrated) {
         clearWorkspaceAcceptedBaseline();
@@ -316,14 +320,17 @@ export function WorkspaceScopedReadBoundary() {
 
   const loadMore = React.useCallback(async () => {
     if (!authUser || pageLoading || needsExpansion) return;
-    const cursors = Object.entries(workspacePageState(useRDashStore.getState().db))
-      .filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null)
-      .slice(0, MAX_COLLECTION_PAGES_PER_REQUEST);
-    if (!cursors.length) return;
 
     setPageLoading(true);
     setPageError(undefined);
     try {
+      await useRDashStore.getState().awaitServerSync().catch(() => undefined);
+      const pageBaseRevision = useRDashStore.getState().serverRevision;
+      const cursors = Object.entries(workspacePageState(useRDashStore.getState().db))
+        .filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null)
+        .slice(0, MAX_COLLECTION_PAGES_PER_REQUEST);
+      if (!cursors.length) return;
+
       const params = new URLSearchParams();
       for (const [collection, cursor] of cursors) {
         params.append("page", `${collection}:${cursor.nextOffset}`);
@@ -357,7 +364,7 @@ export function WorkspaceScopedReadBoundary() {
 
       const latest = useRDashStore.getState();
       if (!latest.authUser || latest.authUser.email !== authUser.email) return;
-      if (payload.revision !== latest.serverRevision || latest.serverRevision !== serverRevision) {
+      if (payload.revision !== latest.serverRevision || latest.serverRevision !== pageBaseRevision) {
         // A concurrent commit means page offsets no longer describe the same
         // snapshot. Restart the normal scoped read rather than merging stale rows.
         workspaceReadState.reset();

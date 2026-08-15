@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRDashStore } from "@/lib/rdash/store";
+import { deletedWorkspaceOperationVersionKeys } from "@/lib/rdash/workspace-row-version-state";
 import { uploadQueueStore } from "@/lib/uploads/upload-store";
 import { kickUploadManager } from "@/lib/uploads/upload-transfer";
 import {
@@ -64,6 +65,7 @@ export function UploadManagerProvider({ children }: { children: React.ReactNode 
         useRDashStore.getState().acceptWorkspaceServerRevision({
           revision: result.payload.revision,
           rowVersions: result.payload.rowVersions,
+          deletedRowVersionKeys: deletedWorkspaceOperationVersionKeys(result.payload.patches || []),
         });
         restoredSessionRef.current = null;
         await applyPendingOverlay();

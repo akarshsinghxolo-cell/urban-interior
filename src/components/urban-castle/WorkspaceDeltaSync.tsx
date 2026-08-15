@@ -237,6 +237,7 @@ export function WorkspaceDeltaSync(): null {
             revision: delta.revision,
             user: latest.authUser,
             rowVersions: mergedRowVersions,
+            deletedRowVersionKeys: deletedDeltaVersionKeys(delta),
           });
           if (!hydrated) return;
           afterRevision = delta.revision;

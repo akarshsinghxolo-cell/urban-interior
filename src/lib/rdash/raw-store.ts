@@ -9,12 +9,12 @@ import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyO
 import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, replaceAreaId, validateBusinessData, } from "./business-rules";
 import { resolveCustomerIdFromLinks } from "./customer-relations";
 import { diffWorkspaceOperations } from "./workspace-operations";
-import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent } from "./workspace-session-merge";
+import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent, workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";
 import { workspaceFoundationRevisionState } from "./workspace-foundation-revision-state";
 import { workspaceReadCache } from "./workspace-read-cache";
-import { workspaceRowVersionState } from "./workspace-row-version-state";
+import { deletedWorkspaceOperationVersionKeys, workspaceRowVersionState } from "./workspace-row-version-state";
 import { invalidateWorkspaceClientCaches } from "./client-auth";
-import { awaitWorkspaceOutboxIdle, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";
+import { beginWorkspaceOutboxResetBarrier, cancelWorkspaceOutboxResetBarrier, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";
 import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
 import { attendancePolicyForStaff, attendancePolicyForVisit, createDefaultAttendancePolicy } from "./attendance-policy";
@@ -233,7 +233,14 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 serverRevisionForQueue = payload.revision;
                 lastAcceptedServerRevision = payload.revision;
                 lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
+                const acceptedOperations = Array.isArray(payload.patches) ? payload.patches : operations;
+                const deletedVersionKeys = deletedWorkspaceOperationVersionKeys(acceptedOperations);
                 rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, payload.rowVersions);
+                for (const key of deletedVersionKeys) {
+                    if (rowVersionsCache) delete rowVersionsCache[key];
+                }
+                workspaceRowVersionState.merge(payload.rowVersions);
+                workspaceRowVersionState.remove(deletedVersionKeys);
                 setBase({
                     serverRevision: payload.revision,
                     workspaceSyncStatus: "saved",
@@ -404,7 +411,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         //     canReleaseContractorPayment, mutateMaster, dataIssues, logAudit.
         //     hydrateSecureWorkspace + resetDatabase stay inline (closure vars). ──
         ...coreSlice,
-        acceptWorkspaceServerRevision: ({ revision, rowVersions }) => {
+        acceptWorkspaceServerRevision: ({ revision, rowVersions, deletedRowVersionKeys }) => {
             const current = get();
             const nextRevision = Math.max(
                 revision,
@@ -416,13 +423,18 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             lastAcceptedServerRevision = nextRevision;
             lastAcceptedServerDb = structuredClone(current.db) as RDashDatabase;
             rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);
+            for (const key of deletedRowVersionKeys || []) {
+                if (rowVersionsCache) delete rowVersionsCache[key];
+            }
+            workspaceRowVersionState.merge(rowVersions);
+            workspaceRowVersionState.remove(deletedRowVersionKeys || []);
             setBase({
                 serverRevision: nextRevision,
                 workspaceSyncStatus: "saved",
                 workspaceSyncError: null,
             });
         },
-        hydrateSecureWorkspace: ({ db, revision, user, rowVersions }) => {
+        hydrateSecureWorkspace: ({ db, revision, user, rowVersions, deletedRowVersionKeys }) => {
             const current = get();
             if (!workspaceHydrationRevisionIsCurrent(
                 revision,
@@ -432,12 +444,19 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             )) {
                 return false;
             }
+            const removedVersionKeys = [
+                ...workspaceSnapshotRemovedRowVersionKeys(current.db, db),
+                ...(deletedRowVersionKeys || []),
+            ];
             const accepted = mergeWorkspaceSnapshot(current.db, db);
             const nextRevision = revision;
             serverRevisionForQueue = nextRevision;
             lastAcceptedServerRevision = nextRevision;
             lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
             rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);
+            for (const key of removedVersionKeys) {
+                if (rowVersionsCache) delete rowVersionsCache[key];
+            }
             const selectedCustomerId = current.selectedCustomerId;
             const resolvedCustomerId = accepted.customers.some((customer) => customer.id === selectedCustomerId)
                 ? selectedCustomerId
@@ -543,8 +562,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             if (typeof window === "undefined") {
                 throw new Error("Workspace reset can only be requested from an authenticated browser session.");
             }
+            await beginWorkspaceOutboxResetBarrier();
             await serverSyncQueue.catch(() => undefined);
-            await awaitWorkspaceOutboxIdle();
             syncEpoch += 1;
             setBase({ workspaceSyncStatus: "saving", workspaceSyncError: null });
             let response: Response;
@@ -557,6 +576,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
             }
             catch {
+                cancelWorkspaceOutboxResetBarrier();
                 restoreAcceptedWorkspace("Could not reach the server. The workspace was not reset.");
                 throw new Error("Could not reach the server. The workspace was not reset.");
             }
@@ -566,6 +586,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 data?: RDashDatabase;
             };
             if (!response.ok || !payload.data || typeof payload.revision !== "number") {
+                cancelWorkspaceOutboxResetBarrier();
                 restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.");
                 throw new Error(payload.error || "The server rejected the workspace reset.");
             }
@@ -578,11 +599,6 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             workspaceFoundationRevisionState.replace(payload.revision);
             workspaceReadCache.clear();
             invalidateWorkspaceClientCaches();
-            try {
-                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);
-            } catch (error) {
-                console.error("[workspace-reset] Could not clear local pending changes after reset.", error);
-            }
             serverSyncQueue = Promise.resolve();
             setBase({
                 db: accepted,
@@ -590,6 +606,14 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 workspaceSyncStatus: "saved",
                 workspaceSyncError: null,
             });
+            try {
+                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);
+            } catch (error) {
+                const message = "The workspace was reset on the server, but old local pending changes could not be cleared. This tab has paused background replay; keep it open and retry after closing other Urban Castle tabs.";
+                console.error("[workspace-reset] Local cleanup failed after server reset.", error);
+                setBase({ workspaceSyncStatus: "error", workspaceSyncError: message });
+                throw new Error(message, { cause: error });
+            }
             window.location.reload();
         },
         // ── mutateMaster moved to core slice (Phase 3o) ──

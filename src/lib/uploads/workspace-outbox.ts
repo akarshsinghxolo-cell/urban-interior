@@ -19,6 +19,7 @@ let hydratePromise: Promise<void> | null = null;
 let flushPromise: Promise<WorkspaceOutboxFlushResult> | null = null;
 let acceptedWorkspace: RDashDatabase | null = null;
 let acceptedRevision = 0;
+let resetBarrier = false;
 let activeScope: { workspaceId: string; ownerUserId: string } | null = null;
 const listeners = new Set<() => void>();
 
@@ -105,13 +106,22 @@ export function clearWorkspaceAcceptedBaseline(): void {
   acceptedRevision = 0;
 }
 
-export async function awaitWorkspaceOutboxIdle(): Promise<void> {
+export async function beginWorkspaceOutboxResetBarrier(): Promise<void> {
+  resetBarrier = true;
   const pending = flushPromise;
   if (!pending) return;
   try {
     await pending;
   } catch {
     // Reset is authoritative; a failed replay must not prevent the Owner from resetting.
+  }
+}
+
+export function cancelWorkspaceOutboxResetBarrier(): void {
+  if (!resetBarrier) return;
+  resetBarrier = false;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("uc-workspace-outbox-kick"));
   }
 }
 
@@ -124,8 +134,17 @@ export async function resetWorkspaceOutboxAfterWorkspaceReset(
   hydratePromise = null;
   emit([], true);
   const items = await readScopedWorkspaceOutbox();
-  for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
+  try {
+    for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
+  } catch {
+    // The outbox belongs to local recovery only. If scoped cleanup itself fails
+    // after a destructive workspace reset, prefer clearing the local outbox to
+    // ever replaying pre-reset operations into the new revision epoch.
+    await uploadIndexedDb.clearWorkspaceOutbox();
+  }
   await refresh();
+  const remaining = await readScopedWorkspaceOutbox();
+  if (remaining.length) throw new Error("Old workspace outbox entries survived reset cleanup.");
 }
 
 function summarizeOperations(operations: NonNullable<WorkspaceCommitPayload["operations"]>) {
@@ -409,6 +428,7 @@ export async function discardWorkspaceOutbox(): Promise<void> {
 }
 
 export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult> {
+  if (resetBarrier) return { replayed: false, conflict: false };
   if (flushPromise) return flushPromise;
   flushPromise = (async () => {
     await workspaceOutboxStore.hydrate();

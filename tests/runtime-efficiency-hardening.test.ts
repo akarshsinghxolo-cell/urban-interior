@@ -149,8 +149,8 @@ describe("runtime efficiency hardening", () => {
     const clientAuth = await read("src/lib/rdash/client-auth.ts");
     expect(rawStore).toContain("workspaceHydrationRevisionIsCurrent(");
     expect(rawStore).toContain("if (saveEpoch !== syncEpoch) return;");
+    expect(rawStore).toContain("await beginWorkspaceOutboxResetBarrier()");
     expect(rawStore).toContain("await serverSyncQueue.catch(() => undefined)");
-    expect(rawStore).toContain("await awaitWorkspaceOutboxIdle()");
     expect(rawStore).toContain("rowVersionsCache = null");
     expect(rawStore).toContain("workspaceRowVersionState.replace(undefined)");
     expect(rawStore).toContain("workspaceFoundationRevisionState.replace(payload.revision)");
@@ -162,6 +162,8 @@ describe("runtime efficiency hardening", () => {
     expect(boundary).toContain("result.reason === \"client_ahead\"");
     expect(boundary).toContain("if (!hydrated)");
     expect(bridge.indexOf("const accepted = original(input)")).toBeLessThan(bridge.indexOf("workspaceRowVersionState.merge(input.rowVersions)"));
+    expect(outbox).toContain("beginWorkspaceOutboxResetBarrier");
+    expect(outbox).toContain("if (resetBarrier) return { replayed: false, conflict: false }");
     expect(outbox).toContain("resetWorkspaceOutboxAfterWorkspaceReset");
     expect(outbox).toContain("await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId)");
     expect(clientAuth).toContain("if (isWorkspaceRead && !deferReadState)");

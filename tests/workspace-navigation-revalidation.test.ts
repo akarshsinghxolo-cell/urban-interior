@@ -59,6 +59,7 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain("workspaceReadCache.peek(requestedTarget, authUser)");
     expect(source).toContain("workspaceReadCache.get(requestedTarget, authUser)");
     expect(source).toContain("revalidateWorkspaceReadCacheEntry");
+    expect(source).toContain("await useRDashStore.getState().awaitServerSync().catch(() => undefined)");
     expect(source).toContain('"X-UC-Read-Revalidate": enteredNewTarget ? "navigation-full" : "coverage"');
   });
 
@@ -99,6 +100,8 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain("mergeWorkspaceRowVersions");
     expect(source).toContain("changed: boolean");
     expect(source).toContain("changed = changed || deltaChanged");
+    expect(source).toContain("deletedRowVersionKeys");
+    expect(source).toContain("deletedDeltaVersionKeys(delta)");
   });
 
   test("relationship row graphs never request collection-wide delta row bodies", async () => {
