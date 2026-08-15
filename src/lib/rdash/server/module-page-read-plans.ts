@@ -11,7 +11,7 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
     "customers", "sites", "areas", "workRequired", "quotations", "workOrders",
     "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
     "drawings", "executionLogs", "boqs", "purchaseOrders", "grns", "vendorBills",
-    "commSends", "auditLog", "entityFileAttachments", "master.fileAssets",
+    "blocked", "commSends", "auditLog", "entityFileAttachments", "master.fileAssets",
   ]),
   customerRequests: Object.freeze([
     "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
