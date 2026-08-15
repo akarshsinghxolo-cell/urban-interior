@@ -88,14 +88,26 @@ export interface WorkspaceOperationCommitResult {
   bumpedRowVersions?: Record<string, number>;
 }
 
+export interface WorkspacePaginationEntry {
+  offset: number;
+  limit: number;
+  returned: number;
+  hasMore: boolean;
+  nextOffset?: number;
+}
+
+export type WorkspacePagination = Record<string, WorkspacePaginationEntry>;
+
 export type WorkspaceReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
   limitsByCollection?: Record<string, number>;
+  offsetsByCollection?: Record<string, number>;
 };
 
 export interface WorkspaceSubset extends WorkspaceWithRevisions {
   queryCount: number;
+  pagination?: WorkspacePagination;
 }
 
 export async function getWorkspace(includeRevisions = false): Promise<WorkspaceWithRevisions> {
@@ -111,7 +123,9 @@ export async function getWorkspace(includeRevisions = false): Promise<WorkspaceW
 }
 
 /**
- * Reads only the collections and row IDs requested by a targeted commit.
+ * Reads only the collections and row IDs requested by a targeted commit or a
+ * bounded page read. Limited full-collection reads can carry a per-collection
+ * offset and return pagination metadata without issuing an expensive count.
  * The in-memory development fallback returns its complete local snapshot because
  * it has no network/database query cost and is not used in production.
  */
