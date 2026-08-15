@@ -43,17 +43,66 @@ jobs:
           if test.count(old_foundation) != 1:
               raise SystemExit('foundation expectation shape changed unexpectedly')
           test = test.replace(old_foundation, new_foundation, 1)
-
+          test = test.replace(
+              '''    expect(projected).toContain('"staffRolePermissions",\\n        ...WORKSPACE_FOUNDATION_COLLECTIONS');\n''',
+              '''    expect(projected).toContain("WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS");\n    expect(projected).toContain("...WORKSPACE_FOUNDATION_COLLECTIONS,");\n''',
+              1,
+          )
           anchor = '''  test("exposes plan and page-limit telemetry", async () => {\n'''
           guard = '''  test("marks entity graphs as partial row reads", async () => {\n    const entityRead = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();\n    expect(entityRead).toContain('metadata._workspace_read_strategy = "row"');\n    expect(entityRead).toContain('metadata._workspace_foundation_embedded = false');\n  });\n\n'''
           if anchor not in test:
               raise SystemExit('module read-plan test insertion anchor missing')
           test_path.write_text(test.replace(anchor, guard + anchor, 1), encoding='utf-8')
+
+          entity_test_path = Path('tests/workspace-entity-scoped-read.test.ts')
+          entity_test = entity_test_path.read_text(encoding='utf-8')
+          entity_test = entity_test.replace(
+              'expect(ENTITY_REFERENCE_COLLECTIONS).toContain("master.workCategories");',
+              'expect(ENTITY_REFERENCE_COLLECTIONS).not.toContain("master.workCategories");',
+              1,
+          )
+          entity_test = entity_test.replace(
+              'expect(source).toContain("getWorkspaceBootstrap(user)");',
+              'expect(source).toContain("getProjectedWorkspacePermissions()");',
+              1,
+          )
+          entity_test = entity_test.replace(
+              'expect(source).toContain("workspaceRouteAccessDecision");',
+              'expect(source).toContain("workspaceRouteAccessDecision");\n    expect(source).toContain(\'metadata._workspace_read_strategy = "row"\');',
+              1,
+          )
+          entity_test_path.write_text(entity_test, encoding='utf-8')
+
+          app_path = Path('src/components/urban-castle/UrbanCastleApp.tsx')
+          app = app_path.read_text(encoding='utf-8')
+          app = app.replace(
+              'return scope === "full" || scope === "workdesk";',
+              'return scope === "workdesk";',
+              1,
+          )
+          app = app.replace(
+              'wait until Workdesk or a full compatibility module is opened.',
+              'wait until the complete Workdesk reconciliation scope is opened.',
+              1,
+          )
+          app_path.write_text(app, encoding='utf-8')
+
+          efficiency_path = Path('tests/runtime-efficiency-hardening.test.ts')
+          efficiency = efficiency_path.read_text(encoding='utf-8')
+          old_efficiency = '''    const projected = await read("src/lib/rdash/server/projected-workspace-bootstrap.ts");\n'''
+          new_efficiency = '''    const projected = await read("src/lib/rdash/server/projected-workspace-bootstrap.ts");\n    const appShell = await read("src/components/urban-castle/UrbanCastleApp.tsx");\n'''
+          if efficiency.count(old_efficiency) < 1:
+              raise SystemExit('runtime efficiency foundation test shape changed unexpectedly')
+          efficiency = efficiency.replace(old_efficiency, new_efficiency, 1)
+          old_tail = '''    expect(projected).not.toContain("compatibility read");\n'''
+          new_tail = '''    expect(projected).not.toContain("compatibility read");\n    expect(appShell).toContain('return scope === "workdesk";');\n    expect(appShell).not.toContain('scope === "full"');\n'''
+          efficiency = efficiency.replace(old_tail, new_tail, 1)
+          efficiency_path.write_text(efficiency, encoding='utf-8')
           PY
       - name: Install dependencies
         run: npm ci
       - name: Run focused regressions
-        run: npx vitest run tests/workspace-module-read-plans.test.ts tests/workspace-session-merge.test.ts tests/workspace-entity-scoped-read.test.ts
+        run: npx vitest run tests/workspace-module-read-plans.test.ts tests/workspace-session-merge.test.ts tests/workspace-entity-scoped-read.test.ts tests/runtime-efficiency-hardening.test.ts
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Commit fixes and remove temporary workflow
@@ -62,5 +111,5 @@ jobs:
           git config user.email "akarshsinghxolo@gmail.com"
           git rm .github/workflows/agent-reaudit-fixes.yml
           git add src tests
-          git commit -m "Fix partial entity session merge and foundation guard"
+          git commit -m "Fix partial entity session merge and foundation guards"
           git push origin HEAD:agent/page-entity-egress-architecture
