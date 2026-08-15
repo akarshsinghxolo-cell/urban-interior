@@ -16,7 +16,8 @@ import {
 } from "./module-scoped-read";
 import type { WorkspaceSubset } from "./workspace";
 
-export const ENTITY_SCOPED_READS_ENABLED = process.env.UC_ENTITY_SCOPED_READS !== "0";
+// Entity-scoped reads are the authoritative Customer/Site detail architecture.
+export const ENTITY_SCOPED_READS_ENABLED = true;
 const MAX_ENTITY_IDS = 500;
 
 export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([
@@ -144,6 +145,14 @@ function allLoadedEntityIds(database: RDashDatabase): string[] {
   return unique(values);
 }
 
+function canonicalThreadRecordIds(database: RDashDatabase, values: unknown[]): string[] {
+  const customerIds = new Set(database.customers.map((customer) => customer.id));
+  return unique(values.map((value) => {
+    const id = String(value || "").trim();
+    return customerIds.has(id) ? `customer-conversation:${id}` : id;
+  }));
+}
+
 function addJsonValues(
   plan: EntityScopedReadPlan,
   collection: string,
@@ -183,7 +192,12 @@ function relationPlan(
   const collections = kind === "customer" ? CUSTOMER_RELATION_COLLECTIONS : SITE_RELATION_COLLECTIONS;
   const field = kind === "customer" ? "customer_id" : "site_id";
   for (const collection of collections) addJsonValues(plan, collection, field, [id]);
-  addJsonValues(plan, "threads", "record_id", [id, `${kind}-conversation:${id}`]);
+  addJsonValues(
+    plan,
+    "threads",
+    "record_id",
+    [kind === "customer" ? `customer-conversation:${id}` : id],
+  );
   addJsonValues(plan, "auditLog", kind === "customer" ? "customer_id" : "entity_id", [id]);
   addJsonValues(plan, "master.fileAssets", `${kind}_id`, [id]);
   addJsonValues(plan, "master.storageFolderInstances", `${kind}_id`, [id]);
@@ -243,7 +257,7 @@ function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind
 
   addRows(plan, "threads", threadIds);
   addRows(plan, "entityFileAttachments", attachmentIds);
-  addJsonValues(plan, "threads", "record_id", unique([...entityIds, id, `${kind}-conversation:${id}`]));
+  addJsonValues(plan, "threads", "record_id", canonicalThreadRecordIds(database, [...entityIds, id]));
   addJsonValues(plan, "auditLog", "entity_id", entityIds);
   addJsonValues(plan, "entityFileAttachments", "entity_id", entityIds);
   addJsonValues(plan, "entityReferenceAssignments", "entity_id", entityIds);
