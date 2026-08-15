@@ -27,7 +27,6 @@ import {
   workspaceReadCoverageIsCompatible,
   workspaceReadScopeForModule,
   workspaceReadScopeFromMode,
-  workspaceReadScopeIsCompatible,
   workspaceReadTargetForModule,
   workspaceReadTargetForPath,
 } from "@/lib/rdash/workspace-read-scope";
@@ -88,7 +87,7 @@ describe("workspace module read scopes", () => {
     }
   });
 
-  test("fails closed for unknown modes and module IDs", () => {
+  test("fails closed for unknown and removed full modes", () => {
     expect(workspaceReadScopeFromMode("customer-row")).toBe("customer");
     expect(workspaceReadScopeFromMode("site-row")).toBe("site");
     expect(workspaceReadScopeFromMode("workdesk")).toBe("workdesk");
@@ -127,13 +126,13 @@ describe("workspace module read scopes", () => {
     });
   });
 
-  test("distinguishes full, scope, exact-module, and row coverage", () => {
+  test("distinguishes scope, exact-module, and row coverage while rejecting old full snapshots", () => {
     const tasks = workspaceReadTargetForModule("tasks");
     const approvals = workspaceReadTargetForModule("approvals");
     expect(workspaceReadCoverageIsCompatible(
       { scope: "full", mode: "full", strategy: "full" },
       tasks,
-    )).toBe(true);
+    )).toBe(false);
     expect(workspaceReadCoverageIsCompatible(
       { scope: "workdesk", mode: "workdesk", strategy: "scope" },
       approvals,
@@ -150,12 +149,6 @@ describe("workspace module read scopes", () => {
       { scope: "bootstrap", mode: "unknown", strategy: "unknown" },
       tasks,
     )).toBe(false);
-  });
-
-  test("keeps compatibility helper behavior explicit", () => {
-    expect(workspaceReadScopeIsCompatible("full", "finance")).toBe(true);
-    expect(workspaceReadScopeIsCompatible("finance", "finance")).toBe(true);
-    expect(workspaceReadScopeIsCompatible("workdesk", "finance")).toBe(false);
   });
 });
 
