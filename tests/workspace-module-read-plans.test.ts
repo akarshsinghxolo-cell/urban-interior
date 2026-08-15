@@ -42,6 +42,13 @@ const EXACT_MODULES = [
   "userApprovals",
   "approvalPolicies",
   "auditLog",
+  "customerTimeline",
+  "customerRequests",
+  "salesPipeline",
+  "lostClosedReview",
+  "drawings",
+  "executionLogs",
+  "woTimeline",
 ] as const;
 
 describe("exact module workspace read plans", () => {
@@ -91,29 +98,32 @@ describe("exact module workspace read plans", () => {
     }
   });
 
-  test("bounds history-heavy secondary collections", () => {
+  test("bounds existing and true-history feeds only", () => {
     const audit = workspaceModuleReadPlan(workspaceReadTargetForModule("auditLog"));
     expect(audit.limitsByCollection?.auditLog).toBe(250);
 
     const rates = workspaceModuleReadPlan(workspaceReadTargetForModule("vendorRates"));
     expect(rates.limitsByCollection?.["master.vendorRateHistories"]).toBe(100);
+
+    const customerTimeline = workspaceModuleReadPlan(workspaceReadTargetForModule("customerTimeline"));
+    expect(customerTimeline.limitsByCollection?.executionLogs).toBe(100);
+    expect(customerTimeline.limitsByCollection?.commSends).toBe(100);
+    expect(customerTimeline.limitsByCollection?.auditLog).toBe(100);
   });
 
-  test("never pages lookup rows independently from visible primary rows", () => {
-    const tasks = workspaceModuleReadPlan(workspaceReadTargetForModule("tasks"));
-    expect(tasks.limitsByCollection?.customers).toBeUndefined();
-    expect(tasks.limitsByCollection?.sites).toBeUndefined();
-
+  test("does not truncate primary arrays that currently drive total counters", () => {
     const drawings = workspaceModuleReadPlan(workspaceReadTargetForModule("drawings"));
-    expect(drawings.limitsByCollection?.drawings).toBe(100);
+    expect(drawings.limitsByCollection?.drawings).toBeUndefined();
     expect(drawings.limitsByCollection?.customers).toBeUndefined();
     expect(drawings.limitsByCollection?.sites).toBeUndefined();
     expect(drawings.limitsByCollection?.entityFileAttachments).toBeUndefined();
     expect(drawings.limitsByCollection?.["master.fileAssets"]).toBeUndefined();
 
+    const executionLogs = workspaceModuleReadPlan(workspaceReadTargetForModule("executionLogs"));
+    expect(executionLogs.limitsByCollection?.executionLogs).toBeUndefined();
+
     const inbox = workspaceModuleReadPlan(workspaceReadTargetForModule("unifiedThreadInbox"));
-    expect(inbox.limitsByCollection?.threads).toBe(100);
-    expect(inbox.limitsByCollection?.commSends).toBe(100);
+    expect(inbox.limitsByCollection?.threads).toBeUndefined();
     expect(inbox.limitsByCollection?.customers).toBeUndefined();
   });
 });
