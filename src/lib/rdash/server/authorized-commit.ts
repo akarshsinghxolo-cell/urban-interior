@@ -92,7 +92,21 @@ function canonicalizeVendorRateOperations(
   return diffWorkspaceOperations(current, canonical);
 }
 
+function assertCanonicalThreadOperations(operations: WorkspaceOperation[]): void {
+  for (const operation of operations) {
+    if (operation.collection !== "threads") continue;
+    for (const row of operation.upsert || []) {
+      const kind = String(row.kind || row.record_type || "");
+      const recordId = String(row.record_id || "").trim();
+      if (kind === "generic" && recordId.startsWith("cust-")) {
+        throw new Error("INVALID:Customer conversation threads must use customer-conversation:<customer_id>.");
+      }
+    }
+  }
+}
+
 function sanitizeWorkspaceOperations(operations: WorkspaceOperation[]): WorkspaceOperation[] {
+  assertCanonicalThreadOperations(operations);
   return operations.map((operation) => {
     if (operation.collection !== "master.staff") return operation;
     return {
