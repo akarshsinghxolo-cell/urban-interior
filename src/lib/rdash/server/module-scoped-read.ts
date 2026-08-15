@@ -27,7 +27,8 @@ export * from "./module-scoped-collections";
 export * from "./module-read-plans";
 export * from "./projected-workspace-bootstrap";
 
-export const MODULE_SCOPED_READS_ENABLED = process.env.UC_MODULE_SCOPED_READS !== "0";
+// Scoped reads are the runtime architecture, not an optional rollout mode.
+export const MODULE_SCOPED_READS_ENABLED = true;
 
 export interface ModuleScopedWorkspace extends WorkspaceSubset {
   scope: ModuleWorkspaceReadScope;
@@ -294,7 +295,7 @@ async function readAuthorizedPage(
 
 /**
  * Reads a projected permission/bootstrap first, then the route's exact module
- * plan (or bounded scope fallback) at the same workspace revision. Staff is
+ * plan (or bounded scope plan) at the same workspace revision. Staff is
  * directory-projected by default; only privileged HR reads receive all Staff
  * HR fields, while ordinary Staff can receive their own full row on HR screens.
  * A concurrent write causes one clean retry.
