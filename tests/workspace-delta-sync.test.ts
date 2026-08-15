@@ -83,7 +83,7 @@ describe("workspace delta aggregation", () => {
     expect(delta.changedRows).toEqual({});
   });
 
-  test("requires a full reload for revisions older than the journal baseline", () => {
+  test("requires a fresh scoped read for revisions older than the journal baseline", () => {
     const delta = aggregateWorkspaceChangeBatches({
       afterRevision: 9,
       currentRevision: 20,
@@ -94,7 +94,7 @@ describe("workspace delta aggregation", () => {
     expect(delta.reason).toBe("revision_too_old");
   });
 
-  test("requires a full reload when a journal revision is missing", () => {
+  test("requires a fresh scoped read when a journal revision is missing", () => {
     const delta = aggregateWorkspaceChangeBatches({
       afterRevision: 10,
       currentRevision: 13,
@@ -195,14 +195,18 @@ describe("delta journal migration and API contract", () => {
     expect(source).toContain("PostgreSQL deletes every collection");
   });
 
-  test("resets journal history before revision numbers restart", async () => {
+  test("resets journal history before revision numbers restart and canonicalizes reset data", async () => {
     const reset = await testFile("src/lib/rdash/server/workspace-change-reset.ts").text();
     const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();
     expect(reset).toContain('from("entity_workspace_change_batches")');
     expect(reset).toContain("revision: 0");
     expect(reset).toContain("is_baseline: true");
     expect(workspace).toContain("await resetWorkspaceChangeJournal()");
+    expect(workspace).toContain("const reset = await resetRestWorkspace()");
+    expect(workspace).toContain("return canonicalizeResetCustomerThreads(reset)");
     expect(workspace.indexOf("await resetWorkspaceChangeJournal()"))
-      .toBeLessThan(workspace.indexOf("return resetRestWorkspace()"));
+      .toBeLessThan(workspace.indexOf("const reset = await resetRestWorkspace()"));
+    expect(workspace.indexOf("const reset = await resetRestWorkspace()"))
+      .toBeLessThan(workspace.indexOf("return canonicalizeResetCustomerThreads(reset)"));
   });
 });
