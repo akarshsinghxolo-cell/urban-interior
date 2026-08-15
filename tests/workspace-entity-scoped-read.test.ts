@@ -58,14 +58,14 @@ describe("row-scoped workspace targets", () => {
     expect(workspaceReadCoverageIsCompatible(current, customerList)).toBe(false);
   });
 
-  test("broader module and full snapshots cover narrower record links", () => {
+  test("module snapshots cover their row links and old full snapshots do not", () => {
     const customer = workspaceReadTargetForPath("/workspace/customers/cust-123");
     const site = workspaceReadTargetForPath("/workspace/sites/site-123");
 
     expect(workspaceReadCoverageIsCompatible({ scope: "customer", mode: "customer" }, customer)).toBe(true);
     expect(workspaceReadCoverageIsCompatible({ scope: "site", mode: "site" }, site)).toBe(true);
-    expect(workspaceReadCoverageIsCompatible({ scope: "full", mode: "full" }, customer)).toBe(true);
-    expect(workspaceReadCoverageIsCompatible({ scope: "full", mode: "full" }, site)).toBe(true);
+    expect(workspaceReadCoverageIsCompatible({ scope: "full", mode: "full", strategy: "full" }, customer)).toBe(false);
+    expect(workspaceReadCoverageIsCompatible({ scope: "full", mode: "full", strategy: "full" }, site)).toBe(false);
     expect(workspaceReadCoverageIsCompatible({ scope: "customer", mode: "customer" }, site)).toBe(false);
   });
 });
@@ -108,12 +108,15 @@ describe("entity-scoped collection policy", () => {
     expect(source).toContain("queryCount: 1 + queries.length");
   });
 
-  test("entity reader has revision restart, rollback, and plural proof coverage", async () => {
+  test("entity reader is always on, revision-safe, and uses canonical Customer thread IDs", async () => {
     const source = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
-    expect(source).toContain('UC_ENTITY_SCOPED_READS !== "0"');
+    expect(source).toContain("ENTITY_SCOPED_READS_ENABLED = true");
+    expect(source).not.toContain("UC_ENTITY_SCOPED_READS");
     expect(source).toContain('error.message !== "READ_CONFLICT"');
     expect(source).toContain("getWorkspaceBootstrap(user)");
     expect(source).toContain("workspaceRouteAccessDecision");
     expect(source).toContain('"proof_attachment_ids"');
+    expect(source).toContain("canonicalThreadRecordIds");
+    expect(source).toContain("customer-conversation:");
   });
 });
