@@ -16,6 +16,7 @@ import type { WorkspaceReadScope } from "@/lib/rdash/workspace-read-scope";
 import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
 import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
 import { WorkspaceDeltaSync } from "./WorkspaceDeltaSync";
+import { WorkspaceFoundationSync } from "./WorkspaceFoundationSync";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
 
 const AUTH_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000;
@@ -180,6 +181,7 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
         <LegacyDirtyFormAdapter />
         <DirtyFormNavigationGuard />
         <WorkspaceScopedReadBoundary />
+        <WorkspaceFoundationSync />
         <WorkspaceDeltaSync />
         <ReconcileWorkspaceButton />
       </UploadManagerProvider>

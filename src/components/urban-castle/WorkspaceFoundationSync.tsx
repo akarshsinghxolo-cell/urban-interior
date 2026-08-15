@@ -169,7 +169,7 @@ export function WorkspaceFoundationSync(): null {
             return;
           }
           if (delta.revision === afterRevision) {
-            workspaceFoundationRevisionState.advance(delta.currentRevision);
+            workspaceFoundationRevisionState.advance(delta.revision);
             return;
           }
 

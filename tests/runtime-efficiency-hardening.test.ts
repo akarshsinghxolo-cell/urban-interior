@@ -310,4 +310,20 @@ describe("runtime efficiency hardening", () => {
     expect(coreTypes).not.toContain("aggregateRevisions");
   });
 
+  test("keeps the bootstrap Master foundation revision-safe without retransmitting it on module reads", async () => {
+    const foundationSync = await read("src/components/urban-castle/WorkspaceFoundationSync.tsx");
+    const moduleReader = await read("src/lib/rdash/server/module-scoped-read.ts");
+    const appShell = await read("src/components/urban-castle/UrbanCastleApp.tsx");
+    expect(appShell).toContain("<WorkspaceFoundationSync />");
+    expect(foundationSync).toContain("WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS.join");
+    expect(foundationSync).toContain('fetch(`/api/changes?${params.toString()}`');
+    expect(foundationSync).toContain('"X-UC-Delta-Client": "workspace-foundation"');
+    expect(foundationSync).toContain("workspaceFoundationRevisionState");
+    expect(foundationSync).toContain("acceptWorkspaceServerRevision");
+    expect(foundationSync).toContain("applyWorkspaceDelta");
+    expect(foundationSync).toContain('fetch("/api/bootstrap"');
+    expect(foundationSync).not.toContain("setInterval");
+    expect(moduleReader).toContain("!FOUNDATION_COLLECTIONS.has(collection)");
+  });
+
 });

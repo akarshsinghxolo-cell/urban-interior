@@ -11,6 +11,7 @@ import {
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
 import { workspaceDeltaSyncIsSafe } from "@/lib/rdash/workspace-delta-sync-policy";
+import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
 import {
   mergeWorkspaceRowVersions,
   workspaceRowVersionState,
@@ -63,7 +64,10 @@ function scopedDatabase(): RDashDatabase {
   return database;
 }
 
-afterEach(() => workspaceRowVersionState.resetForTests());
+afterEach(() => {
+  workspaceRowVersionState.resetForTests();
+  workspaceFoundationRevisionState.reset();
+});
 
 describe("client delta application", () => {
   test("applies only collections represented by the current scoped snapshot", () => {
@@ -137,6 +141,18 @@ describe("client delta application", () => {
       "visits:visit-1": 3,
       "visit-1": 3,
     });
+  });
+});
+
+describe("foundation revision state", () => {
+  test("advances monotonically and can reset for a new authenticated session", () => {
+    workspaceFoundationRevisionState.replace(10);
+    workspaceFoundationRevisionState.advance(8);
+    expect(workspaceFoundationRevisionState.get()).toBe(10);
+    workspaceFoundationRevisionState.advance(12);
+    expect(workspaceFoundationRevisionState.get()).toBe(12);
+    workspaceFoundationRevisionState.reset();
+    expect(workspaceFoundationRevisionState.get()).toBe(0);
   });
 });
 
