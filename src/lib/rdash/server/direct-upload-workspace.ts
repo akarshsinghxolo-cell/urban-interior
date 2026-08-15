@@ -5,17 +5,11 @@ import type {
 } from "../types";
 import type { UploadPurpose } from "@/lib/uploads/upload-types";
 import {
-  getWorkspace,
   getWorkspaceSubset,
   type WorkspaceSubset,
 } from "./workspace";
 
 const MAX_DEPENDENCY_ROUNDS = 5;
-const COMPATIBILITY_NESTED_TARGETS = new Set<FileAttachmentEntityType>([
-  "quotation_item",
-  "boq_item",
-  "thread_message",
-]);
 
 const TARGET_COLLECTION: Partial<Record<FileAttachmentEntityType, string>> = {
   customer: "customers",
@@ -55,6 +49,18 @@ const TARGET_COLLECTION: Partial<Record<FileAttachmentEntityType, string>> = {
   commission: "commissions",
   blocked: "blocked",
   communication: "commSends",
+};
+
+/**
+ * Nested attachment targets live inside canonical parent rows rather than their
+ * own entity table. The new upload architecture reads only that parent
+ * collection, finds the nested identity, then follows the same targeted
+ * dependency graph as every other upload. There is no whole-workspace fallback.
+ */
+const NESTED_TARGET_PARENT_COLLECTION: Partial<Record<FileAttachmentEntityType, string>> = {
+  quotation_item: "quotations",
+  boq_item: "boqs",
+  thread_message: "threads",
 };
 
 const FIELD_TO_COLLECTION: Readonly<Record<string, string>> = Object.freeze({
@@ -163,8 +169,6 @@ function collectDependencies(database: RDashDatabase): IdPlan {
       if (parentCollection && recordId) addId(plan, parentCollection, recordId);
       if (kind === "generic" && recordId.startsWith("customer-conversation:")) {
         addId(plan, "customers", recordId.slice("customer-conversation:".length));
-      } else if (kind === "generic" && recordId.startsWith("cust-")) {
-        addId(plan, "customers", recordId);
       }
     }
 
@@ -196,14 +200,15 @@ function loadedIds(database: RDashDatabase): IdPlan {
     const ids = new Set(rowsFor(database, collection).map(rowId).filter(Boolean));
     if (ids.size) result.set(collection, ids);
   }
-  // Parent/dependency collections not directly represented in TARGET_COLLECTION.
   for (const collection of new Set([
     ...Object.values(FIELD_TO_COLLECTION),
     ...Object.values(ARRAY_FIELD_TO_COLLECTION),
+    ...Object.values(NESTED_TARGET_PARENT_COLLECTION),
     "threads",
     "master.storageAccounts",
     "master.storageFolderTemplates",
   ])) {
+    if (!collection) continue;
     const ids = new Set(rowsFor(database, collection).map(rowId).filter(Boolean));
     if (ids.size) result.set(collection, ids);
   }
@@ -270,34 +275,37 @@ function initialPlan(
   purpose: UploadPurpose,
 ) {
   const rowsByCollection: Record<string, string[]> = {};
+  const fullCollections = new Set<string>(["master.storageAccounts", "master.storageFolderTemplates"]);
   const collection = TARGET_COLLECTION[targetEntityType];
   if (collection) rowsByCollection[collection] = [targetEntityId];
+  const nestedParentCollection = NESTED_TARGET_PARENT_COLLECTION[targetEntityType];
+  if (nestedParentCollection) fullCollections.add(nestedParentCollection);
   if (targetEntityType === "general" && purpose === "staff_document") {
     rowsByCollection["master.staff"] = [targetEntityId];
   }
   return {
-    fullCollections: ["master.storageAccounts", "master.storageFolderTemplates"],
+    fullCollections: [...fullCollections],
     rowsByCollection,
   };
+}
+
+function invalidUploadContext(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith("INVALID:") ? new Error(message) : new Error(`INVALID:${message}`);
 }
 
 /**
  * Reads only the upload target, its parent chain and the small Drive account /
  * folder-template configuration required to start/finalize an upload. Nested
- * line/message targets keep a compatibility full read for now because their
- * identity lives inside JSON arrays rather than a table row; every ordinary
- * entity upload avoids the old whole-workspace read.
+ * item/message targets read their canonical parent collection and then follow
+ * the same dependency graph. Failure to resolve the canonical graph is an
+ * explicit validation error; the server never falls back to a whole workspace.
  */
 export async function getDirectUploadWorkspace(
   targetEntityType: FileAttachmentEntityType,
   targetEntityId: string,
   purpose: UploadPurpose,
 ): Promise<WorkspaceSubset> {
-  if (COMPATIBILITY_NESTED_TARGETS.has(targetEntityType)) {
-    const full = await getWorkspace(true);
-    return { ...full, queryCount: Number.MAX_SAFE_INTEGER };
-  }
-
   let workspace = await getWorkspaceSubset(initialPlan(targetEntityType, targetEntityId, purpose));
   for (let round = 0; round < MAX_DEPENDENCY_ROUNDS; round += 1) {
     const dependencies = collectDependencies(workspace.data);
@@ -311,16 +319,7 @@ export async function getDirectUploadWorkspace(
     try {
       resolveEntityContext(workspace.data, targetEntityType, targetEntityId, "Upload target");
     } catch (error) {
-      // Preserve correctness for an unusual relationship shape while making
-      // ordinary uploads cheap. The warning makes any remaining compatibility
-      // case observable so it can be converted later instead of staying hidden.
-      console.warn("[upload-context] targeted context incomplete; using compatibility full read", {
-        targetEntityType,
-        targetEntityId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      const full = await getWorkspace(true);
-      return { ...full, queryCount: Number.MAX_SAFE_INTEGER };
+      throw invalidUploadContext(error);
     }
   }
 
