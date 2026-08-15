@@ -7,6 +7,7 @@ import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
 import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
+import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -95,6 +96,7 @@ export function RDashApp() {
                 user: payload.user,
                 rowVersions: payload.rowVersions,
             });
+            workspaceFoundationRevisionState.replace(payload.revision);
             workspaceReadState.recordResponse(response);
             setSecureBootstrapReady(true);
         })

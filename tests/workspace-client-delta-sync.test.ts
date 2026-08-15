@@ -264,5 +264,7 @@ describe("delta synchronization safety policy", () => {
     expect(source).toContain("MAX_COLLECTION_FILTERS");
     expect(source).toContain("knownWorkspaceCollection");
     expect(source).toContain('"X-UC-Delta-Filtered"');
+    expect(source).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
+    expect(source).toContain("canReturnFullStaffRows");
   });
 });

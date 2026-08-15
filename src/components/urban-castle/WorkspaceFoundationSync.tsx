@@ -91,8 +91,8 @@ async function reloadFoundation(signal: AbortSignal): Promise<boolean> {
 
 /**
  * The shared Master foundation is fetched once at bootstrap and retained in the
- * session. This synchronizer only consults the revision journal when the user
- * enters a module (or a scoped read discovers a newer workspace revision).
+ * session. This synchronizer consults the revision journal only after another
+ * authoritative scoped/entity read discovers a newer workspace revision.
  * Unrelated commits advance the foundation revision without retransmitting
  * Master rows; actual foundation changes transfer only the changed rows.
  */
@@ -105,30 +105,20 @@ export function WorkspaceFoundationSync(): null {
     () => workspaceReadTargetForActiveNavigation(pathname, activeModuleId),
     [activeModuleId, pathname],
   );
-  const targetKey = `${target.scope}:${target.moduleId}:${target.entity?.kind || ""}:${target.entity?.id || ""}`;
-  const previousTargetKeyRef = React.useRef<string | null>(null);
-
   React.useEffect(() => {
     if (!authUser) {
       workspaceFoundationRevisionState.reset();
-      previousTargetKeyRef.current = null;
       return;
     }
 
     const current = useRDashStore.getState();
     const metadata = current.db as unknown as Record<string, unknown>;
-    if (
-      workspaceFoundationRevisionState.get() === 0
-      && metadata._workspace_read_scope === "bootstrap"
-      && metadata._workspace_foundation_embedded === true
-    ) {
+    if (workspaceFoundationRevisionState.get() === 0 && metadata._workspace_foundation_embedded === true) {
       workspaceFoundationRevisionState.replace(current.serverRevision);
     }
 
-    const targetChanged = previousTargetKeyRef.current !== targetKey;
-    previousTargetKeyRef.current = targetKey;
     const knownFoundationRevision = workspaceFoundationRevisionState.get();
-    if (!targetChanged && knownFoundationRevision >= serverRevision) return;
+    if (knownFoundationRevision >= serverRevision) return;
     if (!foundationSyncIsSafe()) return;
 
     const controller = new AbortController();
@@ -153,6 +143,7 @@ export function WorkspaceFoundationSync(): null {
             headers: {
               Accept: "application/json",
               "X-UC-Delta-Client": "workspace-foundation",
+              "X-UC-Foundation-Delta": "1",
               "X-UC-Delta-Module": target.moduleId,
             },
           });
@@ -212,7 +203,7 @@ export function WorkspaceFoundationSync(): null {
       disposed = true;
       controller.abort();
     };
-  }, [authUser, serverRevision, target.moduleId, targetKey]);
+  }, [authUser, serverRevision, target.moduleId]);
 
   return null;
 }

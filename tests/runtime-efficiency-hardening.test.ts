@@ -326,4 +326,17 @@ describe("runtime efficiency hardening", () => {
     expect(moduleReader).toContain("!FOUNDATION_COLLECTIONS.has(collection)");
   });
 
+  test("syncs shared foundation only after global revision advancement and keeps Staff projected", async () => {
+    const app = await read("src/components/rdash/RDashApp.tsx");
+    const foundationSync = await read("src/components/urban-castle/WorkspaceFoundationSync.tsx");
+    const changes = await read("src/app/api/changes/route.ts");
+    expect(app).toContain("workspaceFoundationRevisionState.replace(payload.revision)");
+    expect(foundationSync).toContain("if (knownFoundationRevision >= serverRevision) return");
+    expect(foundationSync).not.toContain("targetChanged");
+    expect(foundationSync).toContain('"X-UC-Foundation-Delta": "1"');
+    expect(changes).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
+    expect(changes).toContain("canReturnFullStaffRows = canReadFullStaff && !foundationProjection");
+    expect(changes).toContain("canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
+  });
+
 });
