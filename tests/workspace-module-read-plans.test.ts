@@ -110,7 +110,8 @@ describe("bootstrap JSON projections", () => {
   });
 
   test("builds JSON selectors and preserves a bounded taxonomy foundation", async () => {
-    const projected = await testFile("src/lib/rdash/server/projected-workspace-bootstrap.ts").text();
+    const projected = (await testFile("src/lib/rdash/server/projected-workspace-bootstrap.ts").text())
+      .replace(/\r\n/g, "\n");
     expect(projected).toContain("data->${field}");
     expect(WORKSPACE_FOUNDATION_COLLECTIONS).toEqual([
       "master.units",
