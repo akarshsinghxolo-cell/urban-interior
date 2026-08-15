@@ -83,7 +83,7 @@ describe("workspace delta aggregation", () => {
     expect(delta.changedRows).toEqual({});
   });
 
-  test("requires a full reload for revisions older than the journal baseline", () => {
+  test("requires a fresh scoped read for revisions older than the journal baseline", () => {
     const delta = aggregateWorkspaceChangeBatches({
       afterRevision: 9,
       currentRevision: 20,
@@ -94,7 +94,7 @@ describe("workspace delta aggregation", () => {
     expect(delta.reason).toBe("revision_too_old");
   });
 
-  test("requires a full reload when a journal revision is missing", () => {
+  test("requires a fresh scoped read when a journal revision is missing", () => {
     const delta = aggregateWorkspaceChangeBatches({
       afterRevision: 10,
       currentRevision: 13,
@@ -172,7 +172,9 @@ describe("delta journal migration and API contract", () => {
     expect(route).toContain("authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)");
     expect(route).toContain("getWorkspaceChanges(");
     expect(route).toContain("DIRECTORY_PROJECTION_COLLECTIONS");
-    expect(route).toContain("canReadFullStaff ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
+    expect(route).toContain("canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
+    expect(route).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
+    expect(route).toContain("canReturnFullStaffRows = canReadFullStaff && !foundationProjection");
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
     expect(route).toContain('"Cache-Control": "private, no-store, max-age=0"');
     expect(route).toContain('"X-Content-Type-Options": "nosniff"');
@@ -195,14 +197,19 @@ describe("delta journal migration and API contract", () => {
     expect(source).toContain("PostgreSQL deletes every collection");
   });
 
-  test("resets journal history before revision numbers restart", async () => {
-    const reset = await testFile("src/lib/rdash/server/workspace-change-reset.ts").text();
+  test("runs destructive reset through the same atomic revision-CAS transaction", async () => {
+    const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();
-    expect(reset).toContain('from("entity_workspace_change_batches")');
-    expect(reset).toContain("revision: 0");
-    expect(reset).toContain("is_baseline: true");
-    expect(workspace).toContain("await resetWorkspaceChangeJournal()");
-    expect(workspace.indexOf("await resetWorkspaceChangeJournal()"))
-      .toBeLessThan(workspace.indexOf("return resetRestWorkspace()"));
+
+    expect(rest).toContain("const current = await getRestWorkspace()");
+    expect(rest).toContain("diffWorkspaceOperations(current.data, seedData)");
+    expect(rest).toContain("commitRestOperations(operations, current.revision, {})");
+    expect(rest).toContain("customer-conversation:${thread.record_id}");
+    expect(rest).toContain("Could not read workspace collection ${collection}");
+    expect(rest).not.toContain("Existing reset behavior is intentionally preserved for now");
+    expect(rest).not.toContain('revision: 0,\n      updated_at: new Date().toISOString()');
+    expect(workspace).not.toContain("resetWorkspaceChangeJournal");
+    expect(workspace).not.toContain("canonicalizeResetCustomerThreads");
+    expect(workspace).toContain("return resetRestWorkspace()");
   });
 });

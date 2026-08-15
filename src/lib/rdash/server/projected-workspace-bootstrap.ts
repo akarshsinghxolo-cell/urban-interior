@@ -16,6 +16,17 @@ export const WORKSPACE_FOUNDATION_COLLECTIONS = Object.freeze([
   "master.units",
   "master.workCategories",
   "master.workSubcategories",
+  "master.articles",
+  "master.articleVariants",
+  "master.subcategoryArticleMap",
+  "master.workOptionGroups",
+  "master.workOptionValues",
+] as const);
+
+export const WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS = Object.freeze([
+  "staffRolePermissions",
+  "master.staff",
+  ...WORKSPACE_FOUNDATION_COLLECTIONS,
 ] as const);
 
 const PERMISSION_FIELDS = Object.freeze([
@@ -97,81 +108,115 @@ function mergeProjectedStaffRows(
   }));
 }
 
+function markBootstrapMetadata(database: RDashDatabase): void {
+  const metadata = database as unknown as Record<string, unknown>;
+  metadata._workspace_read_scope = "bootstrap";
+  metadata._workspace_read_mode = "bootstrap";
+  metadata._workspace_read_strategy = "bootstrap";
+  metadata._workspace_read_collections = [...WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS];
+  metadata._workspace_foundation_embedded = true;
+  metadata._workspace_staff_projection = "directory";
+}
+
 /**
- * Reads the authorization fields required before a module query plus the small
- * work-taxonomy foundation used by global create/edit flows. Every scoped
- * workspace also receives a safe Staff directory for assignee labels/pickers.
- * Only the signed-in Staff row receives its attendance policy because field
- * geofencing needs that policy outside the HR module. Compensation, bank,
- * address, emergency-contact and auth-link fields are not included here.
+ * Minimal authorization read for module/entity endpoints. The reusable Master
+ * foundation is not retransmitted after /api/bootstrap.
  */
-export async function getProjectedWorkspaceBootstrap(
+export async function getProjectedWorkspacePermissions(): Promise<WorkspaceSubset> {
+  const base = await getWorkspaceSubset({});
+  const permissionRows = await projectedRows("staffRolePermissions", PERMISSION_FIELDS);
+  const data = structuredClone(base.data) as RDashDatabase;
+  const rowVersions = { ...(base.rowVersions || {}) };
+  data.staffRolePermissions = decodeProjectedRows(
+    permissionRows,
+    PERMISSION_FIELDS,
+    "staffRolePermissions",
+    rowVersions,
+  ) as unknown as RDashDatabase["staffRolePermissions"];
+
+  return {
+    ...base,
+    data,
+    rowVersions,
+    queryCount: base.queryCount + 1,
+  };
+}
+
+async function readProjectedWorkspaceBootstrap(
   staffId?: string,
 ): Promise<WorkspaceSubset> {
   const base = await getWorkspaceSubset({
     fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS],
   });
-  if (base.queryCount === 0) return base;
 
+  const [permissionRows, staffDirectoryRows, currentStaffRows] = await Promise.all([
+    projectedRows("staffRolePermissions", PERMISSION_FIELDS),
+    projectedRows("master.staff", STAFF_DIRECTORY_FIELDS),
+    staffId
+      ? projectedRows("master.staff", CURRENT_STAFF_RUNTIME_FIELDS, [staffId])
+      : Promise.resolve([]),
+  ]);
+
+  // Ensure the foundation and projections belong to one revision. Bootstrap is
+  // infrequent, so one tiny revision check is cheaper than a mixed client state.
+  const revisionCheck = await getWorkspaceSubset({});
+  if (revisionCheck.revision !== base.revision) {
+    throw new Error("READ_CONFLICT");
+  }
+
+  const data = structuredClone(base.data) as RDashDatabase;
+  const rowVersions = { ...(base.rowVersions || {}) };
+  data.staffRolePermissions = decodeProjectedRows(
+    permissionRows,
+    PERMISSION_FIELDS,
+    "staffRolePermissions",
+    rowVersions,
+  ) as unknown as RDashDatabase["staffRolePermissions"];
+
+  const directory = decodeProjectedRows(
+    staffDirectoryRows,
+    STAFF_DIRECTORY_FIELDS,
+    "master.staff",
+    rowVersions,
+  );
+  const currentRuntime = decodeProjectedRows(
+    currentStaffRows,
+    CURRENT_STAFF_RUNTIME_FIELDS,
+    "master.staff",
+    rowVersions,
+  );
+  data.master.staff = mergeProjectedStaffRows(
+    directory,
+    currentRuntime,
+  ) as unknown as RDashDatabase["master"]["staff"];
+
+  (data as unknown as Record<string, unknown>)._workspace_bootstrap_projection = {
+    staffRolePermissions: [...PERMISSION_FIELDS],
+    "master.staff": {
+      directory: [...STAFF_DIRECTORY_FIELDS],
+      ...(staffId ? { currentStaffRuntime: [...CURRENT_STAFF_RUNTIME_FIELDS] } : {}),
+    },
+    foundation: [...WORKSPACE_FOUNDATION_COLLECTIONS],
+  };
+  markBootstrapMetadata(data);
+
+  return {
+    ...base,
+    data,
+    rowVersions,
+    queryCount: base.queryCount + 3 + (staffId ? 1 : 0),
+  };
+}
+
+/** One bootstrap shape only; projection errors fail closed rather than fallback. */
+export async function getProjectedWorkspaceBootstrap(
+  staffId?: string,
+): Promise<WorkspaceSubset> {
   try {
-    const [permissionRows, staffDirectoryRows, currentStaffRows] = await Promise.all([
-      projectedRows("staffRolePermissions", PERMISSION_FIELDS),
-      projectedRows("master.staff", STAFF_DIRECTORY_FIELDS),
-      staffId
-        ? projectedRows("master.staff", CURRENT_STAFF_RUNTIME_FIELDS, [staffId])
-        : Promise.resolve([]),
-    ]);
-
-    const data = structuredClone(base.data) as RDashDatabase;
-    const rowVersions = { ...(base.rowVersions || {}) };
-    data.staffRolePermissions = decodeProjectedRows(
-      permissionRows,
-      PERMISSION_FIELDS,
-      "staffRolePermissions",
-      rowVersions,
-    ) as unknown as RDashDatabase["staffRolePermissions"];
-
-    const directory = decodeProjectedRows(
-      staffDirectoryRows,
-      STAFF_DIRECTORY_FIELDS,
-      "master.staff",
-      rowVersions,
-    );
-    const currentRuntime = decodeProjectedRows(
-      currentStaffRows,
-      CURRENT_STAFF_RUNTIME_FIELDS,
-      "master.staff",
-      rowVersions,
-    );
-    data.master.staff = mergeProjectedStaffRows(
-      directory,
-      currentRuntime,
-    ) as unknown as RDashDatabase["master"]["staff"];
-
-    (data as unknown as Record<string, unknown>)._workspace_bootstrap_projection = {
-      staffRolePermissions: [...PERMISSION_FIELDS],
-      "master.staff": {
-        directory: [...STAFF_DIRECTORY_FIELDS],
-        ...(staffId ? { currentStaffRuntime: [...CURRENT_STAFF_RUNTIME_FIELDS] } : {}),
-      },
-      foundation: [...WORKSPACE_FOUNDATION_COLLECTIONS],
-    };
-
-    return {
-      ...base,
-      data,
-      rowVersions,
-      queryCount: base.queryCount + 2 + (staffId ? 1 : 0),
-    };
+    return await readProjectedWorkspaceBootstrap(staffId);
   } catch (error) {
-    console.warn("[workspace-bootstrap] projected read unavailable; using bounded compatibility read:", error);
-    return getWorkspaceSubset({
-      fullCollections: [
-        "staffRolePermissions",
-        ...WORKSPACE_FOUNDATION_COLLECTIONS,
-      ],
-      rowsByCollection: staffId ? { "master.staff": [staffId] } : undefined,
-    });
+    if (!(error instanceof Error) || error.message !== "READ_CONFLICT") throw error;
+    return readProjectedWorkspaceBootstrap(staffId);
   }
 }
 

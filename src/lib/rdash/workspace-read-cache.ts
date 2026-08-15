@@ -18,7 +18,6 @@ export interface WorkspaceReadCacheEntry {
   revision: number;
   data: RDashDatabase;
   rowVersions?: Record<string, number>;
-  aggregateRevisions?: Record<string, number>;
   readState: WorkspaceReadStateSnapshot;
   cachedAt: number;
 }
@@ -41,7 +40,6 @@ function cloneEntry(entry: WorkspaceReadCacheEntry): WorkspaceReadCacheEntry {
     target: structuredClone(entry.target),
     data: structuredClone(entry.data),
     rowVersions: entry.rowVersions ? { ...entry.rowVersions } : undefined,
-    aggregateRevisions: entry.aggregateRevisions ? { ...entry.aggregateRevisions } : undefined,
     readState: { ...entry.readState },
   };
 }
@@ -76,6 +74,14 @@ export const workspaceReadCache = {
     return cloneEntry(entry);
   },
 
+  peek(
+    target: WorkspaceReadTarget,
+    user: AuthenticatedWorkspaceUser,
+  ): WorkspaceReadCacheEntry | null {
+    const entry = entries.get(cacheKey(target, user));
+    return entry ? cloneEntry(entry) : null;
+  },
+
   put(entry: WorkspaceReadCacheEntry): void {
     putEntry(entry);
   },
@@ -86,7 +92,6 @@ export const workspaceReadCache = {
     revision: number;
     data: RDashDatabase;
     rowVersions?: Record<string, number>;
-    aggregateRevisions?: Record<string, number>;
     readState: WorkspaceReadStateSnapshot;
   }): WorkspaceReadCacheEntry {
     const userKey = authenticatedUserKey(input.user);
@@ -99,7 +104,6 @@ export const workspaceReadCache = {
       revision: input.revision,
       data: structuredClone(input.data),
       rowVersions: input.rowVersions ? { ...input.rowVersions } : undefined,
-      aggregateRevisions: input.aggregateRevisions ? { ...input.aggregateRevisions } : undefined,
       readState: {
         ...input.readState,
         requestStatus: "idle",

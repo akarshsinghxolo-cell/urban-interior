@@ -86,17 +86,19 @@ export async function GET(request: NextRequest) {
 
   try {
     const access = await authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections);
+    const foundationProjection = request.headers.get("x-uc-foundation-delta") === "1";
     const canReadFullStaff = canReadFullStaffData(user.role);
-    const collections = staffSafeCollections(access.collections, canReadFullStaff);
+    const canReturnFullStaffRows = canReadFullStaff && !foundationProjection;
+    const collections = staffSafeCollections(access.collections, canReturnFullStaffRows);
     const delta = await getWorkspaceChanges(
       afterRevision,
       collections,
-      canReadFullStaff ? undefined : DIRECTORY_PROJECTION_COLLECTIONS,
+      canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS,
     );
     return NextResponse.json(delta, {
       headers: {
         ...PRIVATE_JSON_HEADERS,
-        Vary: "Cookie, Authorization, X-UC-Delta-Module",
+        Vary: "Cookie, Authorization, X-UC-Delta-Module, X-UC-Foundation-Delta",
         "X-UC-Delta-Module": access.target.moduleId,
         "X-UC-Delta-From": String(delta.fromRevision),
         "X-UC-Delta-To": String(delta.revision),
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
         "X-UC-Delta-Full-Reload": delta.requiresFullReload ? "1" : "0",
         "X-UC-Delta-Filtered": "1",
         "X-UC-Delta-Dropped-Collections": String(access.droppedCollectionCount),
-        "X-UC-Staff-Delta": canReadFullStaff ? "full-allowed" : "directory-only",
+        "X-UC-Staff-Delta": canReturnFullStaffRows ? "full-allowed" : "directory-only",
         "Server-Timing": `workspace-changes;dur=${(delta.loadMs || 0).toFixed(2)}`,
       },
     });

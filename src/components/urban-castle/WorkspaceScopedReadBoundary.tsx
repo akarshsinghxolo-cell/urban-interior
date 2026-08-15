@@ -4,6 +4,7 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { AlertTriangle, Database, LoaderCircle, RotateCw } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
+import { clearWorkspaceReadRequestCache } from "@/lib/rdash/client-auth";
 import { workspaceReadCoverageIsCompatible } from "@/lib/rdash/workspace-read-scope";
 import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 import { workspaceReadEndpointForTarget } from "@/lib/rdash/workspace-read-client";
@@ -15,14 +16,21 @@ import {
 } from "@/lib/rdash/workspace-read-state";
 import { workspaceReadCache } from "@/lib/rdash/workspace-read-cache";
 import { revalidateWorkspaceReadCacheEntry } from "@/lib/rdash/workspace-navigation-delta";
-import { restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
+import {
+  mergeWorkspacePage,
+  workspacePageState,
+} from "@/lib/rdash/workspace-page-merge";
+import {
+  mergeWorkspaceRowVersions,
+  workspaceRowVersionState,
+} from "@/lib/rdash/workspace-row-version-state";
+import { clearWorkspaceAcceptedBaseline, restoreWorkspaceOutboxOverlay } from "@/lib/uploads/workspace-outbox";
 import { Button } from "@/components/ui/button";
 
 interface WorkspaceReadPayload {
   error?: string;
   revision?: number;
   data?: import("@/lib/rdash/types").RDashDatabase;
-  aggregateRevisions?: Record<string, number>;
   rowVersions?: Record<string, number>;
   user?: {
     name: string;
@@ -32,6 +40,8 @@ interface WorkspaceReadPayload {
     expiresAt: number;
   };
 }
+
+const MAX_COLLECTION_PAGES_PER_REQUEST = 4;
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -54,6 +64,11 @@ function applyOverlayStatus(overlay: Awaited<ReturnType<typeof restoreWorkspaceO
  * journal gaps, relationship-selected row graphs, limited collections, Staff
  * projection refreshes, or an unavailable/corrupt cache.
  *
+ * Bounded list collections expose page cursors in workspace metadata. The
+ * non-blocking Load more control requests only the next page (at most four
+ * collections per click) and merges rows into the current Zustand snapshot.
+ * It never replaces the module or refetches already-loaded collections.
+ *
  * Module navigation state is authoritative while the browser-history pathname
  * catches up. This prevents a newly selected module from rendering against the
  * previous module's scoped snapshot or skipping its required server read.
@@ -62,6 +77,8 @@ export function WorkspaceScopedReadBoundary() {
   const pathname = usePathname();
   const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const authUser = useRDashStore((state) => state.authUser);
+  const db = useRDashStore((state) => state.db);
+  const serverRevision = useRDashStore((state) => state.serverRevision);
   const hydrateSecureWorkspace = useRDashStore((state) => state.hydrateSecureWorkspace);
   const readState = useWorkspaceReadState();
 
@@ -74,15 +91,52 @@ export function WorkspaceScopedReadBoundary() {
     [requestedTarget],
   );
   const targetKey = workspaceReadTargetKey(requestedTarget);
-  const needsExpansion = Boolean(authUser) && !workspaceReadCoverageIsCompatible(readState, requestedTarget);
+  const currentCoverageCompatible = workspaceReadCoverageIsCompatible(readState, requestedTarget);
+  const cachedTarget = React.useMemo(
+    () => authUser ? workspaceReadCache.peek(requestedTarget, authUser) : null,
+    [authUser, requestedTarget, targetKey],
+  );
+  const cachedCoverageAvailable = Boolean(
+    cachedTarget && workspaceReadCoverageIsCompatible(cachedTarget.readState, requestedTarget),
+  );
+  const needsExpansion = Boolean(authUser)
+    && !currentCoverageCompatible
+    && !cachedCoverageAvailable;
   const loadState = workspaceReadLoadStateForTarget(readState, requestedTarget);
+  const pageState = React.useMemo(() => workspacePageState(db), [db]);
+  const pageCursors = React.useMemo(
+    () => Object.entries(pageState).filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null),
+    [pageState],
+  );
   const [retryNonce, setRetryNonce] = React.useState(0);
+  const [pageLoading, setPageLoading] = React.useState(false);
+  const [pageError, setPageError] = React.useState<string | undefined>();
   const requestSequenceRef = React.useRef(0);
   const latestTargetKeyRef = React.useRef(targetKey);
   const previousEffectTargetKeyRef = React.useRef(targetKey);
 
   React.useLayoutEffect(() => {
     latestTargetKeyRef.current = targetKey;
+  }, [targetKey]);
+
+  React.useLayoutEffect(() => {
+    if (!authUser || currentCoverageCompatible || !cachedTarget || !cachedCoverageAvailable) return;
+
+    // The long-lived session already retains previously visited module rows.
+    // Cache is a server revalidation baseline only; copying it back into Zustand
+    // would re-render every `s.db` subscriber and could restore older rows.
+    workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState);
+  }, [
+    authUser,
+    cachedCoverageAvailable,
+    cachedTarget,
+    currentCoverageCompatible,
+    requestedTarget,
+    targetKey,
+  ]);
+
+  React.useEffect(() => {
+    setPageError(undefined);
   }, [targetKey]);
 
   React.useEffect(() => {
@@ -119,7 +173,7 @@ export function WorkspaceScopedReadBoundary() {
       if (requestStillCurrent()) workspaceReadState.beginRequest(requestedTarget);
     });
 
-    const loadFullScope = async (): Promise<void> => {
+    const loadFullScope = async (staleRetry = 0): Promise<void> => {
       const response = await fetch(endpoint, {
         credentials: "same-origin",
         cache: "no-store",
@@ -142,23 +196,37 @@ export function WorkspaceScopedReadBoundary() {
         throw new Error(payload.error || "The requested workspace data could not be loaded.");
       }
 
+      if (payload.revision < useRDashStore.getState().serverRevision) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        if (staleRetry < 1 && requestStillCurrent()) return loadFullScope(staleRetry + 1);
+        if (requestStillCurrent()) window.location.reload();
+        return;
+      }
+
       const overlay = await restoreWorkspaceOutboxOverlay(payload.data);
       if (!requestStillCurrent()) return;
 
-      hydrateSecureWorkspace({
+      const hydrated = hydrateSecureWorkspace({
         db: overlay.db,
         revision: payload.revision,
         user: hydrationUser,
-        aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
       });
+      if (!hydrated) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        workspaceReadCache.clear();
+        if (staleRetry < 1 && requestStillCurrent()) return loadFullScope(staleRetry + 1);
+        if (requestStillCurrent()) window.location.reload();
+        return;
+      }
       workspaceReadState.recordResponse(response, requestedTarget);
       workspaceReadCache.store({
         target: requestedTarget,
         user: hydrationUser,
         revision: payload.revision,
         data: payload.data,
-        aggregateRevisions: payload.aggregateRevisions,
         rowVersions: payload.rowVersions,
         readState: workspaceReadState.getSnapshot(),
       });
@@ -166,6 +234,8 @@ export function WorkspaceScopedReadBoundary() {
     };
 
     const revalidateCachedScope = async (): Promise<void> => {
+      await useRDashStore.getState().awaitServerSync().catch(() => undefined);
+      if (!requestStillCurrent()) return;
       const cached = workspaceReadCache.get(requestedTarget, authUser);
       if (!cached) {
         await loadFullScope();
@@ -187,22 +257,50 @@ export function WorkspaceScopedReadBoundary() {
         return;
       }
       if (result.kind === "reload") {
+        if (result.reason === "client_ahead") {
+          clearWorkspaceAcceptedBaseline();
+          clearWorkspaceReadRequestCache();
+          window.location.reload();
+          return;
+        }
         await loadFullScope();
+        return;
+      }
+
+      if (!requestStillCurrent()) return;
+      if (result.entry.revision < useRDashStore.getState().serverRevision) {
+        clearWorkspaceReadRequestCache();
+        await loadFullScope();
+        return;
+      }
+      workspaceReadCache.put(result.entry);
+      workspaceReadState.restoreCached(requestedTarget, result.entry.readState);
+
+      if (!result.changed) {
+        useRDashStore.getState().acceptWorkspaceServerRevision({
+          revision: result.entry.revision,
+          rowVersions: result.entry.rowVersions,
+          deletedRowVersionKeys: result.deletedRowVersionKeys,
+        });
         return;
       }
 
       const overlay = await restoreWorkspaceOutboxOverlay(result.entry.data);
       if (!requestStillCurrent()) return;
-
-      hydrateSecureWorkspace({
+      const hydrated = hydrateSecureWorkspace({
         db: overlay.db,
         revision: result.entry.revision,
         user: authUser,
-        aggregateRevisions: result.entry.aggregateRevisions,
         rowVersions: result.entry.rowVersions,
+        deletedRowVersionKeys: result.deletedRowVersionKeys,
       });
-      workspaceReadCache.put(result.entry);
-      workspaceReadState.restoreCached(requestedTarget, result.entry.readState);
+      if (!hydrated) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        workspaceReadCache.clear();
+        await loadFullScope();
+        return;
+      }
       applyOverlayStatus(overlay);
     };
 
@@ -220,7 +318,130 @@ export function WorkspaceScopedReadBoundary() {
     };
   }, [authUser, endpoint, hydrateSecureWorkspace, needsExpansion, pathname, requestedTarget, retryNonce, targetKey]);
 
-  if (!needsExpansion) return null;
+  const loadMore = React.useCallback(async () => {
+    if (!authUser || pageLoading || needsExpansion) return;
+
+    setPageLoading(true);
+    setPageError(undefined);
+    try {
+      await useRDashStore.getState().awaitServerSync().catch(() => undefined);
+      const pageBaseRevision = useRDashStore.getState().serverRevision;
+      const cursors = Object.entries(workspacePageState(useRDashStore.getState().db))
+        .filter(([, cursor]) => cursor.hasMore && cursor.nextOffset != null)
+        .slice(0, MAX_COLLECTION_PAGES_PER_REQUEST);
+      if (!cursors.length) return;
+
+      const params = new URLSearchParams();
+      for (const [collection, cursor] of cursors) {
+        params.append("page", `${collection}:${cursor.nextOffset}`);
+      }
+      const response = await fetch(`${endpoint}?${params.toString()}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+          "X-UC-Workspace-Path": pathname,
+          "X-UC-Workspace-Module": requestedTarget.moduleId,
+          "X-UC-Read-Page": "1",
+        },
+      });
+      if (response.status === 401) {
+        workspaceReadCache.clear();
+        workspaceReadState.reset();
+        window.location.replace("/signin");
+        return;
+      }
+
+      const payload = await response.json().catch(() => ({})) as WorkspaceReadPayload;
+      if (
+        !response.ok ||
+        response.headers.get("X-UC-Read-Page-Only") !== "1" ||
+        !payload.data ||
+        typeof payload.revision !== "number"
+      ) {
+        throw new Error(payload.error || "The next page could not be loaded.");
+      }
+
+      const latest = useRDashStore.getState();
+      if (!latest.authUser || latest.authUser.email !== authUser.email) return;
+      if (payload.revision !== latest.serverRevision || latest.serverRevision !== pageBaseRevision) {
+        // A concurrent commit means page offsets no longer describe the same
+        // snapshot. Restart the normal scoped read rather than merging stale rows.
+        workspaceReadState.reset();
+        setRetryNonce((value) => value + 1);
+        return;
+      }
+
+      const cached = workspaceReadCache.get(requestedTarget, authUser);
+      const cacheBase = cached?.data || latest.db;
+      const mergedCacheData = mergeWorkspacePage(cacheBase, payload.data);
+      const mergedUiData = mergeWorkspacePage(latest.db, payload.data);
+      const mergedRowVersions = mergeWorkspaceRowVersions(
+        workspaceRowVersionState.getSnapshot(),
+        payload.rowVersions || {},
+      );
+      const overlay = await restoreWorkspaceOutboxOverlay(mergedUiData);
+
+      const latestAfterOverlay = useRDashStore.getState();
+      if (!latestAfterOverlay.authUser || latestAfterOverlay.serverRevision !== payload.revision) {
+        clearWorkspaceAcceptedBaseline();
+        workspaceReadState.reset();
+        setRetryNonce((value) => value + 1);
+        return;
+      }
+      const hydrated = latestAfterOverlay.hydrateSecureWorkspace({
+        db: overlay.db,
+        revision: payload.revision,
+        user: authUser,
+        rowVersions: mergedRowVersions,
+      });
+      if (!hydrated) {
+        clearWorkspaceAcceptedBaseline();
+        clearWorkspaceReadRequestCache();
+        workspaceReadCache.clear();
+        workspaceReadState.reset();
+        setRetryNonce((value) => value + 1);
+        return;
+      }
+      workspaceReadCache.store({
+        target: requestedTarget,
+        user: authUser,
+        revision: payload.revision,
+        data: mergedCacheData,
+        rowVersions: mergedRowVersions,
+        readState: workspaceReadState.getSnapshot(),
+      });
+      applyOverlayStatus(overlay);
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "The next page could not be loaded.");
+    } finally {
+      setPageLoading(false);
+    }
+  }, [authUser, endpoint, needsExpansion, pageLoading, pathname, requestedTarget, serverRevision]);
+
+  if (!needsExpansion) {
+    if (!pageCursors.length && !pageError) return null;
+    return (
+      <div className="fixed bottom-4 right-4 z-[70] w-[min(92vw,360px)] rounded-xl border border-border bg-card/95 p-3 shadow-xl backdrop-blur-sm">
+        <div className="flex items-start gap-2.5">
+          <Database className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold">{pageError ? "More records could not be loaded" : "More records are available"}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {pageError || `${pageCursors.length} bounded data ${pageCursors.length === 1 ? "set has" : "sets have"} another page.`}
+            </p>
+          </div>
+          {pageCursors.length ? (
+            <Button type="button" size="sm" variant="outline" disabled={pageLoading} onClick={() => void loadMore()}>
+              {pageLoading ? <LoaderCircle className="mr-1 h-3.5 w-3.5 animate-spin" /> : <RotateCw className="mr-1 h-3.5 w-3.5" />}
+              Load more
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
   const error = loadState.status === "error" ? loadState.error : undefined;
   const loading = loadState.status === "not_loaded" || loadState.status === "loading";
   return (

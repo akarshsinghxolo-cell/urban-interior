@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { getWorkspaceSubset } from "@/lib/rdash/server/workspace";
+import { getProjectedWorkspaceBootstrap } from "@/lib/rdash/server/projected-workspace-bootstrap";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,11 +39,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const startedAt = performance.now();
-    const workspace = await getWorkspaceSubset({});
+    const workspace = await getProjectedWorkspaceBootstrap(user.staffId);
     const loadMs = performance.now() - startedAt;
     const body = JSON.stringify({
       revision: workspace.revision,
       updatedAt: workspace.updatedAt,
+      data: workspace.data,
+      rowVersions: workspace.rowVersions,
       user: {
         userId: user.userId,
         name: user.name,
@@ -53,7 +55,7 @@ export async function GET(request: NextRequest) {
         expiresAt: user.expiresAt,
       },
       workspaceId: process.env.UC_WORKSPACE_ID || "default",
-      readStrategy: "module-scoped",
+      readStrategy: "foundation-first",
     });
     return new NextResponse(body, {
       status: 200,

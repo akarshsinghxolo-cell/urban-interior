@@ -11,6 +11,7 @@ import {
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
 import { workspaceDeltaSyncIsSafe } from "@/lib/rdash/workspace-delta-sync-policy";
+import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
 import {
   mergeWorkspaceRowVersions,
   workspaceRowVersionState,
@@ -59,10 +60,14 @@ function scopedDatabase(): RDashDatabase {
   const metadata = database as unknown as Record<string, unknown>;
   metadata._workspace_read_scope = "workdesk";
   metadata._workspace_read_collections = ["tasks", "followups", "master.staff"];
+  metadata._workspace_foundation_embedded = true;
   return database;
 }
 
-afterEach(() => workspaceRowVersionState.resetForTests());
+afterEach(() => {
+  workspaceRowVersionState.resetForTests();
+  workspaceFoundationRevisionState.reset();
+});
 
 describe("client delta application", () => {
   test("applies only collections represented by the current scoped snapshot", () => {
@@ -136,6 +141,18 @@ describe("client delta application", () => {
       "visits:visit-1": 3,
       "visit-1": 3,
     });
+  });
+});
+
+describe("foundation revision state", () => {
+  test("advances monotonically and can reset for a new authenticated session", () => {
+    workspaceFoundationRevisionState.replace(10);
+    workspaceFoundationRevisionState.advance(8);
+    expect(workspaceFoundationRevisionState.get()).toBe(10);
+    workspaceFoundationRevisionState.advance(12);
+    expect(workspaceFoundationRevisionState.get()).toBe(12);
+    workspaceFoundationRevisionState.reset();
+    expect(workspaceFoundationRevisionState.get()).toBe(0);
   });
 });
 
@@ -234,7 +251,7 @@ describe("delta synchronization safety policy", () => {
     const source = await testFile("src/lib/rdash/use-workspace-row-version-bridge.ts").text();
     const app = await testFile("src/components/urban-castle/UrbanCastleApp.tsx").text();
     expect(source).toContain("React.useLayoutEffect");
-    expect(source).toContain("workspaceRowVersionState.replace(input.rowVersions)");
+    expect(source).toContain("workspaceRowVersionState.merge(input.rowVersions)");
     expect(source).toContain("hydrateSecureWorkspace: wrapped");
     expect(app).toContain("useInstallWorkspaceRowVersionBridge()");
     expect(app.indexOf("useInstallWorkspaceRowVersionBridge()"))
@@ -247,5 +264,7 @@ describe("delta synchronization safety policy", () => {
     expect(source).toContain("MAX_COLLECTION_FILTERS");
     expect(source).toContain("knownWorkspaceCollection");
     expect(source).toContain('"X-UC-Delta-Filtered"');
+    expect(source).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
+    expect(source).toContain("canReturnFullStaffRows");
   });
 });

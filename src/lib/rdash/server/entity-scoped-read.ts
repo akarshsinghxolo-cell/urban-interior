@@ -10,13 +10,12 @@ import {
   getRestWorkspaceBySelectors,
   type EntityScopedReadPlan,
 } from "./entity-scoped-rest";
-import {
-  getWorkspaceBootstrap,
-  mergeWorkspaceSubsets,
-} from "./module-scoped-read";
-import type { WorkspaceSubset } from "./workspace";
+import { mergeWorkspaceSubsets } from "./module-scoped-read";
+import { getProjectedWorkspacePermissions } from "./projected-workspace-bootstrap";
+import { getWorkspaceSubset, type WorkspaceSubset } from "./workspace";
 
-export const ENTITY_SCOPED_READS_ENABLED = process.env.UC_ENTITY_SCOPED_READS !== "0";
+// Entity-scoped reads are the authoritative Customer/Site detail architecture.
+export const ENTITY_SCOPED_READS_ENABLED = true;
 const MAX_ENTITY_IDS = 500;
 
 export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([
@@ -24,14 +23,6 @@ export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([
   "paymentTermTemplates",
   "taxConfigs",
   "validityConfigs",
-  "master.units",
-  "master.workCategories",
-  "master.workSubcategories",
-  "master.articles",
-  "master.articleVariants",
-  "master.subcategoryArticleMap",
-  "master.workOptionGroups",
-  "master.workOptionValues",
 ] as const);
 
 export const CUSTOMER_RELATION_COLLECTIONS = Object.freeze([
@@ -144,6 +135,14 @@ function allLoadedEntityIds(database: RDashDatabase): string[] {
   return unique(values);
 }
 
+function canonicalThreadRecordIds(database: RDashDatabase, values: unknown[]): string[] {
+  const customerIds = new Set(database.customers.map((customer) => customer.id));
+  return unique(values.map((value) => {
+    const id = String(value || "").trim();
+    return customerIds.has(id) ? `customer-conversation:${id}` : id;
+  }));
+}
+
 function addJsonValues(
   plan: EntityScopedReadPlan,
   collection: string,
@@ -183,7 +182,12 @@ function relationPlan(
   const collections = kind === "customer" ? CUSTOMER_RELATION_COLLECTIONS : SITE_RELATION_COLLECTIONS;
   const field = kind === "customer" ? "customer_id" : "site_id";
   for (const collection of collections) addJsonValues(plan, collection, field, [id]);
-  addJsonValues(plan, "threads", "record_id", [id, `${kind}-conversation:${id}`]);
+  addJsonValues(
+    plan,
+    "threads",
+    "record_id",
+    [kind === "customer" ? `customer-conversation:${id}` : id],
+  );
   addJsonValues(plan, "auditLog", kind === "customer" ? "customer_id" : "entity_id", [id]);
   addJsonValues(plan, "master.fileAssets", `${kind}_id`, [id]);
   addJsonValues(plan, "master.storageFolderInstances", `${kind}_id`, [id]);
@@ -243,7 +247,7 @@ function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind
 
   addRows(plan, "threads", threadIds);
   addRows(plan, "entityFileAttachments", attachmentIds);
-  addJsonValues(plan, "threads", "record_id", unique([...entityIds, id, `${kind}-conversation:${id}`]));
+  addJsonValues(plan, "threads", "record_id", canonicalThreadRecordIds(database, [...entityIds, id]));
   addJsonValues(plan, "auditLog", "entity_id", entityIds);
   addJsonValues(plan, "entityFileAttachments", "entity_id", entityIds);
   addJsonValues(plan, "entityReferenceAssignments", "entity_id", entityIds);
@@ -297,11 +301,11 @@ async function readEntityScope(
   const startedAt = performance.now();
   const touchedCollections = new Set<string>();
 
-  let merged = await getWorkspaceBootstrap(user);
+  const authorization = await getProjectedWorkspacePermissions();
   const access = workspaceRouteAccessDecision(
     target.moduleId,
     user.role,
-    merged.data.staffRolePermissions as unknown[],
+    authorization.data.staffRolePermissions as unknown[],
     target.permissionModule,
   );
   if (access.status !== "allowed") {
@@ -310,7 +314,8 @@ async function readEntityScope(
 
   const first = relationPlan(entity.kind, entity.id);
   requestedCollections(first).forEach((collection) => touchedCollections.add(collection));
-  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(first));
+  let merged = await getRestWorkspaceBySelectors(first);
+  if (merged.revision !== authorization.revision) throw new Error("READ_CONFLICT");
 
   const second = downstreamPlan(entity.kind, merged.data);
   requestedCollections(second).forEach((collection) => touchedCollections.add(collection));
@@ -324,15 +329,21 @@ async function readEntityScope(
   requestedCollections(fourth).forEach((collection) => touchedCollections.add(collection));
   merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(fourth));
 
+  const revisionFence = await getWorkspaceSubset({});
+  if (revisionFence.revision !== merged.revision) throw new Error("READ_CONFLICT");
+
   const mode = `${entity.kind}-row` as const;
   const metadata = merged.data as unknown as Record<string, unknown>;
   metadata._workspace_read_scope = target.scope;
   metadata._workspace_read_mode = mode;
+  metadata._workspace_read_strategy = "row";
   metadata._workspace_read_entity = { kind: entity.kind, id: entity.id };
   metadata._workspace_read_collections = [...touchedCollections];
+  metadata._workspace_foundation_embedded = false;
 
   return {
     ...merged,
+    queryCount: merged.queryCount + authorization.queryCount + revisionFence.queryCount,
     scope: target.scope as "customer" | "site",
     mode,
     entityKind: entity.kind,

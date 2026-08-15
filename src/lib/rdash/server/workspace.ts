@@ -9,65 +9,33 @@ import {
   assertWorkspaceMutationAllowed,
 } from "./mutation-policy";
 
-// REST-based data layer — Supabase only in production, no local database.
-// A seed-backed in-memory store is available only for explicitly opted-in local
-// development. Production must fail closed if Supabase is unavailable.
-
+// Supabase/PostgreSQL is the single server workspace persistence system.
+// The server fails closed if the canonical entity schema is unavailable.
 let restModule: typeof import("./commit-rest") | null = null;
 async function getRestModule() {
-  if (!restModule) {
-    restModule = await import("./commit-rest");
-  }
+  if (!restModule) restModule = await import("./commit-rest");
   return restModule;
 }
 
-// In-memory fallback cache (explicit local-development opt-in only).
-let inMemoryWorkspace: { revision: number; data: RDashDatabase; updatedAt: string } | null = null;
 let supabaseSchemaReady: boolean | null = null;
 
-export function allowsInMemoryWorkspaceFallback(environment = process.env): boolean {
-  return environment.NODE_ENV !== "production"
-    && environment.UC_ALLOW_IN_MEMORY_WORKSPACE_FALLBACK === "1";
-}
-
-function assertFallbackAllowed(): void {
-  if (allowsInMemoryWorkspaceFallback()) return;
-  throw new Error(
-    "SUPABASE_SCHEMA_UNAVAILABLE:Supabase is unavailable or the entity schema is missing; in-memory workspace fallback is disabled.",
-  );
-}
-
-async function checkSupabaseSchema(): Promise<boolean> {
-  if (supabaseSchemaReady !== null) return supabaseSchemaReady;
+async function assertSupabaseSchemaReady(): Promise<void> {
+  if (supabaseSchemaReady === true) return;
+  if (supabaseSchemaReady === false) {
+    throw new Error("SUPABASE_SCHEMA_UNAVAILABLE:Supabase is unavailable or the canonical entity schema is missing.");
+  }
   try {
     const admin = (await import("../../supabase/server")).getSupabaseAdminClient();
     const { error } = await admin.from("entity_workspace_revision").select("id").limit(1);
     supabaseSchemaReady = !error;
-    if (supabaseSchemaReady) {
-      console.log("[workspace] Supabase entity_* schema is ready.");
-    } else {
-      console.error("[workspace] Supabase entity_* schema is not ready.", error?.message || error);
-    }
+    if (error) console.error("[workspace] Supabase entity_* schema is not ready.", error.message || error);
   } catch (error) {
     supabaseSchemaReady = false;
     console.error("[workspace] Supabase schema check failed.", error);
   }
-  if (!supabaseSchemaReady) assertFallbackAllowed();
-  return supabaseSchemaReady;
-}
-
-async function getInMemoryWorkspace(): Promise<{ revision: number; data: RDashDatabase; updatedAt: string }> {
-  if (!inMemoryWorkspace) {
-    const { buildSeedDatabase } = await import("../seed");
-    inMemoryWorkspace = {
-      revision: 1,
-      data: buildSeedDatabase(),
-      updatedAt: new Date().toISOString(),
-    };
-    console.log("[workspace] In-memory workspace seeded from buildSeedDatabase().");
+  if (!supabaseSchemaReady) {
+    throw new Error("SUPABASE_SCHEMA_UNAVAILABLE:Supabase is unavailable or the canonical entity schema is missing.");
   }
-  hydrateStaffReferenceLabels(inMemoryWorkspace.data);
-  return inMemoryWorkspace;
 }
 
 export interface WorkspaceSnapshot {
@@ -88,40 +56,47 @@ export interface WorkspaceOperationCommitResult {
   bumpedRowVersions?: Record<string, number>;
 }
 
+export interface WorkspacePaginationEntry {
+  offset: number;
+  limit: number;
+  returned: number;
+  hasMore: boolean;
+  nextOffset?: number;
+}
+
+export type WorkspacePagination = Record<string, WorkspacePaginationEntry>;
+
 export type WorkspaceReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
   limitsByCollection?: Record<string, number>;
+  offsetsByCollection?: Record<string, number>;
 };
 
 export interface WorkspaceSubset extends WorkspaceWithRevisions {
   queryCount: number;
+  pagination?: WorkspacePagination;
 }
 
+/** Full reads are reserved for explicit reset/integrity/diagnostic operations. */
 export async function getWorkspace(includeRevisions = false): Promise<WorkspaceWithRevisions> {
-  if (await checkSupabaseSchema()) {
-    const { getRestWorkspace } = await getRestModule();
-    const workspace = await getRestWorkspace();
-    hydrateStaffReferenceLabels(workspace.data);
-    if (includeRevisions) return workspace;
-    return { revision: workspace.revision, data: workspace.data, updatedAt: workspace.updatedAt };
-  }
-  const ws = await getInMemoryWorkspace();
-  return includeRevisions ? { ...ws, rowVersions: {} } : ws;
+  await assertSupabaseSchemaReady();
+  const { getRestWorkspace } = await getRestModule();
+  const workspace = await getRestWorkspace();
+  hydrateStaffReferenceLabels(workspace.data);
+  if (includeRevisions) return workspace;
+  return { revision: workspace.revision, data: workspace.data, updatedAt: workspace.updatedAt };
 }
 
 /**
- * Reads only the collections and row IDs requested by a targeted commit.
- * The in-memory development fallback returns its complete local snapshot because
- * it has no network/database query cost and is not used in production.
+ * Reads only the collections and row IDs requested by the authoritative subset
+ * architecture. Limited full-collection reads can carry a per-collection
+ * offset and return pagination metadata without issuing an expensive count.
  */
 export async function getWorkspaceSubset(plan: WorkspaceReadPlan): Promise<WorkspaceSubset> {
-  if (await checkSupabaseSchema()) {
-    const { getRestWorkspaceSubset } = await getRestModule();
-    return getRestWorkspaceSubset(plan);
-  }
-  const ws = await getInMemoryWorkspace();
-  return { ...ws, rowVersions: {}, queryCount: 0 };
+  await assertSupabaseSchemaReady();
+  const { getRestWorkspaceSubset } = await getRestModule();
+  return getRestWorkspaceSubset(plan);
 }
 
 function secureMutationAudit(user: AuthenticatedUser, operations: ReturnType<typeof diffWorkspaceOperations>): AuditLogEntry {
@@ -165,10 +140,7 @@ export function enforceMutation(user: AuthenticatedUser, current: RDashDatabase,
   return trustedCandidate;
 }
 
-/**
- * Commits already-authorized row operations without reconstructing the whole
- * workspace again. PostgreSQL performs workspace and row CAS atomically.
- */
+/** Commits already-authorized row operations with PostgreSQL workspace/row CAS. */
 export async function commitWorkspaceOperations(
   revision: number,
   operations: WorkspaceOperation[],
@@ -178,31 +150,20 @@ export async function commitWorkspaceOperations(
     return { revision, updatedAt: new Date().toISOString(), bumpedRowVersions: {} };
   }
 
-  if (await checkSupabaseSchema()) {
-    const { commitRestOperations } = await getRestModule();
-    const result = await commitRestOperations(operations, revision, expectedRowVersions);
-    return {
-      revision: result.newRevision,
-      updatedAt: new Date().toISOString(),
-      bumpedRowVersions: result.bumpedRowVersions,
-    };
-  }
-
-  const current = await getInMemoryWorkspace();
-  if (current.revision !== revision) throw new Error("CONFLICT");
-  inMemoryWorkspace = {
-    revision: current.revision + 1,
-    data: applyWorkspaceOperations(current.data, operations),
-    updatedAt: new Date().toISOString(),
-  };
-  hydrateStaffReferenceLabels(inMemoryWorkspace.data);
+  await assertSupabaseSchemaReady();
+  const { commitRestOperations } = await getRestModule();
+  const result = await commitRestOperations(operations, revision, expectedRowVersions);
   return {
-    revision: inMemoryWorkspace.revision,
-    updatedAt: inMemoryWorkspace.updatedAt,
-    bumpedRowVersions: {},
+    revision: result.newRevision,
+    updatedAt: new Date().toISOString(),
+    bumpedRowVersions: result.bumpedRowVersions,
   };
 }
 
+/**
+ * Full snapshot save is retained only for explicit administrative callers.
+ * Normal application mutations use /api/operations/commit and subset reads.
+ */
 export async function saveWorkspace(
   revision: number,
   data: RDashDatabase,
@@ -214,18 +175,8 @@ export async function saveWorkspace(
   const operations = diffWorkspaceOperations(current.data, data);
   if (!operations.length) return current;
 
-  if (await checkSupabaseSchema()) {
-    const result = await commitWorkspaceOperations(revision, operations, expectedRowVersions);
-    const saved = await getWorkspace();
-    return {
-      ...saved,
-      revision: result.revision,
-      bumpedRowVersions: result.bumpedRowVersions,
-    };
-  }
-
   const result = await commitWorkspaceOperations(revision, operations, expectedRowVersions);
-  const saved = await getInMemoryWorkspace();
+  const saved = await getWorkspace();
   return {
     ...saved,
     revision: result.revision,
@@ -240,20 +191,7 @@ export function assertWorkspaceResetRequest(user: AuthenticatedUser, confirmatio
 
 export async function resetWorkspace(user: AuthenticatedUser, confirmation: string): Promise<WorkspaceSnapshot> {
   assertWorkspaceResetRequest(user, confirmation);
-
-  if (await checkSupabaseSchema()) {
-    const { resetWorkspaceChangeJournal } = await import("./workspace-change-reset");
-    const { resetRestWorkspace } = await getRestModule();
-    await resetWorkspaceChangeJournal();
-    return resetRestWorkspace();
-  }
-
-  const { buildSeedDatabase } = await import("../seed");
-  inMemoryWorkspace = {
-    revision: 1,
-    data: buildSeedDatabase(),
-    updatedAt: new Date().toISOString(),
-  };
-  hydrateStaffReferenceLabels(inMemoryWorkspace.data);
-  return inMemoryWorkspace;
+  await assertSupabaseSchemaReady();
+  const { resetRestWorkspace } = await getRestModule();
+  return resetRestWorkspace();
 }

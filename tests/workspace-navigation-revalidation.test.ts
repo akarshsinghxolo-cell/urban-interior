@@ -56,8 +56,10 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain(
       "if (!needsExpansion && !enteredNewTarget)",
     );
+    expect(source).toContain("workspaceReadCache.peek(requestedTarget, authUser)");
     expect(source).toContain("workspaceReadCache.get(requestedTarget, authUser)");
     expect(source).toContain("revalidateWorkspaceReadCacheEntry");
+    expect(source).toContain("await useRDashStore.getState().awaitServerSync().catch(() => undefined)");
     expect(source).toContain('"X-UC-Read-Revalidate": enteredNewTarget ? "navigation-full" : "coverage"');
   });
 
@@ -66,7 +68,16 @@ describe("workspace navigation freshness", () => {
       "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
     );
 
-    expect(source).toContain("if (!needsExpansion) return null");
+    // Compatible module data must never be covered by the blocking refresh UI.
+    // A small non-blocking Load-more card is allowed when bounded collections
+    // advertise another page.
+    expect(source).toContain("if (!needsExpansion) {");
+    expect(source).toContain("workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState)");
+    expect(source).not.toContain("db: cachedTarget.data");
+    expect(source).toContain("if (!result.changed)");
+    expect(source).toContain("acceptWorkspaceServerRevision");
+    expect(source).toContain("if (!pageCursors.length && !pageError) return null");
+    expect(source).toContain("More records are available");
     expect(source).not.toContain("if (!needsExpansion && !enteredNewTarget) return null");
   });
 
@@ -87,6 +98,10 @@ describe("workspace navigation freshness", () => {
     expect(source).toContain('"X-UC-Delta-Module": entry.target.moduleId');
     expect(source).toContain("applyWorkspaceDelta(entry.data, delta)");
     expect(source).toContain("mergeWorkspaceRowVersions");
+    expect(source).toContain("changed: boolean");
+    expect(source).toContain("changed = changed || deltaChanged");
+    expect(source).toContain("deletedRowVersionKeys");
+    expect(source).toContain("deletedDeltaVersionKeys(delta)");
   });
 
   test("relationship row graphs never request collection-wide delta row bodies", async () => {

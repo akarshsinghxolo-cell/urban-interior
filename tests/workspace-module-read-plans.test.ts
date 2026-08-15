@@ -42,6 +42,13 @@ const EXACT_MODULES = [
   "userApprovals",
   "approvalPolicies",
   "auditLog",
+  "customerTimeline",
+  "customerRequests",
+  "salesPipeline",
+  "lostClosedReview",
+  "drawings",
+  "executionLogs",
+  "woTimeline",
 ] as const;
 
 describe("exact module workspace read plans", () => {
@@ -91,12 +98,33 @@ describe("exact module workspace read plans", () => {
     }
   });
 
-  test("bounds history-heavy secondary collections", () => {
+  test("bounds existing and true-history feeds only", () => {
     const audit = workspaceModuleReadPlan(workspaceReadTargetForModule("auditLog"));
     expect(audit.limitsByCollection?.auditLog).toBe(250);
 
     const rates = workspaceModuleReadPlan(workspaceReadTargetForModule("vendorRates"));
     expect(rates.limitsByCollection?.["master.vendorRateHistories"]).toBe(100);
+
+    const customerTimeline = workspaceModuleReadPlan(workspaceReadTargetForModule("customerTimeline"));
+    expect(customerTimeline.limitsByCollection?.executionLogs).toBe(100);
+    expect(customerTimeline.limitsByCollection?.commSends).toBe(100);
+    expect(customerTimeline.limitsByCollection?.auditLog).toBe(100);
+  });
+
+  test("does not truncate primary arrays that currently drive total counters", () => {
+    const drawings = workspaceModuleReadPlan(workspaceReadTargetForModule("drawings"));
+    expect(drawings.limitsByCollection?.drawings).toBeUndefined();
+    expect(drawings.limitsByCollection?.customers).toBeUndefined();
+    expect(drawings.limitsByCollection?.sites).toBeUndefined();
+    expect(drawings.limitsByCollection?.entityFileAttachments).toBeUndefined();
+    expect(drawings.limitsByCollection?.["master.fileAssets"]).toBeUndefined();
+
+    const executionLogs = workspaceModuleReadPlan(workspaceReadTargetForModule("executionLogs"));
+    expect(executionLogs.limitsByCollection?.executionLogs).toBeUndefined();
+
+    const inbox = workspaceModuleReadPlan(workspaceReadTargetForModule("unifiedThreadInbox"));
+    expect(inbox.limitsByCollection?.threads).toBeUndefined();
+    expect(inbox.limitsByCollection?.customers).toBeUndefined();
   });
 });
 
@@ -117,10 +145,22 @@ describe("bootstrap JSON projections", () => {
       "master.units",
       "master.workCategories",
       "master.workSubcategories",
+      "master.articles",
+      "master.articleVariants",
+      "master.subcategoryArticleMap",
+      "master.workOptionGroups",
+      "master.workOptionValues",
     ]);
     expect(projected).toContain("fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]");
-    expect(projected).toContain('"staffRolePermissions",\n        ...WORKSPACE_FOUNDATION_COLLECTIONS');
+    expect(projected).toContain("WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS");
+    expect(projected).toContain("...WORKSPACE_FOUNDATION_COLLECTIONS,");
     expect(projected).not.toContain("select(\"id,revision,data\")");
+  });
+
+  test("marks entity graphs as partial row reads", async () => {
+    const entityRead = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
+    expect(entityRead).toContain('metadata._workspace_read_strategy = "row"');
+    expect(entityRead).toContain('metadata._workspace_foundation_embedded = false');
   });
 
   test("exposes plan and page-limit telemetry", async () => {

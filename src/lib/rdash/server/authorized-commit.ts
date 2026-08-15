@@ -13,13 +13,67 @@ import type { AuthenticatedUser } from "./auth";
 import { introducedIntegrityIssues } from "./integrity-delta";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
+import { prepareSimpleTargetedCommit } from "./simple-targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
 import { canonicalizeVendorRateMaster } from "../vendor-rate";
 import { contractorRateProjection } from "../contractor-profile";
-import type { ContractorProfileRecord } from "../contractor-profile";
-import { commitWorkspaceOperations, getWorkspace } from "./workspace";
+import { moduleForCollection } from "../staff-operations";
+import type { ModuleWorkspaceReadScope } from "../workspace-read-scope";
+import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
+import {
+  commitWorkspaceOperations,
+  getWorkspaceSubset,
+  type WorkspaceReadPlan,
+} from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
+
+const VALIDATION_SCOPE_BY_MODULE: Readonly<Record<string, ModuleWorkspaceReadScope>> = Object.freeze({
+  workspace: "system",
+  customers: "customer",
+  sites: "site",
+  work: "site",
+  quotations: "quotation",
+  workOrders: "site",
+  boqs: "site",
+  tasks: "workdesk",
+  visits: "field",
+  attendance: "hr",
+  gps: "field",
+  vendors: "procurement",
+  contractors: "finance",
+  procurement: "procurement",
+  purchaseOrders: "procurement",
+  grns: "procurement",
+  inventory: "procurement",
+  finance: "finance",
+  payroll: "hr",
+  staff: "hr",
+  masters: "master",
+  media: "media",
+  approvals: "system",
+  reports: "reports",
+  system: "system",
+});
+
+const CONTRACTOR_CANONICAL_COLLECTIONS = Object.freeze([
+  "master.contractors",
+  "master.contractorRates",
+  "master.workCategories",
+  "master.workSubcategories",
+  "master.articles",
+  "master.articleVariants",
+  "master.subcategoryArticleMap",
+  "master.units",
+  "master.sourcePartners",
+] as const);
+
+const MASTER_REVERSE_VALIDATION_SCOPES: readonly ModuleWorkspaceReadScope[] = Object.freeze([
+  "master",
+  "quotation",
+  "procurement",
+  "site",
+]);
 
 function normalizeWorkspace(data: RDashDatabase) {
   return attachCustomerLabels(prepareWorkspaceData(repairOperationalWorkspace(data)));
@@ -38,7 +92,21 @@ function canonicalizeVendorRateOperations(
   return diffWorkspaceOperations(current, canonical);
 }
 
+function assertCanonicalThreadOperations(operations: WorkspaceOperation[]): void {
+  for (const operation of operations) {
+    if (operation.collection !== "threads") continue;
+    for (const row of operation.upsert || []) {
+      const kind = String(row.kind || row.record_type || "");
+      const recordId = String(row.record_id || "").trim();
+      if (kind === "generic" && recordId.startsWith("cust-")) {
+        throw new Error("INVALID:Customer conversation threads must use customer-conversation:<customer_id>.");
+      }
+    }
+  }
+}
+
 function sanitizeWorkspaceOperations(operations: WorkspaceOperation[]): WorkspaceOperation[] {
+  assertCanonicalThreadOperations(operations);
   return operations.map((operation) => {
     if (operation.collection !== "master.staff") return operation;
     return {
@@ -66,9 +134,6 @@ function canonicalizeContractorRateOperations(
     return operations;
   }
 
-  // Caller-supplied rate rows are never authoritative. Apply only the
-  // Contractor/profile operations, then rebuild rate rows from canonical
-  // work_capabilities for every touched Contractor.
   const profileOperations = operations.filter((operation) => operation.collection !== "master.contractorRates");
   const candidate = applyWorkspaceOperations(current, profileOperations);
   let contractorRates = current.master.contractorRates || [];
@@ -100,6 +165,55 @@ function canonicalizeContractorRateOperations(
   return diffWorkspaceOperations(current, canonical);
 }
 
+function validationReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]): WorkspaceReadPlan {
+  const fullCollections = new Set<string>();
+
+  for (const operation of operations) {
+    fullCollections.add(operation.collection);
+    const moduleKey = moduleForCollection(operation.collection);
+    const scope = VALIDATION_SCOPE_BY_MODULE[moduleKey] || "system";
+    for (const collection of COLLECTIONS_BY_SCOPE[scope]) fullCollections.add(collection);
+
+    // Taxonomy/master deletes can invalidate quotation, procurement and site
+    // records in other modules. Load those explicit reverse-reference domains
+    // rather than reverting to a whole-workspace validator.
+    if (
+      operation.collection.startsWith("master.")
+      && !operation.collection.startsWith("master.vendor")
+      && operation.collection !== "master.contractors"
+      && operation.collection !== "master.contractorRates"
+      && operation.collection !== "master.staff"
+      && !operation.collection.startsWith("master.storage")
+      && operation.collection !== "master.fileAssets"
+    ) {
+      for (const reverseScope of MASTER_REVERSE_VALIDATION_SCOPES) {
+        for (const collection of COLLECTIONS_BY_SCOPE[reverseScope]) fullCollections.add(collection);
+      }
+    }
+  }
+
+  const hasContractorMutation = operations.some((operation) =>
+    operation.collection === "master.contractors" || operation.collection === "master.contractorRates",
+  );
+  if (hasContractorMutation) {
+    for (const collection of CONTRACTOR_CANONICAL_COLLECTIONS) fullCollections.add(collection);
+  }
+
+  // Permission checks need the authoritative role matrix. Staff-sensitive
+  // writes also use the signed-in Staff record; the Staff table is small and
+  // loading it keeps all role/active-status checks on the same new read path.
+  if (user.role !== "Owner") fullCollections.add("staffRolePermissions");
+  fullCollections.add("master.staff");
+
+  const collections = [...fullCollections];
+  return {
+    fullCollections: collections,
+    // A validation domain must be complete. Explicit zero disables the generic
+    // history/list caps in getWorkspaceSubset without switching read systems.
+    limitsByCollection: Object.fromEntries(collections.map((collection) => [collection, 0])),
+  };
+}
+
 function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): AuditLogEntry {
   return {
     id: `audit-rest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
@@ -114,7 +228,7 @@ function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): Audit
   };
 }
 
-export type CommitMode = "phase2b-targeted" | "phase2-single-read";
+export type CommitMode = "row-targeted" | "domain-targeted";
 
 export interface CommitResult {
   revision: number;
@@ -133,9 +247,10 @@ export interface CommitResult {
 }
 
 /**
- * Phase 2B uses targeted row reads for common Task, Follow-up, Visit, and
- * related Thread/Audit mutations. Any unsupported or high-risk operation falls
- * back to the Phase 2A single-full-read path without changing its behavior.
+ * Every normal commit uses the new subset architecture. Common mutations use
+ * row/dependency reads; complex or cross-domain mutations use an explicit
+ * validation-domain subset. There is no whole-workspace fallback and no old
+ * commit mode to switch back to.
  */
 export async function commitAuthorizedPostgresOperations(
   user: AuthenticatedUser,
@@ -146,22 +261,27 @@ export async function commitAuthorizedPostgresOperations(
 ): Promise<CommitResult> {
   const startedAt = Date.now();
   let commitOperations = sanitizeWorkspaceOperations(operations);
-  let mode: CommitMode = "phase2-single-read";
+  let mode: CommitMode = "domain-targeted";
   let queryCount: number | undefined;
   let loadMs = 0;
   let authorizeAndValidateMs = 0;
 
   const targeted = await prepareTargetedCommit(user, revision, commitOperations);
-  if (targeted) {
-    commitOperations = targeted.operations;
-    mode = "phase2b-targeted";
-    queryCount = targeted.queryCount;
-    loadMs = targeted.loadMs;
-    authorizeAndValidateMs = targeted.authorizeAndValidateMs;
+  const simpleTargeted = targeted
+    ? null
+    : await prepareSimpleTargetedCommit(user, revision, commitOperations);
+  if (targeted || simpleTargeted) {
+    const prepared = targeted || simpleTargeted!;
+    commitOperations = prepared.operations;
+    mode = "row-targeted";
+    queryCount = prepared.queryCount;
+    loadMs = prepared.loadMs;
+    authorizeAndValidateMs = prepared.authorizeAndValidateMs;
   } else {
     const loadStartedAt = Date.now();
-    const current = await getWorkspace();
+    const current = await getWorkspaceSubset(validationReadPlan(user, commitOperations));
     const loadedAt = Date.now();
+    queryCount = current.queryCount;
     if (current.revision !== revision) throw new Error("CONFLICT");
 
     assertWorkspaceMutationAllowed(user, commitOperations, current.data);

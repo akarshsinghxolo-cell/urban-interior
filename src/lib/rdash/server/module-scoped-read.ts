@@ -7,18 +7,19 @@ import type {
   WorkspaceReadTarget,
 } from "../workspace-read-scope";
 import type { AuthenticatedUser } from "./auth";
-import {
-  COLLECTIONS_BY_SCOPE,
-  WORKSPACE_BOOTSTRAP_COLLECTIONS,
-} from "./module-scoped-collections";
+import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
   collectionsForWorkspaceReadTarget,
   moduleReadPlanSavings,
   workspaceModuleReadPlan,
 } from "./module-read-plans";
-import { getProjectedWorkspaceBootstrap } from "./projected-workspace-bootstrap";
+import {
+  getProjectedWorkspacePermissions,
+  WORKSPACE_FOUNDATION_COLLECTIONS,
+} from "./projected-workspace-bootstrap";
 import {
   getWorkspaceSubset,
+  type WorkspacePagination,
   type WorkspaceSubset,
 } from "./workspace";
 
@@ -26,7 +27,9 @@ export * from "./module-scoped-collections";
 export * from "./module-read-plans";
 export * from "./projected-workspace-bootstrap";
 
-export const MODULE_SCOPED_READS_ENABLED = process.env.UC_MODULE_SCOPED_READS !== "0";
+// Scoped reads are the runtime architecture, not an optional rollout mode.
+export const MODULE_SCOPED_READS_ENABLED = true;
+const FOUNDATION_COLLECTIONS = new Set<string>(WORKSPACE_FOUNDATION_COLLECTIONS);
 
 export interface ModuleScopedWorkspace extends WorkspaceSubset {
   scope: ModuleWorkspaceReadScope;
@@ -35,6 +38,7 @@ export interface ModuleScopedWorkspace extends WorkspaceSubset {
   readStrategy: "module" | "scope";
   limitedCollections: Record<string, number>;
   loadMs: number;
+  pageOnly?: boolean;
 }
 
 function rowsFor(database: RDashDatabase, collection: string): Array<Record<string, unknown>> {
@@ -61,6 +65,14 @@ function mergeRows(
     if (id) merged.set(id, row);
   }
   return [...merged.values()];
+}
+
+function mergedPagination(
+  current?: WorkspacePagination,
+  incoming?: WorkspacePagination,
+): WorkspacePagination | undefined {
+  const merged = { ...(current || {}), ...(incoming || {}) };
+  return Object.keys(merged).length ? merged : undefined;
 }
 
 export function mergeWorkspaceSubsets(target: WorkspaceSubset, source: WorkspaceSubset): WorkspaceSubset {
@@ -93,6 +105,7 @@ export function mergeWorkspaceSubsets(target: WorkspaceSubset, source: Workspace
     data,
     rowVersions: { ...(target.rowVersions || {}), ...(source.rowVersions || {}) },
     queryCount: target.queryCount + source.queryCount,
+    pagination: mergedPagination(target.pagination, source.pagination),
   };
 }
 
@@ -102,37 +115,72 @@ export function collectionsForWorkspaceReadScope(
   return COLLECTIONS_BY_SCOPE[scope];
 }
 
-export async function getWorkspaceBootstrap(user: AuthenticatedUser): Promise<WorkspaceSubset> {
-  return getProjectedWorkspaceBootstrap(user.staffId);
+function assertModuleTarget(target: WorkspaceReadTarget): asserts target is WorkspaceReadTarget & { scope: ModuleWorkspaceReadScope } {
+  if (target.scope === "full" || target.scope === "bootstrap") {
+    throw new Error("INVALID:Bootstrap and full reads do not use the module-scoped planner.");
+  }
+}
+
+function moduleMetadata(input: {
+  database: RDashDatabase;
+  target: WorkspaceReadTarget & { scope: ModuleWorkspaceReadScope };
+  readStrategy: "module" | "scope";
+  readCollections: readonly string[];
+  limitedCollections: Record<string, number>;
+  pagination?: WorkspacePagination;
+  fullStaffAllowed?: boolean;
+  pageOnly?: boolean;
+}) {
+  const metadata = input.database as unknown as Record<string, unknown>;
+  metadata._workspace_read_scope = input.target.scope;
+  metadata._workspace_read_mode = input.target.scope;
+  metadata._workspace_read_module = input.target.moduleId;
+  metadata._workspace_read_strategy = input.readStrategy;
+  metadata._workspace_read_collections = [...input.readCollections];
+  metadata._workspace_read_limits = { ...input.limitedCollections };
+  metadata._workspace_pagination = { ...(input.pagination || {}) };
+  metadata._workspace_foundation_embedded = false;
+  if (input.pageOnly) metadata._workspace_page_only = true;
+  if (typeof input.fullStaffAllowed === "boolean") {
+    metadata._workspace_staff_projection = input.fullStaffAllowed ? "full" : "directory";
+  }
+}
+
+async function authorizeModuleTarget(
+  user: AuthenticatedUser,
+  target: WorkspaceReadTarget & { scope: ModuleWorkspaceReadScope },
+): Promise<WorkspaceSubset> {
+  const authorization = await getProjectedWorkspacePermissions();
+  const access = workspaceRouteAccessDecision(
+    target.moduleId,
+    user.role,
+    authorization.data.staffRolePermissions as unknown[],
+    target.permissionModule,
+  );
+  if (access.status !== "allowed") {
+    throw new Error(`FORBIDDEN:Your role cannot open ${access.moduleLabel}.`);
+  }
+  return authorization;
 }
 
 async function readAuthorizedScope(
   user: AuthenticatedUser,
   target: WorkspaceReadTarget,
 ): Promise<ModuleScopedWorkspace> {
-  if (target.scope === "full" || target.scope === "bootstrap") {
-    throw new Error("INVALID:Bootstrap and full reads do not use the module-scoped planner.");
-  }
+  assertModuleTarget(target);
 
   const startedAt = performance.now();
-  const bootstrap = await getWorkspaceBootstrap(user);
-  const access = workspaceRouteAccessDecision(
-    target.moduleId,
-    user.role,
-    bootstrap.data.staffRolePermissions as unknown[],
-    target.permissionModule,
-  );
-  if (access.status !== "allowed") {
-    throw new Error(`FORBIDDEN:Your role cannot open ${access.moduleLabel}.`);
-  }
-
+  const authorization = await authorizeModuleTarget(user, target);
   const plan = workspaceModuleReadPlan(target);
   const plannedCollections = collectionsForWorkspaceReadTarget(target);
   const plannedFullStaff = plannedCollections.includes("master.staff");
   const fullStaffAllowed = plannedFullStaff && canReadFullStaffData(user.role);
+  const transmittedCollections = plannedCollections.filter(
+    (collection) => !FOUNDATION_COLLECTIONS.has(collection),
+  );
   const fullCollections = fullStaffAllowed
-    ? [...plannedCollections]
-    : plannedCollections.filter((collection) => collection !== "master.staff");
+    ? [...transmittedCollections]
+    : transmittedCollections.filter((collection) => collection !== "master.staff");
   const scoped = await getWorkspaceSubset({
     fullCollections,
     rowsByCollection:
@@ -141,7 +189,9 @@ async function readAuthorizedScope(
         : undefined,
     limitsByCollection: { ...(plan.limitsByCollection || {}) },
   });
-  const merged = mergeWorkspaceSubsets(bootstrap, scoped);
+  if (scoped.revision !== authorization.revision) throw new Error("READ_CONFLICT");
+  const revisionFence = await getWorkspaceSubset({});
+  if (revisionFence.revision !== scoped.revision) throw new Error("READ_CONFLICT");
   const savings = moduleReadPlanSavings(target);
   const limitedCollections = Object.fromEntries(
     Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
@@ -149,34 +199,110 @@ async function readAuthorizedScope(
     ),
   );
   const readCollections = [...new Set([
-    ...WORKSPACE_BOOTSTRAP_COLLECTIONS,
-    ...plannedCollections,
+    ...fullCollections,
+    ...(plannedFullStaff && !fullStaffAllowed && user.staffId ? ["master.staff"] : []),
   ])];
 
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_scope = target.scope;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_mode = target.scope;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_module = target.moduleId;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_strategy = plan.strategy;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_collections = readCollections;
-  (merged.data as unknown as Record<string, unknown>)._workspace_read_limits = limitedCollections;
-  (merged.data as unknown as Record<string, unknown>)._workspace_staff_projection = fullStaffAllowed
-    ? "full"
-    : "directory";
+  moduleMetadata({
+    database: scoped.data,
+    target,
+    readStrategy: plan.strategy,
+    readCollections,
+    limitedCollections,
+    pagination: scoped.pagination,
+    fullStaffAllowed,
+  });
 
   return {
-    ...merged,
+    ...scoped,
+    queryCount: scoped.queryCount + authorization.queryCount + revisionFence.queryCount,
     scope: target.scope,
     collectionCount: readCollections.length,
-    scopeCollectionCount: savings.scope + WORKSPACE_BOOTSTRAP_COLLECTIONS.length,
+    scopeCollectionCount: savings.scope,
     readStrategy: plan.strategy,
     limitedCollections,
     loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
   };
 }
 
+function sanitizePageOffsets(
+  requested: Record<string, number>,
+  limitedCollections: Record<string, number>,
+): Record<string, number> {
+  const offsets: Record<string, number> = {};
+  for (const [collection, rawOffset] of Object.entries(requested)) {
+    if (!(collection in limitedCollections)) continue;
+    const offset = Number(rawOffset);
+    if (!Number.isSafeInteger(offset) || offset <= 0 || offset > 1_000_000) continue;
+    offsets[collection] = offset;
+  }
+  return offsets;
+}
+
+async function readAuthorizedPage(
+  user: AuthenticatedUser,
+  target: WorkspaceReadTarget,
+  requestedOffsets: Record<string, number>,
+): Promise<ModuleScopedWorkspace> {
+  assertModuleTarget(target);
+
+  const startedAt = performance.now();
+  const authorization = await authorizeModuleTarget(user, target);
+  const plan = workspaceModuleReadPlan(target);
+  const plannedCollections = collectionsForWorkspaceReadTarget(target);
+  const limitedCollections = Object.fromEntries(
+    Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
+      plannedCollections.includes(collection),
+    ),
+  );
+  const offsets = sanitizePageOffsets(requestedOffsets, limitedCollections);
+  const pageCollections = Object.keys(offsets);
+  if (!pageCollections.length) {
+    throw new Error("INVALID:No valid bounded collection page was requested.");
+  }
+
+  const page = await getWorkspaceSubset({
+    fullCollections: pageCollections,
+    limitsByCollection: Object.fromEntries(
+      pageCollections.map((collection) => [collection, limitedCollections[collection]]),
+    ),
+    offsetsByCollection: offsets,
+  });
+  if (page.revision !== authorization.revision) throw new Error("READ_CONFLICT");
+  const revisionFence = await getWorkspaceSubset({});
+  if (revisionFence.revision !== page.revision) throw new Error("READ_CONFLICT");
+
+  const savings = moduleReadPlanSavings(target);
+  moduleMetadata({
+    database: page.data,
+    target,
+    readStrategy: plan.strategy,
+    readCollections: pageCollections,
+    limitedCollections: Object.fromEntries(
+      pageCollections.map((collection) => [collection, limitedCollections[collection]]),
+    ),
+    pagination: page.pagination,
+    pageOnly: true,
+  });
+
+  return {
+    ...page,
+    queryCount: page.queryCount + authorization.queryCount + revisionFence.queryCount,
+    scope: target.scope,
+    collectionCount: pageCollections.length,
+    scopeCollectionCount: savings.scope,
+    readStrategy: plan.strategy,
+    limitedCollections: Object.fromEntries(
+      pageCollections.map((collection) => [collection, limitedCollections[collection]]),
+    ),
+    loadMs: Math.round((performance.now() - startedAt) * 100) / 100,
+    pageOnly: true,
+  };
+}
+
 /**
- * Reads a projected permission/bootstrap first, then the route's exact module
- * plan (or bounded scope fallback) at the same workspace revision. Staff is
+ * Reads a projected permission snapshot first, then the route's exact module
+ * plan (or bounded scope plan) at the same workspace revision. Staff is
  * directory-projected by default; only privileged HR reads receive all Staff
  * HR fields, while ordinary Staff can receive their own full row on HR screens.
  * A concurrent write causes one clean retry.
@@ -190,5 +316,24 @@ export async function getModuleScopedWorkspace(
   } catch (error) {
     if (!(error instanceof Error) || error.message !== "READ_CONFLICT") throw error;
     return readAuthorizedScope(user, target);
+  }
+}
+
+/**
+ * Loads only the next page of bounded collections that are already part of the
+ * current module. Permissions are used for authorization but are not
+ * retransmitted to the client; the returned page merges into the existing
+ * scoped session snapshot.
+ */
+export async function getModuleScopedWorkspacePage(
+  user: AuthenticatedUser,
+  target: WorkspaceReadTarget,
+  offsets: Record<string, number>,
+): Promise<ModuleScopedWorkspace> {
+  try {
+    return await readAuthorizedPage(user, target, offsets);
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== "READ_CONFLICT") throw error;
+    return readAuthorizedPage(user, target, offsets);
   }
 }

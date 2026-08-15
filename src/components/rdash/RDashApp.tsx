@@ -7,6 +7,7 @@ import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
 import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
+import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -65,6 +66,8 @@ export function RDashApp() {
                 error?: string;
                 revision?: number;
                 workspaceId?: string;
+                data?: import("@/lib/rdash/types").RDashDatabase;
+                rowVersions?: Record<string, number>;
                 user?: {
                     userId: string;
                     name: string;
@@ -79,7 +82,7 @@ export function RDashApp() {
                 window.location.replace("/signin");
                 return;
             }
-            if (!response.ok || typeof payload.revision !== "number" || !payload.user)
+            if (!response.ok || typeof payload.revision !== "number" || !payload.user || !payload.data)
                 throw new Error(payload.error || "The secure workspace session could not be initialized.");
             if (!active)
                 return;
@@ -87,12 +90,15 @@ export function RDashApp() {
                 workspaceId: payload.workspaceId || "default",
                 ownerUserId: payload.user.userId,
             });
-            useRDashStore.setState({
-                authUser: payload.user,
-                serverRevision: payload.revision,
-                workspaceSyncStatus: "idle",
-                workspaceSyncError: null,
+            const hydrated = useRDashStore.getState().hydrateSecureWorkspace({
+                db: payload.data,
+                revision: payload.revision,
+                user: payload.user,
+                rowVersions: payload.rowVersions,
             });
+            if (!hydrated)
+                throw new Error("The workspace bootstrap was older than the active browser session. Reload to establish a clean revision epoch.");
+            workspaceFoundationRevisionState.replace(payload.revision);
             workspaceReadState.recordResponse(response);
             setSecureBootstrapReady(true);
         })

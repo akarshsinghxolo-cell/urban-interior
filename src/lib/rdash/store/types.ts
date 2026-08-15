@@ -36,8 +36,13 @@ export interface CoreState {
     db: RDashDatabase;
     revision: number;
     user: AuthenticatedWorkspaceUser;
-    aggregateRevisions?: Record<string, number>;
     rowVersions?: Record<string, number>;
+    deletedRowVersionKeys?: string[];
+  }) => boolean;
+  acceptWorkspaceServerRevision: (input: {
+    revision: number;
+    rowVersions?: Record<string, number>;
+    deletedRowVersionKeys?: string[];
   }) => void;
   currentUser: () => CurrentUserContext;
   updateAuthUser: (patch: { name?: string }) => void;

@@ -1,15 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
-import {
-  ENTITY_SCOPED_READS_ENABLED,
-  getEntityScopedWorkspace,
-} from "@/lib/rdash/server/entity-scoped-read";
-import {
-  getModuleScopedWorkspace,
-  MODULE_SCOPED_READS_ENABLED,
-} from "@/lib/rdash/server/module-scoped-read";
-import { getWorkspace } from "@/lib/rdash/server/workspace";
+import { getEntityScopedWorkspace } from "@/lib/rdash/server/entity-scoped-read";
+import { getModuleScopedWorkspace } from "@/lib/rdash/server/module-scoped-read";
 import {
   rowScopedEntityForTarget,
   workspaceReadTargetForModule,
@@ -18,8 +10,6 @@ import {
 } from "@/lib/rdash/workspace-read-scope";
 
 export const runtime = "nodejs";
-
-const FULL_WORKSPACE_FALLBACK_ENABLED = process.env.UC_FULL_WORKSPACE_FALLBACK === "1";
 
 function requestWorkspaceTarget(request: NextRequest): WorkspaceReadTarget {
   const explicitPath = request.headers.get("x-uc-workspace-path")?.trim();
@@ -83,21 +73,13 @@ function workspaceJson(payload: Record<string, unknown>, headers: Record<string,
   const responseBytes = Buffer.byteLength(body);
   return {
     response: new NextResponse(body, {
-      headers: { "Content-Type": "application/json", ...headers, "X-UC-Response-Bytes": String(responseBytes) },
+      headers: {
+        "Content-Type": "application/json",
+        ...headers,
+        "X-UC-Response-Bytes": String(responseBytes),
+      },
     }),
     responseBytes,
-  };
-}
-
-async function fullWorkspacePayload() {
-  const startedAt = performance.now();
-  const workspace = await getWorkspace(true);
-  (workspace.data as unknown as Record<string, unknown>)._workspace_read_scope = "full";
-  (workspace.data as unknown as Record<string, unknown>)._workspace_read_mode = "full";
-  return {
-    workspace,
-    queryCount: 1 + Object.keys(COLLECTION_TO_TABLE).length,
-    loadMs: performance.now() - startedAt,
   };
 }
 
@@ -114,128 +96,100 @@ export async function GET(request: NextRequest) {
   }
 
   const target = requestWorkspaceTarget(request);
-  let scopedFailure: unknown = null;
-  try {
-    const entity = rowScopedEntityForTarget(target);
-    if (MODULE_SCOPED_READS_ENABLED && ENTITY_SCOPED_READS_ENABLED && entity) {
-      try {
-        const workspace = await getEntityScopedWorkspace(user, target);
-        console.info("[workspace-read]", {
-          mode: workspace.mode,
-          moduleId: target.moduleId,
-          permissionModule: target.permissionModule,
-          entityKind: workspace.entityKind,
-          entityId: workspace.entityId,
-          queryCount: workspace.queryCount,
-          collectionCount: workspace.collectionCount,
-          rowCount: workspace.rowCount,
-          loadMs: workspace.loadMs,
-        });
-        const measured = workspaceJson({
-          revision: workspace.revision,
-          data: workspace.data,
-          ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
-          user: userPayload(user),
-        }, responseHeaders(workspace.mode, workspace.queryCount, workspace.loadMs, {
-          collectionCount: workspace.collectionCount,
-          rowCount: workspace.rowCount,
-          entityKind: workspace.entityKind,
-          entityId: workspace.entityId,
-        }));
-        console.info("[workspace-response]", { mode: workspace.mode, responseBytes: measured.responseBytes });
-        return measured.response;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.startsWith("FORBIDDEN:")) {
-          return NextResponse.json(
-            { error: message.slice("FORBIDDEN:".length) },
-            { status: 403, headers: { "Cache-Control": "no-store", "X-UC-Read-Mode": `${entity.kind}-row` } },
-          );
-        }
-        scopedFailure = error;
-        console.error("[workspace-read] entity read failed; trying the collection-scoped graph:", error);
-      }
-    }
+  const entity = rowScopedEntityForTarget(target);
+  let entityFailure: unknown;
 
-    if (MODULE_SCOPED_READS_ENABLED && target.scope !== "full") {
-      try {
-        const workspace = await getModuleScopedWorkspace(user, target);
-        console.info("[workspace-read]", {
-          mode: workspace.scope,
-          moduleId: target.moduleId,
-          permissionModule: target.permissionModule,
-          queryCount: workspace.queryCount,
-          collectionCount: workspace.collectionCount,
-          loadMs: workspace.loadMs,
-          ...(entity ? { fallbackFrom: `${entity.kind}-row` } : {}),
-        });
-        const measured = workspaceJson({
-          revision: workspace.revision,
-          data: workspace.data,
-          ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
-          user: userPayload(user),
-        }, responseHeaders(workspace.scope, workspace.queryCount, workspace.loadMs, {
-          collectionCount: workspace.collectionCount,
-        }));
-        console.info("[workspace-response]", { mode: workspace.scope, responseBytes: measured.responseBytes });
-        return measured.response;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "";
-        if (message.startsWith("FORBIDDEN:")) {
-          return NextResponse.json(
-            { error: message.slice("FORBIDDEN:".length) },
-            { status: 403, headers: { "Cache-Control": "no-store", "X-UC-Read-Mode": target.scope } },
-          );
-        }
-        scopedFailure = error;
-        console.error("[workspace-read] scoped read failed:", error);
-      }
-    }
-
-    if (
-      MODULE_SCOPED_READS_ENABLED &&
-      target.scope !== "full" &&
-      !FULL_WORKSPACE_FALLBACK_ENABLED
-    ) {
-      console.error("[workspace-read] full fallback blocked", {
+  // Entity reads are the smallest supported graph. If one entity graph cannot
+  // be resolved, fall back only to that module's scoped graph—not to a second
+  // whole-workspace architecture.
+  if (entity) {
+    try {
+      const workspace = await getEntityScopedWorkspace(user, target);
+      console.info("[workspace-read]", {
+        mode: workspace.mode,
         moduleId: target.moduleId,
-        scope: target.scope,
-        cause: scopedFailure instanceof Error ? scopedFailure.message : "unknown",
+        permissionModule: target.permissionModule,
+        entityKind: workspace.entityKind,
+        entityId: workspace.entityId,
+        queryCount: workspace.queryCount,
+        collectionCount: workspace.collectionCount,
+        rowCount: workspace.rowCount,
+        loadMs: workspace.loadMs,
       });
-      return NextResponse.json(
-        { error: "The requested workspace scope is temporarily unavailable. A full-workspace fallback was not attempted." },
-        {
-          status: 503,
-          headers: {
-            "Cache-Control": "no-store",
-            "X-UC-Read-Mode": target.scope,
-            "X-UC-Full-Fallback": "blocked",
+      const measured = workspaceJson({
+        revision: workspace.revision,
+        data: workspace.data,
+        ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
+        user: userPayload(user),
+      }, responseHeaders(workspace.mode, workspace.queryCount, workspace.loadMs, {
+        collectionCount: workspace.collectionCount,
+        rowCount: workspace.rowCount,
+        entityKind: workspace.entityKind,
+        entityId: workspace.entityId,
+      }));
+      console.info("[workspace-response]", { mode: workspace.mode, responseBytes: measured.responseBytes });
+      return measured.response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (message.startsWith("FORBIDDEN:")) {
+        return NextResponse.json(
+          { error: message.slice("FORBIDDEN:".length) },
+          {
+            status: 403,
+            headers: { "Cache-Control": "no-store", "X-UC-Read-Mode": `${entity.kind}-row` },
           },
-        },
-      );
+        );
+      }
+      entityFailure = error;
+      console.error("[workspace-read] entity read failed; trying the module graph:", error);
     }
+  }
 
-    const full = await fullWorkspacePayload();
-    const mode = target.scope === "full" || !MODULE_SCOPED_READS_ENABLED ? "full" : "full-fallback";
+  try {
+    const workspace = await getModuleScopedWorkspace(user, target);
     console.info("[workspace-read]", {
-      mode,
+      mode: workspace.scope,
       moduleId: target.moduleId,
-      queryCount: full.queryCount,
-      loadMs: Math.round(full.loadMs * 100) / 100,
+      permissionModule: target.permissionModule,
+      queryCount: workspace.queryCount,
+      collectionCount: workspace.collectionCount,
+      loadMs: workspace.loadMs,
+      ...(entity ? { fallbackFrom: `${entity.kind}-row` } : {}),
     });
     const measured = workspaceJson({
-      revision: full.workspace.revision,
-      data: full.workspace.data,
-      ...(full.workspace.rowVersions ? { rowVersions: full.workspace.rowVersions } : {}),
+      revision: workspace.revision,
+      data: workspace.data,
+      ...(workspace.rowVersions ? { rowVersions: workspace.rowVersions } : {}),
       user: userPayload(user),
-    }, responseHeaders(mode, full.queryCount, full.loadMs));
-    console.info("[workspace-response]", { mode, responseBytes: measured.responseBytes });
+    }, responseHeaders(workspace.scope, workspace.queryCount, workspace.loadMs, {
+      collectionCount: workspace.collectionCount,
+    }));
+    console.info("[workspace-response]", { mode: workspace.scope, responseBytes: measured.responseBytes });
     return measured.response;
   } catch (error) {
-    console.error("[api/workspace] workspace load failed:", error);
+    const message = error instanceof Error ? error.message : "";
+    if (message.startsWith("FORBIDDEN:")) {
+      return NextResponse.json(
+        { error: message.slice("FORBIDDEN:".length) },
+        { status: 403, headers: { "Cache-Control": "no-store", "X-UC-Read-Mode": target.scope } },
+      );
+    }
+    console.error("[workspace-read] scoped read failed", {
+      moduleId: target.moduleId,
+      scope: target.scope,
+      entityFailure: entityFailure instanceof Error ? entityFailure.message : undefined,
+      cause: error instanceof Error ? error.message : String(error),
+    });
     return NextResponse.json(
-      { error: "The workspace data service is temporarily unavailable." },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { error: "The requested workspace data is temporarily unavailable." },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store",
+          "X-UC-Read-Mode": target.scope,
+          "X-UC-Read-Architecture": "scoped-only",
+        },
+      },
     );
   }
 }

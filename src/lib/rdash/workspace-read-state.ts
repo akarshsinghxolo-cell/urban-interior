@@ -157,6 +157,9 @@ export const workspaceReadState = {
     });
   },
   restoreCached(target: WorkspaceReadTarget, cached: WorkspaceReadStateSnapshot): void {
+    // Old full-workspace cache entries are deliberately not restored as valid
+    // coverage. They will remain non-compatible and trigger the authoritative
+    // scoped read for the requested target.
     emit({
       ...cached,
       moduleId: cached.moduleId || target.moduleId,
@@ -174,11 +177,9 @@ export const workspaceReadState = {
       ? strategyHeader
       : mode === "bootstrap"
         ? "bootstrap"
-        : mode === "full"
-          ? "full"
-          : mode.endsWith("-row")
-            ? "row"
-            : "unknown";
+        : mode.endsWith("-row")
+          ? "row"
+          : "unknown";
     const nextScope = workspaceReadScopeFromMode(mode);
     const nextModuleId = boundedHeader(response.headers.get("X-UC-Read-Module"));
     const nextEntityKind = rowEntityKind(response.headers.get("X-UC-Read-Entity-Kind"));

@@ -21,7 +21,6 @@ export interface WorkspaceCommitOutboxRecord {
   ownerUserId: string;
   revision: number;
   operations: WorkspaceOperation[];
-  expectedRevisions?: Record<string, number>;
   expectedRowVersions?: Record<string, number>;
   uploadBatchIds: string[];
   status: WorkspaceOutboxStatus;
@@ -43,7 +42,6 @@ export interface WorkspaceOutboxSnapshot {
 export interface WorkspaceCommitPayload {
   revision?: number;
   operations?: WorkspaceOperation[];
-  expectedRevisions?: Record<string, number>;
   expectedRowVersions?: Record<string, number>;
   operationId?: string;
 }
@@ -55,7 +53,6 @@ export interface WorkspaceCommitResponsePayload {
   patches?: WorkspaceOperation[];
   data?: RDashDatabase;
   rowVersions?: Record<string, number>;
-  bumpedAggregateRevisions?: Record<string, number>;
   retryAfterSeconds?: number;
   error?: string;
 }

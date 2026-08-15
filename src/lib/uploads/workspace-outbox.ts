@@ -19,6 +19,7 @@ let hydratePromise: Promise<void> | null = null;
 let flushPromise: Promise<WorkspaceOutboxFlushResult> | null = null;
 let acceptedWorkspace: RDashDatabase | null = null;
 let acceptedRevision = 0;
+let resetBarrier = false;
 let activeScope: { workspaceId: string; ownerUserId: string } | null = null;
 const listeners = new Set<() => void>();
 
@@ -100,6 +101,52 @@ export function clearWorkspaceOutboxScope(): void {
   emit([], true);
 }
 
+export function clearWorkspaceAcceptedBaseline(): void {
+  acceptedWorkspace = null;
+  acceptedRevision = 0;
+}
+
+export async function beginWorkspaceOutboxResetBarrier(): Promise<void> {
+  resetBarrier = true;
+  const pending = flushPromise;
+  if (!pending) return;
+  try {
+    await pending;
+  } catch {
+    // Reset is authoritative; a failed replay must not prevent the Owner from resetting.
+  }
+}
+
+export function cancelWorkspaceOutboxResetBarrier(): void {
+  if (!resetBarrier) return;
+  resetBarrier = false;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("uc-workspace-outbox-kick"));
+  }
+}
+
+export async function resetWorkspaceOutboxAfterWorkspaceReset(
+  base: RDashDatabase,
+  revision: number,
+): Promise<void> {
+  acceptedWorkspace = structuredClone(base) as RDashDatabase;
+  acceptedRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+  hydratePromise = null;
+  emit([], true);
+  const items = await readScopedWorkspaceOutbox();
+  try {
+    for (const item of items) await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
+  } catch {
+    // The outbox belongs to local recovery only. If scoped cleanup itself fails
+    // after a destructive workspace reset, prefer clearing the local outbox to
+    // ever replaying pre-reset operations into the new revision epoch.
+    await uploadIndexedDb.clearWorkspaceOutbox();
+  }
+  await refresh();
+  const remaining = await readScopedWorkspaceOutbox();
+  if (remaining.length) throw new Error("Old workspace outbox entries survived reset cleanup.");
+}
+
 function summarizeOperations(operations: NonNullable<WorkspaceCommitPayload["operations"]>) {
   return operations.map((operation) => ({
     collection: operation.collection,
@@ -138,14 +185,12 @@ function acceptCompactCommit(
     acceptedRevision = payload.revision;
   }
 
+  const { data: _discardedWorkspace, ...compact } = payload;
   return {
-    ...payload,
+    ...compact,
     status: payload.status || "applied",
     operationId: payload.operationId || item.operationId,
     patches,
-    data: acceptedWorkspace && typeof payload.revision === "number"
-      ? structuredClone(acceptedWorkspace) as RDashDatabase
-      : payload.data,
   };
 }
 
@@ -184,7 +229,6 @@ async function rebaseRemainingItems(base: RDashDatabase, revision: number): Prom
       ...item,
       revision,
       operations,
-      expectedRevisions: undefined,
       expectedRowVersions: undefined,
       status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
       retryCount: 0,
@@ -254,7 +298,6 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
     ownerUserId: activeScope.ownerUserId,
     revision: parsed.revision,
     operations: parsed.operations,
-    expectedRevisions: parsed.expectedRevisions,
     expectedRowVersions: parsed.expectedRowVersions,
     uploadBatchIds: [],
     status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
@@ -315,8 +358,8 @@ export async function markWorkspaceCommitResponse(operationId: string, response:
     let adaptedPayload = payload;
     try {
       adaptedPayload = acceptCompactCommit(current, payload);
-      if (adaptedPayload.data && typeof adaptedPayload.revision === "number") {
-        await rebaseRemainingItems(adaptedPayload.data, adaptedPayload.revision);
+      if (acceptedWorkspace && typeof adaptedPayload.revision === "number") {
+        await rebaseRemainingItems(acceptedWorkspace, adaptedPayload.revision);
       }
     } catch (error) {
       console.error("[WorkspaceOutbox] Server accepted the change, but local response adaptation failed.", error);
@@ -356,51 +399,26 @@ export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promis
   };
 }
 
-async function rebaseConflict(item: WorkspaceCommitOutboxRecord): Promise<void> {
-  const response = await fetch("/api/workspace", { credentials: "same-origin", cache: "no-store" });
-  const payload = await response.json().catch(() => ({})) as WorkspaceCommitResponsePayload;
-  if (!response.ok || !payload.data || typeof payload.revision !== "number") {
-    throw new Error(payload.error || "Could not load the latest workspace for conflict resolution.");
-  }
-  rememberAcceptedWorkspace(payload);
-  const desired = applyWorkspaceOperations(payload.data, item.operations);
-  const operations = diffWorkspaceOperations(payload.data, desired);
-  const timestamp = nowIso();
-  const replacement: WorkspaceCommitOutboxRecord = {
-    ...item,
-    operationId: makeOperationId(),
-    revision: payload.revision,
-    operations,
-    expectedRevisions: undefined,
-    expectedRowVersions: undefined,
-    status: "pending",
-    retryCount: 0,
-    retryAt: undefined,
-    lastErrorCode: undefined,
-    lastErrorMessage: undefined,
-    summary: summarizeOperations(operations),
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId);
-  if (operations.length) await uploadIndexedDb.putWorkspaceOutbox(replacement);
-  await refresh();
-}
-
 export async function retryWorkspaceOutbox(operationId: string): Promise<void> {
   const item = await uploadIndexedDb.getWorkspaceOutbox(operationId);
   if (!item || !belongsToActiveScope(item)) return;
   if (item.status === "conflict") {
-    await rebaseConflict(item);
-  } else {
-    await patchRecord(operationId, {
-      status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
-      retryAt: undefined,
-      lastErrorCode: undefined,
-      lastErrorMessage: undefined,
-    });
+    throw new Error("This change conflicts with newer server data and cannot be auto-overwritten. Reload the server version and reapply the intended change after review.");
   }
+  await patchRecord(operationId, {
+    status: typeof navigator !== "undefined" && !navigator.onLine ? "waiting_for_network" : "pending",
+    retryAt: undefined,
+    lastErrorCode: undefined,
+    lastErrorMessage: undefined,
+  });
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("uc-workspace-outbox-kick"));
+}
+
+export async function discardWorkspaceOutboxItem(operationId: string): Promise<void> {
+  const item = await uploadIndexedDb.getWorkspaceOutbox(operationId);
+  if (!item || !belongsToActiveScope(item)) return;
+  await uploadIndexedDb.deleteWorkspaceOutbox(operationId);
+  await refresh();
 }
 
 export async function discardWorkspaceOutbox(): Promise<void> {
@@ -410,6 +428,7 @@ export async function discardWorkspaceOutbox(): Promise<void> {
 }
 
 export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult> {
+  if (resetBarrier) return { replayed: false, conflict: false };
   if (flushPromise) return flushPromise;
   flushPromise = (async () => {
     await workspaceOutboxStore.hydrate();
@@ -435,7 +454,6 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
           operationId: item.operationId,
           revision: item.revision,
           operations: item.operations,
-          expectedRevisions: item.expectedRevisions,
           expectedRowVersions: item.expectedRowVersions,
         }),
       });
@@ -474,7 +492,6 @@ export function createDeferredWorkspaceCommitResponse(
     operationId,
     retryAfterSeconds: 10,
     revision: acceptedRevision || fallbackRevision,
-    data: acceptedWorkspace ? structuredClone(acceptedWorkspace) as RDashDatabase : undefined,
   };
   return new Response(JSON.stringify(payload), {
     status: 202,

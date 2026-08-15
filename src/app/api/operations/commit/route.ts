@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
-import { getWorkspace } from "@/lib/rdash/server/workspace";
+import {
+  getWorkspaceSubset,
+  type WorkspaceSubset,
+} from "@/lib/rdash/server/workspace";
 import { commitAuthorizedPostgresOperations, type CommitResult } from "@/lib/rdash/server/authorized-commit";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { applyWorkspaceOperations, diffWorkspaceOperations, type WorkspaceOperation } from "@/lib/rdash/workspace-operations";
@@ -80,7 +83,7 @@ function compactPayload(workspace: CommitResult, operationId?: string): CompactC
 }
 
 function recoveredPayload(
-  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  workspace: Pick<WorkspaceSubset, "revision" | "rowVersions">,
   operations: WorkspaceOperation[],
   operationId?: string,
 ): CompactCommitPayload {
@@ -140,8 +143,37 @@ function processingResponse(operationId: string) {
   );
 }
 
+function operationRowsByCollection(operations: WorkspaceOperation[]): Record<string, string[]> {
+  const idsByCollection = new Map<string, Set<string>>();
+  for (const operation of operations) {
+    const ids = idsByCollection.get(operation.collection) || new Set<string>();
+    for (const row of operation.upsert || []) {
+      const id = String(row.id || "").trim();
+      if (id) ids.add(id);
+    }
+    for (const rawId of operation.deleteIds || []) {
+      const id = String(rawId || "").trim();
+      if (id) ids.add(id);
+    }
+    if (ids.size) idsByCollection.set(operation.collection, ids);
+  }
+  return Object.fromEntries(
+    [...idsByCollection.entries()].map(([collection, ids]) => [collection, [...ids]]),
+  );
+}
+
+/**
+ * Commit recovery needs only the rows the operation touched. Reading the entire
+ * workspace here used to turn an idempotency check for one row into dozens of
+ * PostgREST queries and growing database egress.
+ */
+async function loadOperationSubset(operations: WorkspaceOperation[]): Promise<WorkspaceSubset> {
+  const rowsByCollection = operationRowsByCollection(operations);
+  return getWorkspaceSubset({ rowsByCollection });
+}
+
 function operationEffectsAlreadyPresent(
-  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  workspace: WorkspaceSubset,
   operations: WorkspaceOperation[],
 ): boolean {
   const candidate = applyWorkspaceOperations(workspace.data, operations);
@@ -169,7 +201,7 @@ function hasAttachmentWithUnsupportedEntityType(operations: WorkspaceOperation[]
 }
 
 function restoreExistingAttachmentEntityIdentity(
-  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  workspace: WorkspaceSubset,
   operations: WorkspaceOperation[],
 ): WorkspaceOperation[] {
   const existingAttachments = new Map(
@@ -199,7 +231,7 @@ function restoreExistingAttachmentEntityIdentity(
 }
 
 function restoreManagedFileFolderIdentity(
-  workspace: Awaited<ReturnType<typeof getWorkspace>>,
+  workspace: WorkspaceSubset,
   operations: WorkspaceOperation[],
 ): WorkspaceOperation[] {
   const existingFiles = new Map(
@@ -341,7 +373,7 @@ export async function POST(request: NextRequest) {
     const repairManagedFiles = hasManagedFileWithoutFolder(operations);
     const repairAttachmentContext = hasAttachmentWithUnsupportedEntityType(operations);
     if (repairManagedFiles || repairAttachmentContext) {
-      const current = await getWorkspace(true);
+      const current = await loadOperationSubset(operations);
       if (repairManagedFiles) {
         operations = restoreManagedFileFolderIdentity(current, operations);
       }
@@ -379,12 +411,12 @@ export async function POST(request: NextRequest) {
           return processingResponse(operationId);
         }
 
-        const current = await getWorkspace(true);
+        const current = await loadOperationSubset(operations);
         if (operationEffectsAlreadyPresent(current, operations)) {
           const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
-            headers: commitHeaders("idempotent-recovered", undefined, {
+            headers: commitHeaders("idempotent-recovered-targeted", current.queryCount, {
               "X-UC-Idempotent-Recovered": "1",
             }),
           });
@@ -394,10 +426,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!operations.length) {
-      const current = await getWorkspace(true);
+      const current = await getWorkspaceSubset({});
       const result = recoveredPayload(current, [], operationId);
       if (operationId) await saveAppliedReceipt(operationId, result, current.revision);
-      return NextResponse.json(result, { headers: commitHeaders("no-op-full-read") });
+      return NextResponse.json(result, {
+        headers: commitHeaders("no-op-revision-read", current.queryCount),
+      });
     }
 
     let saved: CommitResult;
@@ -411,12 +445,12 @@ export async function POST(request: NextRequest) {
       );
     } catch (error) {
       if (operationId && error instanceof Error && error.message === "CONFLICT") {
-        const current = await getWorkspace(true);
+        const current = await loadOperationSubset(operations);
         if (operationEffectsAlreadyPresent(current, operations)) {
           const result = recoveredPayload(current, operations, operationId);
           await saveAppliedReceipt(operationId, result, current.revision);
           return NextResponse.json(result, {
-            headers: commitHeaders("idempotent-recovered", undefined, {
+            headers: commitHeaders("idempotent-recovered-targeted", current.queryCount, {
               "X-UC-Idempotent-Recovered": "1",
             }),
           });

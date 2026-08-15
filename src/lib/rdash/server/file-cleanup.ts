@@ -1,6 +1,6 @@
 import type { AuthenticatedUser } from "./auth";
 import { getGoogleDriveAccessToken } from "./google-drive";
-import { commitWorkspaceOperations, getWorkspace } from "./workspace";
+import { commitWorkspaceOperations, getWorkspaceSubset } from "./workspace";
 import { DRIVE_API, driveFetch } from "./direct-upload-storage";
 import type { FileAsset, RDashDatabase, StorageAccount } from "../types";
 
@@ -17,6 +17,14 @@ type CleanupClaim = {
   account?: StorageAccount;
   reason?: FileCleanupResult["reason"];
 };
+
+const FILE_REFERENCE_COLLECTIONS = Object.freeze([
+  "entityFileAttachments",
+  "staffDocuments",
+  "threads",
+  "master.catalogues",
+  "master.referenceMedia",
+] as const);
 
 function threadReferencesFileAsset(db: RDashDatabase, fileAssetId: string): boolean {
   return (db.threads || []).some((thread) =>
@@ -38,21 +46,34 @@ export function fileAssetHasReferences(db: RDashDatabase, fileAssetId: string): 
 async function claimUnreferencedFileAsset(fileAssetId: string): Promise<CleanupClaim> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const workspace = await getWorkspace(true);
+    // The cleanup decision needs the one FileAsset plus the collections that can
+    // actually reference it. It never reconstructs unrelated ERP domains.
+    const workspace = await getWorkspaceSubset({
+      fullCollections: [...FILE_REFERENCE_COLLECTIONS],
+      rowsByCollection: { "master.fileAssets": [fileAssetId] },
+      limitsByCollection: Object.fromEntries(FILE_REFERENCE_COLLECTIONS.map((collection) => [collection, 0])),
+    });
     const asset = workspace.data.master.fileAssets.find((row) => row.id === fileAssetId) as FileAsset | undefined;
     if (!asset) return { reason: "missing" };
     if (fileAssetHasReferences(workspace.data, fileAssetId)) return { reason: "referenced", asset };
 
     const managed = asset.storage_mode === "managed" && Boolean(asset.google_file_id);
-    const account = managed && asset.storage_account_id
-      ? workspace.data.master.storageAccounts.find((row) => row.id === asset.storage_account_id)
-      : undefined;
+    let account: StorageAccount | undefined;
+    if (managed && asset.storage_account_id) {
+      const accountState = await getWorkspaceSubset({
+        rowsByCollection: { "master.storageAccounts": [asset.storage_account_id] },
+      });
+      if (accountState.revision !== workspace.revision) {
+        lastError = new Error("CONFLICT");
+        continue;
+      }
+      account = accountState.data.master.storageAccounts.find((row) => row.id === asset.storage_account_id);
+    }
     if (managed && !account) return { reason: "account_missing", asset };
 
     try {
       // Claim the unused asset under the current workspace revision before any
-      // external Drive deletion. Any stale concurrent attachment write must now
-      // conflict instead of racing between an "unused" check and physical delete.
+      // external Drive deletion. Any concurrent attachment write conflicts.
       await commitWorkspaceOperations(
         workspace.revision,
         [{ collection: "master.fileAssets", deleteIds: [fileAssetId] }],
@@ -70,7 +91,9 @@ async function claimUnreferencedFileAsset(fileAssetId: string): Promise<CleanupC
 async function restoreFileAsset(asset: FileAsset): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const workspace = await getWorkspace(true);
+    const workspace = await getWorkspaceSubset({
+      rowsByCollection: { "master.fileAssets": [asset.id] },
+    });
     if (workspace.data.master.fileAssets.some((row) => row.id === asset.id)) return;
     try {
       await commitWorkspaceOperations(
@@ -118,8 +141,6 @@ export async function cleanupUnreferencedManagedFile(
 
   const account = claim.account;
   if (!account) {
-    // This should have been caught before the registry claim. Restore defensively
-    // if the account disappeared between claim construction and this branch.
     await restoreFileAsset(asset);
     return { deleted: false, reason: "account_missing", fileAssetId, googleFileId: asset.google_file_id };
   }

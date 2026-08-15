@@ -1,9 +1,9 @@
 /**
  * Supabase REST workspace data layer.
  *
- * Full reads remain available for bootstrap and compatibility paths. Phase 2B
- * adds row-scoped reads for high-frequency commits so authorization and
- * validation no longer require reconstructing every collection.
+ * Full reads remain available for reset/compatibility paths. Normal workspace
+ * navigation uses bounded or row-scoped reads so the browser never needs a
+ * growing copy of every workspace table.
  *
  * Writes are delegated to the commit_workspace_operations PostgreSQL function
  * so one logical workspace save is atomic and workspace/row CAS checks occur
@@ -13,6 +13,7 @@ import { getSupabaseAdminClient } from "../../supabase/server";
 import type { WorkspaceOperation } from "../workspace-operations";
 import type { RDashDatabase, Master } from "../types";
 import { WORK_CATALOG_VERSION } from "../work-category-master";
+import type { WorkspacePagination } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 const DEFAULT_COLLECTION_LIMITS: Record<string, number> = {
@@ -119,6 +120,7 @@ export type RestWorkspaceReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
   limitsByCollection?: Record<string, number>;
+  offsetsByCollection?: Record<string, number>;
 };
 
 export type RestWorkspaceSubset = {
@@ -127,6 +129,7 @@ export type RestWorkspaceSubset = {
   updatedAt: string;
   rowVersions: Record<string, number>;
   queryCount: number;
+  pagination?: WorkspacePagination;
 };
 
 function emptyWorkspaceData(): RDashDatabase {
@@ -176,6 +179,18 @@ function putCollectionRows(
   }
 }
 
+function normalizedLimit(value: unknown): number | undefined {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+  return Math.min(500, Math.floor(parsed));
+}
+
+function normalizedOffset(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(1_000_000, Math.floor(parsed));
+}
+
 async function readRevision(): Promise<{ revision: number; updatedAt: string }> {
   const admin = getSupabaseAdminClient();
   const { data: wsRevRow, error } = await admin
@@ -211,24 +226,53 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
     const table = tableFor(collection);
     if (!table) throw new Error(`INVALID:Unknown workspace collection ${collection}.`);
 
+    const isFullCollection = fullCollections.has(collection);
+    const configuredLimit = isFullCollection
+      ? normalizedLimit(plan.limitsByCollection?.[collection] ?? DEFAULT_COLLECTION_LIMITS[collection])
+      : undefined;
+    const offset = configuredLimit ? normalizedOffset(plan.offsetsByCollection?.[collection]) : 0;
+
     let query = admin.from(table)
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
-    if (!fullCollections.has(collection)) {
+
+    if (!isFullCollection) {
       query = query.in("id", rowsByCollection.get(collection) || []);
-    } else {
-      const limit = plan.limitsByCollection?.[collection] ?? DEFAULT_COLLECTION_LIMITS[collection];
-      if (limit) query = query.order("revision", { ascending: false }).limit(limit);
+    } else if (configuredLimit) {
+      // Fetch one extra row instead of issuing a COUNT query. That tells the
+      // client whether a next page exists while keeping database/egress work bounded.
+      query = query
+        .order("revision", { ascending: false })
+        .order("id", { ascending: true })
+        .range(offset, offset + configuredLimit);
     }
+
     const { data, error } = await query;
     if (error) throw new Error(`Could not read targeted collection ${collection}: ${error.message}`);
-    return { collection, rows: (data || []) as RestEntityRow[] };
+
+    const rawRows = (data || []) as RestEntityRow[];
+    const rows = configuredLimit ? rawRows.slice(0, configuredLimit) : rawRows;
+    return {
+      collection,
+      rows,
+      pagination: configuredLimit
+        ? {
+            offset,
+            limit: configuredLimit,
+            returned: rows.length,
+            hasMore: rawRows.length > configuredLimit,
+            ...(rawRows.length > configuredLimit ? { nextOffset: offset + rows.length } : {}),
+          }
+        : undefined,
+    };
   }));
 
   const data = emptyWorkspaceData();
   const rowVersions: Record<string, number> = {};
+  const pagination: WorkspacePagination = {};
   for (const result of results) {
     putCollectionRows(data, rowVersions, result.collection, result.rows);
+    if (result.pagination) pagination[result.collection] = result.pagination;
   }
 
   return {
@@ -237,6 +281,7 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
     data,
     rowVersions,
     queryCount: 1 + requestedCollections.length,
+    ...(Object.keys(pagination).length ? { pagination } : {}),
   };
 }
 
@@ -256,8 +301,10 @@ export async function getRestWorkspace(): Promise<{
       .from(table)
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
-    if (error || !data) return { collection, rows: [] };
-    return { collection, rows: data as RestEntityRow[] };
+    if (error) {
+      throw new Error(`Could not read workspace collection ${collection}: ${error.message}`);
+    }
+    return { collection, rows: (data || []) as RestEntityRow[] };
   };
 
   const results = await Promise.all(Object.keys(COLLECTION_TO_TABLE).map(readCollection));
@@ -347,45 +394,29 @@ export async function resetRestWorkspace(): Promise<{
   data: RDashDatabase;
   updatedAt: string;
 }> {
-  const admin = getSupabaseAdminClient();
-  const tables = Object.values(COLLECTION_TO_TABLE);
-  await Promise.all(
-    tables.map(async (table) => {
-      try {
-        await admin.from(table).delete().eq("workspace_id", workspaceId);
-      } catch {
-        // Existing reset behavior is intentionally preserved for now.
-      }
-    }),
-  );
-
-  await admin.from("entity_workspace_revision").upsert(
-    {
-      id: workspaceId,
-      workspace_id: workspaceId,
-      revision: 0,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
-
+  // RESET is a normal canonical workspace transaction with a larger operation
+  // set. Reading first and committing against that exact revision means the
+  // existing PostgreSQL revision-row lock serializes RESET with every normal
+  // commit. If anything changes while the snapshot is being assembled, the
+  // atomic commit fails with CONFLICT instead of producing a mixed workspace.
+  const current = await getRestWorkspace();
   const { buildSeedDatabase } = await import("../seed");
   const { diffWorkspaceOperations } = await import("../workspace-operations");
   const seedData = buildSeedDatabase() as RDashDatabase;
-  const emptyDb = structuredClone(seedData) as any;
-  for (const key of Object.keys(emptyDb)) {
-    if (Array.isArray(emptyDb[key])) emptyDb[key] = [];
-  }
-  if (emptyDb.master) {
-    for (const key of Object.keys(emptyDb.master)) {
-      if (Array.isArray(emptyDb.master[key])) emptyDb.master[key] = [];
-    }
-  }
 
-  const operations = diffWorkspaceOperations(emptyDb, seedData);
-  if (operations.length > 0) {
-    await commitRestOperations(operations, 0, {});
-  }
+  // Reset data must already use the one canonical Customer conversation ID.
+  // Doing this before the atomic diff avoids a second post-reset transaction.
+  const customerIds = new Set(seedData.customers.map((customer) => customer.id));
+  seedData.threads = seedData.threads.map((thread) => (
+    thread.kind === "generic" && customerIds.has(thread.record_id)
+      ? { ...thread, record_id: `customer-conversation:${thread.record_id}` }
+      : thread
+  ));
+
+  const operations = diffWorkspaceOperations(current.data, seedData);
+  if (!operations.length) return current;
+
+  await commitRestOperations(operations, current.revision, {});
   return getRestWorkspace();
 }
 

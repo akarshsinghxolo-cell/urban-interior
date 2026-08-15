@@ -1,5 +1,6 @@
 import type { AuthenticatedUser } from "./auth";
-import { getWorkspace } from "./workspace";
+import { getDirectUploadWorkspace } from "./direct-upload-workspace";
+import { getWorkspaceSubset } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
 import { resolveAttachmentEntityLabel, resolveEntityContext } from "../entity-context";
@@ -174,7 +175,7 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
     throw new Error("The completed upload is missing its registered FileAsset or attachment.");
   }
 
-  const workspace = await getWorkspace();
+  const workspace = await getDirectUploadWorkspace(serverTargetType, serverTargetId, serverPurpose);
   if (!uploadPurposeAllowedForEntity(serverTargetType, serverPurpose)) {
     throw new Error(`Upload purpose "${serverPurpose}" does not belong to ${serverTargetType}.`);
   }
@@ -233,7 +234,13 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
 
   const timestamp = nowIso();
   const folderInstanceId = `storage-folder-${account.id}-${destination.id}`;
-  const existingFolderInstance = workspace.data.master.storageFolderInstances.find((row) => row.id === folderInstanceId);
+  // Folder instances can grow with every business path. Read only the one
+  // physical folder that this finalization is about instead of loading the
+  // complete folder-instance registry with every file.
+  const folderState = await getWorkspaceSubset({
+    rowsByCollection: { "master.storageFolderInstances": [folderInstanceId] },
+  });
+  const existingFolderInstance = folderState.data.master.storageFolderInstances.find((row) => row.id === folderInstanceId);
   // A physical Drive folder can intentionally receive more than one upload purpose
   // (for example execution evidence and a variation document both land in Variations).
   // Preserve its original logical template instead of flipping metadata on every upload.
@@ -332,8 +339,10 @@ export async function cancelDirectUpload(user: AuthenticatedUser, uploadItemId: 
 
   const googleFileId = String(item.google_file_id || clientGoogleFileId || "");
   if (googleFileId && item.storage_account_id) {
-    const workspace = await getWorkspace();
-    const account = workspace.data.master.storageAccounts.find((row) => row.id === String(item.storage_account_id));
+    const accountState = await getWorkspaceSubset({
+      rowsByCollection: { "master.storageAccounts": [String(item.storage_account_id)] },
+    });
+    const account = accountState.data.master.storageAccounts.find((row) => row.id === String(item.storage_account_id));
     if (!account) throw new Error("The Drive account used for cleanup is no longer connected.");
     const token = await getGoogleDriveAccessToken(account);
     const deleted = await driveFetch(token, `${DRIVE_API}/files/${encodeURIComponent(googleFileId)}`, { method: "DELETE" });

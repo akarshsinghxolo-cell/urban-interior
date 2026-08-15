@@ -4,7 +4,7 @@ import { AlertTriangle, CheckCircle2, CloudOff, Database, RefreshCw, Trash2 } fr
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceOutbox } from "@/lib/uploads/use-workspace-outbox";
-import { discardWorkspaceOutbox, retryWorkspaceOutbox } from "@/lib/uploads/workspace-outbox";
+import { discardWorkspaceOutbox, discardWorkspaceOutboxItem, retryWorkspaceOutbox } from "@/lib/uploads/workspace-outbox";
 import { allowNextWorkspaceExit } from "@/lib/uploads/workspace-exit-guard";
 import type { WorkspaceCommitOutboxRecord } from "@/lib/uploads/workspace-outbox-types";
 
@@ -49,11 +49,21 @@ function PendingChangeRow({ item }: { item: WorkspaceCommitOutboxRecord }) {
   const changedRecords = item.summary.reduce((sum, row) => sum + row.upsertIds.length + row.deleteIds.length, 0);
 
   const retry = async () => {
-    if (conflict && !window.confirm("Apply your locally saved version over the latest server records? Review the affected records afterward because this can replace fields changed on another device.")) return;
     try {
       await retryWorkspaceOutbox(item.operationId);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "The locally saved change could not be retried.");
+    }
+  };
+
+  const discardConflictAndReload = async () => {
+    if (!window.confirm("Discard this conflicting local change and reload the authoritative server version? Reapply the intended change only after reviewing the latest record.")) return;
+    try {
+      await discardWorkspaceOutboxItem(item.operationId);
+      allowNextWorkspaceExit();
+      window.location.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The conflicting local change could not be discarded.");
     }
   };
 
@@ -83,9 +93,10 @@ function PendingChangeRow({ item }: { item: WorkspaceCommitOutboxRecord }) {
             </span>
           </div>
           {item.lastErrorMessage ? <p className="mt-2 rounded-md bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">{item.lastErrorMessage}</p> : null}
+          {conflict ? <p className="mt-2 text-[11px] text-muted-foreground">Automatic overwrite is disabled. Reload the authoritative server record, review it, then reapply your intended change.</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" onClick={() => void retry()} disabled={syncing}>
-              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />{conflict ? "Apply my version to latest" : syncing ? "Synchronizing" : "Retry now"}
+            <Button size="sm" variant="outline" onClick={() => void (conflict ? discardConflictAndReload() : retry())} disabled={syncing}>
+              <RefreshCw className={`mr-1 h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />{conflict ? "Reload server version" : syncing ? "Synchronizing" : "Retry now"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => void discard()} disabled={syncing}>
               <Trash2 className="mr-1 h-3.5 w-3.5" />Discard all local changes

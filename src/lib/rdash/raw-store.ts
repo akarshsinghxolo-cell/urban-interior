@@ -1,17 +1,20 @@
 "use client";
 import { create } from "zustand";
 import type { RDashDatabase, Customer, Task, Followup, Visit, Quotation, QuotationItem, Payment, CustomerInvoice, CustomerReceipt, ApprovalAction, WorkOrder, WorkOrderBOQ, WorkOrderBOQ as WorkOrderBOQT, PurchaseOrder, GRN, InventoryItem, StockMovement, SiteDispatch, VendorBill, VendorPayment, ContractorBill, ContractorPayment, Commission, WorkOrderCostLine, ContractorBid, ContractorSettlement, Drawing, DailyExecutionLog, VisitRoutePoint, Site, Area, Thread, ThreadMessage, ThreadKind, LineItem, BlockedItem, RiskItem, Master, FileAsset, FileAssetCreateInput, EntityFileAttachment, EntityReferenceAssignment, AttendancePolicy, AttendanceRecord, VariationRequest, RecurringTaskDefinition, VisitType, } from "./types";
-import { buildSeedDatabase } from "./seed";
 // mergeStaffLocationPings, StaffLocationPing moved to slices/core.ts (Phase 3o)
-import { formatINR } from "./format";
-import { prepareWorkspaceData } from "./work-category-master";
 import { applyVendorRateAverages } from "./vendor-rate-average";
 import { attachCustomerLabels, customerName, customerNameForJob, } from "./customer";
 import { assertUniqueCustomerIdentity, normalizeCustomerSegments } from "./customer-identity";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitExitGps, verifyVisitGps, type GpsCapture, } from "./gps";
-import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, threadParentExists, replaceAreaId, validateBusinessData, } from "./business-rules";
+import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, replaceAreaId, validateBusinessData, } from "./business-rules";
 import { resolveCustomerIdFromLinks } from "./customer-relations";
 import { diffWorkspaceOperations } from "./workspace-operations";
+import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent, workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";
+import { workspaceFoundationRevisionState } from "./workspace-foundation-revision-state";
+import { workspaceReadCache } from "./workspace-read-cache";
+import { deletedWorkspaceOperationVersionKeys, workspaceRowVersionState } from "./workspace-row-version-state";
+import { invalidateWorkspaceClientCaches } from "./client-auth";
+import { beginWorkspaceOutboxResetBarrier, cancelWorkspaceOutboxResetBarrier, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";
 import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
 import { attendancePolicyForStaff, attendancePolicyForVisit, createDefaultAttendancePolicy } from "./attendance-policy";
@@ -73,9 +76,6 @@ function genId(prefix: string) {
         .slice(2, 6)}`;
 }
 const nowIso = () => new Date().toISOString();
-function loadStoredWorkspaceDatabase(): RDashDatabase | null {
-    return null;
-}
 // coverageAcceptedValue, quotationAcceptanceWarnings moved to store/quotations-helpers.ts (Phase 3j)
 // assertQuotationEditable, assertQuotationStatusTransition moved to slices/quotations.ts (Phase 3j)
 const today = () => businessDate();
@@ -113,238 +113,7 @@ function isOverdueDate(dueDate: string | undefined, at = new Date()) {
 // Work Required lifecycle policies live in work-required-lifecycle.ts and are shared across slices.
 // paymentFollowupTitle, invoiceStatusFromPayment, paymentStatusFromInvoice,
 // buildInvoiceDraftFromPayment, syncInvoiceWithPayment moved to finance-helpers (Phase 3f)
-function createSystemThread(kind: ThreadKind, recordId: string, title: string, participants: string[] = ["Owner"]) {
-    const id = genId("thr");
-    const now = nowIso();
-    return {
-        id,
-        kind,
-        title,
-        record_id: recordId,
-        record_type: kind,
-        messages: [
-            {
-                id: genId("msg"),
-                thread_id: id,
-                author_name: "System",
-                body: `Thread opened for ${title}`,
-                kind: "system" as const,
-                created_at: now,
-            },
-        ],
-        participants,
-        open: true,
-        created_at: now,
-        updated_at: now,
-    } satisfies Thread;
-}
-function ensureThreadId(threads: Thread[], record: {
-    id: string;
-    thread_id?: string;
-}, kind: ThreadKind, title: string, participants: string[] = ["Owner"]) {
-    if (record.thread_id &&
-        threads.some((thread) => thread.id === record.thread_id))
-        return record.thread_id;
-    const existing = threads.find((thread) => thread.kind === kind && thread.record_id === record.id);
-    if (existing)
-        return existing.id;
-    const thread = createSystemThread(kind, record.id, title, participants.filter(Boolean));
-    threads.push(thread);
-    return thread.id;
-}
-// findOpenLinkedFollowup moved to finance-helpers (Phase 3f)
-function prepareWorkspaceDatabase(input: RDashDatabase): RDashDatabase {
-    const base = attachCustomerLabels(prepareWorkspaceData({ ...input }));
-    const threads = base.threads.filter((thread) => thread.record_type === thread.kind &&
-        threadParentExists(base, thread.kind, thread.record_id));
-    const tasks = base.tasks.map((task) => ({
-        ...task,
-        thread_id: ensureThreadId(threads, task, "task", task.title, [
-            task.assignee_name || task.assigned_to || "Owner",
-        ]),
-    }));
-    const followups = base.followups.map((followup) => ({
-        ...followup,
-        thread_id: ensureThreadId(threads, followup, "followup", followup.title, [
-            followup.assigned_to || "Owner",
-        ]),
-    }));
-    const quotations = base.quotations.map((quotation) => ({
-        ...quotation,
-        thread_id: ensureThreadId(threads, quotation, "quotation", `${quotation.quotation_no} · ${quotation.title}`, [quotation.customer_name || "Customer", "Owner"]),
-    }));
-    const visits = base.visits.map((visit) => ({
-        ...visit,
-        thread_id: ensureThreadId(threads, visit, "visit", `${visit.visit_type} · ${visit.location_name}`, [visit.staff_name, "Owner"]),
-    }));
-    const payments = base.payments.map((payment) => ({
-        ...payment,
-        finance_context: payment.finance_context || "service",
-        thread_id: ensureThreadId(threads, payment, "payment", `Payment · ${payment.milestone_label || formatINR(payment.amount || 0)} · ${payment.customer_name || ""}`, [payment.customer_name || "Customer", "Owner"]),
-    }));
-    let invoices = (base.invoices || []).map((invoice) => ({
-        ...invoice,
-        finance_context: invoice.finance_context || "service",
-        status: invoice.status || "issued",
-        subtotal: invoice.subtotal ?? invoice.total_amount ?? 0,
-        tax_amount: invoice.tax_amount ?? 0,
-        total_amount: invoice.total_amount ?? invoice.subtotal ?? 0,
-        paid_amount: invoice.paid_amount ?? 0,
-        balance_amount: invoice.balance_amount ??
-            Math.max(0, (invoice.total_amount ?? invoice.subtotal ?? 0) -
-                (invoice.paid_amount ?? 0)),
-        thread_id: ensureThreadId(threads, invoice, "invoice", `${invoice.invoice_no || "Invoice"} · ${invoice.customer_name || ""}`, [invoice.customer_name || "Customer", "Accounts"]),
-    }));
-    const workOrders = base.workOrders.map((workOrder) => ({
-        ...workOrder,
-        thread_id: ensureThreadId(threads, workOrder, "workOrder", `${workOrder.work_order_no} · ${workOrder.title}`, [workOrder.customer_name || "Customer", "Owner"]),
-    }));
-    const boqs = base.boqs.map((boq) => ({
-        ...boq,
-        thread_id: ensureThreadId(threads, boq, "generic", `BOQ · ${boq.title}`, [
-            boq.customer_name || "Customer",
-            "Owner",
-        ]),
-    }));
-    const purchaseOrders = base.purchaseOrders.map((po) => ({
-        ...po,
-        thread_id: ensureThreadId(threads, po, "po", `${po.po_no} · ${po.vendor_name}`, [po.vendor_name, "Owner"]),
-    }));
-    const grns = base.grns.map((grn) => ({
-        ...grn,
-        thread_id: ensureThreadId(threads, grn, "grn", `${grn.grn_no} · ${grn.vendor_name}`, [grn.vendor_name, "Owner"]),
-    }));
-    const vendorBills = base.vendorBills.map((bill) => ({
-        ...bill,
-        paid_amount: bill.paid_amount ?? 0,
-        balance_amount: bill.balance_amount ??
-            Math.max(0, bill.total_amount - (bill.paid_amount ?? 0)),
-        thread_id: ensureThreadId(threads, bill, "vendor_bill", `${bill.bill_no} · ${bill.vendor_name}`, [bill.vendor_name, "Owner"]),
-    }));
-    const inventory = base.inventory.map((item) => ({
-        ...item,
-        thread_id: ensureThreadId(threads, item, "inventory", `Inventory · ${item.name}`, [item.location || "Store", "Owner"]),
-    }));
-    const commissions = base.commissions.map((commission) => ({
-        ...commission,
-        thread_id: ensureThreadId(threads, commission, "commission", `${commission.commission_no} · ${commission.source_partner_name}`, [commission.source_partner_name, "Owner"]),
-    }));
-    const dispatches = base.dispatches.map((dispatch) => ({
-        ...dispatch,
-        thread_id: ensureThreadId(threads, dispatch, "dispatch", `${dispatch.dispatch_no} · ${dispatch.customer_name || "Customer"}`, [dispatch.customer_name || "Customer", "Owner"]),
-    }));
-    const blocked = base.blocked.map((item) => ({
-        ...item,
-        thread_id: ensureThreadId(threads, item, "blocked", item.title, [
-            item.customer_name || "Owner",
-        ]),
-    }));
-    const normalized: RDashDatabase = {
-        ...base,
-        tasks,
-        followups,
-        quotations,
-        visits,
-        payments,
-        invoices,
-        workOrders,
-        boqs,
-        purchaseOrders,
-        grns,
-        vendorBills,
-        inventory,
-        commissions,
-        dispatches,
-        blocked,
-        threads,
-    };
-    payments.forEach((payment) => {
-        if (!isPaymentChaseNeeded(payment))
-            return;
-        const existing = findOpenLinkedFollowup(normalized, {
-            payment_id: payment.id,
-            customer_id: payment.customer_id,
-            work_required_id: payment.work_required_id,
-            followup_type: "payment",
-        });
-        if (existing)
-            return;
-        const id = genId("follow");
-        const dueDate = payment.promise_date || dateOnlyFrom(payment.due_date);
-        const threadId = ensureThreadId(threads, { id }, "followup", paymentFollowupTitle(payment), ["Accounts", payment.customer_name || "Customer"]);
-        normalized.followups = [
-            {
-                id,
-                customer_id: payment.customer_id,
-                work_required_id: payment.work_required_id,
-                payment_id: payment.id,
-                title: paymentFollowupTitle(payment),
-                notes: `Auto-created because payment is ${payment.status === "overdue" ? "overdue" : "due"}.`,
-                status: "pending",
-                priority: payment.status === "overdue" ? "urgent" : "high",
-                due_at: new Date(`${dueDate}T09:00:00`).toISOString(),
-                due_date: dueDate,
-                assigned_to: "Accounts",
-                assigned_role: "Finance",
-                followup_type: "payment",
-                promise_date: payment.promise_date,
-                notes_history: [],
-                thread_id: threadId,
-                created_at: nowIso(),
-                updated_at: nowIso(),
-            },
-            ...normalized.followups,
-        ];
-    });
-    visits.forEach((visit) => {
-        if (visit.status !== "missed")
-            return;
-        const existing = findOpenLinkedFollowup(normalized, {
-            visit_id: visit.id,
-            customer_id: visit.customer_id,
-            work_required_id: visit.work_required_id,
-            followup_type: "call",
-        });
-        if (existing)
-            return;
-        const id = genId("follow");
-        const dueDate = today();
-        const title = `Reschedule missed visit · ${visit.location_name || visit.customer_id}`;
-        const threadId = ensureThreadId(threads, { id }, "followup", title, [
-            visit.staff_name || "Owner",
-        ]);
-        normalized.followups = [
-            {
-                id,
-                customer_id: visit.customer_id,
-                work_required_id: visit.work_required_id,
-                visit_id: visit.id,
-                title,
-                notes: `Auto-created because visit ${visit.id} was missed.`,
-                status: "pending",
-                priority: "high",
-                due_at: new Date(`${dueDate}T09:00:00`).toISOString(),
-                due_date: dueDate,
-                assigned_to: visit.staff_name || "Owner",
-                assigned_role: "Field Staff",
-                followup_type: "call",
-                notes_history: [],
-                thread_id: threadId,
-                created_at: nowIso(),
-                updated_at: nowIso(),
-            },
-            ...normalized.followups,
-        ];
-    });
-    const dataIssues = validateBusinessData(normalized);
-    if (dataIssues.length) {
-        // Log warnings but don't block workspace loading — a single broken
-        // reference shouldn't prevent the entire app from starting.
-        // The server-side commit endpoint still validates and can reject bad data.
-        console.warn("[prepareWorkspaceDatabase] Data integrity warnings:", dataIssues.slice(0, 5));
-    }
-    return normalized;
-}
+// Hydration is pure; record creation belongs to explicit business actions.
 // quotationWorkRequiredIds, primaryWorkRequiredId, upsertQuotationFollowup moved to slices/quotations.ts (Phase 3j)
 // upsertPaymentFollowup moved to finance-helpers (Phase 3f)
 // upsertMissedVisitFollowup moved to slices/visits.ts (Phase 3l)
@@ -356,20 +125,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
     let lastAcceptedServerDb: RDashDatabase | null = null;
     let serverSyncQueue: Promise<void> = Promise.resolve();
     let syncEpoch = 0;
-    // Per-aggregate revision cache (relational mode only). In blob mode this
-    // stays null and expectedRevisions is omitted from commit requests.
-    let aggregateRevisionsCache: Record<string, number> | null = null;
-    // Per-row version cache (relational mode only). Tracks the `version` column
-    // for high-contention rows (tasks, visits, followups) so commits can send
-    // expectedRowVersions for true per-row CAS. In blob mode this stays null.
+    // Per-row revisions are the canonical optimistic-concurrency signal.
     let rowVersionsCache: Record<string, number> | null = null;
-    // Per-aggregate revisions are no longer fetched separately (the REST
-    // data layer uses per-row CAS via the `revision` column, not per-aggregate).
-    // This stub is kept for backward-compat with the store's commit body builder.
-    const refreshAggregateRevisions = async () => {
-        if (typeof window === "undefined") return;
-        // No-op — per-row CAS (rowVersionsCache) is the primary conflict detector.
-    };
     interface WorkspaceTransaction {
         name: string;
         depth: number;
@@ -377,28 +134,17 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         dirty: boolean;
     }
     let activeWorkspaceTransaction: WorkspaceTransaction | null = null;
-    const restoreAcceptedWorkspace = (error: string, payload?: {
-        revision?: number;
-        data?: RDashDatabase;
-    }) => {
-        const hasAuthoritativePayload = Boolean(payload?.data) && typeof payload?.revision === "number";
-        const revision = hasAuthoritativePayload
-            ? payload!.revision!
-            : lastAcceptedServerRevision;
-        const source = hasAuthoritativePayload
-            ? payload!.data!
-            : lastAcceptedServerDb;
+    const restoreAcceptedWorkspace = (error: string) => {
+        const source = lastAcceptedServerDb;
         if (source) {
-            const restored = attachCustomerLabels(prepareWorkspaceDatabase(structuredClone(source) as RDashDatabase));
-            lastAcceptedServerDb = structuredClone(restored) as RDashDatabase;
-            lastAcceptedServerRevision = revision;
-            serverRevisionForQueue = revision;
+            const restored = normalizeWorkspaceSession(structuredClone(source) as RDashDatabase);
             setBase({
                 db: restored,
-                serverRevision: revision,
+                serverRevision: lastAcceptedServerRevision,
                 workspaceSyncStatus: "error",
                 workspaceSyncError: error,
             });
+            serverRevisionForQueue = lastAcceptedServerRevision;
             return;
         }
         setBase({ workspaceSyncStatus: "error", workspaceSyncError: error });
@@ -422,15 +168,10 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             }
             let response: Response;
             try {
-                // Build the commit body. If per-aggregate revisions are cached
-                // (relational mode), include expectedRevisions for fine-grained
-                // CAS conflict detection. If per-row versions are cached, include
-                // expectedRowVersions for per-row CAS. In blob mode both caches
-                // are null and the commit falls back to whole-workspace revision.
-                const commitBody: Record<string, unknown> = { revision: serverRevisionForQueue, operations };
-                if (aggregateRevisionsCache && Object.keys(aggregateRevisionsCache).length > 0) {
-                    commitBody.expectedRevisions = aggregateRevisionsCache;
-                }
+                const commitBody: Record<string, unknown> = {
+                    revision: serverRevisionForQueue,
+                    operations,
+                };
                 if (rowVersionsCache && Object.keys(rowVersionsCache).length > 0) {
                     // Only send expectedRowVersions for rows this commit touches
                     // (to avoid sending the entire version map every time).
@@ -455,6 +196,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
             }
             catch (error) {
+                if (saveEpoch !== syncEpoch) return;
                 const message = error instanceof Error && error.message
                     ? error.message
                     : "Could not reach the PostgreSQL operation server. Your change is saved locally and will retry after connectivity is restored.";
@@ -464,19 +206,19 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
                 throw new Error(message, { cause: error });
             }
+            if (saveEpoch !== syncEpoch) return;
             const payload = (await response.json().catch(() => ({}))) as {
                 status?: "applied" | "processing";
                 error?: string;
                 revision?: number;
-                data?: RDashDatabase;
+                patches?: import("./workspace-operations").WorkspaceOperation[];
                 rowVersions?: Record<string, number>;
-                bumpedAggregateRevisions?: Record<string, number>;
             };
             const outcome = classifyWorkspaceSaveOutcome(response.status, payload.status);
             if (outcome === "rejected") {
                 syncEpoch += 1;
                 const message = payload.error || "The server rejected this change. The last confirmed workspace was restored.";
-                restoreAcceptedWorkspace(message, payload);
+                restoreAcceptedWorkspace(message);
                 if (response.status === 401)
                     window.location.assign("/signin");
                 throw new Error(message);
@@ -486,41 +228,24 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 setBase({ workspaceSyncStatus: "saving", workspaceSyncError: message });
                 throw new Error(message);
             }
-            if (payload.data && typeof payload.revision === "number") {
-                // FIX-PERF-001: Don't replace the entire db on successful commit.
-                // The client already applied the change locally via commitState.
-                // Replacing db with the server response creates a new reference
-                // that triggers re-renders in all 154 components subscribed to
-                // s.db — causing the "entire workspace refreshes" UX issue.
-                // Instead, only update metadata (revision, sync status) and keep
-                // the local db reference. The server response is still stored as
-                // lastAcceptedServerDb for conflict recovery.
-                const accepted = attachCustomerLabels(prepareWorkspaceDatabase(payload.data));
+            if (typeof payload.revision === "number") {
+                const accepted = normalizeWorkspaceSession(snapshot);
                 serverRevisionForQueue = payload.revision;
                 lastAcceptedServerRevision = payload.revision;
                 lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
+                const acceptedOperations = Array.isArray(payload.patches) ? payload.patches : operations;
+                const deletedVersionKeys = deletedWorkspaceOperationVersionKeys(acceptedOperations);
+                rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, payload.rowVersions);
+                for (const key of deletedVersionKeys) {
+                    if (rowVersionsCache) delete rowVersionsCache[key];
+                }
+                workspaceRowVersionState.merge(payload.rowVersions);
+                workspaceRowVersionState.remove(deletedVersionKeys);
                 setBase({
                     serverRevision: payload.revision,
                     workspaceSyncStatus: "saved",
                     workspaceSyncError: null,
                 });
-                // Refresh per-aggregate revisions after a successful commit so
-                // the next commit's expectedRevisions reflects the bumped values.
-                // (No-op in blob mode; in relational mode the server bumped the
-                // touched aggregates' revisions during commit.)
-                void refreshAggregateRevisions();
-                // Update per-row version cache from the response (relational mode).
-                // The server returns the post-commit versions so the next commit's
-                // expectedRowVersions reflects the bumped values.
-                if (payload.rowVersions && Object.keys(payload.rowVersions).length > 0) {
-                    rowVersionsCache = { ...(rowVersionsCache || {}), ...payload.rowVersions };
-                }
-                // Update per-aggregate revision cache from the bumped values
-                // (relational mode). This avoids a separate /api/workspace/
-                // aggregate-revisions fetch after every commit.
-                if (payload.bumpedAggregateRevisions && Object.keys(payload.bumpedAggregateRevisions).length > 0) {
-                    aggregateRevisionsCache = { ...(aggregateRevisionsCache || {}), ...payload.bumpedAggregateRevisions };
-                }
             }
         });
     };
@@ -649,7 +374,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
     // UI slice (Phase 3o) — 31 UI actions. State field initializers stay inline below.
     const uiSlice = createUISlice(ctx);
     const state: RDashState = {
-        db: loadStoredWorkspaceDatabase() || attachCustomerLabels(prepareWorkspaceDatabase(buildSeedDatabase())),
+        db: createEmptyWorkspaceDatabase(),
         activeModuleId: "workdesk",
         moduleHistory: [
             { id: "nav-today", moduleId: "workdesk", label: "Today", icon: "🗂️" },
@@ -661,7 +386,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             { id: "tab-today", moduleId: "workdesk", label: "🗂️ Today", icon: "🗂️" },
         ],
         activeTabId: "tab-today",
-        selectedCustomerId: "cust-das",
+        selectedCustomerId: null,
         mobileNavOpen: false,
         sidebarCollapsed: false,
         moreMenuOpen: false,
@@ -686,28 +411,65 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         //     canReleaseContractorPayment, mutateMaster, dataIssues, logAudit.
         //     hydrateSecureWorkspace + resetDatabase stay inline (closure vars). ──
         ...coreSlice,
-        hydrateSecureWorkspace: ({ db, revision, user, aggregateRevisions, rowVersions }) => {
-            const accepted = attachCustomerLabels(prepareWorkspaceDatabase(db));
-            serverRevisionForQueue = revision;
-            lastAcceptedServerRevision = revision;
+        acceptWorkspaceServerRevision: ({ revision, rowVersions, deletedRowVersionKeys }) => {
+            const current = get();
+            const nextRevision = Math.max(
+                revision,
+                current.serverRevision,
+                serverRevisionForQueue,
+                lastAcceptedServerRevision,
+            );
+            serverRevisionForQueue = nextRevision;
+            lastAcceptedServerRevision = nextRevision;
+            lastAcceptedServerDb = structuredClone(current.db) as RDashDatabase;
+            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);
+            for (const key of deletedRowVersionKeys || []) {
+                if (rowVersionsCache) delete rowVersionsCache[key];
+            }
+            workspaceRowVersionState.merge(rowVersions);
+            workspaceRowVersionState.remove(deletedRowVersionKeys || []);
+            setBase({
+                serverRevision: nextRevision,
+                workspaceSyncStatus: "saved",
+                workspaceSyncError: null,
+            });
+        },
+        hydrateSecureWorkspace: ({ db, revision, user, rowVersions, deletedRowVersionKeys }) => {
+            const current = get();
+            if (!workspaceHydrationRevisionIsCurrent(
+                revision,
+                current.serverRevision,
+                serverRevisionForQueue,
+                lastAcceptedServerRevision,
+            )) {
+                return false;
+            }
+            const removedVersionKeys = [
+                ...workspaceSnapshotRemovedRowVersionKeys(current.db, db),
+                ...(deletedRowVersionKeys || []),
+            ];
+            const accepted = mergeWorkspaceSnapshot(current.db, db);
+            const nextRevision = revision;
+            serverRevisionForQueue = nextRevision;
+            lastAcceptedServerRevision = nextRevision;
             lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
-            const selectedCustomerId = get().selectedCustomerId;
+            rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, rowVersions);
+            for (const key of removedVersionKeys) {
+                if (rowVersionsCache) delete rowVersionsCache[key];
+            }
+            const selectedCustomerId = current.selectedCustomerId;
             const resolvedCustomerId = accepted.customers.some((customer) => customer.id === selectedCustomerId)
                 ? selectedCustomerId
                 : accepted.customers[0]?.id || null;
-            setBase({ db: accepted, selectedCustomerId: resolvedCustomerId, serverRevision: revision, authUser: user, workspaceSyncStatus: "saved", workspaceSyncError: null });
-            // If the workspace response included aggregateRevisions (relational
-            // mode), populate the cache directly — no separate fetch needed.
-            if (aggregateRevisions && Object.keys(aggregateRevisions).length > 0) {
-                aggregateRevisionsCache = aggregateRevisions;
-            } else {
-                // Blob mode (no aggregateRevisions in response) — try a separate
-                // fetch as a fallback (will 400 in blob mode, gracefully no-op).
-                void refreshAggregateRevisions();
-            }
-            // Populate per-row version cache (relational mode only). Used to
-            // send expectedRowVersions in commits for per-row CAS.
-            rowVersionsCache = rowVersions && Object.keys(rowVersions).length > 0 ? rowVersions : null;
+            setBase({
+                db: accepted,
+                selectedCustomerId: resolvedCustomerId,
+                serverRevision: nextRevision,
+                authUser: user,
+                workspaceSyncStatus: "saved",
+                workspaceSyncError: null,
+            });
+            return true;
         },
         // currentUser, canReleaseContractorPayment moved to core slice (Phase 3o)
         taskPriorityOrder: [],
@@ -800,6 +562,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             if (typeof window === "undefined") {
                 throw new Error("Workspace reset can only be requested from an authenticated browser session.");
             }
+            await beginWorkspaceOutboxResetBarrier();
+            await serverSyncQueue.catch(() => undefined);
             syncEpoch += 1;
             setBase({ workspaceSyncStatus: "saving", workspaceSyncError: null });
             let response: Response;
@@ -812,6 +576,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 });
             }
             catch {
+                cancelWorkspaceOutboxResetBarrier();
                 restoreAcceptedWorkspace("Could not reach the server. The workspace was not reset.");
                 throw new Error("Could not reach the server. The workspace was not reset.");
             }
@@ -821,19 +586,35 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 data?: RDashDatabase;
             };
             if (!response.ok || !payload.data || typeof payload.revision !== "number") {
-                restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.", payload);
+                cancelWorkspaceOutboxResetBarrier();
+                restoreAcceptedWorkspace(payload.error || "The server rejected the workspace reset. The last confirmed workspace was restored.");
                 throw new Error(payload.error || "The server rejected the workspace reset.");
             }
-            const accepted = attachCustomerLabels(prepareWorkspaceDatabase(payload.data));
+            const accepted = normalizeWorkspaceSession(payload.data);
             serverRevisionForQueue = payload.revision;
             lastAcceptedServerRevision = payload.revision;
             lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
+            rowVersionsCache = null;
+            workspaceRowVersionState.replace(undefined);
+            workspaceFoundationRevisionState.replace(payload.revision);
+            workspaceReadCache.clear();
+            invalidateWorkspaceClientCaches();
+            serverSyncQueue = Promise.resolve();
             setBase({
                 db: accepted,
                 serverRevision: payload.revision,
                 workspaceSyncStatus: "saved",
                 workspaceSyncError: null,
             });
+            try {
+                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);
+            } catch (error) {
+                const message = "The workspace was reset on the server, but old local pending changes could not be cleared. This tab has paused background replay; keep it open and retry after closing other Urban Castle tabs.";
+                console.error("[workspace-reset] Local cleanup failed after server reset.", error);
+                setBase({ workspaceSyncStatus: "error", workspaceSyncError: message });
+                throw new Error(message, { cause: error });
+            }
+            window.location.reload();
         },
         // ── mutateMaster moved to core slice (Phase 3o) ──
         // ── Files slice (Phase 3c) ──
