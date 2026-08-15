@@ -1,10 +1,10 @@
 import type { WorkspaceReadTarget } from "../workspace-read-scope";
 
 /**
- * Exact page-level plans are limited to focused screens whose UI can explicitly
- * expose additional pages. Aggregate dashboards intentionally remain on their
- * complete scope plans until their totals are replaced by server aggregates;
- * silently paging those arrays would make business metrics incorrect.
+ * Exact screen plans reduce unrelated collection reads. A plan being exact does
+ * not by itself make every collection pageable: relationship/lookup collections
+ * must stay complete until the server can project exactly the IDs needed by the
+ * current primary page.
  */
 export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   customerTimeline: Object.freeze([
@@ -63,6 +63,28 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
 });
 
 /**
+ * Only these primary/history collections are safe to page with the current UI.
+ * Lookup collections such as customers, sites, vendors, articles and file-join
+ * tables are deliberately absent: independently truncating them can orphan a
+ * visible row from its label/relationship data.
+ */
+export const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string, number>>>> = Object.freeze({
+  customerTimeline: Object.freeze({
+    executionLogs: 100,
+    commSends: 100,
+    auditLog: 100,
+  }),
+  drawings: Object.freeze({ drawings: 100 }),
+  executionLogs: Object.freeze({ executionLogs: 100 }),
+  woTimeline: Object.freeze({ executionLogs: 100 }),
+  unifiedThreadInbox: Object.freeze({
+    threads: 100,
+    commSends: 100,
+  }),
+  vendors: Object.freeze({ "master.vendorRates": 100 }),
+});
+
+/**
  * Report-family screens need complete inputs for correct sums/rates, but each
  * family uses only a small subset of the old Reports scope. These plans are
  * exact but intentionally unpaginated. They reduce egress without turning a
@@ -90,69 +112,6 @@ export const MODULE_COMPLETE_COLLECTIONS: Readonly<Record<string, readonly strin
   ]),
 });
 
-/**
- * Operational/history tables grow without a practical upper bound. Focused
- * module reads page these collections. Slow-changing taxonomy/config tables are
- * deliberately not bounded because forms require those reference sets in full.
- */
-export const DEFAULT_PAGE_LIMITS: Readonly<Record<string, number>> = Object.freeze({
-  customers: 50,
-  sites: 50,
-  areas: 100,
-  workRequired: 100,
-  measurementRevisions: 100,
-  quotations: 75,
-  acceptedScopes: 100,
-  workOrders: 75,
-  boqs: 75,
-  vendorRfqs: 75,
-  vendorBids: 75,
-  purchaseOrders: 75,
-  grns: 75,
-  inventory: 125,
-  stockMovements: 100,
-  dispatches: 75,
-  vendorBills: 75,
-  vendorPayments: 100,
-  contractorBills: 75,
-  contractorPayments: 100,
-  commissions: 75,
-  workOrderCostLines: 100,
-  contractorBids: 75,
-  contractorSettlements: 75,
-  drawings: 100,
-  executionLogs: 100,
-  variationRequests: 75,
-  visits: 100,
-  tasks: 100,
-  followups: 100,
-  actions: 100,
-  payments: 100,
-  invoices: 100,
-  customerReceipts: 100,
-  blocked: 100,
-  risks: 100,
-  threads: 100,
-  attendance: 100,
-  leaveRequests: 100,
-  payrollPeriods: 50,
-  payrollLines: 100,
-  salaryAdjustments: 100,
-  staffDocuments: 100,
-  commSends: 100,
-  entityFileAttachments: 100,
-  entityReferenceAssignments: 100,
-  auditLog: 100,
-  "master.vendorRates": 100,
-  "master.vendorRateHistories": 100,
-  "master.storageFolderInstances": 100,
-  "master.fileAssets": 100,
-  "master.catalogues": 100,
-  "master.catalogueArticleVendorLinks": 100,
-  "master.pinterestBoards": 100,
-  "master.referenceMedia": 100,
-});
-
 export function pageCollectionsForTarget(target: WorkspaceReadTarget): readonly string[] | undefined {
   if (target.scope === "bootstrap" || target.scope === "full") return undefined;
   return MODULE_PAGE_COLLECTIONS[target.moduleId];
@@ -167,12 +126,12 @@ export function boundedPageLimits(
   collections: readonly string[],
   moduleId: string,
 ): Readonly<Record<string, number>> {
+  const allowedCollections = new Set(collections);
+  const configured = MODULE_PAGE_LIMITS[moduleId] || {};
   const limits: Record<string, number> = {};
-  for (const collection of collections) {
-    const limit = DEFAULT_PAGE_LIMITS[collection];
-    if (limit) limits[collection] = limit;
+  for (const [collection, limit] of Object.entries(configured)) {
+    if (allowedCollections.has(collection)) limits[collection] = limit;
   }
-  if (moduleId === "auditLog") limits.auditLog = 250;
-  if (moduleId === "executionLogs") limits.executionLogs = 100;
+  if (moduleId === "auditLog" && allowedCollections.has("auditLog")) limits.auditLog = 250;
   return Object.freeze(limits);
 }
