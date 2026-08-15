@@ -159,11 +159,13 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(helper).toContain('"X-UC-Response-Bytes"');
   });
 
-  test("blocks expensive full-workspace fallback unless explicitly enabled", async () => {
+  test("normal workspace reads have no full-workspace fallback or fallback feature flag", async () => {
     const route = await testFile("src/app/api/workspace/route.ts").text();
-    expect(route).toContain('process.env.UC_FULL_WORKSPACE_FALLBACK === "1"');
-    expect(route).toContain('"X-UC-Full-Fallback": "blocked"');
-    expect(route).toContain("A full-workspace fallback was not attempted.");
+    expect(route).not.toContain("UC_FULL_WORKSPACE_FALLBACK");
+    expect(route).not.toContain("getWorkspace(");
+    expect(route).not.toContain("fullWorkspacePayload");
+    expect(route).toContain('"X-UC-Read-Architecture": "scoped-only"');
+    expect(route).toContain("trying the module graph");
   });
 
   test("keeps delta recovery on the same scoped data path", async () => {
