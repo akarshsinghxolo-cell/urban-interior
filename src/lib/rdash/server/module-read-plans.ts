@@ -5,6 +5,7 @@ import type {
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
   boundedPageLimits,
+  completeCollectionsForTarget,
   pageCollectionsForTarget,
 } from "./module-page-read-plans";
 
@@ -52,6 +53,27 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   auditLog: Object.freeze(["auditLog"]),
 });
 
+type ExactPlan = {
+  collections: readonly string[];
+  bounded: boolean;
+};
+
+function exactPlan(target: WorkspaceReadTarget): ExactPlan | undefined {
+  const paged = pageCollectionsForTarget(target);
+  if (paged) return { collections: paged, bounded: true };
+
+  // Family reports still need complete rows because the current report UI
+  // computes exact totals and exports from those rows. Narrowing the collection
+  // set saves egress; pagination here would silently corrupt the totals.
+  if (target.moduleId !== "reportsDesk") {
+    const complete = completeCollectionsForTarget(target);
+    if (complete) return { collections: complete, bounded: false };
+  }
+
+  const legacy = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  return legacy ? { collections: legacy, bounded: true } : undefined;
+}
+
 function limitsForModule(
   moduleId: string,
   collections: readonly string[],
@@ -73,16 +95,12 @@ function completeFileJoin(collections: readonly string[]): readonly string[] {
   return Object.freeze(joined);
 }
 
-function exactCollections(target: WorkspaceReadTarget): readonly string[] | undefined {
-  return pageCollectionsForTarget(target) || EXACT_MODULE_COLLECTIONS[target.moduleId];
-}
-
 export function collectionsForWorkspaceReadTarget(
   target: WorkspaceReadTarget,
 ): readonly string[] {
   if (target.scope === "bootstrap" || target.scope === "full") return [];
-  const exact = exactCollections(target);
-  return exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope];
+  const exact = exactPlan(target);
+  return exact ? completeFileJoin(exact.collections) : COLLECTIONS_BY_SCOPE[target.scope];
 }
 
 export function workspaceModuleReadPlan(
@@ -91,15 +109,14 @@ export function workspaceModuleReadPlan(
   if (target.scope === "bootstrap" || target.scope === "full") {
     throw new Error("INVALID:Bootstrap and full reads do not use module read plans.");
   }
-  const exact = exactCollections(target);
-  const collections = exact ? completeFileJoin(exact) : COLLECTIONS_BY_SCOPE[target.scope];
+  const exact = exactPlan(target);
+  const collections = exact ? completeFileJoin(exact.collections) : COLLECTIONS_BY_SCOPE[target.scope];
   return Object.freeze({
     collections,
-    // Broad scope fallbacks (most importantly Reports) must remain complete
-    // until their client-side totals are replaced by server aggregates. Silent
-    // pagination there would make business numbers wrong. Exact screen plans,
-    // on the other hand, expose their incompleteness through page cursors.
-    limitsByCollection: limitsForModule(target.moduleId, collections, Boolean(exact)),
+    // Scope fallbacks remain complete until their aggregate/dashboard clients
+    // are migrated. Exact report-family plans are also complete but much
+    // smaller; focused screens expose bounded pages through page cursors.
+    limitsByCollection: limitsForModule(target.moduleId, collections, exact?.bounded === true),
     strategy: exact ? "module" : "scope",
   });
 }
