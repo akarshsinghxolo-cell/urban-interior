@@ -51,12 +51,7 @@ const TARGET_COLLECTION: Partial<Record<FileAttachmentEntityType, string>> = {
   communication: "commSends",
 };
 
-/**
- * Nested attachment targets live inside canonical parent rows rather than their
- * own entity table. The new upload architecture reads only that parent
- * collection, finds the nested identity, then follows the same targeted
- * dependency graph as every other upload. There is no whole-workspace fallback.
- */
+/** Nested upload identities live inside these canonical parent rows. */
 const NESTED_TARGET_PARENT_COLLECTION: Partial<Record<FileAttachmentEntityType, string>> = {
   quotation_item: "quotations",
   boq_item: "boqs",
@@ -295,6 +290,41 @@ function invalidUploadContext(error: unknown): Error {
 }
 
 /**
+ * The shared entity-context resolver predates nested rows and canonical
+ * Customer-conversation IDs. Adapt only this in-memory read projection so the
+ * canonical persisted model remains singular while nested uploads resolve
+ * correctly without another storage/read architecture.
+ */
+function prepareNestedResolverProjection(
+  database: RDashDatabase,
+  targetEntityType: FileAttachmentEntityType,
+  targetEntityId: string,
+): void {
+  if (targetEntityType === "quotation_item") {
+    for (const quotation of database.quotations) {
+      const row = quotation as unknown as Record<string, unknown>;
+      const scopeLines = Array.isArray(row.scope_lines) ? row.scope_lines as Array<Record<string, unknown>> : [];
+      const items = Array.isArray(row.items) ? row.items as Array<Record<string, unknown>> : [];
+      if (![...scopeLines, ...items].some((item) => String(item.id || "") === targetEntityId)) continue;
+      row.scope_lines = [...scopeLines, ...items];
+      break;
+    }
+  }
+
+  if (targetEntityType === "thread_message") {
+    for (const thread of database.threads) {
+      if (!(thread.messages || []).some((message) => message.id === targetEntityId)) continue;
+      if (thread.kind === "generic" && thread.record_id.startsWith("customer-conversation:")) {
+        // This is a resolver projection only. The stored Thread keeps the one
+        // canonical `customer-conversation:<id>` identity.
+        thread.record_id = thread.record_id.slice("customer-conversation:".length);
+      }
+      break;
+    }
+  }
+}
+
+/**
  * Reads only the upload target, its parent chain and the small Drive account /
  * folder-template configuration required to start/finalize an upload. Nested
  * item/message targets read their canonical parent collection and then follow
@@ -315,6 +345,7 @@ export async function getDirectUploadWorkspace(
     workspace = mergeSubsets(workspace, next);
   }
 
+  prepareNestedResolverProjection(workspace.data, targetEntityType, targetEntityId);
   if (targetEntityType !== "general") {
     try {
       resolveEntityContext(workspace.data, targetEntityType, targetEntityId, "Upload target");
