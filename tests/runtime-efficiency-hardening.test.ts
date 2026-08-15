@@ -162,7 +162,21 @@ describe("runtime efficiency hardening", () => {
     expect(route).not.toContain("getWorkspace,");
   });
 
-  test("ordinary Drive upload lifecycle reads targeted context instead of the ERP workspace", async () => {
+  test("all normal commits use row or domain subset validation with no old full-workspace fallback", async () => {
+    const authorized = await read("src/lib/rdash/server/authorized-commit.ts");
+    const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
+    const simple = await read("src/lib/rdash/server/simple-targeted-commit.ts");
+
+    expect(authorized).toContain("validationReadPlan");
+    expect(authorized).toContain("getWorkspaceSubset(validationReadPlan");
+    expect(authorized).toContain('CommitMode = "row-targeted" | "domain-targeted"');
+    expect(authorized).not.toContain("getWorkspace(");
+    expect(authorized).not.toContain("phase2-single-read");
+    expect(targeted).not.toContain("UC_PHASE2B_TARGETED_COMMITS");
+    expect(simple).not.toContain("UC_PHASE2B_TARGETED_COMMITS");
+  });
+
+  test("ordinary and nested Drive uploads use one targeted context architecture", async () => {
     const initiate = await read("src/lib/rdash/server/direct-upload-initiate.ts");
     const finalize = await read("src/lib/rdash/server/direct-upload-finalize-core.ts");
     const context = await read("src/lib/rdash/server/direct-upload-workspace.ts");
@@ -172,13 +186,26 @@ describe("runtime efficiency hardening", () => {
     expect(finalize).toContain("getDirectUploadWorkspace");
     expect(finalize).toContain("getWorkspaceSubset");
     expect(finalize).not.toContain("getWorkspace(");
-    expect(context).toContain("COMPATIBILITY_NESTED_TARGETS");
-    expect(context).toContain('"quotation_item"');
-    expect(context).toContain('"boq_item"');
-    expect(context).toContain('"thread_message"');
+    expect(context).toContain("NESTED_TARGET_PARENT_COLLECTION");
+    expect(context).toContain('quotation_item: "quotations"');
+    expect(context).toContain('boq_item: "boqs"');
+    expect(context).toContain('thread_message: "threads"');
     expect(context).toContain("getWorkspaceSubset");
-    expect(context).toContain("TARGET_COLLECTION");
-    expect(context).toContain("[upload-context] targeted context incomplete; using compatibility full read");
+    expect(context).toContain("invalidUploadContext");
+    expect(context).not.toContain("getWorkspace(");
+    expect(context).not.toContain("COMPATIBILITY_NESTED_TARGETS");
+    expect(context).not.toContain("compatibility full read");
+  });
+
+  test("canonical Customer thread migration removes the old bare identity", async () => {
+    const migration = await read("supabase/migrations/20260815163500_canonical_customer_thread_identity.sql");
+    expect(migration).toContain("customer-conversation:");
+    expect(migration).toContain("data->>'record_id' like 'cust-%'");
+    expect(migration).toContain("revision = revision + 1");
+
+    const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
+    expect(targeted).toContain('recordId.startsWith("customer-conversation:")');
+    expect(targeted).not.toContain('recordId.startsWith("cust-")');
   });
 
   test("report families narrow complete inputs without paginating business totals", () => {
