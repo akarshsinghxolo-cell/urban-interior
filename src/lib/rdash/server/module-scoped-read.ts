@@ -14,7 +14,6 @@ import {
   workspaceModuleReadPlan,
 } from "./module-read-plans";
 import {
-  getProjectedWorkspaceBootstrap,
   getProjectedWorkspacePermissions,
   WORKSPACE_FOUNDATION_COLLECTIONS,
 } from "./projected-workspace-bootstrap";
@@ -114,10 +113,6 @@ export function collectionsForWorkspaceReadScope(
   scope: ModuleWorkspaceReadScope,
 ): readonly string[] {
   return COLLECTIONS_BY_SCOPE[scope];
-}
-
-export async function getWorkspaceBootstrap(user: AuthenticatedUser): Promise<WorkspaceSubset> {
-  return getProjectedWorkspaceBootstrap(user.staffId);
 }
 
 function assertModuleTarget(target: WorkspaceReadTarget): asserts target is WorkspaceReadTarget & { scope: ModuleWorkspaceReadScope } {
@@ -302,7 +297,7 @@ async function readAuthorizedPage(
 }
 
 /**
- * Reads a projected permission/bootstrap first, then the route's exact module
+ * Reads a projected permission snapshot first, then the route's exact module
  * plan (or bounded scope plan) at the same workspace revision. Staff is
  * directory-projected by default; only privileged HR reads receive all Staff
  * HR fields, while ordinary Staff can receive their own full row on HR screens.
@@ -322,9 +317,9 @@ export async function getModuleScopedWorkspace(
 
 /**
  * Loads only the next page of bounded collections that are already part of the
- * current module. Bootstrap/permissions are used for authorization but are not
- * retransmitted to the client; the returned page is designed to merge into the
- * existing scoped snapshot.
+ * current module. Permissions are used for authorization but are not
+ * retransmitted to the client; the returned page merges into the existing
+ * scoped session snapshot.
  */
 export async function getModuleScopedWorkspacePage(
   user: AuthenticatedUser,
