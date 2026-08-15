@@ -10,6 +10,7 @@ import {
   type WorkspaceOperation,
 } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
+import { introducedIntegrityIssues } from "./integrity-delta";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
@@ -99,8 +100,12 @@ export async function commitAuthorizedPostgresOperations(
 
     assertWorkspaceMutationAllowed(user, commitOperations, current.data);
     commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
+    const baseline = normalizeWorkspace(current.data);
     const candidate = normalizeWorkspace(applyWorkspaceOperations(current.data, commitOperations));
-    const issues = validateBusinessData(candidate);
+    const issues = introducedIntegrityIssues(
+      validateBusinessData(baseline),
+      validateBusinessData(candidate),
+    );
     if (issues.length) throw new Error(`INVALID:${issues[0]}`);
     const validatedAt = Date.now();
 

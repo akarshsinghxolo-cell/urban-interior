@@ -14,6 +14,7 @@ import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
 import { indiaBusinessDate } from "@/lib/rdash/format";
+import { configureWorkspaceOutboxScope } from "@/lib/uploads/workspace-outbox";
 const DetailPanel = React.lazy(() => import("./DetailPanelWithHistory").then((module) => ({ default: module.DetailPanelWithHistory })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
@@ -59,7 +60,9 @@ export function RDashApp() {
             const payload = await response.json().catch(() => ({})) as {
                 error?: string;
                 revision?: number;
+                workspaceId?: string;
                 user?: {
+                    userId: string;
                     name: string;
                     email: string;
                     role: string;
@@ -76,6 +79,10 @@ export function RDashApp() {
                 throw new Error(payload.error || "The secure workspace session could not be initialized.");
             if (!active)
                 return;
+            configureWorkspaceOutboxScope({
+                workspaceId: payload.workspaceId || "default",
+                ownerUserId: payload.user.userId,
+            });
             useRDashStore.setState({
                 authUser: payload.user,
                 serverRevision: payload.revision,

@@ -45,12 +45,14 @@ export async function GET(request: NextRequest) {
       revision: workspace.revision,
       updatedAt: workspace.updatedAt,
       user: {
+        userId: user.userId,
         name: user.name,
         email: user.email,
         role: user.role,
         staffId: user.staffId,
         expiresAt: user.expiresAt,
       },
+      workspaceId: process.env.UC_WORKSPACE_ID || "default",
       readStrategy: "module-scoped",
     });
     return new NextResponse(body, {

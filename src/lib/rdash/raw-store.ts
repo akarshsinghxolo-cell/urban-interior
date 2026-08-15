@@ -12,6 +12,7 @@ import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyO
 import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, threadParentExists, replaceAreaId, validateBusinessData, } from "./business-rules";
 import { resolveCustomerIdFromLinks } from "./customer-relations";
 import { diffWorkspaceOperations } from "./workspace-operations";
+import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
 import { attendancePolicyForStaff, attendancePolicyForVisit, createDefaultAttendancePolicy } from "./attendance-policy";
 // Re-export UI types from the store/ subfolder (Phase 1 split)
@@ -453,26 +454,37 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                     body: JSON.stringify(commitBody),
                 });
             }
-            catch {
+            catch (error) {
+                const message = error instanceof Error && error.message
+                    ? error.message
+                    : "Could not reach the PostgreSQL operation server. Your change is saved locally and will retry after connectivity is restored.";
                 setBase({
                     workspaceSyncStatus: "error",
-                    workspaceSyncError: "Could not reach the PostgreSQL operation server. Your last confirmed workspace is still safe; retry the change after connectivity is restored.",
+                    workspaceSyncError: message,
                 });
-                return;
+                throw new Error(message, { cause: error });
             }
             const payload = (await response.json().catch(() => ({}))) as {
+                status?: "applied" | "processing";
                 error?: string;
                 revision?: number;
                 data?: RDashDatabase;
                 rowVersions?: Record<string, number>;
                 bumpedAggregateRevisions?: Record<string, number>;
             };
-            if (!response.ok) {
+            const outcome = classifyWorkspaceSaveOutcome(response.status, payload.status);
+            if (outcome === "rejected") {
                 syncEpoch += 1;
-                restoreAcceptedWorkspace(payload.error || "The server rejected this change. The last confirmed workspace was restored.", payload);
+                const message = payload.error || "The server rejected this change. The last confirmed workspace was restored.";
+                restoreAcceptedWorkspace(message, payload);
                 if (response.status === 401)
                     window.location.assign("/signin");
-                return;
+                throw new Error(message);
+            }
+            if (outcome === "pending") {
+                const message = "Saved locally and waiting for server confirmation. Keep this form open until synchronization completes.";
+                setBase({ workspaceSyncStatus: "saving", workspaceSyncError: message });
+                throw new Error(message);
             }
             if (payload.data && typeof payload.revision === "number") {
                 // FIX-PERF-001: Don't replace the entire db on successful commit.

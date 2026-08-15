@@ -11,10 +11,11 @@ import {
   workspaceExitRisk,
 } from "../src/lib/uploads/workspace-exit-guard";
 
-function item(status: WorkspaceOutboxStatus, id = status): WorkspaceCommitOutboxRecord {
+function item(status: WorkspaceOutboxStatus, id: string = status): WorkspaceCommitOutboxRecord {
   return {
     operationId: id,
     workspaceId: "default",
+    ownerUserId: "user-test",
     revision: 1,
     operations: [],
     uploadBatchIds: [],

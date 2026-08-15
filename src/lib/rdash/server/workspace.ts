@@ -2,18 +2,15 @@ import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
 import { applyWorkspaceOperations, diffWorkspaceOperations, operationSummary, type WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
+import { introducedIntegrityIssues } from "./integrity-delta";
 import {
   assertNotImplicitSeedReset,
   assertWorkspaceMutationAllowed,
 } from "./mutation-policy";
 
-// REST-based data layer — Supabase only, no Prisma, no local database.
-// All data is read from and written to Supabase entity_* tables via REST.
-//
-// FALLBACK: When the Supabase entity_* tables are not yet applied (first deploy
-// before schema-entity-tables.sql is run), the app falls back to in-memory seed
-// data so it's always usable. Once the schema is applied, all reads/writes go
-// to Supabase automatically.
+// REST-based data layer — Supabase only in production, no local database.
+// A seed-backed in-memory store is available only for explicitly opted-in local
+// development. Production must fail closed if Supabase is unavailable.
 
 let restModule: typeof import("./commit-rest") | null = null;
 async function getRestModule() {
@@ -23,9 +20,21 @@ async function getRestModule() {
   return restModule;
 }
 
-// In-memory fallback cache (only used when Supabase tables don't exist)
+// In-memory fallback cache (explicit local-development opt-in only).
 let inMemoryWorkspace: { revision: number; data: RDashDatabase; updatedAt: string } | null = null;
 let supabaseSchemaReady: boolean | null = null;
+
+export function allowsInMemoryWorkspaceFallback(environment = process.env): boolean {
+  return environment.NODE_ENV !== "production"
+    && environment.UC_ALLOW_IN_MEMORY_WORKSPACE_FALLBACK === "1";
+}
+
+function assertFallbackAllowed(): void {
+  if (allowsInMemoryWorkspaceFallback()) return;
+  throw new Error(
+    "SUPABASE_SCHEMA_UNAVAILABLE:Supabase is unavailable or the entity schema is missing; in-memory workspace fallback is disabled.",
+  );
+}
 
 async function checkSupabaseSchema(): Promise<boolean> {
   if (supabaseSchemaReady !== null) return supabaseSchemaReady;
@@ -36,11 +45,13 @@ async function checkSupabaseSchema(): Promise<boolean> {
     if (supabaseSchemaReady) {
       console.log("[workspace] Supabase entity_* schema is ready.");
     } else {
-      console.log("[workspace] Supabase entity_* schema NOT ready — using in-memory fallback.");
+      console.error("[workspace] Supabase entity_* schema is not ready.", error?.message || error);
     }
-  } catch {
+  } catch (error) {
     supabaseSchemaReady = false;
+    console.error("[workspace] Supabase schema check failed.", error);
   }
+  if (!supabaseSchemaReady) assertFallbackAllowed();
   return supabaseSchemaReady;
 }
 
@@ -135,7 +146,10 @@ export function enforceMutation(user: AuthenticatedUser, current: RDashDatabase,
   const operations = diffWorkspaceOperations(current, trustedCandidate);
   assertWorkspaceMutationAllowed(user, operations, current);
 
-  const issues = validateBusinessData(trustedCandidate);
+  const issues = introducedIntegrityIssues(
+    validateBusinessData(current),
+    validateBusinessData(trustedCandidate),
+  );
   if (issues.length) throw new Error(`INVALID:${issues[0]}`);
 
   if (!operations.length) return trustedCandidate;

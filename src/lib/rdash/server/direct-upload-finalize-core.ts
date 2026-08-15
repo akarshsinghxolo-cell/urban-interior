@@ -1,12 +1,12 @@
 import type { AuthenticatedUser } from "./auth";
-import { getWorkspace } from "./workspace";
+import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
 import { getGoogleDriveAccessToken } from "./google-drive";
 import { resolveEntityContext } from "../entity-context";
 import type { EntityFileAttachment, FileAsset, FileAttachmentEntityType, StorageFolderInstance } from "../types";
 import type { FinalizeUploadRequest, FinalizedUploadResult, GoogleFileId, UploadPurpose } from "@/lib/uploads/upload-types";
 import { DRIVE_API, destinationSegments, driveFetch, ensureFolderPath, nowIso } from "./direct-upload-storage";
-import { bumpWorkspaceRevision, updateAttachmentField, upsertEntityRow } from "./direct-upload-persistence";
+import { buildAtomicUploadMetadataOperations } from "./direct-upload-persistence";
 
 type UploadItemRow = Record<string, unknown>;
 
@@ -175,18 +175,30 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
     updated_at: timestamp,
   };
 
-  await upsertEntityRow("entity_master_storageFolderInstances", folderInstance.id, folderInstance, user);
-  await upsertEntityRow("entity_master_fileAssets", asset.id, asset, user);
-  await upsertEntityRow("entity_entityFileAttachments", attachment.id, attachment, user);
-  await updateAttachmentField(
-    user,
-    serverTargetType,
-    serverTargetId,
-    input.attachmentField || (item.attachment_field ? String(item.attachment_field) : undefined),
-    input.attachmentFieldMode || (item.attachment_field_mode as "set" | "append" | undefined),
-    attachment.id,
-  );
-  await bumpWorkspaceRevision();
+  const attachmentField = input.attachmentField
+    || (item.attachment_field ? String(item.attachment_field) : undefined);
+  const attachmentFieldMode = input.attachmentFieldMode
+    || (item.attachment_field_mode as "set" | "append" | undefined);
+  const metadataOperations = buildAtomicUploadMetadataOperations({
+    workspace: workspace.data,
+    folderInstance,
+    asset,
+    attachment,
+    targetEntityType: serverTargetType,
+    targetEntityId: serverTargetId,
+    attachmentField,
+    attachmentFieldMode,
+  });
+  try {
+    // These four rows are applied by one PostgreSQL RPC transaction with
+    // workspace CAS, so a target never references half-finalized metadata.
+    await commitWorkspaceOperations(workspace.revision, metadataOperations);
+  } catch (commitError) {
+    if (commitError instanceof Error && commitError.message === "CONFLICT") {
+      throw new Error("TARGET_NOT_READY:The workspace changed while the file was being attached. Retry finalization.");
+    }
+    throw commitError;
+  }
 
   const { error: updateError } = await admin.from("uc_upload_items").update({
     status: "completed",

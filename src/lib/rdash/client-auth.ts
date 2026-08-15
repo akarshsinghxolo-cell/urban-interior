@@ -2,6 +2,7 @@
 
 import {
   captureWorkspaceCommit,
+  clearWorkspaceOutboxScope,
   markWorkspaceCommitNetworkFailure,
   markWorkspaceCommitResponse,
   rememberWorkspaceResponse,
@@ -86,6 +87,7 @@ export function setSessionToken(token: string): void {
     const previous = window.localStorage.getItem(TOKEN_KEY);
     if (previous && decodeSessionIdentity(previous) !== decodeSessionIdentity(token)) {
       clearStoredHealthResponses();
+      clearWorkspaceOutboxScope();
     }
     window.localStorage.setItem(TOKEN_KEY, token);
   } catch {
@@ -98,6 +100,7 @@ export function clearSessionToken(): void {
   try {
     window.localStorage.removeItem(TOKEN_KEY);
     clearStoredHealthResponses();
+    clearWorkspaceOutboxScope();
   } catch {
     // ignore
   }
