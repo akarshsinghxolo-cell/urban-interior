@@ -98,6 +98,24 @@ describe("exact module workspace read plans", () => {
     const rates = workspaceModuleReadPlan(workspaceReadTargetForModule("vendorRates"));
     expect(rates.limitsByCollection?.["master.vendorRateHistories"]).toBe(100);
   });
+
+  test("never pages lookup rows independently from visible primary rows", () => {
+    const tasks = workspaceModuleReadPlan(workspaceReadTargetForModule("tasks"));
+    expect(tasks.limitsByCollection?.customers).toBeUndefined();
+    expect(tasks.limitsByCollection?.sites).toBeUndefined();
+
+    const drawings = workspaceModuleReadPlan(workspaceReadTargetForModule("drawings"));
+    expect(drawings.limitsByCollection?.drawings).toBe(100);
+    expect(drawings.limitsByCollection?.customers).toBeUndefined();
+    expect(drawings.limitsByCollection?.sites).toBeUndefined();
+    expect(drawings.limitsByCollection?.entityFileAttachments).toBeUndefined();
+    expect(drawings.limitsByCollection?.["master.fileAssets"]).toBeUndefined();
+
+    const inbox = workspaceModuleReadPlan(workspaceReadTargetForModule("unifiedThreadInbox"));
+    expect(inbox.limitsByCollection?.threads).toBe(100);
+    expect(inbox.limitsByCollection?.commSends).toBe(100);
+    expect(inbox.limitsByCollection?.customers).toBeUndefined();
+  });
 });
 
 describe("bootstrap JSON projections", () => {
