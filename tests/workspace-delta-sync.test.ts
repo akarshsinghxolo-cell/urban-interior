@@ -172,7 +172,9 @@ describe("delta journal migration and API contract", () => {
     expect(route).toContain("authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)");
     expect(route).toContain("getWorkspaceChanges(");
     expect(route).toContain("DIRECTORY_PROJECTION_COLLECTIONS");
-    expect(route).toContain("canReadFullStaff ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
+    expect(route).toContain("canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
+    expect(route).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
+    expect(route).toContain("canReturnFullStaffRows = canReadFullStaff && !foundationProjection");
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
     expect(route).toContain('"Cache-Control": "private, no-store, max-age=0"');
     expect(route).toContain('"X-Content-Type-Options": "nosniff"');
