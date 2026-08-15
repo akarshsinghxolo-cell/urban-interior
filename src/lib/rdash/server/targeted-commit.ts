@@ -89,12 +89,8 @@ function addFullCollection(plan: MutableReadPlan, collection: string): void {
 }
 
 function genericCustomerId(recordId: string): string | undefined {
-  if (recordId.startsWith("customer-conversation:")) {
-    return recordId.slice("customer-conversation:".length).trim() || undefined;
-  }
-  // Current and legacy Customer IDs both use the cust- prefix. Other generic
-  // entity threads remain on the Phase 2A fallback rather than being guessed.
-  return recordId.startsWith("cust-") ? recordId : undefined;
+  if (!recordId.startsWith("customer-conversation:")) return undefined;
+  return recordId.slice("customer-conversation:".length).trim() || undefined;
 }
 
 function threadParentTarget(row: Record<string, unknown>): ThreadParentTarget | undefined {
@@ -207,7 +203,7 @@ function isTargetedThreadRow(row: Record<string, unknown>): boolean {
 }
 
 export function canUseTargetedCommit(operations: WorkspaceOperation[]): boolean {
-  if (process.env.UC_PHASE2B_TARGETED_COMMITS === "0" || !operations.length) return false;
+  if (!operations.length) return false;
 
   let rowCount = 0;
   let hasBusinessMutation = false;
