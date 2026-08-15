@@ -15,7 +15,7 @@ export interface WorkspaceModuleReadPlan {
   strategy: "module" | "scope";
 }
 
-const HISTORY_LIMITS = Object.freeze({
+const SCOPE_HISTORY_LIMITS = Object.freeze({
   auditLog: 100,
   executionLogs: 100,
   commSends: 100,
@@ -55,23 +55,22 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
 
 type ExactPlan = {
   collections: readonly string[];
-  mode: "paged" | "complete" | "legacy";
+  mode: "paged" | "complete" | "exact";
 };
 
 function exactPlan(target: WorkspaceReadTarget): ExactPlan | undefined {
   const paged = pageCollectionsForTarget(target);
   if (paged) return { collections: paged, mode: "paged" };
 
-  // Family reports still need complete rows because the current report UI
-  // computes exact totals and exports from those rows. Narrowing the collection
-  // set saves egress; pagination here would silently corrupt the totals.
+  // Family reports need complete rows because their current UI computes exact
+  // totals and exports client-side. Their collection set is still narrowed.
   if (target.moduleId !== "reportsDesk") {
     const complete = completeCollectionsForTarget(target);
     if (complete) return { collections: complete, mode: "complete" };
   }
 
-  const legacy = EXACT_MODULE_COLLECTIONS[target.moduleId];
-  return legacy ? { collections: legacy, mode: "legacy" } : undefined;
+  const exact = EXACT_MODULE_COLLECTIONS[target.moduleId];
+  return exact ? { collections: exact, mode: "exact" } : undefined;
 }
 
 function limitsForModule(
@@ -80,20 +79,18 @@ function limitsForModule(
   mode: ExactPlan["mode"] | "scope",
 ): Readonly<Record<string, number>> {
   if (mode === "paged") {
-    // New page plans opt into limits explicitly. Do not inherit an old global
-    // history cap for a collection that is now the screen's primary dataset.
     return Object.freeze({ ...boundedPageLimits(collections, moduleId) });
   }
   if (mode === "complete") {
     return Object.freeze({});
   }
-  if (mode === "legacy") {
+  if (mode === "exact") {
     return Object.freeze({
-      ...HISTORY_LIMITS,
+      ...SCOPE_HISTORY_LIMITS,
       ...boundedPageLimits(collections, moduleId),
     });
   }
-  return HISTORY_LIMITS;
+  return SCOPE_HISTORY_LIMITS;
 }
 
 function completeFileJoin(collections: readonly string[]): readonly string[] {
@@ -124,9 +121,9 @@ export function workspaceModuleReadPlan(
   const collections = exact ? completeFileJoin(exact.collections) : COLLECTIONS_BY_SCOPE[target.scope];
   return Object.freeze({
     collections,
-    // Broad scope fallbacks preserve the pre-existing history caps. New exact
-    // screens limit only explicitly safe history feeds; report families stay
-    // complete so totals and exports remain authoritative.
+    // Every screen now resolves through one planner. Exact screens limit only
+    // explicitly safe feeds; scope plans use bounded history defaults; report
+    // families stay complete so totals and exports remain authoritative.
     limitsByCollection: limitsForModule(target.moduleId, collections, exact?.mode || "scope"),
     strategy: exact ? "module" : "scope",
   });
