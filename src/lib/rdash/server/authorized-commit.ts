@@ -13,10 +13,10 @@ import type { AuthenticatedUser } from "./auth";
 import { introducedIntegrityIssues } from "./integrity-delta";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
+import { prepareSimpleTargetedCommit } from "./simple-targeted-commit";
 import { applyVendorRateAverages } from "../vendor-rate-average";
 import { canonicalizeVendorRateMaster } from "../vendor-rate";
 import { contractorRateProjection } from "../contractor-profile";
-import type { ContractorProfileRecord } from "../contractor-profile";
 import { commitWorkspaceOperations, getWorkspace } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -114,7 +114,7 @@ function audit(user: AuthenticatedUser, operations: WorkspaceOperation[]): Audit
   };
 }
 
-export type CommitMode = "phase2b-targeted" | "phase2-single-read";
+export type CommitMode = "phase2b-targeted" | "phase2c-entity-targeted" | "phase2-single-read";
 
 export interface CommitResult {
   revision: number;
@@ -133,9 +133,11 @@ export interface CommitResult {
 }
 
 /**
- * Phase 2B uses targeted row reads for common Task, Follow-up, Visit, and
- * related Thread/Audit mutations. Any unsupported or high-risk operation falls
- * back to the Phase 2A single-full-read path without changing its behavior.
+ * Targeted paths cover common row mutations whose complete authorization and
+ * business rules can be proven from a small dependency set. Complex master
+ * mutations (notably Vendor/Contractor profile changes with derived rates)
+ * deliberately retain the full validation path until their canonicalization
+ * can be moved without changing behavior.
  */
 export async function commitAuthorizedPostgresOperations(
   user: AuthenticatedUser,
@@ -152,12 +154,16 @@ export async function commitAuthorizedPostgresOperations(
   let authorizeAndValidateMs = 0;
 
   const targeted = await prepareTargetedCommit(user, revision, commitOperations);
-  if (targeted) {
-    commitOperations = targeted.operations;
-    mode = "phase2b-targeted";
-    queryCount = targeted.queryCount;
-    loadMs = targeted.loadMs;
-    authorizeAndValidateMs = targeted.authorizeAndValidateMs;
+  const simpleTargeted = targeted
+    ? null
+    : await prepareSimpleTargetedCommit(user, revision, commitOperations);
+  if (targeted || simpleTargeted) {
+    const prepared = targeted || simpleTargeted!;
+    commitOperations = prepared.operations;
+    mode = targeted ? "phase2b-targeted" : "phase2c-entity-targeted";
+    queryCount = prepared.queryCount;
+    loadMs = prepared.loadMs;
+    authorizeAndValidateMs = prepared.authorizeAndValidateMs;
   } else {
     const loadStartedAt = Date.now();
     const current = await getWorkspace();
