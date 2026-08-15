@@ -4,22 +4,29 @@
 --   customer-conversation:<customer_id>
 --
 -- Older bare Customer IDs are migrated once so runtime code does not need a
--- second read/write compatibility path. This migration is idempotent.
+-- second read/write compatibility path. Only IDs backed by a canonical
+-- Customer row are converted. This migration is idempotent.
 
 with migrated as (
-  update public."entity_threads"
+  update public."entity_threads" as thread
   set data = jsonb_set(
-        data,
+        thread.data,
         '{record_id}',
-        to_jsonb('customer-conversation:' || (data->>'record_id')),
+        to_jsonb('customer-conversation:' || (thread.data->>'record_id')),
         true
       ),
-      revision = revision + 1,
+      revision = thread.revision + 1,
       updated_at = now(),
       updated_by = 'migration:canonical_customer_thread_identity'
-  where coalesce(data->>'kind', data->>'record_type') = 'generic'
-    and data->>'record_id' like 'cust-%'
-  returning workspace_id
+  where coalesce(thread.data->>'kind', thread.data->>'record_type') = 'generic'
+    and thread.data->>'record_id' like 'cust-%'
+    and exists (
+      select 1
+      from public."entity_customers" as customer
+      where customer.workspace_id = thread.workspace_id
+        and customer.id = thread.data->>'record_id'
+    )
+  returning thread.workspace_id
 ),
 affected as (
   select distinct workspace_id from migrated
