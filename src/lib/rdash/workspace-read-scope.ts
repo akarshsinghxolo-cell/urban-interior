@@ -270,7 +270,7 @@ export function rowScopedEntityForTarget(
 function inferredReadStrategy(current: WorkspaceReadCoverage): WorkspaceReadStrategy {
   if (current.strategy) return current.strategy;
   if (current.mode === "unknown") return "unknown";
-  if (current.scope === "full" && current.mode === "full") return "full";
+  if (current.scope === "full" || current.mode === "full") return "unknown";
   if (current.scope === "bootstrap" || current.mode === "bootstrap") return "bootstrap";
   if (current.mode.endsWith("-row")) return "row";
   if (current.mode === current.scope) return "scope";
@@ -278,11 +278,12 @@ function inferredReadStrategy(current: WorkspaceReadCoverage): WorkspaceReadStra
 }
 
 /**
- * A full snapshot covers every destination. Bootstrap contains authentication
- * and permission context only, so it never satisfies a module or entity read.
- * Scope snapshots cover every module and record assigned to the same scope.
- * Exact-module snapshots cover only the module that produced them. Customer and
- * Site row snapshots remain compatible only with the same concrete record.
+ * Bootstrap contains authentication and permission context only, so it never
+ * satisfies a module or entity read. Scope snapshots cover every module and
+ * record assigned to the same scope. Exact-module snapshots cover only the
+ * module that produced them. Customer and Site row snapshots remain compatible
+ * only with the same concrete record. Old full-workspace snapshots are rejected
+ * so a browser cannot carry pre-migration coverage semantics into this system.
  */
 export function workspaceReadCoverageIsCompatible(
   current: WorkspaceReadCoverage,
@@ -293,9 +294,10 @@ export function workspaceReadCoverageIsCompatible(
     current.mode === "unknown" ||
     strategy === "unknown" ||
     current.scope === "bootstrap" ||
-    strategy === "bootstrap"
+    strategy === "bootstrap" ||
+    current.scope === "full" ||
+    current.mode === "full"
   ) return false;
-  if (current.scope === "full" && strategy === "full") return true;
   if (current.scope !== requested.scope) return false;
 
   const entity = rowScopedEntityForTarget(requested);
@@ -310,12 +312,4 @@ export function workspaceReadCoverageIsCompatible(
     return !entity && current.moduleId === requested.moduleId;
   }
   return strategy === "scope";
-}
-
-// Compatibility helper retained for existing callers and tests.
-export function workspaceReadScopeIsCompatible(
-  current: WorkspaceReadScope,
-  requested: WorkspaceReadScope,
-): boolean {
-  return current === "full" || current === requested;
 }
