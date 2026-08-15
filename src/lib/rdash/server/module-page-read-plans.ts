@@ -3,8 +3,8 @@ import type { WorkspaceReadTarget } from "../workspace-read-scope";
 /**
  * Exact screen plans reduce unrelated collection reads. A plan being exact does
  * not by itself make every collection pageable: relationship/lookup collections
- * must stay complete until the server can project exactly the IDs needed by the
- * current primary page.
+ * and collections that drive aggregate counters must stay complete until the
+ * server supplies row-ID projections / aggregate counts for those screens.
  */
 export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   customerTimeline: Object.freeze([
@@ -12,61 +12,43 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
     "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
     "drawings", "executionLogs", "boqs", "purchaseOrders", "grns", "vendorBills",
     "blocked", "commSends", "auditLog", "entityFileAttachments", "master.fileAssets",
+    "master.sourcePartners",
   ]),
   customerRequests: Object.freeze([
     "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
-    "visits", "tasks", "followups", "threads", "entityFileAttachments", "master.fileAssets",
-    "master.workCategories", "master.workSubcategories",
+    "workOrders", "visits", "tasks", "followups", "threads", "entityFileAttachments",
+    "master.fileAssets", "master.workCategories", "master.workSubcategories",
   ]),
   salesPipeline: Object.freeze([
-    "customers", "sites", "workRequired", "quotations", "acceptedScopes", "workOrders",
-    "followups", "tasks", "commSends", "threads", "entityFileAttachments", "master.fileAssets",
+    "customers", "sites", "workRequired", "measurementRevisions", "quotations",
+    "acceptedScopes", "workOrders", "visits", "invoices", "followups", "tasks",
+    "commSends", "threads", "entityFileAttachments", "master.fileAssets",
   ]),
   lostClosedReview: Object.freeze([
     "customers", "sites", "workRequired", "quotations", "workOrders", "followups", "tasks",
     "threads", "auditLog",
   ]),
   drawings: Object.freeze([
-    "customers", "sites", "workOrders", "drawings", "entityFileAttachments", "master.fileAssets",
+    "customers", "sites", "areas", "workOrders", "drawings", "entityFileAttachments", "master.fileAssets",
   ]),
   executionLogs: Object.freeze([
     "customers", "sites", "workOrders", "executionLogs", "variationRequests", "visits",
     "entityFileAttachments", "master.fileAssets",
   ]),
   woTimeline: Object.freeze([
-    "customers", "sites", "workOrders", "boqs", "purchaseOrders", "grns", "dispatches",
-    "vendorBills", "vendorPayments", "contractorBills", "contractorPayments", "drawings",
-    "executionLogs", "visits", "tasks", "threads", "entityFileAttachments", "master.fileAssets",
-  ]),
-  contractorDetail: Object.freeze([
-    "customers", "sites", "workOrders", "contractorBills", "contractorPayments", "contractorBids",
-    "contractorSettlements", "entityFileAttachments", "master.units", "master.workCategories",
-    "master.workSubcategories", "master.contractors", "master.contractorRates", "master.fileAssets",
-  ]),
-  contractorRates: Object.freeze([
-    "entityFileAttachments", "master.units", "master.workCategories", "master.workSubcategories",
-    "master.contractors", "master.contractorRates", "master.fileAssets",
-  ]),
-  unifiedThreadInbox: Object.freeze([
-    "customers", "sites", "quotations", "workOrders", "tasks", "followups", "visits", "payments",
-    "invoices", "threads", "commSends", "entityFileAttachments", "master.fileAssets",
-  ]),
-  boqControlCentre: Object.freeze([
-    "customers", "sites", "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders",
-    "entityFileAttachments", "master.units", "master.articles", "master.vendors", "master.fileAssets",
-  ]),
-  vendors: Object.freeze([
-    "entityFileAttachments", "master.units", "master.workCategories", "master.workSubcategories",
-    "master.articles", "master.articleVariants", "master.subcategoryArticleMap", "master.vendors",
-    "master.vendorRates", "master.fileAssets",
+    "customers", "sites", "workOrders", "quotations", "acceptedScopes", "boqs", "drawings",
+    "executionLogs", "variationRequests", "vendorRfqs", "purchaseOrders", "grns", "dispatches",
+    "vendorBills", "contractorBills", "invoices", "customerReceipts", "commissions", "tasks",
+    "followups", "threads", "visits", "commSends", "auditLog", "entityFileAttachments",
+    "master.fileAssets",
   ]),
 });
 
 /**
- * Only these primary/history collections are safe to page with the current UI.
- * Lookup collections such as customers, sites, vendors, articles and file-join
- * tables are deliberately absent: independently truncating them can orphan a
- * visible row from its label/relationship data.
+ * Only true history feeds are newly paged in this pass. Drawings, execution-log
+ * dashboards, inbox counters, and other list screens currently calculate totals
+ * from their loaded arrays; truncating those arrays would create false business
+ * metrics even if a Load-more control existed.
  */
 export const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string, number>>>> = Object.freeze({
   customerTimeline: Object.freeze({
@@ -74,14 +56,6 @@ export const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string,
     commSends: 100,
     auditLog: 100,
   }),
-  drawings: Object.freeze({ drawings: 100 }),
-  executionLogs: Object.freeze({ executionLogs: 100 }),
-  woTimeline: Object.freeze({ executionLogs: 100 }),
-  unifiedThreadInbox: Object.freeze({
-    threads: 100,
-    commSends: 100,
-  }),
-  vendors: Object.freeze({ "master.vendorRates": 100 }),
 });
 
 /**
