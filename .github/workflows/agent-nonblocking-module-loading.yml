@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   refactor:
-    if: ${{ !contains(github.event.head_commit.message, '[agent-applied]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -19,7 +18,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version-file: package.json
+          node-version: 24
           cache: npm
       - name: Apply nonblocking loading refactor
         run: |
@@ -33,9 +32,6 @@ jobs:
                   raise SystemExit(f"Expected exactly one match in {path}: {old[:80]!r}; found {text.count(old)}")
               p.write_text(text.replace(old, new, 1))
 
-          # The application shell becomes ready as soon as the secure bootstrap
-          # foundation is accepted. Operational module data remains gated locally
-          # by WorkspaceModuleRouter, so unloaded arrays cannot render as zeroes.
           app_path = "src/components/rdash/RDashApp.tsx"
           replace_once(
               app_path,
@@ -54,9 +50,6 @@ jobs:
               '        const loadingMessage = secureWorkspaceError || "Verifying your session and loading the workspace bootstrap…";',
           )
 
-          # Keep the unloaded-data gate, but make it a content-area skeleton rather
-          # than a whole-application wait. Error state remains explicit and does
-          # not allow the real module renderer to see empty placeholder arrays.
           router_path = Path("src/components/rdash/WorkspaceModuleRouter.tsx")
           router = router_path.read_text()
           start = router.index("function ModuleDataStateFallback")
@@ -102,10 +95,6 @@ jobs:
 }'''
           router_path.write_text(router[:start] + replacement + router[end:])
 
-          # WorkspaceScopedReadBoundary keeps doing all fetching/revalidation, but
-          # it no longer covers the entire app while a first-time module is loading.
-          # The router owns the localized loading surface. Only errors keep a small
-          # nonblocking retry card; existing Load-more behavior is unchanged.
           boundary_path = Path("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx")
           boundary = boundary_path.read_text()
           tail_start = boundary.index('  const error = loadState.status === "error" ? loadState.error : undefined;')
@@ -120,12 +109,7 @@ jobs:
           <p className="text-xs font-semibold">Module data unavailable</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground">{error}</p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() => setRetryNonce((value) => value + 1)}
-        >
+        <Button type="button" size="sm" variant="outline" onClick={() => setRetryNonce((value) => value + 1)}>
           <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry
         </Button>
       </div>
@@ -135,7 +119,6 @@ jobs:
 '''
           boundary_path.write_text(boundary[:tail_start] + new_tail)
 
-          # Lock the UX contract into existing CI suites.
           bootstrap_test = "tests/workspace-bootstrap-scoped-flow.test.ts"
           replace_once(
               bootstrap_test,
@@ -181,16 +164,8 @@ jobs:
         run: npm run build
       - name: Commit validated application changes
         run: |
-          if git diff --quiet; then
-            echo "No application changes to commit"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/components/rdash/RDashApp.tsx \
-                  src/components/rdash/WorkspaceModuleRouter.tsx \
-                  src/components/urban-castle/WorkspaceScopedReadBoundary.tsx \
-                  tests/workspace-bootstrap-scoped-flow.test.ts \
-                  tests/workspace-navigation-revalidation.test.ts
+          git add src/components/rdash/RDashApp.tsx src/components/rdash/WorkspaceModuleRouter.tsx src/components/urban-castle/WorkspaceScopedReadBoundary.tsx tests/workspace-bootstrap-scoped-flow.test.ts tests/workspace-navigation-revalidation.test.ts
           git commit -m "Make module loading nonblocking [agent-applied]"
           git push origin HEAD:agent/nonblocking-module-loading
