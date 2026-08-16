@@ -78,16 +78,22 @@ export function NotificationCenter() {
     const [snoozed, setSnoozed] = React.useState<Record<string, number>>({});
     const [filter, setFilter] = React.useState<NotifCategory | "all">("all");
     const [loadedPreferenceKey, setLoadedPreferenceKey] = React.useState<string | null>(null);
-    const loadedSessionCollections = React.useMemo(() => {
-        const raw = (db as unknown as { _workspace_session_collections?: unknown })._workspace_session_collections;
-        return new Set(Array.isArray(raw)
+    const notificationReadCoverage = React.useMemo(() => {
+        const metadata = db as unknown as { _workspace_read_collections?: unknown; _workspace_read_strategy?: unknown };
+        const raw = metadata._workspace_read_collections;
+        const collections = new Set(Array.isArray(raw)
             ? raw.map((value) => String(value || "").trim()).filter(Boolean)
             : []);
+        const strategy = String(metadata._workspace_read_strategy || "unknown");
+        const authoritative = strategy !== "row" && strategy !== "bootstrap" && strategy !== "unknown";
+        return { collections, authoritative };
     }, [db]);
-    const notificationCoverageComplete = NOTIFICATION_SOURCE_COLLECTIONS.every((collection) => loadedSessionCollections.has(collection));
+    const notificationCoverageComplete = notificationReadCoverage.authoritative
+        && NOTIFICATION_SOURCE_COLLECTIONS.every((collection) => notificationReadCoverage.collections.has(collection));
     const filterCoverageComplete = filter === "all"
         ? notificationCoverageComplete
-        : loadedSessionCollections.has(NOTIFICATION_SOURCE_COLLECTION[filter]);
+        : notificationReadCoverage.authoritative
+            && notificationReadCoverage.collections.has(NOTIFICATION_SOURCE_COLLECTION[filter]);
     React.useEffect(() => {
         setLoadedPreferenceKey(null);
         const applyStored = () => {
@@ -209,15 +215,13 @@ export function NotificationCenter() {
     };
     const notificationAriaLabel = notificationCoverageComplete
         ? `Notifications (${unread.length} unread)`
-        : unread.length > 0
-            ? `Notifications (${unread.length} known unread; more alert sources are still loading)`
-            : "Notifications (alert sources are still loading)";
+        : "Notifications (partial alert data; open to view loaded alerts)";
     return (<div className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)} className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-all hover:bg-accent hover:text-foreground" aria-label={notificationAriaLabel}>
         <Bell className="h-4 w-4"/>
-        {unread.length > 0 ? (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[10px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
-            {unread.length > 9 ? "9+" : `${unread.length}${notificationCoverageComplete ? "" : "+"}`}
-          </span>) : !notificationCoverageComplete ? (<span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden="true" title="Alert sources are still loading"/>) : null}
+        {notificationCoverageComplete && unread.length > 0 ? (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[10px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
+            {unread.length > 9 ? "9+" : unread.length}
+          </span>) : !notificationCoverageComplete ? (<span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden="true" title="Alert coverage is partial"/>) : null}
       </button>
 
       {open && (<>
@@ -229,18 +233,18 @@ export function NotificationCenter() {
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-primary"/>
                   <h3 className="text-sm font-semibold">Notifications</h3>
-                  {unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{unread.length} new</span>)}
+                  {notificationCoverageComplete && unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{unread.length} new</span>)}
                   {!notificationCoverageComplete && (<span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Partial</span>)}
                 </div>
                 <div className="flex items-center gap-1">
-                  {filter !== "all" && filtered.some((n) => !n.read && !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
+                  {filter !== "all" && filterCoverageComplete && filtered.some((n) => !n.read && !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
                       <CheckCheck className="h-3 w-3"/> Mark these read
                     </button>)}
-                  {unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
+                  {notificationCoverageComplete && unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
                       <CheckCheck className="h-3 w-3"/> Mark all read
                     </button>)}
-                  <button type="button" onClick={dismissAll} className="rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Dismiss all">
-                    Clear
+                  <button type="button" onClick={dismissAll} className="rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title={notificationCoverageComplete ? "Dismiss all" : "Dismiss loaded alerts"}>
+                    {notificationCoverageComplete ? "Clear" : "Clear loaded"}
                   </button>
                 </div>
               </div>
@@ -321,7 +325,9 @@ export function NotificationCenter() {
             </div>
             {visible.length > 0 && (<div className="border-t border-border bg-muted/20 px-3 py-1.5">
                 <p className="text-center text-[10px] text-muted-foreground">
-                  {unread.length} unread · {visible.length} total{!notificationCoverageComplete && " · partial"}{Object.keys(activeSnoozed).length > 0 && ` · ${Object.keys(activeSnoozed).length} snoozed`}
+                  {notificationCoverageComplete
+                    ? `${unread.length} unread · ${visible.length} total`
+                    : `Showing ${visible.length} loaded alert${visible.length === 1 ? "" : "s"} · partial`}{Object.keys(activeSnoozed).length > 0 && ` · ${Object.keys(activeSnoozed).length} snoozed`}
                 </p>
               </div>)}
           </div>
