@@ -1,0 +1,196 @@
+name: Agent nonblocking module loading
+
+on:
+  push:
+    branches:
+      - agent/nonblocking-module-loading
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: ${{ !contains(github.event.head_commit.message, '[agent-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/nonblocking-module-loading
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: package.json
+          cache: npm
+      - name: Apply nonblocking loading refactor
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one match in {path}: {old[:80]!r}; found {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          # The application shell becomes ready as soon as the secure bootstrap
+          # foundation is accepted. Operational module data remains gated locally
+          # by WorkspaceModuleRouter, so unloaded arrays cannot render as zeroes.
+          app_path = "src/components/rdash/RDashApp.tsx"
+          replace_once(
+              app_path,
+              'import { useWorkspaceReadState, workspaceReadState } from "@/lib/rdash/workspace-read-state";',
+              'import { workspaceReadState } from "@/lib/rdash/workspace-read-state";',
+          )
+          replace_once(app_path, '    const readState = useWorkspaceReadState();\n', '')
+          replace_once(
+              app_path,
+              '    const secureWorkspaceReady = secureBootstrapReady && readState.scope !== "bootstrap" && readState.mode !== "unknown";',
+              '    const secureWorkspaceReady = secureBootstrapReady;',
+          )
+          replace_once(
+              app_path,
+              '        const loadingMessage = secureWorkspaceError || (secureBootstrapReady\n            ? "Loading only the secure data required for this screen…"\n            : "Verifying your session and loading the workspace bootstrap…");',
+              '        const loadingMessage = secureWorkspaceError || "Verifying your session and loading the workspace bootstrap…";',
+          )
+
+          # Keep the unloaded-data gate, but make it a content-area skeleton rather
+          # than a whole-application wait. Error state remains explicit and does
+          # not allow the real module renderer to see empty placeholder arrays.
+          router_path = Path("src/components/rdash/WorkspaceModuleRouter.tsx")
+          router = router_path.read_text()
+          start = router.index("function ModuleDataStateFallback")
+          end = router.index("\n\nexport function WorkspaceModuleRouter", start)
+          replacement = r'''function ModuleDataStateFallback({ status, error }: { status: WorkspaceDataLoadStatus; error?: string }) {
+    const failed = status === "error";
+    if (failed) {
+        return <div className="rounded-[var(--panel-radius)] border border-destructive/30 bg-card p-6 shadow-card">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-4 w-4"/>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Module data unavailable</p>
+              <p className="mt-1 text-xs text-muted-foreground">{error || "The requested workspace data could not be loaded. Use the retry control and keep the rest of the workspace available."}</p>
+            </div>
+          </div>
+        </div>;
+    }
+
+    return <div className="space-y-4" aria-live="polite" aria-busy="true">
+      <div className="rounded-[var(--panel-radius)] border border-border bg-card p-5 shadow-card">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Database className="h-4 w-4"/>
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{status === "loading" ? "Loading module data" : "Preparing module data"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">This module is loading its scoped data. Navigation and the rest of the workspace remain available.</p>
+          </div>
+          <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-primary"/>
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+        {[0, 1, 2].map((item) => <div key={item} className="rounded-[var(--panel-radius)] border border-border bg-card p-5 shadow-card">
+          <div className="h-3 w-24 animate-pulse rounded bg-muted"/>
+          <div className="mt-4 h-7 w-2/3 animate-pulse rounded bg-muted"/>
+          <div className="mt-3 h-3 w-full animate-pulse rounded bg-muted"/>
+          <div className="mt-2 h-3 w-4/5 animate-pulse rounded bg-muted"/>
+        </div>)}
+      </div>
+    </div>;
+}'''
+          router_path.write_text(router[:start] + replacement + router[end:])
+
+          # WorkspaceScopedReadBoundary keeps doing all fetching/revalidation, but
+          # it no longer covers the entire app while a first-time module is loading.
+          # The router owns the localized loading surface. Only errors keep a small
+          # nonblocking retry card; existing Load-more behavior is unchanged.
+          boundary_path = Path("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx")
+          boundary = boundary_path.read_text()
+          tail_start = boundary.index('  const error = loadState.status === "error" ? loadState.error : undefined;')
+          new_tail = r'''  const error = loadState.status === "error" ? loadState.error : undefined;
+  if (!error) return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 z-[70] w-[min(92vw,360px)] rounded-xl border border-destructive/30 bg-card/95 p-3 shadow-xl backdrop-blur-sm">
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold">Module data unavailable</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{error}</p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setRetryNonce((value) => value + 1)}
+        >
+          <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry
+        </Button>
+      </div>
+    </div>
+  );
+}
+'''
+          boundary_path.write_text(boundary[:tail_start] + new_tail)
+
+          # Lock the UX contract into existing CI suites.
+          bootstrap_test = "tests/workspace-bootstrap-scoped-flow.test.ts"
+          replace_once(
+              bootstrap_test,
+              '    expect(app).toContain("hydrateSecureWorkspace({");\n',
+              '    expect(app).toContain("hydrateSecureWorkspace({");\n    expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");\n    expect(app).not.toContain(\'readState.scope !== "bootstrap"\');\n',
+          )
+
+          nav_path = Path("tests/workspace-navigation-revalidation.test.ts")
+          nav = nav_path.read_text()
+          marker = '  test("caches bounded targets by user and target revision", async () => {'
+          if nav.count(marker) != 1:
+              raise SystemExit("Could not find navigation test insertion point")
+          new_test = r'''  test("keeps the app shell visible during a first-time module load", async () => {
+    const app = await read("src/components/rdash/RDashApp.tsx");
+    const boundary = await read(
+      "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
+    );
+    const router = await read("src/components/rdash/WorkspaceModuleRouter.tsx");
+
+    expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
+    expect(app).not.toContain('readState.scope !== "bootstrap"');
+    expect(boundary).not.toContain('fixed inset-0 z-[90]');
+    expect(boundary).not.toContain("Refreshing module data");
+    expect(boundary).toContain("if (!error) return null");
+    expect(router).toContain('if (dataLoadState.status !== "loaded")');
+    expect(router).toContain('aria-busy="true"');
+    expect(router).toContain("animate-pulse");
+    expect(router).toContain("Navigation and the rest of the workspace remain available.");
+  });
+
+'''
+          nav_path.write_text(nav.replace(marker, new_test + marker, 1))
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused loading and navigation regressions
+        run: npx vitest run tests/workspace-bootstrap-scoped-flow.test.ts tests/workspace-navigation-revalidation.test.ts tests/runtime-efficiency-hardening.test.ts
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Commit validated application changes
+        run: |
+          if git diff --quiet; then
+            echo "No application changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/rdash/RDashApp.tsx \
+                  src/components/rdash/WorkspaceModuleRouter.tsx \
+                  src/components/urban-castle/WorkspaceScopedReadBoundary.tsx \
+                  tests/workspace-bootstrap-scoped-flow.test.ts \
+                  tests/workspace-navigation-revalidation.test.ts
+          git commit -m "Make module loading nonblocking [agent-applied]"
+          git push origin HEAD:agent/nonblocking-module-loading
