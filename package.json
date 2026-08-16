@@ -7,8 +7,9 @@
   },
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build",
+    "build": "next build && python scripts/finalize-quick-create-readiness.py",
     "start": "next start",
+    "postinstall": "python scripts/apply-quick-create-readiness.py",
     "lint": "eslint .",
     "test:phase2b": "vitest run tests/phase2b-targeted-commit.test.ts",
     "test:routing": "vitest run tests/workspace-route-registry.test.ts",
