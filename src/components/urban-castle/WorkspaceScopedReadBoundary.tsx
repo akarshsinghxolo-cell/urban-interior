@@ -443,32 +443,19 @@ export function WorkspaceScopedReadBoundary() {
   }
 
   const error = loadState.status === "error" ? loadState.error : undefined;
-  const loading = loadState.status === "not_loaded" || loadState.status === "loading";
+  if (!error) return null;
+
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-background/80 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-xl border border-border bg-card p-4 shadow-xl">
-        <div className="flex items-start gap-3">
-          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${error ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>
-            {error ? <AlertTriangle className="h-5 w-5" /> : <Database className="h-5 w-5" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold">{error ? "Workspace data unavailable" : "Refreshing module data"}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {error || "Checking for workspace changes before showing this screen."}
-            </p>
-          </div>
-          {loading ? <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-primary" /> : null}
+    <div className="fixed bottom-4 right-4 z-[70] w-[min(92vw,360px)] rounded-xl border border-destructive/30 bg-card/95 p-3 shadow-xl backdrop-blur-sm">
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-semibold">Module data unavailable</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">{error}</p>
         </div>
-        {error ? (
-          <Button
-            type="button"
-            size="sm"
-            className="mt-4 w-full"
-            onClick={() => setRetryNonce((value) => value + 1)}
-          >
-            <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry workspace data
-          </Button>
-        ) : null}
+        <Button type="button" size="sm" variant="outline" onClick={() => setRetryNonce((value) => value + 1)}>
+          <RotateCw className="mr-1 h-3.5 w-3.5" /> Retry
+        </Button>
       </div>
     </div>
   );

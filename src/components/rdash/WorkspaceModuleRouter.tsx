@@ -83,16 +83,40 @@ export function ModuleLoadingFallback() {
 
 function ModuleDataStateFallback({ status, error }: { status: WorkspaceDataLoadStatus; error?: string }) {
     const failed = status === "error";
-    return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 shadow-card">
-      <div className="flex items-start gap-3">
-        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${failed ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`}>
-          {failed ? <AlertTriangle className="h-4 w-4"/> : <Database className="h-4 w-4"/>}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">{failed ? "Module data unavailable" : status === "loading" ? "Loading module data" : "Preparing module data"}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{error || "This screen will appear only after its authoritative data has loaded."}</p>
+    if (failed) {
+        return <div className="rounded-[var(--panel-radius)] border border-destructive/30 bg-card p-6 shadow-card">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-4 w-4"/>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">Module data unavailable</p>
+              <p className="mt-1 text-xs text-muted-foreground">{error || "The requested workspace data could not be loaded. Use Retry and keep the rest of the workspace available."}</p>
+            </div>
+          </div>
+        </div>;
+    }
+
+    return <div className="space-y-4" aria-live="polite" aria-busy="true">
+      <div className="rounded-[var(--panel-radius)] border border-border bg-card p-5 shadow-card">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Database className="h-4 w-4"/>
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{status === "loading" ? "Loading module data" : "Preparing module data"}</p>
+            <p className="mt-1 text-xs text-muted-foreground">This module is loading its scoped data. Navigation and the rest of the workspace remain available.</p>
+          </div>
+          <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-primary"/>
         </div>
-        {!failed ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-primary"/> : null}
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+        {[0, 1, 2].map((item) => <div key={item} className="rounded-[var(--panel-radius)] border border-border bg-card p-5 shadow-card">
+          <div className="h-3 w-24 animate-pulse rounded bg-muted"/>
+          <div className="mt-4 h-7 w-2/3 animate-pulse rounded bg-muted"/>
+          <div className="mt-3 h-3 w-full animate-pulse rounded bg-muted"/>
+          <div className="mt-2 h-3 w-4/5 animate-pulse rounded bg-muted"/>
+        </div>)}
       </div>
     </div>;
 }

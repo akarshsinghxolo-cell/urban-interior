@@ -109,6 +109,9 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(app).toContain('fetch("/api/bootstrap"');
     expect(app).not.toContain('fetch("/api/workspace"');
     expect(app).toContain("hydrateSecureWorkspace({");
+    expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
+    expect(app).not.toContain('readState.scope !== "bootstrap"');
+    expect(app).toContain("<QuickActionsToolbar />");
     expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
     expect(bootstrap).toContain("data: workspace.data");
     expect(bootstrap).toContain('readStrategy: "foundation-first"');
@@ -139,6 +142,33 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(app).toContain('collectionCount("customers", db.customers.length)');
     expect(app).toContain('collectionCount("workOrders", db.workOrders.length)');
     expect(app).toContain('collectionCount("purchaseOrders", db.purchaseOrders.length)');
+  });
+
+  test("does not present unloaded notification sources as authoritative zero alerts", async () => {
+    const notifications = await testFile("src/components/rdash/NotificationCenter.tsx").text();
+    expect(notifications).toContain("_workspace_read_collections");
+    expect(notifications).toContain("_workspace_read_strategy");
+    expect(notifications).toContain("notificationCoverageComplete");
+    expect(notifications).toContain("filterCoverageComplete");
+    expect(notifications).toContain('strategy !== "row"');
+    expect(notifications).toContain("partial alert data");
+    expect(notifications).toContain("notificationCoverageComplete && unread.length > 0");
+    expect(notifications).toContain("Notification data will fill in as relevant modules load.");
+    expect(notifications).toContain("All caught up! No pending alerts.");
+    expect(notifications).toContain("filterCoverageComplete ?");
+  });
+
+  test("keeps global quick-create selectors closed until their current scoped lookups are authoritative", async () => {
+    const readiness = await testFile("src/lib/rdash/workspace-create-readiness.ts").text();
+    const toolbar = await testFile("src/components/rdash/QuickActionsToolbar.tsx").text();
+    const sheet = await testFile("src/components/rdash/QuickAddSheet.tsx").text();
+    expect(readiness).toContain('quotation: Object.freeze(["customers", "sites", "workRequired"])');
+    expect(readiness).toContain('visit: Object.freeze(["customers", "sites", "workRequired", "master.vendors", "master.contractors"])');
+    expect(readiness).toContain('strategy === "row" || strategy === "bootstrap"');
+    expect(toolbar).toContain("workspaceGlobalCreateReadiness");
+    expect(toolbar).toContain("disabled={!readiness.ready}");
+    expect(sheet).toContain("workspaceGlobalCreateReadiness");
+    expect(sheet).toContain("disabled={!readiness.ready}");
   });
 
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {

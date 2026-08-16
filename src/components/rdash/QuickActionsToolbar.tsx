@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
+import { workspaceGlobalCreateReadiness } from "@/lib/rdash/workspace-create-readiness";
 
 interface QuickAction {
   id: string;
@@ -53,6 +54,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function QuickActionsToolbar() {
   const openCreateDialog = useRDashStore((state) => state.openCreateDialog);
   const setActiveModule = useRDashStore((state) => state.setActiveModule);
+  const db = useRDashStore((state) => state.db);
 
   React.useEffect(() => {
     const timeoutIds = new Set<number>();
@@ -118,6 +120,8 @@ export function QuickActionsToolbar() {
       event.preventDefault();
       const action = ACTIONS[index];
       if (action.kind) {
+        const readiness = workspaceGlobalCreateReadiness(useRDashStore.getState().db, action.kind);
+        if (!readiness.ready) return;
         openCreateDialog({ kind: action.kind });
       } else if (action.navigate) {
         setActiveModule(action.navigate);
@@ -133,6 +137,8 @@ export function QuickActionsToolbar() {
 
   const handleClick = (action: QuickAction) => {
     if (action.kind) {
+      const readiness = workspaceGlobalCreateReadiness(db, action.kind);
+      if (!readiness.ready) return;
       openCreateDialog({ kind: action.kind });
     } else if (action.navigate) {
       setActiveModule(action.navigate);
@@ -147,13 +153,15 @@ export function QuickActionsToolbar() {
       <div className="rd-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
         {ACTIONS.map((action) => {
           const Icon = action.icon;
+          const readiness = action.kind ? workspaceGlobalCreateReadiness(db, action.kind) : { ready: true };
           return (
             <button
               key={action.id}
               type="button"
               onClick={() => handleClick(action)}
-              title={`${action.label} (Alt+${action.shortcut})`}
-              className="group flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border/70 bg-card px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-border hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-accent"
+              disabled={!readiness.ready}
+              title={readiness.ready ? `${action.label} (Alt+${action.shortcut})` : readiness.reason}
+              className="group flex h-9 shrink-0 items-center gap-2 rounded-lg border border-border/70 bg-card px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-colors hover:border-border hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:bg-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-card"
             >
               <span className={cn("grid h-6 w-6 place-items-center rounded-md", toneIconStyles[action.tone])}>
                 <Icon className="h-3.5 w-3.5" />
