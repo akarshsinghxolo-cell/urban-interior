@@ -3,6 +3,7 @@ import * as React from "react";
 import { FilePlus2, ListPlus, MapPinPlus, PhoneCall, Plus, X } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { CreateDialogKind } from "@/lib/rdash/store/ui-types";
+import { workspaceGlobalCreateReadiness } from "@/lib/rdash/workspace-create-readiness";
 
 const QUICK_OPTIONS: { kind: CreateDialogKind; label: string; desc: string; icon: React.ComponentType<{ className?: string }>; tone: string; shortcut: string; }[] = [
     { kind: "task", label: "New task", desc: "Actionable to-do", icon: ListPlus, tone: "bg-primary/10 text-primary", shortcut: "1" },
@@ -13,10 +14,13 @@ const QUICK_OPTIONS: { kind: CreateDialogKind; label: string; desc: string; icon
 
 export function QuickAddSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
     const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
+    const db = useRDashStore((s) => s.db);
     const handleSelect = React.useCallback((kind: CreateDialogKind) => {
+        const readiness = workspaceGlobalCreateReadiness(db, kind);
+        if (!readiness.ready) return;
         openCreateDialog({ kind });
         onOpenChange(false);
-    }, [openCreateDialog, onOpenChange]);
+    }, [db, openCreateDialog, onOpenChange]);
     React.useEffect(() => {
         if (!open)
             return;
@@ -56,12 +60,15 @@ export function QuickAddSheet({ open, onOpenChange }: { open: boolean; onOpenCha
           </button>
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          {QUICK_OPTIONS.map((opt) => (<button key={opt.kind} type="button" onClick={() => handleSelect(opt.kind)} className="group relative flex flex-col items-start gap-1.5 rounded-xl border border-border bg-background p-3 text-left transition-all hover:border-primary/30 hover:bg-accent/30 hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+          {QUICK_OPTIONS.map((opt) => {
+            const readiness = workspaceGlobalCreateReadiness(db, opt.kind);
+            return <button key={opt.kind} type="button" onClick={() => handleSelect(opt.kind)} disabled={!readiness.ready} title={readiness.ready ? opt.desc : readiness.reason} className="group relative flex flex-col items-start gap-1.5 rounded-xl border border-border bg-background p-3 text-left transition-all hover:border-primary/30 hover:bg-accent/30 hover:shadow-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-border disabled:hover:bg-background disabled:hover:shadow-none">
               <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded border border-border bg-muted/60 text-[10px] font-bold text-muted-foreground opacity-70 transition-opacity group-hover:opacity-100">{opt.shortcut}</span>
               <span className={"flex h-9 w-9 items-center justify-center rounded-lg transition-transform group-hover:scale-105 " + opt.tone}><opt.icon className="h-4 w-4"/></span>
               <span className="text-sm font-semibold text-foreground">{opt.label}</span>
-              <span className="text-[10px] text-muted-foreground">{opt.desc}</span>
-            </button>))}
+              <span className="text-[10px] text-muted-foreground">{readiness.ready ? opt.desc : "Load the required module data first"}</span>
+            </button>;
+          })}
         </div>
       </div>
     </div>);
