@@ -143,6 +143,16 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(app).toContain('collectionCount("purchaseOrders", db.purchaseOrders.length)');
   });
 
+  test("does not present unloaded notification sources as authoritative zero alerts", async () => {
+    const notifications = await testFile("src/components/rdash/NotificationCenter.tsx").text();
+    expect(notifications).toContain("_workspace_session_collections");
+    expect(notifications).toContain("notificationCoverageComplete");
+    expect(notifications).toContain("filterCoverageComplete");
+    expect(notifications).toContain("Notification data will fill in as relevant modules load.");
+    expect(notifications).toContain("All caught up! No pending alerts.");
+    expect(notifications).toContain("filterCoverageComplete ?");
+  });
+
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {
     const helper = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain('request.headers.get("x-uc-workspace-module")');

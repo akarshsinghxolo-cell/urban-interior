@@ -7,9 +7,8 @@
   },
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "next build && python scripts/finalize-notification-coverage-fix.py",
+    "build": "next build",
     "start": "next start",
-    "postinstall": "python scripts/apply-notification-coverage-fix.py",
     "lint": "eslint .",
     "test:phase2b": "vitest run tests/phase2b-targeted-commit.test.ts",
     "test:routing": "vitest run tests/workspace-route-registry.test.ts",
