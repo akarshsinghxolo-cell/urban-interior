@@ -8,6 +8,7 @@ import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
 import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
+import { WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS } from "@/lib/rdash/workspace-session-merge";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
@@ -30,6 +31,7 @@ const QuickAddSheet = React.lazy(() => import("./QuickAddSheet").then((module) =
 const MapCacheRegistration = React.lazy(() => import("./MapCacheRegistration").then((module) => ({ default: module.MapCacheRegistration })));
 const AutoGeofenceMonitor = React.lazy(() => import("./AutoGeofenceMonitor").then((module) => ({ default: module.AutoGeofenceMonitor })));
 const StaffLocationTracker = React.lazy(() => import("./StaffLocationTracker").then((module) => ({ default: module.StaffLocationTracker })));
+const BOOTSTRAP_COLLECTION_SET = new Set<string>(WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS);
 export function RDashApp() {
     const db = useRDashStore((s) => s.db);
     const activeModuleId = useRDashStore((s) => s.activeModuleId);
@@ -39,6 +41,14 @@ export function RDashApp() {
     const quickAddOpen = useRDashStore((s) => s.quickAddOpen);
     const setQuickAddOpen = useRDashStore((s) => s.setQuickAddOpen);
     const loadedCollections = React.useMemo(() => loadedWorkspaceCollections(db), [db]);
+    const hasOperationalSessionData = React.useMemo(() => {
+        const raw = (db as unknown as { _workspace_session_collections?: unknown })._workspace_session_collections;
+        if (!Array.isArray(raw)) return false;
+        return raw.some((value) => {
+            const collection = String(value || "").trim();
+            return Boolean(collection) && !BOOTSTRAP_COLLECTION_SET.has(collection);
+        });
+    }, [db]);
     const collectionCount = React.useCallback((collection: string, count: number) =>
         loadedCollections && !loadedCollections.has(collection) ? "—" : String(count), [loadedCollections]);
     const [secureBootstrapReady, setSecureBootstrapReady] = React.useState(false);
@@ -271,16 +281,24 @@ export function RDashApp() {
           <WorkspaceHeader />
           {/* CRON-2: Quick actions toolbar with keyboard shortcuts (Alt+1-6) */}
           <div className="mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] pt-3">
-            <QuickActionsToolbar />
+            {hasOperationalSessionData ? <QuickActionsToolbar /> : (
+              <div className="flex h-[53px] items-center gap-2 border-b border-border/50 py-2" aria-label="Quick actions are preparing">
+                <span className="h-8 w-24 animate-pulse rounded-lg bg-muted" aria-hidden="true"/>
+                <span className="h-8 w-28 animate-pulse rounded-lg bg-muted" aria-hidden="true"/>
+                <span className="hidden h-8 w-24 animate-pulse rounded-lg bg-muted sm:block" aria-hidden="true"/>
+              </div>
+            )}
             {/* CRON-5: Favorites bar for pinned records */}
             <FavoritesBar />
           </div>
           <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-32 lg:pb-0">
             <WorkspaceModulePanels />
           </main>
-          <button type="button" aria-label="Quick add" onClick={() => setQuickAddOpen(true)} className="absolute bottom-24 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition-all hover:scale-105 hover:bg-primary/90 active:scale-95 animate-pulse-ring lg:hidden" style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
-            <Plus className="h-5 w-5"/>
-          </button>
+          {hasOperationalSessionData ? (
+            <button type="button" aria-label="Quick add" onClick={() => setQuickAddOpen(true)} className="absolute bottom-24 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition-all hover:scale-105 hover:bg-primary/90 active:scale-95 animate-pulse-ring lg:hidden" style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+              <Plus className="h-5 w-5"/>
+            </button>
+          ) : null}
           <React.Suspense fallback={null}>
             <QuickAddSheet open={quickAddOpen} onOpenChange={setQuickAddOpen}/>
           </React.Suspense>

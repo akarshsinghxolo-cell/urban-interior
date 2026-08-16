@@ -111,6 +111,10 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(app).toContain("hydrateSecureWorkspace({");
     expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
     expect(app).not.toContain('readState.scope !== "bootstrap"');
+    expect(app).toContain("hasOperationalSessionData");
+    expect(app).toContain("WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS");
+    expect(app).toContain("Quick actions are preparing");
+    expect(app).toContain("hasOperationalSessionData ? <QuickActionsToolbar />");
     expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
     expect(bootstrap).toContain("data: workspace.data");
     expect(bootstrap).toContain('readStrategy: "foundation-first"');
