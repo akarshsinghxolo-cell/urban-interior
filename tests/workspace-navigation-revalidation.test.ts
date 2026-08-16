@@ -81,6 +81,24 @@ describe("workspace navigation freshness", () => {
     expect(source).not.toContain("if (!needsExpansion && !enteredNewTarget) return null");
   });
 
+  test("keeps the app shell visible during a first-time module load", async () => {
+    const app = await read("src/components/rdash/RDashApp.tsx");
+    const boundary = await read(
+      "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
+    );
+    const router = await read("src/components/rdash/WorkspaceModuleRouter.tsx");
+
+    expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
+    expect(app).not.toContain('readState.scope !== "bootstrap"');
+    expect(boundary).not.toContain('fixed inset-0 z-[90]');
+    expect(boundary).not.toContain("Refreshing module data");
+    expect(boundary).toContain("if (!error) return null");
+    expect(router).toContain('if (dataLoadState.status !== "loaded")');
+    expect(router).toContain('aria-busy="true"');
+    expect(router).toContain("animate-pulse");
+    expect(router).toContain("Navigation and the rest of the workspace remain available.");
+  });
+
   test("caches bounded targets by user and target revision", async () => {
     const source = await read("src/lib/rdash/workspace-read-cache.ts");
     expect(source).toContain("MAX_CACHE_ENTRIES = 32");

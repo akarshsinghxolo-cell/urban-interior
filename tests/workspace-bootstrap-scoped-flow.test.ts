@@ -109,6 +109,8 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(app).toContain('fetch("/api/bootstrap"');
     expect(app).not.toContain('fetch("/api/workspace"');
     expect(app).toContain("hydrateSecureWorkspace({");
+    expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
+    expect(app).not.toContain('readState.scope !== "bootstrap"');
     expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
     expect(bootstrap).toContain("data: workspace.data");
     expect(bootstrap).toContain('readStrategy: "foundation-first"');
