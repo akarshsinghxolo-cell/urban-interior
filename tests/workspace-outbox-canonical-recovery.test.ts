@@ -4,6 +4,7 @@ import {
   recoverQueuedCustomerConversationRecord,
 } from "../src/lib/uploads/workspace-outbox-canonical-recovery";
 import type { WorkspaceCommitOutboxRecord } from "../src/lib/uploads/workspace-outbox-types";
+import { testFile } from "./test-file";
 
 function failedRecord(overrides: Partial<WorkspaceCommitOutboxRecord> = {}): WorkspaceCommitOutboxRecord {
   return {
@@ -129,5 +130,18 @@ describe("Customer conversation outbox recovery", () => {
 
     expect(result.changed).toBe(false);
     expect(result.record).toBe(record);
+  });
+
+  test("runs the one-way recovery before both overlay restore and outbox replay", async () => {
+    const source = await testFile("src/lib/uploads/workspace-outbox.ts").text();
+    expect(source).toContain('import { recoverQueuedCustomerConversationRecord } from "./workspace-outbox-canonical-recovery";');
+    expect(source).toContain("await recoverCanonicalCustomerConversationOutbox(base);");
+    expect(source).toContain("await recoverCanonicalCustomerConversationOutbox(acceptedWorkspace);");
+    expect(source.indexOf("await recoverCanonicalCustomerConversationOutbox(base);")).toBeLessThan(
+      source.indexOf("const items = (await readScopedWorkspaceOutbox())", source.indexOf("export async function restoreWorkspaceOutboxOverlay")),
+    );
+    expect(source.indexOf("await recoverCanonicalCustomerConversationOutbox(acceptedWorkspace);")).toBeLessThan(
+      source.indexOf("const items = (await readScopedWorkspaceOutbox()).sort", source.indexOf("export async function flushWorkspaceOutbox")),
+    );
   });
 });
