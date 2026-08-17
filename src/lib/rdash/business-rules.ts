@@ -56,11 +56,10 @@ export function threadParentExists(db: RDashDatabase, kind: ThreadKind, recordId
                 return db.customers.some((row) => row.id === customerId);
             }
             // "generic" threads are the catch-all for entities without a
-            // dedicated ThreadKind: customers, areas, boqs, variationRequests,
-            // vendors, contractors, staff, vendorRates, attendance, purchase
-            // orders, GRNs, dispatches, vendor bills, invoices, payments, etc.
-            return (db.customers.some((row) => row.id === recordId) ||
-                db.areas.some((row) => row.id === recordId) ||
+            // dedicated ThreadKind. Customer conversations are deliberately
+            // excluded here because they have exactly one persisted identity:
+            // customer-conversation:<customer_id>.
+            return (db.areas.some((row) => row.id === recordId) ||
                 db.measurementRevisions.some((row) => row.id === recordId) ||
                 db.acceptedScopes.some((row) => row.id === recordId) ||
                 db.boqs.some((row) => row.id === recordId) ||
