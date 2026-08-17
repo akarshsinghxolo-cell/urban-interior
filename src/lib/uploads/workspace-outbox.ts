@@ -3,6 +3,7 @@
 import { applyWorkspaceOperations, diffWorkspaceOperations } from "@/lib/rdash/workspace-operations";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import { uploadIndexedDb } from "./upload-indexed-db";
+import { recoverQueuedCustomerConversationRecord } from "./workspace-outbox-canonical-recovery";
 import type {
   WorkspaceCommitOutboxRecord,
   WorkspaceCommitPayload,
@@ -82,6 +83,23 @@ async function readScopedWorkspaceOutbox(): Promise<WorkspaceCommitOutboxRecord[
 
 async function refresh(): Promise<void> {
   emit(await readScopedWorkspaceOutbox());
+}
+
+async function recoverCanonicalCustomerConversationOutbox(
+  base?: Pick<RDashDatabase, "customers"> | null,
+): Promise<boolean> {
+  const items = await readScopedWorkspaceOutbox();
+  if (!items.length) return false;
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
+  let changed = false;
+  for (const item of items) {
+    const recovered = recoverQueuedCustomerConversationRecord(item, { base, online });
+    if (!recovered.changed) continue;
+    await uploadIndexedDb.putWorkspaceOutbox(recovered.record);
+    changed = true;
+  }
+  if (changed) await refresh();
+  return changed;
 }
 
 export function configureWorkspaceOutboxScope(scope: { workspaceId: string; ownerUserId: string }): void {
@@ -388,6 +406,7 @@ export async function restoreWorkspaceOutboxOverlay(base: RDashDatabase): Promis
 }> {
   acceptedWorkspace = structuredClone(base) as RDashDatabase;
   await workspaceOutboxStore.hydrate();
+  await recoverCanonicalCustomerConversationOutbox(base);
   const items = (await readScopedWorkspaceOutbox())
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   let db = structuredClone(base) as RDashDatabase;
@@ -432,6 +451,7 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
   if (flushPromise) return flushPromise;
   flushPromise = (async () => {
     await workspaceOutboxStore.hydrate();
+    await recoverCanonicalCustomerConversationOutbox(acceptedWorkspace);
     if (typeof navigator !== "undefined" && !navigator.onLine) {
       return { replayed: false, conflict: false };
     }
