@@ -5,6 +5,7 @@ import { threadParentExists, BusinessRuleError } from "../../business-rules";
 import { resolveCustomerIdFromLinks } from "../../customer-relations";
 import { customerName } from "../../customer";
 import { genId, nowIso } from "../helpers";
+import { canonicalThreadRecordIdForParent } from "../../thread-record-id";
 import { parseMentions, mentionThreadKindForEntityType } from "../../mentions";
 
 export function createThreadsSlice(ctx: StoreContext): ThreadsState {
@@ -13,12 +14,13 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
     return {
         openThreadFor: (kind: ThreadKind, recordId: string, title: string, participants = ["Owner"]) => {
             const db = get().db;
-            const parentExists = threadParentExists(db, kind, recordId);
+            const canonicalRecordId = canonicalThreadRecordIdForParent(db, kind, recordId);
+            const parentExists = threadParentExists(db, kind, canonicalRecordId);
             const nestedCreation = ctx.isNestedTransaction();
             if (!parentExists && !nestedCreation) {
-                throw new BusinessRuleError(`Thread parent ${kind} record "${recordId}" does not exist. Threads can only be created from a valid parent action.`);
+                throw new BusinessRuleError(`Thread parent ${kind} record "${canonicalRecordId}" does not exist. Threads can only be created from a valid parent action.`);
             }
-            const existing = db.threads.find((t: Thread) => t.record_id === recordId && t.kind === kind);
+            const existing = db.threads.find((t: Thread) => t.record_id === canonicalRecordId && t.kind === kind);
             if (existing)
                 return existing.id;
             const id = genId("thr");
@@ -27,7 +29,7 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
                 id,
                 kind,
                 title,
-                record_id: recordId,
+                record_id: canonicalRecordId,
                 record_type: kind,
                 messages: [
                     {
