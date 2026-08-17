@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { threadParentExists } from "../src/lib/rdash/business-rules";
 import { createThreadsSlice } from "../src/lib/rdash/store/slices/threads";
+import { createCoreSlice } from "../src/lib/rdash/store/slices/core";
 import { customerConversationThreadRecordId } from "../src/lib/rdash/thread-record-id";
 import type { RDashDatabase } from "../src/lib/rdash/types";
 
@@ -37,6 +38,45 @@ describe("canonical Customer conversation threads", () => {
     expect(created.record_id).not.toBe(customer.id);
     expect(created.kind).toBe("generic");
     expect(created.record_type).toBe("generic");
+  });
+
+  test("posts Customer audit lifecycle events into the canonical conversation", () => {
+    const db = structuredClone(buildSeedDatabase()) as RDashDatabase;
+    const customer = db.customers[0];
+    db.threads = [];
+    db.auditLog = [];
+
+    const state: any = { db };
+    const ctx: any = {
+      get: () => state,
+      isNestedTransaction: () => false,
+      commitState: (update: any) => {
+        const partial = typeof update === "function" ? update(state) : update;
+        Object.assign(state, partial);
+      },
+      setBase: (update: any) => {
+        const partial = typeof update === "function" ? update(state) : update;
+        Object.assign(state, partial);
+      },
+    };
+    Object.assign(state, createThreadsSlice(ctx));
+    const core = createCoreSlice(ctx);
+
+    core.logAudit({
+      actor: "Owner",
+      actor_role: "Owner",
+      action: `Created customer "${customer.name}"`,
+      entity_type: "customer",
+      entity_id: customer.id,
+      entity_label: customer.name,
+      kind: "create",
+    });
+
+    expect(state.db.threads).toHaveLength(1);
+    const thread = state.db.threads[0];
+    expect(thread.record_id).toBe(customerConversationThreadRecordId(customer.id));
+    expect(thread.messages.some((message: any) => message.body.includes(`Created customer "${customer.name}"`))).toBe(true);
+    expect(state.db.auditLog[0]?.thread_id).toBe(thread.id);
   });
 
   test("reuses the same canonical Customer conversation thread", () => {

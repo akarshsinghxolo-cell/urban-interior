@@ -34,6 +34,7 @@ import { prepareWorkspaceData } from "../../work-category-master";
 import { threadParentExists, validateBusinessData } from "../../business-rules";
 import { genId, nowIso, contractorPaymentProofStatus } from "../helpers";
 import { mapEntityTypeToThreadKind } from "../../entity-thread-map";
+import { canonicalThreadRecordIdForParent } from "../../thread-record-id";
 import { checkWorkspaceIntegrity } from "../../integrity/checker";
 import { repairIntegrityIssues } from "../../integrity/repair";
 import { cascadeDelete } from "../../integrity/cascade";
@@ -252,25 +253,26 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             const threadKind = mapEntityTypeToThreadKind(entityType);
             const threadMessageBody = entry.action + (entry.reason ? ` — Reason: "${entry.reason}"` : "");
             // Collect all thread IDs to post to: the primary entity + cross-posts.
+            // Canonicalize the persisted thread record ID before validating the
+            // parent. Customer entities therefore always resolve to the single
+            // customer-conversation:<customer_id> thread identity.
             const threadTargets: Array<{ kind: any; recordId: string; title: string; }> = [];
-            if (threadKind && entityId && threadParentExists(get().db, threadKind, entityId)) {
+            const addThreadTarget = (entityType: string, targetEntityId: string | undefined, title?: string) => {
+                const kind = mapEntityTypeToThreadKind(entityType);
+                if (!kind || !targetEntityId) return;
+                const recordId = canonicalThreadRecordIdForParent(get().db, kind, targetEntityId);
+                if (!threadParentExists(get().db, kind, recordId)) return;
                 threadTargets.push({
-                    kind: threadKind,
-                    recordId: entityId,
-                    title: entry.entity_label || entityId,
+                    kind,
+                    recordId,
+                    title: title || targetEntityId,
                 });
-            }
+            };
+            addThreadTarget(entityType, entityId, entry.entity_label);
             // Add cross-post targets.
             if (entry.cross_post) {
                 for (const cp of entry.cross_post) {
-                    const cpKind = mapEntityTypeToThreadKind(cp.entity_type);
-                    if (cpKind && cp.entity_id && threadParentExists(get().db, cpKind, cp.entity_id)) {
-                        threadTargets.push({
-                            kind: cpKind,
-                            recordId: cp.entity_id,
-                            title: cp.entity_label || cp.entity_id,
-                        });
-                    }
+                    addThreadTarget(cp.entity_type, cp.entity_id, cp.entity_label);
                 }
             }
             // Open threads + add system messages for each target.
