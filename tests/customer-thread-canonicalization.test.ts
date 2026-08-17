@@ -79,6 +79,46 @@ describe("canonical Customer conversation threads", () => {
     expect(state.db.auditLog[0]?.thread_id).toBe(thread.id);
   });
 
+  test("canonicalizes Customer cross-post targets from related entity audits", () => {
+    const db = structuredClone(buildSeedDatabase()) as RDashDatabase;
+    const customer = db.customers[0];
+    const site = db.sites.find((row) => row.customer_id === customer.id);
+    expect(site).toBeTruthy();
+    db.threads = [];
+    db.auditLog = [];
+
+    const state: any = { db };
+    const ctx: any = {
+      get: () => state,
+      isNestedTransaction: () => false,
+      commitState: (update: any) => {
+        const partial = typeof update === "function" ? update(state) : update;
+        Object.assign(state, partial);
+      },
+      setBase: (update: any) => {
+        const partial = typeof update === "function" ? update(state) : update;
+        Object.assign(state, partial);
+      },
+    };
+    Object.assign(state, createThreadsSlice(ctx));
+    const core = createCoreSlice(ctx);
+
+    core.logAudit({
+      actor: "Owner",
+      actor_role: "Owner",
+      action: `Updated Site "${site!.name}"`,
+      entity_type: "site",
+      entity_id: site!.id,
+      entity_label: site!.name,
+      kind: "update",
+      cross_post: [{ entity_type: "customer", entity_id: customer.id, entity_label: customer.name }],
+    });
+
+    expect(state.db.threads.some((thread: any) => thread.kind === "site" && thread.record_id === site!.id)).toBe(true);
+    expect(state.db.threads.some((thread: any) => thread.kind === "generic" && thread.record_id === customerConversationThreadRecordId(customer.id))).toBe(true);
+    expect(state.db.threads.some((thread: any) => thread.kind === "generic" && thread.record_id === customer.id)).toBe(false);
+  });
+
   test("reuses the same canonical Customer conversation thread", () => {
     const db = structuredClone(buildSeedDatabase()) as RDashDatabase;
     const customer = db.customers[0];
