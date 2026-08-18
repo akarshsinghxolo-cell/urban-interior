@@ -37,6 +37,12 @@ describe("Customer Roles removal", () => {
     }
   });
 
+  test("Data Import counts all Customers rather than a removed role subset", async () => {
+    const text = await readFile("src/components/rdash/modules/DataImportModule.tsx", "utf8");
+    expect(text).toContain('title="Existing customers"');
+    expect(text).toContain("value={db.customers.length}");
+  });
+
   test("canonical Customer rows discard unknown stale-client fields", () => {
     const input: Record<string, unknown> = {
       id: "cust-1",
