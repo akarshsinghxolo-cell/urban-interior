@@ -17,6 +17,9 @@ export const CUSTOMER_RECORD_FIELDS = [
   "updated_at",
 ] as const satisfies readonly (keyof Customer)[];
 
+export const CUSTOMER_RECORD_FIELDS_COMPLETE:
+  Exclude<keyof Customer, (typeof CUSTOMER_RECORD_FIELDS)[number]> extends never ? true : never = true;
+
 export function canonicalizeCustomerRow(row: Record<string, unknown>): Record<string, unknown> {
   const safe: Record<string, unknown> = {};
   for (const field of CUSTOMER_RECORD_FIELDS) {
