@@ -51,11 +51,11 @@ describe("workspace session merge", () => {
 
   test("row graphs and page-only payloads merge", () => {
     const current = createEmptyWorkspaceDatabase();
-    current.customers = [{ id: "c1", name: "One", status: "active", customer_segments: [], created_at: "", updated_at: "" }, { id: "c2", name: "Two", status: "active", customer_segments: [], created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"];
-    const row = scoped(["customers"], (db) => { db.customers = [{ id: "c1", name: "Updated", status: "active", customer_segments: [], created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"]; }, { strategy: "row" });
+    current.customers = [{ id: "c1", name: "One", status: "active", created_at: "", updated_at: "" }, { id: "c2", name: "Two", status: "active", created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"];
+    const row = scoped(["customers"], (db) => { db.customers = [{ id: "c1", name: "Updated", status: "active", created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"]; }, { strategy: "row" });
     const rowMerged = mergeWorkspaceSnapshot(current, row);
     expect(rowMerged.customers.map((customer) => customer.id).sort()).toEqual(["c1", "c2"]);
-    const page = scoped(["customers"], (db) => { db.customers = [{ id: "c3", name: "Three", status: "active", customer_segments: [], created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"]; }, { pageOnly: true });
+    const page = scoped(["customers"], (db) => { db.customers = [{ id: "c3", name: "Three", status: "active", created_at: "", updated_at: "" }] as unknown as RDashDatabase["customers"]; }, { pageOnly: true });
     expect(mergeWorkspaceSnapshot(rowMerged, page).customers.map((customer) => customer.id).sort()).toEqual(["c1", "c2", "c3"]);
   });
 

@@ -1,4 +1,4 @@
-import type { CustomerSegment, ID, Customer } from "./types";
+import type { ID, Customer } from "./types";
 export type CustomerIdentityField = "phone" | "whatsapp" | "alternate_phone" | "email";
 export interface CustomerIdentityMatch {
     customer: Customer;
@@ -21,12 +21,6 @@ export class CustomerIdentityConflictError extends Error {
         this.name = "CustomerIdentityConflictError";
         this.matches = matches;
     }
-}
-export const DEFAULT_CUSTOMER_SEGMENTS: CustomerSegment[] = ["service_customer"];
-export function normalizeCustomerSegments(value?: CustomerSegment[] | CustomerSegment | null): CustomerSegment[] {
-    const candidates = Array.isArray(value) ? value : value ? [value] : [];
-    const valid = candidates.filter((segment): segment is CustomerSegment => ["walk_in", "service_customer", "product_buyer", "repeat_customer", "trade_customer"].includes(String(segment)));
-    return Array.from(new Set(valid.length > 0 ? valid : DEFAULT_CUSTOMER_SEGMENTS));
 }
 function labelForField(field: CustomerIdentityField) {
     return field === "alternate_phone" ? "alternate phone" : field;

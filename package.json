@@ -34,7 +34,7 @@
     "test:runtime-efficiency": "vitest run tests/runtime-efficiency-hardening.test.ts",
     "test:vendor-rate-average": "vitest run tests/vendor-rate-average.test.ts",
     "test:bug-hunt": "vitest run tests/bug-hunt-regressions.test.ts",
-    "test:customer-sites-save": "vitest run tests/customer-sites-save.test.ts tests/customer-thread-canonicalization.test.ts tests/workspace-outbox-canonical-recovery.test.ts",
+    "test:customer-sites-save": "vitest run tests/customer-sites-save.test.ts tests/customer-thread-canonicalization.test.ts tests/workspace-outbox-canonical-recovery.test.ts tests/customer-role-removal.test.ts",
     "test:customer-sites-legacy": "vitest run tests/customer-sites-legacy-removal.test.ts",
     "test:contractor-profile": "vitest run tests/contractor-profile.test.ts tests/contractor-legacy-removal.test.ts",
     "test:vendor-module": "vitest run tests/vendor-profile.test.ts tests/vendor-rate-average.test.ts tests/vendor-legacy-removal.test.ts",

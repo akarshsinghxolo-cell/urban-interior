@@ -155,7 +155,6 @@ describe("canonical Customer conversation threads", () => {
         name: "Regression Customer",
         phone: "7000000099",
         whatsapp: "7000000099",
-        customer_segments: ["service_customer"],
         status: "active",
         interest_category_ids: [],
         interest_work_subcategory_ids: [],

@@ -10,7 +10,6 @@ import type { Customer, RDashDatabase } from "@/lib/rdash/types";
 import type { CustomerIdentityMatch } from "@/lib/rdash/customer-identity";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import {
-  CUSTOMER_SEGMENTS,
   validEmail,
   validIndianPhone,
   type CustomerDraft,
@@ -71,12 +70,6 @@ export function CustomerDetailsFields({
     }
   };
 
-  const toggleSegment = (segment: Customer["customer_segments"][number]) => setCustomer((current) => {
-    const next = current.segments.includes(segment)
-      ? current.segments.filter((value) => value !== segment)
-      : [...current.segments, segment];
-    return { ...current, segments: next.length ? next : ["service_customer"] };
-  });
 
   const toggleInterestCategory = (id: string) => setCustomer((current) => {
     const removing = current.interestCategoryIds.includes(id);
@@ -219,14 +212,6 @@ export function CustomerDetailsFields({
         </Field>
       </div>
 
-      <div className="rounded-lg border border-border bg-muted/20 p-3">
-        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer roles</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {CUSTOMER_SEGMENTS.map(([segment, label]) => (
-            <button key={segment} type="button" aria-pressed={customer.segments.includes(segment)} onClick={() => toggleSegment(segment)} className={cn("min-h-9 rounded-md border px-2.5 py-1.5 text-[11px]", customer.segments.includes(segment) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}>{label}</button>
-          ))}
-        </div>
-      </div>
 
       <div className="rounded-lg border border-border bg-muted/20 p-3">
         <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work categories interested in</p>

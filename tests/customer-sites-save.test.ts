@@ -18,7 +18,6 @@ function database(): RDashDatabase {
     name: "Existing Customer",
     phone: "9876543210",
     whatsapp: "9876543210",
-    customer_segments: ["service_customer"],
     status: "active",
     interest_category_ids: [],
     interest_work_subcategory_ids: [],
@@ -99,7 +98,6 @@ describe("canonical customer and Sites save", () => {
       customer: {
         name: "New Customer",
         phone: "9123456789",
-        customer_segments: ["service_customer"],
         status: "active",
       },
       sites: [{ name: "New Residence", site_type: "villa", stage: "enquiry" }],
@@ -120,7 +118,6 @@ describe("canonical customer and Sites save", () => {
       customer: {
         name: "Customer Without Site",
         phone: "9123456789",
-        customer_segments: ["service_customer"],
         status: "active",
       },
       sites: [],
@@ -138,7 +135,6 @@ describe("canonical customer and Sites save", () => {
         name: "Existing Customer",
         phone: "9876543210",
         whatsapp: "9876543210",
-        customer_segments: ["service_customer"],
         status: "active",
         interest_category_ids: [],
         interest_work_subcategory_ids: [],
@@ -268,7 +264,7 @@ describe("canonical customer and Sites save", () => {
   test("rejects duplicate customer identity", () => {
     const db = database();
     expect(() => applyCustomerWithSitesSave(db, {
-      customer: { name: "Duplicate", phone: "9876543210", customer_segments: ["service_customer"] },
+      customer: { name: "Duplicate", phone: "9876543210", },
     }, options)).toThrow(/customer/i);
   });
 

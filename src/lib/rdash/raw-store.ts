@@ -4,7 +4,7 @@ import type { RDashDatabase, Customer, Task, Followup, Visit, Quotation, Quotati
 // mergeStaffLocationPings, StaffLocationPing moved to slices/core.ts (Phase 3o)
 import { applyVendorRateAverages } from "./vendor-rate-average";
 import { attachCustomerLabels, customerName, customerNameForJob, } from "./customer";
-import { assertUniqueCustomerIdentity, normalizeCustomerSegments } from "./customer-identity";
+import { assertUniqueCustomerIdentity } from "./customer-identity";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitExitGps, verifyVisitGps, type GpsCapture, } from "./gps";
 import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, replaceAreaId, validateBusinessData, } from "./business-rules";
 import { resolveCustomerIdFromLinks } from "./customer-relations";

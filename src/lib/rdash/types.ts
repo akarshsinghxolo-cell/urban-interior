@@ -5,7 +5,7 @@
 // store slices, UI modules, server routes, business rules, and seed data.
 //
 // Organization (by domain):
-//   1.  Primitives          — ID, CustomerSegment, EntityStatus
+//   1.  Primitives          — ID, EntityStatus
 //   2.  Customer domain      — Customer, Site, Area, WorkRequired, Measurement
 //   3.  Quotation domain     — Quotation, LineItem, AcceptedScope, PaymentTerm
 //   4.  Execution domain     — WorkOrder, BOQ, Drawing, ExecutionLog, Variation
@@ -30,7 +30,6 @@
 
 // --- 1. Primitives ---
 export type ID = string;
-export type CustomerSegment = "walk_in" | "service_customer" | "product_buyer" | "repeat_customer" | "trade_customer";
 export type EntityStatus = "active" | "inactive" | "blocked";
 export interface Customer {
     id: ID;
@@ -39,7 +38,6 @@ export interface Customer {
     whatsapp?: string;
     alternate_phone?: string;
     email?: string;
-    customer_segments: CustomerSegment[];
     status: EntityStatus;
     interest_category_ids?: ID[];
     interest_work_subcategory_ids?: ID[];

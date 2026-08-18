@@ -191,7 +191,6 @@ export function DataImportModule() {
                     whatsapp: data.whatsapp || data.phone || "",
                     alternate_phone: data.alternate_phone || undefined,
                     email: data.email || undefined,
-                    customer_segments: ["service_customer"],
                     status: "active",
                     created_at: "",
                     updated_at: "",
@@ -294,7 +293,6 @@ export function DataImportModule() {
                             email: row.data.email || undefined,
                             source_partner_name: row.data.source || undefined,
                             status: "active",
-                            customer_segments: ["service_customer"],
                         },
                         sites: includesSite ? [firstSite] : [],
                     });
@@ -341,7 +339,7 @@ export function DataImportModule() {
       </div>
       <input ref={fileInputRef} type="file" accept="text/csv,.csv" onChange={handleFileUpload} className="hidden" aria-label="Upload customer CSV"/>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Existing customers" value={db.customers.filter((customer) => customer.customer_segments.includes("service_customer")).length} tone="primary" icon={<UserPlus className="h-4 w-4"/>}/>
+        <MetricCard label="Existing customers" value={db.customers.length} tone="primary" icon={<UserPlus className="h-4 w-4"/>}/>
         <MetricCard label="Ready" value={hasParsed ? readyCount : "—"} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
         <MetricCard label="Duplicate review" value={hasParsed ? reviewCount : "—"} tone={reviewCount > 0 ? "warning" : "default"} icon={<ShieldAlert className="h-4 w-4"/>}/>
         <MetricCard label="Blocked rows" value={hasParsed ? issueCount : "—"} tone={issueCount > 0 ? "destructive" : "default"} icon={<AlertTriangle className="h-4 w-4"/>}/>

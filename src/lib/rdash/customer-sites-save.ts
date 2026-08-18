@@ -1,5 +1,5 @@
 import type { Customer, EntityFileAttachment, RDashDatabase, Site } from "./types";
-import { assertUniqueCustomerIdentity, normalizeCustomerSegments } from "./customer-identity";
+import { assertUniqueCustomerIdentity } from "./customer-identity";
 
 export type CustomerSiteSaveDraft = Partial<Site> & {
   id?: string;
@@ -48,7 +48,6 @@ const customerMutableFields: Array<keyof Customer> = [
   "whatsapp",
   "alternate_phone",
   "email",
-  "customer_segments",
   "status",
   "interest_category_ids",
   "interest_work_subcategory_ids",
@@ -116,7 +115,6 @@ function customerRecord(
     whatsapp: String(whatsapp ?? phone).trim() || undefined,
     alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
     email: suppliedValue(input, "email", existing?.email),
-    customer_segments: normalizeCustomerSegments(suppliedValue(input, "customer_segments", existing?.customer_segments)),
     status: suppliedValue(input, "status", existing?.status ?? "active") ?? "active",
     interest_category_ids: suppliedValue(input, "interest_category_ids", existing?.interest_category_ids ?? []) ?? [],
     interest_work_subcategory_ids: suppliedValue(input, "interest_work_subcategory_ids", existing?.interest_work_subcategory_ids ?? []) ?? [],
