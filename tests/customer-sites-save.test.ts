@@ -98,7 +98,7 @@ describe("canonical customer and Sites save", () => {
       customer: {
         name: "New Customer",
         phone: "9123456789",
-            status: "active",
+        status: "active",
       },
       sites: [{ name: "New Residence", site_type: "villa", stage: "enquiry" }],
     }, options);
@@ -118,7 +118,7 @@ describe("canonical customer and Sites save", () => {
       customer: {
         name: "Customer Without Site",
         phone: "9123456789",
-            status: "active",
+        status: "active",
       },
       sites: [],
     }, options);
@@ -135,7 +135,7 @@ describe("canonical customer and Sites save", () => {
         name: "Existing Customer",
         phone: "9876543210",
         whatsapp: "9876543210",
-            status: "active",
+        status: "active",
         interest_category_ids: [],
         interest_work_subcategory_ids: [],
       },
