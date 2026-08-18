@@ -3,18 +3,18 @@ from pathlib import Path
 path = Path('src/components/rdash/modules/DataImportModule.tsx')
 text = path.read_text()
 
-replacements = [
-    ('                    customer_segments: ["service_customer"],\n', ''),
-    ('                            customer_segments: ["service_customer"],\n', ''),
-    ('db.customers.filter((customer) => customer.customer_segments.includes("service_customer")).length', 'db.customers.length'),
-]
+# The main patch removes the two import defaults already. Keep these removals
+# idempotent so the finalizer can run after that patch without assuming they remain.
+for old in [
+    '                    customer_segments: ["service_customer"],\n',
+    '                            customer_segments: ["service_customer"],\n',
+]:
+    text = text.replace(old, '')
 
-for old, new in replacements:
-    count = text.count(old)
-    if count != 1:
-        raise SystemExit(f'DataImportModule.tsx: expected one match, found {count}: {old.strip()}')
-    text = text.replace(old, new, 1)
-
+old_metric = 'db.customers.filter((customer) => customer.customer_segments.includes("service_customer")).length'
+if text.count(old_metric) != 1:
+    raise SystemExit(f'DataImportModule.tsx: expected one role-based Existing customers metric, found {text.count(old_metric)}')
+text = text.replace(old_metric, 'db.customers.length', 1)
 path.write_text(text)
 
 banned = [
