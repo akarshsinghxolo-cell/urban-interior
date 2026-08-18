@@ -45,13 +45,19 @@ form = replace_once(
 form = replace_once(form, b'    customer_segments: draft.segments,\r\n', b'', "form payload")
 Path(form_path).write_bytes(form)
 
-# Rebuild the save test from exact main bytes and remove only role fixture lines.
+# Rebuild the save test from exact main bytes. Four fixtures use a standalone
+# role line; the duplicate-identity fixture keeps the Customer object on the same
+# line, so remove only its inline property instead of deleting the object.
 test_path = "tests/customer-sites-save.test.ts"
 test_data = main_bytes(test_path)
-lines = test_data.splitlines(keepends=True)
-removed = [line for line in lines if b'customer_segments:' in line]
-if len(removed) != 5:
-    raise SystemExit(f"save test: expected five role fixture lines, found {len(removed)}")
-Path(test_path).write_bytes(b''.join(line for line in lines if b'customer_segments:' not in line))
+standalone = b'    customer_segments: ["service_customer"],\r\n'
+if test_data.count(standalone) != 4:
+    raise SystemExit(f"save test: expected four standalone role lines, found {test_data.count(standalone)}")
+test_data = test_data.replace(standalone, b'')
+inline = b', customer_segments: ["service_customer"]'
+if test_data.count(inline) != 1:
+    raise SystemExit(f"save test: expected one inline role property, found {test_data.count(inline)}")
+test_data = test_data.replace(inline, b'', 1)
+Path(test_path).write_bytes(test_data)
 
 print("Rebuilt mixed-line-ending files from exact main bytes with only Customer Roles edits.")
