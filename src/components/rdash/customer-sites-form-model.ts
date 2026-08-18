@@ -1,4 +1,4 @@
-import type { Customer, CustomerSegment, Site } from "@/lib/rdash/types";
+import type { Customer, Site } from "@/lib/rdash/types";
 import type { CustomerSiteSaveDraft } from "@/lib/rdash/customer-sites-save";
 import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
@@ -45,7 +45,6 @@ export type CustomerDraft = {
   notes: string;
   interestCategoryIds: string[];
   interestSubcategoryIds: string[];
-  segments: CustomerSegment[];
   referralQuery: string;
   referralLegacyName: string;
   referralSelected: { id: string; name: string } | null;
@@ -71,14 +70,6 @@ export const SITE_STAGES: Array<{ value: Site["stage"]; label: string }> = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-export const CUSTOMER_SEGMENTS: Array<[CustomerSegment, string]> = [
-  ["walk_in", "Walk-in"],
-  ["service_customer", "Service customer"],
-  ["product_buyer", "Product buyer"],
-  ["repeat_customer", "Repeat customer"],
-  ["trade_customer", "Trade customer"],
-];
-
 export function defaultSiteName(customerName: string): string {
   const trimmed = customerName.trim();
   return trimmed ? `${trimmed} Site` : "";
@@ -101,7 +92,6 @@ export function emptyCustomerDraft(): CustomerDraft {
     notes: "",
     interestCategoryIds: [],
     interestSubcategoryIds: [],
-    segments: ["service_customer"],
     referralQuery: "",
     referralLegacyName: "",
     referralSelected: null,
@@ -119,7 +109,6 @@ export function draftForCustomer(customer: Customer): CustomerDraft {
     notes: customer.notes || "",
     interestCategoryIds: customer.interest_category_ids || [],
     interestSubcategoryIds: customer.interest_work_subcategory_ids || [],
-    segments: customer.customer_segments?.length ? customer.customer_segments : ["service_customer"],
     referralQuery: customer.source_partner_name || "",
     referralLegacyName: customer.source_partner_id ? "" : customer.source_partner_name || "",
     referralSelected: customer.source_partner_id
@@ -224,7 +213,6 @@ export function customerPayload(draft: CustomerDraft): Partial<Customer> {
     alternate_phone: draft.alternatePhone.trim() || undefined,
     email: draft.email.trim().toLowerCase() || undefined,
     status: draft.status,
-    customer_segments: draft.segments,
     interest_category_ids: draft.interestCategoryIds,
     interest_work_subcategory_ids: draft.interestSubcategoryIds,
     source_partner_id: draft.referralSelected?.id,

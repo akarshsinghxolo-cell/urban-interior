@@ -1,5 +1,5 @@
-import type { Customer, CustomerSegment } from "./types";
-import { normalizeCustomerSegments } from "./customer-identity";
+import type { Customer } from "./types";
+import { normalizeCustomerRow } from "./customer-record";
 import sourceCategories from "@/data/work-category-master.json";
 import { normalizeStorageMaster } from "./storage";
 import type { Article, ArticleVariant, LineItem, Master, MasterUnit, RDashDatabase, VendorRate, WorkCategory, WorkRequiredArticle, WorkSubcategory, } from "./types";
@@ -254,15 +254,7 @@ function repairLineItem(item: LineItem, master: Master): LineItem {
 function normalizeCustomers(rows: unknown): Customer[] {
     if (!Array.isArray(rows))
         return [];
-    return rows.map((row) => {
-        const candidate = (row || {}) as Partial<Customer> & {
-            customer_segments?: CustomerSegment[] | CustomerSegment;
-        };
-        return {
-            ...candidate,
-            customer_segments: normalizeCustomerSegments(candidate.customer_segments),
-        } as Customer;
-    });
+    return rows.map((row) => normalizeCustomerRow(row));
 }
 export function prepareWorkspaceData(db: Partial<RDashDatabase>): RDashDatabase {
     const master = normalizeCatalogMaster(db.master || ({} as Master));

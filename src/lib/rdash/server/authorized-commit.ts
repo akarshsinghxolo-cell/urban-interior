@@ -1,6 +1,7 @@
 import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
 import { attachCustomerLabels } from "../customer";
+import { canonicalizeCustomerRow } from "../customer-record";
 import { prepareWorkspaceData } from "../work-category-master";
 import { repairOperationalWorkspace } from "../operational-repair";
 import {
@@ -108,6 +109,12 @@ function assertCanonicalThreadOperations(operations: WorkspaceOperation[]): void
 function sanitizeWorkspaceOperations(operations: WorkspaceOperation[]): WorkspaceOperation[] {
   assertCanonicalThreadOperations(operations);
   return operations.map((operation) => {
+    if (operation.collection === "customers") {
+      return {
+        ...operation,
+        upsert: (operation.upsert || []).map((row) => canonicalizeCustomerRow(row)),
+      };
+    }
     if (operation.collection !== "master.staff") return operation;
     return {
       ...operation,

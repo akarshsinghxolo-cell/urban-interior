@@ -8,7 +8,6 @@ function namingFixture(): RDashDatabase {
       id: "customer-internal-4b0e89c1",
       name: "Rahul Verma",
       phone: "9999999999",
-      customer_segments: ["service_customer"],
       status: "active",
       created_at: "2026-08-07T00:00:00.000Z",
       updated_at: "2026-08-07T00:00:00.000Z",
