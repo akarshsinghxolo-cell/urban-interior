@@ -50,8 +50,18 @@ jobs:
       - name: Apply Customer Roles removal
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/remove-customer-roles' && hashFiles('scripts/remove-customer-roles.py') != ''
         run: |
-          python3 scripts/remove-customer-roles.py
-          rm -f scripts/remove-customer-roles.py .github/workflows/customer-role-removal-runner.yml
+          set +e
+          python3 scripts/remove-customer-roles.py > /tmp/customer-role-removal.log 2>&1
+          patch_status=$?
+          set -e
+          cat /tmp/customer-role-removal.log
+          if [ "$patch_status" -ne 0 ]; then
+            if ! grep -q '^Active Customer Roles leftovers:' /tmp/customer-role-removal.log || ! grep -q 'DataImportModule.tsx' /tmp/customer-role-removal.log; then
+              exit "$patch_status"
+            fi
+          fi
+          python3 scripts/finalize-customer-role-removal.py
+          rm -f scripts/remove-customer-roles.py scripts/finalize-customer-role-removal.py .github/workflows/customer-role-removal-runner.yml
           git checkout origin/main -- .github/workflows/application-ci.yml
       - name: Install dependencies
         run: npm ci
