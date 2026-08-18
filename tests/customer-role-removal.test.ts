@@ -39,7 +39,7 @@ describe("Customer Roles removal", () => {
 
   test("Data Import counts all Customers rather than a removed role subset", async () => {
     const text = await readFile("src/components/rdash/modules/DataImportModule.tsx", "utf8");
-    expect(text).toContain('title="Existing customers"');
+    expect(text).toContain('label="Existing customers"');
     expect(text).toContain("value={db.customers.length}");
   });
 
