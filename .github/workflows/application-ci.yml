@@ -118,6 +118,8 @@ jobs:
         run: npm run test:bug-hunt
       - name: Test field staff UI visibility
         run: npx vitest run tests/field-staff-visibility.test.ts
+      - name: Test Quick Actions removal
+        run: npx vitest run tests/quick-actions-removal.test.ts
       # TypeScript errors are blocking: this gate must stay green before lint/build.
       - name: Typecheck application
         run: npx tsc --noEmit
