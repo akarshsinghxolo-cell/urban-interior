@@ -12,7 +12,6 @@ import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceModulePanels } from "./WorkspaceModuleRouter";
-import { QuickActionsToolbar } from "./QuickActionsToolbar";
 import { FavoritesBar } from "./FavoritesBar";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
 import { indiaBusinessDate } from "@/lib/rdash/format";
@@ -269,12 +268,7 @@ export function RDashApp() {
         <Sidebar />
         <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkspaceHeader />
-          {/* CRON-2: Quick actions toolbar with keyboard shortcuts (Alt+1-6) */}
-          <div className="mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] pt-3">
-            <QuickActionsToolbar />
-            {/* CRON-5: Favorites bar for pinned records */}
-            <FavoritesBar />
-          </div>
+          <FavoritesBar />
           <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-32 lg:pb-0">
             <WorkspaceModulePanels />
           </main>
