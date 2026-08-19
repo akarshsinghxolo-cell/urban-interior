@@ -159,14 +159,45 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(notifications).toContain("filterCoverageComplete ?");
   });
 
-  test("keeps the surviving global quick-add selectors closed until scoped lookups are authoritative", async () => {
-    const readiness = await testFile("src/lib/rdash/workspace-create-readiness.ts").text();
+  test("routes the mobile plus launcher through authoritative scopes and canonical forms", async () => {
     const sheet = await testFile("src/components/rdash/QuickAddSheet.tsx").text();
-    expect(readiness).toContain('quotation: Object.freeze(["customers", "sites", "workRequired"])');
-    expect(readiness).toContain('visit: Object.freeze(["customers", "sites", "workRequired", "master.vendors", "master.contractors"])');
-    expect(readiness).toContain('strategy === "row" || strategy === "bootstrap"');
-    expect(sheet).toContain("workspaceGlobalCreateReadiness");
-    expect(sheet).toContain("disabled={!readiness.ready}");
+
+    for (const [label, moduleId] of [
+      ["Add Customer", "customerDesk"],
+      ["Add Contractor", "contractorDetail"],
+      ["Add Vendor", "vendors"],
+      ["Sites & Execution", "siteExecution"],
+    ] as const) {
+      expect(sheet).toContain(`label: "${label}"`);
+      expect(sheet).toContain(`moduleId: "${moduleId}"`);
+    }
+
+    expect(sheet).toContain('import("./CustomerSitesDialog")');
+    expect(sheet).toContain('import("./EntityFormDialog")');
+    expect(sheet).toContain("workspaceReadTargetForModule");
+    expect(sheet).toContain("workspaceReadLoadStateForTarget");
+    expect(sheet).toContain('pendingLoadState?.status === "loaded"');
+    expect(sheet).toContain('type={formAction}');
+    expect(sheet).toContain('setActiveModule(option.moduleId)');
+
+    for (const duplicatePersistenceToken of [
+      "saveCustomerWithSites",
+      "addCustomer",
+      "addContractor",
+      "addVendor",
+      "mutateMaster",
+    ]) {
+      expect(sheet).not.toContain(duplicatePersistenceToken);
+    }
+
+    for (const removedQuickCreateKind of [
+      'kind: "task"',
+      'kind: "visit"',
+      'kind: "followup"',
+      'kind: "quotation"',
+    ]) {
+      expect(sheet).not.toContain(removedQuickCreateKind);
+    }
   });
 
   test("preserves module permissions and response telemetry on dedicated endpoints", async () => {
