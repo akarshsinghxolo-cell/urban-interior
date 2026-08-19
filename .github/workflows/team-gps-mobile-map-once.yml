@@ -1,0 +1,33 @@
+name: Team GPS mobile map one-shot
+
+on:
+  push:
+    branches:
+      - fix/team-gps-mobile-map
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/team-gps-mobile-map
+          fetch-depth: 0
+      - name: Apply responsive Team GPS map height
+        run: python3 scripts/apply-team-gps-mobile-map.py
+      - name: Verify responsive height and remove temporary tooling
+        run: |
+          grep -F 'h-[clamp(300px,44svh,420px)] sm:h-[440px] lg:h-[560px]' src/components/rdash/modules/GpsTrackingModule.tsx
+          ! grep -F 'className="min-h-[560px]" emptyTitle="No mapped route or field records"' src/components/rdash/modules/GpsTrackingModule.tsx
+          rm scripts/apply-team-gps-mobile-map.py
+          rm .github/workflows/team-gps-mobile-map-once.yml
+      - name: Commit clean application change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Make Team GPS Monitor map responsive on mobile"
+          git push origin HEAD:fix/team-gps-mobile-map
