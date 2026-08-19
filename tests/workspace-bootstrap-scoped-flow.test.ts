@@ -111,7 +111,8 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(app).toContain("hydrateSecureWorkspace({");
     expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
     expect(app).not.toContain('readState.scope !== "bootstrap"');
-    expect(app).toContain("<QuickActionsToolbar />");
+    expect(app).not.toContain("QuickActionsToolbar");
+    expect(app).toContain("<QuickAddSheet");
     expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
     expect(bootstrap).toContain("data: workspace.data");
     expect(bootstrap).toContain('readStrategy: "foundation-first"');
@@ -158,15 +159,12 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(notifications).toContain("filterCoverageComplete ?");
   });
 
-  test("keeps global quick-create selectors closed until their current scoped lookups are authoritative", async () => {
+  test("keeps the surviving global quick-add selectors closed until scoped lookups are authoritative", async () => {
     const readiness = await testFile("src/lib/rdash/workspace-create-readiness.ts").text();
-    const toolbar = await testFile("src/components/rdash/QuickActionsToolbar.tsx").text();
     const sheet = await testFile("src/components/rdash/QuickAddSheet.tsx").text();
     expect(readiness).toContain('quotation: Object.freeze(["customers", "sites", "workRequired"])');
     expect(readiness).toContain('visit: Object.freeze(["customers", "sites", "workRequired", "master.vendors", "master.contractors"])');
     expect(readiness).toContain('strategy === "row" || strategy === "bootstrap"');
-    expect(toolbar).toContain("workspaceGlobalCreateReadiness");
-    expect(toolbar).toContain("disabled={!readiness.ready}");
     expect(sheet).toContain("workspaceGlobalCreateReadiness");
     expect(sheet).toContain("disabled={!readiness.ready}");
   });
