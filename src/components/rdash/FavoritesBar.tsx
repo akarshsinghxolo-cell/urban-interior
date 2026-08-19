@@ -103,43 +103,45 @@ export function FavoritesBar() {
   if (favorites.length === 0) return null;
 
   return (
-    <section aria-label="Favorites" className="flex min-w-0 items-center gap-2 border-b border-border/40 py-2">
-      <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-        <Star className="h-3 w-3 fill-warning text-warning" />
-        Favorites
-      </span>
-      <div className="rd-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
-        {favorites.map((fav) => {
-          const kindKey = (fav.kind || "task") as string;
-          const Icon = KIND_ICON[kindKey] || Star;
-          const iconClass = KIND_ICON_STYLE[kindKey] || KIND_ICON_STYLE.task;
-          return (
-            <div
-              key={favoriteKey(fav)}
-              className="group flex h-8 shrink-0 items-center rounded-full border border-border/70 bg-card pl-2 pr-1 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:bg-accent/50"
-            >
-              <button
-                type="button"
-                onClick={() => openDetail(fav.kind, fav.id)}
-                className="flex min-w-0 items-center gap-1.5 pr-1.5 text-xs font-medium"
-                title={`Open ${fav.label}`}
+    <div className="mx-auto w-full max-w-[var(--content-max)] px-[var(--page-pad)] pt-3">
+      <section aria-label="Favorites" className="flex min-w-0 items-center gap-2 border-b border-border/40 py-2">
+        <span className="flex shrink-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <Star className="h-3 w-3 fill-warning text-warning" />
+          Favorites
+        </span>
+        <div className="rd-scroll flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pb-0.5">
+          {favorites.map((fav) => {
+            const kindKey = (fav.kind || "task") as string;
+            const Icon = KIND_ICON[kindKey] || Star;
+            const iconClass = KIND_ICON_STYLE[kindKey] || KIND_ICON_STYLE.task;
+            return (
+              <div
+                key={favoriteKey(fav)}
+                className="group flex h-8 shrink-0 items-center rounded-full border border-border/70 bg-card pl-2 pr-1 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:bg-accent/50"
               >
-                <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClass)} />
-                <span className="max-w-36 truncate">{fav.label}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => removeFavorite(fav)}
-                className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground/50 opacity-60 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                aria-label={`Remove ${fav.label} from favorites`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </section>
+                <button
+                  type="button"
+                  onClick={() => openDetail(fav.kind, fav.id)}
+                  className="flex min-w-0 items-center gap-1.5 pr-1.5 text-xs font-medium"
+                  title={`Open ${fav.label}`}
+                >
+                  <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClass)} />
+                  <span className="max-w-36 truncate">{fav.label}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeFavorite(fav)}
+                  className="grid h-6 w-6 place-items-center rounded-full text-muted-foreground/50 opacity-60 transition-colors hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                  aria-label={`Remove ${fav.label} from favorites`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
   );
 }
 
