@@ -1,7 +1,6 @@
 "use client";
 import * as React from "react";
-import { cn } from "@/lib/utils";
-import { Compass, MapPin, Pin, Zap, Menu, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
 import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
@@ -14,7 +13,6 @@ import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceModulePanels } from "./WorkspaceModuleRouter";
 import { FavoritesBar } from "./FavoritesBar";
 import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
-import { indiaBusinessDate } from "@/lib/rdash/format";
 import { configureWorkspaceOutboxScope } from "@/lib/uploads/workspace-outbox";
 const DetailPanel = React.lazy(() => import("./DetailPanelWithHistory").then((module) => ({ default: module.DetailPanelWithHistory })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
@@ -31,9 +29,7 @@ const AutoGeofenceMonitor = React.lazy(() => import("./AutoGeofenceMonitor").the
 const StaffLocationTracker = React.lazy(() => import("./StaffLocationTracker").then((module) => ({ default: module.StaffLocationTracker })));
 export function RDashApp() {
     const db = useRDashStore((s) => s.db);
-    const activeModuleId = useRDashStore((s) => s.activeModuleId);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
-    const setMobileNavOpen = useRDashStore((s) => s.setMobileNavOpen);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
     const quickAddOpen = useRDashStore((s) => s.quickAddOpen);
     const setQuickAddOpen = useRDashStore((s) => s.setQuickAddOpen);
@@ -269,76 +265,15 @@ export function RDashApp() {
         <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkspaceHeader />
           <FavoritesBar />
-          <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-32 lg:pb-0">
+          <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-20 lg:pb-0">
             <WorkspaceModulePanels />
           </main>
-          <button type="button" aria-label="Quick add" onClick={() => setQuickAddOpen(true)} className="absolute bottom-24 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition-all hover:scale-105 hover:bg-primary/90 active:scale-95 animate-pulse-ring lg:hidden" style={{ bottom: "calc(96px + env(safe-area-inset-bottom, 0px))" }}>
+          <button type="button" aria-label="Quick add" onClick={() => setQuickAddOpen(true)} className="absolute bottom-4 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition-all hover:scale-105 hover:bg-primary/90 active:scale-95 animate-pulse-ring lg:hidden" style={{ bottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>
             <Plus className="h-5 w-5"/>
           </button>
           <React.Suspense fallback={null}>
             <QuickAddSheet open={quickAddOpen} onOpenChange={setQuickAddOpen}/>
           </React.Suspense>
-          <nav aria-label="Mobile priority actions" className="flex shrink-0 items-stretch justify-around border-t border-border bg-card/95 backdrop-blur-md lg:hidden" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
-            {([
-            {
-                label: "Customers",
-                icon: Compass,
-                target: {
-                    id: "customerDesk",
-                    label: "🧭 Customer Desk",
-                    icon: "🧭",
-                },
-            },
-            {
-                label: "Visits",
-                icon: MapPin,
-                target: {
-                    id: "fieldOperations",
-                    label: "📍 Field Visits",
-                    icon: "📍",
-                },
-            },
-            {
-                label: "Tasks",
-                icon: Pin,
-                target: { id: "tasks", label: "📌 Tasks", icon: "📌" },
-            },
-            {
-                label: "Workdesk",
-                icon: Zap,
-                target: { id: "workdesk", label: "🗂️ Workdesk", icon: "🗂️" },
-            },
-        ] as const).map((item) => {
-            const Icon = item.icon;
-            const active = activeModuleId === item.target.id;
-            // CRON-4: Add count badges to mobile nav items
-            const todayKey = indiaBusinessDate();
-            const badgeCount = item.target.id === "tasks" ? db.tasks.filter((t: any) => t.status !== "completed" && t.status !== "cancelled" && t.due_date <= todayKey).length :
-                               item.target.id === "fieldOperations" ? db.visits.filter((v: any) => indiaBusinessDate(v.scheduled_at) === todayKey).length :
-                               item.target.id === "customerDesk" ? db.customers.length :
-                               item.target.id === "workdesk" ? db.actions.filter((a: any) => a.status === "pending").length : 0;
-            return (<button key={item.label} type="button" aria-label={item.label} aria-current={active ? "page" : undefined} onClick={() => setActiveModule(item.target.id)} className={cn("relative flex flex-1 flex-col items-center gap-0.5 px-2 py-2.5 text-[11px] font-bold transition-colors", active
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground")}>
-                  {active && (<span className="absolute top-0 h-0.5 w-8 rounded-full bg-primary" aria-hidden/>)}
-                  <div className="relative">
-                    <Icon className="h-5 w-5" aria-hidden/>
-                    {badgeCount > 0 && (
-                      <span className={cn("absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8px] font-bold tabular-nums text-white shadow-sm",
-                        item.target.id === "tasks" ? "bg-destructive" :
-                        item.target.id === "workdesk" ? "bg-warning" : "bg-primary")}>
-                        {badgeCount > 99 ? "99+" : badgeCount}
-                      </span>
-                    )}
-                  </div>
-                  <span>{item.label}</span>
-                </button>);
-        })}
-            <button type="button" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)} className="flex flex-1 flex-col items-center gap-0.5 px-2 py-2.5 text-[11px] font-bold text-muted-foreground hover:text-foreground">
-              <Menu className="h-5 w-5" aria-hidden/>
-              <span>More</span>
-            </button>
-          </nav>
           <footer className="rd-sidebar-header mt-auto hidden shrink-0 items-center justify-between gap-2 border-t border-border px-[var(--page-pad)] py-2 text-[11px] text-muted-foreground md:flex">
             <div className="flex items-center gap-2">
               <span className="flex h-4 w-4 items-center justify-center rounded bg-primary/10 text-[8px] font-black text-primary">
