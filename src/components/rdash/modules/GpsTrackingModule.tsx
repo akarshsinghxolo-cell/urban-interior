@@ -274,7 +274,7 @@ export function GpsTrackingModule({ moduleId }: { moduleId: string; viewFilter?:
           <button key={key} type="button" className={layerClass(layers[key])} onClick={() => setLayers((current) => ({ ...current, [key]: !current[key] }))}><Icon className="mr-1 inline h-3.5 w-3.5" />{label}</button>)}
         <div className="ml-auto flex gap-3 text-[10px] text-muted-foreground"><span>🟩 &gt;15 km/h</span><span>🟨 ≤15 km/h</span><span>🟥 stopped</span></div>
       </div>
-      <div className="mt-3"><MapView title={`${selectedName} field map`} points={mapPoints} showRoute={layers.route} routeSegments={layers.route ? segments : []} className="min-h-[560px]" emptyTitle="No mapped route or field records" emptyDescription="Fetch a route bundle or add coordinates to Sites and Vendors." /></div>
+      <div className="mt-3"><MapView title={`${selectedName} field map`} points={mapPoints} showRoute={layers.route} routeSegments={layers.route ? segments : []} className="h-[clamp(300px,44svh,420px)] sm:h-[440px] lg:h-[560px]" emptyTitle="No mapped route or field records" emptyDescription="Fetch a route bundle or add coordinates to Sites and Vendors." /></div>
       <div className="mt-2 flex flex-wrap justify-between gap-2 text-[10px] text-muted-foreground"><span>Missing coordinates: {missingSites} sites · {missingVendors} vendors</span><span>{loadedAt ? `Fetched ${formatDateTime(loadedAt)}` : "Not fetched yet"}</span></div>
     </section>
 
