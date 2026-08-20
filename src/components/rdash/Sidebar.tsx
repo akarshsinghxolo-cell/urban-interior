@@ -200,7 +200,7 @@ function CollapsedModuleItem({ module, active, activeModuleId, setActiveModule }
     );
 }
 
-function SidebarContent({ collapsed }: { collapsed?: boolean }) {
+function SidebarContent({ collapsed, onMobileClose }: { collapsed?: boolean; onMobileClose?: () => void }) {
     const moduleSearch = useRDashStore((s) => s.moduleSearch);
     const authUser = useRDashStore((s) => s.authUser);
     const db = useRDashStore((s) => s.db);
@@ -265,9 +265,22 @@ function SidebarContent({ collapsed }: { collapsed?: boolean }) {
               {exceptionCount}
             </span>
           )}
-          <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={toggleSidebar} aria-label="Collapse sidebar" title="Collapse sidebar">
-            <PanelLeft className="h-4 w-4" />
-          </Button>
+          {onMobileClose ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 rounded-lg border border-sidebar-border bg-sidebar-accent/60 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              onClick={onMobileClose}
+              aria-label="Close navigation"
+              title="Close navigation"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground" onClick={toggleSidebar} aria-label="Collapse sidebar" title="Collapse sidebar">
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         <div className="rd-scroll flex-1 overflow-y-auto p-2.5">
@@ -324,10 +337,7 @@ export function Sidebar() {
             onKeyDown={(event) => { if (event.key === "Escape" || event.key === "Enter") setMobileNavOpen(false); }}
           />
           <div className="absolute inset-y-0 left-0 w-[288px] max-w-[88vw] shadow-popover" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-            <button type="button" className="absolute right-3 top-3 z-10 grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation">
-              <X className="h-4 w-4" />
-            </button>
-            <SidebarContent />
+            <SidebarContent onMobileClose={() => setMobileNavOpen(false)} />
           </div>
         </div>
       )}
