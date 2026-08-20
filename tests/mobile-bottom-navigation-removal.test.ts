@@ -31,6 +31,17 @@ test("top-left mobile sidebar navigation remains available", () => {
   expect(sidebar.includes("setMobileNavOpen(false)")).toBe(true);
 });
 
+test("mobile sidebar uses one header action instead of overlapping close and collapse buttons", () => {
+  const sidebar = readFileSync(sidebarPath, "utf8");
+
+  expect(sidebar.includes("function SidebarContent({ collapsed, onMobileClose }")).toBe(true);
+  expect(sidebar.includes("{onMobileClose ? (")).toBe(true);
+  expect(sidebar.includes('<X className="h-5 w-5" />')).toBe(true);
+  expect(sidebar.includes('<SidebarContent onMobileClose={() => setMobileNavOpen(false)} />')).toBe(true);
+  expect(sidebar.includes('className="absolute right-3 top-3 z-10')).toBe(false);
+  expect(sidebar.includes('aria-label="Collapse sidebar"')).toBe(true);
+});
+
 test("Quick Add remains separate and is repositioned for the removed bottom bar", () => {
   const app = readFileSync(appPath, "utf8");
 
