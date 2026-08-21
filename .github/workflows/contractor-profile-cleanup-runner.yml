@@ -28,17 +28,27 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: Correct one-shot runner pattern
+      - name: Correct one-shot runner patterns
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('scripts/apply-contractor-profile-cleanup.py')
           s = p.read_text()
-          old = r"\} \) \{.*?\n}\s*$'"
-          new = r"\}\) \{.*?\n}\s*$'"
-          if old not in s:
-              raise SystemExit('Expected runner pattern was not found')
-          p.write_text(s.replace(old, new, 1))
+          replacements = [
+              (
+                  r"\} \) \{.*?\n}\s*$'",
+                  r"\}\) \{.*?\n}\s*$'",
+              ),
+              (
+                  'text, count = re.subn(rf"^  {re.escape(field)}: [^;]+;\\n", "", text, flags=re.M)',
+                  'text, count = re.subn(rf"^  {re.escape(field)}: [^;]+;\\n", "", text, count=1, flags=re.M)',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'Expected runner pattern was not found: {old}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
           PY
       - name: Apply Contractor profile cleanup
         id: apply
@@ -51,7 +61,7 @@ jobs:
           if [ "$status" -ne 0 ]; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add contractor-cleanup-run.log
+            git add -f contractor-cleanup-run.log
             git commit -m "Record Contractor cleanup runner failure" || true
             git push origin HEAD:cleanup/contractor-profile-redbox || true
             exit "$status"
