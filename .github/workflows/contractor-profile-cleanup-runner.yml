@@ -83,7 +83,7 @@ jobs:
           def regex_required(path: str, pattern: str, replacement: str, label: str, count: int = 1) -> None:
               file = Path(path)
               text = file.read_text()
-              next_text, found = re.subn(pattern, replacement, text, count=count)
+              next_text, found = re.subn(pattern, replacement, text, count=count, flags=re.M)
               if found != count:
                   raise SystemExit(f'{label}: expected {count}, found {found}')
               file.write_text(next_text)
