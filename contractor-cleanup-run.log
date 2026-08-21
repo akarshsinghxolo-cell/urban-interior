@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/runner/work/urban-interior/urban-interior/scripts/apply-contractor-profile-cleanup.py", line 959, in <module>
+    final_source_assertions()
+  File "/home/runner/work/urban-interior/urban-interior/scripts/apply-contractor-profile-cleanup.py", line 941, in final_source_assertions
+    raise RuntimeError(f"Removed field still in canonical profile: {field}")
+RuntimeError: Removed field still in canonical profile: pan
