@@ -23,16 +23,19 @@ jobs:
         with:
           ref: cleanup/contractor-profile-redbox
           fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: Correct one-shot runner patterns
+
+      - name: Correct one-shot runner assertions
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('scripts/apply-contractor-profile-cleanup.py')
-          s = p.read_text()
+
+          path = Path('scripts/apply-contractor-profile-cleanup.py')
+          text = path.read_text()
           replacements = [
               (
                   r"\} \) \{.*?\n}\s*$'",
@@ -52,32 +55,145 @@ jobs:
               ),
           ]
           for old, new in replacements:
-              if old not in s:
+              if old not in text:
                   raise SystemExit(f'Expected runner pattern was not found: {old}')
-              s = s.replace(old, new, 1)
-          p.write_text(s)
+              text = text.replace(old, new, 1)
+          path.write_text(text)
           PY
+
       - name: Apply Contractor profile cleanup
-        shell: bash
         run: |
-          set +e
-          python scripts/apply-contractor-profile-cleanup.py > contractor-cleanup-run.log 2>&1
-          status=$?
-          cat contractor-cleanup-run.log
-          if [ "$status" -ne 0 ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -f contractor-cleanup-run.log
-            git commit -m "Record Contractor cleanup runner failure" || true
-            git push origin HEAD:cleanup/contractor-profile-redbox || true
-            exit "$status"
-          fi
+          rm -f contractor-cleanup-run.log
+          python scripts/apply-contractor-profile-cleanup.py
+
+      - name: Tighten Contractor capacity removal and regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_required(path: str, old: str, new: str, label: str, count: int = 1) -> None:
+              file = Path(path)
+              text = file.read_text()
+              found = text.count(old)
+              if found != count:
+                  raise SystemExit(f'{label}: expected {count}, found {found}')
+              file.write_text(text.replace(old, new, count))
+
+          def regex_required(path: str, pattern: str, replacement: str, label: str, count: int = 1) -> None:
+              file = Path(path)
+              text = file.read_text()
+              next_text, found = re.subn(pattern, replacement, text, count=count)
+              if found != count:
+                  raise SystemExit(f'{label}: expected {count}, found {found}')
+              file.write_text(next_text)
+
+          # The stale-payload test must deliberately carry removed keys without
+          # re-declaring them as part of ContractorProfileRecord.
+          replace_required(
+              'tests/contractor-profile.test.ts',
+              '    const stalePayload: ContractorProfileRecord = {',
+              '    const stalePayload = {',
+              'stale Contractor regression fixture',
+          )
+
+          # Capacity is not a second hidden Contractor capability model. Keep
+          # trade/rate data, but remove crew_required/max_daily_capacity too.
+          for field in ('crew_required', 'max_daily_capacity'):
+              regex_required(
+                  'src/lib/rdash/contractor-profile.ts',
+                  rf'^  {field}\?: [^;]+;\n',
+                  '',
+                  f'ContractorCapability {field}',
+              )
+              regex_required(
+                  'src/lib/rdash/contractor-profile.ts',
+                  rf'^    {field}: finiteNonNegative\(row\.{field}\),\n',
+                  '',
+                  f'canonical capability normalize {field}',
+              )
+              regex_required(
+                  'src/lib/rdash/contractor-profile.ts',
+                  rf'^    {field}: capability\.{field},\n',
+                  '',
+                  f'governance capability projection {field}',
+              )
+              regex_required(
+                  'src/lib/rdash/types.ts',
+                  rf'^        {field}\?: [^;]+;\n',
+                  '',
+                  f'Contractor work capability type {field}',
+              )
+              regex_required(
+                  'src/lib/rdash/partner-governance.ts',
+                  rf'^  {field}\?: [^;]+;\n',
+                  '',
+                  f'ContractorTradeCapability {field}',
+              )
+
+          module = Path('src/components/rdash/modules/PartnerGovernanceModule.tsx')
+          text = module.read_text()
+          text = text.replace(
+              'Structured trade, rate and capacity records used for shortlisting and award decisions.',
+              'Structured trade and rate records used for shortlisting and award decisions.',
+          )
+          text = text.replace(
+              '[capability.unit_id, capability.crew_required && `${capability.crew_required} crew`, capability.max_daily_capacity && `${capability.max_daily_capacity}/day`]',
+              '[capability.unit_id]',
+          )
+          text = text.replace(
+              'Link this Contractor to Work subcategories, rates and capacity.',
+              'Link this Contractor to Work subcategories and rates.',
+          )
+          text, save_count = re.subn(
+              r', crew_required: draft\.crew_required === "" \? undefined : Number\(draft\.crew_required\), max_daily_capacity: draft\.max_daily_capacity === "" \? undefined : Number\(draft\.max_daily_capacity\)',
+              '',
+              text,
+              count=1,
+          )
+          if save_count != 1:
+              raise SystemExit(f'Governance capability save capacity fields: expected 1, found {save_count}')
+          for field, placeholder in (
+              ('crew_required', 'Crew required'),
+              ('max_daily_capacity', 'Maximum daily capacity'),
+          ):
+              text, input_count = re.subn(
+                  rf'<Input value=\{{draft\.{field} \?\? ""\}} onChange=\{{\(event\) => set\("{field}", event\.target\.value\)\}} placeholder="{placeholder}" type="number" />',
+                  '',
+                  text,
+                  count=1,
+              )
+              if input_count != 1:
+                  raise SystemExit(f'Governance {field} input: expected 1, found {input_count}')
+          module.write_text(text)
+
+          architecture = Path('docs/contractor-profile-architecture.md')
+          text = architecture.read_text().replace(
+              'plus material-specific Article rates, unit/capacity metadata, and status.',
+              'plus material-specific Article rates, unit metadata, and status.',
+          )
+          architecture.write_text(text)
+
+          # Persist a source-level guard for the two hidden capability-capacity keys.
+          legacy = Path('tests/contractor-legacy-removal.test.ts')
+          text = legacy.read_text()
+          needle = '      "labour_registration_no", "insurance_expiry", "pf_no", "esi_no", "bank_verified",\n'
+          if needle not in text:
+              raise SystemExit('Contractor legacy removed-field list was not found')
+          text = text.replace(
+              needle,
+              needle + '      "crew_required", "max_daily_capacity",\n',
+              1,
+          )
+          legacy.write_text(text)
+          PY
+
       - name: Align field staff regression with canonical Contractor model
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('tests/field-staff-visibility.test.ts')
-          s = p.read_text()
+          path = Path('tests/field-staff-visibility.test.ts')
+          text = path.read_text()
           replacements = [
               (', bank_account: "123456", ifsc: "BANK0001"', ''),
               (', bank_account: "987654", ifsc: "BANK0002"', ''),
@@ -85,33 +201,118 @@ jobs:
                'expect(visible.master.contractors.find((row) => row.id === "contractor-linked")?.outstanding).toBeUndefined();'),
           ]
           for old, new in replacements:
-              if old not in s:
+              if old not in text:
                   raise SystemExit(f'Expected field-staff regression pattern was not found: {old}')
-              s = s.replace(old, new, 1)
-          p.write_text(s)
+              text = text.replace(old, new, 1)
+          path.write_text(text)
           PY
-      - name: Check patch whitespace
-        run: git diff --check
-      - name: Install dependencies
-        run: npm ci
-      - name: Test Contractor canonical model and legacy guardrails
-        run: npm run test:contractor-profile
-      - name: Typecheck application
-        run: npx tsc --noEmit
-      - name: Lint application
-        run: npm run lint
-      - name: Build application
-        run: npm run build
-      - name: Remove one-shot cleanup machinery
+
+      - name: Audit removed Contractor concepts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          removed = [
+              'business_gst', 'pan', 'bank_account', 'ifsc', 'supervisor_name', 'supervisor_phone',
+              'available_workers', 'concurrent_site_limit', 'earliest_mobilisation_date', 'service_radius_km',
+              'labour_registration_no', 'insurance_expiry', 'pf_no', 'esi_no', 'bank_verified',
+              'crew_required', 'max_daily_capacity',
+          ]
+          profile = Path('src/lib/rdash/contractor-profile.ts').read_text()
+          types = Path('src/lib/rdash/types.ts').read_text()
+          start = types.index('export interface Contractor {')
+          end = types.index('export type StaffRoleKey', start)
+          contractor_type = types[start:end]
+          form = Path('src/components/rdash/ContractorFormDialog.tsx').read_text()
+          governance = Path('src/lib/rdash/partner-governance.ts').read_text()
+          governance_ui = Path('src/components/rdash/modules/PartnerGovernanceModule.tsx').read_text()
+
+          for field in removed:
+              for label, source in (('canonical profile', profile), ('Contractor interface', contractor_type)):
+                  if re.search(rf'\b{re.escape(field)}\b', source):
+                      raise SystemExit(f'{field} still exists in {label}')
+          for field in ('crew_required', 'max_daily_capacity'):
+              if re.search(rf'\b{field}\b', governance) or re.search(rf'\b{field}\b', governance_ui):
+                  raise SystemExit(f'{field} still exists in Contractor governance')
+
+          forbidden_form = [
+              'Tax and banking (optional)', 'Capacity and optional records', 'Bank proof verified',
+              'draft.gstin', 'draft.pan', 'draft.bankAccount', 'draft.ifsc',
+              'draft.supervisorName', 'draft.supervisorPhone', 'draft.availableWorkers',
+              'draft.concurrentSiteLimit', 'draft.earliestMobilisationDate', 'draft.serviceRadiusKm',
+              'draft.labourRegistrationNo', 'draft.insuranceExpiry', 'draft.pfNo', 'draft.esiNo',
+              'verifiedContractorBankProof',
+          ]
+          for token in forbidden_form:
+              if token in form:
+                  raise SystemExit(f'{token} still exists in Contractor form')
+
+          block = re.search(
+              r'const CONTRACTOR_DOCUMENT_KINDS: PartnerDocumentKind\[\] = \[(.*?)\];',
+              governance_ui,
+              re.S,
+          )
+          if not block:
+              raise SystemExit('Contractor document-kind block missing')
+          for token in ('gst_registration', 'pan_card', 'bank_proof', 'labour_license', 'insurance', 'pf_registration', 'esi_registration'):
+              if token in block.group(1):
+                  raise SystemExit(f'{token} still available as a Contractor document kind')
+
+          for dead in ('verifiedContractorBankProof', 'contractorProfileComplianceDocuments', 'PROFILE_DOCUMENT_SOURCE'):
+              if dead in profile:
+                  raise SystemExit(f'{dead} still exists in canonical Contractor profile')
+          print('Contractor tax/banking/capacity removal audit passed.')
+          PY
+
+      - name: Remove one-shot cleanup machinery before application checks
         run: |
           rm -f contractor-cleanup-run.log
           rm scripts/apply-contractor-profile-cleanup.py
           rm .github/workflows/contractor-profile-cleanup-runner.yml
+
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test Contractor canonical model and legacy guardrails
+        run: npm run test:contractor-profile
+
+      - name: Test field staff Contractor presentation
+        run: npx vitest run tests/field-staff-visibility.test.ts
+
+      - name: Typecheck application
+        run: npx tsc --noEmit
+
+      - name: Lint application
+        run: npm run lint
+
+      - name: Build application
+        run: npm run build
+
       - name: Commit verified cleanup
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -- \
+            src/components/rdash/ContractorFormDialog.tsx \
+            src/components/rdash/DetailPanel.tsx \
+            src/components/rdash/modules/Partner360Module.tsx \
+            src/components/rdash/modules/PartnerGovernanceModule.tsx \
+            src/lib/rdash/contractor-profile.ts \
+            src/lib/rdash/field-staff-presentation.ts \
+            src/lib/rdash/partner-governance.ts \
+            src/lib/rdash/types.ts \
+            docs/contractor-profile-architecture.md \
+            docs/partner-governance-phase2.md \
+            tests/contractor-profile.test.ts \
+            tests/contractor-legacy-removal.test.ts \
+            tests/field-staff-visibility.test.ts \
+            .github/workflows/contractor-profile-cleanup-runner.yml \
+            scripts/apply-contractor-profile-cleanup.py \
+            contractor-cleanup-run.log
           if git diff --cached --quiet; then
             echo "No cleanup changes to commit."
             exit 1
