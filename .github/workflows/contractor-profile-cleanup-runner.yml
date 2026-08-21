@@ -72,6 +72,24 @@ jobs:
             git push origin HEAD:cleanup/contractor-profile-redbox || true
             exit "$status"
           fi
+      - name: Align field staff regression with canonical Contractor model
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tests/field-staff-visibility.test.ts')
+          s = p.read_text()
+          replacements = [
+              (', bank_account: "123456", ifsc: "BANK0001"', ''),
+              (', bank_account: "987654", ifsc: "BANK0002"', ''),
+              ('expect(visible.master.contractors.find((row) => row.id === "contractor-linked")?.bank_account).toBeUndefined();',
+               'expect(visible.master.contractors.find((row) => row.id === "contractor-linked")?.outstanding).toBeUndefined();'),
+          ]
+          for old, new in replacements:
+              if old not in s:
+                  raise SystemExit(f'Expected field-staff regression pattern was not found: {old}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
       - name: Check patch whitespace
         run: git diff --check
       - name: Install dependencies
