@@ -43,6 +43,10 @@ jobs:
                   'text, count = re.subn(rf"^  {re.escape(field)}: [^;]+;\\n", "", text, flags=re.M)',
                   'text, count = re.subn(rf"^  {re.escape(field)}: [^;]+;\\n", "", text, count=1, flags=re.M)',
               ),
+              (
+                  'if field in profile:\n            raise RuntimeError(f"Removed field still in canonical profile: {field}")\n        if field in contractor_slice:',
+                  'if re.search(rf"\\b{re.escape(field)}\\b", profile):\n            raise RuntimeError(f"Removed field still in canonical profile: {field}")\n        if re.search(rf"\\b{re.escape(field)}\\b", contractor_slice):',
+              ),
           ]
           for old, new in replacements:
               if old not in s:
@@ -63,6 +67,7 @@ jobs:
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -f contractor-cleanup-run.log
             git commit -m "Record Contractor cleanup runner failure" || true
+            git pull --rebase origin cleanup/contractor-profile-redbox || true
             git push origin HEAD:cleanup/contractor-profile-redbox || true
             exit "$status"
           fi
@@ -92,5 +97,6 @@ jobs:
             echo "No cleanup changes to commit."
             exit 1
           fi
+          git pull --rebase origin cleanup/contractor-profile-redbox
           git commit -m "Remove obsolete Contractor tax, banking and capacity fields"
           git push origin HEAD:cleanup/contractor-profile-redbox
