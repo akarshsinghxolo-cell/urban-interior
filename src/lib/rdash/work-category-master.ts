@@ -3,6 +3,7 @@ import { normalizeCustomerRow } from "./customer-record";
 import sourceCategories from "@/data/work-category-master.json";
 import { normalizeStorageMaster } from "./storage";
 import type { Article, ArticleVariant, LineItem, Master, MasterUnit, RDashDatabase, VendorRate, WorkCategory, WorkRequiredArticle, WorkSubcategory, } from "./types";
+import { defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "./work-types";
 export const WORK_CATALOG_VERSION = "1.0.0";
 type CatalogMaterial = {
     n: string;
@@ -97,8 +98,16 @@ export function buildWorkCategoryCatalog(): CatalogCore {
                 category_id: category.id,
                 name: item.name,
                 unit_id: ensureUnit(item.unit),
-                material_rate: Number(item.matRate || 0),
-                labour_rate: Number(item.labRate || 0),
+                work_types: [{
+                    id: defaultWorkTypeId(item.id),
+                    name: "Standard",
+                    unit_id: ensureUnit(item.unit),
+                    material_rate: Number(item.matRate || 0),
+                    labour_rate: Number(item.labRate || 0),
+                    notes: item.notes || "",
+                    created_at: timestamp,
+                    updated_at: timestamp,
+                }],
                 notes: item.notes || "",
                 work_required_article_ids: [],
                 created_at: timestamp,
@@ -184,7 +193,13 @@ function ensureMediaCollections(input: Master): Master {
     };
 }
 export function normalizeCatalogMaster(input: Master): Master {
-    const normalizedInput = normalizeStorageMaster(ensureMediaCollections(input));
+    const storageNormalized = normalizeStorageMaster(ensureMediaCollections(input));
+    const normalizedInput: Master = {
+        ...storageNormalized,
+        workSubcategories: Array.isArray(storageNormalized.workSubcategories)
+            ? storageNormalized.workSubcategories.map(normalizeWorkSubcategoryWorkTypes)
+            : [],
+    };
     if (normalizedInput.catalog_version === WORK_CATALOG_VERSION &&
         Array.isArray(normalizedInput.units) &&
         Array.isArray(normalizedInput.workCategories) &&
@@ -308,6 +323,17 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
             issues.push({ severity: "error", message: `Submodule ${item.name} has no valid category.` });
         if (!item.unit_id || !units.has(item.unit_id))
             issues.push({ severity: "error", message: `Submodule ${item.name} has an invalid unit.` });
+        const workTypeNames = new Set<string>();
+        for (const workType of workTypesForSubcategory(item)) {
+            const workTypeName = normalizeCatalogName(workType.name);
+            if (!workTypeName)
+                issues.push({ severity: "error", message: `Submodule ${item.name} has an unnamed work type.` });
+            if (workTypeNames.has(workTypeName))
+                issues.push({ severity: "error", message: `Submodule ${item.name} contains duplicate work type ${workType.name}.` });
+            if (!workType.unit_id || !units.has(workType.unit_id))
+                issues.push({ severity: "error", message: `Work type ${workType.name} in ${item.name} has an invalid unit.` });
+            workTypeNames.add(workTypeName);
+        }
         if (workNames.has(key))
             issues.push({ severity: "error", message: `Duplicate submodule in one category: ${item.name}.` });
         workNames.add(key);

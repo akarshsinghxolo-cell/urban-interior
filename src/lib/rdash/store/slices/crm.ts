@@ -24,6 +24,7 @@ import type { Customer, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
+import { primaryWorkType } from "../../work-types";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
     assertAreaBelongsToSite, assertAreasBelongToSite,
@@ -776,7 +777,8 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     throw new Error(`${context}: line ${index + 1} duplicates an existing structured work line. Edit the existing line instead.`);
                 }
                 lineKeys.add(duplicateKey);
-                const rate = mapping.reference_rate || article.base_rate || (subcategory.material_rate || 0) + (subcategory.labour_rate || 0) || 0;
+                const primaryRate = primaryWorkType(subcategory);
+                const rate = mapping.reference_rate || article.base_rate || (primaryRate.material_rate || 0) + (primaryRate.labour_rate || 0) || 0;
                 const title = `${area.name} · ${article.name}`;
                 return {
                     id: genId("req-line"),

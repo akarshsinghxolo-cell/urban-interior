@@ -60,9 +60,11 @@ export interface ContractorTradeCapability {
   id: ID;
   work_subcategory_id: ID;
   work_subcategory_name?: string;
-  unit_id?: ID;
-  labour_rate?: number;
-  with_material_rate?: number;
+  work_type_rates?: Array<{
+    work_type_id: ID;
+    work_type_name?: string;
+    labour_rate?: number;
+  }>;
   crew_required?: number;
   max_daily_capacity?: number;
   preferred?: boolean;

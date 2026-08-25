@@ -44,14 +44,11 @@ export function MastersModule({ submodule }: {
     const updateStaffDocument = useRDashStore((s) => s.updateStaffDocument);
     const removeStaffDocument = useRDashStore((s) => s.removeStaffDocument);
     const addSourcePartner = useRDashStore((s) => s.addSourcePartner);
-    const addContractorRate = useRDashStore((s) => s.addContractorRate);
     const addCommissionRule = useRDashStore((s) => s.addCommissionRule);
     // F.12: Add-dialog state for master entities that were previously read-only
     const [addSpOpen, setAddSpOpen] = React.useState(false);
-    const [addCrOpen, setAddCrOpen] = React.useState(false);
     const [addCruleOpen, setAddCruleOpen] = React.useState(false);
     const [spDraft, setSpDraft] = React.useState({ name: "", phone: "", email: "", commission_pct: "5" });
-    const [crDraft, setCrDraft] = React.useState({ contractor_id: "", trade: "", rate: "" });
     const [cruleDraft, setCruleDraft] = React.useState({ source_partner_id: "", rate_pct: "5", applies_to: "partner" as "partner" | "category", category_id: "" });
     const effectiveSubmodule = submodule === "vendors" && vendorsTab === "rates" ? "vendorRates"
         : submodule === "contractors" && contractorsTab === "rates" ? "contractorRates"
@@ -327,7 +324,7 @@ export function MastersModule({ submodule }: {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span>
             <div><h2 className="text-lg font-bold tracking-tight">{title}</h2><p className="text-xs text-muted-foreground">Rate master configuration</p></div>
           </div>
-          {isContractor && <Button size="sm" className="h-8 gap-1.5 shrink-0" onClick={() => { setCrDraft({ contractor_id: db.master.contractors[0]?.id || "", trade: "", rate: "" }); setAddCrOpen(true); }}><Plus className="h-3.5 w-3.5"/> Add rate</Button>}
+          {isContractor && <p className="text-[11px] text-muted-foreground">Edit a contractor to manage labour rates by work type.</p>}
           {isCommission && <Button size="sm" className="h-8 gap-1.5 shrink-0" onClick={() => { setCruleDraft({ source_partner_id: db.master.sourcePartners[0]?.id || "", rate_pct: "5", applies_to: "partner", category_id: "" }); setAddCruleOpen(true); }}><Plus className="h-3.5 w-3.5"/> Add rule</Button>}
         </div>
         {/* B: Banner explains that commission rules are consumed by findCommissionRule
@@ -345,7 +342,7 @@ export function MastersModule({ submodule }: {
             })}
           {isContractor && db.master.contractorRates.map((r) => {
                 const c = db.master.contractors.find((x) => x.id === r.contractor_id);
-                return <div key={r.id} className="flex items-center justify-between border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20"><div><p className="font-medium">{r.trade}</p><p className="text-[11px] text-muted-foreground">{c?.name} · {r.unit_id}</p></div><span className="font-mono font-bold">{formatINR(r.rate)}</span></div>;
+                return <div key={r.id} className="flex items-center justify-between border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20"><div><p className="font-medium">{r.work_subcategory_name || r.trade}</p><p className="text-[11px] text-muted-foreground">{c?.name} · {r.work_type_name || "Work type"} · {r.unit_id}</p></div><span className="font-mono font-bold">{formatINR(r.labour_rate ?? r.rate)}</span></div>;
             })}
           {isCommission && db.master.commissionRules.map((r) => {
                 const categoryName = r.category_id ? categoryById.get(r.category_id)?.name : undefined;

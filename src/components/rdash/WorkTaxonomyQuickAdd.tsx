@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useRDashStore } from "@/lib/rdash/store";
 import { normalizeCatalogName } from "@/lib/rdash/work-category-master";
 import type { WorkCategory, WorkSubcategory } from "@/lib/rdash/types";
+import { defaultWorkTypeId } from "@/lib/rdash/work-types";
 import { cn } from "@/lib/utils";
 
 const newCatalogId = (prefix: string) =>
@@ -121,13 +122,22 @@ export function AddWorkSubcategoryAction({
     }
     if (!master.units.some((unit) => unit.id === unitId)) return toast.error("Choose a valid execution unit.");
     const now = new Date().toISOString();
+    const subcategoryId = newCatalogId("work");
     const subcategory: WorkSubcategory = {
-      id: newCatalogId("work"),
+      id: subcategoryId,
       category_id: categoryId,
       name: clean,
       unit_id: unitId,
-      labour_rate: optionalRate(labourRate),
-      material_rate: optionalRate(materialRate),
+      work_types: [{
+        id: defaultWorkTypeId(subcategoryId),
+        name: "Standard",
+        unit_id: unitId,
+        labour_rate: optionalRate(labourRate),
+        material_rate: optionalRate(materialRate),
+        notes: notes.trim() || undefined,
+        created_at: now,
+        updated_at: now,
+      }],
       notes: notes.trim() || undefined,
       work_required_article_ids: [],
       created_at: now,

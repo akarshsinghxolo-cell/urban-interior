@@ -1,4 +1,5 @@
 import type { RDashDatabase } from "./types";
+import { defaultWorkTypeId, workTypesForSubcategory } from "./work-types";
 
 export type ContractorLifecycleStatus =
   | "onboarding"
@@ -10,10 +11,7 @@ export type ContractorLifecycleStatus =
 export type ContractorCapability = {
   subcategory_id: string;
   subcategory_name?: string;
-  labour_rate?: number;
-  with_material_rate?: number;
-  article_ids?: string[];
-  article_rates?: ContractorArticleRate[];
+  work_type_rates?: ContractorWorkTypeRate[];
   unit_id?: string;
   crew_required?: number;
   max_daily_capacity?: number;
@@ -22,11 +20,10 @@ export type ContractorCapability = {
   notes?: string;
 };
 
-export type ContractorArticleRate = {
-  article_id: string;
-  article_name?: string;
+export type ContractorWorkTypeRate = {
+  work_type_id: string;
+  work_type_name?: string;
   labour_rate?: number;
-  with_material_rate?: number;
 };
 
 export type ContractorProfileRecord = {
@@ -179,29 +176,31 @@ const finiteNonNegative = (value: unknown): number | undefined => {
 function normalizeCapability(row: Record<string, unknown>): ContractorCapability | null {
   const subcategoryId = String(row.subcategory_id || row.work_subcategory_id || "").trim();
   if (!subcategoryId) return null;
-  const articleIds = Array.isArray(row.article_ids)
-    ? Array.from(new Set(row.article_ids.map(String).filter(Boolean)))
-    : [];
-  const articleRatesById = new Map<string, ContractorArticleRate>();
-  if (Array.isArray(row.article_rates)) {
-    for (const source of row.article_rates as Array<Record<string, unknown>>) {
-      const articleId = String(source.article_id || "").trim();
-      if (!articleId) continue;
-      articleRatesById.set(articleId, {
-        article_id: articleId,
-        article_name: String(source.article_name || "").trim() || undefined,
+  const workTypeRatesById = new Map<string, ContractorWorkTypeRate>();
+  if (Array.isArray(row.work_type_rates)) {
+    for (const source of row.work_type_rates as Array<Record<string, unknown>>) {
+      const workTypeId = String(source.work_type_id || "").trim();
+      if (!workTypeId) continue;
+      workTypeRatesById.set(workTypeId, {
+        work_type_id: workTypeId,
+        work_type_name: String(source.work_type_name || "").trim() || undefined,
         labour_rate: finiteNonNegative(source.labour_rate),
-        with_material_rate: finiteNonNegative(source.with_material_rate),
       });
     }
+  }
+  const legacyLabourRate = finiteNonNegative(row.labour_rate);
+  if (!workTypeRatesById.size && legacyLabourRate !== undefined) {
+    const workTypeId = defaultWorkTypeId(subcategoryId);
+    workTypeRatesById.set(workTypeId, {
+      work_type_id: workTypeId,
+      work_type_name: "Standard",
+      labour_rate: legacyLabourRate,
+    });
   }
   return {
     subcategory_id: subcategoryId,
     subcategory_name: String(row.subcategory_name || row.work_subcategory_name || "").trim() || undefined,
-    labour_rate: finiteNonNegative(row.labour_rate),
-    with_material_rate: finiteNonNegative(row.with_material_rate),
-    article_ids: articleIds,
-    article_rates: Array.from(articleRatesById.values()).filter((rate) => articleIds.includes(rate.article_id)),
+    work_type_rates: Array.from(workTypeRatesById.values()),
     unit_id: String(row.unit_id || "").trim() || undefined,
     crew_required: finiteNonNegative(row.crew_required),
     max_daily_capacity: finiteNonNegative(row.max_daily_capacity),
@@ -213,7 +212,7 @@ function normalizeCapability(row: Record<string, unknown>): ContractorCapability
 
 export function canonicalContractorCapabilities(
   contractor: Pick<ContractorProfileRecord, "id" | "work_capabilities">,
-  _db?: Pick<RDashDatabase, "master">,
+  db?: Pick<RDashDatabase, "master">,
 ): ContractorCapability[] {
   const rows = Array.isArray(contractor.work_capabilities)
     ? contractor.work_capabilities as Array<Record<string, unknown>>
@@ -224,22 +223,26 @@ export function canonicalContractorCapabilities(
     const normalized = normalizeCapability(source);
     if (!normalized) continue;
     const previous = bySubcategory.get(normalized.subcategory_id);
-    const articleRatesById = new Map<string, ContractorArticleRate>();
-    for (const rate of [...(previous?.article_rates || []), ...(normalized.article_rates || [])]) {
-      articleRatesById.set(rate.article_id, { ...articleRatesById.get(rate.article_id), ...rate });
+    const workTypeRatesById = new Map<string, ContractorWorkTypeRate>();
+    for (const rate of [...(previous?.work_type_rates || []), ...(normalized.work_type_rates || [])]) {
+      workTypeRatesById.set(rate.work_type_id, { ...workTypeRatesById.get(rate.work_type_id), ...rate });
     }
+    const subcategory = db?.master.workSubcategories.find((row) => row.id === normalized.subcategory_id);
+    const validWorkTypes = subcategory ? new Map(workTypesForSubcategory(subcategory).map((row) => [row.id, row])) : undefined;
+    const workTypeRates = Array.from(workTypeRatesById.values()).flatMap((rate) => {
+      const workType = validWorkTypes?.get(rate.work_type_id);
+      if (validWorkTypes && !workType) return [];
+      return [{
+        ...rate,
+        work_type_name: workType?.name || rate.work_type_name,
+      }];
+    });
     bySubcategory.set(normalized.subcategory_id, {
       ...previous,
       ...normalized,
-      labour_rate: normalized.labour_rate ?? previous?.labour_rate,
-      with_material_rate: normalized.with_material_rate ?? previous?.with_material_rate,
-      article_ids: Array.from(
-        new Set([
-          ...(bySubcategory.get(normalized.subcategory_id)?.article_ids || []),
-          ...(normalized.article_ids || []),
-        ]),
-      ),
-      article_rates: Array.from(articleRatesById.values()),
+      subcategory_name: subcategory?.name || normalized.subcategory_name || previous?.subcategory_name,
+      unit_id: subcategory?.unit_id || normalized.unit_id || previous?.unit_id,
+      work_type_rates: workTypeRates,
     });
   }
   return Array.from(bySubcategory.values());
@@ -254,10 +257,7 @@ export function contractorGovernanceCapabilityProjection(
     work_subcategory_id: capability.subcategory_id,
     work_subcategory_name: capability.subcategory_name,
     unit_id: capability.unit_id,
-    labour_rate: capability.labour_rate,
-    with_material_rate: capability.with_material_rate,
-    article_ids: capability.article_ids,
-    article_rates: capability.article_rates,
+    work_type_rates: capability.work_type_rates,
     crew_required: capability.crew_required,
     max_daily_capacity: capability.max_daily_capacity,
     preferred: capability.preferred,
@@ -417,51 +417,31 @@ export function contractorRateProjection(
   const otherContractors = existing.filter((rate) => rate.contractor_id !== contractor.id);
   const capabilities = canonicalContractorCapabilities(contractor, db);
   const projected = capabilities.flatMap((capability) => {
-    const previous = existing.find(
-      (rate) =>
-        rate.contractor_id === contractor.id &&
-        rate.work_subcategory_id === capability.subcategory_id &&
-        !rate.article_id,
-    );
-    const defaultRow = {
-      id: previous?.id || `crate-${contractor.id}-${capability.subcategory_id}`,
-      contractor_id: contractor.id!,
-      trade: capability.subcategory_name || previous?.trade || "Contractor rate",
-      rate: capability.labour_rate ?? capability.with_material_rate ?? previous?.rate ?? 0,
-      unit_id: capability.unit_id || db.master.workSubcategories.find((row) => row.id === capability.subcategory_id)?.unit_id || previous?.unit_id,
-      work_subcategory_id: capability.subcategory_id,
-      work_subcategory_name: capability.subcategory_name || previous?.work_subcategory_name,
-      labour_rate: capability.labour_rate,
-      with_material_rate: capability.with_material_rate,
-    };
-    const materialRows = (capability.article_rates || []).map((articleRate) => {
-      const article = (db.master.articles || []).find((row) => row.id === articleRate.article_id);
-      const scopedMaterial = (db.master.subcategoryArticleMap || []).find(
-        (row) => row.work_required_id === capability.subcategory_id && row.article_id === articleRate.article_id,
+    const subcategory = db.master.workSubcategories.find((row) => row.id === capability.subcategory_id);
+    const workTypes = new Map((subcategory ? workTypesForSubcategory(subcategory) : []).map((row) => [row.id, row]));
+    return (capability.work_type_rates || []).flatMap((workTypeRate) => {
+      if (workTypeRate.labour_rate === undefined) return [];
+      const workType = workTypes.get(workTypeRate.work_type_id);
+      if (subcategory && !workType) return [];
+      const previous = existing.find(
+        (rate) => rate.contractor_id === contractor.id
+          && rate.work_subcategory_id === capability.subcategory_id
+          && rate.work_type_id === workTypeRate.work_type_id,
       );
-      const priorMaterial = existing.find(
-        (rate) =>
-          rate.contractor_id === contractor.id &&
-          rate.work_subcategory_id === capability.subcategory_id &&
-          rate.article_id === articleRate.article_id,
-      );
-      return {
-        id: priorMaterial?.id || `crate-${contractor.id}-${capability.subcategory_id}-${articleRate.article_id}`,
+      const workTypeName = workType?.name || workTypeRate.work_type_name || "Standard";
+      return [{
+        id: previous?.id || `crate-${contractor.id}-${capability.subcategory_id}-${workTypeRate.work_type_id}`,
         contractor_id: contractor.id!,
-        trade: `${capability.subcategory_name || previous?.trade || "Contractor rate"} · ${articleRate.article_name || article?.name || "Material"}`,
-        rate: articleRate.labour_rate ?? articleRate.with_material_rate ?? 0,
-        unit_id: scopedMaterial?.unit_id || capability.unit_id || priorMaterial?.unit_id,
+        trade: `${capability.subcategory_name || previous?.work_subcategory_name || "Contractor rate"} · ${workTypeName}`,
+        rate: workTypeRate.labour_rate,
+        unit_id: workType?.unit_id || capability.unit_id || subcategory?.unit_id || previous?.unit_id,
         work_subcategory_id: capability.subcategory_id,
         work_subcategory_name: capability.subcategory_name || previous?.work_subcategory_name,
-        article_id: articleRate.article_id,
-        article_name: articleRate.article_name || article?.name,
-        work_required_article_id: scopedMaterial?.id,
-        labour_rate: articleRate.labour_rate,
-        with_material_rate: articleRate.with_material_rate,
-      };
+        work_type_id: workTypeRate.work_type_id,
+        work_type_name: workTypeName,
+        labour_rate: workTypeRate.labour_rate,
+      }];
     });
-    const hasDefaultRate = capability.labour_rate !== undefined || capability.with_material_rate !== undefined;
-    return hasDefaultRate || !materialRows.length ? [defaultRow, ...materialRows] : materialRows;
   });
   return [...projected, ...otherContractors];
 }
@@ -528,11 +508,7 @@ export function contractorProfileValidationError(
     }
   }
   for (const capability of candidate.work_capabilities || []) {
-    const rateValues = [
-      capability.labour_rate,
-      capability.with_material_rate,
-      ...(capability.article_rates || []).flatMap((rate) => [rate.labour_rate, rate.with_material_rate]),
-    ];
+    const rateValues = (capability.work_type_rates || []).map((rate) => rate.labour_rate);
     for (const value of rateValues) {
       if (value !== undefined && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
         return "Contractor rates must be valid non-negative numbers.";

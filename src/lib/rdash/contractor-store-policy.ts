@@ -9,6 +9,7 @@ import {
   type ContractorCapability,
   type ContractorProfileRecord,
 } from "./contractor-profile";
+import { workTypesForSubcategory } from "./work-types";
 
 const installedStores = new WeakSet<object>();
 const WRITE_ROLES = new Set(["Owner", "Operations Manager", "OWNER", "OPERATIONS_MANAGER"]);
@@ -107,21 +108,29 @@ export function installContractorStorePolicy(store: RDashStore): void {
     assertContractorPermission(state, "edit contractor rates");
     const contractor = state.db.master.contractors.find((row) => row.id === rate.contractor_id) as ContractorProfileRecord | undefined;
     if (!contractor) throw new Error("Contractor not found.");
-    if (!rate.work_subcategory_id) {
-      throw new Error("Contractor rates must be linked to a Work Subcategory. Edit the contractor capability instead of creating a free-form rate.");
+    if (!rate.work_subcategory_id || !rate.work_type_id) {
+      throw new Error("Contractor rates must be linked to a Work Subcategory and Work Type. Edit the contractor capability instead of creating a free-form rate.");
     }
 
     const subcategory = state.db.master.workSubcategories.find((row) => row.id === rate.work_subcategory_id);
+    if (!subcategory) throw new Error("Work Subcategory not found.");
+    const workType = workTypesForSubcategory(subcategory).find((row) => row.id === rate.work_type_id);
+    if (!workType) throw new Error("Work Type not found for this Work Subcategory.");
     const capabilities = canonicalContractorCapabilities(contractor, state.db);
     const existing = capabilities.find((row) => row.subcategory_id === rate.work_subcategory_id);
+    const workTypeRates = [
+      ...(existing?.work_type_rates || []).filter((row) => row.work_type_id !== workType.id),
+      {
+        work_type_id: workType.id,
+        work_type_name: workType.name,
+        labour_rate: rate.labour_rate ?? rate.rate ?? 0,
+      },
+    ];
     const next: ContractorCapability = {
       ...existing,
       subcategory_id: rate.work_subcategory_id,
-      subcategory_name: subcategory?.name || rate.work_subcategory_name || rate.trade || existing?.subcategory_name,
-      labour_rate: rate.labour_rate ?? rate.rate ?? existing?.labour_rate,
-      with_material_rate: rate.with_material_rate ?? existing?.with_material_rate,
-      unit_id: rate.unit_id || existing?.unit_id,
-      article_ids: existing?.article_ids || [],
+      subcategory_name: subcategory.name,
+      work_type_rates: workTypeRates,
       status: "active",
     };
     const updated = existing
@@ -129,9 +138,11 @@ export function installContractorStorePolicy(store: RDashStore): void {
       : [...capabilities, next];
     updateContractor(contractor.id!, { work_capabilities: updated } as never);
     const refreshed = store.getState().db.master.contractorRates.find(
-      (row) => row.contractor_id === contractor.id && row.work_subcategory_id === next.subcategory_id,
+      (row) => row.contractor_id === contractor.id
+        && row.work_subcategory_id === next.subcategory_id
+        && row.work_type_id === workType.id,
     );
-    return refreshed?.id || `crate-${contractor.id}-${next.subcategory_id}`;
+    return refreshed?.id || `crate-${contractor.id}-${next.subcategory_id}-${workType.id}`;
   };
 
   store.setState({

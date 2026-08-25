@@ -4,8 +4,9 @@ import { AlertTriangle, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Downlo
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
-import type { Article, ArticleVariant, Master, MasterUnit, WorkCategory, WorkRequiredArticle, WorkSubcategory } from "@/lib/rdash/types";
+import type { Article, ArticleVariant, Master, MasterUnit, WorkCategory, WorkRequiredArticle, WorkSubcategory, WorkTypeRate } from "@/lib/rdash/types";
 import { resolveUnitId, catalogCounts, getCatalogIssues, normalizeCatalogName, } from "@/lib/rdash/work-category-master";
+import { createWorkTypeId, defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { confirmDialog } from "../ConfirmDialog";
 import { MetricCard, EmptyState, StatusBadge } from "../primitives";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ type Props = {
 type DraftWork = {
     categoryId: string;
     name: string;
+    workTypeName: string;
     unitId: string;
     materialRate: string;
     labourRate: string;
@@ -150,7 +152,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             if (normalizeCatalogName(category.name).includes(needle))
                 return true;
             return (workByCategory.get(category.id) || []).some((work) => {
-                if (normalizeCatalogName(work.name).includes(needle) || normalizeCatalogName(work.notes).includes(needle))
+                if (normalizeCatalogName(work.name).includes(needle) || normalizeCatalogName(work.notes).includes(needle) || workTypesForSubcategory(work).some((workType) => normalizeCatalogName(`${workType.name} ${workType.notes}`).includes(needle)))
                     return true;
                 return (scopesByWork.get(work.id) || []).some((row) => normalizeCatalogName(articleFor(master, row.article_id)?.name).includes(needle));
             });
@@ -219,13 +221,22 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             return toast.error("This category already has a sub category with this name.");
         }
         const now = iso();
+        const workId = id("work");
         const item: WorkSubcategory = {
-            id: id("work"),
+            id: workId,
             category_id: draft.categoryId,
             name: clean,
             unit_id: draft.unitId || "sqft",
-            material_rate: amount(draft.materialRate),
-            labour_rate: amount(draft.labourRate),
+            work_types: [{
+                id: defaultWorkTypeId(workId),
+                name: draft.workTypeName.trim() || "Standard",
+                unit_id: draft.unitId || "sqft",
+                material_rate: amount(draft.materialRate),
+                labour_rate: amount(draft.labourRate),
+                notes: draft.notes.trim() || undefined,
+                created_at: now,
+                updated_at: now,
+            }],
             notes: draft.notes.trim(),
             work_required_article_ids: [],
             created_at: now,
@@ -245,33 +256,117 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (clean && master.workSubcategories.some((item) => item.id !== workId && item.category_id === existing.category_id && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
             return toast.error("Duplicate sub category in the same category.");
         }
-        const oldMaterialRate = existing.material_rate;
-        const oldLabourRate = existing.labour_rate;
         updateMaster((current) => ({
             ...current,
             workSubcategories: current.workSubcategories.map((item) => item.id === workId ? { ...item, ...patch, name: clean ?? item.name, updated_at: iso() } : item),
         }));
-        // Audit log for rate edits — financial
-        const changes: any[] = [];
-        if (patch.material_rate !== undefined && patch.material_rate !== oldMaterialRate)
-            changes.push({ id: `ch-${Date.now()}-mr`, field: "material_rate", before: oldMaterialRate, after: patch.material_rate });
-        if (patch.labour_rate !== undefined && patch.labour_rate !== oldLabourRate)
-            changes.push({ id: `ch-${Date.now()}-lr`, field: "labour_rate", before: oldLabourRate, after: patch.labour_rate });
-        if (changes.length > 0) {
+    }
+    function addWorkType(workId: string) {
+        const work = workFor(master, workId);
+        if (!work) return;
+        const existingNames = new Set(workTypesForSubcategory(work).map((row) => normalizeCatalogName(row.name)));
+        let suffix = 1;
+        let name = "New work type";
+        while (existingNames.has(normalizeCatalogName(name))) name = `New work type ${++suffix}`;
+        const now = iso();
+        const workType: WorkTypeRate = {
+            id: createWorkTypeId(workId, name),
+            name,
+            unit_id: workTypesForSubcategory(work)[0]?.unit_id || work.unit_id || "pcs",
+            material_rate: 0,
+            labour_rate: 0,
+            created_at: now,
+            updated_at: now,
+        };
+        updateMaster((current) => ({
+            ...current,
+            workSubcategories: current.workSubcategories.map((row) => row.id === workId
+                ? { ...normalizeWorkSubcategoryWorkTypes(row), work_types: [...workTypesForSubcategory(row), workType], updated_at: now }
+                : row),
+        }));
+        toast.success("Work type added. Rename it and enter its rates.");
+    }
+    function updateWorkType(workId: string, workTypeId: string, patch: Partial<WorkTypeRate>) {
+        const work = workFor(master, workId);
+        if (!work) return;
+        const existing = workTypesForSubcategory(work).find((row) => row.id === workTypeId);
+        if (!existing) return;
+        const cleanName = patch.name === undefined ? undefined : patch.name.trim();
+        if (cleanName !== undefined && !cleanName) return toast.error("Work type name is required.");
+        if (cleanName && workTypesForSubcategory(work).some((row) => row.id !== workTypeId && normalizeCatalogName(row.name) === normalizeCatalogName(cleanName))) {
+            return toast.error("This sub category already has that work type.");
+        }
+        const nextPatch = { ...patch, name: cleanName ?? existing.name, updated_at: iso() };
+        updateMaster((current) => ({
+            ...current,
+            workSubcategories: current.workSubcategories.map((row) => row.id === workId ? {
+                ...normalizeWorkSubcategoryWorkTypes(row),
+                work_types: workTypesForSubcategory(row).map((workType) => workType.id === workTypeId ? { ...workType, ...nextPatch } : workType),
+                updated_at: iso(),
+            } : row),
+            contractors: current.contractors.map((contractor) => ({
+                ...contractor,
+                work_capabilities: contractor.work_capabilities?.map((capability) => capability.subcategory_id === workId ? {
+                    ...capability,
+                    work_type_rates: capability.work_type_rates?.map((rate) => rate.work_type_id === workTypeId ? { ...rate, work_type_name: cleanName ?? rate.work_type_name } : rate),
+                } : capability),
+            })),
+            contractorRates: current.contractorRates.map((rate) => rate.work_subcategory_id === workId && rate.work_type_id === workTypeId ? {
+                ...rate,
+                work_type_name: cleanName ?? rate.work_type_name,
+                trade: cleanName ? `${work.name} · ${cleanName}` : rate.trade,
+                unit_id: patch.unit_id ?? rate.unit_id,
+            } : rate),
+        }));
+        const changes = (["material_rate", "labour_rate"] as const).flatMap((field) => patch[field] !== undefined && patch[field] !== existing[field]
+            ? [{ id: `ch-${Date.now()}-${field}`, field: `work_types.${workTypeId}.${field}`, before: existing[field], after: patch[field] }]
+            : []);
+        if (changes.length) {
             const actor = useRDashStore.getState().currentUser();
             useRDashStore.getState().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
-                action: `Work item rate edited: ${existing.name}`,
+                action: `Work type rate edited: ${work.name} · ${existing.name}`,
                 entity_type: "workSubcategory",
                 entity_id: workId,
-                entity_label: existing.name,
+                entity_label: work.name,
                 kind: "update",
                 source_module: "masters",
                 reason: `Financial edit by ${actor.name} (${actor.role})`,
                 changes,
             });
         }
+    }
+    async function removeWorkType(workId: string, workTypeId: string) {
+        const work = workFor(master, workId);
+        const workTypes = work ? workTypesForSubcategory(work) : [];
+        const workType = workTypes.find((row) => row.id === workTypeId);
+        if (!work || !workType) return;
+        if (workTypes.length === 1) return toast.error("A sub category must keep at least one work type. Add a replacement first.");
+        const ok = await confirmDialog({
+            title: `Delete ${workType.name}`,
+            description: "This work type and its contractor labour-rate entries will be removed. Vendor article data is not affected.",
+            confirmLabel: "Delete work type",
+            danger: true,
+        });
+        if (!ok) return;
+        updateMaster((current) => ({
+            ...current,
+            workSubcategories: current.workSubcategories.map((row) => row.id === workId ? {
+                ...normalizeWorkSubcategoryWorkTypes(row),
+                work_types: workTypesForSubcategory(row).filter((entry) => entry.id !== workTypeId),
+                updated_at: iso(),
+            } : row),
+            contractors: current.contractors.map((contractor) => ({
+                ...contractor,
+                work_capabilities: contractor.work_capabilities?.map((capability) => capability.subcategory_id === workId ? {
+                    ...capability,
+                    work_type_rates: capability.work_type_rates?.filter((rate) => rate.work_type_id !== workTypeId),
+                } : capability),
+            })),
+            contractorRates: current.contractorRates.filter((rate) => !(rate.work_subcategory_id === workId && rate.work_type_id === workTypeId)),
+        }));
+        toast.success("Work type and linked contractor rates removed.");
     }
     async function removeWorkItem(workId: string) {
         const work = workFor(master, workId);
@@ -549,7 +644,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         if (!unit)
             return;
         const references = [
-            master.workSubcategories.filter((item) => item.unit_id === unitId).length,
+            master.workSubcategories.reduce((count, item) => count + workTypesForSubcategory(item).filter((workType) => workType.unit_id === unitId).length, 0),
             master.articles.filter((article) => article.default_unit_id === unitId).length,
             master.subcategoryArticleMap.filter((row) => row.unit_id === unitId).length,
             master.articleVariants.filter((variant) => variant.unit_id === unitId).length,
@@ -567,16 +662,19 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         toast.success("Unused unit removed.");
     }
     function exportCatalogue() {
-        const rows: Array<Array<string | number>> = [["Category", "Sub category", "Work unit", "Material rate", "Labour rate", "Article", "Article unit", "Scoped reference rate", "Variants", "Notes"]];
+        const rows: Array<Array<string | number>> = [["Category", "Sub category", "Work type", "Execution unit", "Material rate", "Labour rate", "Total rate", "Article", "Article unit", "Scoped reference rate", "Variants", "Notes"]];
         master.workSubcategories.forEach((work) => {
             const category = master.workCategories.find((entry) => entry.id === work.category_id);
-            (scopesByWork.get(work.id) || []).forEach((scope) => {
-                const article = articleFor(master, scope.article_id);
-                rows.push([
-                    category?.name || "", work.name, unitLabel(master, work.unit_id), amount(work.material_rate), amount(work.labour_rate),
-                    article?.name || "", unitLabel(master, scope.unit_id), amount(scope.reference_rate), (variantsByArticle.get(scope.article_id) || []).length,
-                    [scope.variation_note, scope.product_note, work.notes].filter(Boolean).join(" | "),
-                ]);
+            const scopes = scopesByWork.get(work.id) || [];
+            workTypesForSubcategory(work).forEach((workType) => {
+                (scopes.length ? scopes : [undefined]).forEach((scope) => {
+                    const article = articleFor(master, scope?.article_id);
+                    rows.push([
+                        category?.name || "", work.name, workType.name, unitLabel(master, workType.unit_id), amount(workType.material_rate), amount(workType.labour_rate), amount(workType.material_rate) + amount(workType.labour_rate),
+                        article?.name || "", scope ? unitLabel(master, scope.unit_id) : "", amount(scope?.reference_rate), scope ? (variantsByArticle.get(scope.article_id) || []).length : 0,
+                        [workType.notes, scope?.variation_note, scope?.product_note, work.notes].filter(Boolean).join(" | "),
+                    ]);
+                });
             });
         });
         downloadCsv("rdash-work-category-catalogue.csv", rows);
@@ -588,7 +686,17 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             const validCategories = new Set(current.workCategories.map((category) => category.id));
             const validWorks = new Set(current.workSubcategories.map((work) => work.id));
             const validArticles = new Set(current.articles.map((article) => article.id));
-            const cleanWorks = current.workSubcategories.filter((work) => validCategories.has(work.category_id)).map((work) => ({ ...work, unit_id: validUnits.has(work.unit_id || "") ? work.unit_id : "pcs" }));
+            const cleanWorks = current.workSubcategories.filter((work) => validCategories.has(work.category_id)).map((work) => {
+                const normalized = normalizeWorkSubcategoryWorkTypes(work);
+                return {
+                    ...normalized,
+                    unit_id: validUnits.has(normalized.unit_id || "") ? normalized.unit_id : "pcs",
+                    work_types: workTypesForSubcategory(normalized).map((workType) => ({
+                        ...workType,
+                        unit_id: validUnits.has(workType.unit_id || "") ? workType.unit_id : "pcs",
+                    })),
+                };
+            });
             const cleanScopes = current.subcategoryArticleMap.filter((scope) => validWorks.has(scope.work_required_id) && validArticles.has(scope.article_id) && validUnits.has(scope.unit_id));
             const validScopes = new Set(cleanScopes.map((scope) => scope.id));
             const cleanVariants = current.articleVariants.filter((variant) => validArticles.has(variant.article_id) && (!variant.unit_id || validUnits.has(variant.unit_id)));
@@ -617,7 +725,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Layers3 className="h-5 w-5"/></span>
           <div>
             <h2 className="text-lg font-bold tracking-tight">Work & Rate Master</h2>
-            <p className="text-xs text-muted-foreground">Category → sub category → scoped material → variant · all linked to the shared unit master</p>
+            <p className="text-xs text-muted-foreground">Category → sub category → work type rates for contractors · scoped articles and variants for vendors</p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -642,7 +750,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         })}
       </div>
 
-      {view === "catalogue" ? <CatalogueView master={master} query={query} setQuery={setQuery} filteredCategories={filteredCategories} workByCategory={workByCategory} scopesByWork={scopesByWork} variantsByArticle={variantsByArticle} expanded={expanded} setExpanded={setExpanded} updateCategory={updateCategory} removeCategory={removeCategory} setWorkDialogCategoryId={setWorkDialogCategoryId} updateWorkItem={updateWorkItem} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} removeScope={removeScope} setVariantArticleId={setVariantArticleId} onAddCategory={() => setCategoryDialogOpen(true)}/> : null}
+      {view === "catalogue" ? <CatalogueView master={master} query={query} setQuery={setQuery} filteredCategories={filteredCategories} workByCategory={workByCategory} scopesByWork={scopesByWork} variantsByArticle={variantsByArticle} expanded={expanded} setExpanded={setExpanded} updateCategory={updateCategory} removeCategory={removeCategory} setWorkDialogCategoryId={setWorkDialogCategoryId} updateWorkItem={updateWorkItem} addWorkType={addWorkType} updateWorkType={updateWorkType} removeWorkType={removeWorkType} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} updateArticle={updateArticle} removeScope={removeScope} setVariantArticleId={setVariantArticleId} onAddCategory={() => setCategoryDialogOpen(true)}/> : null}
       {view === "articles" ? <ArticlesView master={master} query={query} setQuery={setQuery} scopesByWork={scopesByWork} variantsByArticle={variantsByArticle} updateArticle={updateArticle} removeArticle={removeArticle} setVariantArticleId={setVariantArticleId}/> : null}
       {view === "variants" ? <VariantsView master={master} query={query} setQuery={setQuery} variantsByArticle={variantsByArticle} setVariantArticleId={setVariantArticleId}/> : null}
       {view === "units" ? <UnitsView master={master} query={query} setQuery={setQuery} updateUnit={updateUnit} removeUnit={removeUnit}/> : null}
@@ -656,7 +764,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
       <ArticleDialog open={articleDialogOpen} onOpenChange={setArticleDialogOpen} units={master.units} onSave={addArticle}/>
     </div>);
 }
-function CatalogueView({ master, query, setQuery, filteredCategories, workByCategory, scopesByWork, variantsByArticle, expanded, setExpanded, updateCategory, removeCategory, setWorkDialogCategoryId, updateWorkItem, removeWorkItem, setMaterialWorkId, updateScope, removeScope, setVariantArticleId, onAddCategory }: {
+function CatalogueView({ master, query, setQuery, filteredCategories, workByCategory, scopesByWork, variantsByArticle, expanded, setExpanded, updateCategory, removeCategory, setWorkDialogCategoryId, updateWorkItem, addWorkType, updateWorkType, removeWorkType, removeWorkItem, setMaterialWorkId, updateScope, updateArticle, removeScope, setVariantArticleId, onAddCategory }: {
     master: Master;
     query: string;
     setQuery: (value: string) => void;
@@ -670,9 +778,13 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
     removeCategory: (id: string) => void;
     setWorkDialogCategoryId: (id: string) => void;
     updateWorkItem: (id: string, patch: Partial<WorkSubcategory>) => void;
+    addWorkType: (workId: string) => void;
+    updateWorkType: (workId: string, workTypeId: string, patch: Partial<WorkTypeRate>) => void;
+    removeWorkType: (workId: string, workTypeId: string) => void;
     removeWorkItem: (id: string) => void;
     setMaterialWorkId: (id: string) => void;
     updateScope: (id: string, patch: Partial<WorkRequiredArticle>) => void;
+    updateArticle: (id: string, patch: Partial<Article>) => void;
     removeScope: (id: string) => void;
     setVariantArticleId: (id: string) => void;
     onAddCategory: () => void;
@@ -716,7 +828,7 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
         </div>
         {isExpanded ? <div className="p-3">
           <div className="grid gap-3">
-            {works.map((work) => <WorkItemCard key={work.id} master={master} work={work} scopes={scopesByWork.get(work.id) || []} variantsByArticle={variantsByArticle} updateWorkItem={updateWorkItem} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} removeScope={removeScope} setVariantArticleId={setVariantArticleId}/>)}
+            {works.map((work) => <WorkItemCard key={work.id} master={master} work={work} scopes={scopesByWork.get(work.id) || []} variantsByArticle={variantsByArticle} updateWorkItem={updateWorkItem} addWorkType={addWorkType} updateWorkType={updateWorkType} removeWorkType={removeWorkType} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} updateArticle={updateArticle} removeScope={removeScope} setVariantArticleId={setVariantArticleId}/>)}
             {works.length === 0 ? <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No sub categories match this category filter.</div> : null}
           </div>
         </div> : null}
@@ -724,23 +836,26 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
         })}
   </div>;
 }
-function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem, removeWorkItem, setMaterialWorkId, updateScope, removeScope, setVariantArticleId }: {
+function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem, addWorkType, updateWorkType, removeWorkType, removeWorkItem, setMaterialWorkId, updateScope, updateArticle, removeScope, setVariantArticleId }: {
     master: Master;
     work: WorkSubcategory;
     scopes: WorkRequiredArticle[];
     variantsByArticle: Map<string, ArticleVariant[]>;
     updateWorkItem: (id: string, patch: Partial<WorkSubcategory>) => void;
+    addWorkType: (workId: string) => void;
+    updateWorkType: (workId: string, workTypeId: string, patch: Partial<WorkTypeRate>) => void;
+    removeWorkType: (workId: string, workTypeId: string) => void;
     removeWorkItem: (id: string) => void;
     setMaterialWorkId: (id: string) => void;
     updateScope: (id: string, patch: Partial<WorkRequiredArticle>) => void;
+    updateArticle: (id: string, patch: Partial<Article>) => void;
     removeScope: (id: string) => void;
     setVariantArticleId: (id: string) => void;
 }) {
-    const total = amount(work.material_rate) + amount(work.labour_rate);
+    const workTypes = workTypesForSubcategory(work);
     const [open, setOpen] = React.useState(false);
     const [materialsOpen, setMaterialsOpen] = React.useState(false);
     const [editingName, setEditingName] = React.useState(false);
-    const workUnit = master.units.find((unit) => unit.id === work.unit_id)?.symbol || work.unit_id || "unit";
     return <article className="rounded-xl border border-border bg-background/50 p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
@@ -760,24 +875,39 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
             if (event.key === "Escape")
                 setEditingName(false);
         }} className="h-8 max-w-md text-sm font-semibold"/>) : (<span className="block truncate text-sm font-semibold">{work.name}</span>)}
-          <span className="text-[10px] text-muted-foreground">{scopes.length} scoped materials - {workUnit}</span>
+          <span className="text-[10px] text-muted-foreground">{workTypes.length} work type{workTypes.length === 1 ? "" : "s"} · {scopes.length} scoped material{scopes.length === 1 ? "" : "s"}</span>
         </span>
       </button>
       <div className="flex items-center gap-1.5">
         <Button size="icon" variant="ghost" aria-label={`Rename ${work.name}`} onClick={() => setEditingName(true)}><Pencil className="h-4 w-4"/></Button>
-        <StatusBadge label={`${total.toLocaleString("en-IN")} / ${workUnit}`} className="border-primary/20 bg-primary/10 text-primary"/>
+        <StatusBadge label={`${workTypes.length} rate row${workTypes.length === 1 ? "" : "s"}`} className="border-primary/20 bg-primary/10 text-primary"/>
         <Button size="icon" variant="ghost" aria-label={`Delete ${work.name}`} onClick={() => removeWorkItem(work.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
       </div>
     </div>
 
     {open ? <>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <Field label="Execution unit"><NativeSelect value={work.unit_id || "pcs"} onChange={(event) => updateWorkItem(work.id, { unit_id: event.target.value })}>{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect></Field>
-        <Field label="Material rate"><Input type="number" min="0" defaultValue={work.material_rate || 0} onBlur={(event) => updateWorkItem(work.id, { material_rate: amount(event.target.value) })}/></Field>
-        <Field label="Labour rate"><Input type="number" min="0" defaultValue={work.labour_rate || 0} onBlur={(event) => updateWorkItem(work.id, { labour_rate: amount(event.target.value) })}/></Field>
-        <Field label="Total rate"><div className="flex h-9 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">Rs {total.toLocaleString("en-IN")}</div></Field>
-        <Field label="Notes"><Input defaultValue={work.notes || ""} placeholder="Scope note" onBlur={(event) => updateWorkItem(work.id, { notes: event.target.value })}/></Field>
+      <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+        <div className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_40px] gap-2 bg-muted/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span />
+        </div>
+        {workTypes.map((workType) => {
+            const total = amount(workType.material_rate) + amount(workType.labour_rate);
+            return <div key={workType.id} className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_40px] items-center gap-2 border-t border-border px-2.5 py-2">
+              <Input defaultValue={workType.name} aria-label={`Work type for ${work.name}`} onBlur={(event) => event.target.value !== workType.name && updateWorkType(work.id, workType.id, { name: event.target.value })} className="h-8 font-semibold"/>
+              <NativeSelect value={workType.unit_id || work.unit_id || "pcs"} onChange={(event) => updateWorkType(work.id, workType.id, { unit_id: event.target.value })} className="h-8">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect>
+              <Input type="number" min="0" defaultValue={workType.material_rate || 0} aria-label={`${workType.name} material rate`} onBlur={(event) => updateWorkType(work.id, workType.id, { material_rate: amount(event.target.value) })} className="h-8"/>
+              <Input type="number" min="0" defaultValue={workType.labour_rate || 0} aria-label={`${workType.name} labour rate`} onBlur={(event) => updateWorkType(work.id, workType.id, { labour_rate: amount(event.target.value) })} className="h-8"/>
+              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">Rs {total.toLocaleString("en-IN")}</div>
+              <Input defaultValue={workType.notes || ""} placeholder="Work-type note" aria-label={`${workType.name} notes`} onBlur={(event) => event.target.value !== (workType.notes || "") && updateWorkType(work.id, workType.id, { notes: event.target.value })} className="h-8"/>
+              <Button size="icon" variant="ghost" onClick={() => removeWorkType(work.id, workType.id)} aria-label={`Delete ${workType.name}`}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+            </div>;
+        })}
+        <div className="border-t border-border p-2">
+          <Button size="sm" variant="outline" className="border-dashed" onClick={() => addWorkType(work.id)}><Plus className="h-3.5 w-3.5"/> Add work type</Button>
+        </div>
       </div>
+
+      <div className="mt-2"><Field label="Sub-category notes"><Input defaultValue={work.notes || ""} placeholder="General scope note" onBlur={(event) => event.target.value !== (work.notes || "") && updateWorkItem(work.id, { notes: event.target.value })}/></Field></div>
 
       <div className="mt-3 overflow-hidden rounded-lg border border-border">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-2.5 py-2">
@@ -791,7 +921,7 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
                     const article = articleFor(master, scope.article_id);
                     const variants = variantsByArticle.get(scope.article_id) || [];
                     const note = [scope.variation_note, scope.product_note].filter(Boolean).join(" - ");
-                    return <tr key={scope.id} className="border-t border-border align-top hover:bg-accent/20"><td className="px-3 py-2"><p className="font-semibold">{article?.name || "Missing article"}</p></td><td className="px-3 py-2"><NativeSelect value={scope.unit_id} onChange={(event) => updateScope(scope.id, { unit_id: event.target.value })} className="h-8 min-w-[140px]">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol}</option>)}</NativeSelect></td><td className="px-3 py-2"><Input type="number" min="0" defaultValue={scope.reference_rate || 0} onBlur={(event) => updateScope(scope.id, { reference_rate: amount(event.target.value) })} className="h-8 w-28"/></td><td className="px-3 py-2"><Input defaultValue={note} placeholder="Use variants for brand, grade, size and finish" onBlur={(event) => updateScope(scope.id, { variation_note: "", product_note: event.target.value })} className="h-8 min-w-56"/></td><td className="px-3 py-2"><Button size="sm" variant="outline" onClick={() => article && setVariantArticleId(article.id)}><Tags className="h-3.5 w-3.5"/> Manage variants ({variants.length})</Button></td><td className="px-3 py-2"><Button size="icon" variant="ghost" aria-label={`Remove ${article?.name || "material"}`} onClick={() => removeScope(scope.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button></td></tr>;
+                    return <tr key={scope.id} className="border-t border-border align-top hover:bg-accent/20"><td className="px-3 py-2">{article ? <Input defaultValue={article.name} aria-label={`Material article ${article.name}`} onBlur={(event) => event.target.value !== article.name && updateArticle(article.id, { name: event.target.value })} className="h-8 min-w-48 font-semibold"/> : <p className="font-semibold text-destructive">Missing article</p>}</td><td className="px-3 py-2"><NativeSelect value={scope.unit_id} onChange={(event) => updateScope(scope.id, { unit_id: event.target.value })} className="h-8 min-w-[140px]">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol}</option>)}</NativeSelect></td><td className="px-3 py-2"><Input type="number" min="0" defaultValue={scope.reference_rate || 0} onBlur={(event) => updateScope(scope.id, { reference_rate: amount(event.target.value) })} className="h-8 w-28"/></td><td className="px-3 py-2"><Input defaultValue={note} placeholder="Use variants for brand, grade, size and finish" onBlur={(event) => updateScope(scope.id, { variation_note: "", product_note: event.target.value })} className="h-8 min-w-56"/></td><td className="px-3 py-2"><Button size="sm" variant="outline" onClick={() => article && setVariantArticleId(article.id)}><Tags className="h-3.5 w-3.5"/> Manage variants ({variants.length})</Button></td><td className="px-3 py-2"><Button size="icon" variant="ghost" aria-label={`Remove ${article?.name || "material"}`} onClick={() => removeScope(scope.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button></td></tr>;
                 })}</tbody></table></div>) : null}
       </div>
     </> : null}
@@ -865,7 +995,7 @@ function UnitsView({ master, query, setQuery, updateUnit, removeUnit }: {
     removeUnit: (id: string) => void;
 }) {
     const rows = master.units.filter((unit) => !query || normalizeCatalogName(`${unit.symbol} ${unit.name} ${unit.family}`).includes(normalizeCatalogName(query))).sort((a, b) => a.symbol.localeCompare(b.symbol));
-    const countUsage = (unitId: string) => master.workSubcategories.filter((work) => work.unit_id === unitId).length + master.articles.filter((article) => article.default_unit_id === unitId).length + master.subcategoryArticleMap.filter((scope) => scope.unit_id === unitId).length + master.articleVariants.filter((variant) => variant.unit_id === unitId).length;
+    const countUsage = (unitId: string) => master.workSubcategories.filter((work) => work.unit_id === unitId).length + master.workSubcategories.reduce((count, work) => count + workTypesForSubcategory(work).filter((workType) => workType.unit_id === unitId).length, 0) + master.articles.filter((article) => article.default_unit_id === unitId).length + master.subcategoryArticleMap.filter((scope) => scope.unit_id === unitId).length + master.articleVariants.filter((variant) => variant.unit_id === unitId).length;
     return <div className="flex flex-col gap-3"><div className="flex flex-wrap items-center gap-2"><div className="relative w-full max-w-md"><Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search shared units…" className="pl-8"/></div><span className="text-xs text-muted-foreground">Stable IDs prevent unit text conflicts in quotations, vendors and materials.</span></div><div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card"><div className="overflow-x-auto"><table className="min-w-[720px] w-full text-left text-xs"><thead className="bg-muted/40 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2">Symbol</th><th className="px-3 py-2">Name</th><th className="px-3 py-2">Family</th><th className="px-3 py-2">Linked records</th><th className="px-3 py-2"></th></tr></thead><tbody>{rows.map((unit) => <tr key={unit.id} className="border-t border-border hover:bg-accent/20"><td className="px-3 py-2"><Input defaultValue={unit.symbol} onBlur={(event) => event.target.value !== unit.symbol && updateUnit(unit.id, { symbol: event.target.value })} className="h-8 w-28 font-mono"/></td><td className="px-3 py-2"><Input defaultValue={unit.name} onBlur={(event) => event.target.value !== unit.name && updateUnit(unit.id, { name: event.target.value })} className="h-8 min-w-56"/></td><td className="px-3 py-2"><NativeSelect value={unit.family || "other"} onChange={(event) => updateUnit(unit.id, { family: event.target.value as MasterUnit["family"] })} className="h-8 min-w-32"><option value="area">Area</option><option value="length">Length</option><option value="count">Count</option><option value="weight">Weight</option><option value="volume">Volume</option><option value="package">Package</option><option value="other">Other</option></NativeSelect></td><td className="px-3 py-2"><span className="rounded-full bg-muted px-2 py-1 font-semibold">{countUsage(unit.id)}</span></td><td className="px-3 py-2"><Button size="icon" variant="ghost" onClick={() => removeUnit(unit.id)} aria-label={`Delete ${unit.symbol}`}><Trash2 className="h-4 w-4 text-destructive"/></Button></td></tr>)}</tbody></table></div></div></div>;
 }
 function IntegrityView({ master, issues, onRepair }: {
@@ -894,10 +1024,10 @@ function WorkItemDialog({ open, onOpenChange, category, units, onSave }: {
     units: MasterUnit[];
     onSave: (draft: DraftWork) => void;
 }) {
-    const [draft, setDraft] = React.useState<DraftWork>({ categoryId: "", name: "", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" });
+    const [draft, setDraft] = React.useState<DraftWork>({ categoryId: "", name: "", workTypeName: "Standard", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" });
     React.useEffect(() => { if (open)
-        setDraft({ categoryId: category?.id || "", name: "", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" }); }, [open, category?.id]);
-    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Add sub category</DialogTitle><DialogDescription>{category ? `Create an execution sub category under ${category.name}.` : "Create an execution sub category."}</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Sub category name"><Input autoFocus value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Gypsum false ceiling"/></Field><Field label="Execution unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><Field label="Material rate"><Input type="number" min="0" value={draft.materialRate} onChange={(event) => setDraft((current) => ({ ...current, materialRate: event.target.value }))}/></Field><Field label="Labour rate"><Input type="number" min="0" value={draft.labourRate} onChange={(event) => setDraft((current) => ({ ...current, labourRate: event.target.value }))}/></Field></div><Field label="Scope note"><Textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Where this work is used, finish workRequired, exclusions…"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}><Plus className="h-3.5 w-3.5"/> Add sub category</Button></DialogFooter></DialogContent></Dialog>;
+        setDraft({ categoryId: category?.id || "", name: "", workTypeName: "Standard", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" }); }, [open, category?.id]);
+    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Add sub category</DialogTitle><DialogDescription>{category ? `Create an execution sub category under ${category.name}.` : "Create an execution sub category."}</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Sub category name"><Input autoFocus value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Gypsum false ceiling"/></Field><Field label="Initial work type"><Input value={draft.workTypeName} onChange={(event) => setDraft((current) => ({ ...current, workTypeName: event.target.value }))} placeholder="Standard, Budget, Premium or Luxury"/></Field><Field label="Execution unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><Field label="Material rate"><Input type="number" min="0" value={draft.materialRate} onChange={(event) => setDraft((current) => ({ ...current, materialRate: event.target.value }))}/></Field><Field label="Labour rate"><Input type="number" min="0" value={draft.labourRate} onChange={(event) => setDraft((current) => ({ ...current, labourRate: event.target.value }))}/></Field></div><Field label="Scope note"><Textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Where this work is used, finish requirements or exclusions…"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}><Plus className="h-3.5 w-3.5"/> Add sub category</Button></DialogFooter></DialogContent></Dialog>;
 }
 function MaterialDialog({ open, onOpenChange, master, work, onSave }: {
     open: boolean;

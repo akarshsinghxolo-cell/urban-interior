@@ -1548,12 +1548,25 @@ export interface WorkCategory {
     created_at?: string;
     updated_at?: string;
 }
+export interface WorkTypeRate {
+    id: ID;
+    name: string;
+    unit_id?: ID;
+    material_rate?: number;
+    labour_rate?: number;
+    notes?: string;
+    created_at?: string;
+    updated_at?: string;
+}
 export interface WorkSubcategory {
     id: ID;
     category_id: ID;
     name: string;
     unit_id?: ID;
+    work_types?: WorkTypeRate[];
+    /** @deprecated Legacy rate fields are migrated into work_types. */
     material_rate?: number;
+    /** @deprecated Legacy rate fields are migrated into work_types. */
     labour_rate?: number;
     notes?: string;
     work_required_article_ids?: ID[];
@@ -1693,14 +1706,10 @@ export interface Contractor {
     work_capabilities?: Array<{
         subcategory_id: ID;
         subcategory_name?: string;
-        labour_rate?: number;
-        with_material_rate?: number;
-        article_ids?: ID[];
-        article_rates?: Array<{
-            article_id: ID;
-            article_name?: string;
+        work_type_rates?: Array<{
+            work_type_id: ID;
+            work_type_name?: string;
             labour_rate?: number;
-            with_material_rate?: number;
         }>;
         unit_id?: ID;
         crew_required?: number;
@@ -1857,11 +1866,9 @@ export interface ContractorRate {
     // backward compatibility with seed rows that don't have a subcategory.
     work_subcategory_id?: ID;
     work_subcategory_name?: string;
+    work_type_id?: ID;
+    work_type_name?: string;
     labour_rate?: number;
-    with_material_rate?: number;
-    article_id?: ID;
-    article_name?: string;
-    work_required_article_id?: ID;
 }
 export type FileAssetKind = "document" | "media" | "catalogue" | "drawing" | "site_proof" | "other";
 export type FileAssetStorageMode = "managed" | "external_reference";

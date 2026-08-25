@@ -47,6 +47,7 @@ import {
   type ContractorLifecycleStatus,
   type ContractorProfileRecord,
 } from "@/lib/rdash/contractor-profile";
+import { workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { FilePreview } from "./FilePreview";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
@@ -67,10 +68,7 @@ type MediaValue = "" | PendingMedia | ExistingMedia;
 type CapabilityDraft = {
   subcategory_id: string;
   subcategory_name?: string;
-  labour_rate: string;
-  with_material_rate: string;
-  article_ids: string[];
-  article_rates: Record<string, { labour_rate: string; with_material_rate: string }>;
+  work_type_rates: Record<string, string>;
 };
 
 type Draft = {
@@ -195,15 +193,9 @@ function capabilitiesToDraft(capabilities: ContractorCapability[]): CapabilityDr
   return capabilities.map((row) => ({
     subcategory_id: row.subcategory_id,
     subcategory_name: row.subcategory_name,
-    labour_rate: row.labour_rate == null ? "" : String(row.labour_rate),
-    with_material_rate: row.with_material_rate == null ? "" : String(row.with_material_rate),
-    article_ids: row.article_ids || [],
-    article_rates: Object.fromEntries((row.article_rates || []).map((rate) => [
-      rate.article_id,
-      {
-        labour_rate: rate.labour_rate == null ? "" : String(rate.labour_rate),
-        with_material_rate: rate.with_material_rate == null ? "" : String(rate.with_material_rate),
-      },
+    work_type_rates: Object.fromEntries((row.work_type_rates || []).map((rate) => [
+      rate.work_type_id,
+      rate.labour_rate == null ? "" : String(rate.labour_rate),
     ])),
   }));
 }
@@ -244,8 +236,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
   const allCategories = db.master.workCategories;
   const allSubcategories = db.master.workSubcategories;
-  const allArticles = db.master.articles;
-  const articleMap = db.master.subcategoryArticleMap;
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -291,18 +281,15 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       work_capabilities: capabilities.map((row) => ({
         subcategory_id: row.subcategory_id,
         subcategory_name: row.subcategory_name,
-        labour_rate: row.labour_rate ? Number(row.labour_rate) : undefined,
-        with_material_rate: row.with_material_rate ? Number(row.with_material_rate) : undefined,
-        article_ids: [...row.article_ids],
-        article_rates: row.article_ids.flatMap((articleId) => {
-          const rate = row.article_rates[articleId];
-          if (!rate || (!rate.labour_rate && !rate.with_material_rate)) return [];
-          return [{
-            article_id: articleId,
-            article_name: allArticles.find((article) => article.id === articleId)?.name,
-            labour_rate: rate.labour_rate ? Number(rate.labour_rate) : undefined,
-            with_material_rate: rate.with_material_rate ? Number(rate.with_material_rate) : undefined,
-          }];
+        work_type_rates: workTypesForSubcategory(
+          allSubcategories.find((subcategory) => subcategory.id === row.subcategory_id)!,
+        ).flatMap((workType) => {
+          const value = row.work_type_rates[workType.id]?.trim();
+          return value ? [{
+            work_type_id: workType.id,
+            work_type_name: workType.name,
+            labour_rate: Number(value),
+          }] : [];
         }),
       })),
       supervisor_name: draft.supervisorName,
@@ -323,7 +310,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     };
     return normalizeContractorForWrite(raw, db, { id: raw.id });
   }, [
-    allArticles,
+    allSubcategories,
     baselineComplianceDocuments,
     businessCard,
     capabilities,
@@ -589,60 +576,27 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
         : [...values, {
             subcategory_id: row.id,
             subcategory_name: row.name,
-            labour_rate: "",
-            with_material_rate: "",
-            article_ids: [],
-            article_rates: {},
+            work_type_rates: {},
           }],
     );
     setDuplicateAcknowledged(false);
   };
 
-  const updateCapability = (subcategoryId: string, patch: Partial<CapabilityDraft>) =>
-    setCapabilities((values) =>
-      values.map((value) => value.subcategory_id === subcategoryId ? { ...value, ...patch } : value),
-    );
-
-  const toggleCapabilityArticle = (subcategoryId: string, articleId: string) =>
-    setCapabilities((values) => values.map((value) => {
-      if (value.subcategory_id !== subcategoryId) return value;
-      const selected = value.article_ids.includes(articleId);
-      if (!selected) return { ...value, article_ids: [...value.article_ids, articleId] };
-      const nextRates = { ...value.article_rates };
-      delete nextRates[articleId];
-      return {
-        ...value,
-        article_ids: value.article_ids.filter((id) => id !== articleId),
-        article_rates: nextRates,
-      };
-    }));
-
-  const updateCapabilityArticleRate = (
+  const updateCapabilityWorkTypeRate = (
     subcategoryId: string,
-    articleId: string,
-    field: "labour_rate" | "with_material_rate",
+    workTypeId: string,
     value: string,
   ) => setCapabilities((values) => values.map((capability) =>
     capability.subcategory_id === subcategoryId
       ? {
           ...capability,
-          article_rates: {
-            ...capability.article_rates,
-            [articleId]: {
-              labour_rate: capability.article_rates[articleId]?.labour_rate || "",
-              with_material_rate: capability.article_rates[articleId]?.with_material_rate || "",
-              [field]: value,
-            },
+          work_type_rates: {
+            ...capability.work_type_rates,
+            [workTypeId]: value,
           },
         }
       : capability,
   ));
-
-  const articlesForSubcategory = (subcategoryId: string) =>
-    articleMap
-      .filter((row) => row.work_required_id === subcategoryId)
-      .map((row) => allArticles.find((article) => article.id === row.article_id))
-      .filter(Boolean);
 
   const bankVerified = verifiedContractorBankProof(
     (editId ? db.master.contractors.find((row) => row.id === editId) : undefined) as ContractorProfileRecord || {},
@@ -808,44 +762,34 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
               <AddWorkCategoryAction className="mt-2" />
               <div className="mt-2 space-y-2">
                 {capabilities.map((capability) => {
-                  const articles = articlesForSubcategory(capability.subcategory_id);
+                  const subcategory = allSubcategories.find((row) => row.id === capability.subcategory_id);
+                  const workTypes = subcategory ? workTypesForSubcategory(subcategory) : [];
                   return (
                     <div key={capability.subcategory_id} className="rounded border p-2.5">
                       <div className="flex items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold">{capability.subcategory_name}</span>
                         <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="shrink-0 text-destructive"><X className="h-4 w-4" /></button>
                       </div>
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
-                          Default labour rate
-                          <Input type="number" min={0} value={capability.labour_rate} onChange={(event) => updateCapability(capability.subcategory_id, { labour_rate: event.target.value })} placeholder="₹ 0" className="h-8 text-xs" />
-                        </label>
-                        <label className="grid gap-1 text-[10px] font-medium text-muted-foreground">
-                          Default with material
-                          <Input type="number" min={0} value={capability.with_material_rate} onChange={(event) => updateCapability(capability.subcategory_id, { with_material_rate: event.target.value })} placeholder="₹ 0" className="h-8 text-xs" />
-                        </label>
-                      </div>
-                      {articles.length ? (
-                        <div className="mt-2 overflow-hidden rounded-md border">
-                          <div className="grid grid-cols-[minmax(0,1fr)_5.5rem_6.5rem] gap-1.5 bg-muted/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            <span>Material</span><span>Labour ₹</span><span>With material ₹</span>
-                          </div>
-                          {articles.map((article) => {
-                            const selected = capability.article_ids.includes(article!.id);
-                            const rate = capability.article_rates[article!.id];
-                            return (
-                              <div key={article!.id} className="grid grid-cols-[minmax(0,1fr)_5.5rem_6.5rem] items-center gap-1.5 border-t px-2 py-1.5 first:border-t-0">
-                                <label className="flex min-w-0 items-center gap-1.5 text-[10px]">
-                                  <input type="checkbox" checked={selected} onChange={() => toggleCapabilityArticle(capability.subcategory_id, article!.id)} className="h-3.5 w-3.5 shrink-0 accent-primary" />
-                                  <span className="truncate" title={article!.name}>{article!.name}</span>
-                                </label>
-                                <Input type="number" min={0} disabled={!selected} value={rate?.labour_rate || ""} onChange={(event) => updateCapabilityArticleRate(capability.subcategory_id, article!.id, "labour_rate", event.target.value)} placeholder="Default" aria-label={`${article!.name} labour rate`} className="h-7 px-1.5 text-[10px]" />
-                                <Input type="number" min={0} disabled={!selected} value={rate?.with_material_rate || ""} onChange={(event) => updateCapabilityArticleRate(capability.subcategory_id, article!.id, "with_material_rate", event.target.value)} placeholder="Default" aria-label={`${article!.name} with material rate`} className="h-7 px-1.5 text-[10px]" />
-                              </div>
-                            );
-                          })}
+                      <div className="mt-2 overflow-hidden rounded-md border">
+                        <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-2 bg-muted/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span>Work type</span><span>Labour rate ₹</span>
                         </div>
-                      ) : null}
+                        {workTypes.map((workType) => (
+                          <div key={workType.id} className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-2 border-t px-2 py-1.5 first:border-t-0">
+                            <span className="truncate text-[10px] font-medium" title={workType.name}>{workType.name}</span>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={capability.work_type_rates[workType.id] || ""}
+                              onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, workType.id, event.target.value)}
+                              placeholder="₹ 0"
+                              aria-label={`${workType.name} labour rate`}
+                              className="h-7 px-1.5 text-[10px]"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {!workTypes.length ? <p className="mt-2 text-[10px] text-destructive">Add a work type in Master Setup before entering contractor rates.</p> : null}
                     </div>
                   );
                 })}

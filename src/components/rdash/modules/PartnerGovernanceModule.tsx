@@ -60,6 +60,7 @@ import { Avatar, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../p
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { entityFiles } from "@/lib/rdash/file-attachments";
 import { Partner360Module } from "./Partner360Module";
+import { workTypesForSubcategory } from "@/lib/rdash/work-types";
 
 export function Partner360Phase2Workspace({ mode }: { mode: PartnerGovernanceMode }) {
   const [view, setView] = React.useState<"relationship" | "governance">("relationship");
@@ -257,7 +258,18 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
 }
 
 function CapabilitiesSection({ mode, selected, capabilities, onAdd, onEdit, onToggle }: any) {
-  return <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><div className="flex flex-wrap items-center justify-between gap-3"><SectionHeader title={mode === "vendor" ? "Vendor–Article capabilities" : "Contractor–Trade capabilities"} count={capabilities.length} /><Button size="sm" onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add capability</Button></div><p className="mt-1 text-xs text-muted-foreground">{mode === "vendor" ? "A structured replacement for article names hidden in notes. Used for sourcing, RFQ targeting and Vendor comparison." : "Structured trade, rate and capacity records used for shortlisting and award decisions."}</p><div className="mt-4 grid gap-3 lg:grid-cols-2">{capabilities.map((capability: any) => <div key={capability.id} className="rounded-xl border border-border bg-muted/10 p-3"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{mode === "vendor" ? capability.article_name || capability.article_id : capability.work_subcategory_name || capability.work_subcategory_id}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{mode === "vendor" ? [capability.variant_name, capability.brand, capability.grade].filter(Boolean).join(" · ") || "General supply" : [capability.unit_id, capability.crew_required && `${capability.crew_required} crew`, capability.max_daily_capacity && `${capability.max_daily_capacity}/day`].filter(Boolean).join(" · ") || "Trade capability"}</p></div><StatusBadge label={titleCase(capability.status || "active")} /></div><div className="mt-3 grid grid-cols-2 gap-2 text-xs">{mode === "vendor" ? <><Value label="Lead time" value={capability.lead_time_days != null ? `${capability.lead_time_days} days` : "—"} /><Value label="Minimum qty" value={capability.minimum_order_qty ?? "—"} /></> : <><Value label="Labour rate" value={capability.labour_rate != null ? formatINR(capability.labour_rate) : "—"} /><Value label="With material" value={capability.with_material_rate != null ? formatINR(capability.with_material_rate) : "—"} /></>}</div><div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => onEdit(capability.id)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button><Button size="sm" variant="outline" onClick={() => onToggle(capability.id)}><Archive className="mr-1 h-3.5 w-3.5" />{capability.status === "active" ? "Deactivate" : "Activate"}</Button></div></div>)}{!capabilities.length && <div className="lg:col-span-2"><EmptyState title="No structured capabilities" description={mode === "vendor" ? "Link this Vendor to Articles and variants they can actually supply." : "Link this Contractor to Work subcategories, rates and capacity."} action={<Button onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add first capability</Button>} /></div>}</div></section>;
+  return <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
+    <div className="flex flex-wrap items-center justify-between gap-3"><SectionHeader title={mode === "vendor" ? "Vendor–Article capabilities" : "Contractor–Work capabilities"} count={capabilities.length} /><Button size="sm" onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add capability</Button></div>
+    <p className="mt-1 text-xs text-muted-foreground">{mode === "vendor" ? "Article and variant supply records used for sourcing, RFQs and Vendor comparison." : "Work subcategories, work-type labour rates and capacity used for contractor shortlisting."}</p>
+    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      {capabilities.map((capability: any) => <div key={capability.id} className="rounded-xl border border-border bg-muted/10 p-3">
+        <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{mode === "vendor" ? capability.article_name || capability.article_id : capability.work_subcategory_name || capability.work_subcategory_id}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{mode === "vendor" ? [capability.variant_name, capability.brand, capability.grade].filter(Boolean).join(" · ") || "General supply" : [capability.crew_required && `${capability.crew_required} crew`, capability.max_daily_capacity && `${capability.max_daily_capacity}/day`].filter(Boolean).join(" · ") || "Work capability"}</p></div><StatusBadge label={titleCase(capability.status || "active")} /></div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">{mode === "vendor" ? <><Value label="Lead time" value={capability.lead_time_days != null ? `${capability.lead_time_days} days` : "—"} /><Value label="Minimum qty" value={capability.minimum_order_qty ?? "—"} /></> : (capability.work_type_rates || []).map((rate: any) => <Value key={rate.work_type_id} label={rate.work_type_name || "Work type"} value={rate.labour_rate != null ? formatINR(rate.labour_rate) : "—"} />)}</div>
+        <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => onEdit(capability.id)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button><Button size="sm" variant="outline" onClick={() => onToggle(capability.id)}><Archive className="mr-1 h-3.5 w-3.5" />{capability.status === "active" ? "Deactivate" : "Activate"}</Button></div>
+      </div>)}
+      {!capabilities.length && <div className="lg:col-span-2"><EmptyState title="No structured capabilities" description={mode === "vendor" ? "Link this Vendor to Articles and variants they can actually supply." : "Link this Contractor to Work subcategories and work-type labour rates."} action={<Button onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add first capability</Button>} /></div>}
+    </div>
+  </section>;
 }
 
 function DocumentsSection({ mode, selected, documents, onAdd, onEdit, onVerify, onDelete }: any) {
@@ -285,8 +297,16 @@ function CapabilityDialog({ mode, partner, open, editId, onClose, onSave }: { mo
     : vendorCapabilities(partner)) as any[];
   const editing = current.find((capability) => capability.id === editId);
   const [draft, setDraft] = React.useState<Record<string, any>>({});
-  React.useEffect(() => { if (!open) return; setDraft(editing ? { ...editing } : { status: "active", preferred: false, supply_mode: "stocked" }); }, [open, editId]);
+  React.useEffect(() => {
+    if (!open) return;
+    setDraft(editing ? {
+      ...editing,
+      work_type_rates: Object.fromEntries((editing.work_type_rates || []).map((rate: any) => [rate.work_type_id, String(rate.labour_rate ?? "")])),
+    } : { status: "active", preferred: false, supply_mode: "stocked", work_type_rates: {} });
+  }, [open, editId]);
   const set = (key: string, value: any) => setDraft((state) => ({ ...state, [key]: value }));
+  const selectedSubcategory = db.master.workSubcategories.find((row: any) => row.id === draft.work_subcategory_id);
+  const selectedWorkTypes = selectedSubcategory ? workTypesForSubcategory(selectedSubcategory) : [];
   const save = () => {
     const now = new Date().toISOString();
     if (mode === "vendor") {
@@ -298,12 +318,47 @@ function CapabilityDialog({ mode, partner, open, editId, onClose, onSave }: { mo
     } else {
       const subcategory = db.master.workSubcategories.find((row: any) => row.id === draft.work_subcategory_id);
       if (!subcategory) { toast.error("Select a Work subcategory"); return; }
-      const record: ContractorTradeCapability = { id: editing?.id || governanceId("ccap"), work_subcategory_id: subcategory.id, work_subcategory_name: subcategory.name, unit_id: draft.unit_id || subcategory.unit_id, labour_rate: draft.labour_rate === "" ? undefined : Number(draft.labour_rate), with_material_rate: draft.with_material_rate === "" ? undefined : Number(draft.with_material_rate), crew_required: draft.crew_required === "" ? undefined : Number(draft.crew_required), max_daily_capacity: draft.max_daily_capacity === "" ? undefined : Number(draft.max_daily_capacity), preferred: Boolean(draft.preferred), status: draft.status || "active", notes: draft.notes?.trim() || undefined, created_at: editing?.created_at || now, updated_at: now };
+      const record: ContractorTradeCapability = {
+        id: editing?.id || governanceId("ccap"),
+        work_subcategory_id: subcategory.id,
+        work_subcategory_name: subcategory.name,
+        work_type_rates: workTypesForSubcategory(subcategory).flatMap((workType) => {
+          const value = String(draft.work_type_rates?.[workType.id] ?? "").trim();
+          return value ? [{ work_type_id: workType.id, work_type_name: workType.name, labour_rate: Number(value) }] : [];
+        }),
+        crew_required: draft.crew_required === "" ? undefined : Number(draft.crew_required),
+        max_daily_capacity: draft.max_daily_capacity === "" ? undefined : Number(draft.max_daily_capacity),
+        preferred: Boolean(draft.preferred),
+        status: draft.status || "active",
+        notes: draft.notes?.trim() || undefined,
+        created_at: editing?.created_at || now,
+        updated_at: now,
+      };
       onSave(editing ? current.map((row) => row.id === editing.id ? record : row) : [record, ...current]);
     }
     toast.success("Capability saved");
   };
-  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="max-w-xl"><DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} {mode === "vendor" ? "Vendor–Article" : "Contractor–Trade"} capability</DialogTitle><DialogDescription>Structured data used for sourcing and shortlisting.</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2">{mode === "vendor" ? <><select value={draft.article_id || ""} onChange={(event) => { set("article_id", event.target.value); set("variant_id", ""); }} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Select Article</option>{db.master.articles.map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><select value={draft.variant_id || ""} onChange={(event) => set("variant_id", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Any variant</option>{db.master.articleVariants.filter((row: any) => !draft.article_id || row.article_id === draft.article_id).map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><Input value={draft.brand || ""} onChange={(event) => set("brand", event.target.value)} placeholder="Brand" /><Input value={draft.grade || ""} onChange={(event) => set("grade", event.target.value)} placeholder="Grade / quality" /><select value={draft.supply_mode || "stocked"} onChange={(event) => set("supply_mode", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="stocked">Stocked</option><option value="on_order">On order</option><option value="special_order">Special order</option></select><Input value={draft.lead_time_days ?? ""} onChange={(event) => set("lead_time_days", event.target.value)} placeholder="Lead time days" type="number" /><Input value={draft.minimum_order_qty ?? ""} onChange={(event) => set("minimum_order_qty", event.target.value)} placeholder="Minimum order quantity" type="number" /></> : <><select value={draft.work_subcategory_id || ""} onChange={(event) => set("work_subcategory_id", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Select Work subcategory</option>{db.master.workSubcategories.map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select><Input value={draft.labour_rate ?? ""} onChange={(event) => set("labour_rate", event.target.value)} placeholder="Labour rate" type="number" /><Input value={draft.with_material_rate ?? ""} onChange={(event) => set("with_material_rate", event.target.value)} placeholder="With-material rate" type="number" /><Input value={draft.crew_required ?? ""} onChange={(event) => set("crew_required", event.target.value)} placeholder="Crew required" type="number" /><Input value={draft.max_daily_capacity ?? ""} onChange={(event) => set("max_daily_capacity", event.target.value)} placeholder="Maximum daily capacity" type="number" /></>}<label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(draft.preferred)} onChange={(event) => set("preferred", event.target.checked)} />Preferred capability</label><Textarea value={draft.notes || ""} onChange={(event) => set("notes", event.target.value)} placeholder="Notes" className="sm:col-span-2" /></div><DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save}>Save capability</Button></DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
+    <DialogContent className="max-w-xl">
+      <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} {mode === "vendor" ? "Vendor–Article" : "Contractor–Work"} capability</DialogTitle><DialogDescription>{mode === "vendor" ? "Structured supply data used for sourcing and shortlisting." : "Assign labour rates by the work types configured in Master Setup."}</DialogDescription></DialogHeader>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {mode === "vendor" ? <>
+          <select value={draft.article_id || ""} onChange={(event) => { set("article_id", event.target.value); set("variant_id", ""); }} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Select Article</option>{db.master.articles.map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
+          <select value={draft.variant_id || ""} onChange={(event) => set("variant_id", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Any variant</option>{db.master.articleVariants.filter((row: any) => !draft.article_id || row.article_id === draft.article_id).map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
+          <Input value={draft.brand || ""} onChange={(event) => set("brand", event.target.value)} placeholder="Brand" /><Input value={draft.grade || ""} onChange={(event) => set("grade", event.target.value)} placeholder="Grade / quality" />
+          <select value={draft.supply_mode || "stocked"} onChange={(event) => set("supply_mode", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="stocked">Stocked</option><option value="on_order">On order</option><option value="special_order">Special order</option></select>
+          <Input value={draft.lead_time_days ?? ""} onChange={(event) => set("lead_time_days", event.target.value)} placeholder="Lead time days" type="number" /><Input value={draft.minimum_order_qty ?? ""} onChange={(event) => set("minimum_order_qty", event.target.value)} placeholder="Minimum order quantity" type="number" />
+        </> : <>
+          <select value={draft.work_subcategory_id || ""} onChange={(event) => { set("work_subcategory_id", event.target.value); set("work_type_rates", {}); }} className="h-10 rounded-md border border-input bg-card px-3 text-sm sm:col-span-2"><option value="">Select Work subcategory</option>{db.master.workSubcategories.map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
+          <div className="space-y-2 rounded-lg border p-3 sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Labour rate by work type</p>{selectedWorkTypes.map((workType) => <label key={workType.id} className="grid grid-cols-[minmax(0,1fr)_9rem] items-center gap-2 text-xs"><span>{workType.name}</span><Input value={draft.work_type_rates?.[workType.id] || ""} onChange={(event) => set("work_type_rates", { ...(draft.work_type_rates || {}), [workType.id]: event.target.value })} placeholder="₹ 0" type="number" min={0} className="h-8" /></label>)}{selectedSubcategory && !selectedWorkTypes.length ? <p className="text-xs text-destructive">No work types configured for this subcategory.</p> : null}</div>
+          <Input value={draft.crew_required ?? ""} onChange={(event) => set("crew_required", event.target.value)} placeholder="Crew required" type="number" /><Input value={draft.max_daily_capacity ?? ""} onChange={(event) => set("max_daily_capacity", event.target.value)} placeholder="Maximum daily capacity" type="number" />
+        </>}
+        <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(draft.preferred)} onChange={(event) => set("preferred", event.target.checked)} />Preferred capability</label>
+        <Textarea value={draft.notes || ""} onChange={(event) => set("notes", event.target.value)} placeholder="Notes" className="sm:col-span-2" />
+      </div>
+      <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save}>Save capability</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function DocumentDialog({ mode, partner, open, editId, onClose, onSave }: { mode: PartnerGovernanceMode; partner: PartnerRecord; open: boolean; editId?: string; onClose: () => void; onSave: (next: PartnerComplianceDocument[]) => void }) {

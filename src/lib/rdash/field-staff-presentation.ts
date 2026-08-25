@@ -369,8 +369,7 @@ export function fieldStaffPresentationDatabase(
         source_partner_name: undefined,
         work_capabilities: row.work_capabilities?.map((capability) => ({
           ...capability,
-          labour_rate: undefined,
-          with_material_rate: undefined,
+          work_type_rates: undefined,
         })),
       })),
       staff: visible.master.staff

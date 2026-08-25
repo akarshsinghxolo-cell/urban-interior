@@ -502,7 +502,7 @@ function ProfileTab({ mode, selected, model }: any) {
             </div>
             <div>
               <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Capabilities</p>
-              <div className="flex flex-wrap gap-1.5">{(selected.work_capabilities || []).map((cap: any) => <span key={cap.subcategory_id} className="rounded-full border border-border bg-muted/30 px-2 py-1 text-[11px]">{cap.subcategory_name || cap.subcategory_id}{cap.labour_rate ? ` · ${formatINR(cap.labour_rate)}` : ""}</span>)}{!selected.work_capabilities?.length && <span className="text-xs text-muted-foreground">No structured capabilities recorded.</span>}</div>
+              <div className="flex flex-wrap gap-1.5">{(selected.work_capabilities || []).flatMap((cap: any) => (cap.work_type_rates || []).map((rate: any) => <span key={`${cap.subcategory_id}-${rate.work_type_id}`} className="rounded-full border border-border bg-muted/30 px-2 py-1 text-[11px]">{cap.subcategory_name || cap.subcategory_id} · {rate.work_type_name || "Work type"}{rate.labour_rate != null ? ` · ${formatINR(rate.labour_rate)}` : ""}</span>))}{!selected.work_capabilities?.length && <span className="text-xs text-muted-foreground">No structured capabilities recorded.</span>}</div>
             </div>
           </div>
         )}
@@ -522,7 +522,7 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
           {mode === "vendor"
             ? model.rates.map((rate: any) => <SmallRecord key={rate.id} title={rate.article_name || "Article"} subtitle={[rate.brand, rate.grade, rate.unit_id, rate.valid_from && `From ${formatOptionalDate(rate.valid_from)}`].filter(Boolean).join(" · ")} amount={rate.rate ?? rate.labour_rate} onOpen={() => openDetail("vendorRate", rate.id)} />)
             : model.rates.map((rate: any) => <ContractorRateRecord key={rate.id} rate={rate} />)}
-          {!model.rates.length && <EmptyState title="No structured rates" description={mode === "vendor" ? "Add Vendor rates from Vendor Price Matrix or an actual invoice." : "Add labour and with-material rates while editing this contractor's capabilities."} />}
+          {!model.rates.length && <EmptyState title="No structured rates" description={mode === "vendor" ? "Add Vendor rates from Vendor Price Matrix or an actual invoice." : "Add labour rates by work type while editing this contractor's capabilities."} />}
         </div>
       </section>
 
@@ -556,21 +556,19 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
 
 function ContractorRateRecord({ rate }: { rate: Record<string, any> }) {
   const labourRate = rate.labour_rate ?? rate.rate;
-  const withMaterialRate = rate.with_material_rate;
   return (
     <div className="rounded-xl border border-border bg-muted/10 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-bold">{rate.work_subcategory_name || rate.trade || "Contractor rate"}</p>
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            {[rate.article_name || "General rate", rate.unit_id].filter(Boolean).join(" · ")}
+            {[rate.work_type_name || "Work type", rate.unit_id].filter(Boolean).join(" · ")}
           </p>
         </div>
-        {rate.article_name && <StatusBadge label="Material-specific" />}
+        <StatusBadge label="Labour only" />
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-3">
         <RateValue label="Labour" value={labourRate != null ? formatINR(labourRate) : "—"} />
-        <RateValue label="With material" value={withMaterialRate != null ? formatINR(withMaterialRate) : "—"} />
       </div>
     </div>
   );

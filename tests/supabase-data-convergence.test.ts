@@ -141,7 +141,9 @@ describe("Supabase persistence convergence", () => {
     expect(authorized).toContain("function canonicalizeContractorRateOperations(");
     expect(authorized).toContain("contractorRates = contractorRateProjection(");
     expect(authorized).toContain("canonicalizeContractorRateOperations(current.data, commitOperations)");
-    expect(profile).toContain("db.master.workSubcategories.find((row) => row.id === capability.subcategory_id)?.unit_id");
+    expect(profile).toContain("workTypesForSubcategory(subcategory)");
+    expect(profile).toContain("rate.work_type_id === workTypeRate.work_type_id");
+    expect(profile).toContain("work_type_name: workTypeName");
   });
 
   test("persists the work catalog in Supabase and stops runtime JSON replacement", async () => {
