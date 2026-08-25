@@ -49,8 +49,17 @@ describe("contractor and vendor domain separation", () => {
   test("contractor form contains the standard work-type rate row and no Article editor", () => {
     const source = read("../src/components/rdash/ContractorFormDialog.tsx");
     expect(source).toContain("work_type_rates");
-    expect(source).toContain("<span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span>");
+    expect(source).toContain(">Work type</span>");
+    expect(source).toContain(">Execution unit</span>");
+    expect(source).toContain(">Material rate</span>");
+    expect(source).toContain(">Labour rate</span>");
+    expect(source).toContain(">Total rate</span>");
+    expect(source).toContain(">Notes</span>");
     expect(source).toContain("Add work type");
+    expect(source).toContain("sm:max-w-4xl");
+    expect(source).toContain("grid-cols-1 gap-2");
+    expect(source).not.toContain("min-w-[860px]");
+    expect(source).not.toContain("overflow-x-auto");
     expect(source).not.toContain("subcategoryArticleMap");
     expect(source).not.toContain("with_material_rate");
     expect(source).not.toContain("article_rates");

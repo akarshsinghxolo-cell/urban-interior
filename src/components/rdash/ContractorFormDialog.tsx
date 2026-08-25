@@ -638,7 +638,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && requestClose()}>
-      <DialogContent className="max-h-[94vh] max-w-4xl gap-0 p-0">
+      <DialogContent className="max-h-[94vh] gap-0 p-0 sm:max-w-4xl">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             {isEdit ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -773,35 +773,48 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold">{capability.subcategory_name}</span>
                         <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="shrink-0 text-destructive"><X className="h-4 w-4" /></button>
                       </div>
-                      <div className="mt-2 overflow-x-auto rounded-md border">
-                        <div className="grid min-w-[860px] grid-cols-[1.15fr_1fr_0.8fr_0.8fr_0.75fr_1.2fr_2rem] gap-2 bg-muted/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span />
-                        </div>
+                      <div className="mt-2 rounded-md border">
                         {capability.work_type_rates.map((rate) => {
                           const average = contractorWorkTypeAverages(db.master.contractorRates, capability.subcategory_id, rate.work_type_id, editId);
                           const total = (Number(rate.material_rate) || 0) + (Number(rate.labour_rate) || 0);
                           return (
-                          <div key={rate.work_type_id} className="grid min-w-[860px] grid-cols-[1.15fr_1fr_0.8fr_0.8fr_0.75fr_1.2fr_2rem] items-center gap-2 border-t px-2 py-1.5 first:border-t-0">
-                            {rate.custom ? <Input value={rate.work_type_name} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { work_type_name: event.target.value })} placeholder="Work type" className="h-8 text-[10px]" /> : <span className="truncate text-[10px] font-medium" title={rate.work_type_name}>{rate.work_type_name}</span>}
-                            <select value={rate.unit_id} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { unit_id: event.target.value })} className="h-8 rounded-md border border-input bg-card px-2 text-[10px]">
-                              {db.master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}
-                            </select>
-                            <Input
-                              type="number"
-                              min={0}
-                              value={rate.material_rate}
-                              onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { material_rate: event.target.value })}
-                              placeholder="₹ 0"
-                              aria-label={`${rate.work_type_name} material rate`}
-                              className="h-7 px-1.5 text-[10px]"
-                            />
-                            <Input type="number" min={0} value={rate.labour_rate} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { labour_rate: event.target.value })} placeholder="₹ 0" aria-label={`${rate.work_type_name} labour rate`} className="h-7 px-1.5 text-[10px]" />
-                            <span className="rounded bg-muted px-2 py-1.5 text-[10px] font-semibold">₹ {total}</span>
-                            <div>
-                              <Input value={rate.notes} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { notes: event.target.value })} placeholder="Notes" className="h-7 px-1.5 text-[10px]" />
-                              {average.contractor_count ? <p className="mt-0.5 text-[9px] text-muted-foreground">Other contractors avg: material ₹{Math.round(average.material_rate || 0)} · labour ₹{Math.round(average.labour_rate || 0)} · total ₹{Math.round(average.total_rate || 0)} ({average.contractor_count})</p> : null}
+                          <div key={rate.work_type_id} className="relative grid min-w-0 grid-cols-1 gap-2 border-t p-2 pr-9 first:border-t-0 sm:grid-cols-2 lg:grid-cols-3">
+                            <label className="min-w-0 space-y-1">
+                              <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Work type</span>
+                              {rate.custom ? <Input value={rate.work_type_name} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { work_type_name: event.target.value })} placeholder="Work type" className="h-8 min-w-0 text-[10px]" /> : <span className="block h-8 truncate rounded-md border border-input bg-muted/30 px-2 py-2 text-[10px] font-medium" title={rate.work_type_name}>{rate.work_type_name}</span>}
+                            </label>
+                            <label className="min-w-0 space-y-1">
+                              <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Execution unit</span>
+                              <select value={rate.unit_id} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { unit_id: event.target.value })} className="h-8 w-full min-w-0 rounded-md border border-input bg-card px-2 text-[10px]">
+                                {db.master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}
+                              </select>
+                            </label>
+                            <label className="min-w-0 space-y-1">
+                              <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Material rate</span>
+                              <Input
+                                type="number"
+                                min={0}
+                                value={rate.material_rate}
+                                onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { material_rate: event.target.value })}
+                                placeholder="₹ 0"
+                                aria-label={`${rate.work_type_name} material rate`}
+                                className="h-8 min-w-0 px-2 text-[10px]"
+                              />
+                            </label>
+                            <label className="min-w-0 space-y-1">
+                              <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Labour rate</span>
+                              <Input type="number" min={0} value={rate.labour_rate} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { labour_rate: event.target.value })} placeholder="₹ 0" aria-label={`${rate.work_type_name} labour rate`} className="h-8 min-w-0 px-2 text-[10px]" />
+                            </label>
+                            <div className="min-w-0 space-y-1">
+                              <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Total rate</span>
+                              <span className="block h-8 rounded-md bg-muted px-2 py-2 text-[10px] font-semibold">₹ {total}</span>
                             </div>
-                            <button type="button" aria-label={`Remove ${rate.work_type_name || "work type"}`} onClick={() => removeCapabilityWorkType(capability.subcategory_id, rate.work_type_id)} className="text-destructive"><X className="h-3.5 w-3.5" /></button>
+                            <label className="min-w-0 space-y-1">
+                              <span className="block text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Notes</span>
+                              <Input value={rate.notes} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { notes: event.target.value })} placeholder="Notes" className="h-8 min-w-0 px-2 text-[10px]" />
+                            </label>
+                            {average.contractor_count ? <p className="text-[9px] text-muted-foreground sm:col-span-2 lg:col-span-3">Other contractors avg: material ₹{Math.round(average.material_rate || 0)} · labour ₹{Math.round(average.labour_rate || 0)} · total ₹{Math.round(average.total_rate || 0)} ({average.contractor_count})</p> : null}
+                            <button type="button" aria-label={`Remove ${rate.work_type_name || "work type"}`} onClick={() => removeCapabilityWorkType(capability.subcategory_id, rate.work_type_id)} className="absolute right-2 top-2 text-destructive"><X className="h-3.5 w-3.5" /></button>
                           </div>
                         );})}
                         <button type="button" onClick={() => addCapabilityWorkType(capability.subcategory_id)} className="m-2 inline-flex items-center gap-1 rounded border border-dashed px-2 py-1 text-[10px] font-semibold text-primary"><Plus className="h-3 w-3" />Add work type</button>
