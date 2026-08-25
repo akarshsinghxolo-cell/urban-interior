@@ -326,7 +326,7 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
       </div>
 
       <EntityFormDialog type={mode} editId={entityEditId} open={entityDialogOpen} onClose={() => { setEntityDialogOpen(false); setEntityEditId(undefined); }} onSaved={(id) => setSelectedId(id)} />
-      {mode === "vendor" && <PartnerBusinessDialog mode="vendor" partner={selected} open={businessDialogOpen} onClose={() => setBusinessDialogOpen(false)} />}
+      {mode === "vendor" && <VendorBusinessDialog partner={selected} open={businessDialogOpen} onClose={() => setBusinessDialogOpen(false)} />}
     </div>
   );
 }
@@ -358,7 +358,7 @@ function buildPartnerModel(mode: Partner360Mode, db: any, partner: PartnerRecord
     const relatedIds = new Set<string>([partner.id, ...purchaseOrders.map((x: any) => x.id), ...rfqs.map((x: any) => x.id), ...bids.map((x: any) => x.id), ...bills.map((x: any) => x.id), ...payments.map((x: any) => x.id), ...grns.map((x: any) => x.id)]);
     const activity = (db.auditLog || []).filter((row: any) => row.entity_id && relatedIds.has(row.entity_id)).sort((a: any, b: any) => auditTime(b).localeCompare(auditTime(a)));
     const compliance: ChecklistItem[] = [
-      { label: "GSTIN", complete: Boolean(partner.gstin || partner.business_gst), detail: partner.gstin || partner.business_gst, critical: true },
+      { label: "GSTIN", complete: Boolean(partner.gstin), detail: partner.gstin, critical: true },
       { label: "PAN", complete: Boolean(partner.pan), detail: partner.pan, critical: true },
       { label: "Bank account and IFSC", complete: Boolean(partner.bank_account && partner.ifsc), detail: partner.bank_account && partner.ifsc ? `${partner.bank_account} · ${partner.ifsc}` : undefined, critical: true },
       { label: "Bank verification", complete: Boolean(partner.verified_bank), detail: partner.verified_bank ? "Verified" : "Pending verification", critical: true },
@@ -390,16 +390,9 @@ function buildPartnerModel(mode: Partner360Mode, db: any, partner: PartnerRecord
   catch { outstanding = Math.max(0, totalBilled - totalPaid - settlements.reduce((sum: number, row: any) => sum + (row.payable_amount || 0), 0)); }
   const relatedIds = new Set<string>([partner.id, ...workOrders.map((x: any) => x.id), ...bids.map((x: any) => x.id), ...bills.map((x: any) => x.id), ...payments.map((x: any) => x.id), ...settlements.map((x: any) => x.id)]);
   const activity = (db.auditLog || []).filter((row: any) => row.entity_id && relatedIds.has(row.entity_id)).sort((a: any, b: any) => auditTime(b).localeCompare(auditTime(a)));
-  const insuranceValid = partner.insurance_expiry ? new Date(partner.insurance_expiry).getTime() >= Date.now() : false;
   const compliance: ChecklistItem[] = [
-    { label: "GSTIN", complete: Boolean(partner.business_gst), detail: partner.business_gst, optional: true },
-    { label: "PAN", complete: Boolean(partner.pan), detail: partner.pan, optional: true },
-    { label: "Bank account and IFSC", complete: Boolean(partner.bank_account && partner.ifsc), detail: partner.bank_account && partner.ifsc ? `${partner.bank_account} · ${partner.ifsc}` : undefined, optional: true },
-    { label: "Bank verification", complete: Boolean(partner.bank_verified), detail: partner.bank_verified ? "Verified" : "Not verified", optional: true },
-    { label: "Supervisor contact", complete: Boolean(partner.supervisor_name && partner.supervisor_phone), detail: partner.supervisor_name && partner.supervisor_phone ? `${partner.supervisor_name} · ${partner.supervisor_phone}` : undefined },
-    { label: "Labour registration", complete: Boolean(partner.labour_registration_no), detail: partner.labour_registration_no, optional: true },
-    { label: "Insurance", complete: insuranceValid, detail: partner.insurance_expiry ? `Expires ${formatOptionalDate(partner.insurance_expiry)}` : "Not recorded", optional: true },
-    { label: "PF / ESI", complete: Boolean(partner.pf_no || partner.esi_no), detail: [partner.pf_no && `PF ${partner.pf_no}`, partner.esi_no && `ESI ${partner.esi_no}`].filter(Boolean).join(" · ") || undefined },
+    { label: "Capacity", complete: partner.available_workers != null, detail: partner.available_workers != null ? `${partner.available_workers} workers available` : undefined },
+    { label: "Service radius", complete: partner.service_radius_km != null, detail: partner.service_radius_km != null ? `${partner.service_radius_km} km` : undefined, optional: true },
     { label: "Photo and business card", complete: Boolean(partner.photo_attachment_id && partner.business_card_attachment_id) },
     { label: "Structured capabilities", complete: Boolean(partner.work_capabilities?.length), detail: `${partner.work_capabilities?.length || 0} capability record${partner.work_capabilities?.length === 1 ? "" : "s"}` },
   ];
@@ -493,16 +486,13 @@ function ProfileTab({ mode, selected, model }: any) {
             <div className="grid gap-2 sm:grid-cols-2">
               <InfoCell label="Trade" value={selected.trade || selected.categories?.join(", ")} />
               <InfoCell label="Workers" value={selected.available_workers != null ? `${selected.available_workers} available` : selected.worker_count_range} />
-              <InfoCell label="Concurrent sites" value={selected.concurrent_site_limit} />
-              <InfoCell label="Mobilisation" value={formatOptionalDate(selected.earliest_mobilisation_date)} />
-              <InfoCell label="Supervisor" value={selected.supervisor_name} />
-              <InfoCell label="Supervisor phone" value={selected.supervisor_phone} />
+              <InfoCell label="Service radius" value={selected.service_radius_km != null ? `${selected.service_radius_km} km` : "—"} />
               <InfoCell label="Politeness" value={titleCase(selected.politeness_rating || "not rated")} />
               <InfoCell label="Deadline commitment" value={titleCase(selected.deadline_commitment || "not rated")} />
             </div>
             <div>
               <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Capabilities</p>
-              <div className="flex flex-wrap gap-1.5">{(selected.work_capabilities || []).flatMap((cap: any) => (cap.work_type_rates || []).map((rate: any) => <span key={`${cap.subcategory_id}-${rate.work_type_id}`} className="rounded-full border border-border bg-muted/30 px-2 py-1 text-[11px]">{cap.subcategory_name || cap.subcategory_id} · {rate.work_type_name || "Work type"}{rate.labour_rate != null ? ` · ${formatINR(rate.labour_rate)}` : ""}</span>))}{!selected.work_capabilities?.length && <span className="text-xs text-muted-foreground">No structured capabilities recorded.</span>}</div>
+              <div className="flex flex-wrap gap-1.5">{(selected.work_capabilities || []).flatMap((cap: any) => (cap.work_type_rates || []).map((rate: any) => <span key={`${cap.subcategory_id}-${rate.work_type_id}`} className="rounded-full border border-border bg-muted/30 px-2 py-1 text-[11px]">{cap.subcategory_name || cap.subcategory_id} · {rate.work_type_name || "Work type"} · {rate.unit_id || "—"} · Material {rate.material_rate == null ? "—" : formatINR(rate.material_rate)} · Labour {rate.labour_rate == null ? "—" : formatINR(rate.labour_rate)}</span>))}{!selected.work_capabilities?.length && <span className="text-xs text-muted-foreground">No structured capabilities recorded.</span>}</div>
             </div>
           </div>
         )}
@@ -522,7 +512,7 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
           {mode === "vendor"
             ? model.rates.map((rate: any) => <SmallRecord key={rate.id} title={rate.article_name || "Article"} subtitle={[rate.brand, rate.grade, rate.unit_id, rate.valid_from && `From ${formatOptionalDate(rate.valid_from)}`].filter(Boolean).join(" · ")} amount={rate.rate ?? rate.labour_rate} onOpen={() => openDetail("vendorRate", rate.id)} />)
             : model.rates.map((rate: any) => <ContractorRateRecord key={rate.id} rate={rate} />)}
-          {!model.rates.length && <EmptyState title="No structured rates" description={mode === "vendor" ? "Add Vendor rates from Vendor Price Matrix or an actual invoice." : "Add labour rates by work type while editing this contractor's capabilities."} />}
+          {!model.rates.length && <EmptyState title="No structured rates" description={mode === "vendor" ? "Add Vendor rates from Vendor Price Matrix or an actual invoice." : "Add material and labour rates by work type while editing this contractor."} />}
         </div>
       </section>
 
@@ -539,8 +529,6 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
             </> : <>
               <InfoCell label="Crew range" value={selected.worker_count_range} />
               <InfoCell label="Available workers" value={selected.available_workers} />
-              <InfoCell label="Concurrent-site limit" value={selected.concurrent_site_limit} />
-              <InfoCell label="Earliest mobilisation" value={formatOptionalDate(selected.earliest_mobilisation_date)} />
               <InfoCell label="Service radius" value={selected.service_radius_km != null ? `${selected.service_radius_km} km` : "—"} />
             </>}
           </div>
@@ -555,7 +543,9 @@ function CommercialTab({ mode, selected, model, openDetail }: any) {
 }
 
 function ContractorRateRecord({ rate }: { rate: Record<string, any> }) {
-  const labourRate = rate.labour_rate ?? rate.rate;
+  const materialRate = rate.material_rate;
+  const labourRate = rate.labour_rate;
+  const totalRate = (materialRate || 0) + (labourRate || 0);
   return (
     <div className="rounded-xl border border-border bg-muted/10 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -565,10 +555,12 @@ function ContractorRateRecord({ rate }: { rate: Record<string, any> }) {
             {[rate.work_type_name || "Work type", rate.unit_id].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <StatusBadge label="Labour only" />
+        <StatusBadge label={rate.unit_id || "No unit"} />
       </div>
-      <div className="mt-3">
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <RateValue label="Material" value={materialRate != null ? formatINR(materialRate) : "—"} />
         <RateValue label="Labour" value={labourRate != null ? formatINR(labourRate) : "—"} />
+        <RateValue label="Total" value={formatINR(totalRate)} />
       </div>
     </div>
   );
@@ -639,9 +631,8 @@ function ActivityTab({ mode, selected, model }: any) {
   );
 }
 
-function PartnerBusinessDialog({ mode, partner, open, onClose }: { mode: Partner360Mode; partner: PartnerRecord; open: boolean; onClose: () => void }) {
+function VendorBusinessDialog({ partner, open, onClose }: { partner: PartnerRecord; open: boolean; onClose: () => void }) {
   const updateVendor = useRDashStore((state) => state.updateVendor);
-  const updateContractor = useRDashStore((state) => state.updateContractor);
   const [draft, setDraft] = React.useState<Record<string, any>>({});
 
   React.useEffect(() => {
@@ -652,7 +643,7 @@ function PartnerBusinessDialog({ mode, partner, open, onClose }: { mode: Partner
       whatsapp: partner.whatsapp || partner.phone || "",
       alternate_phone: partner.alternate_phone || "",
       status: partner.status || "active",
-      gstin: partner.gstin || partner.business_gst || "",
+      gstin: partner.gstin || "",
       pan: partner.pan || "",
       bank_account: partner.bank_account || "",
       ifsc: partner.ifsc || "",
@@ -664,17 +655,6 @@ function PartnerBusinessDialog({ mode, partner, open, onClose }: { mode: Partner
       warranty_terms: partner.warranty_terms || "",
       udyam_no: partner.udyam_no || "",
       verified_bank: Boolean(partner.verified_bank),
-      supervisor_name: partner.supervisor_name || "",
-      supervisor_phone: partner.supervisor_phone || "",
-      available_workers: partner.available_workers ?? "",
-      concurrent_site_limit: partner.concurrent_site_limit ?? "",
-      earliest_mobilisation_date: partner.earliest_mobilisation_date || "",
-      service_radius_km: partner.service_radius_km ?? "",
-      labour_registration_no: partner.labour_registration_no || "",
-      insurance_expiry: partner.insurance_expiry || "",
-      pf_no: partner.pf_no || "",
-      esi_no: partner.esi_no || "",
-      bank_verified: Boolean(partner.bank_verified),
       notes: partner.notes || "",
     });
   }, [open, partner]);
@@ -690,8 +670,7 @@ function PartnerBusinessDialog({ mode, partner, open, onClose }: { mode: Partner
       status: draft.status,
       notes: draft.notes.trim() || undefined,
     };
-    if (mode === "vendor") {
-      updateVendor(partner.id, {
+    updateVendor(partner.id, {
         ...common,
         gstin: draft.gstin.trim() || undefined,
         pan: draft.pan.trim() || undefined,
@@ -706,38 +685,18 @@ function PartnerBusinessDialog({ mode, partner, open, onClose }: { mode: Partner
         udyam_no: draft.udyam_no.trim() || undefined,
         verified_bank: Boolean(draft.verified_bank),
       } as any);
-    } else {
-      updateContractor(partner.id, {
-        ...common,
-        business_gst: draft.gstin.trim() || undefined,
-        pan: draft.pan.trim() || undefined,
-        bank_account: draft.bank_account.trim() || undefined,
-        ifsc: draft.ifsc.trim() || undefined,
-        supervisor_name: draft.supervisor_name.trim() || undefined,
-        supervisor_phone: draft.supervisor_phone.trim() || undefined,
-        available_workers: numberOrUndefined(draft.available_workers),
-        concurrent_site_limit: numberOrUndefined(draft.concurrent_site_limit),
-        earliest_mobilisation_date: draft.earliest_mobilisation_date || undefined,
-        service_radius_km: numberOrUndefined(draft.service_radius_km),
-        labour_registration_no: draft.labour_registration_no.trim() || undefined,
-        insurance_expiry: draft.insurance_expiry || undefined,
-        pf_no: draft.pf_no.trim() || undefined,
-        esi_no: draft.esi_no.trim() || undefined,
-        bank_verified: Boolean(draft.bank_verified),
-      } as any);
-    }
-    toast.success(`${mode === "vendor" ? "Vendor" : "Contractor"} business details updated`);
+    toast.success("Vendor business details updated");
     onClose();
   };
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
       <DialogContent className="max-h-[92vh] max-w-3xl overflow-hidden p-0">
-        <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>{mode === "vendor" ? "Vendor business details" : "Contractor business details"}</DialogTitle><DialogDescription>Structured identity, tax, banking, commercial and operational readiness fields used by the 360° workspace.</DialogDescription></DialogHeader>
+        <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Vendor business details</DialogTitle><DialogDescription>Structured identity, tax, banking, commercial and operational readiness fields used by the 360° workspace.</DialogDescription></DialogHeader>
         <div className="rd-scroll max-h-[68vh] space-y-4 overflow-y-auto px-5 py-4">
-          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Identity and lifecycle</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.legal_name || ""} onChange={(e) => set("legal_name", e.target.value)} placeholder="Legal / registered name" /><Input value={draft.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="Email" type="email" /><Input value={draft.whatsapp || ""} onChange={(e) => set("whatsapp", e.target.value)} placeholder="WhatsApp number" /><Input value={draft.alternate_phone || ""} onChange={(e) => set("alternate_phone", e.target.value)} placeholder="Alternate phone" /><select value={draft.status || "active"} onChange={(e) => set("status", e.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value={mode === "vendor" ? "blocked" : "blacklisted"}>{mode === "vendor" ? "Blocked" : "Blacklisted"}</option><option value="inactive">Inactive</option></select></div></section>
-          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tax and banking</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.gstin || ""} onChange={(e) => set("gstin", e.target.value.toUpperCase())} placeholder="GSTIN" /><Input value={draft.pan || ""} onChange={(e) => set("pan", e.target.value.toUpperCase())} placeholder="PAN" /><Input value={draft.bank_account || ""} onChange={(e) => set("bank_account", e.target.value)} placeholder="Bank account number" /><Input value={draft.ifsc || ""} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} placeholder="IFSC" /></div><label className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(mode === "vendor" ? draft.verified_bank : draft.bank_verified)} onChange={(e) => set(mode === "vendor" ? "verified_bank" : "bank_verified", e.target.checked)} />Bank details independently verified</label></section>
-          {mode === "vendor" ? <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Commercial terms</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.payment_terms || ""} onChange={(e) => set("payment_terms", e.target.value)} placeholder="Payment terms" /><Input value={draft.credit_days ?? ""} onChange={(e) => set("credit_days", e.target.value)} placeholder="Credit days" type="number" /><Input value={draft.credit_limit ?? ""} onChange={(e) => set("credit_limit", e.target.value)} placeholder="Credit limit" type="number" /><Input value={draft.minimum_order_value ?? ""} onChange={(e) => set("minimum_order_value", e.target.value)} placeholder="Minimum order value" type="number" /><Input value={draft.standard_lead_time_days ?? ""} onChange={(e) => set("standard_lead_time_days", e.target.value)} placeholder="Standard lead time (days)" type="number" /><Input value={draft.udyam_no || ""} onChange={(e) => set("udyam_no", e.target.value)} placeholder="MSME / Udyam number" /><Input value={draft.warranty_terms || ""} onChange={(e) => set("warranty_terms", e.target.value)} placeholder="Warranty terms" className="sm:col-span-2" /></div></section> : <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Capacity and compliance</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.supervisor_name || ""} onChange={(e) => set("supervisor_name", e.target.value)} placeholder="Supervisor / foreman name" /><Input value={draft.supervisor_phone || ""} onChange={(e) => set("supervisor_phone", e.target.value)} placeholder="Supervisor phone" /><Input value={draft.available_workers ?? ""} onChange={(e) => set("available_workers", e.target.value)} placeholder="Workers currently available" type="number" /><Input value={draft.concurrent_site_limit ?? ""} onChange={(e) => set("concurrent_site_limit", e.target.value)} placeholder="Concurrent site limit" type="number" /><Input value={draft.earliest_mobilisation_date || ""} onChange={(e) => set("earliest_mobilisation_date", e.target.value)} type="date" /><Input value={draft.service_radius_km ?? ""} onChange={(e) => set("service_radius_km", e.target.value)} placeholder="Service radius (km)" type="number" /><Input value={draft.labour_registration_no || ""} onChange={(e) => set("labour_registration_no", e.target.value)} placeholder="Labour registration number" /><Input value={draft.insurance_expiry || ""} onChange={(e) => set("insurance_expiry", e.target.value)} type="date" /><Input value={draft.pf_no || ""} onChange={(e) => set("pf_no", e.target.value)} placeholder="PF number" /><Input value={draft.esi_no || ""} onChange={(e) => set("esi_no", e.target.value)} placeholder="ESI number" /></div></section>}
+          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Identity and lifecycle</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.legal_name || ""} onChange={(e) => set("legal_name", e.target.value)} placeholder="Legal / registered name" /><Input value={draft.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="Email" type="email" /><Input value={draft.whatsapp || ""} onChange={(e) => set("whatsapp", e.target.value)} placeholder="WhatsApp number" /><Input value={draft.alternate_phone || ""} onChange={(e) => set("alternate_phone", e.target.value)} placeholder="Alternate phone" /><select value={draft.status || "active"} onChange={(e) => set("status", e.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blocked">Blocked</option><option value="inactive">Inactive</option></select></div></section>
+          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tax and banking</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.gstin || ""} onChange={(e) => set("gstin", e.target.value.toUpperCase())} placeholder="GSTIN" /><Input value={draft.pan || ""} onChange={(e) => set("pan", e.target.value.toUpperCase())} placeholder="PAN" /><Input value={draft.bank_account || ""} onChange={(e) => set("bank_account", e.target.value)} placeholder="Bank account number" /><Input value={draft.ifsc || ""} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} placeholder="IFSC" /></div><label className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(draft.verified_bank)} onChange={(e) => set("verified_bank", e.target.checked)} />Bank details independently verified</label></section>
+          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Commercial terms</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.payment_terms || ""} onChange={(e) => set("payment_terms", e.target.value)} placeholder="Payment terms" /><Input value={draft.credit_days ?? ""} onChange={(e) => set("credit_days", e.target.value)} placeholder="Credit days" type="number" /><Input value={draft.credit_limit ?? ""} onChange={(e) => set("credit_limit", e.target.value)} placeholder="Credit limit" type="number" /><Input value={draft.minimum_order_value ?? ""} onChange={(e) => set("minimum_order_value", e.target.value)} placeholder="Minimum order value" type="number" /><Input value={draft.standard_lead_time_days ?? ""} onChange={(e) => set("standard_lead_time_days", e.target.value)} placeholder="Standard lead time (days)" type="number" /><Input value={draft.udyam_no || ""} onChange={(e) => set("udyam_no", e.target.value)} placeholder="MSME / Udyam number" /><Input value={draft.warranty_terms || ""} onChange={(e) => set("warranty_terms", e.target.value)} placeholder="Warranty terms" className="sm:col-span-2" /></div></section>
           <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Internal notes</p><Textarea value={draft.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={3} placeholder="Relationship notes, special conditions, escalation or operating instructions" /></section>
         </div>
         <DialogFooter className="border-t border-border px-5 py-3"><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={save}><CheckCircle2 className="mr-1 h-4 w-4" />Save business details</Button></DialogFooter>

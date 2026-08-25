@@ -15,12 +15,6 @@ import { cn } from "@/lib/utils";
 const newCatalogId = (prefix: string) =>
   `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 
-const optionalRate = (value: string): number | undefined => {
-  if (!value.trim()) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-};
-
 export function AddWorkCategoryAction({
   onCreated,
   className,
@@ -99,16 +93,12 @@ export function AddWorkSubcategoryAction({
   const [adding, setAdding] = React.useState(false);
   const [name, setName] = React.useState("");
   const [unitId, setUnitId] = React.useState("sqft");
-  const [labourRate, setLabourRate] = React.useState("");
-  const [materialRate, setMaterialRate] = React.useState("");
   const [notes, setNotes] = React.useState("");
 
   function reset() {
     setAdding(false);
     setName("");
     setUnitId("sqft");
-    setLabourRate("");
-    setMaterialRate("");
     setNotes("");
   }
 
@@ -132,8 +122,6 @@ export function AddWorkSubcategoryAction({
         id: defaultWorkTypeId(subcategoryId),
         name: "Standard",
         unit_id: unitId,
-        labour_rate: optionalRate(labourRate),
-        material_rate: optionalRate(materialRate),
         notes: notes.trim() || undefined,
         created_at: now,
         updated_at: now,
@@ -167,8 +155,6 @@ export function AddWorkSubcategoryAction({
         <select value={unitId} onChange={(event) => setUnitId(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs" aria-label="Execution unit">
           {master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol}</option>)}
         </select>
-        <Input type="number" min={0} value={labourRate} onChange={(event) => setLabourRate(event.target.value)} placeholder="Labour ₹" className="h-8 text-xs" />
-        <Input type="number" min={0} value={materialRate} onChange={(event) => setMaterialRate(event.target.value)} placeholder="Material ₹" className="h-8 text-xs" />
       </div>
       <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Scope notes (optional)" className="min-h-14 text-xs" />
       <div className="flex justify-end gap-1.5">

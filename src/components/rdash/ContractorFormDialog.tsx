@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CheckCircle2, Navigation, Pencil, Plus, Search, X } from "lucide-react";
+import { Navigation, Pencil, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,13 +41,14 @@ import {
   contractorDuplicateConflicts,
   contractorFormProjection,
   contractorProfileValidationError,
+  contractorWorkTypeAverages,
   normalizeContractorForWrite,
-  verifiedContractorBankProof,
   type ContractorCapability,
   type ContractorLifecycleStatus,
   type ContractorProfileRecord,
 } from "@/lib/rdash/contractor-profile";
-import { workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { createWorkTypeId, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import type { WorkSubcategory } from "@/lib/rdash/types";
 import { FilePreview } from "./FilePreview";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
@@ -68,7 +69,15 @@ type MediaValue = "" | PendingMedia | ExistingMedia;
 type CapabilityDraft = {
   subcategory_id: string;
   subcategory_name?: string;
-  work_type_rates: Record<string, string>;
+  work_type_rates: Array<{
+    work_type_id: string;
+    work_type_name: string;
+    unit_id: string;
+    material_rate: string;
+    labour_rate: string;
+    notes: string;
+    custom?: boolean;
+  }>;
 };
 
 type Draft = {
@@ -86,20 +95,8 @@ type Draft = {
   politeness: string;
   workerRange: string;
   deadline: string;
-  gstin: string;
-  pan: string;
-  bankAccount: string;
-  ifsc: string;
-  supervisorName: string;
-  supervisorPhone: string;
   availableWorkers: string;
-  concurrentSiteLimit: string;
-  earliestMobilisationDate: string;
   serviceRadiusKm: string;
-  labourRegistrationNo: string;
-  insuranceExpiry: string;
-  pfNo: string;
-  esiNo: string;
   notes: string;
 };
 
@@ -118,20 +115,8 @@ const EMPTY_DRAFT: Draft = {
   politeness: "moderate",
   workerRange: "1-3",
   deadline: "usual",
-  gstin: "",
-  pan: "",
-  bankAccount: "",
-  ifsc: "",
-  supervisorName: "",
-  supervisorPhone: "",
   availableWorkers: "",
-  concurrentSiteLimit: "",
-  earliestMobilisationDate: "",
   serviceRadiusKm: "",
-  labourRegistrationNo: "",
-  insuranceExpiry: "",
-  pfNo: "",
-  esiNo: "",
   notes: "",
 };
 
@@ -171,32 +156,41 @@ function draftFromRecord(record: ContractorProfileRecord): Draft {
     politeness: String(record.politeness_rating || "moderate"),
     workerRange: String(record.worker_count_range || "1-3"),
     deadline: String(record.deadline_commitment || "usual"),
-    gstin: String(record.business_gst || ""),
-    pan: String(record.pan || ""),
-    bankAccount: String(record.bank_account || ""),
-    ifsc: String(record.ifsc || ""),
-    supervisorName: String(record.supervisor_name || ""),
-    supervisorPhone: String(record.supervisor_phone || ""),
     availableWorkers: record.available_workers == null ? "" : String(record.available_workers),
-    concurrentSiteLimit: record.concurrent_site_limit == null ? "" : String(record.concurrent_site_limit),
-    earliestMobilisationDate: String(record.earliest_mobilisation_date || ""),
     serviceRadiusKm: record.service_radius_km == null ? "" : String(record.service_radius_km),
-    labourRegistrationNo: String(record.labour_registration_no || ""),
-    insuranceExpiry: String(record.insurance_expiry || ""),
-    pfNo: String(record.pf_no || ""),
-    esiNo: String(record.esi_no || ""),
     notes: String(record.notes || ""),
   };
 }
 
-function capabilitiesToDraft(capabilities: ContractorCapability[]): CapabilityDraft[] {
+function capabilitiesToDraft(capabilities: ContractorCapability[], subcategories: WorkSubcategory[]): CapabilityDraft[] {
   return capabilities.map((row) => ({
     subcategory_id: row.subcategory_id,
     subcategory_name: row.subcategory_name,
-    work_type_rates: Object.fromEntries((row.work_type_rates || []).map((rate) => [
-      rate.work_type_id,
-      rate.labour_rate == null ? "" : String(rate.labour_rate),
-    ])),
+    work_type_rates: (() => {
+      const subcategory = subcategories.find((item) => item.id === row.subcategory_id);
+      const stored = new Map((row.work_type_rates || []).map((rate) => [rate.work_type_id, rate]));
+      const catalog = (subcategory ? workTypesForSubcategory(subcategory) : []).map((workType) => {
+        const rate = stored.get(workType.id);
+        stored.delete(workType.id);
+        return {
+          work_type_id: workType.id,
+          work_type_name: workType.name,
+          unit_id: rate?.unit_id || workType.unit_id || subcategory?.unit_id || "pcs",
+          material_rate: rate?.material_rate == null ? "" : String(rate.material_rate),
+          labour_rate: rate?.labour_rate == null ? "" : String(rate.labour_rate),
+          notes: rate?.notes || "",
+        };
+      });
+      return [...catalog, ...Array.from(stored.values()).map((rate) => ({
+        work_type_id: rate.work_type_id,
+        work_type_name: rate.work_type_name || "",
+        unit_id: rate.unit_id || subcategory?.unit_id || "pcs",
+        material_rate: rate.material_rate == null ? "" : String(rate.material_rate),
+        labour_rate: rate.labour_rate == null ? "" : String(rate.labour_rate),
+        notes: rate.notes || "",
+        custom: true,
+      }))];
+    })(),
   }));
 }
 
@@ -273,44 +267,32 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       politeness_rating: draft.politeness,
       worker_count_range: draft.workerRange,
       deadline_commitment: draft.deadline,
-      business_gst: draft.gstin,
-      pan: draft.pan,
-      bank_account: draft.bankAccount,
-      ifsc: draft.ifsc,
       status: draft.status,
       work_capabilities: capabilities.map((row) => ({
         subcategory_id: row.subcategory_id,
         subcategory_name: row.subcategory_name,
-        work_type_rates: workTypesForSubcategory(
-          allSubcategories.find((subcategory) => subcategory.id === row.subcategory_id)!,
-        ).flatMap((workType) => {
-          const value = row.work_type_rates[workType.id]?.trim();
-          return value ? [{
-            work_type_id: workType.id,
-            work_type_name: workType.name,
-            labour_rate: Number(value),
-          }] : [];
+        work_type_rates: row.work_type_rates.flatMap((rate) => {
+          const name = rate.work_type_name.trim();
+          const material = rate.material_rate.trim();
+          const labour = rate.labour_rate.trim();
+          if (!name || (!material && !labour)) return [];
+          return [{
+            work_type_id: rate.custom ? createWorkTypeId(row.subcategory_id, name) : rate.work_type_id,
+            work_type_name: name,
+            unit_id: rate.unit_id,
+            material_rate: material ? Number(material) : undefined,
+            labour_rate: labour ? Number(labour) : undefined,
+            notes: rate.notes.trim() || undefined,
+          }];
         }),
       })),
-      supervisor_name: draft.supervisorName,
-      supervisor_phone: draft.supervisorPhone,
       available_workers: optionalNumber(draft.availableWorkers),
-      concurrent_site_limit: optionalNumber(draft.concurrentSiteLimit),
-      earliest_mobilisation_date: draft.earliestMobilisationDate,
       service_radius_km: optionalNumber(draft.serviceRadiusKm),
-      labour_registration_no: draft.labourRegistrationNo,
-      insurance_expiry: draft.insuranceExpiry,
-      pf_no: draft.pfNo,
-      esi_no: draft.esiNo,
       notes: draft.notes,
-      // Preserve documents added from Governance while the canonical profile
-      // helper synchronizes form-entered PAN, bank, labour, insurance, PF and
-      // ESI details into unverified document-register rows.
       compliance_documents: baselineComplianceDocuments,
     };
     return normalizeContractorForWrite(raw, db, { id: raw.id });
   }, [
-    allSubcategories,
     baselineComplianceDocuments,
     businessCard,
     capabilities,
@@ -321,7 +303,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     latitude,
     longitude,
     referralId,
-    referralQuery,
     reservedId,
   ]);
 
@@ -364,7 +345,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setLatitude(normalized.latitude as number | undefined);
     setLongitude(normalized.longitude as number | undefined);
     setCoordinates(nextCoordinates);
-    setCapabilities(capabilitiesToDraft(normalized.work_capabilities || []));
+    setCapabilities(capabilitiesToDraft(normalized.work_capabilities || [], allSubcategories));
     setContractorPhoto(
       normalized.photo_attachment_id
         ? { attachment_id: String(normalized.photo_attachment_id) }
@@ -430,7 +411,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setLatitude(baseline.latitude as number | undefined);
     setLongitude(baseline.longitude as number | undefined);
     setCoordinates(baselineCoordinateRef.current);
-    setCapabilities(capabilitiesToDraft(baseline.work_capabilities || []));
+    setCapabilities(capabilitiesToDraft(baseline.work_capabilities || [], allSubcategories));
     setReferralId(baseline.source_partner_id as string | undefined);
     setReferralQuery(String(baseline.source_partner_name || ""));
     setContractorPhoto(baseline.photo_attachment_id ? { attachment_id: String(baseline.photo_attachment_id) } : "");
@@ -576,7 +557,14 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
         : [...values, {
             subcategory_id: row.id,
             subcategory_name: row.name,
-            work_type_rates: {},
+            work_type_rates: workTypesForSubcategory(row).map((workType) => ({
+              work_type_id: workType.id,
+              work_type_name: workType.name,
+              unit_id: workType.unit_id || row.unit_id || "pcs",
+              material_rate: "",
+              labour_rate: "",
+              notes: "",
+            })),
           }],
     );
     setDuplicateAcknowledged(false);
@@ -585,22 +573,38 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const updateCapabilityWorkTypeRate = (
     subcategoryId: string,
     workTypeId: string,
-    value: string,
+    patch: Partial<CapabilityDraft["work_type_rates"][number]>,
   ) => setCapabilities((values) => values.map((capability) =>
     capability.subcategory_id === subcategoryId
       ? {
           ...capability,
-          work_type_rates: {
-            ...capability.work_type_rates,
-            [workTypeId]: value,
-          },
+          work_type_rates: capability.work_type_rates.map((rate) => rate.work_type_id === workTypeId ? { ...rate, ...patch } : rate),
         }
       : capability,
   ));
 
-  const bankVerified = verifiedContractorBankProof(
-    (editId ? db.master.contractors.find((row) => row.id === editId) : undefined) as ContractorProfileRecord || {},
-  );
+  const addCapabilityWorkType = (subcategoryId: string) => setCapabilities((values) => values.map((capability) => {
+    if (capability.subcategory_id !== subcategoryId) return capability;
+    const subcategory = allSubcategories.find((row) => row.id === subcategoryId);
+    return {
+      ...capability,
+      work_type_rates: [...capability.work_type_rates, {
+        work_type_id: `wt-${subcategoryId}-draft-${crypto.randomUUID()}`,
+        work_type_name: "",
+        unit_id: subcategory?.unit_id || "pcs",
+        material_rate: "",
+        labour_rate: "",
+        notes: "",
+        custom: true,
+      }],
+    };
+  }));
+
+  const removeCapabilityWorkType = (subcategoryId: string, workTypeId: string) => setCapabilities((values) => values.map((capability) =>
+    capability.subcategory_id === subcategoryId
+      ? { ...capability, work_type_rates: capability.work_type_rates.filter((rate) => rate.work_type_id !== workTypeId) }
+      : capability,
+  ));
 
   const photoField = (
     label: string,
@@ -699,6 +703,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                         key={option.id}
                         type="button"
                         role="option"
+                        aria-selected={option.id === referralId}
                         className="flex w-full justify-between px-3 py-2 text-xs hover:bg-accent"
                         onClick={() => { setReferralId(option.id); setReferralQuery(option.name); setReferralOpen(false); }}
                       >
@@ -762,67 +767,56 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
               <AddWorkCategoryAction className="mt-2" />
               <div className="mt-2 space-y-2">
                 {capabilities.map((capability) => {
-                  const subcategory = allSubcategories.find((row) => row.id === capability.subcategory_id);
-                  const workTypes = subcategory ? workTypesForSubcategory(subcategory) : [];
                   return (
                     <div key={capability.subcategory_id} className="rounded border p-2.5">
                       <div className="flex items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold">{capability.subcategory_name}</span>
                         <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="shrink-0 text-destructive"><X className="h-4 w-4" /></button>
                       </div>
-                      <div className="mt-2 overflow-hidden rounded-md border">
-                        <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-2 bg-muted/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          <span>Work type</span><span>Labour rate ₹</span>
+                      <div className="mt-2 overflow-x-auto rounded-md border">
+                        <div className="grid min-w-[860px] grid-cols-[1.15fr_1fr_0.8fr_0.8fr_0.75fr_1.2fr_2rem] gap-2 bg-muted/50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span />
                         </div>
-                        {workTypes.map((workType) => (
-                          <div key={workType.id} className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-2 border-t px-2 py-1.5 first:border-t-0">
-                            <span className="truncate text-[10px] font-medium" title={workType.name}>{workType.name}</span>
+                        {capability.work_type_rates.map((rate) => {
+                          const average = contractorWorkTypeAverages(db.master.contractorRates, capability.subcategory_id, rate.work_type_id, editId);
+                          const total = (Number(rate.material_rate) || 0) + (Number(rate.labour_rate) || 0);
+                          return (
+                          <div key={rate.work_type_id} className="grid min-w-[860px] grid-cols-[1.15fr_1fr_0.8fr_0.8fr_0.75fr_1.2fr_2rem] items-center gap-2 border-t px-2 py-1.5 first:border-t-0">
+                            {rate.custom ? <Input value={rate.work_type_name} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { work_type_name: event.target.value })} placeholder="Work type" className="h-8 text-[10px]" /> : <span className="truncate text-[10px] font-medium" title={rate.work_type_name}>{rate.work_type_name}</span>}
+                            <select value={rate.unit_id} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { unit_id: event.target.value })} className="h-8 rounded-md border border-input bg-card px-2 text-[10px]">
+                              {db.master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}
+                            </select>
                             <Input
                               type="number"
                               min={0}
-                              value={capability.work_type_rates[workType.id] || ""}
-                              onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, workType.id, event.target.value)}
+                              value={rate.material_rate}
+                              onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { material_rate: event.target.value })}
                               placeholder="₹ 0"
-                              aria-label={`${workType.name} labour rate`}
+                              aria-label={`${rate.work_type_name} material rate`}
                               className="h-7 px-1.5 text-[10px]"
                             />
+                            <Input type="number" min={0} value={rate.labour_rate} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { labour_rate: event.target.value })} placeholder="₹ 0" aria-label={`${rate.work_type_name} labour rate`} className="h-7 px-1.5 text-[10px]" />
+                            <span className="rounded bg-muted px-2 py-1.5 text-[10px] font-semibold">₹ {total}</span>
+                            <div>
+                              <Input value={rate.notes} onChange={(event) => updateCapabilityWorkTypeRate(capability.subcategory_id, rate.work_type_id, { notes: event.target.value })} placeholder="Notes" className="h-7 px-1.5 text-[10px]" />
+                              {average.contractor_count ? <p className="mt-0.5 text-[9px] text-muted-foreground">Other contractors avg: material ₹{Math.round(average.material_rate || 0)} · labour ₹{Math.round(average.labour_rate || 0)} · total ₹{Math.round(average.total_rate || 0)} ({average.contractor_count})</p> : null}
+                            </div>
+                            <button type="button" aria-label={`Remove ${rate.work_type_name || "work type"}`} onClick={() => removeCapabilityWorkType(capability.subcategory_id, rate.work_type_id)} className="text-destructive"><X className="h-3.5 w-3.5" /></button>
                           </div>
-                        ))}
+                        );})}
+                        <button type="button" onClick={() => addCapabilityWorkType(capability.subcategory_id)} className="m-2 inline-flex items-center gap-1 rounded border border-dashed px-2 py-1 text-[10px] font-semibold text-primary"><Plus className="h-3 w-3" />Add work type</button>
                       </div>
-                      {!workTypes.length ? <p className="mt-2 text-[10px] text-destructive">Add a work type in Master Setup before entering contractor rates.</p> : null}
                     </div>
                   );
                 })}
               </div>
             </section>
 
-            <section className="space-y-2 rounded-lg border bg-muted/20 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tax and banking (optional)</p>
-                {bankVerified && <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/10 px-2 py-1 text-[10px] font-semibold text-success"><CheckCircle2 className="h-3 w-3" />Bank proof verified</span>}
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Input value={draft.gstin} onChange={(event) => { set("gstin", event.target.value.toUpperCase()); setDuplicateAcknowledged(false); }} placeholder="GSTIN" maxLength={15} />
-                <Input value={draft.pan} onChange={(event) => { set("pan", event.target.value.toUpperCase()); setDuplicateAcknowledged(false); }} placeholder="PAN" maxLength={10} />
-                <Input value={draft.bankAccount} onChange={(event) => { set("bankAccount", event.target.value.replace(/\D/g, "")); setDuplicateAcknowledged(false); }} placeholder="Bank account number" inputMode="numeric" />
-                <Input value={draft.ifsc} onChange={(event) => set("ifsc", event.target.value.toUpperCase())} placeholder="IFSC" maxLength={11} />
-              </div>
-              <p className="text-[10px] text-muted-foreground">These details are optional reference information.</p>
-            </section>
-
             <section className="space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Capacity and optional records</p>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <Input value={draft.supervisorName} onChange={(event) => set("supervisorName", event.target.value)} placeholder="Supervisor / foreman name" />
-                <Input value={draft.supervisorPhone} onChange={(event) => set("supervisorPhone", sanitizeIndianMobile(event.target.value))} placeholder="Supervisor phone" inputMode="numeric" />
+              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Capacity</p>
+              <div className="grid gap-2 sm:grid-cols-2">
                 <Input type="number" min={0} value={draft.availableWorkers} onChange={(event) => set("availableWorkers", event.target.value)} placeholder="Workers currently available" />
-                <Input type="number" min={0} value={draft.concurrentSiteLimit} onChange={(event) => set("concurrentSiteLimit", event.target.value)} placeholder="Concurrent site limit" />
-                <Input type="date" value={draft.earliestMobilisationDate} onChange={(event) => set("earliestMobilisationDate", event.target.value)} title="Earliest mobilisation date" />
                 <Input type="number" min={0} value={draft.serviceRadiusKm} onChange={(event) => set("serviceRadiusKm", event.target.value)} placeholder="Service radius (km)" />
-                <Input value={draft.labourRegistrationNo} onChange={(event) => set("labourRegistrationNo", event.target.value)} placeholder="Labour registration number (optional)" />
-                <Input type="date" value={draft.insuranceExpiry} onChange={(event) => set("insuranceExpiry", event.target.value)} title="Insurance expiry (optional)" />
-                <Input value={draft.pfNo} onChange={(event) => set("pfNo", event.target.value)} placeholder="PF number" />
-                <Input value={draft.esiNo} onChange={(event) => set("esiNo", event.target.value)} placeholder="ESI number" />
               </div>
             </section>
 

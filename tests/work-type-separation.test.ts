@@ -9,53 +9,48 @@ import {
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
 describe("work-type master", () => {
-  test("legacy subcategory rates become a deterministic Standard work type", () => {
+  test("a subcategory without work types receives only a deterministic identity row", () => {
     const normalized = normalizeWorkSubcategoryWorkTypes({
       id: "sub-paint",
       category_id: "cat-paint",
       name: "Interior Painting",
       unit_id: "sqft",
-      material_rate: 40,
-      labour_rate: 25,
-      notes: "Legacy row",
+      notes: "Scope row",
     });
 
-    expect(normalized.material_rate).toBeUndefined();
-    expect(normalized.labour_rate).toBeUndefined();
     expect(normalized.work_types).toEqual([{
       id: defaultWorkTypeId("sub-paint"),
       name: "Standard",
       unit_id: "sqft",
-      material_rate: 40,
-      labour_rate: 25,
-      notes: "Legacy row",
+      notes: "Scope row",
       created_at: undefined,
       updated_at: undefined,
     }]);
   });
 
-  test("multiple editable work types retain independent rates", () => {
+  test("multiple editable work types retain identity, unit and notes only", () => {
     const rows = workTypesForSubcategory({
       id: "sub-paint",
       category_id: "cat-paint",
       name: "Interior Painting",
       work_types: [
-        { id: "budget", name: "Budget", unit_id: "sqft", material_rate: 30, labour_rate: 15 },
-        { id: "luxury", name: "Luxury", unit_id: "sqft", material_rate: 120, labour_rate: 70 },
+        { id: "budget", name: "Budget", unit_id: "sqft", notes: "Budget finish" },
+        { id: "luxury", name: "Luxury", unit_id: "sqft", notes: "Luxury finish" },
       ],
     });
-    expect(rows.map((row) => [row.name, row.material_rate, row.labour_rate])).toEqual([
-      ["Budget", 30, 15],
-      ["Luxury", 120, 70],
+    expect(rows.map((row) => [row.name, row.unit_id, row.notes])).toEqual([
+      ["Budget", "sqft", "Budget finish"],
+      ["Luxury", "sqft", "Luxury finish"],
     ]);
   });
 });
 
 describe("contractor and vendor domain separation", () => {
-  test("contractor form contains work-type labour rates and no material/article capability editor", () => {
+  test("contractor form contains the standard work-type rate row and no Article editor", () => {
     const source = read("../src/components/rdash/ContractorFormDialog.tsx");
     expect(source).toContain("work_type_rates");
-    expect(source).toContain("Labour rate ₹");
+    expect(source).toContain("<span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span>");
+    expect(source).toContain("Add work type");
     expect(source).not.toContain("subcategoryArticleMap");
     expect(source).not.toContain("with_material_rate");
     expect(source).not.toContain("article_rates");
@@ -69,13 +64,14 @@ describe("contractor and vendor domain separation", () => {
   });
 
   test("database migration leaves Vendor Article tables untouched", () => {
-    const migration = read("../supabase/migrations/20260825121000_separate_contractor_work_types_from_vendor_articles.sql");
+    const migration = read("../supabase/migrations/20260825180000_canonical_contractor_work_type_rates.sql");
     const projection = migration.slice(
       migration.indexOf("create or replace function public.uc_contractor_rate_projection_rows"),
       migration.indexOf("revoke all on function public.uc_contractor_rate_projection_rows"),
     );
     expect(migration).toContain("'work_types'");
     expect(migration).toContain("'work_type_rates'");
+    expect(migration).toContain("'material_rate', v_material");
     expect(migration).not.toMatch(/update public\.entity_master_vendors/i);
     expect(migration).not.toMatch(/update public\."entity_master_subcategoryArticleMap"/i);
     expect(projection).not.toContain("entity_master_articles");
