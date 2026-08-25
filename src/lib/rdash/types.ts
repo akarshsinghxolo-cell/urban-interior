@@ -1552,8 +1552,6 @@ export interface WorkTypeRate {
     id: ID;
     name: string;
     unit_id?: ID;
-    material_rate?: number;
-    labour_rate?: number;
     notes?: string;
     created_at?: string;
     updated_at?: string;
@@ -1564,10 +1562,6 @@ export interface WorkSubcategory {
     name: string;
     unit_id?: ID;
     work_types?: WorkTypeRate[];
-    /** @deprecated Legacy rate fields are migrated into work_types. */
-    material_rate?: number;
-    /** @deprecated Legacy rate fields are migrated into work_types. */
-    labour_rate?: number;
     notes?: string;
     work_required_article_ids?: ID[];
     created_at?: string;
@@ -1709,38 +1703,19 @@ export interface Contractor {
         work_type_rates?: Array<{
             work_type_id: ID;
             work_type_name?: string;
+            unit_id?: ID;
+            material_rate?: number;
             labour_rate?: number;
+            notes?: string;
         }>;
-        unit_id?: ID;
-        crew_required?: number;
-        max_daily_capacity?: number;
-        preferred?: boolean;
-        status?: "active" | "inactive";
-        notes?: string;
     }>;
-    // FIX-CONTRACTOR-BATCH2 / F.6: Business / tax / banking fields, previously
-    // declared-but-never-populated dead fields. Now captured in the
-    // EntityFormDialog contractor branch and persisted on the master record.
-    business_gst?: string;
-    pan?: string;
-    bank_account?: string;
-    ifsc?: string;
     /** Free-form work-category tags (resolved from the master.workCategories
      * list at create/edit time). Mirrors the customer interest_category_ids
      * pattern but kept as names for human readability on the contractor card. */
     categories?: string[];
-    supervisor_name?: string;
-    supervisor_phone?: string;
     available_workers?: number;
-    concurrent_site_limit?: number;
-    earliest_mobilisation_date?: string;
     service_radius_km?: number;
-    labour_registration_no?: string;
-    insurance_expiry?: string;
-    pf_no?: string;
-    esi_no?: string;
     notes?: string;
-    bank_verified?: boolean;
     compliance_documents?: Array<{
         id?: ID;
         kind?: string;
@@ -1860,15 +1835,13 @@ export interface ContractorRate {
     trade: string;
     rate: number;
     unit_id?: string;
-    // FIX-CONTRACTOR-BATCH2 / F.12: Optional subcategory + labour/material
-    // split — populated by the new "Add Contractor Rate" dialog in
-    // MastersSalesOpsModule. The legacy `trade`/`rate` pair is kept for
-    // backward compatibility with seed rows that don't have a subcategory.
     work_subcategory_id?: ID;
     work_subcategory_name?: string;
     work_type_id?: ID;
     work_type_name?: string;
+    material_rate?: number;
     labour_rate?: number;
+    notes?: string;
 }
 export type FileAssetKind = "document" | "media" | "catalogue" | "drawing" | "site_proof" | "other";
 export type FileAssetStorageMode = "managed" | "external_reference";

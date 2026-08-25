@@ -2,12 +2,6 @@ import type { WorkSubcategory, WorkTypeRate } from "./types";
 
 export const DEFAULT_WORK_TYPE_NAME = "Standard";
 
-function finiteNonNegative(value: unknown): number | undefined {
-  if (value === "" || value === undefined || value === null) return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-}
-
 function slug(value: string): string {
   return value
     .trim()
@@ -21,7 +15,7 @@ export function defaultWorkTypeId(subcategoryId: string): string {
 }
 
 export function createWorkTypeId(subcategoryId: string, name: string): string {
-  return `wt-${subcategoryId}-${slug(name)}-${Date.now().toString(36)}`;
+  return `wt-${subcategoryId}-${slug(name)}`;
 }
 
 export function workTypesForSubcategory(work: WorkSubcategory): WorkTypeRate[] {
@@ -36,8 +30,6 @@ export function workTypesForSubcategory(work: WorkSubcategory): WorkTypeRate[] {
       id,
       name,
       unit_id: String(row.unit_id || work.unit_id || "pcs").trim(),
-      material_rate: finiteNonNegative(row.material_rate),
-      labour_rate: finiteNonNegative(row.labour_rate),
       notes: String(row.notes || "").trim() || undefined,
       created_at: row.created_at || work.created_at,
       updated_at: row.updated_at || work.updated_at,
@@ -50,8 +42,6 @@ export function workTypesForSubcategory(work: WorkSubcategory): WorkTypeRate[] {
     id: defaultWorkTypeId(work.id),
     name: DEFAULT_WORK_TYPE_NAME,
     unit_id: work.unit_id || "pcs",
-    material_rate: finiteNonNegative(work.material_rate),
-    labour_rate: finiteNonNegative(work.labour_rate),
     notes: String(work.notes || "").trim() || undefined,
     created_at: work.created_at,
     updated_at: work.updated_at,
@@ -59,11 +49,10 @@ export function workTypesForSubcategory(work: WorkSubcategory): WorkTypeRate[] {
 }
 
 export function normalizeWorkSubcategoryWorkTypes(work: WorkSubcategory): WorkSubcategory {
-  const { material_rate: _materialRate, labour_rate: _labourRate, ...rest } = work;
   const workTypes = workTypesForSubcategory(work);
   return {
-    ...rest,
-    unit_id: rest.unit_id || workTypes[0]?.unit_id || "pcs",
+    ...work,
+    unit_id: work.unit_id || workTypes[0]?.unit_id || "pcs",
     work_types: workTypes,
   };
 }

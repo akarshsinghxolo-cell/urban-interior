@@ -44,6 +44,33 @@ function synchronizeRateProjection(store: RDashStore, contractorId: string) {
   state.mutateMaster((master) => ({ ...master, contractorRates: projected }));
 }
 
+function synchronizeWorkTypeCatalog(store: RDashStore, capabilities: ContractorCapability[]) {
+  const state = store.getState();
+  let changed = false;
+  const workSubcategories = state.db.master.workSubcategories.map((subcategory) => {
+    const capability = capabilities.find((row) => row.subcategory_id === subcategory.id);
+    if (!capability) return subcategory;
+    const existing = workTypesForSubcategory(subcategory);
+    const byId = new Map(existing.map((row) => [row.id, row]));
+    let rowChanged = false;
+    for (const rate of capability.work_type_rates || []) {
+      if (byId.has(rate.work_type_id)) continue;
+      byId.set(rate.work_type_id, {
+        id: rate.work_type_id,
+        name: rate.work_type_name || "Work type",
+        unit_id: rate.unit_id || subcategory.unit_id || "pcs",
+        notes: rate.notes,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      changed = true;
+      rowChanged = true;
+    }
+    return rowChanged ? { ...subcategory, work_types: Array.from(byId.values()), updated_at: new Date().toISOString() } : subcategory;
+  });
+  if (changed) state.mutateMaster((master) => ({ ...master, workSubcategories }));
+}
+
 /**
  * Permanent contractor-domain guard installed at the public store boundary.
  * Every normal add/update/rate write goes through the same canonical
@@ -68,6 +95,7 @@ export function installContractorStorePolicy(store: RDashStore): void {
     const duplicateError = hardDuplicateError(state, normalized);
     if (duplicateError) throw new Error(duplicateError);
 
+    synchronizeWorkTypeCatalog(store, normalized.work_capabilities || []);
     const id = originalAddContractor(normalized as never);
     synchronizeRateProjection(store, id);
     return id;
@@ -99,6 +127,7 @@ export function installContractorStorePolicy(store: RDashStore): void {
     const duplicateError = hardDuplicateError(state, normalized, id);
     if (duplicateError) throw new Error(duplicateError);
 
+    synchronizeWorkTypeCatalog(store, normalized.work_capabilities || []);
     originalUpdateContractor(id, normalized as never);
     synchronizeRateProjection(store, id);
   };
@@ -108,6 +137,8 @@ export function installContractorStorePolicy(store: RDashStore): void {
     assertContractorPermission(state, "edit contractor rates");
     const contractor = state.db.master.contractors.find((row) => row.id === rate.contractor_id) as ContractorProfileRecord | undefined;
     if (!contractor) throw new Error("Contractor not found.");
+    const contractorId = contractor.id;
+    if (!contractorId) throw new Error("Contractor ID is required.");
     if (!rate.work_subcategory_id || !rate.work_type_id) {
       throw new Error("Contractor rates must be linked to a Work Subcategory and Work Type. Edit the contractor capability instead of creating a free-form rate.");
     }
@@ -123,7 +154,10 @@ export function installContractorStorePolicy(store: RDashStore): void {
       {
         work_type_id: workType.id,
         work_type_name: workType.name,
+        unit_id: rate.unit_id || workType.unit_id || subcategory.unit_id,
+        material_rate: rate.material_rate,
         labour_rate: rate.labour_rate ?? rate.rate ?? 0,
+        notes: rate.notes,
       },
     ];
     const next: ContractorCapability = {
@@ -131,18 +165,17 @@ export function installContractorStorePolicy(store: RDashStore): void {
       subcategory_id: rate.work_subcategory_id,
       subcategory_name: subcategory.name,
       work_type_rates: workTypeRates,
-      status: "active",
     };
     const updated = existing
       ? capabilities.map((row) => row.subcategory_id === next.subcategory_id ? next : row)
       : [...capabilities, next];
-    updateContractor(contractor.id!, { work_capabilities: updated } as never);
+    updateContractor(contractorId, { work_capabilities: updated } as never);
     const refreshed = store.getState().db.master.contractorRates.find(
-      (row) => row.contractor_id === contractor.id
+      (row) => row.contractor_id === contractorId
         && row.work_subcategory_id === next.subcategory_id
         && row.work_type_id === workType.id,
     );
-    return refreshed?.id || `crate-${contractor.id}-${next.subcategory_id}-${workType.id}`;
+    return refreshed?.id || `crate-${contractorId}-${next.subcategory_id}-${workType.id}`;
   };
 
   store.setState({

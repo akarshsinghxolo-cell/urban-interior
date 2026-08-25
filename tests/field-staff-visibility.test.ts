@@ -61,8 +61,8 @@ function visibilityFixture() {
       { id: "vendor-hidden", name: "Hidden vendor" },
     ],
     contractors: [
-      { id: "contractor-created", name: "Created contractor", outstanding: 40_000, bank_account: "123456", ifsc: "BANK0001", reliability_score: 90 },
-      { id: "contractor-linked", name: "Linked contractor", outstanding: 50_000, bank_account: "987654", ifsc: "BANK0002", reliability_score: 80 },
+      { id: "contractor-created", name: "Created contractor", outstanding: 40_000, reliability_score: 90 },
+      { id: "contractor-linked", name: "Linked contractor", outstanding: 50_000, reliability_score: 80, work_capabilities: [{ subcategory_id: "work-1", work_type_rates: [{ work_type_id: "wt-1", work_type_name: "Standard", unit_id: "sqft", material_rate: 40, labour_rate: 20 }] }] },
       { id: "contractor-hidden", name: "Hidden contractor" },
     ],
     staff: [
@@ -183,7 +183,7 @@ describe("field staff UI visibility", () => {
     expect(visible.purchaseOrders[0]?.items[0]?.rate).toBe(0);
     expect(visible.inventory[0]?.rate).toBeUndefined();
     expect(visible.master.vendors.find((row) => row.id === "vendor-visit")?.outstanding).toBeUndefined();
-    expect(visible.master.contractors.find((row) => row.id === "contractor-linked")?.bank_account).toBeUndefined();
+    expect(visible.master.contractors.find((row) => row.id === "contractor-linked")?.work_capabilities?.[0]?.work_type_rates).toBeUndefined();
   });
 
   test("shows only the signed-in staff member's attendance, GPS, staff profile and files", () => {

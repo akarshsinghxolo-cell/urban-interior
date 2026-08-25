@@ -102,8 +102,6 @@ export function buildWorkCategoryCatalog(): CatalogCore {
                     id: defaultWorkTypeId(item.id),
                     name: "Standard",
                     unit_id: ensureUnit(item.unit),
-                    material_rate: Number(item.matRate || 0),
-                    labour_rate: Number(item.labRate || 0),
                     notes: item.notes || "",
                     created_at: timestamp,
                     updated_at: timestamp,

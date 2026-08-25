@@ -324,7 +324,7 @@ export function MastersModule({ submodule }: {
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">{icon}</span>
             <div><h2 className="text-lg font-bold tracking-tight">{title}</h2><p className="text-xs text-muted-foreground">Rate master configuration</p></div>
           </div>
-          {isContractor && <p className="text-[11px] text-muted-foreground">Edit a contractor to manage labour rates by work type.</p>}
+          {isContractor && <p className="text-[11px] text-muted-foreground">Edit a contractor to manage work type, execution unit, material, labour, total and notes.</p>}
           {isCommission && <Button size="sm" className="h-8 gap-1.5 shrink-0" onClick={() => { setCruleDraft({ source_partner_id: db.master.sourcePartners[0]?.id || "", rate_pct: "5", applies_to: "partner", category_id: "" }); setAddCruleOpen(true); }}><Plus className="h-3.5 w-3.5"/> Add rule</Button>}
         </div>
         {/* B: Banner explains that commission rules are consumed by findCommissionRule
@@ -342,7 +342,7 @@ export function MastersModule({ submodule }: {
             })}
           {isContractor && db.master.contractorRates.map((r) => {
                 const c = db.master.contractors.find((x) => x.id === r.contractor_id);
-                return <div key={r.id} className="flex items-center justify-between border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20"><div><p className="font-medium">{r.work_subcategory_name || r.trade}</p><p className="text-[11px] text-muted-foreground">{c?.name} · {r.work_type_name || "Work type"} · {r.unit_id}</p></div><span className="font-mono font-bold">{formatINR(r.labour_rate ?? r.rate)}</span></div>;
+                return <div key={r.id} className="grid grid-cols-[minmax(0,1.4fr)_1fr_1fr_1fr] items-center gap-3 border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20"><div><p className="font-medium">{r.work_subcategory_name || r.trade}</p><p className="text-[11px] text-muted-foreground">{c?.name} · {r.work_type_name || "Work type"} · {r.unit_id}</p></div><span className="font-mono text-xs">Material {r.material_rate == null ? "—" : formatINR(r.material_rate)}</span><span className="font-mono text-xs">Labour {r.labour_rate == null ? "—" : formatINR(r.labour_rate)}</span><span className="font-mono font-bold">Total {formatINR((r.material_rate || 0) + (r.labour_rate || 0))}</span></div>;
             })}
           {isCommission && db.master.commissionRules.map((r) => {
                 const categoryName = r.category_id ? categoryById.get(r.category_id)?.name : undefined;

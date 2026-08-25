@@ -7,6 +7,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import type { Article, ArticleVariant, Master, MasterUnit, WorkCategory, WorkRequiredArticle, WorkSubcategory, WorkTypeRate } from "@/lib/rdash/types";
 import { resolveUnitId, catalogCounts, getCatalogIssues, normalizeCatalogName, } from "@/lib/rdash/work-category-master";
 import { createWorkTypeId, defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import { confirmDialog } from "../ConfirmDialog";
 import { MetricCard, EmptyState, StatusBadge } from "../primitives";
 import { Button } from "@/components/ui/button";
@@ -22,8 +23,6 @@ type DraftWork = {
     name: string;
     workTypeName: string;
     unitId: string;
-    materialRate: string;
-    labourRate: string;
     notes: string;
 };
 type DraftMaterial = {
@@ -231,8 +230,6 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                 id: defaultWorkTypeId(workId),
                 name: draft.workTypeName.trim() || "Standard",
                 unit_id: draft.unitId || "sqft",
-                material_rate: amount(draft.materialRate),
-                labour_rate: amount(draft.labourRate),
                 notes: draft.notes.trim() || undefined,
                 created_at: now,
                 updated_at: now,
@@ -273,8 +270,6 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             id: createWorkTypeId(workId, name),
             name,
             unit_id: workTypesForSubcategory(work)[0]?.unit_id || work.unit_id || "pcs",
-            material_rate: 0,
-            labour_rate: 0,
             created_at: now,
             updated_at: now,
         };
@@ -284,7 +279,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
                 ? { ...normalizeWorkSubcategoryWorkTypes(row), work_types: [...workTypesForSubcategory(row), workType], updated_at: now }
                 : row),
         }));
-        toast.success("Work type added. Rename it and enter its rates.");
+        toast.success("Work type added. Contractor quotes will supply its average rates.");
     }
     function updateWorkType(workId: string, workTypeId: string, patch: Partial<WorkTypeRate>) {
         const work = workFor(master, workId);
@@ -667,10 +662,11 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
             const category = master.workCategories.find((entry) => entry.id === work.category_id);
             const scopes = scopesByWork.get(work.id) || [];
             workTypesForSubcategory(work).forEach((workType) => {
+                const average = contractorWorkTypeAverages(master.contractorRates, work.id, workType.id);
                 (scopes.length ? scopes : [undefined]).forEach((scope) => {
                     const article = articleFor(master, scope?.article_id);
                     rows.push([
-                        category?.name || "", work.name, workType.name, unitLabel(master, workType.unit_id), amount(workType.material_rate), amount(workType.labour_rate), amount(workType.material_rate) + amount(workType.labour_rate),
+                        category?.name || "", work.name, workType.name, unitLabel(master, workType.unit_id), average.material_rate || 0, average.labour_rate || 0, average.total_rate || 0,
                         article?.name || "", scope ? unitLabel(master, scope.unit_id) : "", amount(scope?.reference_rate), scope ? (variantsByArticle.get(scope.article_id) || []).length : 0,
                         [workType.notes, scope?.variation_note, scope?.product_note, work.notes].filter(Boolean).join(" | "),
                     ]);
@@ -891,13 +887,13 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
           <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span />
         </div>
         {workTypes.map((workType) => {
-            const total = amount(workType.material_rate) + amount(workType.labour_rate);
+            const average = contractorWorkTypeAverages(master.contractorRates, work.id, workType.id);
             return <div key={workType.id} className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_40px] items-center gap-2 border-t border-border px-2.5 py-2">
               <Input defaultValue={workType.name} aria-label={`Work type for ${work.name}`} onBlur={(event) => event.target.value !== workType.name && updateWorkType(work.id, workType.id, { name: event.target.value })} className="h-8 font-semibold"/>
               <NativeSelect value={workType.unit_id || work.unit_id || "pcs"} onChange={(event) => updateWorkType(work.id, workType.id, { unit_id: event.target.value })} className="h-8">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect>
-              <Input type="number" min="0" defaultValue={workType.material_rate || 0} aria-label={`${workType.name} material rate`} onBlur={(event) => updateWorkType(work.id, workType.id, { material_rate: amount(event.target.value) })} className="h-8"/>
-              <Input type="number" min="0" defaultValue={workType.labour_rate || 0} aria-label={`${workType.name} labour rate`} onBlur={(event) => updateWorkType(work.id, workType.id, { labour_rate: amount(event.target.value) })} className="h-8"/>
-              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">Rs {total.toLocaleString("en-IN")}</div>
+              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average material rate`}>{average.material_rate == null ? "—" : `Rs ${Math.round(average.material_rate).toLocaleString("en-IN")}`}</div>
+              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average labour rate`}>{average.labour_rate == null ? "—" : `Rs ${Math.round(average.labour_rate).toLocaleString("en-IN")}`}</div>
+              <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">{average.total_rate == null ? "—" : `Rs ${Math.round(average.total_rate).toLocaleString("en-IN")}`}</div>
               <Input defaultValue={workType.notes || ""} placeholder="Work-type note" aria-label={`${workType.name} notes`} onBlur={(event) => event.target.value !== (workType.notes || "") && updateWorkType(work.id, workType.id, { notes: event.target.value })} className="h-8"/>
               <Button size="icon" variant="ghost" onClick={() => removeWorkType(work.id, workType.id)} aria-label={`Delete ${workType.name}`}><Trash2 className="h-4 w-4 text-destructive"/></Button>
             </div>;
@@ -1024,10 +1020,10 @@ function WorkItemDialog({ open, onOpenChange, category, units, onSave }: {
     units: MasterUnit[];
     onSave: (draft: DraftWork) => void;
 }) {
-    const [draft, setDraft] = React.useState<DraftWork>({ categoryId: "", name: "", workTypeName: "Standard", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" });
+    const [draft, setDraft] = React.useState<DraftWork>({ categoryId: "", name: "", workTypeName: "Standard", unitId: "sqft", notes: "" });
     React.useEffect(() => { if (open)
-        setDraft({ categoryId: category?.id || "", name: "", workTypeName: "Standard", unitId: "sqft", materialRate: "0", labourRate: "0", notes: "" }); }, [open, category?.id]);
-    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Add sub category</DialogTitle><DialogDescription>{category ? `Create an execution sub category under ${category.name}.` : "Create an execution sub category."}</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Sub category name"><Input autoFocus value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Gypsum false ceiling"/></Field><Field label="Initial work type"><Input value={draft.workTypeName} onChange={(event) => setDraft((current) => ({ ...current, workTypeName: event.target.value }))} placeholder="Standard, Budget, Premium or Luxury"/></Field><Field label="Execution unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field><Field label="Material rate"><Input type="number" min="0" value={draft.materialRate} onChange={(event) => setDraft((current) => ({ ...current, materialRate: event.target.value }))}/></Field><Field label="Labour rate"><Input type="number" min="0" value={draft.labourRate} onChange={(event) => setDraft((current) => ({ ...current, labourRate: event.target.value }))}/></Field></div><Field label="Scope note"><Textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Where this work is used, finish requirements or exclusions…"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}><Plus className="h-3.5 w-3.5"/> Add sub category</Button></DialogFooter></DialogContent></Dialog>;
+        setDraft({ categoryId: category?.id || "", name: "", workTypeName: "Standard", unitId: "sqft", notes: "" }); }, [open, category?.id]);
+    return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>Add sub category</DialogTitle><DialogDescription>{category ? `Create an execution sub category under ${category.name}. Contractor quotes calculate the rate averages.` : "Create an execution sub category."}</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><Field label="Sub category name"><Input autoFocus value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="For example: Gypsum false ceiling"/></Field><Field label="Initial work type"><Input value={draft.workTypeName} onChange={(event) => setDraft((current) => ({ ...current, workTypeName: event.target.value }))} placeholder="Standard, Budget, Premium or Luxury"/></Field><Field label="Execution unit"><NativeSelect value={draft.unitId} onChange={(event) => setDraft((current) => ({ ...current, unitId: event.target.value }))}>{units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</NativeSelect></Field></div><Field label="Scope note"><Textarea value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Where this work is used, finish requirements or exclusions…"/></Field><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button onClick={() => { onSave(draft); onOpenChange(false); }}><Plus className="h-3.5 w-3.5"/> Add sub category</Button></DialogFooter></DialogContent></Dialog>;
 }
 function MaterialDialog({ open, onOpenChange, master, work, onSave }: {
     open: boolean;

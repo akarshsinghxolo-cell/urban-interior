@@ -19,7 +19,7 @@ describe("Contractor legacy-path removal", () => {
     const profile = await source("src/lib/rdash/contractor-profile.ts");
     const policy = await source("src/lib/rdash/contractor-store-policy.ts");
     const governance = await source("src/components/rdash/modules/PartnerGovernanceModule.tsx");
-    expect(profile).toContain("const rows = Array.isArray(contractor.work_capabilities)");
+    expect(profile).toContain("Array.isArray(contractor.work_capabilities)");
     expect(profile).not.toContain("const legacyUnmapped");
     expect(profile).not.toContain("capabilities_v2");
     expect(policy).not.toContain("capabilities_v2");
@@ -55,6 +55,11 @@ describe("Contractor legacy-path removal", () => {
     const detail = await source("src/components/rdash/modules/ContractorDetailModule.tsx");
     expect(form).not.toContain("legacyReferral");
     expect(form).not.toContain("Legacy free-text referrals");
+    expect(form).not.toContain("business_gst");
+    expect(form).not.toContain("bank_account");
+    expect(form).not.toContain("supervisor_name");
+    expect(form).not.toContain("concurrent_site_limit");
+    expect(form).toContain("Add work type");
     expect(detail).toContain("contractorRateProjection(db, c)");
   });
 

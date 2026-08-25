@@ -25,9 +25,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { formatDate, formatINR, titleCase } from "@/lib/rdash/format";
 import {
   canonicalContractorCapabilities,
-  contractorCapabilitiesFromGovernance,
   contractorGovernanceCapabilityProjection,
-  derivedContractorCategoryNames,
 } from "@/lib/rdash/contractor-profile";
 import {
   DOCUMENT_KIND_LABELS,
@@ -39,7 +37,6 @@ import {
   partnerDocuments,
   partnerMergePlan,
   vendorPaymentReadiness,
-  type ContractorTradeCapability,
   type PartnerComplianceDocument,
   type PartnerDocumentKind,
   type PartnerGovernanceMode,
@@ -60,7 +57,7 @@ import { Avatar, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../p
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { entityFiles } from "@/lib/rdash/file-attachments";
 import { Partner360Module } from "./Partner360Module";
-import { workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { ContractorFormDialog } from "../ContractorFormDialog";
 
 export function Partner360Phase2Workspace({ mode }: { mode: PartnerGovernanceMode }) {
   const [view, setView] = React.useState<"relationship" | "governance">("relationship");
@@ -77,7 +74,7 @@ export function Partner360Phase2Workspace({ mode }: { mode: PartnerGovernanceMod
 }
 
 type GovernanceTab = "capabilities" | "documents" | "duplicates";
-type PartnerRecord = Record<string, any> & { id: string; name: string; phone?: string; city?: string; status?: string };
+type PartnerRecord = Record<string, any> & { id: string; name: string; phone?: string; city?: string; status?: string; work_capabilities?: import("@/lib/rdash/contractor-profile").ContractorCapability[] };
 
 const VENDOR_DOCUMENT_KINDS: PartnerDocumentKind[] = [
   "gst_registration", "pan_card", "bank_proof", "udyam_registration", "address_proof",
@@ -109,6 +106,7 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
   const [query, setQuery] = React.useState("");
   const [tab, setTab] = React.useState<GovernanceTab>("capabilities");
   const [capabilityDialog, setCapabilityDialog] = React.useState<{ open: boolean; editId?: string }>({ open: false });
+  const [contractorFormOpen, setContractorFormOpen] = React.useState(false);
   const [documentDialog, setDocumentDialog] = React.useState<{ open: boolean; editId?: string }>({ open: false });
   const [duplicateDialog, setDuplicateDialog] = React.useState<{ open: boolean; candidateId?: string }>({ open: false });
 
@@ -121,9 +119,9 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
   const filtered = React.useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return partners;
-    return partners.filter((partner) => [partner.name, partner.legal_name, partner.phone, partner.city, partner.gstin, partner.business_gst, partner.pan].filter(Boolean).join(" ").toLowerCase().includes(needle));
+    return partners.filter((partner) => [partner.name, partner.legal_name, partner.phone, partner.city, mode === "vendor" ? partner.gstin : undefined, mode === "vendor" ? partner.pan : undefined].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [partners, query]);
-  const duplicateCandidates = React.useMemo(() => detectPartnerDuplicates(partners), [partners]);
+  const duplicateCandidates = React.useMemo(() => detectPartnerDuplicates(partners, mode), [mode, partners]);
   const selectedDuplicates = selected ? duplicateCandidates.filter((candidate) => candidate.leftId === selected.id || candidate.rightId === selected.id) : [];
   const capabilities = selected
     ? mode === "contractor"
@@ -144,17 +142,9 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
   }, [mode, updateVendor, updateContractor]);
 
   const updateCapabilities = React.useCallback((next: Array<Record<string, unknown>>) => {
-    if (!selected) return;
-    if (mode === "vendor") {
-      updateVendor(selected.id, { capabilities_v2: next } as any);
-      return;
-    }
-    const workCapabilities = contractorCapabilitiesFromGovernance(next);
-    updateContractor(selected.id, {
-      work_capabilities: workCapabilities,
-      categories: derivedContractorCategoryNames(db, workCapabilities),
-    } as any);
-  }, [db, mode, selected, updateVendor, updateContractor]);
+    if (!selected || mode !== "vendor") return;
+    updateVendor(selected.id, { capabilities_v2: next } as any);
+  }, [mode, selected, updateVendor]);
 
   const createExpiryTasks = () => {
     if (!selected) return;
@@ -240,13 +230,14 @@ export function PartnerGovernanceModule({ mode }: { mode: PartnerGovernanceMode 
             <TabButton active={tab === "duplicates"} onClick={() => setTab("duplicates")} icon={Users} label="Duplicate control" />
           </div>
 
-          {tab === "capabilities" && <CapabilitiesSection mode={mode} selected={selected} capabilities={capabilities} onAdd={() => setCapabilityDialog({ open: true })} onEdit={(editId) => setCapabilityDialog({ open: true, editId })} onToggle={(id) => updateCapabilities(capabilities.map((capability: any) => capability.id === id ? { ...capability, status: capability.status === "active" ? "inactive" : "active", updated_at: new Date().toISOString() } : capability))} />}
+          {tab === "capabilities" && <CapabilitiesSection mode={mode} selected={selected} capabilities={capabilities} onAdd={() => mode === "contractor" ? setContractorFormOpen(true) : setCapabilityDialog({ open: true })} onEdit={(editId) => mode === "contractor" ? setContractorFormOpen(true) : setCapabilityDialog({ open: true, editId })} onToggle={(id) => updateCapabilities(capabilities.map((capability: any) => capability.id === id ? { ...capability, status: capability.status === "active" ? "inactive" : "active", updated_at: new Date().toISOString() } : capability))} />}
           {tab === "documents" && <DocumentsSection mode={mode} selected={selected} documents={documents} onAdd={() => setDocumentDialog({ open: true })} onEdit={(editId) => setDocumentDialog({ open: true, editId })} onVerify={(id) => updatePartner(selected.id, { compliance_documents: documents.map((document) => document.id === id ? { ...document, verified: !document.verified, verified_at: !document.verified ? new Date().toISOString() : undefined, verified_by: !document.verified ? "Current user" : undefined, updated_at: new Date().toISOString() } : document) })} onDelete={(id) => updatePartner(selected.id, { compliance_documents: documents.filter((document) => document.id !== id) })} />}
           {tab === "duplicates" && <DuplicateSection mode={mode} db={db as any} partners={partners} selected={selected} candidates={selectedDuplicates} onReview={(candidateId) => setDuplicateDialog({ open: true, candidateId })} />}
         </main>
       </div>
 
-      <CapabilityDialog mode={mode} partner={selected} open={capabilityDialog.open} editId={capabilityDialog.editId} onClose={() => setCapabilityDialog({ open: false })} onSave={(next) => { updateCapabilities(next); setCapabilityDialog({ open: false }); }} />
+      {mode === "vendor" && <CapabilityDialog mode="vendor" partner={selected} open={capabilityDialog.open} editId={capabilityDialog.editId} onClose={() => setCapabilityDialog({ open: false })} onSave={(next) => { updateCapabilities(next); setCapabilityDialog({ open: false }); }} />}
+      {mode === "contractor" && <ContractorFormDialog open={contractorFormOpen} editId={selected.id} onClose={() => setContractorFormOpen(false)} />}
       <DocumentDialog mode={mode} partner={selected} open={documentDialog.open} editId={documentDialog.editId} onClose={() => setDocumentDialog({ open: false })} onSave={(next) => { updatePartner(selected.id, { compliance_documents: next }); setDocumentDialog({ open: false }); }} />
       <DuplicateReviewDialog mode={mode} db={db as any} partners={partners} selected={selected} candidateId={duplicateDialog.candidateId} open={duplicateDialog.open} onClose={() => setDuplicateDialog({ open: false })} onQuarantine={quarantineDuplicate} />
     </div>
@@ -260,14 +251,14 @@ function TabButton({ active, onClick, icon: Icon, label }: { active: boolean; on
 function CapabilitiesSection({ mode, selected, capabilities, onAdd, onEdit, onToggle }: any) {
   return <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
     <div className="flex flex-wrap items-center justify-between gap-3"><SectionHeader title={mode === "vendor" ? "Vendor–Article capabilities" : "Contractor–Work capabilities"} count={capabilities.length} /><Button size="sm" onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add capability</Button></div>
-    <p className="mt-1 text-xs text-muted-foreground">{mode === "vendor" ? "Article and variant supply records used for sourcing, RFQs and Vendor comparison." : "Work subcategories, work-type labour rates and capacity used for contractor shortlisting."}</p>
+    <p className="mt-1 text-xs text-muted-foreground">{mode === "vendor" ? "Article and variant supply records used for sourcing, RFQs and Vendor comparison." : "Work subcategories with execution unit, material rate, labour rate, total and notes."}</p>
     <div className="mt-4 grid gap-3 lg:grid-cols-2">
       {capabilities.map((capability: any) => <div key={capability.id} className="rounded-xl border border-border bg-muted/10 p-3">
-        <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{mode === "vendor" ? capability.article_name || capability.article_id : capability.work_subcategory_name || capability.work_subcategory_id}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{mode === "vendor" ? [capability.variant_name, capability.brand, capability.grade].filter(Boolean).join(" · ") || "General supply" : [capability.crew_required && `${capability.crew_required} crew`, capability.max_daily_capacity && `${capability.max_daily_capacity}/day`].filter(Boolean).join(" · ") || "Work capability"}</p></div><StatusBadge label={titleCase(capability.status || "active")} /></div>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">{mode === "vendor" ? <><Value label="Lead time" value={capability.lead_time_days != null ? `${capability.lead_time_days} days` : "—"} /><Value label="Minimum qty" value={capability.minimum_order_qty ?? "—"} /></> : (capability.work_type_rates || []).map((rate: any) => <Value key={rate.work_type_id} label={rate.work_type_name || "Work type"} value={rate.labour_rate != null ? formatINR(rate.labour_rate) : "—"} />)}</div>
-        <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => onEdit(capability.id)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button><Button size="sm" variant="outline" onClick={() => onToggle(capability.id)}><Archive className="mr-1 h-3.5 w-3.5" />{capability.status === "active" ? "Deactivate" : "Activate"}</Button></div>
+        <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{mode === "vendor" ? capability.article_name || capability.article_id : capability.work_subcategory_name || capability.work_subcategory_id}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{mode === "vendor" ? [capability.variant_name, capability.brand, capability.grade].filter(Boolean).join(" · ") || "General supply" : "Work capability"}</p></div>{mode === "vendor" && <StatusBadge label={titleCase(capability.status || "active")} />}</div>
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">{mode === "vendor" ? <><Value label="Lead time" value={capability.lead_time_days != null ? `${capability.lead_time_days} days` : "—"} /><Value label="Minimum qty" value={capability.minimum_order_qty ?? "—"} /></> : (capability.work_type_rates || []).map((rate: any) => <div key={rate.work_type_id} className="col-span-2 grid grid-cols-5 gap-1 rounded-lg border p-2"><Value label="Work type" value={rate.work_type_name || "—"} /><Value label="Execution unit" value={rate.unit_id || "—"} /><Value label="Material" value={rate.material_rate == null ? "—" : formatINR(rate.material_rate)} /><Value label="Labour" value={rate.labour_rate == null ? "—" : formatINR(rate.labour_rate)} /><Value label="Total" value={formatINR((rate.material_rate || 0) + (rate.labour_rate || 0))} /></div>)}</div>
+        <div className="mt-3 flex justify-end gap-2"><Button size="sm" variant="ghost" onClick={() => onEdit(capability.id)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit</Button>{mode === "vendor" && <Button size="sm" variant="outline" onClick={() => onToggle(capability.id)}><Archive className="mr-1 h-3.5 w-3.5" />{capability.status === "active" ? "Deactivate" : "Activate"}</Button>}</div>
       </div>)}
-      {!capabilities.length && <div className="lg:col-span-2"><EmptyState title="No structured capabilities" description={mode === "vendor" ? "Link this Vendor to Articles and variants they can actually supply." : "Link this Contractor to Work subcategories and work-type labour rates."} action={<Button onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add first capability</Button>} /></div>}
+      {!capabilities.length && <div className="lg:col-span-2"><EmptyState title="No structured capabilities" description={mode === "vendor" ? "Link this Vendor to Articles and variants they can actually supply." : "Use the canonical Contractor editor to add work types and rates."} action={<Button onClick={onAdd}><Plus className="mr-1 h-4 w-4" />Add first capability</Button>} /></div>}
     </div>
   </section>;
 }
@@ -280,79 +271,41 @@ function DocumentsSection({ mode, selected, documents, onAdd, onEdit, onVerify, 
 }
 
 function DuplicateSection({ mode, db, partners, selected, candidates, onReview }: any) {
-  return <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><SectionHeader title="Potential duplicate records" count={candidates.length} /><p className="mt-1 text-xs text-muted-foreground">Matches use normalized legal name, city, phone, GSTIN, PAN and bank account. Phase 2 quarantines duplicates safely; it does not silently rewrite financial history.</p><div className="mt-4 space-y-3">{candidates.map((candidate: any) => { const otherId = candidate.leftId === selected.id ? candidate.rightId : candidate.leftId; const other = partners.find((partner: any) => partner.id === otherId); const plan = partnerMergePlan(mode, db, selected.id, otherId); return <div key={`${candidate.leftId}-${candidate.rightId}`} className="rounded-xl border border-warning/30 bg-warning/[0.03] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-warning" /><div><p className="text-sm font-bold">{selected.name} ↔ {other?.name || otherId}</p><p className="mt-1 text-[11px] text-muted-foreground">Score {candidate.score} · {candidate.reasons.join(" · ")}</p><p className="mt-1 text-[10px] text-muted-foreground">{plan.totalReferences} historical reference{plan.totalReferences === 1 ? "" : "s"} would require an atomic merge.</p></div></div><Button size="sm" variant="outline" onClick={() => onReview(otherId)}>Review and quarantine</Button></div></div>; })}{!candidates.length && <div className="flex items-start gap-3 rounded-xl border border-success/30 bg-success/[0.04] p-4"><CheckCircle2 className="mt-0.5 h-5 w-5 text-success" /><div><p className="text-sm font-bold">No likely duplicates</p><p className="mt-1 text-xs text-muted-foreground">No record crossed the duplicate-risk threshold.</p></div></div>}</div></section>;
+  return <section className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><SectionHeader title="Potential duplicate records" count={candidates.length} /><p className="mt-1 text-xs text-muted-foreground">{mode === "vendor" ? "Matches use normalized legal name, city, phone, GSTIN, PAN and bank account." : "Matches use normalized name, city and phone."} Duplicate records are quarantined safely without silently rewriting financial history.</p><div className="mt-4 space-y-3">{candidates.map((candidate: any) => { const otherId = candidate.leftId === selected.id ? candidate.rightId : candidate.leftId; const other = partners.find((partner: any) => partner.id === otherId); const plan = partnerMergePlan(mode, db, selected.id, otherId); return <div key={`${candidate.leftId}-${candidate.rightId}`} className="rounded-xl border border-warning/30 bg-warning/[0.03] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 h-5 w-5 text-warning" /><div><p className="text-sm font-bold">{selected.name} ↔ {other?.name || otherId}</p><p className="mt-1 text-[11px] text-muted-foreground">Score {candidate.score} · {candidate.reasons.join(" · ")}</p><p className="mt-1 text-[10px] text-muted-foreground">{plan.totalReferences} historical reference{plan.totalReferences === 1 ? "" : "s"} would require an atomic merge.</p></div></div><Button size="sm" variant="outline" onClick={() => onReview(otherId)}>Review and quarantine</Button></div></div>; })}{!candidates.length && <div className="flex items-start gap-3 rounded-xl border border-success/30 bg-success/[0.04] p-4"><CheckCircle2 className="mt-0.5 h-5 w-5 text-success" /><div><p className="text-sm font-bold">No likely duplicates</p><p className="mt-1 text-xs text-muted-foreground">No record crossed the duplicate-risk threshold.</p></div></div>}</div></section>;
 }
 
 function Value({ label, value }: { label: string; value: React.ReactNode }) {
   return <div className="rounded-lg border border-border bg-background p-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-0.5 font-medium">{value}</p></div>;
 }
 
-function CapabilityDialog({ mode, partner, open, editId, onClose, onSave }: { mode: PartnerGovernanceMode; partner: PartnerRecord; open: boolean; editId?: string; onClose: () => void; onSave: (next: any[]) => void }) {
+function CapabilityDialog({ partner, open, editId, onClose, onSave }: { mode: "vendor"; partner: PartnerRecord; open: boolean; editId?: string; onClose: () => void; onSave: (next: any[]) => void }) {
   const db = useRDashStore((state) => state.db);
-  const current = (mode === "contractor"
-    ? contractorGovernanceCapabilityProjection(
-        partner.id,
-        canonicalContractorCapabilities(partner, db),
-      )
-    : vendorCapabilities(partner)) as any[];
+  const current = vendorCapabilities(partner) as any[];
   const editing = current.find((capability) => capability.id === editId);
   const [draft, setDraft] = React.useState<Record<string, any>>({});
   React.useEffect(() => {
     if (!open) return;
-    setDraft(editing ? {
-      ...editing,
-      work_type_rates: Object.fromEntries((editing.work_type_rates || []).map((rate: any) => [rate.work_type_id, String(rate.labour_rate ?? "")])),
-    } : { status: "active", preferred: false, supply_mode: "stocked", work_type_rates: {} });
+    setDraft(editing ? { ...editing } : { status: "active", preferred: false, supply_mode: "stocked" });
   }, [open, editId]);
   const set = (key: string, value: any) => setDraft((state) => ({ ...state, [key]: value }));
-  const selectedSubcategory = db.master.workSubcategories.find((row: any) => row.id === draft.work_subcategory_id);
-  const selectedWorkTypes = selectedSubcategory ? workTypesForSubcategory(selectedSubcategory) : [];
   const save = () => {
     const now = new Date().toISOString();
-    if (mode === "vendor") {
-      const article = db.master.articles.find((row: any) => row.id === draft.article_id);
-      if (!article) { toast.error("Select an Article"); return; }
-      const variant = db.master.articleVariants.find((row: any) => row.id === draft.variant_id);
-      const record: VendorArticleCapability = { id: editing?.id || governanceId("vcap"), article_id: article.id, article_name: article.name, variant_id: variant?.id, variant_name: variant?.name, brand: draft.brand || variant?.brand, grade: draft.grade || variant?.grade, unit_id: draft.unit_id || variant?.unit_id || article.default_unit_id || article.unit_id, supply_mode: draft.supply_mode || "stocked", lead_time_days: draft.lead_time_days === "" ? undefined : Number(draft.lead_time_days), minimum_order_qty: draft.minimum_order_qty === "" ? undefined : Number(draft.minimum_order_qty), preferred: Boolean(draft.preferred), status: draft.status || "active", notes: draft.notes?.trim() || undefined, created_at: editing?.created_at || now, updated_at: now };
-      onSave(editing ? current.map((row) => row.id === editing.id ? record : row) : [record, ...current]);
-    } else {
-      const subcategory = db.master.workSubcategories.find((row: any) => row.id === draft.work_subcategory_id);
-      if (!subcategory) { toast.error("Select a Work subcategory"); return; }
-      const record: ContractorTradeCapability = {
-        id: editing?.id || governanceId("ccap"),
-        work_subcategory_id: subcategory.id,
-        work_subcategory_name: subcategory.name,
-        work_type_rates: workTypesForSubcategory(subcategory).flatMap((workType) => {
-          const value = String(draft.work_type_rates?.[workType.id] ?? "").trim();
-          return value ? [{ work_type_id: workType.id, work_type_name: workType.name, labour_rate: Number(value) }] : [];
-        }),
-        crew_required: draft.crew_required === "" ? undefined : Number(draft.crew_required),
-        max_daily_capacity: draft.max_daily_capacity === "" ? undefined : Number(draft.max_daily_capacity),
-        preferred: Boolean(draft.preferred),
-        status: draft.status || "active",
-        notes: draft.notes?.trim() || undefined,
-        created_at: editing?.created_at || now,
-        updated_at: now,
-      };
-      onSave(editing ? current.map((row) => row.id === editing.id ? record : row) : [record, ...current]);
-    }
+    const article = db.master.articles.find((row: any) => row.id === draft.article_id);
+    if (!article) { toast.error("Select an Article"); return; }
+    const variant = db.master.articleVariants.find((row: any) => row.id === draft.variant_id);
+    const record: VendorArticleCapability = { id: editing?.id || governanceId("vcap"), article_id: article.id, article_name: article.name, variant_id: variant?.id, variant_name: variant?.name, brand: draft.brand || variant?.brand, grade: draft.grade || variant?.grade, unit_id: draft.unit_id || variant?.unit_id || article.default_unit_id || article.unit_id, supply_mode: draft.supply_mode || "stocked", lead_time_days: draft.lead_time_days === "" ? undefined : Number(draft.lead_time_days), minimum_order_qty: draft.minimum_order_qty === "" ? undefined : Number(draft.minimum_order_qty), preferred: Boolean(draft.preferred), status: draft.status || "active", notes: draft.notes?.trim() || undefined, created_at: editing?.created_at || now, updated_at: now };
+    onSave(editing ? current.map((row) => row.id === editing.id ? record : row) : [record, ...current]);
     toast.success("Capability saved");
   };
   return <Dialog open={open} onOpenChange={(value) => !value && onClose()}>
     <DialogContent className="max-w-xl">
-      <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} {mode === "vendor" ? "Vendor–Article" : "Contractor–Work"} capability</DialogTitle><DialogDescription>{mode === "vendor" ? "Structured supply data used for sourcing and shortlisting." : "Assign labour rates by the work types configured in Master Setup."}</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{editing ? "Edit" : "Add"} Vendor–Article capability</DialogTitle><DialogDescription>Structured supply data used for sourcing and shortlisting.</DialogDescription></DialogHeader>
       <div className="grid gap-3 sm:grid-cols-2">
-        {mode === "vendor" ? <>
           <select value={draft.article_id || ""} onChange={(event) => { set("article_id", event.target.value); set("variant_id", ""); }} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Select Article</option>{db.master.articles.map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
           <select value={draft.variant_id || ""} onChange={(event) => set("variant_id", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="">Any variant</option>{db.master.articleVariants.filter((row: any) => !draft.article_id || row.article_id === draft.article_id).map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
           <Input value={draft.brand || ""} onChange={(event) => set("brand", event.target.value)} placeholder="Brand" /><Input value={draft.grade || ""} onChange={(event) => set("grade", event.target.value)} placeholder="Grade / quality" />
           <select value={draft.supply_mode || "stocked"} onChange={(event) => set("supply_mode", event.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="stocked">Stocked</option><option value="on_order">On order</option><option value="special_order">Special order</option></select>
           <Input value={draft.lead_time_days ?? ""} onChange={(event) => set("lead_time_days", event.target.value)} placeholder="Lead time days" type="number" /><Input value={draft.minimum_order_qty ?? ""} onChange={(event) => set("minimum_order_qty", event.target.value)} placeholder="Minimum order quantity" type="number" />
-        </> : <>
-          <select value={draft.work_subcategory_id || ""} onChange={(event) => { set("work_subcategory_id", event.target.value); set("work_type_rates", {}); }} className="h-10 rounded-md border border-input bg-card px-3 text-sm sm:col-span-2"><option value="">Select Work subcategory</option>{db.master.workSubcategories.map((row: any) => <option key={row.id} value={row.id}>{row.name}</option>)}</select>
-          <div className="space-y-2 rounded-lg border p-3 sm:col-span-2"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Labour rate by work type</p>{selectedWorkTypes.map((workType) => <label key={workType.id} className="grid grid-cols-[minmax(0,1fr)_9rem] items-center gap-2 text-xs"><span>{workType.name}</span><Input value={draft.work_type_rates?.[workType.id] || ""} onChange={(event) => set("work_type_rates", { ...(draft.work_type_rates || {}), [workType.id]: event.target.value })} placeholder="₹ 0" type="number" min={0} className="h-8" /></label>)}{selectedSubcategory && !selectedWorkTypes.length ? <p className="text-xs text-destructive">No work types configured for this subcategory.</p> : null}</div>
-          <Input value={draft.crew_required ?? ""} onChange={(event) => set("crew_required", event.target.value)} placeholder="Crew required" type="number" /><Input value={draft.max_daily_capacity ?? ""} onChange={(event) => set("max_daily_capacity", event.target.value)} placeholder="Maximum daily capacity" type="number" />
-        </>}
         <label className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(draft.preferred)} onChange={(event) => set("preferred", event.target.checked)} />Preferred capability</label>
         <Textarea value={draft.notes || ""} onChange={(event) => set("notes", event.target.value)} placeholder="Notes" className="sm:col-span-2" />
       </div>
@@ -383,9 +336,9 @@ function DocumentDialog({ mode, partner, open, editId, onClose, onSave }: { mode
 function DuplicateReviewDialog({ mode, db, partners, selected, candidateId, open, onClose, onQuarantine }: any) {
   const candidate = partners.find((partner: any) => partner.id === candidateId);
   const plan = candidate ? partnerMergePlan(mode, db, selected.id, candidate.id) : undefined;
-  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Duplicate impact review</DialogTitle><DialogDescription>Choose the canonical record and quarantine the duplicate. Historical transactions remain untouched until an atomic merge action is implemented.</DialogDescription></DialogHeader>{candidate && plan ? <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><PartnerIdentityCard label="Keep canonical" partner={selected} /><PartnerIdentityCard label="Potential duplicate" partner={candidate} /></div><div className="rounded-xl border border-border bg-muted/10 p-3"><p className="text-xs font-bold">Historical reference impact</p><div className="mt-2 space-y-1">{plan.impacted.map((row: any) => <div key={row.collection} className="flex items-center justify-between text-xs"><span>{titleCase(row.collection)}</span><strong>{row.count}</strong></div>)}{!plan.impacted.length && <p className="text-xs text-muted-foreground">No linked transaction references found.</p>}</div></div><div className="rounded-xl border border-warning/30 bg-warning/[0.04] p-3 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Why this is quarantine, not automatic merge</p><p className="mt-1">{plan.reason}</p></div></div> : <p className="text-xs text-muted-foreground">Duplicate record not found.</p>}<DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button>{candidate && <><Button variant="outline" onClick={() => onQuarantine(selected.id, candidate.id)}>Keep {candidate.name}</Button><Button onClick={() => onQuarantine(candidate.id, selected.id)}><Archive className="mr-1 h-4 w-4" />Keep {selected.name}</Button></>}</DialogFooter></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={(value) => !value && onClose()}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>Duplicate impact review</DialogTitle><DialogDescription>Choose the canonical record and quarantine the duplicate. Historical transactions remain untouched until an atomic merge action is implemented.</DialogDescription></DialogHeader>{candidate && plan ? <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2"><PartnerIdentityCard mode={mode} label="Keep canonical" partner={selected} /><PartnerIdentityCard mode={mode} label="Potential duplicate" partner={candidate} /></div><div className="rounded-xl border border-border bg-muted/10 p-3"><p className="text-xs font-bold">Historical reference impact</p><div className="mt-2 space-y-1">{plan.impacted.map((row: any) => <div key={row.collection} className="flex items-center justify-between text-xs"><span>{titleCase(row.collection)}</span><strong>{row.count}</strong></div>)}{!plan.impacted.length && <p className="text-xs text-muted-foreground">No linked transaction references found.</p>}</div></div><div className="rounded-xl border border-warning/30 bg-warning/[0.04] p-3 text-xs text-muted-foreground"><p className="font-semibold text-foreground">Why this is quarantine, not automatic merge</p><p className="mt-1">{plan.reason}</p></div></div> : <p className="text-xs text-muted-foreground">Duplicate record not found.</p>}<DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button>{candidate && <><Button variant="outline" onClick={() => onQuarantine(selected.id, candidate.id)}>Keep {candidate.name}</Button><Button onClick={() => onQuarantine(candidate.id, selected.id)}><Archive className="mr-1 h-4 w-4" />Keep {selected.name}</Button></>}</DialogFooter></DialogContent></Dialog>;
 }
 
-function PartnerIdentityCard({ label, partner }: any) {
-  return <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p><div className="mt-2 flex items-center gap-2"><Avatar name={partner.name} size={36} /><div><p className="text-sm font-bold">{partner.name}</p><p className="text-[10px] text-muted-foreground">{partner.phone || "No phone"} · {partner.city || "No city"}</p></div></div><div className="mt-2 text-[10px] text-muted-foreground">GST: {partner.gstin || partner.business_gst || "—"} · PAN: {partner.pan || "—"}</div></div>;
+function PartnerIdentityCard({ mode, label, partner }: any) {
+  return <div className="rounded-xl border border-border bg-card p-3"><p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">{label}</p><div className="mt-2 flex items-center gap-2"><Avatar name={partner.name} size={36} /><div><p className="text-sm font-bold">{partner.name}</p><p className="text-[10px] text-muted-foreground">{partner.phone || "No phone"} · {partner.city || "No city"}</p>{mode === "vendor" && <p className="text-[10px] text-muted-foreground">{partner.gstin || "No GSTIN"} · {partner.pan || "No PAN"}</p>}</div></div></div>;
 }

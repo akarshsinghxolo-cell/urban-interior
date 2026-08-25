@@ -294,7 +294,7 @@ export function ContractorDetailModule() {
                 <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Trade rates</p>
                 <div className="flex flex-wrap gap-1.5">
                   {selected.rates.map((r) => (<span key={r.id} className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px]">
-                      {r.trade}: <span className="font-mono font-semibold">{formatINR(r.rate)}/{r.unit_id || "unit"}</span>
+                      {r.trade} · {r.unit_id || "unit"}: <span className="font-mono font-semibold">Material {r.material_rate == null ? "—" : formatINR(r.material_rate)} · Labour {r.labour_rate == null ? "—" : formatINR(r.labour_rate)} · Total {formatINR((r.material_rate || 0) + (r.labour_rate || 0))}</span>
                     </span>))}
                 </div>
               </div>)}

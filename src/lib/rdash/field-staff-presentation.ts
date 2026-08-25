@@ -361,10 +361,6 @@ export function fieldStaffPresentationDatabase(
         reliability_score: undefined,
         on_time_pct: undefined,
         past_jobs_count: undefined,
-        business_gst: undefined,
-        pan: undefined,
-        bank_account: undefined,
-        ifsc: undefined,
         source_partner_id: undefined,
         source_partner_name: undefined,
         work_capabilities: row.work_capabilities?.map((capability) => ({

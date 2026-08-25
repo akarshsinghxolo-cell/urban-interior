@@ -56,26 +56,6 @@ export interface VendorArticleCapability {
   updated_at: string;
 }
 
-export interface ContractorTradeCapability {
-  id: ID;
-  work_subcategory_id: ID;
-  work_subcategory_name?: string;
-  work_type_rates?: Array<{
-    work_type_id: ID;
-    work_type_name?: string;
-    labour_rate?: number;
-  }>;
-  crew_required?: number;
-  max_daily_capacity?: number;
-  preferred?: boolean;
-  status: "active" | "inactive";
-  notes?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export type PartnerCapability = VendorArticleCapability | ContractorTradeCapability;
-
 export interface PartnerDuplicateCandidate {
   leftId: ID;
   rightId: ID;
@@ -216,7 +196,7 @@ export function vendorPaymentReadiness(
   };
 }
 
-export function detectPartnerDuplicates(partners: Array<Record<string, any>>): PartnerDuplicateCandidate[] {
+export function detectPartnerDuplicates(partners: Array<Record<string, any>>, mode: PartnerGovernanceMode = "vendor"): PartnerDuplicateCandidate[] {
   const candidates: PartnerDuplicateCandidate[] = [];
   for (let leftIndex = 0; leftIndex < partners.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < partners.length; rightIndex += 1) {
@@ -226,14 +206,14 @@ export function detectPartnerDuplicates(partners: Array<Record<string, any>>): P
 
       let score = 0;
       const reasons: string[] = [];
-      const leftGst = normalizeTaxId(left.gstin || left.business_gst);
-      const rightGst = normalizeTaxId(right.gstin || right.business_gst);
-      const leftPan = normalizeTaxId(left.pan);
-      const rightPan = normalizeTaxId(right.pan);
+      const leftGst = mode === "vendor" ? normalizeTaxId(left.gstin) : "";
+      const rightGst = mode === "vendor" ? normalizeTaxId(right.gstin) : "";
+      const leftPan = mode === "vendor" ? normalizeTaxId(left.pan) : "";
+      const rightPan = mode === "vendor" ? normalizeTaxId(right.pan) : "";
       const leftPhone = normalizePhone(left.phone || left.whatsapp);
       const rightPhone = normalizePhone(right.phone || right.whatsapp);
-      const leftBank = normalizeBankAccount(left.bank_account);
-      const rightBank = normalizeBankAccount(right.bank_account);
+      const leftBank = mode === "vendor" ? normalizeBankAccount(left.bank_account) : "";
+      const rightBank = mode === "vendor" ? normalizeBankAccount(right.bank_account) : "";
       const leftName = normalizePartnerName(left.legal_name || left.name);
       const rightName = normalizePartnerName(right.legal_name || right.name);
       const sameCity = String(left.city || "").trim().toLowerCase() === String(right.city || "").trim().toLowerCase();

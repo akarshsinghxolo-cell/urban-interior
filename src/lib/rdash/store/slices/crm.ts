@@ -25,6 +25,7 @@ import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
 import { primaryWorkType } from "../../work-types";
+import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
     assertAreaBelongsToSite, assertAreasBelongToSite,
@@ -778,7 +779,8 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 }
                 lineKeys.add(duplicateKey);
                 const primaryRate = primaryWorkType(subcategory);
-                const rate = mapping.reference_rate || article.base_rate || (primaryRate.material_rate || 0) + (primaryRate.labour_rate || 0) || 0;
+                const contractorAverage = contractorWorkTypeAverages(state.db.master.contractorRates, subcategory.id, primaryRate.id);
+                const rate = mapping.reference_rate || article.base_rate || contractorAverage.total_rate || 0;
                 const title = `${area.name} · ${article.name}`;
                 return {
                     id: genId("req-line"),
