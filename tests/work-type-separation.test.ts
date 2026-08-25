@@ -73,7 +73,7 @@ describe("contractor and vendor domain separation", () => {
   });
 
   test("database migration leaves Vendor Article tables untouched", () => {
-    const migration = read("../supabase/migrations/20260825180000_canonical_contractor_work_type_rates.sql");
+    const migration = read("../supabase/migrations/20260825172252_canonical_contractor_work_type_rates.sql");
     const projection = migration.slice(
       migration.indexOf("create or replace function public.uc_contractor_rate_projection_rows"),
       migration.indexOf("revoke all on function public.uc_contractor_rate_projection_rows"),
