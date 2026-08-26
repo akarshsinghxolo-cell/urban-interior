@@ -336,7 +336,7 @@ export function CustomerSitesDialog({
               {isEdit ? "Edit Customer and Sites" : "Add New Customer"}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Save customer identity, optional Sites, Areas, and Work Required in one workflow.
+              Save customer identity and optional Sites, Areas, and Work Required in one workflow.
             </DialogDescription>
           </DialogHeader>
 
