@@ -3,7 +3,6 @@ import * as React from "react";
 import { Plus } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { initAuthFetch, clearSessionToken } from "@/lib/rdash/client-auth";
-import { loadWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
 import { loadedWorkspaceCollections } from "@/lib/rdash/workspace-delta";
 import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
@@ -103,16 +102,9 @@ export function RDashApp() {
         return () => { active = false; };
     }, []);
 
-    // ── Login welcome + workspace health banner ─────────────────────────
-    // Once the secure workspace is hydrated, fetch /api/health/summary once
-    // and surface a contextual welcome toast:
-    //   - greeting + role
-    //   - integrity score (warn if < 100)
-    //   - attention count (warn if > 0)
-    //   - overdue invoices (warn if > 0)
-    //   - negative cash position (warn)
-    // This makes the integrity + finance layers visible at the exact moment
-    // the user logs in, rather than requiring them to navigate to a module.
+    // Welcome once per loaded app shell. Workspace health belongs in the
+    // persistent header notification center and its respective modules, not
+    // in the transient toast stack on every hard refresh.
     const welcomedRef = React.useRef(false);
     React.useEffect(() => {
         if (!secureWorkspaceReady || welcomedRef.current) return;
@@ -125,63 +117,6 @@ export function RDashApp() {
         toast.success(`${greeting}, ${firstName}`, {
             description: authUser?.role ? `Signed in as ${authUser.role}` : "Session active",
             duration: 4000,
-        });
-        // Then fetch the health summary and surface any warnings.
-        void loadWorkspaceHealth()
-            .then((summary: any) => {
-            if (!summary) return;
-            const warnings: string[] = [];
-            if (summary.integrity?.healthScore != null && summary.integrity.healthScore < 100) {
-                warnings.push(`Data integrity at ${summary.integrity.healthScore}/100 — ${summary.integrity.totalIssues} issue(s) detected.`);
-            }
-            if (summary.attentionCount > 0) {
-                warnings.push(`${summary.attentionCount} item(s) need attention (overdue tasks, blockers, approvals, risks).`);
-            }
-            if (summary.finance) {
-                if (summary.finance.overdueInvoiceValue > 0) {
-                    warnings.push(`${summary.finance.overdueInvoiceCount} overdue invoice(s) totalling ₹${summary.finance.overdueInvoiceValue.toLocaleString("en-IN")}.`);
-                }
-                if (summary.finance.cashPosition < 0) {
-                    warnings.push(`Negative cash position (₹${summary.finance.cashPosition.toLocaleString("en-IN")}) — payments exceed receipts.`);
-                }
-            }
-            if (warnings.length > 0) {
-                // Deep-link the toast action to the MOST URGENT module needing
-                // attention, prioritized: integrity < 100 → overdue invoices →
-                // negative cash → general attention (blocked/risks/approvals).
-                // The action label reflects the target so users know where they'll land.
-                let targetModule = "workdesk";
-                let actionLabel = "Open Daily Work";
-                if (summary.integrity?.healthScore != null && summary.integrity.healthScore < 100) {
-                    targetModule = "integrity";
-                    actionLabel = "Open Integrity";
-                } else if (summary.finance?.overdueInvoiceValue > 0) {
-                    targetModule = "paymentRecovery";
-                    actionLabel = "Open Recovery";
-                } else if (summary.finance?.cashPosition < 0) {
-                    targetModule = "financeOverview";
-                    actionLabel = "Open Finance";
-                } else if (summary.attentionCount > 0) {
-                    targetModule = "blockedRisks";
-                    actionLabel = "Open Blockers";
-                }
-                toast.warning("Workspace needs attention", {
-                    description: warnings.join(" "),
-                    duration: 9000,
-                    action: {
-                        label: actionLabel,
-                        onClick: () => useRDashStore.getState().setActiveModule(targetModule),
-                    },
-                });
-            } else if (summary.healthBadge === "healthy") {
-                toast.success("Workspace healthy", {
-                    description: `Integrity ${summary.integrity.healthScore}/100 · ${summary.integrity.totalRecords} records in sync`,
-                    duration: 5000,
-                });
-            }
-        })
-            .catch(() => {
-            // Non-fatal — the welcome toast already fired.
         });
     }, [secureWorkspaceReady]);
     // Surface workspace sync errors as a visible toast so users know when an

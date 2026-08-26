@@ -46,6 +46,7 @@ const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
   test("history-heavy reads have server limits", () => {
     expect(rest).toContain("DEFAULT_COLLECTION_LIMITS");
     expect(rest).toContain('auditLog: 100');
-    expect(rest).toContain('.order("revision", { ascending: false }).limit(limit)');
+    expect(rest).toContain('.order("revision", { ascending: false })');
+    expect(rest).toContain('.range(offset, offset + configuredLimit)');
   });
 });
