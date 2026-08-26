@@ -108,6 +108,8 @@ jobs:
         run: npm run test:customer-sites-save
       - name: Test Sales Pipeline progression
         run: npx vitest run tests/sales-pipeline-progress.test.ts
+      - name: Test customer quotation without Site
+        run: npx vitest run tests/customer-quotation-without-site.test.ts
       - name: Test legacy Customer and Site path removal
         run: npm run test:customer-sites-legacy
       - name: Test canonical Contractor profile
