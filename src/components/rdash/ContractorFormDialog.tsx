@@ -218,6 +218,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
   const [businessCard, setBusinessCard] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
+  const [activeCapabilityCategoryId, setActiveCapabilityCategoryId] = React.useState<string | null>(null);
   const [duplicateAcknowledged, setDuplicateAcknowledged] = React.useState(false);
   const [baselineKey, setBaselineKey] = React.useState("");
   const baselineRef = React.useRef<ContractorProfileRecord>({});
@@ -230,6 +231,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
   const allCategories = db.master.workCategories;
   const allSubcategories = db.master.workSubcategories;
+  const activeCapabilityCategory = allCategories.find((category) => category.id === activeCapabilityCategoryId);
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -346,6 +348,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setLongitude(normalized.longitude as number | undefined);
     setCoordinates(nextCoordinates);
     setCapabilities(capabilitiesToDraft(normalized.work_capabilities || [], allSubcategories));
+    setActiveCapabilityCategoryId(null);
     setContractorPhoto(
       normalized.photo_attachment_id
         ? { attachment_id: String(normalized.photo_attachment_id) }
@@ -742,28 +745,56 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
             <section className="rounded-lg border p-3">
               <p className="text-xs font-semibold">Work capabilities and canonical rates</p>
               <p className="mb-2 text-[10px] text-muted-foreground">Categories are derived automatically from selected subcategories. Governance and Contractor Rates are synchronized from these rows.</p>
-              {allCategories.map((category) => (
-                <details key={category.id} className="mb-1 rounded border">
-                  <summary className="cursor-pointer px-2 py-1 text-xs">{category.name}</summary>
-                  <div className="flex flex-wrap gap-1 p-2">
-                    {allSubcategories.filter((row) => row.category_id === category.id).map((subcategory) => (
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Work capability categories">
+                {allCategories.map((category) => {
+                  const active = activeCapabilityCategoryId === category.id;
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setActiveCapabilityCategoryId((current) => current === category.id ? null : category.id)}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                        active
+                          ? "border-primary bg-primary/10 text-primary shadow-sm"
+                          : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:bg-muted/50 hover:text-foreground",
+                      )}
+                    >
+                      {category.name}
+                    </button>
+                  );
+                })}
+              </div>
+              {activeCapabilityCategory ? (
+                <div className="mt-2 rounded-lg border border-border bg-muted/20 p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold">{activeCapabilityCategory.name}</p>
+                    <span className="text-[10px] text-muted-foreground">Select subcategories</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {allSubcategories.filter((row) => row.category_id === activeCapabilityCategory.id).map((subcategory) => (
                       <button
                         key={subcategory.id}
                         type="button"
                         aria-pressed={capabilities.some((row) => row.subcategory_id === subcategory.id)}
                         onClick={() => toggleCapability(subcategory.id)}
                         className={cn(
-                          "rounded border px-2 py-1 text-[10px]",
-                          capabilities.some((row) => row.subcategory_id === subcategory.id) && "border-primary bg-primary text-primary-foreground",
+                          "rounded-full border px-2.5 py-1 text-[10px] transition-colors",
+                          capabilities.some((row) => row.subcategory_id === subcategory.id)
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
                         )}
                       >{subcategory.name}</button>
                     ))}
-                    <div className="w-full">
-                      <AddWorkSubcategoryAction categoryId={category.id} />
-                    </div>
                   </div>
-                </details>
-              ))}
+                  <div className="mt-2">
+                    <AddWorkSubcategoryAction categoryId={activeCapabilityCategory.id} />
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-[10px] text-muted-foreground">Choose a category to select or edit its work subcategories.</p>
+              )}
               <AddWorkCategoryAction className="mt-2" />
               <div className="mt-2 space-y-2">
                 {capabilities.map((capability) => {
