@@ -53,7 +53,7 @@ function database(): RDashDatabase {
 
 const options = {
   now: "2026-07-30T10:00:00.000Z",
-  createId: (prefix: "cust" | "site") => `${prefix}-created`,
+  createId: (prefix: "cust" | "site" | "area") => `${prefix}-created`,
 };
 
 describe("customer Site form defaults", () => {
@@ -108,6 +108,61 @@ describe("canonical customer and Sites save", () => {
     expect(result.db.sites.find((row) => row.id === "site-created")?.customer_id).toBe("cust-created");
     expect(result.changed).toBe(true);
     expect(result.customerCreated).toBe(true);
+  });
+
+  test("creates a customer, Site, and Area atomically", () => {
+    const db = database();
+    db.customers = [];
+    db.sites = [];
+    db.areas = [];
+    const result = applyCustomerWithSitesSave(db, {
+      customer: { name: "New Customer", phone: "9123456789", status: "active" },
+      sites: [{ id: "site-new", name: "New Residence", site_type: "villa", stage: "enquiry" }],
+      areas: [{ id: "area-new", site_id: "site-new", name: "Living Room", area_type: "living_room" }],
+    }, options);
+
+    expect(result.siteIds).toEqual(["site-new"]);
+    expect(result.areaIds).toEqual(["area-new"]);
+    expect(result.db.areas.find((area) => area.id === "area-new")).toMatchObject({
+      site_id: "site-new",
+      name: "Living Room",
+      area_type: "living_room",
+      stage: "unmeasured",
+    });
+    expect(result.areaChanges[0].kind).toBe("create");
+  });
+
+  test("rejects an Area linked outside the saved Customer's Sites", () => {
+    const db = database();
+    db.sites.push({ ...db.sites[0], id: "site-other", customer_id: "customer-other", name: "Other Site" });
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      areas: [{ id: "area-new", site_id: "site-other", name: "Office", area_type: "office_cabin" }],
+    }, options)).toThrow(/Customer's Sites/i);
+  });
+
+  test("preserves an existing Area stage when the form edits its details", () => {
+    const db = database();
+    db.areas = [{
+      id: "area-existing",
+      site_id: "site-1",
+      name: "Living Room",
+      area_type: "living_room",
+      stage: "measured",
+      unit: "ft",
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+    }];
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      areas: [{ id: "area-existing", site_id: "site-1", name: "Main Living Room" }],
+    }, options);
+
+    expect(result.db.areas[0]).toMatchObject({ name: "Main Living Room", stage: "measured" });
   });
 
   test("creates a customer without a Site", () => {
