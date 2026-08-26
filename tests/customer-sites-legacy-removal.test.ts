@@ -24,14 +24,14 @@ test("Customer/Site dialog retains canonical sync and dirty-form protection", ()
   expect(customerSitesDialog.indexOf("await awaitServerSync();")).toBeLessThan(customerSitesDialog.indexOf("commitBatches();"));
 });
 
-test("shared Add/Edit Customer form orders Sites, Areas, then work interests", () => {
+test("shared Add/Edit Customer form orders Sites, Work Required, then work interests", () => {
   const sites = customerSitesDialog.indexOf("<CustomerSiteDraftCard");
-  const areas = customerSitesDialog.indexOf("<CustomerAreasDraftSection");
+  const workRequired = customerSitesDialog.indexOf("<CustomerWorkRequiredDraftSection");
   const interests = customerSitesDialog.indexOf("<CustomerWorkInterests");
 
   expect(customerSitesDialog).toContain('isEdit ? "Edit Customer and Sites" : "Add New Customer"');
   expect(sites).toBeGreaterThanOrEqual(0);
-  expect(areas).toBeGreaterThan(sites);
-  expect(interests).toBeGreaterThan(areas);
+  expect(workRequired).toBeGreaterThan(sites);
+  expect(interests).toBeGreaterThan(workRequired);
   expect(customerDetailsFields).toContain("export function CustomerWorkInterests");
 });

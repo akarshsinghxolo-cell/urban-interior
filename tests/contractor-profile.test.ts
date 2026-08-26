@@ -148,12 +148,13 @@ describe("contractor create persistence and governance projection", () => {
 });
 
 describe("contractor capability picker layout", () => {
-  test("uses compact wrapping category chips with a single active subcategory panel", () => {
+  test("shows the active category's subcategories immediately after its chip", () => {
     const source = readFileSync(new URL("../src/components/rdash/ContractorFormDialog.tsx", import.meta.url), "utf8");
     expect(source).toContain('aria-label="Work capability categories"');
     expect(source).toContain('rounded-full border px-3 py-1.5');
     expect(source).toContain("activeCapabilityCategoryId");
-    expect(source).toContain("activeCapabilityCategory ? (");
+    expect(source).toContain("{active ? (");
+    expect(source).toContain('className="basis-full rounded-lg border');
     expect(source).not.toContain("<details key={category.id}");
   });
 });

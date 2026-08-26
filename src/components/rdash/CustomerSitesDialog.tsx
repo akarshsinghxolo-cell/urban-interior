@@ -13,8 +13,8 @@ import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { CustomerDetailsFields, CustomerWorkInterests } from "./CustomerDetailsFields";
-import { CustomerAreasDraftSection } from "./CustomerAreasDraftSection";
 import { CustomerSiteDraftCard } from "./CustomerSiteDraftCard";
+import { CustomerWorkRequiredDraftSection } from "./CustomerWorkRequiredDraftSection";
 import { EntityFilesCard } from "./EntityFilesCard";
 import {
   areaPayload,
@@ -28,10 +28,12 @@ import {
   newSiteDraft,
   siteNameFollowsCustomer,
   sitePayload,
+  workRequiredPayload,
   validEmail,
   validIndianPhone,
   type AreaDraft,
   type CustomerDraft,
+  type CustomerWorkRequiredDraft,
   type SiteDraft,
 } from "./customer-sites-form-model";
 
@@ -63,6 +65,7 @@ export function CustomerSitesDialog({
   const [customer, setCustomer] = React.useState<CustomerDraft>(() => emptyCustomerDraft());
   const [sites, setSites] = React.useState<SiteDraft[]>([]);
   const [areas, setAreas] = React.useState<AreaDraft[]>([]);
+  const [workRequired, setWorkRequired] = React.useState<CustomerWorkRequiredDraft[]>([]);
   const [detachAttachmentIds, setDetachAttachmentIds] = React.useState<string[]>([]);
   const [baseline, setBaseline] = React.useState("");
   const [sameNameAcknowledged, setSameNameAcknowledged] = React.useState(false);
@@ -85,9 +88,10 @@ export function CustomerSitesDialog({
     setCustomer(nextCustomer);
     setSites(nextSites);
     setAreas(nextAreas);
+    setWorkRequired([]);
     setDetachAttachmentIds([]);
     setSameNameAcknowledged(false);
-    setBaseline(fingerprint(nextCustomer, nextSites, [], false, nextAreas));
+    setBaseline(fingerprint(nextCustomer, nextSites, [], false, nextAreas, []));
     dirtyFormRegistry.markClean(formId);
   }, [db.areas, db.customers, db.sites, editId, formId]);
 
@@ -114,8 +118,8 @@ export function CustomerSitesDialog({
   }, [customer.name, open]);
 
   const currentFingerprint = React.useMemo(
-    () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas),
-    [areas, customer, sites, detachAttachmentIds, sameNameAcknowledged],
+    () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas, workRequired),
+    [areas, customer, sites, detachAttachmentIds, sameNameAcknowledged, workRequired],
   );
   const dirty = open && currentFingerprint !== baseline;
 
@@ -129,6 +133,7 @@ export function CustomerSitesDialog({
     await Promise.all(site.pendingPhotos.map((photo) => cancelQueuedWorkflowFile(photo)));
     setSites((current) => current.filter((row) => row.id !== siteId));
     setAreas((current) => current.filter((area) => area.siteId !== siteId));
+    setWorkRequired((current) => current.filter((work) => work.siteId !== siteId));
   }, [sites]);
 
   const setNewSiteEnabled = React.useCallback(async (siteId: string, enabled: boolean) => {
@@ -137,7 +142,10 @@ export function CustomerSitesDialog({
     if (!enabled && site.pendingPhotos.length) {
       await Promise.all(site.pendingPhotos.map((photo) => cancelQueuedWorkflowFile(photo)));
     }
-    if (!enabled) setAreas((current) => current.filter((area) => area.siteId !== siteId));
+    if (!enabled) {
+      setAreas((current) => current.filter((area) => area.siteId !== siteId));
+      setWorkRequired((current) => current.filter((work) => work.siteId !== siteId));
+    }
     updateSite(siteId, {
       enabled,
       expanded: enabled || site.expanded,
@@ -174,8 +182,10 @@ export function CustomerSitesDialog({
     const areasValid = areas
       .filter((area) => includedLiveSiteIds.has(area.siteId))
       .every((area) => Boolean(area.name.trim()));
-    return sitesValid && areasValid;
-  }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites]);
+    const workRequiredValid = workRequired.every((work) => includedLiveSiteIds.has(work.siteId)
+      && Boolean(work.categoryId && work.subcategoryId && work.title.trim() && work.areaIds.length));
+    return sitesValid && areasValid && workRequiredValid;
+  }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, workRequired]);
 
   const validate = React.useCallback(() => {
     if (!customer.name.trim()) {
@@ -234,8 +244,26 @@ export function CustomerSitesDialog({
         return false;
       }
     }
+    for (const work of workRequired) {
+      if (!includedLiveSiteIds.has(work.siteId)) {
+        toast.error("Every Work Required must belong to an active Site");
+        return false;
+      }
+      if (!work.categoryId || !work.subcategoryId) {
+        toast.error("Select a category and subcategory for every Work Required");
+        return false;
+      }
+      if (!work.title.trim()) {
+        toast.error("Enter a title for every Work Required");
+        return false;
+      }
+      if (!work.areaIds.length) {
+        toast.error(`Select at least one covered Area for ${work.title.trim()}`);
+        return false;
+      }
+    }
     return true;
-  }, [areas, customer, duplicateMatches, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, updateSite]);
+  }, [areas, customer, duplicateMatches, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, updateSite, workRequired]);
 
   const persist = React.useCallback(async (): Promise<boolean> => {
     if (saving || !dirty) return !dirty;
@@ -249,18 +277,19 @@ export function CustomerSitesDialog({
         customer: customerPayload(customer),
         sites: includedSites.map((site) => sitePayload(site, currentUser().name)),
         areas: includedAreas.map(areaPayload),
+        workRequired: workRequired.map(workRequiredPayload),
         detachAttachmentIds,
       });
       await awaitServerSync();
       commitBatches();
-      setBaseline(fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas));
+      setBaseline(fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas, workRequired));
       dirtyFormRegistry.markClean(formId);
       const archivedCount = includedSites.filter((site) => site.archiveRequested).length;
       toast.success(result.changed
         ? archivedCount
           ? `Customer saved and ${archivedCount} Site${archivedCount === 1 ? "" : "s"} archived`
-          : `Customer "${customer.name.trim()}", Site, and Area changes saved`
-        : "No customer, Site, or Area changes to save");
+          : `Customer "${customer.name.trim()}", Site, Area, and Work Required changes saved`
+        : "No customer, Site, Area, or Work Required changes to save");
       onSaved?.(result.customerId);
       return true;
     } catch (error) {
@@ -269,7 +298,7 @@ export function CustomerSitesDialog({
     } finally {
       setSaving(false);
     }
-  }, [areas, awaitServerSync, commitBatches, currentUser, customer, detachAttachmentIds, dirty, editId, formId, includedLiveSiteIds, onSaved, sameNameAcknowledged, saveCustomerWithSites, saving, sites, validate]);
+  }, [areas, awaitServerSync, commitBatches, currentUser, customer, detachAttachmentIds, dirty, editId, formId, includedLiveSiteIds, onSaved, sameNameAcknowledged, saveCustomerWithSites, saving, sites, validate, workRequired]);
 
   useDirtyFormRegistration({
     id: formId,
@@ -310,7 +339,7 @@ export function CustomerSitesDialog({
               {isEdit ? "Edit Customer and Sites" : "Add New Customer"}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Save customer identity, optional Sites and Areas, then record broad work interests in one workflow.
+              Save customer identity, optional Sites, Areas, and Work Required, then record broad work interests in one workflow.
             </DialogDescription>
           </DialogHeader>
 
@@ -367,7 +396,15 @@ export function CustomerSitesDialog({
               ))}
             </section>
 
-            <CustomerAreasDraftSection sites={sites} areas={areas} setAreas={setAreas} />
+            <CustomerWorkRequiredDraftSection
+              db={db}
+              customer={customer}
+              sites={sites}
+              areas={areas}
+              setAreas={setAreas}
+              workRequired={workRequired}
+              setWorkRequired={setWorkRequired}
+            />
 
             <CustomerWorkInterests db={db} customer={customer} setCustomer={setCustomer} />
           </div>

@@ -1,5 +1,5 @@
-import type { Area, Customer, Site } from "@/lib/rdash/types";
-import type { CustomerAreaSaveDraft, CustomerSiteSaveDraft } from "@/lib/rdash/customer-sites-save";
+import type { Area, Customer, Priority, Site } from "@/lib/rdash/types";
+import type { CustomerAreaSaveDraft, CustomerSiteSaveDraft, CustomerWorkRequiredSaveDraft } from "@/lib/rdash/customer-sites-save";
 import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { formatCoordinatePair } from "@/lib/rdash/coordinates";
@@ -42,6 +42,17 @@ export type AreaDraft = {
   name: string;
   areaType: Area["area_type"];
   notes: string;
+};
+
+export type CustomerWorkRequiredDraft = {
+  id: string;
+  siteId: string;
+  title: string;
+  categoryId: string;
+  subcategoryId: string;
+  areaIds: string[];
+  description: string;
+  priority: Priority;
 };
 
 export type CustomerDraft = {
@@ -205,6 +216,19 @@ export function newAreaDraft(siteId: string): AreaDraft {
   };
 }
 
+export function newCustomerWorkRequiredDraft(siteId: string): CustomerWorkRequiredDraft {
+  return {
+    id: reserveEntityId("workRequired"),
+    siteId,
+    title: "",
+    categoryId: "",
+    subcategoryId: "",
+    areaIds: [],
+    description: "",
+    priority: "medium",
+  };
+}
+
 export function draftForArea(area: Area): AreaDraft {
   return {
     id: area.id,
@@ -222,6 +246,7 @@ export function fingerprint(
   detachAttachmentIds: string[],
   sameNameAcknowledged: boolean,
   areas: AreaDraft[] = [],
+  workRequired: CustomerWorkRequiredDraft[] = [],
 ): string {
   return JSON.stringify({
     customer,
@@ -232,6 +257,7 @@ export function fingerprint(
     detachAttachmentIds: [...detachAttachmentIds].sort(),
     sameNameAcknowledged,
     areas,
+    workRequired,
   });
 }
 
@@ -305,5 +331,19 @@ export function areaPayload(draft: AreaDraft): CustomerAreaSaveDraft {
     area_type: draft.areaType,
     ...(draft.existing ? {} : { stage: "unmeasured" as const }),
     notes: draft.notes.trim() || undefined,
+  };
+}
+
+export function workRequiredPayload(draft: CustomerWorkRequiredDraft): CustomerWorkRequiredSaveDraft {
+  return {
+    id: draft.id,
+    site_id: draft.siteId,
+    title: draft.title.trim(),
+    work_category_id: draft.categoryId,
+    work_subcategory_id: draft.subcategoryId,
+    area_ids: draft.areaIds,
+    description: draft.description.trim() || undefined,
+    status: "new",
+    priority: draft.priority,
   };
 }

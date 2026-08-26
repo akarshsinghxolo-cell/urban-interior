@@ -1,257 +1,101 @@
 "use client";
+
 import * as React from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { useRDashStore } from "@/lib/rdash/store";
-import type { Priority, Site } from "@/lib/rdash/types";
+import type { Site } from "@/lib/rdash/types";
+import { emptyWorkRequiredFormDraft, WorkRequiredFields, type WorkRequiredFormDraft } from "./WorkRequiredFields";
+
 export interface WorkRequiredCreateDialogProps {
-    open: boolean;
-    customerId: string;
-    site: Site;
-    initialAreaIds?: string[];
-    onOpenChange: (open: boolean) => void;
-    onCreated?: (workRequiredId: string) => void;
+  open: boolean;
+  customerId: string;
+  site: Site;
+  initialAreaIds?: string[];
+  onOpenChange: (open: boolean) => void;
+  onCreated?: (workRequiredId: string) => void;
 }
-export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaIds, onOpenChange, onCreated, }: WorkRequiredCreateDialogProps) {
-    const db = useRDashStore((state) => state.db);
-    const addArea = useRDashStore((state) => state.addArea);
-    const addWorkRequired = useRDashStore((state) => state.addWorkRequired);
-    const siteAreas = React.useMemo(() => db.areas.filter((area) => area.site_id === site.id && !area.is_archived), [db.areas, site.id]);
-    const [title, setTitle] = React.useState("");
-    const [categoryId, setCategoryId] = React.useState("");
-    const [subcategoryId, setSubcategoryId] = React.useState("");
-    const [systemName, setSystemName] = React.useState("");
-    const [specification, setSpecification] = React.useState("");
-    const [priority, setPriority] = React.useState<Priority>("medium");
-    const [areaIds, setAreaIds] = React.useState<string[]>([]);
-    const [prefilledFromCustomer, setPrefilledFromCustomer] = React.useState(false);
-    const [newAreaOpen, setNewAreaOpen] = React.useState(false);
-    const [newAreaName, setNewAreaName] = React.useState("");
-    const [newAreaType, setNewAreaType] = React.useState("other");
-    const initializedDialogKey = React.useRef("");
-    const subcategories = React.useMemo(() => db.master.workSubcategories.filter((row) => row.category_id === categoryId), [categoryId, db.master.workSubcategories]);
 
-    // Look up the customer's interest categories/subcategories (captured during
-    // customer creation) so we can pre-fill the work required form. This gives
-    // preference to the customer-level work preferences when creating site-level
-    // work required, avoiding re-entry and keeping the quotation flow consistent.
-    const customerInterests = React.useMemo(() => {
-        const customer = db.customers.find((row) => row.id === customerId);
-        if (!customer) return { categories: [] as string[], subcategories: [] as string[] };
-        return {
-            categories: customer.interest_category_ids || [],
-            subcategories: customer.interest_work_subcategory_ids || [],
-        };
-    }, [db.customers, customerId]);
+export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaIds, onOpenChange, onCreated }: WorkRequiredCreateDialogProps) {
+  const db = useRDashStore((state) => state.db);
+  const addArea = useRDashStore((state) => state.addArea);
+  const addWorkRequired = useRDashStore((state) => state.addWorkRequired);
+  const siteAreas = React.useMemo(() => db.areas.filter((area) => area.site_id === site.id && !area.is_archived), [db.areas, site.id]);
+  const [draft, setDraft] = React.useState<WorkRequiredFormDraft>(() => emptyWorkRequiredFormDraft());
+  const [prefilledFromCustomer, setPrefilledFromCustomer] = React.useState(false);
+  const initializedDialogKey = React.useRef("");
+  const initialAreaIdsKey = (initialAreaIds || []).join("|");
 
-    const initialAreaIdsKey = (initialAreaIds || []).join("|");
-    React.useEffect(() => {
-        if (!open) {
-            initializedDialogKey.current = "";
-            return;
-        }
-        const dialogKey = `${site.id}|${initialAreaIdsKey}`;
-        if (initializedDialogKey.current === dialogKey)
-            return;
-        initializedDialogKey.current = dialogKey;
-        const permittedInitialIds = (initialAreaIdsKey ? initialAreaIdsKey.split("|") : []).filter((id) => siteAreas.some((area) => area.id === id));
+  React.useEffect(() => {
+    if (!open) {
+      initializedDialogKey.current = "";
+      return;
+    }
+    const dialogKey = `${site.id}|${initialAreaIdsKey}`;
+    if (initializedDialogKey.current === dialogKey) return;
+    initializedDialogKey.current = dialogKey;
+    const customer = db.customers.find((row) => row.id === customerId);
+    const categoryId = (customer?.interest_category_ids || []).find((id) => db.master.workCategories.some((category) => category.id === id)) || "";
+    const subcategoryId = (customer?.interest_work_subcategory_ids || []).find((id) => db.master.workSubcategories.some((subcategory) => subcategory.id === id && subcategory.category_id === categoryId)) || "";
+    const title = db.master.workSubcategories.find((subcategory) => subcategory.id === subcategoryId)?.name || "";
+    setDraft({
+      ...emptyWorkRequiredFormDraft(),
+      categoryId,
+      subcategoryId,
+      title,
+      areaIds: (initialAreaIdsKey ? initialAreaIdsKey.split("|") : []).filter((id) => siteAreas.some((area) => area.id === id)),
+    });
+    setPrefilledFromCustomer(Boolean(categoryId));
+  }, [customerId, db.customers, db.master.workCategories, db.master.workSubcategories, initialAreaIdsKey, open, site.id, siteAreas]);
 
-        // Pre-fill from customer interests (preference): pick the first interest
-        // category that exists in the master, and the first matching subcategory.
-        let prefillCategoryId = "";
-        let prefillSubcategoryId = "";
-        let prefillTitle = "";
-        let didPrefill = false;
-        if (customerInterests.categories.length) {
-            const matchedCategory = customerInterests.categories
-                .find((id) => db.master.workCategories.some((cat) => cat.id === id));
-            if (matchedCategory) {
-                prefillCategoryId = matchedCategory;
-                const catName = db.master.workCategories.find((cat) => cat.id === matchedCategory)?.name || "";
-                // Pick a matching subcategory from the customer's interests that belongs to this category
-                const matchedSub = customerInterests.subcategories
-                    .find((id) => db.master.workSubcategories.some((sub) => sub.id === id && sub.category_id === matchedCategory));
-                prefillSubcategoryId = matchedSub || "";
-                const subName = matchedSub
-                    ? db.master.workSubcategories.find((sub) => sub.id === matchedSub)?.name || ""
-                    : "";
-                prefillTitle = [catName, subName].filter(Boolean).join(" — ");
-                didPrefill = true;
-            }
-        }
+  const save = () => {
+    if (!draft.categoryId) return toast.error("Select the primary Work Category.");
+    if (!draft.subcategoryId) return toast.error("Select the primary Work Subcategory.");
+    if (!draft.title.trim()) return toast.error("Work Required title is required.");
+    if (!draft.areaIds.length) return toast.error("Select at least one covered Area.");
+    try {
+      const id = addWorkRequired({
+        customer_id: customerId,
+        site_id: site.id,
+        title: draft.title.trim(),
+        work_category_id: draft.categoryId,
+        work_subcategory_id: draft.subcategoryId,
+        area_ids: draft.areaIds,
+        description: draft.description.trim() || undefined,
+        status: "new",
+        priority: draft.priority,
+      });
+      toast.success(`Work Required created for ${site.name}`);
+      onCreated?.(id);
+      onOpenChange(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Work Required could not be created.");
+    }
+  };
 
-        setTitle(prefillTitle);
-        setCategoryId(prefillCategoryId);
-        setSubcategoryId(prefillSubcategoryId);
-        setSystemName("");
-        setSpecification("");
-        setPriority("medium");
-        setAreaIds(permittedInitialIds);
-        setPrefilledFromCustomer(didPrefill);
-        setNewAreaOpen(false);
-        setNewAreaName("");
-        setNewAreaType("other");
-    }, [initialAreaIdsKey, open, siteAreas, customerInterests, db.master.workCategories, db.master.workSubcategories]);
-    const toggleArea = (areaId: string) => {
-        setAreaIds((current) => current.includes(areaId)
-            ? current.filter((id) => id !== areaId)
-            : [...current, areaId]);
-    };
-    const createArea = () => {
-        if (!newAreaName.trim()) {
-            toast.error("Area name is required.");
-            return;
-        }
-        try {
-            const areaId = addArea({
-                site_id: site.id,
-                name: newAreaName.trim(),
-                area_type: newAreaType as never,
-                stage: "unmeasured",
-            });
-            setAreaIds((current) => Array.from(new Set([...current, areaId])));
-            setNewAreaName("");
-            setNewAreaType("other");
-            setNewAreaOpen(false);
-            toast.success(`Area added and selected for ${site.name}`);
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Area could not be added.");
-        }
-    };
-    const save = () => {
-        if (!title.trim()) {
-            toast.error("Work Required title is required.");
-            return;
-        }
-        if (!siteAreas.length) {
-            toast.error("Add at least one Area before defining work required.");
-            return;
-        }
-        if (!areaIds.length) {
-            toast.error("Select at least one covered Area.");
-            return;
-        }
-        if (!categoryId) {
-            toast.error("Select the primary Work Category.");
-            return;
-        }
-        if (subcategories.length > 0 && !subcategoryId) {
-            toast.error("Select the primary Work Subcategory.");
-            return;
-        }
-        try {
-            const id = addWorkRequired({
-                customer_id: customerId,
-                site_id: site.id,
-                title: title.trim(),
-                work_category_id: categoryId || undefined,
-                work_subcategory_id: subcategoryId || undefined,
-                system_name: systemName.trim() || undefined,
-                specification: specification.trim() || undefined,
-                area_ids: areaIds,
-                status: "new",
-                priority,
-            });
-            toast.success(`Work Required created for ${site.name}`);
-            onCreated?.(id);
-            onOpenChange(false);
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Work Required could not be created.");
-        }
-    };
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary"/> Add Work Required</DialogTitle>
+          <DialogTitle className="flex items-center gap-2"><Plus className="h-4 w-4 text-primary" />Add Work Required</DialogTitle>
           <DialogDescription>{site.name} · the work, areas, quotation, and execution remain linked to this Customer Site.</DialogDescription>
         </DialogHeader>
-        {prefilledFromCustomer && (
-          <div className="flex items-start gap-2 rounded-md border border-primary/20 bg-primary/[0.04] px-3 py-2 text-xs">
-            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-            <span className="text-foreground/80">
-              Pre-filled from this customer's interest categories (captured during customer creation).
-              The category, subcategory, and title are suggestions — edit if this site needs different scope.
-            </span>
-          </div>
-        )}
-        <div className="grid gap-3">
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required title *</label>
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Living room false ceiling" className="mt-1" autoFocus/>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
-                Primary Category
-                {prefilledFromCustomer && categoryId && <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" />}
-              </label>
-              <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setSubcategoryId(""); }} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                <option value="">Select work category</option>
-                {db.master.workCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
-                Primary Subcategory
-                {prefilledFromCustomer && subcategoryId && <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" />}
-              </label>
-              <select value={subcategoryId} onChange={(event) => setSubcategoryId(event.target.value)} disabled={!categoryId} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60">
-                <option value="">{categoryId ? "Select work subcategory" : "Select category first"}</option>
-                {subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">System / specification</label>
-            <Input value={systemName} onChange={(event) => setSystemName(event.target.value)} placeholder="e.g. 12.5 mm gypsum board with GI framework" className="mt-1"/>
-          </div>
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas *</label>
-              <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
-                <Plus className="mr-1 h-3 w-3"/> {newAreaOpen ? "Close" : "Add Area"}
-              </Button>
-            </div>
-            {newAreaOpen && (<div className="mt-2 rounded-md border border-primary/20 bg-primary/[0.03] p-3">
-                <p className="text-xs font-semibold">Add an Area to {site.name}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">The new Area stays linked to this Site and is selected for the current Work Required.</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px_auto]">
-                  <Input value={newAreaName} onChange={(event) => setNewAreaName(event.target.value)} placeholder="e.g. Dining room" className="h-9"/>
-                  <select value={newAreaType} onChange={(event) => setNewAreaType(event.target.value)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
-                    {["bedroom", "guest_room", "living_room", "kitchen", "bathroom", "balcony", "staircase", "rooftop", "office_cabin", "reception", "meeting_room", "pantry", "facade", "common_area", "other"].map((type) => <option key={type} value={type}>{type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}</option>)}
-                  </select>
-                  <Button type="button" size="sm" onClick={createArea} disabled={!newAreaName.trim()}><Plus className="mr-1 h-3.5 w-3.5"/>Add</Button>
-                </div>
-              </div>)}
-            {siteAreas.length ? (<div className="mt-1 grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2">
-                {siteAreas.map((area) => (<label key={area.id} className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs hover:bg-accent/50">
-                    <input type="checkbox" checked={areaIds.includes(area.id)} onChange={() => toggleArea(area.id)}/>
-                    <span className="truncate">{area.name}</span>
-                  </label>))}
-              </div>) : <p className="mt-1 rounded-md border border-dashed border-warning/40 bg-warning/[0.04] px-3 py-2 text-xs text-muted-foreground">Add an Area to this Site first. Work Required must belong to at least one Area.</p>}
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label>
-            <Textarea value={specification} onChange={(event) => setSpecification(event.target.value)} placeholder="Scope notes, customer preference, access constraints…" rows={3} className="mt-1"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Priority</label>
-            <select value={priority} onChange={(event) => setPriority(event.target.value as Priority)} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
-            </select>
-          </div>
-        </div>
+        <WorkRequiredFields
+          db={db}
+          site={site}
+          areas={siteAreas}
+          value={draft}
+          onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
+          onCreateArea={({ name, areaType, notes }) => addArea({ site_id: site.id, name, area_type: areaType, notes: notes || undefined, stage: "unmeasured" })}
+          prefilledFromCustomer={prefilledFromCustomer}
+        />
         <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={!siteAreas.length}><Plus className="mr-1 h-3.5 w-3.5"/> Create Work Required</Button>
+          <Button size="sm" onClick={save}><Plus className="mr-1 h-3.5 w-3.5" />Create Work Required</Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>);
+    </Dialog>
+  );
 }
-
