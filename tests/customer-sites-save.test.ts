@@ -163,6 +163,29 @@ describe("canonical customer and Sites save", () => {
     expect(result.workRequiredChanges[0].kind).toBe("create");
   });
 
+  test("creates customer-level Work Required without a Site or Areas", () => {
+    const db = database();
+    db.workRequired = [];
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      workRequired: [{
+        id: "work-customer",
+        site_id: "",
+        title: "Modular Kitchen",
+        work_category_id: "fc2",
+        work_subcategory_id: "fc2_kit",
+        area_ids: [],
+      }],
+    }, options);
+
+    expect(result.db.workRequired.find((work) => work.id === "work-customer")).toMatchObject({
+      customer_id: "customer-1",
+      site_id: "",
+      area_ids: [],
+    });
+  });
+
   test("updates an existing Work Required without resetting lifecycle data", () => {
     const db = database();
     db.areas = [{
@@ -289,6 +312,37 @@ describe("canonical customer and Sites save", () => {
     }, options);
 
     expect(result.db.areas[0]).toMatchObject({ name: "Main Living Room", stage: "measured" });
+  });
+
+  test("archives an existing Area removed from the customer form", () => {
+    const db = database();
+    db.areas = [{
+      id: "area-existing",
+      site_id: "site-1",
+      name: "Pantry",
+      area_type: "pantry",
+      stage: "unmeasured",
+      unit: "ft",
+      created_at: options.now,
+      updated_at: options.now,
+    }];
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      areas: [{
+        id: "area-existing",
+        site_id: "site-1",
+        is_archived: true,
+        archived_by: "Rahul Chauhan",
+        archive_reason: "Removed from customer form",
+      }],
+    }, options);
+
+    expect(result.db.areas[0]).toMatchObject({
+      is_archived: true,
+      archived_by: "Rahul Chauhan",
+      archive_reason: "Removed from customer form",
+    });
   });
 
   test("creates a customer without a Site", () => {
@@ -466,6 +520,9 @@ describe("canonical customer and Sites save", () => {
   test("preserves omitted customer and Site fields for patch-style callers", () => {
     const db = database();
     db.customers[0].email = "existing@example.com";
+    db.customers[0].alternate_phone = "9988776655";
+    db.customers[0].status = "inactive";
+    db.sites[0].building_name = "Existing Tower";
     db.sites[0].notes = "Keep this note";
     const result = applyCustomerWithSitesSave(db, {
       customerId: "customer-1",
@@ -473,6 +530,10 @@ describe("canonical customer and Sites save", () => {
       sites: [{ id: "site-1", name: "Renamed Site" }],
     }, options);
     expect(result.db.customers[0].email).toBe("existing@example.com");
+    expect(result.db.customers[0].alternate_phone).toBe("9988776655");
+    expect(result.db.customers[0].status).toBe("inactive");
+    expect(result.db.sites[0].building_name).toBe("Existing Tower");
+    expect(result.db.sites[0].stage).toBe("planning");
     expect(result.db.sites[0].notes).toBe("Keep this note");
   });
 

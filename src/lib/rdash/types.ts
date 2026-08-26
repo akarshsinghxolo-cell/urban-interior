@@ -77,7 +77,7 @@ export interface Site {
     created_at: string;
     updated_at: string;
 }
-export type AreaType = "bedroom" | "guest_room" | "living_room" | "kitchen" | "bathroom" | "balcony" | "staircase" | "rooftop" | "office_cabin" | "reception" | "meeting_room" | "pantry" | "facade" | "common_area" | "other";
+export type AreaType = string;
 export type AreaStage = "unmeasured" | "measured" | "quoted" | "active" | "completed";
 export interface Area {
     id: ID;

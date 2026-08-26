@@ -114,6 +114,10 @@ const areaMutableFields: Array<keyof Area> = [
   "floor_area",
   "perimeter",
   "notes",
+  "is_archived",
+  "archived_at",
+  "archived_by",
+  "archive_reason",
 ];
 
 const workRequiredMutableFields: Array<keyof WorkRequired> = [
@@ -247,7 +251,9 @@ function areaRecord(
   now: string,
 ): Area {
   if (site.is_archived) throw new Error(`Areas cannot be added to archived Site "${site.name}".`);
+  const isArchiving = Boolean(input.is_archived) && !existing?.is_archived;
   if (existing?.is_archived) throw new Error(`Archived Area "${existing.name}" cannot be edited.`);
+  if (isArchiving && !existing) throw new Error("A new Area cannot be archived before it is created.");
   if (existing && existing.site_id !== site.id) {
     throw new Error("An Area cannot be moved to another Site.");
   }
@@ -270,10 +276,10 @@ function areaRecord(
     floor_area: suppliedValue(input, "floor_area", existing?.floor_area ?? (length && width ? length * width : undefined)),
     perimeter: suppliedValue(input, "perimeter", existing?.perimeter ?? (length && width ? 2 * (length + width) : undefined)),
     notes: suppliedValue(input, "notes", existing?.notes),
-    is_archived: existing?.is_archived,
-    archived_at: existing?.archived_at,
-    archived_by: existing?.archived_by,
-    archive_reason: existing?.archive_reason,
+    is_archived: suppliedValue(input, "is_archived", existing?.is_archived),
+    archived_at: isArchiving ? String(input.archived_at || now) : existing?.archived_at,
+    archived_by: isArchiving ? String(input.archived_by || "Unknown user") : existing?.archived_by,
+    archive_reason: isArchiving ? String(input.archive_reason || "Removed") : existing?.archive_reason,
     replaced_by_area_id: existing?.replaced_by_area_id,
     created_at: existing?.created_at ?? now,
     updated_at: existing?.updated_at ?? now,
@@ -290,14 +296,14 @@ function workRequiredRecord(
   input: CustomerWorkRequiredSaveDraft,
   workRequiredId: string,
   customer: Customer,
-  site: Site,
+  site: Site | undefined,
   areas: Area[],
   now: string,
 ): WorkRequired {
   if (existing && existing.customer_id !== customer.id) {
     throw new Error("Work Required cannot be moved to another Customer.");
   }
-  if (existing && existing.site_id !== site.id) {
+  if (existing?.site_id && existing.site_id !== (site?.id || "")) {
     throw new Error("Work Required cannot be moved to another Site.");
   }
   const title = String(input.title ?? existing?.title ?? "").trim();
@@ -306,13 +312,14 @@ function workRequiredRecord(
   const workSubcategoryId = input.work_subcategory_id ?? existing?.work_subcategory_id;
   if (!workCategoryId || !workSubcategoryId) throw new Error(`Select a category and subcategory for Work Required "${title}".`);
   const areaIds = uniqueStrings(input.area_ids ?? existing?.area_ids ?? []);
-  if (!areaIds.length) throw new Error(`Select at least one covered Area for Work Required "${title}".`);
-  const siteAreaIds = new Set(areas.filter((area) => area.site_id === site.id && !area.is_archived).map((area) => area.id));
-  if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site.name}.`);
+  if (site && !areaIds.length) throw new Error(`Select at least one covered Area for Work Required "${title}".`);
+  if (!site && areaIds.length) throw new Error(`Customer-level Work Required "${title}" cannot include Site Areas.`);
+  const siteAreaIds = new Set(areas.filter((area) => area.site_id === site?.id && !area.is_archived).map((area) => area.id));
+  if (site && areaIds.some((areaId) => !siteAreaIds.has(areaId))) throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site.name}.`);
   return {
     id: workRequiredId,
     customer_id: customer.id,
-    site_id: site.id,
+    site_id: site?.id || "",
     title,
     work_category_id: workCategoryId,
     work_subcategory_id: workSubcategoryId,
@@ -414,9 +421,9 @@ export function applyCustomerWithSitesSave(
     workRequiredIds.push(workRequiredId);
     const existing = workRequiredById.get(workRequiredId);
     const siteId = String(draft.site_id ?? existing?.site_id ?? "");
-    const site = resultingSiteById.get(siteId);
-    if (!site || site.customer_id !== nextCustomer.id || site.is_archived) {
-      throw new Error("Every Work Required in a customer bundle must belong to one active Site for that Customer.");
+    const site = siteId ? resultingSiteById.get(siteId) : undefined;
+    if (siteId && (!site || site.customer_id !== nextCustomer.id || site.is_archived)) {
+      throw new Error("Site-linked Work Required must belong to one active Site for that Customer.");
     }
     const categoryId = draft.work_category_id ?? existing?.work_category_id;
     const subcategoryId = draft.work_subcategory_id ?? existing?.work_subcategory_id;

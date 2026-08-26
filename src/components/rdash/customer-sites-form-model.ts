@@ -17,9 +17,7 @@ export type SiteDraft = {
   enabled: boolean;
   expanded: boolean;
   name: string;
-  buildingName: string;
   siteType: Site["site_type"];
-  stage: Site["stage"];
   address: string;
   locality: string;
   city: string;
@@ -42,6 +40,7 @@ export type AreaDraft = {
   name: string;
   areaType: Area["area_type"];
   notes: string;
+  archiveRequested: boolean;
 };
 
 export type CustomerWorkRequiredDraft = {
@@ -59,14 +58,10 @@ export type CustomerWorkRequiredDraft = {
 export type CustomerDraft = {
   name: string;
   phone: string;
-  whatsapp: string;
-  alternatePhone: string;
-  email: string;
-  status: Customer["status"];
   notes: string;
   referralQuery: string;
   referralLegacyName: string;
-  referralSelected: { id: string; name: string } | null;
+  referralSelected: { id?: string; name: string } | null;
 };
 
 export const SITE_TYPES: Array<{ value: Site["site_type"]; label: string }> = [
@@ -76,17 +71,6 @@ export const SITE_TYPES: Array<{ value: Site["site_type"]; label: string }> = [
   { value: "shop", label: "Shop" },
   { value: "showroom", label: "Showroom" },
   { value: "other", label: "Other" },
-];
-
-export const SITE_STAGES: Array<{ value: Site["stage"]; label: string }> = [
-  { value: "enquiry", label: "Enquiry" },
-  { value: "planning", label: "Planning" },
-  { value: "quoted", label: "Quoted" },
-  { value: "awarded", label: "Awarded" },
-  { value: "execution", label: "Execution" },
-  { value: "on_hold", label: "On hold" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
 ];
 
 export const AREA_TYPES: Array<{ value: Area["area_type"]; label: string }> = [
@@ -122,10 +106,6 @@ export function emptyCustomerDraft(): CustomerDraft {
   return {
     name: "",
     phone: "",
-    whatsapp: "",
-    alternatePhone: "",
-    email: "",
-    status: "active",
     notes: "",
     referralQuery: "",
     referralLegacyName: "",
@@ -137,10 +117,6 @@ export function draftForCustomer(customer: Customer): CustomerDraft {
   return {
     name: customer.name || "",
     phone: customer.phone || "",
-    whatsapp: customer.whatsapp || customer.phone || "",
-    alternatePhone: customer.alternate_phone || "",
-    email: customer.email || "",
-    status: customer.status || "active",
     notes: customer.notes || "",
     referralQuery: customer.source_partner_name || "",
     referralLegacyName: customer.source_partner_id ? "" : customer.source_partner_name || "",
@@ -157,9 +133,7 @@ export function newSiteDraft(customerName = ""): SiteDraft {
     enabled: true,
     expanded: true,
     name: defaultSiteName(customerName),
-    buildingName: "",
     siteType: "apartment",
-    stage: "enquiry",
     address: "",
     locality: "",
     city: "",
@@ -181,9 +155,7 @@ export function draftForSite(site: Site): SiteDraft {
     enabled: true,
     expanded: false,
     name: site.name || "",
-    buildingName: site.building_name || "",
     siteType: site.site_type || "other",
-    stage: site.stage || "enquiry",
     address: site.address || "",
     locality: site.locality || "",
     city: site.city || "",
@@ -208,6 +180,7 @@ export function newAreaDraft(siteId: string): AreaDraft {
     name: "",
     areaType: "other",
     notes: "",
+    archiveRequested: false,
   };
 }
 
@@ -247,6 +220,7 @@ export function draftForArea(area: Area): AreaDraft {
     name: area.name || "",
     areaType: area.area_type || "other",
     notes: area.notes || "",
+    archiveRequested: false,
   };
 }
 
@@ -275,10 +249,6 @@ export function validIndianPhone(value: string): boolean {
   return !value || /^[6-9]\d{9}$/.test(value);
 }
 
-export function validEmail(value: string): boolean {
-  return !value.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
 /**
  * Only attachment rows already confirmed by PostgreSQL belong in the Site
  * mutation. Deferred uploads append their attachment IDs atomically after the
@@ -296,10 +266,6 @@ export function customerPayload(draft: CustomerDraft): Partial<Customer> {
   return {
     name: draft.name.trim(),
     phone: draft.phone.trim(),
-    whatsapp: draft.whatsapp.trim() || draft.phone.trim(),
-    alternate_phone: draft.alternatePhone.trim() || undefined,
-    email: draft.email.trim().toLowerCase() || undefined,
-    status: draft.status,
     source_partner_id: draft.referralSelected?.id,
     source_partner_name: draft.referralSelected?.name
       || (draft.referralQuery.trim() === draft.referralLegacyName ? draft.referralLegacyName || undefined : undefined),
@@ -311,9 +277,8 @@ export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSa
   return {
     id: draft.id,
     name: draft.name.trim(),
-    building_name: draft.buildingName.trim() || undefined,
     site_type: draft.siteType,
-    stage: draft.archiveRequested && draft.archiveCancelled ? "cancelled" : draft.stage,
+    ...(draft.archiveRequested && draft.archiveCancelled ? { stage: "cancelled" as const } : {}),
     address: draft.address.trim() || undefined,
     locality: draft.locality.trim() || undefined,
     city: draft.city.trim() || undefined,
@@ -331,7 +296,7 @@ export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSa
   };
 }
 
-export function areaPayload(draft: AreaDraft): CustomerAreaSaveDraft {
+export function areaPayload(draft: AreaDraft, actorName: string): CustomerAreaSaveDraft {
   return {
     id: draft.id,
     site_id: draft.siteId,
@@ -339,6 +304,12 @@ export function areaPayload(draft: AreaDraft): CustomerAreaSaveDraft {
     area_type: draft.areaType,
     ...(draft.existing ? {} : { stage: "unmeasured" as const }),
     notes: draft.notes.trim() || undefined,
+    ...(draft.archiveRequested ? {
+      is_archived: true,
+      archived_at: new Date().toISOString(),
+      archived_by: actorName,
+      archive_reason: "Removed from customer form",
+    } : {}),
   };
 }
 

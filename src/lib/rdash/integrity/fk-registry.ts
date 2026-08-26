@@ -50,10 +50,10 @@ export type OnDeletePolicy = ForeignKeyRule["onDelete"];
 const customerDomainFks: ForeignKeyRule[] = [
     { collection: "sites", field: "customer_id", targetCollection: "customers", onDelete: "cascade", nullable: false, label: "Site → Customer" },
     { collection: "areas", field: "site_id", targetCollection: "sites", onDelete: "cascade", nullable: false, label: "Area → Site" },
-    // WorkRequired: customer/site are required (restrict); area_ids is required but individual areas cannot be silently lost — restrict
+    // WorkRequired may start at Customer level; Site and Areas become required together when physical scope is attached.
     { collection: "workRequired", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Work Required → Customer" },
-    { collection: "workRequired", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Work Required → Site" },
-    { collection: "workRequired", field: "area_ids", targetCollection: "areas", onDelete: "restrict", nullable: false, isArray: true, label: "Work Required → Areas" },
+    { collection: "workRequired", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: true, label: "Work Required → Site" },
+    { collection: "workRequired", field: "area_ids", targetCollection: "areas", onDelete: "restrict", nullable: true, isArray: true, label: "Work Required → Areas" },
     // MeasurementRevision: site/area required; work_required_id and drawing_id optional
     { collection: "measurementRevisions", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Measurement → Site" },
     { collection: "measurementRevisions", field: "area_id", targetCollection: "areas", onDelete: "restrict", nullable: false, label: "Measurement → Area" },

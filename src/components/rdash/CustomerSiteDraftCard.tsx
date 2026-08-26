@@ -22,7 +22,6 @@ import {
 } from "@/lib/uploads/workflow-upload";
 import type { UploadBatchId } from "@/lib/uploads/upload-types";
 import {
-  SITE_STAGES,
   SITE_TYPES,
   type PendingSiteFile,
   type SiteDraft,
@@ -240,17 +239,6 @@ export function CustomerSiteDraftCard({
               </select>
             </Field>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Building / project name" htmlFor={`site-building-${draft.id}`}>
-              <Input id={`site-building-${draft.id}`} value={draft.buildingName} onChange={(event) => onChange({ buildingName: event.target.value })} placeholder="Building, tower, or project name" />
-            </Field>
-            <Field label="Site stage" htmlFor={`site-stage-${draft.id}`}>
-              <select id={`site-stage-${draft.id}`} value={draft.stage} onChange={(event) => onChange({ stage: event.target.value as Site["stage"] })} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                {SITE_STAGES.map((stage) => <option key={stage.value} value={stage.value}>{stage.label}</option>)}
-              </select>
-            </Field>
-          </div>
-
           <div className="rounded-md border border-border bg-muted/20 p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase text-muted-foreground">Site location</span>

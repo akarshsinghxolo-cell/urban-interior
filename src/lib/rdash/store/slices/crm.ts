@@ -29,7 +29,7 @@ import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
     assertAreaBelongsToSite, assertAreasBelongToSite,
-    assertSiteExists, assertSiteBelongsToCustomer,
+    assertCustomerExists, assertSiteExists, assertSiteBelongsToCustomer,
     assertMeasurementRevisionRelations, assertWorkRequiredMatchesContext,
     assertWorkCategoryId, assertWorkSubcategoryId,
     areaDependencySummary, replaceAreaId,
@@ -42,16 +42,18 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
 
     return {
         addWorkRequired: (work) => {
-            if (!work.customer_id || !work.site_id)
-                throw new Error("Work Required requires a Customer and Site.");
-            assertSiteBelongsToCustomer(get().db, work.site_id, work.customer_id, "Work Required");
-            assertAreasBelongToSite(get().db, work.area_ids || [], work.site_id, "Work Required");
+            if (!work.customer_id) throw new Error("Work Required requires a Customer.");
+            assertCustomerExists(get().db, work.customer_id, "Work Required");
+            if (work.site_id) {
+                assertSiteBelongsToCustomer(get().db, work.site_id, work.customer_id, "Work Required");
+                assertAreasBelongToSite(get().db, work.area_ids || [], work.site_id, "Work Required");
+            } else if (work.area_ids?.length) throw new Error("Customer-level Work Required cannot include Site Areas.");
             const id = work.id || genId("workRequired");
             const now = nowIso();
             const row: import("../../types").WorkRequired = {
                 id,
                 customer_id: work.customer_id,
-                site_id: work.site_id,
+                site_id: work.site_id || "",
                 title: work.title || "New work required",
                 work_category_id: work.work_category_id,
                 work_subcategory_id: work.work_subcategory_id,
@@ -66,7 +68,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 updated_at: now,
             };
             (row.structured_items || []).forEach((item: any) => {
-                if (item.area_id)
+                if (item.area_id && row.site_id)
                     assertAreaBelongsToSite(get().db, item.area_id, row.site_id, "Work Required");
             });
             commitState((s: any) => ({
@@ -95,8 +97,11 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 throw new Error("Work Required status must be changed through transitionWorkRequiredStatus so lifecycle rules are enforced.");
             }
             const next = { ...before, ...patch };
-            assertSiteBelongsToCustomer(get().db, next.site_id, next.customer_id, "Work Required");
-            assertAreasBelongToSite(get().db, next.area_ids, next.site_id, "Work Required");
+            assertCustomerExists(get().db, next.customer_id, "Work Required");
+            if (next.site_id) {
+                assertSiteBelongsToCustomer(get().db, next.site_id, next.customer_id, "Work Required");
+                assertAreasBelongToSite(get().db, next.area_ids, next.site_id, "Work Required");
+            } else if (next.area_ids.length) throw new Error("Customer-level Work Required cannot include Site Areas.");
             (next.structured_items || []).forEach((item: any) => {
                 if (item.area_id)
                     assertAreaBelongsToSite(get().db, item.area_id, next.site_id, "Work Required");
@@ -167,7 +172,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             }
             const actor = get().currentUser();
             const customer = result.db.customers.find((row: Customer) => row.id === result.customerId)!;
-            get().logAudit({
+            if (result.customerCreated || result.customerChanges.length) get().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
                 action: result.customerCreated
@@ -227,7 +232,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 get().logAudit({
                     actor: actor.name,
                     actor_role: actor.role,
-                    action: `${change.kind === "create" ? "Created" : "Updated"} Work Required "${change.after.title}" for ${site?.name || "Site"}`,
+                    action: `${change.kind === "create" ? "Created" : "Updated"} Work Required "${change.after.title}" for ${site?.name || customer.name}`,
                     entity_type: "workRequired",
                     entity_id: change.workRequiredId,
                     entity_label: change.after.title,
@@ -236,19 +241,22 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     after: change.after,
                     cross_post: [
                         { entity_type: "customer", entity_id: customer.id, entity_label: customer.name },
-                        { entity_type: "site", entity_id: change.after.site_id, entity_label: site?.name },
+                        ...(change.after.site_id ? [{ entity_type: "site", entity_id: change.after.site_id, entity_label: site?.name }] : []),
                     ],
                 });
             }
-            if (result.detachedAttachmentIds.length) {
+            for (const attachmentId of result.detachedAttachmentIds) {
+                const attachment = beforeDatabase.entityFileAttachments.find((row) => row.id === attachmentId);
                 get().logAudit({
                     actor: actor.name,
                     actor_role: actor.role,
-                    action: `Detached ${result.detachedAttachmentIds.length} Site file${result.detachedAttachmentIds.length === 1 ? "" : "s"} while saving ${customer.name}`,
-                    entity_type: "customer",
-                    entity_id: customer.id,
-                    entity_label: customer.name,
-                    kind: "update",
+                    action: `Detached file while saving ${customer.name}`,
+                    entity_type: "entityFileAttachment",
+                    entity_id: attachmentId,
+                    entity_label: attachment?.entity_label,
+                    kind: "delete",
+                    before: attachment,
+                    cross_post: [{ entity_type: "customer", entity_id: customer.id, entity_label: customer.name }],
                 });
             }
             return {

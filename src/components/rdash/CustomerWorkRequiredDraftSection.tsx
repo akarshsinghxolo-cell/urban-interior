@@ -15,6 +15,8 @@ import {
 
 export function CustomerWorkRequiredDraftSection({
   db,
+  customerId,
+  customerName,
   sites,
   areas,
   setAreas,
@@ -22,6 +24,8 @@ export function CustomerWorkRequiredDraftSection({
   setWorkRequired,
 }: {
   db: RDashDatabase;
+  customerId?: string;
+  customerName: string;
   sites: SiteDraft[];
   areas: AreaDraft[];
   setAreas: React.Dispatch<React.SetStateAction<AreaDraft[]>>;
@@ -30,12 +34,10 @@ export function CustomerWorkRequiredDraftSection({
 }) {
   const liveSites = sites.filter((site) => (site.existing || site.enabled) && !site.archiveRequested);
   const liveSiteIds = new Set(liveSites.map((site) => site.id));
+  const visibleWorkRequired = workRequired.filter((draft) => !draft.siteId || liveSiteIds.has(draft.siteId));
+  const existingCount = customerId ? db.workRequired.filter((work) => work.customer_id === customerId).length : 0;
 
-  const addWorkRequired = () => {
-    const siteId = liveSites[0]?.id;
-    if (!siteId) return;
-    setWorkRequired((current) => [...current, newCustomerWorkRequiredDraft(siteId)]);
-  };
+  const addWorkRequired = (siteId = "") => setWorkRequired((current) => [...current, newCustomerWorkRequiredDraft(siteId)]);
 
   const updateWorkRequired = (id: string, patch: Partial<CustomerWorkRequiredDraft>) => {
     setWorkRequired((current) => current.map((draft) => draft.id === id ? { ...draft, ...patch } : draft));
@@ -48,33 +50,31 @@ export function CustomerWorkRequiredDraftSection({
           <Wrench className="h-4 w-4 text-primary" />
           <div>
             <h3 className="text-sm font-semibold">Work Required</h3>
-            <p className="text-[11px] text-muted-foreground">Add or edit Site-linked work and its covered Areas.</p>
+            <p className="text-[11px] text-muted-foreground">Add customer-level work, or link it to a Site and covered Areas.</p>
           </div>
         </div>
-        <Button type="button" size="sm" variant="outline" onClick={addWorkRequired} disabled={!liveSites.length}>
+        <Button type="button" size="sm" variant="outline" onClick={() => addWorkRequired()}>
           <Plus className="mr-1 h-3.5 w-3.5" />Add Work Required
         </Button>
       </div>
 
-      {!liveSites.length ? (
-        <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Add a Site before adding Work Required.</p>
-      ) : null}
-
-      {workRequired.filter((draft) => liveSiteIds.has(draft.siteId)).map((draft, index) => {
+      {visibleWorkRequired.map((draft, index) => {
         const site = liveSites.find((row) => row.id === draft.siteId);
-        if (!site) return null;
-        const siteAreas = areas.filter((area) => area.siteId === site.id);
+        const siteAreas = site ? areas.filter((area) => area.siteId === site.id && !area.archiveRequested) : [];
+        const selectedSubcategoryIds = visibleWorkRequired.filter((row) => row.siteId === draft.siteId && row.categoryId === draft.categoryId).map((row) => row.subcategoryId).filter(Boolean);
+        const displayNumber = draft.existing ? index + 1 : Math.max(existingCount, visibleWorkRequired.filter((row) => row.existing).length) + visibleWorkRequired.slice(0, index + 1).filter((row) => !row.existing).length;
         return (
           <article key={draft.id} className="rounded-lg border border-border p-3">
             <div className="mb-3 flex items-center gap-2">
-              <span className="text-xs font-semibold">Work Required {index + 1}</span>
+              <span className="text-xs font-semibold">Work Required {displayNumber}</span>
               <select
-                value={site.id}
+                value={draft.siteId}
                 onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [] })}
-                disabled={draft.existing}
+                disabled={draft.existing && Boolean(draft.siteId)}
                 className="ml-auto h-8 min-w-40 rounded-md border border-input bg-card px-2 text-xs"
-                aria-label={`Site for Work Required ${index + 1}`}
+                aria-label={`Customer or Site for Work Required ${displayNumber}`}
               >
+                <option value="">{customerName.trim() || "Customer"}</option>
                 {liveSites.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
               </select>
               {draft.existing ? null : (
@@ -90,10 +90,24 @@ export function CustomerWorkRequiredDraftSection({
               value={draft}
               onChange={(patch) => updateWorkRequired(draft.id, patch)}
               onCreateArea={({ name, areaType, notes }) => {
+                if (!site) throw new Error("Choose a Site before adding Areas.");
                 const area = { ...newAreaDraft(site.id), name, areaType, notes };
                 setAreas((current) => [...current, area]);
                 return area.id;
               }}
+              onUpdateArea={(areaId, name) => setAreas((current) => current.map((area) => area.id === areaId ? { ...area, name } : area))}
+              onDeleteArea={(areaId) => {
+                setAreas((current) => current.flatMap((area) => area.id !== areaId ? [area] : area.existing ? [{ ...area, archiveRequested: true }] : []));
+                setWorkRequired((current) => current.map((work) => ({ ...work, areaIds: work.areaIds.filter((id) => id !== areaId) })));
+              }}
+              selectedSubcategoryIds={selectedSubcategoryIds}
+              onAddSubcategory={(subcategoryId) => {
+                if (selectedSubcategoryIds.includes(subcategoryId)) return;
+                const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
+                const next = { ...newCustomerWorkRequiredDraft(draft.siteId), categoryId: draft.categoryId, subcategoryId, title: subcategory?.name || "", areaIds: [...draft.areaIds], priority: draft.priority };
+                setWorkRequired((current) => [...current, next]);
+              }}
+              onAddNext={() => addWorkRequired(draft.siteId)}
             />
           </article>
         );

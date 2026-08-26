@@ -30,7 +30,6 @@ import {
   siteNameFollowsCustomer,
   sitePayload,
   workRequiredPayload,
-  validEmail,
   validIndianPhone,
   type AreaDraft,
   type CustomerDraft,
@@ -87,7 +86,7 @@ export function CustomerSitesDialog({
       : [];
     const nextWorkRequired = existing
       ? db.workRequired
-        .filter((work) => nextSiteIds.has(work.site_id))
+        .filter((work) => work.customer_id === existing.id && (!work.site_id || nextSiteIds.has(work.site_id)))
         .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
         .map(draftForWorkRequired)
       : [];
@@ -162,10 +161,7 @@ export function CustomerSitesDialog({
 
   const duplicateMatches = React.useMemo(() => findCustomerIdentityMatches(db.customers, {
     phone: customer.phone,
-    whatsapp: customer.whatsapp || customer.phone,
-    alternate_phone: customer.alternatePhone,
-    email: customer.email,
-  }, { excludeCustomerId: editId }), [customer.alternatePhone, customer.email, customer.phone, customer.whatsapp, db.customers, editId]);
+  }, { excludeCustomerId: editId }), [customer.phone, db.customers, editId]);
 
   const sameNameMatches = React.useMemo(
     () => findSameNameCustomers(db.customers, { name: customer.name }, { excludeCustomerId: editId }),
@@ -179,20 +175,19 @@ export function CustomerSitesDialog({
 
   const formIsValid = React.useMemo(() => {
     if (!customer.name.trim()) return false;
-    if (![customer.phone, customer.whatsapp, customer.alternatePhone].every(validIndianPhone)) return false;
-    if (!validEmail(customer.email) || duplicateMatches.length) return false;
+    if (!validIndianPhone(customer.phone) || duplicateMatches.length) return false;
     if (sameNameMatches.length && !sameNameAcknowledged) return false;
     const sitesValid = sites.filter((site) => site.existing || site.enabled).every((site) => {
       if (site.archiveRequested) return Boolean(site.archiveReason.trim());
       return Boolean(site.name.trim()) && !coordinateInputError(site.coordinateInput);
     });
     const areasValid = areas
-      .filter((area) => includedLiveSiteIds.has(area.siteId))
+      .filter((area) => includedLiveSiteIds.has(area.siteId) && !area.archiveRequested)
       .every((area) => Boolean(area.name.trim()));
     const workRequiredValid = workRequired
-      .filter((work) => includedLiveSiteIds.has(work.siteId))
-      .every((work) => includedLiveSiteIds.has(work.siteId)
-      && Boolean(work.categoryId && work.subcategoryId && work.title.trim() && work.areaIds.length));
+      .filter((work) => !work.siteId || includedLiveSiteIds.has(work.siteId))
+      .every((work) => Boolean(work.categoryId && work.subcategoryId && work.title.trim())
+        && (work.siteId ? work.areaIds.length > 0 : work.areaIds.length === 0));
     return sitesValid && areasValid && workRequiredValid;
   }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, workRequired]);
 
@@ -202,14 +197,9 @@ export function CustomerSitesDialog({
       scrollToField("customer-name");
       return false;
     }
-    if (![customer.phone, customer.whatsapp, customer.alternatePhone].every(validIndianPhone)) {
-      toast.error("Every entered mobile number must contain 10 digits and start with 6, 7, 8, or 9");
+    if (!validIndianPhone(customer.phone)) {
+      toast.error("The contact number must contain 10 digits and start with 6, 7, 8, or 9");
       scrollToField("customer-phone");
-      return false;
-    }
-    if (!validEmail(customer.email)) {
-      toast.error("Enter a valid email address");
-      scrollToField("customer-email");
       return false;
     }
     if (duplicateMatches.length) {
@@ -246,7 +236,7 @@ export function CustomerSitesDialog({
         return false;
       }
     }
-    for (const area of areas.filter((row) => includedLiveSiteIds.has(row.siteId))) {
+    for (const area of areas.filter((row) => includedLiveSiteIds.has(row.siteId) && !row.archiveRequested)) {
       if (!area.name.trim()) {
         toast.error("Enter an Area name or remove that new Area");
         scrollToField(`area-name-${area.id}`);
@@ -254,7 +244,7 @@ export function CustomerSitesDialog({
       }
     }
     for (const work of workRequired) {
-      if (!includedLiveSiteIds.has(work.siteId)) continue;
+      if (work.siteId && !includedLiveSiteIds.has(work.siteId)) continue;
       if (!work.categoryId || !work.subcategoryId) {
         toast.error("Select a category and subcategory for every Work Required");
         return false;
@@ -263,7 +253,7 @@ export function CustomerSitesDialog({
         toast.error("Enter a title for every Work Required");
         return false;
       }
-      if (!work.areaIds.length) {
+      if (work.siteId && !work.areaIds.length) {
         toast.error(`Select at least one covered Area for ${work.title.trim()}`);
         return false;
       }
@@ -278,12 +268,12 @@ export function CustomerSitesDialog({
       setSaving(true);
       const includedSites = sites.filter((site) => site.existing || site.enabled);
       const includedAreas = areas.filter((area) => includedLiveSiteIds.has(area.siteId));
-      const includedWorkRequired = workRequired.filter((work) => includedLiveSiteIds.has(work.siteId));
+      const includedWorkRequired = workRequired.filter((work) => !work.siteId || includedLiveSiteIds.has(work.siteId));
       const result = saveCustomerWithSites({
         customerId: editId,
         customer: customerPayload(customer),
         sites: includedSites.map((site) => sitePayload(site, currentUser().name)),
-        areas: includedAreas.map(areaPayload),
+        areas: includedAreas.map((area) => areaPayload(area, currentUser().name)),
         workRequired: includedWorkRequired.map(workRequiredPayload),
         detachAttachmentIds,
       });
@@ -356,6 +346,7 @@ export function CustomerSitesDialog({
               customer={customer}
               setCustomer={setCustomer}
               isEdit={isEdit}
+              customerId={editId}
               duplicateMatches={duplicateMatches}
               sameNameMatches={sameNameMatches}
               sameNameAcknowledged={sameNameAcknowledged}
@@ -405,6 +396,8 @@ export function CustomerSitesDialog({
 
             <CustomerWorkRequiredDraftSection
               db={db}
+              customerId={editId}
+              customerName={customer.name}
               sites={sites}
               areas={areas}
               setAreas={setAreas}

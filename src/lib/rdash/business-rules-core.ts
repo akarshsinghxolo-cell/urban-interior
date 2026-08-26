@@ -447,8 +447,13 @@ export function validateBusinessData(db: RDashDatabase) {
     db.areas.forEach((area) => capture(`Area ${area.id}`, () => assertSiteExists(db, area.site_id, "Area", { allowArchived: true })));
     db.workRequired.forEach((work) => capture(`Work Required ${work.id}`, () => {
         assertWorkRequiredCatalogRelations(db, work, "Work Required");
-        assertSiteBelongsToCustomer(db, work.site_id, work.customer_id, "Work Required", { allowArchived: true });
-        assertAreasBelongToSite(db, work.area_ids, work.site_id, "Work Required", { allowArchived: true });
+        assertCustomerExists(db, work.customer_id, "Work Required");
+        if (work.site_id) {
+            assertSiteBelongsToCustomer(db, work.site_id, work.customer_id, "Work Required", { allowArchived: true });
+            assertAreasBelongToSite(db, work.area_ids, work.site_id, "Work Required", { allowArchived: true });
+        } else if (work.area_ids.length) {
+            fail("Work Required", `Customer-level Work Required "${work.title}" cannot include Site Areas.`);
+        }
     }));
     db.measurementRevisions.forEach((revision) => capture(`Measurement ${revision.id}`, () => assertMeasurementRevisionRelations(db, revision, "Measurement", { allowArchived: true })));
     db.visits.forEach((visit) => capture(`Visit ${visit.id}`, () => assertVisitRelations(db, visit, "Visit", { allowArchived: true })));

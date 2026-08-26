@@ -12,12 +12,13 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
     "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
     "drawings", "executionLogs", "boqs", "purchaseOrders", "grns", "vendorBills",
     "blocked", "commSends", "auditLog", "entityFileAttachments", "master.fileAssets",
-    "master.sourcePartners",
+    "master.sourcePartners", "master.contractors", "master.vendors",
   ]),
   customerRequests: Object.freeze([
     "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
     "workOrders", "visits", "tasks", "followups", "threads", "entityFileAttachments",
     "master.fileAssets", "master.workCategories", "master.workSubcategories",
+    "master.sourcePartners", "master.contractors", "master.vendors",
   ]),
   salesPipeline: Object.freeze([
     "customers", "sites", "workRequired", "measurementRevisions", "quotations",

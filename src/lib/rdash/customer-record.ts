@@ -8,6 +8,8 @@ export const CUSTOMER_RECORD_FIELDS = [
   "alternate_phone",
   "email",
   "status",
+  "interest_category_ids",
+  "interest_work_subcategory_ids",
   "source_partner_id",
   "source_partner_name",
   "notes",
@@ -26,6 +28,10 @@ export function canonicalizeCustomerRow(row: Record<string, unknown>): Record<st
   return safe;
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 export function normalizeCustomerRow(row: unknown): Customer {
   const source = row && typeof row === "object" ? row as Record<string, unknown> : {};
   const safe = canonicalizeCustomerRow(source);
@@ -38,6 +44,8 @@ export function normalizeCustomerRow(row: unknown): Customer {
     alternate_phone: typeof safe.alternate_phone === "string" ? safe.alternate_phone : undefined,
     email: typeof safe.email === "string" ? safe.email : undefined,
     status,
+    interest_category_ids: stringArray(safe.interest_category_ids),
+    interest_work_subcategory_ids: stringArray(safe.interest_work_subcategory_ids),
     source_partner_id: typeof safe.source_partner_id === "string" ? safe.source_partner_id : undefined,
     source_partner_name: typeof safe.source_partner_name === "string" ? safe.source_partner_name : undefined,
     notes: typeof safe.notes === "string" ? safe.notes : undefined,

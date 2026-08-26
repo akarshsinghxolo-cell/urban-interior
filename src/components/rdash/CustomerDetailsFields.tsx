@@ -10,7 +10,6 @@ import type { Customer, RDashDatabase } from "@/lib/rdash/types";
 import type { CustomerIdentityMatch } from "@/lib/rdash/customer-identity";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import {
-  validEmail,
   validIndianPhone,
   type CustomerDraft,
 } from "./customer-sites-form-model";
@@ -20,6 +19,7 @@ export function CustomerDetailsFields({
   customer,
   setCustomer,
   isEdit,
+  customerId,
   duplicateMatches,
   sameNameMatches,
   sameNameAcknowledged,
@@ -30,6 +30,7 @@ export function CustomerDetailsFields({
   customer: CustomerDraft;
   setCustomer: React.Dispatch<React.SetStateAction<CustomerDraft>>;
   isEdit: boolean;
+  customerId?: string;
   duplicateMatches: CustomerIdentityMatch[];
   sameNameMatches: Customer[];
   sameNameAcknowledged: boolean;
@@ -41,14 +42,16 @@ export function CustomerDetailsFields({
   const referralOptions = React.useMemo(() => {
     const query = customer.referralQuery.trim().toLowerCase();
     if (!query) return [];
-    return db.master.sourcePartners
-      .filter((row) => row.name.toLowerCase().includes(query))
-      .slice(0, 10)
-      .map((row) => ({ id: row.id, name: row.name, type: row.type || "Source partner" }));
-  }, [customer.referralQuery, db.master.sourcePartners]);
+    return [
+      ...db.customers.filter((row) => row.id !== customerId).map((row) => ({ key: `customer:${row.id}`, name: row.name, type: "Customer" })),
+      ...db.master.contractors.map((row) => ({ key: `contractor:${row.id}`, name: row.name, type: "Contractor" })),
+      ...db.master.vendors.map((row) => ({ key: `vendor:${row.id}`, name: row.name, type: "Vendor" })),
+      ...db.master.sourcePartners.map((row) => ({ key: `source:${row.id}`, id: row.id, name: row.name, type: row.type || "Source partner" })),
+    ].filter((row) => row.name.toLowerCase().includes(query)).slice(0, 10);
+  }, [customer.referralQuery, customerId, db.customers, db.master.contractors, db.master.sourcePartners, db.master.vendors]);
 
-  const selectReferral = (option: { id: string; name: string }) => {
-    setCustomer((current) => ({ ...current, referralQuery: option.name, referralSelected: option }));
+  const selectReferral = (option: { id?: string; name: string }) => {
+    setCustomer((current) => ({ ...current, referralQuery: option.name, referralSelected: { id: option.id, name: option.name } }));
     setShowReferralDropdown(false);
   };
 
@@ -82,19 +85,6 @@ export function CustomerDetailsFields({
           <PhoneInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({ ...current, phone }))} placeholder="9876543210" />
         </Field>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Field label="WhatsApp number" htmlFor="customer-whatsapp">
-          <PhoneInput id="customer-whatsapp" value={customer.whatsapp} onChange={(whatsapp) => setCustomer((current) => ({ ...current, whatsapp }))} placeholder="Defaults to contact" />
-        </Field>
-        <Field label="Alternate number" htmlFor="customer-alternate-phone">
-          <PhoneInput id="customer-alternate-phone" value={customer.alternatePhone} onChange={(alternatePhone) => setCustomer((current) => ({ ...current, alternatePhone }))} placeholder="Optional" />
-        </Field>
-        <Field label="Email" htmlFor="customer-email">
-          <Input id="customer-email" type="email" value={customer.email} onChange={(event) => setCustomer((current) => ({ ...current, email: event.target.value }))} placeholder="name@example.com" aria-invalid={!validEmail(customer.email)} />
-          {!validEmail(customer.email) && <p className="text-[10px] text-destructive">Enter a valid email address</p>}
-        </Field>
-      </div>
-
       {duplicateMatches.length > 0 && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
           <p className="font-semibold">This contact identity already belongs to:</p>
@@ -128,7 +118,7 @@ export function CustomerDetailsFields({
       )}
 
       <div className="relative">
-        <Field label="Recommended by (source partner)" htmlFor="customer-referral">
+        <Field label="Recommended by" htmlFor="customer-referral">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -138,7 +128,7 @@ export function CustomerDetailsFields({
               aria-autocomplete="list"
               aria-expanded={showReferralDropdown && referralOptions.length > 0}
               aria-controls="customer-referral-options"
-              aria-activedescendant={showReferralDropdown && referralOptions[activeReferralIndex] ? `customer-referral-option-${referralOptions[activeReferralIndex].id}` : undefined}
+              aria-activedescendant={showReferralDropdown && referralOptions[activeReferralIndex] ? `customer-referral-option-${referralOptions[activeReferralIndex].key}` : undefined}
               value={customer.referralQuery}
               onChange={(event) => {
                 setCustomer((current) => ({ ...current, referralQuery: event.target.value, referralSelected: null }));
@@ -148,7 +138,7 @@ export function CustomerDetailsFields({
               onFocus={() => setShowReferralDropdown(true)}
               onBlur={() => window.setTimeout(() => setShowReferralDropdown(false), 120)}
               onKeyDown={handleReferralKeyDown}
-              placeholder="Search source partners"
+              placeholder="Search customers, contractors, vendors, or source partners"
             />
           </div>
         </Field>
@@ -156,8 +146,8 @@ export function CustomerDetailsFields({
           <div id="customer-referral-options" role="listbox" className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-card shadow-popover">
             {referralOptions.map((option, index) => (
               <button
-                id={`customer-referral-option-${option.id}`}
-                key={option.id}
+                id={`customer-referral-option-${option.key}`}
+                key={option.key}
                 type="button"
                 role="option"
                 aria-selected={index === activeReferralIndex}
@@ -171,22 +161,17 @@ export function CustomerDetailsFields({
           </div>
         )}
         {customer.referralSelected ? (
-          <p className="mt-1 text-[10px] text-success">Linked to source partner: {customer.referralSelected.name}</p>
+          <p className="mt-1 text-[10px] text-success">Selected referrer: {customer.referralSelected.name}</p>
         ) : customer.referralQuery.trim() ? (
           customer.referralQuery.trim() === customer.referralLegacyName ? (
-            <p className="mt-1 text-[10px] text-muted-foreground">Legacy unlinked referrer preserved. Select a source partner to replace it.</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">Saved referrer preserved. Select a result to replace it.</p>
           ) : (
-            <p className="mt-1 text-[10px] text-warning">Select a source partner from the list; new free-text referrers are not saved.</p>
+            <p className="mt-1 text-[10px] text-warning">Select a referrer from the list; free text is not saved.</p>
           )
         ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
-        <Field label="Account condition" htmlFor="customer-status">
-          <select id="customer-status" value={customer.status} onChange={(event) => setCustomer((current) => ({ ...current, status: event.target.value as Customer["status"] }))} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-            <option value="active">Active</option><option value="inactive">Inactive</option><option value="blocked">Blocked</option>
-          </select>
-        </Field>
+      <div>
         <Field label="Customer notes" htmlFor="customer-notes">
           <Textarea id="customer-notes" value={customer.notes} onChange={(event) => setCustomer((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Preferences, communication notes, or customer-level instructions" />
         </Field>

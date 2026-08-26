@@ -1,4 +1,7 @@
-import { assertCustomerExists } from "../business-rules";
+import {
+  assertCustomerCatalogRelations,
+  assertCustomerExists,
+} from "../business-rules";
 import { assertUniqueCustomerIdentity } from "../customer-identity";
 import type { Customer, RDashDatabase } from "../types";
 import {
@@ -33,6 +36,11 @@ function addId(target: Record<string, Set<string>>, collection: string, value: u
   const id = typeof value === "string" ? value.trim() : "";
   if (!id) return;
   (target[collection] ||= new Set()).add(id);
+}
+
+function addIds(target: Record<string, Set<string>>, collection: string, values: unknown) {
+  if (!Array.isArray(values)) return;
+  for (const value of values) addId(target, collection, value);
 }
 
 export function canUseSimpleTargetedCommit(operations: WorkspaceOperation[]): boolean {
@@ -71,7 +79,10 @@ function buildReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]
 
     for (const row of operation.upsert || []) {
       addId(rows, operation.collection, row.id);
-      if (operation.collection === "sites") {
+      if (operation.collection === "customers") {
+        addIds(rows, "master.workCategories", row.interest_category_ids);
+        addIds(rows, "master.workSubcategories", row.interest_work_subcategory_ids);
+      } else if (operation.collection === "sites") {
         addId(rows, "customers", row.customer_id);
       } else if (operation.collection === "attendance") {
         // The mutation policy uses the signed-in Staff row to block inactive
@@ -112,6 +123,7 @@ function validateCandidate(database: RDashDatabase, operations: WorkspaceOperati
 
         if (operation.collection === "customers") {
           const customer = row as unknown as Customer;
+          assertCustomerCatalogRelations(database, customer, "Customer");
           assertUniqueCustomerIdentity(database.customers, customer, { excludeCustomerId: customer.id });
         } else if (operation.collection === "sites") {
           assertCustomerExists(database, String(row.customer_id || ""), "Site");

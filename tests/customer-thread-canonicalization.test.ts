@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { threadParentExists } from "../src/lib/rdash/business-rules";
 import { createThreadsSlice } from "../src/lib/rdash/store/slices/threads";
@@ -191,5 +191,40 @@ describe("canonical Customer conversation threads", () => {
 
     expect(second).toBe(first);
     expect(state.db.threads).toHaveLength(1);
+  });
+
+  test("Work Required-only bundle save does not emit an unrelated customer audit", () => {
+    const db = structuredClone(buildSeedDatabase()) as RDashDatabase;
+    const work = db.workRequired.find((row) => row.area_ids.length > 0)!;
+    const customer = db.customers.find((row) => row.id === work.customer_id)!;
+    const state: any = {
+      db,
+      currentUser: () => ({ name: "Rahul Chauhan", role: "Operations Manager" }),
+      logAudit: vi.fn(),
+    };
+    const ctx: any = {
+      get: () => state,
+      commitState: (update: any) => {
+        const partial = typeof update === "function" ? update(state) : update;
+        Object.assign(state, partial);
+      },
+    };
+    Object.assign(state, createCrmSlice(ctx));
+
+    state.saveCustomerWithSites({
+      customerId: customer.id,
+      customer: { name: customer.name },
+      workRequired: [{
+        id: work.id,
+        site_id: work.site_id,
+        title: `${work.title} updated`,
+        work_category_id: work.work_category_id,
+        work_subcategory_id: work.work_subcategory_id,
+        area_ids: work.area_ids,
+      }],
+    });
+
+    expect(state.logAudit).toHaveBeenCalledTimes(1);
+    expect(state.logAudit.mock.calls[0][0]).toMatchObject({ entity_type: "workRequired", entity_id: work.id });
   });
 });
