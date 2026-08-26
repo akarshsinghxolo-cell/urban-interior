@@ -11,6 +11,11 @@ The format follows a simplified Keep-a-Changelog convention:
 
 ---
 
+## v0.4.4 — Aug 2026
+
+- **FEATURE** — Customer add/edit now supports customer-level Work Required, multi-subcategory scopes, multi-area creation, editable area names, and customer/contractor/vendor referral suggestions.
+- **FIX** — Work Required-only edits no longer emit an unauthorized customer audit entry, so Operations Manager saves complete successfully.
+
 ## v0.4.3 — Aug 2026
 
 - **FIX** — Site photo uploads now wait for confirmed customer/Site persistence before attachment records are committed. Pending browser upload placeholders are excluded from Site payloads, preventing the “attachment does not exist” validation failure.
