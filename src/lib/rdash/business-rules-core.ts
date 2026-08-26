@@ -1,6 +1,6 @@
 import { resolveCustomerIdFromLinks, type CustomerLinkInput } from "./customer-relations";
 import { findCustomerIdentityMatches } from "./customer-identity";
-import type { Area, FinanceContextLink, ID, LineItem, Customer, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
+import type { Area, FinanceContextLink, ID, LineItem, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
 export class BusinessRuleError extends Error {
     constructor(message: string) {
         super(message);
@@ -183,14 +183,6 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
         if (!variant) {
             fail(context, `Line "${item.title}" variant does not exist.`);
         }
-    }
-}
-export function assertCustomerCatalogRelations(db: RDashDatabase, customer: Pick<Customer, "interest_category_ids" | "interest_work_subcategory_ids">, context: string) {
-    for (const categoryId of unique(customer.interest_category_ids || [])) {
-        assertWorkCategoryId(db, categoryId, context);
-    }
-    for (const subcategoryId of unique(customer.interest_work_subcategory_ids || [])) {
-        assertWorkSubcategoryId(db, subcategoryId, context);
     }
 }
 export function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_category_id" | "work_subcategory_id" | "structured_items">, context: string) {
@@ -445,7 +437,6 @@ export function validateBusinessData(db: RDashDatabase) {
             assertAttachmentOwnedBy(attachmentId, entityType, entityId, context);
         }
     };
-    db.customers.forEach((customer) => capture(`Customer ${customer.id}`, () => assertCustomerCatalogRelations(db, customer, "Customer")));
     db.customers.forEach((customer) => {
         const duplicate = findCustomerIdentityMatches(db.customers, customer, { excludeCustomerId: customer.id })[0];
         if (duplicate) {

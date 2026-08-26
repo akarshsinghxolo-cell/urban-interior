@@ -45,7 +45,8 @@ export type AreaSaveChange = {
 
 export type WorkRequiredSaveChange = {
   workRequiredId: string;
-  kind: "create";
+  kind: "create" | "update";
+  before?: WorkRequired;
   after: WorkRequired;
 };
 
@@ -76,8 +77,6 @@ const customerMutableFields: Array<keyof Customer> = [
   "alternate_phone",
   "email",
   "status",
-  "interest_category_ids",
-  "interest_work_subcategory_ids",
   "source_partner_id",
   "source_partner_name",
   "notes",
@@ -115,6 +114,15 @@ const areaMutableFields: Array<keyof Area> = [
   "floor_area",
   "perimeter",
   "notes",
+];
+
+const workRequiredMutableFields: Array<keyof WorkRequired> = [
+  "title",
+  "work_category_id",
+  "work_subcategory_id",
+  "area_ids",
+  "description",
+  "priority",
 ];
 
 function defaultId(prefix: "cust" | "site" | "area" | "workRequired"): string {
@@ -156,8 +164,6 @@ function customerRecord(
     alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
     email: suppliedValue(input, "email", existing?.email),
     status: suppliedValue(input, "status", existing?.status ?? "active") ?? "active",
-    interest_category_ids: suppliedValue(input, "interest_category_ids", existing?.interest_category_ids ?? []) ?? [],
-    interest_work_subcategory_ids: suppliedValue(input, "interest_work_subcategory_ids", existing?.interest_work_subcategory_ids ?? []) ?? [],
     source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id),
     source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name),
     notes: suppliedValue(input, "notes", existing?.notes),
@@ -280,6 +286,7 @@ function areaChanged(before: Area | undefined, after: Area): boolean {
 }
 
 function workRequiredRecord(
+  existing: WorkRequired | undefined,
   input: CustomerWorkRequiredSaveDraft,
   workRequiredId: string,
   customer: Customer,
@@ -287,12 +294,18 @@ function workRequiredRecord(
   areas: Area[],
   now: string,
 ): WorkRequired {
-  const title = String(input.title ?? "").trim();
+  if (existing && existing.customer_id !== customer.id) {
+    throw new Error("Work Required cannot be moved to another Customer.");
+  }
+  if (existing && existing.site_id !== site.id) {
+    throw new Error("Work Required cannot be moved to another Site.");
+  }
+  const title = String(input.title ?? existing?.title ?? "").trim();
   if (!title) throw new Error("Work Required title is required.");
-  const workCategoryId = input.work_category_id;
-  const workSubcategoryId = input.work_subcategory_id;
+  const workCategoryId = input.work_category_id ?? existing?.work_category_id;
+  const workSubcategoryId = input.work_subcategory_id ?? existing?.work_subcategory_id;
   if (!workCategoryId || !workSubcategoryId) throw new Error(`Select a category and subcategory for Work Required "${title}".`);
-  const areaIds = uniqueStrings(input.area_ids ?? []);
+  const areaIds = uniqueStrings(input.area_ids ?? existing?.area_ids ?? []);
   if (!areaIds.length) throw new Error(`Select at least one covered Area for Work Required "${title}".`);
   const siteAreaIds = new Set(areas.filter((area) => area.site_id === site.id && !area.is_archived).map((area) => area.id));
   if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site.name}.`);
@@ -304,15 +317,20 @@ function workRequiredRecord(
     work_category_id: workCategoryId,
     work_subcategory_id: workSubcategoryId,
     area_ids: areaIds,
-    description: input.description,
-    structured_items: [],
-    status: input.status ?? "new",
-    source: input.source,
-    priority: input.priority ?? "medium",
-    budget: input.budget,
-    created_at: now,
-    updated_at: now,
+    description: suppliedValue(input, "description", existing?.description),
+    structured_items: existing?.structured_items ?? input.structured_items ?? [],
+    status: existing?.status ?? input.status ?? "new",
+    source: existing?.source ?? input.source,
+    priority: suppliedValue(input, "priority", existing?.priority ?? "medium") ?? "medium",
+    budget: existing?.budget ?? input.budget,
+    created_at: existing?.created_at ?? now,
+    updated_at: existing?.updated_at ?? now,
   };
+}
+
+function workRequiredChanged(before: WorkRequired | undefined, after: WorkRequired): boolean {
+  if (!before) return true;
+  return workRequiredMutableFields.some((field) => !sameValue(before[field], after[field]));
 }
 
 export function applyCustomerWithSitesSave(
@@ -389,24 +407,32 @@ export function applyCustomerWithSitesSave(
   const workRequiredChanges: WorkRequiredSaveChange[] = [];
   const workRequiredIds: string[] = [];
   const resultingWorkRequired = [...database.workRequired];
+  const workRequiredById = new Map(database.workRequired.map((work) => [work.id, work]));
   for (const draft of input.workRequired ?? []) {
     const workRequiredId = draft.id ?? createId("workRequired");
     if (workRequiredIds.includes(workRequiredId)) throw new Error(`Work Required "${workRequiredId}" was supplied more than once.`);
-    if (resultingWorkRequired.some((work) => work.id === workRequiredId)) throw new Error(`Work Required "${workRequiredId}" already exists.`);
     workRequiredIds.push(workRequiredId);
-    const siteId = String(draft.site_id ?? "");
+    const existing = workRequiredById.get(workRequiredId);
+    const siteId = String(draft.site_id ?? existing?.site_id ?? "");
     const site = resultingSiteById.get(siteId);
     if (!site || site.customer_id !== nextCustomer.id || site.is_archived) {
       throw new Error("Every Work Required in a customer bundle must belong to one active Site for that Customer.");
     }
-    const category = database.master.workCategories.find((row) => row.id === draft.work_category_id);
-    const subcategory = database.master.workSubcategories.find((row) => row.id === draft.work_subcategory_id);
+    const categoryId = draft.work_category_id ?? existing?.work_category_id;
+    const subcategoryId = draft.work_subcategory_id ?? existing?.work_subcategory_id;
+    const category = database.master.workCategories.find((row) => row.id === categoryId);
+    const subcategory = database.master.workSubcategories.find((row) => row.id === subcategoryId);
     if (!category || !subcategory || subcategory.category_id !== category.id) {
       throw new Error("Every Work Required must use a valid category and its subcategory.");
     }
-    const next = workRequiredRecord(draft, workRequiredId, nextCustomer, site, resultingAreas, now);
-    workRequiredChanges.push({ workRequiredId, kind: "create", after: next });
-    resultingWorkRequired.unshift(next);
+    const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, resultingAreas, now);
+    if (!workRequiredChanged(existing, next)) continue;
+    next.updated_at = now;
+    const kind: WorkRequiredSaveChange["kind"] = existing ? "update" : "create";
+    workRequiredChanges.push({ workRequiredId, kind, before: existing, after: next });
+    const index = resultingWorkRequired.findIndex((work) => work.id === workRequiredId);
+    if (index >= 0) resultingWorkRequired[index] = next;
+    else resultingWorkRequired.unshift(next);
   }
 
   const suppliedSiteIds = new Set(siteIds);

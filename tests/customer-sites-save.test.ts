@@ -19,8 +19,6 @@ function database(): RDashDatabase {
     phone: "9876543210",
     whatsapp: "9876543210",
     status: "active",
-    interest_category_ids: [],
-    interest_work_subcategory_ids: [],
     created_at: "2026-07-01T00:00:00.000Z",
     updated_at: "2026-07-01T00:00:00.000Z",
   }];
@@ -165,6 +163,101 @@ describe("canonical customer and Sites save", () => {
     expect(result.workRequiredChanges[0].kind).toBe("create");
   });
 
+  test("updates an existing Work Required without resetting lifecycle data", () => {
+    const db = database();
+    db.areas = [{
+      id: "area-existing",
+      site_id: "site-1",
+      name: "Kitchen",
+      area_type: "kitchen",
+      stage: "measured",
+      unit: "ft",
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+    }];
+    db.workRequired = [{
+      id: "work-existing",
+      customer_id: "customer-1",
+      site_id: "site-1",
+      title: "Old title",
+      work_category_id: "fc2",
+      work_subcategory_id: "fc2_kit",
+      area_ids: ["area-existing"],
+      description: "Keep lifecycle context",
+      structured_items: [{ id: "line-1", title: "Existing line", quantity: 1, unit_id: "sqft", rate: 10, amount: 10 }],
+      status: "quotation_in_progress",
+      source: "site-visit",
+      priority: "medium",
+      budget: 45000,
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+    }];
+
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: [{ ...db.sites[0] }],
+      areas: [{ ...db.areas[0] }],
+      workRequired: [{
+        id: "work-existing",
+        site_id: "site-1",
+        title: "Modular Kitchen",
+        work_category_id: "fc2",
+        work_subcategory_id: "fc2_kit",
+        area_ids: ["area-existing"],
+        description: "Updated scope notes",
+        priority: "high",
+      }],
+    }, options);
+
+    expect(result.workRequiredChanges).toHaveLength(1);
+    expect(result.workRequiredChanges[0]).toMatchObject({ kind: "update", before: { id: "work-existing", title: "Old title" } });
+    expect(result.db.workRequired[0]).toMatchObject({
+      title: "Modular Kitchen",
+      description: "Updated scope notes",
+      status: "quotation_in_progress",
+      source: "site-visit",
+      budget: 45000,
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: options.now,
+    });
+    expect(result.db.workRequired[0].structured_items).toHaveLength(1);
+  });
+
+  test("rejects moving an existing Work Required to another Site", () => {
+    const db = database();
+    db.sites.push({ ...db.sites[0], id: "site-2", name: "Second Site" });
+    db.areas = [{ id: "area-2", site_id: "site-2", name: "Office", area_type: "office_cabin", stage: "unmeasured", unit: "ft", created_at: options.now, updated_at: options.now }];
+    db.workRequired = [{
+      id: "work-existing",
+      customer_id: "customer-1",
+      site_id: "site-1",
+      title: "Existing work",
+      work_category_id: "fc2",
+      work_subcategory_id: "fc2_kit",
+      area_ids: [],
+      status: "new",
+      priority: "medium",
+      created_at: options.now,
+      updated_at: options.now,
+    }];
+
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { ...db.customers[0] },
+      sites: db.sites.map((site) => ({ ...site })),
+      areas: [{ ...db.areas[0] }],
+      workRequired: [{
+        id: "work-existing",
+        site_id: "site-2",
+        title: "Existing work",
+        work_category_id: "fc2",
+        work_subcategory_id: "fc2_kit",
+        area_ids: ["area-2"],
+      }],
+    }, options)).toThrow(/cannot be moved to another Site/i);
+  });
+
   test("rejects an Area linked outside the saved Customer's Sites", () => {
     const db = database();
     db.sites.push({ ...db.sites[0], id: "site-other", customer_id: "customer-other", name: "Other Site" });
@@ -224,8 +317,6 @@ describe("canonical customer and Sites save", () => {
         phone: "9876543210",
         whatsapp: "9876543210",
         status: "active",
-        interest_category_ids: [],
-        interest_work_subcategory_ids: [],
       },
       sites: [{
         id: "site-1",

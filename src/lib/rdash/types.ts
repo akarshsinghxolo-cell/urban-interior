@@ -39,8 +39,6 @@ export interface Customer {
     alternate_phone?: string;
     email?: string;
     status: EntityStatus;
-    interest_category_ids?: ID[];
-    interest_work_subcategory_ids?: ID[];
     source_partner_id?: ID;
     source_partner_name?: string;
     notes?: string;
@@ -1707,9 +1705,7 @@ export interface Contractor {
             notes?: string;
         }>;
     }>;
-    /** Free-form work-category tags (resolved from the master.workCategories
-     * list at create/edit time). Mirrors the customer interest_category_ids
-     * pattern but kept as names for human readability on the contractor card. */
+    /** Free-form work-category tags resolved from master.workCategories at create/edit time. */
     categories?: string[];
     available_workers?: number;
     service_radius_km?: number;
