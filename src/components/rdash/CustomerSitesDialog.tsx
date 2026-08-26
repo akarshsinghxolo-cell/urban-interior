@@ -12,7 +12,7 @@ import { cancelQueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { CustomerDetailsFields, CustomerWorkInterests } from "./CustomerDetailsFields";
+import { CustomerDetailsFields } from "./CustomerDetailsFields";
 import { CustomerSiteDraftCard } from "./CustomerSiteDraftCard";
 import { CustomerWorkRequiredDraftSection } from "./CustomerWorkRequiredDraftSection";
 import { EntityFilesCard } from "./EntityFilesCard";
@@ -23,6 +23,7 @@ import {
   draftForArea,
   draftForCustomer,
   draftForSite,
+  draftForWorkRequired,
   emptyCustomerDraft,
   fingerprint,
   newSiteDraft,
@@ -84,16 +85,22 @@ export function CustomerSitesDialog({
     const nextAreas = existing
       ? db.areas.filter((area) => nextSiteIds.has(area.site_id) && !area.is_archived).map(draftForArea)
       : [];
+    const nextWorkRequired = existing
+      ? db.workRequired
+        .filter((work) => nextSiteIds.has(work.site_id))
+        .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
+        .map(draftForWorkRequired)
+      : [];
     previousCustomerNameRef.current = nextCustomer.name;
     setCustomer(nextCustomer);
     setSites(nextSites);
     setAreas(nextAreas);
-    setWorkRequired([]);
+    setWorkRequired(nextWorkRequired);
     setDetachAttachmentIds([]);
     setSameNameAcknowledged(false);
-    setBaseline(fingerprint(nextCustomer, nextSites, [], false, nextAreas, []));
+    setBaseline(fingerprint(nextCustomer, nextSites, [], false, nextAreas, nextWorkRequired));
     dirtyFormRegistry.markClean(formId);
-  }, [db.areas, db.customers, db.sites, editId, formId]);
+  }, [db.areas, db.customers, db.sites, db.workRequired, editId, formId]);
 
   React.useEffect(() => {
     if (!open) {
@@ -182,7 +189,9 @@ export function CustomerSitesDialog({
     const areasValid = areas
       .filter((area) => includedLiveSiteIds.has(area.siteId))
       .every((area) => Boolean(area.name.trim()));
-    const workRequiredValid = workRequired.every((work) => includedLiveSiteIds.has(work.siteId)
+    const workRequiredValid = workRequired
+      .filter((work) => includedLiveSiteIds.has(work.siteId))
+      .every((work) => includedLiveSiteIds.has(work.siteId)
       && Boolean(work.categoryId && work.subcategoryId && work.title.trim() && work.areaIds.length));
     return sitesValid && areasValid && workRequiredValid;
   }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, workRequired]);
@@ -245,10 +254,7 @@ export function CustomerSitesDialog({
       }
     }
     for (const work of workRequired) {
-      if (!includedLiveSiteIds.has(work.siteId)) {
-        toast.error("Every Work Required must belong to an active Site");
-        return false;
-      }
+      if (!includedLiveSiteIds.has(work.siteId)) continue;
       if (!work.categoryId || !work.subcategoryId) {
         toast.error("Select a category and subcategory for every Work Required");
         return false;
@@ -272,12 +278,13 @@ export function CustomerSitesDialog({
       setSaving(true);
       const includedSites = sites.filter((site) => site.existing || site.enabled);
       const includedAreas = areas.filter((area) => includedLiveSiteIds.has(area.siteId));
+      const includedWorkRequired = workRequired.filter((work) => includedLiveSiteIds.has(work.siteId));
       const result = saveCustomerWithSites({
         customerId: editId,
         customer: customerPayload(customer),
         sites: includedSites.map((site) => sitePayload(site, currentUser().name)),
         areas: includedAreas.map(areaPayload),
-        workRequired: workRequired.map(workRequiredPayload),
+        workRequired: includedWorkRequired.map(workRequiredPayload),
         detachAttachmentIds,
       });
       await awaitServerSync();
@@ -339,7 +346,7 @@ export function CustomerSitesDialog({
               {isEdit ? "Edit Customer and Sites" : "Add New Customer"}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Save customer identity, optional Sites, Areas, and Work Required, then record broad work interests in one workflow.
+              Save customer identity, optional Sites, Areas, and Work Required in one workflow.
             </DialogDescription>
           </DialogHeader>
 
@@ -398,7 +405,6 @@ export function CustomerSitesDialog({
 
             <CustomerWorkRequiredDraftSection
               db={db}
-              customer={customer}
               sites={sites}
               areas={areas}
               setAreas={setAreas}
@@ -406,7 +412,6 @@ export function CustomerSitesDialog({
               setWorkRequired={setWorkRequired}
             />
 
-            <CustomerWorkInterests db={db} customer={customer} setCustomer={setCustomer} />
           </div>
 
           <DialogFooter className="border-t border-border px-5 py-3">

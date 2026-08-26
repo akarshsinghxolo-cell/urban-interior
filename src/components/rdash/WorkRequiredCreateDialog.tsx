@@ -24,7 +24,6 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
   const addWorkRequired = useRDashStore((state) => state.addWorkRequired);
   const siteAreas = React.useMemo(() => db.areas.filter((area) => area.site_id === site.id && !area.is_archived), [db.areas, site.id]);
   const [draft, setDraft] = React.useState<WorkRequiredFormDraft>(() => emptyWorkRequiredFormDraft());
-  const [prefilledFromCustomer, setPrefilledFromCustomer] = React.useState(false);
   const initializedDialogKey = React.useRef("");
   const initialAreaIdsKey = (initialAreaIds || []).join("|");
 
@@ -36,19 +35,11 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
     const dialogKey = `${site.id}|${initialAreaIdsKey}`;
     if (initializedDialogKey.current === dialogKey) return;
     initializedDialogKey.current = dialogKey;
-    const customer = db.customers.find((row) => row.id === customerId);
-    const categoryId = (customer?.interest_category_ids || []).find((id) => db.master.workCategories.some((category) => category.id === id)) || "";
-    const subcategoryId = (customer?.interest_work_subcategory_ids || []).find((id) => db.master.workSubcategories.some((subcategory) => subcategory.id === id && subcategory.category_id === categoryId)) || "";
-    const title = db.master.workSubcategories.find((subcategory) => subcategory.id === subcategoryId)?.name || "";
     setDraft({
       ...emptyWorkRequiredFormDraft(),
-      categoryId,
-      subcategoryId,
-      title,
       areaIds: (initialAreaIdsKey ? initialAreaIdsKey.split("|") : []).filter((id) => siteAreas.some((area) => area.id === id)),
     });
-    setPrefilledFromCustomer(Boolean(categoryId));
-  }, [customerId, db.customers, db.master.workCategories, db.master.workSubcategories, initialAreaIdsKey, open, site.id, siteAreas]);
+  }, [initialAreaIdsKey, open, site.id, siteAreas]);
 
   const save = () => {
     if (!draft.categoryId) return toast.error("Select the primary Work Category.");
@@ -89,7 +80,6 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
           value={draft}
           onChange={(patch) => setDraft((current) => ({ ...current, ...patch }))}
           onCreateArea={({ name, areaType, notes }) => addArea({ site_id: site.id, name, area_type: areaType, notes: notes || undefined, stage: "unmeasured" })}
-          prefilledFromCustomer={prefilledFromCustomer}
         />
         <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

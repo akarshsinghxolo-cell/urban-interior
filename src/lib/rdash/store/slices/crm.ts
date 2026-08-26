@@ -227,11 +227,12 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 get().logAudit({
                     actor: actor.name,
                     actor_role: actor.role,
-                    action: `Created Work Required "${change.after.title}" for ${site?.name || "Site"}`,
+                    action: `${change.kind === "create" ? "Created" : "Updated"} Work Required "${change.after.title}" for ${site?.name || "Site"}`,
                     entity_type: "workRequired",
                     entity_id: change.workRequiredId,
                     entity_label: change.after.title,
                     kind: change.kind,
+                    before: change.before,
                     after: change.after,
                     cross_post: [
                         { entity_type: "customer", entity_id: customer.id, entity_label: customer.name },

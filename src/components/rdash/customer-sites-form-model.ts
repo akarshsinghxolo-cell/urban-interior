@@ -1,4 +1,4 @@
-import type { Area, Customer, Priority, Site } from "@/lib/rdash/types";
+import type { Area, Customer, Priority, Site, WorkRequired } from "@/lib/rdash/types";
 import type { CustomerAreaSaveDraft, CustomerSiteSaveDraft, CustomerWorkRequiredSaveDraft } from "@/lib/rdash/customer-sites-save";
 import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
@@ -46,6 +46,7 @@ export type AreaDraft = {
 
 export type CustomerWorkRequiredDraft = {
   id: string;
+  existing: boolean;
   siteId: string;
   title: string;
   categoryId: string;
@@ -63,8 +64,6 @@ export type CustomerDraft = {
   email: string;
   status: Customer["status"];
   notes: string;
-  interestCategoryIds: string[];
-  interestSubcategoryIds: string[];
   referralQuery: string;
   referralLegacyName: string;
   referralSelected: { id: string; name: string } | null;
@@ -128,8 +127,6 @@ export function emptyCustomerDraft(): CustomerDraft {
     email: "",
     status: "active",
     notes: "",
-    interestCategoryIds: [],
-    interestSubcategoryIds: [],
     referralQuery: "",
     referralLegacyName: "",
     referralSelected: null,
@@ -145,8 +142,6 @@ export function draftForCustomer(customer: Customer): CustomerDraft {
     email: customer.email || "",
     status: customer.status || "active",
     notes: customer.notes || "",
-    interestCategoryIds: customer.interest_category_ids || [],
-    interestSubcategoryIds: customer.interest_work_subcategory_ids || [],
     referralQuery: customer.source_partner_name || "",
     referralLegacyName: customer.source_partner_id ? "" : customer.source_partner_name || "",
     referralSelected: customer.source_partner_id
@@ -219,6 +214,7 @@ export function newAreaDraft(siteId: string): AreaDraft {
 export function newCustomerWorkRequiredDraft(siteId: string): CustomerWorkRequiredDraft {
   return {
     id: reserveEntityId("workRequired"),
+    existing: false,
     siteId,
     title: "",
     categoryId: "",
@@ -226,6 +222,20 @@ export function newCustomerWorkRequiredDraft(siteId: string): CustomerWorkRequir
     areaIds: [],
     description: "",
     priority: "medium",
+  };
+}
+
+export function draftForWorkRequired(work: WorkRequired): CustomerWorkRequiredDraft {
+  return {
+    id: work.id,
+    existing: true,
+    siteId: work.site_id,
+    title: work.title || "",
+    categoryId: work.work_category_id || "",
+    subcategoryId: work.work_subcategory_id || "",
+    areaIds: work.area_ids || [],
+    description: work.description || "",
+    priority: work.priority || "medium",
   };
 }
 
@@ -290,8 +300,6 @@ export function customerPayload(draft: CustomerDraft): Partial<Customer> {
     alternate_phone: draft.alternatePhone.trim() || undefined,
     email: draft.email.trim().toLowerCase() || undefined,
     status: draft.status,
-    interest_category_ids: draft.interestCategoryIds,
-    interest_work_subcategory_ids: draft.interestSubcategoryIds,
     source_partner_id: draft.referralSelected?.id,
     source_partner_name: draft.referralSelected?.name
       || (draft.referralQuery.trim() === draft.referralLegacyName ? draft.referralLegacyName || undefined : undefined),
@@ -343,7 +351,7 @@ export function workRequiredPayload(draft: CustomerWorkRequiredDraft): CustomerW
     work_subcategory_id: draft.subcategoryId,
     area_ids: draft.areaIds,
     description: draft.description.trim() || undefined,
-    status: "new",
+    ...(draft.existing ? {} : { status: "new" as const }),
     priority: draft.priority,
   };
 }

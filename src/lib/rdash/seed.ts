@@ -30,9 +30,9 @@ const line = (id: string, title: string, quantity: number, rate: number, extra: 
     ...extra,
 });
 const customers: Customer[] = [
-    { id: "cust-das", name: "Mr. Das", phone: "+91 9876501933", whatsapp: "+91 9876501933", alternate_phone: "+91 9876501934", email: "mr.das@example.demo", status: "active", interest_category_ids: ["fc", "pw", "fc2"], source_partner_name: "Walk-in", notes: "Customer identity only. Apartment and office details live on separate Sites.", created_at: at(-28), updated_at: now() },
-    { id: "cust-aarav", name: "Aarav Mehta", phone: "+91 9876520110", whatsapp: "+91 9876520110", email: "aarav.mehta@example.demo", status: "active", interest_category_ids: ["fc2", "fc"], created_at: at(-20), updated_at: now() },
-    { id: "cust-nisha", name: "Nisha Rao", phone: "+91 9876592010", whatsapp: "+91 9876592010", email: "nisha.rao@example.demo", status: "active", interest_category_ids: ["fc2", "pw"], created_at: at(-14), updated_at: now() },
+    { id: "cust-das", name: "Mr. Das", phone: "+91 9876501933", whatsapp: "+91 9876501933", alternate_phone: "+91 9876501934", email: "mr.das@example.demo", status: "active", source_partner_name: "Walk-in", notes: "Customer identity only. Apartment and office details live on separate Sites.", created_at: at(-28), updated_at: now() },
+    { id: "cust-aarav", name: "Aarav Mehta", phone: "+91 9876520110", whatsapp: "+91 9876520110", email: "aarav.mehta@example.demo", status: "active", created_at: at(-20), updated_at: now() },
+    { id: "cust-nisha", name: "Nisha Rao", phone: "+91 9876592010", whatsapp: "+91 9876592010", email: "nisha.rao@example.demo", status: "active", created_at: at(-14), updated_at: now() },
 ];
 const sites: Site[] = [
     { id: "site-das-apartment", customer_id: "cust-das", name: "Das Residence — 3BHK Apartment", building_name: "Legio Apartment, Tower B", site_type: "apartment", stage: "execution", address: "Legio Apartment, Taramandal, Gorakhpur", city: "Gorakhpur", locality: "Taramandal", latitude: 26.7398, longitude: 83.3712, notes: "Residence project. Bedroom ceiling and painting package is active.", created_at: at(-24), updated_at: now() },

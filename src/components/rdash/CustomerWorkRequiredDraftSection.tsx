@@ -9,14 +9,12 @@ import {
   newAreaDraft,
   newCustomerWorkRequiredDraft,
   type AreaDraft,
-  type CustomerDraft,
   type CustomerWorkRequiredDraft,
   type SiteDraft,
 } from "./customer-sites-form-model";
 
 export function CustomerWorkRequiredDraftSection({
   db,
-  customer,
   sites,
   areas,
   setAreas,
@@ -24,7 +22,6 @@ export function CustomerWorkRequiredDraftSection({
   setWorkRequired,
 }: {
   db: RDashDatabase;
-  customer: CustomerDraft;
   sites: SiteDraft[];
   areas: AreaDraft[];
   setAreas: React.Dispatch<React.SetStateAction<AreaDraft[]>>;
@@ -33,18 +30,11 @@ export function CustomerWorkRequiredDraftSection({
 }) {
   const liveSites = sites.filter((site) => (site.existing || site.enabled) && !site.archiveRequested);
   const liveSiteIds = new Set(liveSites.map((site) => site.id));
-  const existingWorks = db.workRequired.filter((work) => liveSiteIds.has(work.site_id));
 
   const addWorkRequired = () => {
     const siteId = liveSites[0]?.id;
     if (!siteId) return;
-    const draft = newCustomerWorkRequiredDraft(siteId);
-    const categoryId = customer.interestCategoryIds.find((id) => db.master.workCategories.some((category) => category.id === id)) || "";
-    const subcategoryId = customer.interestSubcategoryIds.find((id) => db.master.workSubcategories.some((subcategory) => subcategory.id === id && subcategory.category_id === categoryId)) || "";
-    draft.categoryId = categoryId;
-    draft.subcategoryId = subcategoryId;
-    draft.title = db.master.workSubcategories.find((subcategory) => subcategory.id === subcategoryId)?.name || "";
-    setWorkRequired((current) => [...current, draft]);
+    setWorkRequired((current) => [...current, newCustomerWorkRequiredDraft(siteId)]);
   };
 
   const updateWorkRequired = (id: string, patch: Partial<CustomerWorkRequiredDraft>) => {
@@ -58,7 +48,7 @@ export function CustomerWorkRequiredDraftSection({
           <Wrench className="h-4 w-4 text-primary" />
           <div>
             <h3 className="text-sm font-semibold">Work Required</h3>
-            <p className="text-[11px] text-muted-foreground">Add Site-linked work and its covered Areas before recording broad customer interests.</p>
+            <p className="text-[11px] text-muted-foreground">Add or edit Site-linked work and its covered Areas.</p>
           </div>
         </div>
         <Button type="button" size="sm" variant="outline" onClick={addWorkRequired} disabled={!liveSites.length}>
@@ -66,18 +56,12 @@ export function CustomerWorkRequiredDraftSection({
         </Button>
       </div>
 
-      {existingWorks.length ? (
-        <div className="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-          {existingWorks.length} existing Work Required record{existingWorks.length === 1 ? " is" : "s are"} already linked to these Sites. Additions below are saved with the customer form.
-        </div>
-      ) : null}
-
       {!liveSites.length ? (
         <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">Add a Site before adding Work Required.</p>
       ) : null}
 
-      {workRequired.map((draft, index) => {
-        const site = liveSites.find((row) => row.id === draft.siteId) || liveSites[0];
+      {workRequired.filter((draft) => liveSiteIds.has(draft.siteId)).map((draft, index) => {
+        const site = liveSites.find((row) => row.id === draft.siteId);
         if (!site) return null;
         const siteAreas = areas.filter((area) => area.siteId === site.id);
         return (
@@ -87,14 +71,17 @@ export function CustomerWorkRequiredDraftSection({
               <select
                 value={site.id}
                 onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [] })}
+                disabled={draft.existing}
                 className="ml-auto h-8 min-w-40 rounded-md border border-input bg-card px-2 text-xs"
                 aria-label={`Site for Work Required ${index + 1}`}
               >
                 {liveSites.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
               </select>
-              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setWorkRequired((current) => current.filter((row) => row.id !== draft.id))} aria-label={`Remove Work Required ${index + 1}`}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {draft.existing ? null : (
+                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setWorkRequired((current) => current.filter((row) => row.id !== draft.id))} aria-label={`Remove Work Required ${index + 1}`}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
             </div>
             <WorkRequiredFields
               db={db}
@@ -107,7 +94,6 @@ export function CustomerWorkRequiredDraftSection({
                 setAreas((current) => [...current, area]);
                 return area.id;
               }}
-              prefilledFromCustomer={Boolean(draft.categoryId && customer.interestCategoryIds.includes(draft.categoryId))}
             />
           </article>
         );

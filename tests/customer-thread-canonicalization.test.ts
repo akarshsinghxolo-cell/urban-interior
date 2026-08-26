@@ -156,8 +156,6 @@ describe("canonical Customer conversation threads", () => {
         phone: "7000000099",
         whatsapp: "7000000099",
         status: "active",
-        interest_category_ids: [],
-        interest_work_subcategory_ids: [],
       },
       sites: [],
     });

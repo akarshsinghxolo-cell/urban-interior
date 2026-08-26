@@ -1,12 +1,16 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
 import { AREA_TYPES } from "./customer-sites-form-model";
+import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
+
+const ADD_CATEGORY_VALUE = "__add_work_category__";
+const ADD_SUBCATEGORY_VALUE = "__add_work_subcategory__";
 
 export type WorkRequiredFormDraft = {
   title: string;
@@ -41,7 +45,6 @@ export function WorkRequiredFields({
   value,
   onChange,
   onCreateArea,
-  prefilledFromCustomer = false,
 }: {
   db: RDashDatabase;
   site: Pick<Site, "id" | "name">;
@@ -49,8 +52,12 @@ export function WorkRequiredFields({
   value: WorkRequiredFormDraft;
   onChange: (patch: Partial<WorkRequiredFormDraft>) => void;
   onCreateArea: (area: NewWorkArea) => string;
-  prefilledFromCustomer?: boolean;
 }) {
+  const fieldId = React.useId();
+  const categorySelectId = `${fieldId}-category`;
+  const subcategorySelectId = `${fieldId}-subcategory`;
+  const [addCategoryOpen, setAddCategoryOpen] = React.useState(false);
+  const [addSubcategoryOpen, setAddSubcategoryOpen] = React.useState(false);
   const [newAreaOpen, setNewAreaOpen] = React.useState(false);
   const [newAreaName, setNewAreaName] = React.useState("");
   const [newAreaType, setNewAreaType] = React.useState<Area["area_type"]>("other");
@@ -80,37 +87,52 @@ export function WorkRequiredFields({
 
   return (
     <div className="grid gap-3">
-      {prefilledFromCustomer ? (
-        <div className="flex items-start gap-2 rounded-md border border-primary/20 bg-primary/[0.04] px-3 py-2 text-xs">
-          <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-          <span className="text-foreground/80">Category and subcategory are suggested from this customer&apos;s interests. They remain editable for this Site.</span>
-        </div>
-      ) : null}
-
       <div className="grid gap-3 sm:grid-cols-2">
-        <label>
-          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
-            Primary Category
-            {prefilledFromCustomer && value.categoryId ? <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" /> : null}
-          </span>
+        <div>
+          <label htmlFor={categorySelectId} className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Category</label>
           <select
+            id={categorySelectId}
             value={value.categoryId}
-            onChange={(event) => onChange({ categoryId: event.target.value, subcategoryId: "", title: "" })}
+            onChange={(event) => {
+              if (event.target.value === ADD_CATEGORY_VALUE) {
+                setAddCategoryOpen(true);
+                return;
+              }
+              setAddCategoryOpen(false);
+              setAddSubcategoryOpen(false);
+              onChange({ categoryId: event.target.value, subcategoryId: "", title: "" });
+            }}
             className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
           >
             <option value="">Select work category</option>
             {db.master.workCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            <option value={ADD_CATEGORY_VALUE}>+ Add category</option>
           </select>
-        </label>
-        <label>
-          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
-            Primary Subcategory
-            {prefilledFromCustomer && value.subcategoryId ? <Sparkles className="h-3 w-3 text-primary" aria-label="From customer interests" /> : null}
-          </span>
+          {addCategoryOpen ? (
+            <AddWorkCategoryAction
+              key="work-required-add-category"
+              initiallyAdding
+              onCancelled={() => setAddCategoryOpen(false)}
+              onCreated={(categoryId) => {
+                setAddCategoryOpen(false);
+                onChange({ categoryId, subcategoryId: "", title: "" });
+              }}
+              className="mt-1"
+            />
+          ) : null}
+        </div>
+        <div>
+          <label htmlFor={subcategorySelectId} className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Subcategory</label>
           <select
+            id={subcategorySelectId}
             value={value.subcategoryId}
             onChange={(event) => {
               const subcategoryId = event.target.value;
+              if (subcategoryId === ADD_SUBCATEGORY_VALUE) {
+                setAddSubcategoryOpen(true);
+                return;
+              }
+              setAddSubcategoryOpen(false);
               const title = db.master.workSubcategories.find((row) => row.id === subcategoryId)?.name || "";
               onChange({ subcategoryId, title });
             }}
@@ -119,8 +141,21 @@ export function WorkRequiredFields({
           >
             <option value="">{value.categoryId ? "Select work subcategory" : "Select category first"}</option>
             {subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
+            {value.categoryId ? <option value={ADD_SUBCATEGORY_VALUE}>+ Add subcategory</option> : null}
           </select>
-        </label>
+          {addSubcategoryOpen && value.categoryId ? (
+            <AddWorkSubcategoryAction
+              key={`work-required-add-subcategory-${value.categoryId}`}
+              categoryId={value.categoryId}
+              initiallyAdding
+              onCancelled={() => setAddSubcategoryOpen(false)}
+              onCreated={(subcategoryId, subcategoryName) => {
+                setAddSubcategoryOpen(false);
+                onChange({ subcategoryId, title: subcategoryName });
+              }}
+            />
+          ) : null}
+        </div>
       </div>
 
       <label>

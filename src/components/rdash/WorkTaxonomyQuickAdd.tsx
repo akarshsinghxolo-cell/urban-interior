@@ -17,14 +17,18 @@ const newCatalogId = (prefix: string) =>
 
 export function AddWorkCategoryAction({
   onCreated,
+  onCancelled,
+  initiallyAdding = false,
   className,
 }: {
   onCreated?: (categoryId: string) => void;
+  onCancelled?: () => void;
+  initiallyAdding?: boolean;
   className?: string;
 }) {
   const categories = useRDashStore((state) => state.db.master.workCategories);
   const mutateMaster = useRDashStore((state) => state.mutateMaster);
-  const [adding, setAdding] = React.useState(false);
+  const [adding, setAdding] = React.useState(initiallyAdding);
   const [name, setName] = React.useState("");
 
   function save() {
@@ -68,14 +72,14 @@ export function AddWorkCategoryAction({
           onChange={(event) => setName(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") { event.preventDefault(); save(); }
-            if (event.key === "Escape") { setAdding(false); setName(""); }
+            if (event.key === "Escape") { setAdding(false); setName(""); onCancelled?.(); }
           }}
           placeholder="Category name"
           className="h-8 text-xs"
           autoFocus
         />
         <Button type="button" size="icon" className="h-8 w-8 shrink-0" onClick={save} aria-label="Save work category"><Check className="h-3.5 w-3.5" /></Button>
-        <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => { setAdding(false); setName(""); }} aria-label="Cancel adding work category"><X className="h-3.5 w-3.5" /></Button>
+        <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => { setAdding(false); setName(""); onCancelled?.(); }} aria-label="Cancel adding work category"><X className="h-3.5 w-3.5" /></Button>
       </div>
     </div>
   );
@@ -84,13 +88,17 @@ export function AddWorkCategoryAction({
 export function AddWorkSubcategoryAction({
   categoryId,
   onCreated,
+  onCancelled,
+  initiallyAdding = false,
 }: {
   categoryId: string;
-  onCreated?: (subcategoryId: string) => void;
+  onCreated?: (subcategoryId: string, subcategoryName: string) => void;
+  onCancelled?: () => void;
+  initiallyAdding?: boolean;
 }) {
   const master = useRDashStore((state) => state.db.master);
   const mutateMaster = useRDashStore((state) => state.mutateMaster);
-  const [adding, setAdding] = React.useState(false);
+  const [adding, setAdding] = React.useState(initiallyAdding);
   const [name, setName] = React.useState("");
   const [unitId, setUnitId] = React.useState("sqft");
   const [notes, setNotes] = React.useState("");
@@ -136,7 +144,7 @@ export function AddWorkSubcategoryAction({
       workSubcategories: [...current.workSubcategories, subcategory],
     }));
     reset();
-    onCreated?.(subcategory.id);
+    onCreated?.(subcategory.id, subcategory.name);
     toast.success("Work subcategory added.");
   }
 
@@ -158,7 +166,7 @@ export function AddWorkSubcategoryAction({
       </div>
       <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Scope notes (optional)" className="min-h-14 text-xs" />
       <div className="flex justify-end gap-1.5">
-        <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={reset}>Cancel</Button>
+        <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { reset(); onCancelled?.(); }}>Cancel</Button>
         <Button type="button" size="sm" className="h-7 text-xs" onClick={save}><Check className="h-3 w-3" /> Save subcategory</Button>
       </div>
     </div>
