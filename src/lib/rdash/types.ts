@@ -110,8 +110,6 @@ export interface WorkRequired {
     title: string;
     work_category_id?: ID;
     work_subcategory_id?: ID;
-    system_name?: string;
-    specification?: string;
     area_ids: ID[];
     description?: string;
     structured_items?: LineItem[];

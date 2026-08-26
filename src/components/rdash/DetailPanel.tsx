@@ -2238,7 +2238,7 @@ function AreaOverview({ area }: {
       </Dialog>
       <EntityFilesCard entityType="room" entityId={area.id} title="Area photos & files" manage={!area.is_archived} showEmpty={!area.is_archived} />
       <ContextSection title={`Work Required in this Area (${works.length})`}>
-        {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={work.title} value={`${titleCase(work.status)} · ${work.system_name || "Specification pending"}`} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="Add area-specific work required before customer quotation or contractor bidding."/>}
+        {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={work.title} value={titleCase(work.status)} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="Add area-specific work required before customer quotation or contractor bidding."/>}
       </ContextSection>
       <ContextSection title={`Measurement Revisions (${measurements.length})`}>
         {measurements.length ? measurements.map((revision) => <div key={revision.id} className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"><div className="flex items-center justify-between gap-2"><span className="font-semibold">Revision {revision.revision_no}</span><StatusPill label={titleCase(revision.status)} tone={revision.status === "verified" ? "success" : revision.status === "superseded" ? "default" : "warning"}/></div><p className="mt-1 text-muted-foreground">{revision.length || 0} × {revision.width || 0}{revision.height ? ` × ${revision.height}` : ""} {revision.unit} · {revision.calculated_area || 0} sq ft</p><EntityFilesCard entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id && revision.status !== "superseded"} showEmpty={!area.is_archived && revision.id === latest?.id && revision.status !== "superseded"} /></div>) : <EmptyContext label="No measurement revision has been captured."/>}
@@ -2259,14 +2259,13 @@ function WorkRequiredOverview({ work }: {
     return (<div className="h-full overflow-y-auto p-4">
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill label={titleCase(work.status)} tone={work.status === "completed" || work.status === "awarded" || work.status === "in_progress" ? "success" : work.status === "lost" || work.status === "on_hold" ? "destructive" : "default"}/>
-        {work.system_name && <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-semibold">{work.system_name}</span>}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2">
         <MetricMini label="Areas" value={areas.length}/>
         <MetricMini label="Quotes" value={quotes.length}/>
         <MetricMini label="Orders" value={workOrders.length}/>
       </div>
-      {work.specification || work.description ? <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">{work.specification || work.description}</div> : null}
+      {work.description ? <div className="mt-4 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">{work.description}</div> : null}
       <div className="mt-4 flex flex-wrap gap-2">
         {site && <Button size="sm" variant="outline" onClick={() => openDetail("site", site.id)}><Building2 className="mr-1.5 h-3.5 w-3.5"/> {site.name}</Button>}
         <Button size="sm" onClick={() => setActiveModule("siteExecution")}><Wrench className="mr-1.5 h-3.5 w-3.5"/> Open execution flow</Button>

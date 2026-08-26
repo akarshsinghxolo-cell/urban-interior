@@ -55,8 +55,6 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 title: work.title || "New work required",
                 work_category_id: work.work_category_id,
                 work_subcategory_id: work.work_subcategory_id,
-                system_name: work.system_name,
-                specification: work.specification,
                 area_ids: work.area_ids || [],
                 description: work.description,
                 structured_items: work.structured_items || [],
@@ -156,6 +154,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     customerId: result.customerId,
                     siteIds: result.siteIds,
                     areaIds: result.areaIds,
+                    workRequiredIds: result.workRequiredIds,
                     changed: false,
                 };
             }
@@ -223,6 +222,23 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     ],
                 });
             }
+            for (const change of result.workRequiredChanges) {
+                const site = result.db.sites.find((row: Site) => row.id === change.after.site_id);
+                get().logAudit({
+                    actor: actor.name,
+                    actor_role: actor.role,
+                    action: `Created Work Required "${change.after.title}" for ${site?.name || "Site"}`,
+                    entity_type: "workRequired",
+                    entity_id: change.workRequiredId,
+                    entity_label: change.after.title,
+                    kind: change.kind,
+                    after: change.after,
+                    cross_post: [
+                        { entity_type: "customer", entity_id: customer.id, entity_label: customer.name },
+                        { entity_type: "site", entity_id: change.after.site_id, entity_label: site?.name },
+                    ],
+                });
+            }
             if (result.detachedAttachmentIds.length) {
                 get().logAudit({
                     actor: actor.name,
@@ -238,6 +254,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 customerId: result.customerId,
                 siteIds: result.siteIds,
                 areaIds: result.areaIds,
+                workRequiredIds: result.workRequiredIds,
                 changed: true,
             };
         },

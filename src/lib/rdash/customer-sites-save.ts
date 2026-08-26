@@ -1,4 +1,4 @@
-import type { Area, Customer, EntityFileAttachment, RDashDatabase, Site } from "./types";
+import type { Area, Customer, EntityFileAttachment, RDashDatabase, Site, WorkRequired } from "./types";
 import { assertUniqueCustomerIdentity } from "./customer-identity";
 
 export type CustomerSiteSaveDraft = Partial<Site> & {
@@ -9,11 +9,16 @@ export type CustomerAreaSaveDraft = Partial<Area> & {
   id?: string;
 };
 
+export type CustomerWorkRequiredSaveDraft = Partial<WorkRequired> & {
+  id?: string;
+};
+
 export type SaveCustomerWithSitesInput = {
   customerId?: string;
   customer: Partial<Customer>;
   sites?: CustomerSiteSaveDraft[];
   areas?: CustomerAreaSaveDraft[];
+  workRequired?: CustomerWorkRequiredSaveDraft[];
   detachAttachmentIds?: string[];
 };
 
@@ -38,22 +43,30 @@ export type AreaSaveChange = {
   after: Area;
 };
 
+export type WorkRequiredSaveChange = {
+  workRequiredId: string;
+  kind: "create";
+  after: WorkRequired;
+};
+
 export type SaveCustomerWithSitesResult = {
   db: RDashDatabase;
   customerId: string;
   siteIds: string[];
   areaIds: string[];
+  workRequiredIds: string[];
   changed: boolean;
   customerCreated: boolean;
   customerChanges: CustomerFieldChange[];
   siteChanges: SiteSaveChange[];
   areaChanges: AreaSaveChange[];
+  workRequiredChanges: WorkRequiredSaveChange[];
   detachedAttachmentIds: string[];
 };
 
 type SaveOptions = {
   now?: string;
-  createId?: (prefix: "cust" | "site" | "area") => string;
+  createId?: (prefix: "cust" | "site" | "area" | "workRequired") => string;
 };
 
 const customerMutableFields: Array<keyof Customer> = [
@@ -104,7 +117,7 @@ const areaMutableFields: Array<keyof Area> = [
   "notes",
 ];
 
-function defaultId(prefix: "cust" | "site" | "area"): string {
+function defaultId(prefix: "cust" | "site" | "area" | "workRequired"): string {
   return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 
@@ -266,6 +279,42 @@ function areaChanged(before: Area | undefined, after: Area): boolean {
   return areaMutableFields.some((field) => !sameValue(before[field], after[field]));
 }
 
+function workRequiredRecord(
+  input: CustomerWorkRequiredSaveDraft,
+  workRequiredId: string,
+  customer: Customer,
+  site: Site,
+  areas: Area[],
+  now: string,
+): WorkRequired {
+  const title = String(input.title ?? "").trim();
+  if (!title) throw new Error("Work Required title is required.");
+  const workCategoryId = input.work_category_id;
+  const workSubcategoryId = input.work_subcategory_id;
+  if (!workCategoryId || !workSubcategoryId) throw new Error(`Select a category and subcategory for Work Required "${title}".`);
+  const areaIds = uniqueStrings(input.area_ids ?? []);
+  if (!areaIds.length) throw new Error(`Select at least one covered Area for Work Required "${title}".`);
+  const siteAreaIds = new Set(areas.filter((area) => area.site_id === site.id && !area.is_archived).map((area) => area.id));
+  if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site.name}.`);
+  return {
+    id: workRequiredId,
+    customer_id: customer.id,
+    site_id: site.id,
+    title,
+    work_category_id: workCategoryId,
+    work_subcategory_id: workSubcategoryId,
+    area_ids: areaIds,
+    description: input.description,
+    structured_items: [],
+    status: input.status ?? "new",
+    source: input.source,
+    priority: input.priority ?? "medium",
+    budget: input.budget,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 export function applyCustomerWithSitesSave(
   database: RDashDatabase,
   input: SaveCustomerWithSitesInput,
@@ -337,6 +386,29 @@ export function applyCustomerWithSitesSave(
     else resultingAreas.unshift(next);
   }
 
+  const workRequiredChanges: WorkRequiredSaveChange[] = [];
+  const workRequiredIds: string[] = [];
+  const resultingWorkRequired = [...database.workRequired];
+  for (const draft of input.workRequired ?? []) {
+    const workRequiredId = draft.id ?? createId("workRequired");
+    if (workRequiredIds.includes(workRequiredId)) throw new Error(`Work Required "${workRequiredId}" was supplied more than once.`);
+    if (resultingWorkRequired.some((work) => work.id === workRequiredId)) throw new Error(`Work Required "${workRequiredId}" already exists.`);
+    workRequiredIds.push(workRequiredId);
+    const siteId = String(draft.site_id ?? "");
+    const site = resultingSiteById.get(siteId);
+    if (!site || site.customer_id !== nextCustomer.id || site.is_archived) {
+      throw new Error("Every Work Required in a customer bundle must belong to one active Site for that Customer.");
+    }
+    const category = database.master.workCategories.find((row) => row.id === draft.work_category_id);
+    const subcategory = database.master.workSubcategories.find((row) => row.id === draft.work_subcategory_id);
+    if (!category || !subcategory || subcategory.category_id !== category.id) {
+      throw new Error("Every Work Required must use a valid category and its subcategory.");
+    }
+    const next = workRequiredRecord(draft, workRequiredId, nextCustomer, site, resultingAreas, now);
+    workRequiredChanges.push({ workRequiredId, kind: "create", after: next });
+    resultingWorkRequired.unshift(next);
+  }
+
   const suppliedSiteIds = new Set(siteIds);
   for (const attachmentId of detachedSet) {
     const attachment = (database.entityFileAttachments || []).find((row) => row.id === attachmentId);
@@ -367,18 +439,20 @@ export function applyCustomerWithSitesSave(
       })
     : database.entityFileAttachments;
 
-  const changed = !existingCustomer || customerChanges.length > 0 || siteChanges.length > 0 || areaChanges.length > 0 || attachmentChanged;
+  const changed = !existingCustomer || customerChanges.length > 0 || siteChanges.length > 0 || areaChanges.length > 0 || workRequiredChanges.length > 0 || attachmentChanged;
   if (!changed) {
     return {
       db: database,
       customerId,
       siteIds,
       areaIds,
+      workRequiredIds,
       changed: false,
       customerCreated: false,
       customerChanges: [],
       siteChanges: [],
       areaChanges: [],
+      workRequiredChanges: [],
       detachedAttachmentIds: [],
     };
   }
@@ -393,16 +467,19 @@ export function applyCustomerWithSitesSave(
       customers,
       sites: resultingSites,
       areas: resultingAreas,
+      workRequired: resultingWorkRequired,
       entityFileAttachments: resultingAttachments,
     },
     customerId,
     siteIds,
     areaIds,
+    workRequiredIds,
     changed: true,
     customerCreated: !existingCustomer,
     customerChanges,
     siteChanges,
     areaChanges,
+    workRequiredChanges,
     detachedAttachmentIds: attachmentChanged ? detachedAttachmentIds : [],
   };
 }

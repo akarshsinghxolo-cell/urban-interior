@@ -9,7 +9,7 @@ function findWorkSubcategory(work: WorkRequired, db: RDashDatabase) {
     const row = db.master.workSubcategories.find((item) => item.id === work.work_subcategory_id);
     if (row && (!work.work_category_id || row.category_id === work.work_category_id)) return row;
   }
-  const haystack = normalizeCatalogName(`${work.title} ${work.system_name || ""} ${work.specification || ""}`);
+  const haystack = normalizeCatalogName(`${work.title} ${work.description || ""}`);
   const candidates = db.master.workSubcategories.filter((row) => !work.work_category_id || row.category_id === work.work_category_id);
   const preferred = [
     ["grid", "fc_grid"],

@@ -53,7 +53,7 @@ function database(): RDashDatabase {
 
 const options = {
   now: "2026-07-30T10:00:00.000Z",
-  createId: (prefix: "cust" | "site" | "area") => `${prefix}-created`,
+  createId: (prefix: "cust" | "site" | "area" | "workRequired") => `${prefix}-created`,
 };
 
 describe("customer Site form defaults", () => {
@@ -130,6 +130,39 @@ describe("canonical customer and Sites save", () => {
       stage: "unmeasured",
     });
     expect(result.areaChanges[0].kind).toBe("create");
+  });
+
+  test("creates Customer, Site, Area, and Work Required in one atomic bundle", () => {
+    const db = database();
+    db.customers = [];
+    db.sites = [];
+    db.areas = [];
+    db.workRequired = [];
+    const result = applyCustomerWithSitesSave(db, {
+      customer: { name: "New Customer", phone: "9123456789", status: "active" },
+      sites: [{ id: "site-new", name: "New Residence", site_type: "villa", stage: "enquiry" }],
+      areas: [{ id: "area-new", site_id: "site-new", name: "Kitchen", area_type: "kitchen", notes: "First floor" }],
+      workRequired: [{
+        id: "work-new",
+        site_id: "site-new",
+        title: "Modular Kitchen",
+        work_category_id: "fc2",
+        work_subcategory_id: "fc2_kit",
+        area_ids: ["area-new"],
+        description: "Use moisture-resistant carcass material.",
+        priority: "high",
+      }],
+    }, options);
+
+    expect(result.workRequiredIds).toEqual(["work-new"]);
+    expect(result.db.workRequired.find((work) => work.id === "work-new")).toMatchObject({
+      customer_id: "cust-created",
+      site_id: "site-new",
+      title: "Modular Kitchen",
+      area_ids: ["area-new"],
+      description: "Use moisture-resistant carcass material.",
+    });
+    expect(result.workRequiredChanges[0].kind).toBe("create");
   });
 
   test("rejects an Area linked outside the saved Customer's Sites", () => {
