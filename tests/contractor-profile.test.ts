@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import {
   canonicalContractorCapabilities,
@@ -143,5 +144,16 @@ describe("contractor create persistence and governance projection", () => {
       { id: "r2", contractor_id: "c2", trade: "Paint", rate: 90, work_subcategory_id: "sub-paint", work_type_id: "wt-budget", material_rate: 60, labour_rate: 30 },
     ], "sub-paint", "wt-budget");
     expect(average).toEqual({ material_rate: 50, labour_rate: 25, total_rate: 75, contractor_count: 2 });
+  });
+});
+
+describe("contractor capability picker layout", () => {
+  test("uses compact wrapping category chips with a single active subcategory panel", () => {
+    const source = readFileSync(new URL("../src/components/rdash/ContractorFormDialog.tsx", import.meta.url), "utf8");
+    expect(source).toContain('aria-label="Work capability categories"');
+    expect(source).toContain('rounded-full border px-3 py-1.5');
+    expect(source).toContain("activeCapabilityCategoryId");
+    expect(source).toContain("activeCapabilityCategory ? (");
+    expect(source).not.toContain("<details key={category.id}");
   });
 });
