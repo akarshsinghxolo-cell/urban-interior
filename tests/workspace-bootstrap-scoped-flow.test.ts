@@ -152,8 +152,12 @@ describe("workspace bootstrap and scoped client reads", () => {
     expect(notifications).toContain("notificationCoverageComplete");
     expect(notifications).toContain("filterCoverageComplete");
     expect(notifications).toContain('strategy !== "row"');
-    expect(notifications).toContain("partial alert data");
-    expect(notifications).toContain("notificationCoverageComplete && unread.length > 0");
+    expect(notifications).toContain("module details load on demand");
+    expect(notifications).not.toContain("notificationCoverageComplete && unread.length > 0");
+    expect(notifications).toContain("useWorkspaceHealth");
+    expect(notifications).toContain("health-overdue-tasks-");
+    expect(notifications).toContain('setActiveModule("tasks")');
+    expect(notifications).toContain("unread.length > 0 ?");
     expect(notifications).toContain("Notification data will fill in as relevant modules load.");
     expect(notifications).toContain("All caught up! No pending alerts.");
     expect(notifications).toContain("filterCoverageComplete ?");

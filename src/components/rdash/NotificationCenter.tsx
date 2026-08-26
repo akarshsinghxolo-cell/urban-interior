@@ -3,11 +3,14 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { relativeDay, titleCase, formatINR } from "@/lib/rdash/format";
+import { indiaDate } from "@/lib/rdash/date";
+import { useWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { Bell, AlertTriangle, CheckCircle2, Clock, X, Wallet, ShieldCheck, Ban, MapPin, CheckCheck, Filter, BellOff } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel, } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-type NotifCategory = "overdue" | "approval" | "blocked" | "risk" | "visit";
+type NotifCategory = "task" | "overdue" | "approval" | "blocked" | "risk" | "visit";
 const NOTIFICATION_SOURCE_COLLECTION: Record<NotifCategory, string> = {
+    task: "tasks",
     overdue: "payments",
     approval: "actions",
     blocked: "blocked",
@@ -32,6 +35,7 @@ const CATEGORY_META: Record<NotifCategory, {
     color: string;
     dotColor: string;
 }> = {
+    task: { label: "Tasks", icon: Clock, color: "bg-destructive/10 text-destructive border-destructive/20", dotColor: "bg-destructive" },
     overdue: { label: "Overdue", icon: Wallet, color: "bg-destructive/10 text-destructive border-destructive/20", dotColor: "bg-destructive" },
     approval: { label: "Approvals", icon: ShieldCheck, color: "bg-warning/10 text-warning border-warning/20", dotColor: "bg-warning" },
     blocked: { label: "Blocked", icon: Ban, color: "bg-destructive/10 text-destructive border-destructive/20", dotColor: "bg-destructive" },
@@ -71,6 +75,7 @@ export function NotificationCenter() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const authEmail = useRDashStore((s) => s.authUser?.email);
+    const { summary: healthSummary } = useWorkspaceHealth();
     const preferenceKey = React.useMemo(() => notificationPreferenceKey(authEmail), [authEmail]);
     const [open, setOpen] = React.useState(false);
     const [dismissed, setDismissed] = React.useState<Set<string>>(() => new Set());
@@ -125,6 +130,28 @@ export function NotificationCenter() {
     }, [dismissed, loadedPreferenceKey, preferenceKey, readItems, snoozed]);
     const notifs: NotifItem[] = React.useMemo(() => {
         const items: NotifItem[] = [];
+        const sourceLoaded = (category: NotifCategory) => notificationReadCoverage.authoritative
+            && notificationReadCoverage.collections.has(NOTIFICATION_SOURCE_COLLECTION[category]);
+        const summaryTime = healthSummary?.timestamp || "";
+        if (sourceLoaded("task")) {
+            db.tasks
+                .filter((task) => ["todo", "in_progress", "review"].includes(task.status) && Boolean(task.due_date) && task.due_date < indiaDate())
+                .forEach((task) => {
+                items.push({
+                    id: `task-${task.id}`, kind: "alert", category: "task", title: `Overdue task: ${task.title}`,
+                    body: `Due ${relativeDay(task.due_date)} · ${titleCase(task.priority)} priority`,
+                    time: task.due_date, actionLabel: "Review", action: () => { setActiveModule("tasks"); setOpen(false); },
+                });
+            });
+        } else if ((healthSummary?.operations.overdueTasks || 0) > 0) {
+            const count = healthSummary?.operations.overdueTasks || 0;
+            items.push({
+                id: `health-overdue-tasks-${count}`, kind: "alert", category: "task",
+                title: `${count} overdue task${count === 1 ? "" : "s"} need attention`,
+                body: "Open Tasks & Follow-ups to complete or reschedule them.",
+                time: summaryTime, actionLabel: "Review tasks", action: () => { setActiveModule("tasks"); setOpen(false); },
+            });
+        }
         db.payments.filter((p) => p.status === "overdue").forEach((p) => {
             items.push({
                 id: `pay-${p.id}`, kind: "alert", category: "overdue", title: `Payment overdue: ${formatINR(p.amount)}`,
@@ -132,25 +159,52 @@ export function NotificationCenter() {
                 time: p.due_date, actionLabel: "Open", action: () => { openDetail("payment", p.id); setOpen(false); },
             });
         });
-        db.actions.filter((a) => a.status === "pending").forEach((a) => {
-            items.push({
-                id: `appr-${a.id}`, kind: "reminder", category: "approval", title: `Approval needed: ${a.title}`,
-                body: (a.customer_name || "Customer") ? `${(a.customer_name || "Customer")}${a.amount ? ` · ${formatINR(a.amount)}` : ""}` : undefined,
-                time: a.created_at, actionLabel: "Review", action: () => { setActiveModule("approvals"); setOpen(false); },
+        if (sourceLoaded("approval")) {
+            db.actions.filter((a) => a.status === "pending").forEach((a) => {
+                items.push({
+                    id: `appr-${a.id}`, kind: "reminder", category: "approval", title: `Approval needed: ${a.title}`,
+                    body: (a.customer_name || "Customer") ? `${(a.customer_name || "Customer")}${a.amount ? ` · ${formatINR(a.amount)}` : ""}` : undefined,
+                    time: a.created_at, actionLabel: "Review", action: () => { setActiveModule("approvals"); setOpen(false); },
+                });
             });
-        });
-        db.blocked.filter((b) => !b.resolved).forEach((b) => {
+        } else if ((healthSummary?.operations.pendingApprovals || 0) > 0) {
+            const count = healthSummary?.operations.pendingApprovals || 0;
             items.push({
-                id: `blk-${b.id}`, kind: "alert", category: "blocked", title: `Blocked: ${b.title}`,
-                body: b.reason, time: b.created_at, actionLabel: "Open", action: () => { openDetail("blocked", b.id); setOpen(false); },
+                id: `health-pending-approvals-${count}`, kind: "reminder", category: "approval",
+                title: `${count} approval${count === 1 ? "" : "s"} waiting for review`,
+                time: summaryTime, actionLabel: "Review approvals", action: () => { setActiveModule("approvals"); setOpen(false); },
             });
-        });
-        db.risks.forEach((r) => {
+        }
+        if (sourceLoaded("blocked")) {
+            db.blocked.filter((b) => !b.resolved).forEach((b) => {
+                items.push({
+                    id: `blk-${b.id}`, kind: "alert", category: "blocked", title: `Blocked: ${b.title}`,
+                    body: b.reason, time: b.created_at, actionLabel: "Open", action: () => { openDetail("blocked", b.id); setOpen(false); },
+                });
+            });
+        } else if ((healthSummary?.operations.unresolvedBlocked || 0) > 0) {
+            const count = healthSummary?.operations.unresolvedBlocked || 0;
             items.push({
-                id: `risk-${r.id}`, kind: "alert", category: "risk", title: `Risk: ${r.title}`,
-                body: r.reason, time: r.created_at, actionLabel: "Review", action: () => { setActiveModule("blockedRisks"); setOpen(false); },
+                id: `health-unresolved-blocked-${count}`, kind: "alert", category: "blocked",
+                title: `${count} unresolved blocker${count === 1 ? "" : "s"}`,
+                time: summaryTime, actionLabel: "Review blockers", action: () => { setActiveModule("blockedRisks"); setOpen(false); },
             });
-        });
+        }
+        if (sourceLoaded("risk")) {
+            db.risks.forEach((risk) => {
+                items.push({
+                    id: `risk-${risk.id}`, kind: "alert", category: "risk", title: `Risk: ${risk.title}`,
+                    body: risk.reason, time: risk.created_at, actionLabel: "Review", action: () => { setActiveModule("blockedRisks"); setOpen(false); },
+                });
+            });
+        } else if ((healthSummary?.operations.openRisks || 0) > 0) {
+            const count = healthSummary?.operations.openRisks || 0;
+            items.push({
+                id: `health-open-risks-${count}`, kind: "alert", category: "risk",
+                title: `${count} open risk${count === 1 ? "" : "s"} need review`,
+                time: summaryTime, actionLabel: "Review risks", action: () => { setActiveModule("blockedRisks"); setOpen(false); },
+            });
+        }
         db.visits.filter((v) => v.status === "scheduled" && relativeDay(v.scheduled_at) === "Today").slice(0, 3).forEach((v) => {
             items.push({
                 id: `visit-${v.id}`, kind: "info", category: "visit", title: `Visit today: ${titleCase(v.visit_type)} · ${v.location_name}`,
@@ -159,7 +213,7 @@ export function NotificationCenter() {
             });
         });
         return items.sort((a, b) => b.time.localeCompare(a.time) || a.id.localeCompare(b.id));
-    }, [db, openDetail, setActiveModule]);
+    }, [db, healthSummary, notificationReadCoverage, openDetail, setActiveModule]);
     const activeSnoozed = React.useMemo(() => {
         const now = Date.now();
         const active: Record<string, number> = {};
@@ -191,7 +245,7 @@ export function NotificationCenter() {
         toast.success(`Snoozed for ${hours}h`);
     };
     const categoryCounts = React.useMemo(() => {
-        const counts: Record<NotifCategory, number> = { overdue: 0, approval: 0, blocked: 0, risk: 0, visit: 0 };
+        const counts: Record<NotifCategory, number> = { task: 0, overdue: 0, approval: 0, blocked: 0, risk: 0, visit: 0 };
         visible.forEach((n) => { if (!n.read && !readItems.has(n.id))
             counts[n.category]++; });
         return counts;
@@ -213,13 +267,11 @@ export function NotificationCenter() {
         setDismissed((current) => new Set([...current, ...notifs.map((notification) => notification.id)]));
         toast.success("All notifications dismissed");
     };
-    const notificationAriaLabel = notificationCoverageComplete
-        ? `Notifications (${unread.length} unread)`
-        : "Notifications (partial alert data; open to view loaded alerts)";
+    const notificationAriaLabel = `Notifications (${unread.length} unread${notificationCoverageComplete ? "" : "; module details load on demand"})`;
     return (<div className="relative">
       <button type="button" onClick={() => setOpen((o) => !o)} className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-input bg-card text-muted-foreground transition-all hover:bg-accent hover:text-foreground" aria-label={notificationAriaLabel}>
         <Bell className="h-4 w-4"/>
-        {notificationCoverageComplete && unread.length > 0 ? (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[10px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
+        {unread.length > 0 ? (<span className={cn("absolute -right-1 -top-1 flex h-4 min-w-[16px] animate-pulse-ring items-center justify-center rounded-full px-1 text-[10px] font-bold text-white", alertCount > 0 ? "bg-destructive" : "bg-primary")}>
             {unread.length > 9 ? "9+" : unread.length}
           </span>) : !notificationCoverageComplete ? (<span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-muted-foreground/50" aria-hidden="true" title="Alert coverage is partial"/>) : null}
       </button>
@@ -233,14 +285,14 @@ export function NotificationCenter() {
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-primary"/>
                   <h3 className="text-sm font-semibold">Notifications</h3>
-                  {notificationCoverageComplete && unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{unread.length} new</span>)}
+                  {unread.length > 0 && (<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">{unread.length} new</span>)}
                   {!notificationCoverageComplete && (<span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Partial</span>)}
                 </div>
                 <div className="flex items-center gap-1">
                   {filter !== "all" && filterCoverageComplete && filtered.some((n) => !n.read && !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
                       <CheckCheck className="h-3 w-3"/> Mark these read
                     </button>)}
-                  {notificationCoverageComplete && unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
+                  {unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
                       <CheckCheck className="h-3 w-3"/> Mark all read
                     </button>)}
                   <button type="button" onClick={dismissAll} className="rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title={notificationCoverageComplete ? "Dismiss all" : "Dismiss loaded alerts"}>
@@ -279,6 +331,7 @@ export function NotificationCenter() {
                 const meta = CATEGORY_META[n.category];
                 const isRead = n.read === true || readItems.has(n.id);
                 const ItemIcon = meta.icon;
+                const notificationAction = n.action;
                 return (<div key={n.id} className={cn("group flex items-start gap-2.5 border-b border-border px-3 py-2.5 last:border-0 transition-colors hover:bg-accent/30", !isRead && "bg-primary/[0.02]")}>
                       <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border", meta.color)}>
                         <ItemIcon className="h-3.5 w-3.5"/>
@@ -292,9 +345,9 @@ export function NotificationCenter() {
                         <div className="mt-1 flex items-center gap-2">
                           <span className="text-[10px] text-muted-foreground">{relativeDay(n.time)}</span>
                           <span className={cn("rounded px-1 py-0.5 text-[8px] font-bold uppercase", meta.color)}>{meta.label}</span>
-                          {n.action && (<button type="button" onClick={() => { setReadItems((r) => new Set([...r, n.id])); n.action!(); }} className="text-[10px] font-semibold text-primary hover:underline">
+                          {notificationAction ? (<button type="button" onClick={() => { setReadItems((r) => new Set([...r, n.id])); notificationAction(); }} className="text-[10px] font-semibold text-primary hover:underline">
                               {n.actionLabel || "Open"} →
-                            </button>)}
+                            </button>) : null}
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-0.5">
