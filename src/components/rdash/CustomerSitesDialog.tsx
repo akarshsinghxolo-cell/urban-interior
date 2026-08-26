@@ -12,12 +12,15 @@ import { cancelQueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { CustomerDetailsFields } from "./CustomerDetailsFields";
+import { CustomerDetailsFields, CustomerWorkInterests } from "./CustomerDetailsFields";
+import { CustomerAreasDraftSection } from "./CustomerAreasDraftSection";
 import { CustomerSiteDraftCard } from "./CustomerSiteDraftCard";
 import { EntityFilesCard } from "./EntityFilesCard";
 import {
+  areaPayload,
   customerPayload,
   defaultSiteName,
+  draftForArea,
   draftForCustomer,
   draftForSite,
   emptyCustomerDraft,
@@ -27,6 +30,7 @@ import {
   sitePayload,
   validEmail,
   validIndianPhone,
+  type AreaDraft,
   type CustomerDraft,
   type SiteDraft,
 } from "./customer-sites-form-model";
@@ -58,6 +62,7 @@ export function CustomerSitesDialog({
   const [saving, setSaving] = React.useState(false);
   const [customer, setCustomer] = React.useState<CustomerDraft>(() => emptyCustomerDraft());
   const [sites, setSites] = React.useState<SiteDraft[]>([]);
+  const [areas, setAreas] = React.useState<AreaDraft[]>([]);
   const [detachAttachmentIds, setDetachAttachmentIds] = React.useState<string[]>([]);
   const [baseline, setBaseline] = React.useState("");
   const [sameNameAcknowledged, setSameNameAcknowledged] = React.useState(false);
@@ -72,14 +77,19 @@ export function CustomerSitesDialog({
     const nextSites = existing
       ? db.sites.filter((site) => site.customer_id === existing.id && !site.is_archived).map(draftForSite)
       : [];
+    const nextSiteIds = new Set(nextSites.map((site) => site.id));
+    const nextAreas = existing
+      ? db.areas.filter((area) => nextSiteIds.has(area.site_id) && !area.is_archived).map(draftForArea)
+      : [];
     previousCustomerNameRef.current = nextCustomer.name;
     setCustomer(nextCustomer);
     setSites(nextSites);
+    setAreas(nextAreas);
     setDetachAttachmentIds([]);
     setSameNameAcknowledged(false);
-    setBaseline(fingerprint(nextCustomer, nextSites, [], false));
+    setBaseline(fingerprint(nextCustomer, nextSites, [], false, nextAreas));
     dirtyFormRegistry.markClean(formId);
-  }, [db.customers, db.sites, editId, formId]);
+  }, [db.areas, db.customers, db.sites, editId, formId]);
 
   React.useEffect(() => {
     if (!open) {
@@ -104,8 +114,8 @@ export function CustomerSitesDialog({
   }, [customer.name, open]);
 
   const currentFingerprint = React.useMemo(
-    () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged),
-    [customer, sites, detachAttachmentIds, sameNameAcknowledged],
+    () => fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas),
+    [areas, customer, sites, detachAttachmentIds, sameNameAcknowledged],
   );
   const dirty = open && currentFingerprint !== baseline;
 
@@ -118,6 +128,7 @@ export function CustomerSitesDialog({
     if (!site || site.existing) return;
     await Promise.all(site.pendingPhotos.map((photo) => cancelQueuedWorkflowFile(photo)));
     setSites((current) => current.filter((row) => row.id !== siteId));
+    setAreas((current) => current.filter((area) => area.siteId !== siteId));
   }, [sites]);
 
   const setNewSiteEnabled = React.useCallback(async (siteId: string, enabled: boolean) => {
@@ -126,6 +137,7 @@ export function CustomerSitesDialog({
     if (!enabled && site.pendingPhotos.length) {
       await Promise.all(site.pendingPhotos.map((photo) => cancelQueuedWorkflowFile(photo)));
     }
+    if (!enabled) setAreas((current) => current.filter((area) => area.siteId !== siteId));
     updateSite(siteId, {
       enabled,
       expanded: enabled || site.expanded,
@@ -145,16 +157,25 @@ export function CustomerSitesDialog({
     [customer.name, db.customers, editId],
   );
 
+  const includedLiveSiteIds = React.useMemo(
+    () => new Set(sites.filter((site) => (site.existing || site.enabled) && !site.archiveRequested).map((site) => site.id)),
+    [sites],
+  );
+
   const formIsValid = React.useMemo(() => {
     if (!customer.name.trim()) return false;
     if (![customer.phone, customer.whatsapp, customer.alternatePhone].every(validIndianPhone)) return false;
     if (!validEmail(customer.email) || duplicateMatches.length) return false;
     if (sameNameMatches.length && !sameNameAcknowledged) return false;
-    return sites.filter((site) => site.existing || site.enabled).every((site) => {
+    const sitesValid = sites.filter((site) => site.existing || site.enabled).every((site) => {
       if (site.archiveRequested) return Boolean(site.archiveReason.trim());
       return Boolean(site.name.trim()) && !coordinateInputError(site.coordinateInput);
     });
-  }, [customer, duplicateMatches.length, sameNameAcknowledged, sameNameMatches.length, sites]);
+    const areasValid = areas
+      .filter((area) => includedLiveSiteIds.has(area.siteId))
+      .every((area) => Boolean(area.name.trim()));
+    return sitesValid && areasValid;
+  }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites]);
 
   const validate = React.useCallback(() => {
     if (!customer.name.trim()) {
@@ -206,8 +227,15 @@ export function CustomerSitesDialog({
         return false;
       }
     }
+    for (const area of areas.filter((row) => includedLiveSiteIds.has(row.siteId))) {
+      if (!area.name.trim()) {
+        toast.error("Enter an Area name or remove that new Area");
+        scrollToField(`area-name-${area.id}`);
+        return false;
+      }
+    }
     return true;
-  }, [customer, duplicateMatches, sameNameAcknowledged, sameNameMatches.length, sites, updateSite]);
+  }, [areas, customer, duplicateMatches, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, updateSite]);
 
   const persist = React.useCallback(async (): Promise<boolean> => {
     if (saving || !dirty) return !dirty;
@@ -215,22 +243,24 @@ export function CustomerSitesDialog({
     try {
       setSaving(true);
       const includedSites = sites.filter((site) => site.existing || site.enabled);
+      const includedAreas = areas.filter((area) => includedLiveSiteIds.has(area.siteId));
       const result = saveCustomerWithSites({
         customerId: editId,
         customer: customerPayload(customer),
         sites: includedSites.map((site) => sitePayload(site, currentUser().name)),
+        areas: includedAreas.map(areaPayload),
         detachAttachmentIds,
       });
       await awaitServerSync();
       commitBatches();
-      setBaseline(fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged));
+      setBaseline(fingerprint(customer, sites, detachAttachmentIds, sameNameAcknowledged, areas));
       dirtyFormRegistry.markClean(formId);
       const archivedCount = includedSites.filter((site) => site.archiveRequested).length;
       toast.success(result.changed
         ? archivedCount
           ? `Customer saved and ${archivedCount} Site${archivedCount === 1 ? "" : "s"} archived`
-          : `Customer \"${customer.name.trim()}\" and Site changes saved`
-        : "No customer or Site changes to save");
+          : `Customer "${customer.name.trim()}", Site, and Area changes saved`
+        : "No customer, Site, or Area changes to save");
       onSaved?.(result.customerId);
       return true;
     } catch (error) {
@@ -239,7 +269,7 @@ export function CustomerSitesDialog({
     } finally {
       setSaving(false);
     }
-  }, [awaitServerSync, commitBatches, currentUser, customer, detachAttachmentIds, dirty, editId, formId, onSaved, sameNameAcknowledged, saveCustomerWithSites, saving, sites, validate]);
+  }, [areas, awaitServerSync, commitBatches, currentUser, customer, detachAttachmentIds, dirty, editId, formId, includedLiveSiteIds, onSaved, sameNameAcknowledged, saveCustomerWithSites, saving, sites, validate]);
 
   useDirtyFormRegistration({
     id: formId,
@@ -280,7 +310,7 @@ export function CustomerSitesDialog({
               {isEdit ? "Edit Customer and Sites" : "Add New Customer"}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Save customer identity and any number of optional Sites in one workflow. Site GPS, stage, files, and archive actions are validated.
+              Save customer identity, optional Sites and Areas, then record broad work interests in one workflow.
             </DialogDescription>
           </DialogHeader>
 
@@ -336,6 +366,10 @@ export function CustomerSitesDialog({
                 />
               ))}
             </section>
+
+            <CustomerAreasDraftSection sites={sites} areas={areas} setAreas={setAreas} />
+
+            <CustomerWorkInterests db={db} customer={customer} setCustomer={setCustomer} />
           </div>
 
           <DialogFooter className="border-t border-border px-5 py-3">

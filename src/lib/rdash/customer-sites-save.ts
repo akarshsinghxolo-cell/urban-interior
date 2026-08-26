@@ -1,7 +1,11 @@
-import type { Customer, EntityFileAttachment, RDashDatabase, Site } from "./types";
+import type { Area, Customer, EntityFileAttachment, RDashDatabase, Site } from "./types";
 import { assertUniqueCustomerIdentity } from "./customer-identity";
 
 export type CustomerSiteSaveDraft = Partial<Site> & {
+  id?: string;
+};
+
+export type CustomerAreaSaveDraft = Partial<Area> & {
   id?: string;
 };
 
@@ -9,6 +13,7 @@ export type SaveCustomerWithSitesInput = {
   customerId?: string;
   customer: Partial<Customer>;
   sites?: CustomerSiteSaveDraft[];
+  areas?: CustomerAreaSaveDraft[];
   detachAttachmentIds?: string[];
 };
 
@@ -26,20 +31,29 @@ export type SiteSaveChange = {
   after: Site;
 };
 
+export type AreaSaveChange = {
+  areaId: string;
+  kind: "create" | "update";
+  before?: Area;
+  after: Area;
+};
+
 export type SaveCustomerWithSitesResult = {
   db: RDashDatabase;
   customerId: string;
   siteIds: string[];
+  areaIds: string[];
   changed: boolean;
   customerCreated: boolean;
   customerChanges: CustomerFieldChange[];
   siteChanges: SiteSaveChange[];
+  areaChanges: AreaSaveChange[];
   detachedAttachmentIds: string[];
 };
 
 type SaveOptions = {
   now?: string;
-  createId?: (prefix: "cust" | "site") => string;
+  createId?: (prefix: "cust" | "site" | "area") => string;
 };
 
 const customerMutableFields: Array<keyof Customer> = [
@@ -77,7 +91,20 @@ const siteMutableFields: Array<keyof Site> = [
   "archive_reason",
 ];
 
-function defaultId(prefix: "cust" | "site"): string {
+const areaMutableFields: Array<keyof Area> = [
+  "name",
+  "area_type",
+  "stage",
+  "length",
+  "width",
+  "height",
+  "unit",
+  "floor_area",
+  "perimeter",
+  "notes",
+];
+
+function defaultId(prefix: "cust" | "site" | "area"): string {
   return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 
@@ -145,7 +172,7 @@ function siteRecord(
 ): Site {
   const name = String(input.name ?? existing?.name ?? "").trim();
   if (!name) throw new Error("Site name is required.");
-  if (existing?.is_archived) throw new Error(`Archived Site \"${existing.name}\" cannot be edited.`);
+  if (existing?.is_archived) throw new Error(`Archived Site "${existing.name}" cannot be edited.`);
   if (existing && existing.customer_id !== customer.id) {
     throw new Error("A Site cannot be moved to another Customer.");
   }
@@ -156,7 +183,7 @@ function siteRecord(
   const isArchiving = Boolean(input.is_archived) && !existing?.is_archived;
   const archiveReason = String(input.archive_reason ?? "").trim();
   if (isArchiving && !existing) throw new Error("A new Site cannot be archived before it is created.");
-  if (isArchiving && !archiveReason) throw new Error(`An archive reason is required for Site \"${name}\".`);
+  if (isArchiving && !archiveReason) throw new Error(`An archive reason is required for Site "${name}".`);
 
   const attachmentIds = uniqueStrings([
     ...(input.photo_attachment_ids ?? existing?.photo_attachment_ids ?? []),
@@ -193,6 +220,52 @@ function siteChanged(before: Site | undefined, after: Site): boolean {
   return siteMutableFields.some((field) => !sameValue(before[field], after[field]));
 }
 
+function areaRecord(
+  existing: Area | undefined,
+  input: CustomerAreaSaveDraft,
+  areaId: string,
+  site: Site,
+  now: string,
+): Area {
+  if (site.is_archived) throw new Error(`Areas cannot be added to archived Site "${site.name}".`);
+  if (existing?.is_archived) throw new Error(`Archived Area "${existing.name}" cannot be edited.`);
+  if (existing && existing.site_id !== site.id) {
+    throw new Error("An Area cannot be moved to another Site.");
+  }
+
+  const name = String(input.name ?? existing?.name ?? "").trim();
+  if (!name) throw new Error("Area name is required.");
+
+  const length = suppliedValue(input, "length", existing?.length);
+  const width = suppliedValue(input, "width", existing?.width);
+  return {
+    id: areaId,
+    site_id: site.id,
+    name,
+    area_type: suppliedValue(input, "area_type", existing?.area_type ?? "other") ?? "other",
+    stage: suppliedValue(input, "stage", existing?.stage ?? "unmeasured") ?? "unmeasured",
+    length,
+    width,
+    height: suppliedValue(input, "height", existing?.height),
+    unit: suppliedValue(input, "unit", existing?.unit ?? "ft") ?? "ft",
+    floor_area: suppliedValue(input, "floor_area", existing?.floor_area ?? (length && width ? length * width : undefined)),
+    perimeter: suppliedValue(input, "perimeter", existing?.perimeter ?? (length && width ? 2 * (length + width) : undefined)),
+    notes: suppliedValue(input, "notes", existing?.notes),
+    is_archived: existing?.is_archived,
+    archived_at: existing?.archived_at,
+    archived_by: existing?.archived_by,
+    archive_reason: existing?.archive_reason,
+    replaced_by_area_id: existing?.replaced_by_area_id,
+    created_at: existing?.created_at ?? now,
+    updated_at: existing?.updated_at ?? now,
+  };
+}
+
+function areaChanged(before: Area | undefined, after: Area): boolean {
+  if (!before) return true;
+  return areaMutableFields.some((field) => !sameValue(before[field], after[field]));
+}
+
 export function applyCustomerWithSitesSave(
   database: RDashDatabase,
   input: SaveCustomerWithSitesInput,
@@ -224,7 +297,7 @@ export function applyCustomerWithSitesSave(
 
   for (const draft of input.sites ?? []) {
     const siteId = draft.id ?? createId("site");
-    if (siteIds.includes(siteId)) throw new Error(`Site \"${siteId}\" was supplied more than once.`);
+    if (siteIds.includes(siteId)) throw new Error(`Site "${siteId}" was supplied more than once.`);
     siteIds.push(siteId);
     const existing = siteById.get(siteId);
     const next = siteRecord(existing, draft, nextCustomer, siteId, now, detachedSet);
@@ -238,11 +311,37 @@ export function applyCustomerWithSitesSave(
     else resultingSites.unshift(next);
   }
 
+  const areaChanges: AreaSaveChange[] = [];
+  const areaIds: string[] = [];
+  const areaById = new Map(database.areas.map((area) => [area.id, area]));
+  const resultingAreas = [...database.areas];
+  const resultingSiteById = new Map(resultingSites.map((site) => [site.id, site]));
+
+  for (const draft of input.areas ?? []) {
+    const areaId = draft.id ?? createId("area");
+    if (areaIds.includes(areaId)) throw new Error(`Area "${areaId}" was supplied more than once.`);
+    areaIds.push(areaId);
+    const existing = areaById.get(areaId);
+    const siteId = String(draft.site_id ?? existing?.site_id ?? "");
+    const site = resultingSiteById.get(siteId);
+    if (!site || site.customer_id !== nextCustomer.id) {
+      throw new Error("Every Area in a customer bundle must belong to one of that Customer's Sites.");
+    }
+    const next = areaRecord(existing, draft, areaId, site, now);
+    if (!areaChanged(existing, next)) continue;
+    next.updated_at = now;
+    const kind: AreaSaveChange["kind"] = existing ? "update" : "create";
+    areaChanges.push({ areaId, kind, before: existing, after: next });
+    const index = resultingAreas.findIndex((area) => area.id === areaId);
+    if (index >= 0) resultingAreas[index] = next;
+    else resultingAreas.unshift(next);
+  }
+
   const suppliedSiteIds = new Set(siteIds);
   for (const attachmentId of detachedSet) {
     const attachment = (database.entityFileAttachments || []).find((row) => row.id === attachmentId);
     if (!attachment || (attachment.entity_type !== "site" && attachment.entity_type !== "customer")) {
-      throw new Error(`Customer/Site attachment \"${attachmentId}\" does not exist.`);
+      throw new Error(`Customer/Site attachment "${attachmentId}" does not exist.`);
     }
     if (attachment.entity_type === "customer") {
       if (attachment.entity_id !== customerId) {
@@ -255,7 +354,7 @@ export function applyCustomerWithSitesSave(
       throw new Error("A Site file cannot be detached from another Customer.");
     }
     if (!suppliedSiteIds.has(attachmentSite.id)) {
-      throw new Error(`Include Site \"${attachmentSite.name}\" in the save before detaching its file.`);
+      throw new Error(`Include Site "${attachmentSite.name}" in the save before detaching its file.`);
     }
   }
 
@@ -268,16 +367,18 @@ export function applyCustomerWithSitesSave(
       })
     : database.entityFileAttachments;
 
-  const changed = !existingCustomer || customerChanges.length > 0 || siteChanges.length > 0 || attachmentChanged;
+  const changed = !existingCustomer || customerChanges.length > 0 || siteChanges.length > 0 || areaChanges.length > 0 || attachmentChanged;
   if (!changed) {
     return {
       db: database,
       customerId,
       siteIds,
+      areaIds,
       changed: false,
       customerCreated: false,
       customerChanges: [],
       siteChanges: [],
+      areaChanges: [],
       detachedAttachmentIds: [],
     };
   }
@@ -291,14 +392,17 @@ export function applyCustomerWithSitesSave(
       ...database,
       customers,
       sites: resultingSites,
+      areas: resultingAreas,
       entityFileAttachments: resultingAttachments,
     },
     customerId,
     siteIds,
+    areaIds,
     changed: true,
     customerCreated: !existingCustomer,
     customerChanges,
     siteChanges,
+    areaChanges,
     detachedAttachmentIds: attachmentChanged ? detachedAttachmentIds : [],
   };
 }

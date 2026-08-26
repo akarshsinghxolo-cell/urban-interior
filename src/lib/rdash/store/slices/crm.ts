@@ -155,6 +155,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 return {
                     customerId: result.customerId,
                     siteIds: result.siteIds,
+                    areaIds: result.areaIds,
                     changed: false,
                 };
             }
@@ -204,6 +205,24 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     cross_post: [{ entity_type: "customer", entity_id: customer.id, entity_label: customer.name }],
                 });
             }
+            for (const change of result.areaChanges) {
+                const site = result.db.sites.find((row: Site) => row.id === change.after.site_id);
+                get().logAudit({
+                    actor: actor.name,
+                    actor_role: actor.role,
+                    action: `${change.kind === "create" ? "Created" : "Updated"} Area "${change.after.name}" for ${site?.name || "Site"}`,
+                    entity_type: "area",
+                    entity_id: change.areaId,
+                    entity_label: change.after.name,
+                    kind: change.kind,
+                    before: change.before,
+                    after: change.after,
+                    cross_post: [
+                        { entity_type: "customer", entity_id: customer.id, entity_label: customer.name },
+                        { entity_type: "site", entity_id: change.after.site_id, entity_label: site?.name },
+                    ],
+                });
+            }
             if (result.detachedAttachmentIds.length) {
                 get().logAudit({
                     actor: actor.name,
@@ -218,6 +237,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             return {
                 customerId: result.customerId,
                 siteIds: result.siteIds,
+                areaIds: result.areaIds,
                 changed: true,
             };
         },

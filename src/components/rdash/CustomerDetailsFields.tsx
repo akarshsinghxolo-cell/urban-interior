@@ -70,25 +70,6 @@ export function CustomerDetailsFields({
     }
   };
 
-
-  const toggleInterestCategory = (id: string) => setCustomer((current) => {
-    const removing = current.interestCategoryIds.includes(id);
-    if (!removing) return { ...current, interestCategoryIds: [...current.interestCategoryIds, id] };
-    const childIds = new Set(db.master.workSubcategories.filter((row) => row.category_id === id).map((row) => row.id));
-    return {
-      ...current,
-      interestCategoryIds: current.interestCategoryIds.filter((value) => value !== id),
-      interestSubcategoryIds: current.interestSubcategoryIds.filter((value) => !childIds.has(value)),
-    };
-  });
-
-  const toggleInterestSubcategory = (id: string) => setCustomer((current) => ({
-    ...current,
-    interestSubcategoryIds: current.interestSubcategoryIds.includes(id)
-      ? current.interestSubcategoryIds.filter((value) => value !== id)
-      : [...current.interestSubcategoryIds, id],
-  }));
-
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2"><UserPlus className="h-4 w-4 text-primary" /><h3 className="text-sm font-semibold">Customer details</h3></div>
@@ -211,28 +192,57 @@ export function CustomerDetailsFields({
           <Textarea id="customer-notes" value={customer.notes} onChange={(event) => setCustomer((current) => ({ ...current, notes: event.target.value }))} rows={3} placeholder="Preferences, communication notes, or customer-level instructions" />
         </Field>
       </div>
+    </section>
+  );
+}
 
+export function CustomerWorkInterests({
+  db,
+  customer,
+  setCustomer,
+}: {
+  db: RDashDatabase;
+  customer: CustomerDraft;
+  setCustomer: React.Dispatch<React.SetStateAction<CustomerDraft>>;
+}) {
+  const toggleCategory = (id: string) => setCustomer((current) => {
+    const removing = current.interestCategoryIds.includes(id);
+    if (!removing) return { ...current, interestCategoryIds: [...current.interestCategoryIds, id] };
+    const childIds = new Set(db.master.workSubcategories.filter((row) => row.category_id === id).map((row) => row.id));
+    return {
+      ...current,
+      interestCategoryIds: current.interestCategoryIds.filter((value) => value !== id),
+      interestSubcategoryIds: current.interestSubcategoryIds.filter((value) => !childIds.has(value)),
+    };
+  });
 
-      <div className="rounded-lg border border-border bg-muted/20 p-3">
-        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work categories interested in</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">Broad interest only. Final Work Required remains under Site → Area.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {db.master.workCategories.map((category) => (
-            <button key={category.id} type="button" aria-pressed={customer.interestCategoryIds.includes(category.id)} onClick={() => toggleInterestCategory(category.id)} className={cn("rounded-md border px-2 py-1 text-[11px]", customer.interestCategoryIds.includes(category.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}>{category.name}</button>
-          ))}
-        </div>
-        <div className="mt-2 space-y-1">
-          {db.master.workCategories.filter((category) => customer.interestCategoryIds.includes(category.id)).map((category) => (
-            <details key={category.id} className="rounded-md border border-border bg-background">
-              <summary className="cursor-pointer px-2.5 py-1 text-xs font-medium">Specific {category.name} work</summary>
-              <div className="flex flex-wrap gap-1 p-2">
-                {db.master.workSubcategories.filter((subcategory) => subcategory.category_id === category.id).map((subcategory) => (
-                  <button key={subcategory.id} type="button" aria-pressed={customer.interestSubcategoryIds.includes(subcategory.id)} onClick={() => toggleInterestSubcategory(subcategory.id)} className={cn("rounded-md border px-2 py-0.5 text-[10px]", customer.interestSubcategoryIds.includes(subcategory.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}>{subcategory.name}</button>
-                ))}
-              </div>
-            </details>
-          ))}
-        </div>
+  const toggleSubcategory = (id: string) => setCustomer((current) => ({
+    ...current,
+    interestSubcategoryIds: current.interestSubcategoryIds.includes(id)
+      ? current.interestSubcategoryIds.filter((value) => value !== id)
+      : [...current.interestSubcategoryIds, id],
+  }));
+
+  return (
+    <section className="rounded-lg border border-border bg-muted/20 p-3">
+      <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work categories interested in</p>
+      <p className="mt-0.5 text-[11px] text-muted-foreground">Broad interest only. Final Work Required remains under Site → Area.</p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {db.master.workCategories.map((category) => (
+          <button key={category.id} type="button" aria-pressed={customer.interestCategoryIds.includes(category.id)} onClick={() => toggleCategory(category.id)} className={cn("rounded-md border px-2 py-1 text-[11px]", customer.interestCategoryIds.includes(category.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}>{category.name}</button>
+        ))}
+      </div>
+      <div className="mt-2 space-y-1">
+        {db.master.workCategories.filter((category) => customer.interestCategoryIds.includes(category.id)).map((category) => (
+          <details key={category.id} className="rounded-md border border-border bg-background">
+            <summary className="cursor-pointer px-2.5 py-1 text-xs font-medium">Specific {category.name} work</summary>
+            <div className="flex flex-wrap gap-1 p-2">
+              {db.master.workSubcategories.filter((subcategory) => subcategory.category_id === category.id).map((subcategory) => (
+                <button key={subcategory.id} type="button" aria-pressed={customer.interestSubcategoryIds.includes(subcategory.id)} onClick={() => toggleSubcategory(subcategory.id)} className={cn("rounded-md border px-2 py-0.5 text-[10px]", customer.interestSubcategoryIds.includes(subcategory.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}>{subcategory.name}</button>
+              ))}
+            </div>
+          </details>
+        ))}
       </div>
     </section>
   );

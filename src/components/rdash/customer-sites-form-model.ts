@@ -1,5 +1,5 @@
-import type { Customer, Site } from "@/lib/rdash/types";
-import type { CustomerSiteSaveDraft } from "@/lib/rdash/customer-sites-save";
+import type { Area, Customer, Site } from "@/lib/rdash/types";
+import type { CustomerAreaSaveDraft, CustomerSiteSaveDraft } from "@/lib/rdash/customer-sites-save";
 import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { formatCoordinatePair } from "@/lib/rdash/coordinates";
@@ -35,6 +35,15 @@ export type SiteDraft = {
   archiveCancelled: boolean;
 };
 
+export type AreaDraft = {
+  id: string;
+  existing: boolean;
+  siteId: string;
+  name: string;
+  areaType: Area["area_type"];
+  notes: string;
+};
+
 export type CustomerDraft = {
   name: string;
   phone: string;
@@ -68,6 +77,24 @@ export const SITE_STAGES: Array<{ value: Site["stage"]; label: string }> = [
   { value: "on_hold", label: "On hold" },
   { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
+];
+
+export const AREA_TYPES: Array<{ value: Area["area_type"]; label: string }> = [
+  { value: "bedroom", label: "Bedroom" },
+  { value: "guest_room", label: "Guest room" },
+  { value: "living_room", label: "Living room / Hall" },
+  { value: "kitchen", label: "Kitchen" },
+  { value: "bathroom", label: "Bathroom" },
+  { value: "balcony", label: "Balcony" },
+  { value: "staircase", label: "Staircase" },
+  { value: "rooftop", label: "Rooftop" },
+  { value: "office_cabin", label: "Office cabin" },
+  { value: "reception", label: "Reception" },
+  { value: "meeting_room", label: "Meeting room" },
+  { value: "pantry", label: "Pantry" },
+  { value: "facade", label: "Facade" },
+  { value: "common_area", label: "Common area" },
+  { value: "other", label: "Other" },
 ];
 
 export function defaultSiteName(customerName: string): string {
@@ -167,11 +194,34 @@ export function draftForSite(site: Site): SiteDraft {
   };
 }
 
+export function newAreaDraft(siteId: string): AreaDraft {
+  return {
+    id: reserveEntityId("area"),
+    existing: false,
+    siteId,
+    name: "",
+    areaType: "other",
+    notes: "",
+  };
+}
+
+export function draftForArea(area: Area): AreaDraft {
+  return {
+    id: area.id,
+    existing: true,
+    siteId: area.site_id,
+    name: area.name || "",
+    areaType: area.area_type || "other",
+    notes: area.notes || "",
+  };
+}
+
 export function fingerprint(
   customer: CustomerDraft,
   sites: SiteDraft[],
   detachAttachmentIds: string[],
   sameNameAcknowledged: boolean,
+  areas: AreaDraft[] = [],
 ): string {
   return JSON.stringify({
     customer,
@@ -181,6 +231,7 @@ export function fingerprint(
     })),
     detachAttachmentIds: [...detachAttachmentIds].sort(),
     sameNameAcknowledged,
+    areas,
   });
 }
 
@@ -243,5 +294,16 @@ export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSa
       archived_by: actorName,
       archive_reason: draft.archiveReason.trim(),
     } : {}),
+  };
+}
+
+export function areaPayload(draft: AreaDraft): CustomerAreaSaveDraft {
+  return {
+    id: draft.id,
+    site_id: draft.siteId,
+    name: draft.name.trim(),
+    area_type: draft.areaType,
+    ...(draft.existing ? {} : { stage: "unmeasured" as const }),
+    notes: draft.notes.trim() || undefined,
   };
 }
