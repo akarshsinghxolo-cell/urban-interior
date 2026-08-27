@@ -133,6 +133,38 @@ export const MODULE_GROUPS: ModuleGroup[] = [
     icon: "🧰",
     modules: [
       {
+        id: "customerDesk",
+        label: "Customer Desk",
+        description: "Customer portfolio: every customer’s sites, commercial context and history",
+        icon: "🧭",
+        renderer: "customer-desk",
+        dataSource: "customers",
+        activePredicate: (db) =>
+          db.customers.length > 0 ||
+          db.tasks.some(
+            (task) => task.task_scope === "client" && task.status !== "completed",
+          ) ||
+          db.blocked.some((blocked) => !blocked.resolved),
+        submodules: [
+          {
+            id: "customerTimeline",
+            label: "Customer Timeline",
+            renderer: "customer-desk",
+            dataSource: "customers",
+            filter: { view: "timeline" },
+            hint: "Lifecycle timeline across every customer",
+          },
+          {
+            id: "customerRequests",
+            label: "Customer Requests",
+            renderer: "customer-extras",
+            dataSource: "customers",
+            filter: { sub: "requests" },
+            hint: "Requests, qualification review and pending customer actions",
+          },
+        ],
+      },
+      {
         id: "workdesk",
         label: "Workdesk Dashboard",
         description: "Cross-site action queue, approvals, follow-ups and operational health",
@@ -185,38 +217,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
             renderer: "calendar",
             dataSource: "tasks",
             filter: { view: "recurring" },
-          },
-        ],
-      },
-      {
-        id: "customerDesk",
-        label: "Customer Desk",
-        description: "Customer portfolio: every customer’s sites, commercial context and history",
-        icon: "🧭",
-        renderer: "customer-desk",
-        dataSource: "customers",
-        activePredicate: (db) =>
-          db.customers.length > 0 ||
-          db.tasks.some(
-            (task) => task.task_scope === "client" && task.status !== "completed",
-          ) ||
-          db.blocked.some((blocked) => !blocked.resolved),
-        submodules: [
-          {
-            id: "customerTimeline",
-            label: "Customer Timeline",
-            renderer: "customer-desk",
-            dataSource: "customers",
-            filter: { view: "timeline" },
-            hint: "Lifecycle timeline across every customer",
-          },
-          {
-            id: "customerRequests",
-            label: "Customer Requests",
-            renderer: "customer-extras",
-            dataSource: "customers",
-            filter: { sub: "requests" },
-            hint: "Requests, qualification review and pending customer actions",
           },
         ],
       },

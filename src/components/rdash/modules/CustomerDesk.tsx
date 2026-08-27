@@ -57,6 +57,8 @@ export function CustomerDesk({ view }: {
     const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
     const openDetail = useRDashStore((s) => s.openDetail);
     const [q, setQ] = React.useState("");
+    const [sort, setSort] = React.useState("default");
+    const [filter, setFilter] = React.useState("all");
     const customerDispatch = React.useMemo(() => ({ setActiveModule, openActionDialog, openCreateDialog }), [setActiveModule, openActionDialog, openCreateDialog]);
     const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
     // B-19: Local state for the unified Customer and Sites edit dialog.
@@ -65,7 +67,31 @@ export function CustomerDesk({ view }: {
     const [editCustomerId, setEditCustomerId] = React.useState<string | undefined>(undefined);
     const filtered = db.customers.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()) ||
         p.phone.includes(q) ||
-        db.sites.some((site) => site.customer_id === p.id && [site.name, site.address, site.locality, site.city, site.building_name].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase())));
+        db.sites.some((site) => site.customer_id === p.id && [site.name, site.address, site.locality, site.city, site.building_name].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase())))
+        .filter((p) => filter === "all" ||
+        (filter === "with-site" ? db.sites.some((site) => site.customer_id === p.id) :
+            filter === "without-site" ? !db.sites.some((site) => site.customer_id === p.id) : p.status === filter))
+        .sort((a, b) => sort === "name-asc" ? a.name.localeCompare(b.name) :
+        sort === "name-desc" ? b.name.localeCompare(a.name) :
+            sort === "newest" ? b.created_at.localeCompare(a.created_at) :
+                sort === "oldest" ? a.created_at.localeCompare(b.created_at) : 0);
+    const customerListControls = (<div className="flex items-center gap-2">
+      <select aria-label="Sort customers" value={sort} onChange={(event) => setSort(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground">
+        <option value="default">Sort: Default</option>
+        <option value="name-asc">Name: A–Z</option>
+        <option value="name-desc">Name: Z–A</option>
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+      </select>
+      <select aria-label="Filter customers" value={filter} onChange={(event) => setFilter(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground">
+        <option value="all">Filter: All</option>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+        <option value="blocked">Blocked</option>
+        <option value="with-site">With site</option>
+        <option value="without-site">Site pending</option>
+      </select>
+    </div>);
     const selected = db.customers.find((p) => p.id === selectedCustomerId) || db.customers[0];
     const selectedTasks = (db.tasks || []).filter((t) => selected ? isCustomerLinked(db, t, selected.id) : false);
     const selectedQuotes = (db.quotations || []).filter((qu) => qu.customer_id === selected?.id);
@@ -120,7 +146,7 @@ export function CustomerDesk({ view }: {
             </div>
           </div>
 
-          <SectionHeader title="Customers" count={filtered.length}/>
+          <SectionHeader title="Customers" count={filtered.length} action={customerListControls}/>
 
           <div className="rd-scroll flex max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto pr-1">
             {filtered.map((p) => {
@@ -173,7 +199,7 @@ export function CustomerDesk({ view }: {
         <MetricCard label="Live work orders" value={db.workOrders.length} tone="success"/>
       </div>
 
-      <SectionHeader title="Customers" count={filtered.length}/>
+      <SectionHeader title="Customers" count={filtered.length} action={customerListControls}/>
 
       <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
         {filtered.map((p) => {
