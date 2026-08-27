@@ -60,7 +60,7 @@ export function CustomerWorkRequiredDraftSection({
 
       {visibleWorkRequired.map((draft, index) => {
         const site = liveSites.find((row) => row.id === draft.siteId);
-        const siteAreas = site ? areas.filter((area) => area.siteId === site.id && !area.archiveRequested) : [];
+        const siteAreas = areas.filter((area) => area.siteId === (site?.id || "") && !area.archiveRequested);
         const selectedSubcategoryIds = visibleWorkRequired.filter((row) => row.siteId === draft.siteId && row.categoryId === draft.categoryId).map((row) => row.subcategoryId).filter(Boolean);
         const displayNumber = draft.existing ? index + 1 : Math.max(existingCount, visibleWorkRequired.filter((row) => row.existing).length) + visibleWorkRequired.slice(0, index + 1).filter((row) => !row.existing).length;
         return (
@@ -90,8 +90,7 @@ export function CustomerWorkRequiredDraftSection({
               value={draft}
               onChange={(patch) => updateWorkRequired(draft.id, patch)}
               onCreateArea={({ name, areaType, notes }) => {
-                if (!site) throw new Error("Choose a Site before adding Areas.");
-                const area = { ...newAreaDraft(site.id), name, areaType, notes };
+                const area = { ...newAreaDraft(site?.id || ""), name, areaType, notes };
                 setAreas((current) => [...current, area]);
                 return area.id;
               }}

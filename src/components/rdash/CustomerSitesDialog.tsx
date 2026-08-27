@@ -81,12 +81,15 @@ export function CustomerSitesDialog({
       ? db.sites.filter((site) => site.customer_id === existing.id && !site.is_archived).map(draftForSite)
       : [];
     const nextSiteIds = new Set(nextSites.map((site) => site.id));
+    const nextCustomerWork = existing
+      ? db.workRequired.filter((work) => work.customer_id === existing.id && (!work.site_id || nextSiteIds.has(work.site_id)))
+      : [];
+    const nextCustomerAreaIds = new Set(nextCustomerWork.flatMap((work) => work.area_ids || []));
     const nextAreas = existing
-      ? db.areas.filter((area) => nextSiteIds.has(area.site_id) && !area.is_archived).map(draftForArea)
+      ? db.areas.filter((area) => (nextSiteIds.has(area.site_id) || (!area.site_id && nextCustomerAreaIds.has(area.id))) && !area.is_archived).map(draftForArea)
       : [];
     const nextWorkRequired = existing
-      ? db.workRequired
-        .filter((work) => work.customer_id === existing.id && (!work.site_id || nextSiteIds.has(work.site_id)))
+      ? nextCustomerWork
         .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
         .map(draftForWorkRequired)
       : [];
@@ -182,12 +185,11 @@ export function CustomerSitesDialog({
       return Boolean(site.name.trim()) && !coordinateInputError(site.coordinateInput);
     });
     const areasValid = areas
-      .filter((area) => includedLiveSiteIds.has(area.siteId) && !area.archiveRequested)
+      .filter((area) => (!area.siteId || includedLiveSiteIds.has(area.siteId)) && !area.archiveRequested)
       .every((area) => Boolean(area.name.trim()));
     const workRequiredValid = workRequired
       .filter((work) => !work.siteId || includedLiveSiteIds.has(work.siteId))
-      .every((work) => Boolean(work.categoryId && work.subcategoryId && work.title.trim())
-        && (work.siteId ? work.areaIds.length > 0 : work.areaIds.length === 0));
+      .every((work) => Boolean(work.categoryId && work.subcategoryId && work.title.trim()));
     return sitesValid && areasValid && workRequiredValid;
   }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, workRequired]);
 
@@ -236,7 +238,7 @@ export function CustomerSitesDialog({
         return false;
       }
     }
-    for (const area of areas.filter((row) => includedLiveSiteIds.has(row.siteId) && !row.archiveRequested)) {
+    for (const area of areas.filter((row) => (!row.siteId || includedLiveSiteIds.has(row.siteId)) && !row.archiveRequested)) {
       if (!area.name.trim()) {
         toast.error("Enter an Area name or remove that new Area");
         scrollToField(`area-name-${area.id}`);
@@ -253,10 +255,6 @@ export function CustomerSitesDialog({
         toast.error("Enter a title for every Work Required");
         return false;
       }
-      if (work.siteId && !work.areaIds.length) {
-        toast.error(`Select at least one covered Area for ${work.title.trim()}`);
-        return false;
-      }
     }
     return true;
   }, [areas, customer, duplicateMatches, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, updateSite, workRequired]);
@@ -267,7 +265,7 @@ export function CustomerSitesDialog({
     try {
       setSaving(true);
       const includedSites = sites.filter((site) => site.existing || site.enabled);
-      const includedAreas = areas.filter((area) => includedLiveSiteIds.has(area.siteId));
+      const includedAreas = areas.filter((area) => !area.siteId || includedLiveSiteIds.has(area.siteId));
       const includedWorkRequired = workRequired.filter((work) => !work.siteId || includedLiveSiteIds.has(work.siteId));
       const result = saveCustomerWithSites({
         customerId: editId,

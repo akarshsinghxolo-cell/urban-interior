@@ -444,6 +444,9 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
     const customerContractorApprovals = db.actions.filter((a) => a.status === "pending" && a.linked_record_type === "contractor_payment" && customerJobs.some((j) => j.id === a.linked_record_id));
     const progress = customerProgress(db, customerId);
     const singleSite = sites.length === 1 ? sites[0] : undefined;
+    const customerWorkRequired = db.workRequired.filter((work) => work.customer_id === customerId);
+    const customerLevelAreaIds = new Set(customerWorkRequired.filter((work) => !work.site_id).flatMap((work) => work.area_ids || []));
+    const customerAreas = db.areas.filter((area) => sites.some((site) => site.id === area.site_id) || customerLevelAreaIds.has(area.id));
     const mapHref = singleSite ? customerMapHref(singleSite.address, singleSite.latitude, singleSite.longitude) : undefined;
     const whatsappHref = customerWhatsappHref(phone);
     const currentQuote = latestQuotationRevisions(quotations)
@@ -513,6 +516,26 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
               <MetricCard label="Open tasks" value={openTasks.length} tone="warning"/>
               <MetricCard label="Quotations" value={quotations.length}/>
               <MetricCard label="Budget" value={budget ? formatINR(budget) : "—"} tone="success"/>
+            </div>
+            <div className="rounded-lg border border-border bg-background p-3">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer scope</p>
+              <div className="mt-2 grid gap-2">
+                {(sites.length ? sites : [undefined]).map((site) => {
+                    const scopedAreas = customerAreas.filter((area) => area.site_id === (site?.id || "") || (Boolean(singleSite) && !area.site_id));
+                    const scopedWork = customerWorkRequired.filter((work) => work.site_id === (site?.id || "") || (Boolean(singleSite) && !work.site_id));
+                    return <div key={site?.id || "customer-level"} className="rounded-md border border-border bg-muted/20 p-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-semibold">{site?.name || name}</p>
+                          <p className="text-[10px] text-muted-foreground">{site ? site.address || `${site.site_type} · ${site.stage}` : "Customer-level work"}</p>
+                        </div>
+                        <span className="text-[10px] text-muted-foreground">{scopedAreas.length} Area{scopedAreas.length === 1 ? "" : "s"} · {scopedWork.length} Work Required</span>
+                      </div>
+                      {scopedAreas.length ? <div className="mt-2 flex flex-wrap gap-1">{scopedAreas.map((area) => <span key={area.id} className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px]">{area.name}</span>)}</div> : null}
+                      {scopedWork.length ? <div className="mt-2 grid gap-1">{scopedWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{work.title}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
+                    </div>;
+                })}
+              </div>
             </div>
             <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" />
             {/* Customer Financial Summary — 360-degree financial view */}
@@ -585,7 +608,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
             {sites.length === 0 ? (<EmptyState title="No sites" description="Add a site to start tracking per-property work." icon={<Building className="h-7 w-7"/>}/>) : (<div className="grid gap-3">
                 {sites.map((site) => {
                     const fin = siteFinancials(db, site.id);
-                    const siteAreas = areas.filter((r) => r.site_id === site.id);
+                    const siteAreas = customerAreas.filter((area) => area.site_id === site.id || (Boolean(singleSite) && !area.site_id));
                     return (<div key={site.id} className="rounded-lg border border-border bg-background p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
@@ -649,7 +672,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                           </Button>
                         </div>
                         {(() => {
-                            const siteWorkRequired = db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === site.id);
+                            const siteWorkRequired = customerWorkRequired.filter((work) => work.site_id === site.id || (Boolean(singleSite) && !work.site_id));
                             return siteWorkRequired.length ? (<div className="mt-2 flex flex-col gap-1.5">
                               {siteWorkRequired.map((work) => (<div key={work.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
                                   <div className="min-w-0">
@@ -923,8 +946,10 @@ export function CustomerPortfolioDrawerContent({ customerId }: {
         return <EmptyState title="Customer not found" description="This customer record is no longer available."/>;
     }
     const sites = db.sites.filter((site) => site.customer_id === customerId);
-    const areas = db.areas.filter((area) => sites.some((site) => site.id === area.site_id));
-    const workRequired = db.workRequired.find((work) => work.customer_id === customerId);
+    const workRequiredRows = db.workRequired.filter((work) => work.customer_id === customerId);
+    const customerLevelAreaIds = new Set(workRequiredRows.filter((work) => !work.site_id).flatMap((work) => work.area_ids || []));
+    const areas = db.areas.filter((area) => sites.some((site) => site.id === area.site_id) || customerLevelAreaIds.has(area.id));
+    const workRequired = workRequiredRows[0];
     const tasks = db.tasks.filter((task) => isCustomerLinked(db, task, customerId));
     const quotations = db.quotations.filter((quotation) => quotation.customer_id === customerId);
     const payments = db.payments.filter((payment) => payment.customer_id === customerId);

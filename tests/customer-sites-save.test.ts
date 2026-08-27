@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { applyCustomerWithSitesSave } from "../src/lib/rdash/customer-sites-save";
+import { validateBusinessData } from "../src/lib/rdash/business-rules";
 import type { RDashDatabase } from "../src/lib/rdash/types";
 import {
   confirmedPhotoAttachmentIds,
@@ -163,7 +164,7 @@ describe("canonical customer and Sites save", () => {
     expect(result.workRequiredChanges[0].kind).toBe("create");
   });
 
-  test("creates customer-level Work Required without a Site or Areas", () => {
+  test("maps new Work Required to the customer's sole Site", () => {
     const db = database();
     db.workRequired = [];
     const result = applyCustomerWithSitesSave(db, {
@@ -181,9 +182,45 @@ describe("canonical customer and Sites save", () => {
 
     expect(result.db.workRequired.find((work) => work.id === "work-customer")).toMatchObject({
       customer_id: "customer-1",
-      site_id: "",
+      site_id: "site-1",
       area_ids: [],
     });
+  });
+
+  test("keeps customer-level Areas and Work Required together, then maps both to the first Site", () => {
+    const db = database();
+    db.sites = [];
+    db.areas = [];
+    db.workRequired = [];
+
+    const customerLevel = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      areas: [{ id: "area-customer", site_id: "", name: "Kitchen", area_type: "kitchen" }],
+      workRequired: [{
+        id: "work-customer",
+        site_id: "",
+        title: "Modular Kitchen",
+        work_category_id: "fc2",
+        work_subcategory_id: "fc2_kit",
+        area_ids: ["area-customer"],
+      }],
+    }, options);
+
+    expect(customerLevel.db.areas[0].site_id).toBe("");
+    expect(customerLevel.db.workRequired[0]).toMatchObject({ site_id: "", area_ids: ["area-customer"] });
+    expect(validateBusinessData(customerLevel.db).filter((issue) => issue.includes("area-customer") || issue.includes("work-customer"))).toEqual([]);
+
+    const linked = applyCustomerWithSitesSave(customerLevel.db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      sites: [{ id: "site-first", name: "First Site", site_type: "apartment" }],
+    }, options);
+
+    expect(linked.db.areas.find((area) => area.id === "area-customer")?.site_id).toBe("site-first");
+    expect(linked.db.workRequired.find((work) => work.id === "work-customer")?.site_id).toBe("site-first");
+    expect(linked.areaChanges).toHaveLength(1);
+    expect(linked.workRequiredChanges).toHaveLength(1);
   });
 
   test("updates an existing Work Required without resetting lifecycle data", () => {

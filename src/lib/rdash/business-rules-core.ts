@@ -444,15 +444,22 @@ export function validateBusinessData(db: RDashDatabase) {
         }
     });
     db.sites.forEach((site) => capture(`Site ${site.id}`, () => assertCustomerExists(db, site.customer_id, "Site")));
-    db.areas.forEach((area) => capture(`Area ${area.id}`, () => assertSiteExists(db, area.site_id, "Area", { allowArchived: true })));
+    db.areas.forEach((area) => capture(`Area ${area.id}`, () => {
+        if (area.site_id) {
+            assertSiteExists(db, area.site_id, "Area", { allowArchived: true });
+        } else if (!db.workRequired.some((work) => !work.site_id && work.area_ids.includes(area.id))) {
+            fail("Area", `Customer-level Area "${area.name}" must belong to customer-level Work Required.`);
+        }
+    }));
     db.workRequired.forEach((work) => capture(`Work Required ${work.id}`, () => {
         assertWorkRequiredCatalogRelations(db, work, "Work Required");
         assertCustomerExists(db, work.customer_id, "Work Required");
         if (work.site_id) {
             assertSiteBelongsToCustomer(db, work.site_id, work.customer_id, "Work Required", { allowArchived: true });
             assertAreasBelongToSite(db, work.area_ids, work.site_id, "Work Required", { allowArchived: true });
-        } else if (work.area_ids.length) {
-            fail("Work Required", `Customer-level Work Required "${work.title}" cannot include Site Areas.`);
+        } else {
+            const invalidArea = work.area_ids.find((areaId) => db.areas.find((area) => area.id === areaId)?.site_id);
+            if (invalidArea) fail("Work Required", `Customer-level Work Required "${work.title}" cannot include a Site Area.`);
         }
     }));
     db.measurementRevisions.forEach((revision) => capture(`Measurement ${revision.id}`, () => assertMeasurementRevisionRelations(db, revision, "Measurement", { allowArchived: true })));
