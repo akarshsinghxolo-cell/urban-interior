@@ -104,6 +104,7 @@ const siteMutableFields: Array<keyof Site> = [
 ];
 
 const areaMutableFields: Array<keyof Area> = [
+  "site_id",
   "name",
   "area_type",
   "stage",
@@ -121,6 +122,7 @@ const areaMutableFields: Array<keyof Area> = [
 ];
 
 const workRequiredMutableFields: Array<keyof WorkRequired> = [
+  "site_id",
   "title",
   "work_category_id",
   "work_subcategory_id",
@@ -247,14 +249,14 @@ function areaRecord(
   existing: Area | undefined,
   input: CustomerAreaSaveDraft,
   areaId: string,
-  site: Site,
+  site: Site | undefined,
   now: string,
 ): Area {
-  if (site.is_archived) throw new Error(`Areas cannot be added to archived Site "${site.name}".`);
+  if (site?.is_archived) throw new Error(`Areas cannot be added to archived Site "${site.name}".`);
   const isArchiving = Boolean(input.is_archived) && !existing?.is_archived;
   if (existing?.is_archived) throw new Error(`Archived Area "${existing.name}" cannot be edited.`);
   if (isArchiving && !existing) throw new Error("A new Area cannot be archived before it is created.");
-  if (existing && existing.site_id !== site.id) {
+  if (existing?.site_id && existing.site_id !== site?.id) {
     throw new Error("An Area cannot be moved to another Site.");
   }
 
@@ -265,7 +267,7 @@ function areaRecord(
   const width = suppliedValue(input, "width", existing?.width);
   return {
     id: areaId,
-    site_id: site.id,
+    site_id: site?.id || "",
     name,
     area_type: suppliedValue(input, "area_type", existing?.area_type ?? "other") ?? "other",
     stage: suppliedValue(input, "stage", existing?.stage ?? "unmeasured") ?? "unmeasured",
@@ -312,10 +314,10 @@ function workRequiredRecord(
   const workSubcategoryId = input.work_subcategory_id ?? existing?.work_subcategory_id;
   if (!workCategoryId || !workSubcategoryId) throw new Error(`Select a category and subcategory for Work Required "${title}".`);
   const areaIds = uniqueStrings(input.area_ids ?? existing?.area_ids ?? []);
-  if (site && !areaIds.length) throw new Error(`Select at least one covered Area for Work Required "${title}".`);
-  if (!site && areaIds.length) throw new Error(`Customer-level Work Required "${title}" cannot include Site Areas.`);
-  const siteAreaIds = new Set(areas.filter((area) => area.site_id === site?.id && !area.is_archived).map((area) => area.id));
-  if (site && areaIds.some((areaId) => !siteAreaIds.has(areaId))) throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site.name}.`);
+  const siteAreaIds = new Set(areas.filter((area) => area.site_id === (site?.id || "") && !area.is_archived).map((area) => area.id));
+  if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) {
+    throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site?.name || "the Customer"}.`);
+  }
   return {
     id: workRequiredId,
     customer_id: customer.id,
@@ -390,16 +392,35 @@ export function applyCustomerWithSitesSave(
   const areaById = new Map(database.areas.map((area) => [area.id, area]));
   const resultingAreas = [...database.areas];
   const resultingSiteById = new Map(resultingSites.map((site) => [site.id, site]));
+  const activeCustomerSites = resultingSites.filter((site) => site.customer_id === nextCustomer.id && !site.is_archived);
+  const soleSite = activeCustomerSites.length === 1 ? activeCustomerSites[0] : undefined;
+  const suppliedAreas = input.areas ?? [];
+  const suppliedAreaIds = new Set(suppliedAreas.map((area) => area.id).filter(Boolean));
+  const customerLevelAreaIds = new Set([
+    ...database.workRequired
+      .filter((work) => work.customer_id === nextCustomer.id && !work.site_id)
+      .flatMap((work) => work.area_ids || []),
+    ...(input.workRequired ?? []).flatMap((work) => work.area_ids || []),
+  ]);
+  const areasToSave = soleSite
+    ? [
+        ...suppliedAreas,
+        ...database.areas.filter((area) => !area.site_id && customerLevelAreaIds.has(area.id) && !suppliedAreaIds.has(area.id)),
+      ]
+    : suppliedAreas;
 
-  for (const draft of input.areas ?? []) {
+  for (const draft of areasToSave) {
     const areaId = draft.id ?? createId("area");
     if (areaIds.includes(areaId)) throw new Error(`Area "${areaId}" was supplied more than once.`);
     areaIds.push(areaId);
     const existing = areaById.get(areaId);
-    const siteId = String(draft.site_id ?? existing?.site_id ?? "");
-    const site = resultingSiteById.get(siteId);
-    if (!site || site.customer_id !== nextCustomer.id) {
+    const requestedSiteId = String(draft.site_id ?? existing?.site_id ?? "");
+    const site = requestedSiteId ? resultingSiteById.get(requestedSiteId) : soleSite;
+    if (site && site.customer_id !== nextCustomer.id) {
       throw new Error("Every Area in a customer bundle must belong to one of that Customer's Sites.");
+    }
+    if (!site && existing && !customerLevelAreaIds.has(existing.id)) {
+      throw new Error("Customer-level Area is not linked to this Customer's Work Required.");
     }
     const next = areaRecord(existing, draft, areaId, site, now);
     if (!areaChanged(existing, next)) continue;
@@ -415,14 +436,22 @@ export function applyCustomerWithSitesSave(
   const workRequiredIds: string[] = [];
   const resultingWorkRequired = [...database.workRequired];
   const workRequiredById = new Map(database.workRequired.map((work) => [work.id, work]));
-  for (const draft of input.workRequired ?? []) {
+  const suppliedWorkRequired = input.workRequired ?? [];
+  const suppliedWorkRequiredIds = new Set(suppliedWorkRequired.map((work) => work.id).filter(Boolean));
+  const workRequiredToSave = soleSite
+    ? [
+        ...suppliedWorkRequired,
+        ...database.workRequired.filter((work) => work.customer_id === nextCustomer.id && !work.site_id && !suppliedWorkRequiredIds.has(work.id)),
+      ]
+    : suppliedWorkRequired;
+  for (const draft of workRequiredToSave) {
     const workRequiredId = draft.id ?? createId("workRequired");
     if (workRequiredIds.includes(workRequiredId)) throw new Error(`Work Required "${workRequiredId}" was supplied more than once.`);
     workRequiredIds.push(workRequiredId);
     const existing = workRequiredById.get(workRequiredId);
-    const siteId = String(draft.site_id ?? existing?.site_id ?? "");
-    const site = siteId ? resultingSiteById.get(siteId) : undefined;
-    if (siteId && (!site || site.customer_id !== nextCustomer.id || site.is_archived)) {
+    const requestedSiteId = String(draft.site_id ?? existing?.site_id ?? "");
+    const site = requestedSiteId ? resultingSiteById.get(requestedSiteId) : soleSite;
+    if (requestedSiteId && (!site || site.customer_id !== nextCustomer.id || site.is_archived)) {
       throw new Error("Site-linked Work Required must belong to one active Site for that Customer.");
     }
     const categoryId = draft.work_category_id ?? existing?.work_category_id;

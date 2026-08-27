@@ -8,6 +8,7 @@ const dataImport = readFileSync("src/components/rdash/modules/DataImportModule.t
 const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDialog.tsx", "utf8");
 const customerDetailsFields = readFileSync("src/components/rdash/CustomerDetailsFields.tsx", "utf8");
 const workRequiredFields = readFileSync("src/components/rdash/WorkRequiredFields.tsx", "utf8");
+const createMenu = readFileSync("src/components/rdash/CreateMenu.tsx", "utf8");
 
 test("legacy customer write APIs are removed from active store and UI paths", () => {
   for (const token of ["addCustomer:", "createCustomerWithFirstSite:", "updateCustomer:", "addSite:", "updateSite:"]) {
@@ -38,4 +39,9 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   expect(workRequiredFields).not.toContain("suggested from this customer");
   expect(workRequiredFields).toContain("+ Add category");
   expect(workRequiredFields).toContain("+ Add subcategory");
+  expect(workRequiredFields.indexOf("Covered Areas")).toBeLessThan(workRequiredFields.indexOf("Primary Category"));
+  expect(workRequiredFields).toContain('site?.name || "this Customer"');
+  expect(createMenu).toContain('type="checkbox"');
+  expect(createMenu).toContain('selectedWorkRequired.map');
+  expect(createMenu).toContain('`${customer.name}${site ? ` · ${site.name}` : ""}`');
 });

@@ -49,7 +49,8 @@ export type OnDeletePolicy = ForeignKeyRule["onDelete"];
 // ─────────────────────────────────────────────────────────────────────────
 const customerDomainFks: ForeignKeyRule[] = [
     { collection: "sites", field: "customer_id", targetCollection: "customers", onDelete: "cascade", nullable: false, label: "Site → Customer" },
-    { collection: "areas", field: "site_id", targetCollection: "sites", onDelete: "cascade", nullable: false, label: "Area → Site" },
+    // Areas may start with customer-level Work Required and attach to the first Site later.
+    { collection: "areas", field: "site_id", targetCollection: "sites", onDelete: "cascade", nullable: true, label: "Area → Site" },
     // WorkRequired may start at Customer level; Site and Areas become required together when physical scope is attached.
     { collection: "workRequired", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Work Required → Customer" },
     { collection: "workRequired", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: true, label: "Work Required → Site" },

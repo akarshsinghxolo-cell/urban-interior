@@ -44,27 +44,24 @@ function CustomerQuotationDialog({ request, onClose }: {
     const addRecentCreated = useRDashStore((state) => state.addRecentCreated);
     const openDetail = useRDashStore((state) => state.openDetail);
 
-    const [customerId, setCustomerId] = React.useState(request.customerId || "");
-    const [siteId, setSiteId] = React.useState(request.siteId || "");
-    const [workRequiredId, setWorkRequiredId] = React.useState(request.workRequiredId || "");
-    const [title, setTitle] = React.useState("");
+    const initialCustomerId = request.customerId || "";
+    const initialSites = db.sites.filter((site) => site.customer_id === initialCustomerId && !site.is_archived);
+    const initialSiteId = request.siteId || (initialSites.length === 1 ? initialSites[0].id : "");
+    const initialCustomer = db.customers.find((customer) => customer.id === initialCustomerId);
+    const initialSite = initialSites.find((site) => site.id === initialSiteId);
+    const [customerId, setCustomerId] = React.useState(initialCustomerId);
+    const [siteId, setSiteId] = React.useState(initialSiteId);
+    const [workRequiredIds, setWorkRequiredIds] = React.useState<string[]>(request.workRequiredId ? [request.workRequiredId] : []);
+    const [title, setTitle] = React.useState(initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : "");
     const [validUntil, setValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
     const [submitting, setSubmitting] = React.useState(false);
-
-    React.useEffect(() => {
-        setCustomerId(request.customerId || "");
-        setSiteId(request.siteId || "");
-        setWorkRequiredId(request.workRequiredId || "");
-        setTitle("");
-        setValidUntil(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
-    }, [request.customerId, request.siteId, request.workRequiredId]);
 
     const customerSites = React.useMemo(
         () => db.sites.filter((site) => site.customer_id === customerId && !site.is_archived),
         [customerId, db.sites],
     );
     const matchingWorkRequired = React.useMemo(
-        () => db.workRequired.filter((work) => work.customer_id === customerId && (!siteId || work.site_id === siteId)),
+        () => db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === siteId),
         [customerId, db.workRequired, siteId],
     );
 
@@ -82,23 +79,18 @@ function CustomerQuotationDialog({ request, onClose }: {
                 return;
             }
 
-            let workRequired = workRequiredId
-                ? db.workRequired.find((row) => row.id === workRequiredId && row.customer_id === customerId)
+            const site = siteId
+                ? db.sites.find((row) => row.id === siteId && row.customer_id === customerId && !row.is_archived)
                 : undefined;
-            let site = workRequired
-                ? db.sites.find((row) => row.id === workRequired!.site_id && row.customer_id === customerId && !row.is_archived)
-                : siteId
-                    ? db.sites.find((row) => row.id === siteId && row.customer_id === customerId && !row.is_archived)
-                    : undefined;
+            let selectedWorkRequired = workRequiredIds
+                .map((id) => db.workRequired.find((row) => row.id === id && row.customer_id === customerId && row.site_id === siteId))
+                .filter((work): work is WorkRequired => Boolean(work));
 
-            if (workRequired && !site) {
-                toast.error("The selected Work Required no longer has a valid customer Site");
+            if (selectedWorkRequired.length !== workRequiredIds.length) {
+                toast.error("One or more selected Work Required records no longer match this Customer and Site");
                 return;
             }
-
-            // Preserve the existing convenience only when the user explicitly
-            // chose a Site. Do not invent or auto-pick a Site for the customer.
-            if (site && !workRequired) {
+            if (site && !selectedWorkRequired.length) {
                 const scopeTitle = title.trim() ? `${title.trim()} — scope` : "General scope";
                 const newId = addWorkRequired({
                     customer_id: customerId,
@@ -108,7 +100,7 @@ function CustomerQuotationDialog({ request, onClose }: {
                     status: "new",
                     priority: "medium",
                 });
-                workRequired = {
+                selectedWorkRequired = [{
                     id: newId,
                     customer_id: customerId,
                     site_id: site.id,
@@ -117,24 +109,20 @@ function CustomerQuotationDialog({ request, onClose }: {
                     structured_items: [],
                     status: "new",
                     priority: "medium",
-                } as unknown as WorkRequired;
+                } as unknown as WorkRequired];
             }
 
-            const quotationTitle = title.trim() || (site && workRequired
-                ? `${site.name} · ${workRequired.title}`
-                : `${customer.name} · Quotation`);
-            const coverage = site && workRequired
-                ? [{
-                    id: `coverage-${Date.now().toString(36)}`,
-                    work_required_id: workRequired.id,
-                    area_ids: workRequired.area_ids,
+            const quotationTitle = title.trim() || `${customer.name}${site ? ` · ${site.name}` : ""}`;
+            const coverage = selectedWorkRequired.map((work, index) => ({
+                    id: `coverage-${Date.now().toString(36)}-${index}`,
+                    work_required_id: work.id,
+                    area_ids: work.area_ids,
                     measurement_revision_ids: db.measurementRevisions
-                        .filter((revision) => revision.site_id === site!.id && workRequired!.area_ids.includes(revision.area_id))
+                        .filter((revision) => revision.site_id === site?.id && work.area_ids.includes(revision.area_id))
                         .map((revision) => revision.id),
-                    coverage_label: workRequired.title,
+                    coverage_label: work.title,
                     status: "proposed" as const,
-                }]
-                : [];
+                }));
 
             const id = addQuotation({
                 customer_id: customerId,
@@ -181,9 +169,13 @@ function CustomerQuotationDialog({ request, onClose }: {
                 <div className="flex flex-col gap-3 py-2">
                     <Field label="Customer *">
                         <Select value={customerId} onValueChange={(value) => {
+                            const sites = db.sites.filter((site) => site.customer_id === value && !site.is_archived);
+                            const nextSite = sites.length === 1 ? sites[0] : undefined;
+                            const customer = db.customers.find((row) => row.id === value);
                             setCustomerId(value);
-                            setSiteId("");
-                            setWorkRequiredId("");
+                            setSiteId(nextSite?.id || "");
+                            setWorkRequiredIds([]);
+                            setTitle(customer ? `${customer.name}${nextSite ? ` · ${nextSite.name}` : ""}` : "");
                         }}>
                             <SelectTrigger><SelectValue placeholder="Select customer…" /></SelectTrigger>
                             <SelectContent>
@@ -199,8 +191,12 @@ function CustomerQuotationDialog({ request, onClose }: {
                         <Select
                             value={siteId || "__customer_level__"}
                             onValueChange={(value) => {
-                                setSiteId(value === "__customer_level__" ? "" : value);
-                                setWorkRequiredId("");
+                                const nextSiteId = value === "__customer_level__" ? "" : value;
+                                const customer = db.customers.find((row) => row.id === customerId);
+                                const site = customerSites.find((row) => row.id === nextSiteId);
+                                setSiteId(nextSiteId);
+                                setWorkRequiredIds([]);
+                                setTitle(customer ? `${customer.name}${site ? ` · ${site.name}` : ""}` : "");
                             }}
                             disabled={!customerId}
                         >
@@ -215,22 +211,20 @@ function CustomerQuotationDialog({ request, onClose }: {
                     </Field>
 
                     <Field label="Work Required (optional)">
-                        <Select
-                            value={workRequiredId || "__none__"}
-                            onValueChange={(value) => setWorkRequiredId(value === "__none__" ? "" : value)}
-                            disabled={!customerId}
-                        >
-                            <SelectTrigger><SelectValue placeholder={customerId ? "No linked Work Required" : "Select customer first"} /></SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="__none__">No linked Work Required</SelectItem>
-                                {matchingWorkRequired.map((work) => {
-                                    const workSite = db.sites.find((candidate) => candidate.id === work.site_id);
-                                    return <SelectItem key={work.id} value={work.id}>{workSite?.name || "Unknown site"} · {work.title}</SelectItem>;
-                                })}
-                            </SelectContent>
-                        </Select>
-                        {customerId && !siteId && !workRequiredId && (
-                            <p className="mt-1 text-[11px] text-muted-foreground">No Site is required to start the quotation. Create the customer-level draft now and link Site / Work Required later when known.</p>
+                        <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-input bg-card p-2">
+                            {matchingWorkRequired.length ? matchingWorkRequired.map((work) => (
+                                <label key={work.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-accent/40">
+                                    <input
+                                        type="checkbox"
+                                        checked={workRequiredIds.includes(work.id)}
+                                        onChange={() => setWorkRequiredIds((current) => current.includes(work.id) ? current.filter((id) => id !== work.id) : [...current, work.id])}
+                                    />
+                                    <span>{work.title}</span>
+                                </label>
+                            )) : <p className="px-1 py-1 text-xs text-muted-foreground">{customerId ? "No Work Required for this selection" : "Select a customer first"}</p>}
+                        </div>
+                        {customerId && !siteId && (
+                            <p className="mt-1 text-[11px] text-muted-foreground">Customer-level Work Required can be included now and will remain linked when a Site is added.</p>
                         )}
                         {customerId && siteId && matchingWorkRequired.length === 0 && (
                             <p className="mt-1 text-[11px] text-muted-foreground">No Work Required exists for this Site yet. A General scope will be created on the selected Site when you submit.</p>
