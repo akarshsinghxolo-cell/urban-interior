@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { attachedPreview } from "@/lib/rdash/file-attachments";
+import { attachedPreview, confirmedAttachmentId } from "@/lib/rdash/file-attachments";
 import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
@@ -82,7 +82,6 @@ const EMPTY_DRAFT: Draft = {
 };
 const isPending = (value: MediaValue): value is PendingMedia => typeof value === "object" && value != null && "uploadItemId" in value;
 const isExisting = (value: MediaValue): value is ExistingMedia => typeof value === "object" && value != null && "attachment_id" in value;
-const attachmentId = (value: MediaValue) => isExisting(value) ? value.attachment_id : isPending(value) ? value.attachmentId : undefined;
 const optionalNumber = (value: string) => value.trim() === "" ? undefined : Number(value);
 
 function fingerprint(value: VendorProfileRecord) {
@@ -176,8 +175,8 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     locality: draft.locality,
     latitude,
     longitude,
-    business_card_attachment_id: attachmentId(businessCard),
-    shop_attachment_id: attachmentId(shopPhoto),
+    business_card_attachment_id: confirmedAttachmentId(businessCard),
+    shop_attachment_id: confirmedAttachmentId(shopPhoto),
     reliability_rating: draft.reliability,
     delivery_time_rating: draft.delivery,
     return_policy: draft.returnPolicy,
