@@ -189,7 +189,7 @@ export function CustomerSitesDialog({
       .every((area) => Boolean(area.name.trim()));
     const workRequiredValid = workRequired
       .filter((work) => !work.siteId || includedLiveSiteIds.has(work.siteId))
-      .every((work) => Boolean(work.categoryId && work.subcategoryId && work.title.trim()));
+      .every((work) => Boolean(work.categoryId && work.subcategoryIds.length && work.title.trim()));
     return sitesValid && areasValid && workRequiredValid;
   }, [areas, customer, duplicateMatches.length, includedLiveSiteIds, sameNameAcknowledged, sameNameMatches.length, sites, workRequired]);
 
@@ -247,8 +247,8 @@ export function CustomerSitesDialog({
     }
     for (const work of workRequired) {
       if (work.siteId && !includedLiveSiteIds.has(work.siteId)) continue;
-      if (!work.categoryId || !work.subcategoryId) {
-        toast.error("Select a category and subcategory for every Work Required");
+      if (!work.categoryId || !work.subcategoryIds.length) {
+        toast.error("Select a category and at least one subcategory for every Work Required");
         return false;
       }
       if (!work.title.trim()) {

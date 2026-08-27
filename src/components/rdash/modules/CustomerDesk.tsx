@@ -1281,8 +1281,19 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         unit_id?: string;
         notes?: string;
     };
-    const freshLine = (): DraftLine => ({ quantity: "1" });
-    const [lines, setLines] = React.useState<DraftLine[]>([freshLine()]);
+    const freshLine = (): DraftLine => ({ quantity: "1", category_id: workRequired.work_category_id });
+    const initialLines = (): DraftLine[] => {
+        const areaIds = workRequired.area_ids.filter((areaId) => areas.some((area) => area.id === areaId && !area.is_archived));
+        const subcategoryIds = workRequired.work_subcategory_ids || [];
+        const scopedAreas: Array<string | undefined> = areaIds.length ? areaIds : [undefined];
+        const scopedSubcategories: Array<string | undefined> = subcategoryIds.length ? subcategoryIds : [undefined];
+        return scopedSubcategories.flatMap((subcategoryId) => scopedAreas.map((areaId) => ({
+            ...freshLine(),
+            area_id: areaId,
+            subcategory_id: subcategoryId,
+        })));
+    };
+    const [lines, setLines] = React.useState<DraftLine[]>(initialLines);
     const updateLine = (index: number, patch: Partial<DraftLine>) => setLines((current) => current.map((line, row) => row === index ? { ...line, ...patch } : line));
     const addLine = () => setLines((current) => [...current, freshLine()]);
     const removeLine = (index: number) => setLines((current) => current.filter((_, row) => row !== index));

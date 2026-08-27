@@ -56,7 +56,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 site_id: work.site_id || "",
                 title: work.title || "New work required",
                 work_category_id: work.work_category_id,
-                work_subcategory_id: work.work_subcategory_id,
+                work_subcategory_ids: work.work_subcategory_ids || [],
                 area_ids: work.area_ids || [],
                 description: work.description,
                 structured_items: work.structured_items || [],

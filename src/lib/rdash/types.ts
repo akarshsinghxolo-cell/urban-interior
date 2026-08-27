@@ -107,7 +107,7 @@ export interface WorkRequired {
     site_id: ID;
     title: string;
     work_category_id?: ID;
-    work_subcategory_id?: ID;
+    work_subcategory_ids?: ID[];
     area_ids: ID[];
     description?: string;
     structured_items?: LineItem[];

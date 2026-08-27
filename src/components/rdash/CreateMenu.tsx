@@ -49,10 +49,11 @@ function CustomerQuotationDialog({ request, onClose }: {
     const initialSiteId = request.siteId || (initialSites.length === 1 ? initialSites[0].id : "");
     const initialCustomer = db.customers.find((customer) => customer.id === initialCustomerId);
     const initialSite = initialSites.find((site) => site.id === initialSiteId);
+    const initialWorkRequired = request.workRequiredId ? db.workRequired.find((work) => work.id === request.workRequiredId) : undefined;
     const [customerId, setCustomerId] = React.useState(initialCustomerId);
     const [siteId, setSiteId] = React.useState(initialSiteId);
     const [workRequiredIds, setWorkRequiredIds] = React.useState<string[]>(request.workRequiredId ? [request.workRequiredId] : []);
-    const [title, setTitle] = React.useState(initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : "");
+    const [title, setTitle] = React.useState(initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""));
     const [validUntil, setValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
     const [submitting, setSubmitting] = React.useState(false);
 
@@ -64,6 +65,21 @@ function CustomerQuotationDialog({ request, onClose }: {
         () => db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === siteId),
         [customerId, db.workRequired, siteId],
     );
+
+    const defaultTitle = () => {
+        const customer = db.customers.find((row) => row.id === customerId);
+        const site = customerSites.find((row) => row.id === siteId);
+        return customer ? `${customer.name}${site ? ` · ${site.name}` : ""}` : "";
+    };
+    const toggleWorkRequired = (workId: string) => {
+        const ids = workRequiredIds.includes(workId) ? workRequiredIds.filter((id) => id !== workId) : [...workRequiredIds, workId];
+        setWorkRequiredIds(ids);
+        setTitle(ids.map((id) => matchingWorkRequired.find((work) => work.id === id)?.title).filter(Boolean).join(" / ") || defaultTitle());
+    };
+    const workRequiredLabel = (work: WorkRequired) => (work.work_subcategory_ids || [])
+        .map((id) => db.master.workSubcategories.find((subcategory) => subcategory.id === id)?.name)
+        .filter(Boolean)
+        .join(" + ") || work.title;
 
     const handleSubmit = () => {
         if (!customerId) {
@@ -167,6 +183,7 @@ function CustomerQuotationDialog({ request, onClose }: {
                 </DialogHeader>
 
                 <div className="flex flex-col gap-3 py-2">
+                    <div className="grid grid-cols-2 gap-3">
                     <Field label="Customer *">
                         <Select value={customerId} onValueChange={(value) => {
                             const sites = db.sites.filter((site) => site.customer_id === value && !site.is_archived);
@@ -209,6 +226,7 @@ function CustomerQuotationDialog({ request, onClose }: {
                             </SelectContent>
                         </Select>
                     </Field>
+                    </div>
 
                     <Field label="Work Required (optional)">
                         <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-input bg-card p-2">
@@ -217,9 +235,9 @@ function CustomerQuotationDialog({ request, onClose }: {
                                     <input
                                         type="checkbox"
                                         checked={workRequiredIds.includes(work.id)}
-                                        onChange={() => setWorkRequiredIds((current) => current.includes(work.id) ? current.filter((id) => id !== work.id) : [...current, work.id])}
+                                        onChange={() => toggleWorkRequired(work.id)}
                                     />
-                                    <span>{work.title}</span>
+                                    <span>{workRequiredLabel(work)}</span>
                                 </label>
                             )) : <p className="px-1 py-1 text-xs text-muted-foreground">{customerId ? "No Work Required for this selection" : "Select a customer first"}</p>}
                         </div>

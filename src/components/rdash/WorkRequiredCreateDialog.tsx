@@ -43,7 +43,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
 
   const save = () => {
     if (!draft.categoryId) return toast.error("Select the primary Work Category.");
-    if (!draft.subcategoryId) return toast.error("Select the primary Work Subcategory.");
+    if (!draft.subcategoryIds.length) return toast.error("Select at least one Work Subcategory.");
     if (!draft.title.trim()) return toast.error("Work Required title is required.");
     if (!draft.areaIds.length) return toast.error("Select at least one covered Area.");
     try {
@@ -52,7 +52,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
         site_id: site.id,
         title: draft.title.trim(),
         work_category_id: draft.categoryId,
-        work_subcategory_id: draft.subcategoryId,
+        work_subcategory_ids: draft.subcategoryIds,
         area_ids: draft.areaIds,
         description: draft.description.trim() || undefined,
         status: "new",

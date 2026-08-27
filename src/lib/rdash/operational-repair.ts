@@ -4,34 +4,6 @@ import { prepareWorkspaceData, normalizeCatalogName } from "./work-category-mast
 
 const timestamp = "2026-07-08T00:00:00.000Z";
 
-function findWorkSubcategory(work: WorkRequired, db: RDashDatabase) {
-  if (work.work_subcategory_id) {
-    const row = db.master.workSubcategories.find((item) => item.id === work.work_subcategory_id);
-    if (row && (!work.work_category_id || row.category_id === work.work_category_id)) return row;
-  }
-  const haystack = normalizeCatalogName(`${work.title} ${work.description || ""}`);
-  const candidates = db.master.workSubcategories.filter((row) => !work.work_category_id || row.category_id === work.work_category_id);
-  const preferred = [
-    ["grid", "fc_grid"],
-    ["gypsum", "fc_gyp"],
-    ["pvc", "fc_pvc"],
-    ["pop", "fc_pop"],
-    ["interior painting", "pw_int"],
-    ["emulsion", "pw_int"],
-    ["painting", "pw_int"],
-    ["wardrobe", "fc2_ward"],
-    ["tv unit", "fc2_tv"],
-    ["kitchen", "fc2_kit"],
-  ] as const;
-  for (const [needle, id] of preferred) {
-    if (haystack.includes(needle)) {
-      const row = candidates.find((item) => item.id === id);
-      if (row) return row;
-    }
-  }
-  return candidates.find((row) => haystack.includes(normalizeCatalogName(row.name))) || candidates[0];
-}
-
 function tokenScore(title: string, articleName: string) {
   const titleTokens = new Set(normalizeCatalogName(title).split(/[^a-z0-9]+/).filter((token) => token.length > 2));
   const articleTokens = normalizeCatalogName(articleName).split(/[^a-z0-9]+/).filter((token) => token.length > 2);
@@ -39,8 +11,8 @@ function tokenScore(title: string, articleName: string) {
 }
 
 function bestScopedMaterialForLine(db: RDashDatabase, line: LineItem, work?: WorkRequired) {
-  const subcategoryId = work?.work_subcategory_id;
-  const rows = db.master.subcategoryArticleMap.filter((row) => !subcategoryId || row.work_required_id === subcategoryId);
+  const subcategoryIds = work?.work_subcategory_ids || [];
+  const rows = db.master.subcategoryArticleMap.filter((row) => !subcategoryIds.length || subcategoryIds.includes(row.work_required_id));
   if (!rows.length) return undefined;
   const current = line.work_required_article_id ? rows.find((row) => row.id === line.work_required_article_id) : undefined;
   if (current) return current;
@@ -236,14 +208,6 @@ export function repairOperationalWorkspace(input: RDashDatabase): RDashDatabase 
   const db = attachCustomerLabels(prepareWorkspaceData(structuredClone(input) as RDashDatabase));
   seedArticleVariants(db);
   ensureVendorRateCoverage(db);
-  db.workRequired = db.workRequired.map((work) => {
-    const subcategory = findWorkSubcategory(work, db);
-    return {
-      ...work,
-      work_subcategory_id: subcategory?.id || work.work_subcategory_id,
-      work_category_id: subcategory?.category_id || work.work_category_id,
-    };
-  });
   repairQuotationTotals(db);
   db.boqs = db.boqs.map((boq) => ({ ...boq, items: boq.items.map((line) => repairLine(db, line, "boq")), total_amount: Math.round(boq.items.reduce((sum, line) => sum + Number(line.amount || 0), 0) * 100) / 100 }));
   db.purchaseOrders = db.purchaseOrders.map((po) => {

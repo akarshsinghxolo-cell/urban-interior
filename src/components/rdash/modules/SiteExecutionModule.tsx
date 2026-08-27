@@ -128,11 +128,11 @@ export function SiteExecutionModule({ initialTab }: {
     const bids = db.contractorBids.filter((bid) => bid.site_id === selectedSiteId);
     const scopeMeta = (work: (typeof workRequired)[number]) => {
         const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
-        const subcategory = db.master.workSubcategories.find((row) => row.id === work.work_subcategory_id);
+        const subcategories = (work.work_subcategory_ids || []).map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean);
         return {
             categoryName: category?.name || work.title,
-            subcategoryName: subcategory?.name,
-            label: [category?.name || work.title, subcategory?.name].filter(Boolean).join(" · "),
+            subcategoryName: subcategories.join(" / ") || undefined,
+            label: [category?.name || work.title, subcategories.join(" / ")].filter(Boolean).join(" · "),
         };
     };
     const activeQuotationForWork = (workId: string) => quotations.find((quotation) =>
