@@ -376,6 +376,19 @@ describe("Phase 3 re-audit", () => {
     }
   });
 
+  test("profile drafts do not persist pre-upload attachment IDs or release uploads after a rejected save", async () => {
+    const [contractor, vendor, store] = await Promise.all([
+      read("src/components/rdash/ContractorFormDialog.tsx"),
+      read("src/components/rdash/VendorFormDialog.tsx"),
+      read("src/lib/rdash/raw-store.ts"),
+    ]);
+    expect(contractor).toContain("confirmedAttachmentId(contractorPhoto)");
+    expect(contractor).toContain("confirmedAttachmentId(businessCard)");
+    expect(vendor).toContain("confirmedAttachmentId(businessCard)");
+    expect(vendor).toContain("confirmedAttachmentId(shopPhoto)");
+    expect(store).toContain("The server rejected this change before it could be confirmed.");
+  });
+
   test("manual Drive linking enforces the same canonical owner validation as direct upload", async () => {
     const files = await read("src/lib/rdash/store/slices/files.ts");
     expect(files).toContain('resolveAttachmentEntityLabel, resolveEntityContext');

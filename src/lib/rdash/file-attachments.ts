@@ -45,6 +45,13 @@ export function attachedPreview(db: RDashDatabase, attachmentId?: ID): FilePrevi
     const attached = attachedFileById(db, attachmentId);
     return attached ? assetPreview(attached.asset) : undefined;
 }
+
+/** Returns an attachment ID only after it has been persisted. */
+export function confirmedAttachmentId(value: unknown): ID | undefined {
+    if (!value || typeof value !== "object" || !("attachment_id" in value)) return undefined;
+    const id = (value as { attachment_id?: unknown }).attachment_id;
+    return typeof id === "string" && id ? id : undefined;
+}
 export function attachmentIdsForEntity(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: ID, role?: FileAttachmentRole): ID[] {
     return entityFiles(db, entityType, entityId, role).map((item) => item.attachment.id);
 }

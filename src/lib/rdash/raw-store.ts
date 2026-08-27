@@ -157,8 +157,10 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         serverSyncQueue = serverSyncQueue
             .catch(() => undefined)
             .then(async () => {
-            if (saveEpoch !== syncEpoch || !get().authUser)
-                return;
+            if (saveEpoch !== syncEpoch)
+                throw new Error(get().workspaceSyncError || "The server rejected this change before it could be confirmed.");
+            if (!get().authUser)
+                throw new Error("Sign in before saving changes to the workspace.");
             setBase({ workspaceSyncStatus: "saving", workspaceSyncError: null });
             const baseline = lastAcceptedServerDb || snapshot;
             const operations = diffWorkspaceOperations(baseline, snapshot);
