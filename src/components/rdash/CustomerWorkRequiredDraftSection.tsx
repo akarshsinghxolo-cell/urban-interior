@@ -61,7 +61,6 @@ export function CustomerWorkRequiredDraftSection({
       {visibleWorkRequired.map((draft, index) => {
         const site = liveSites.find((row) => row.id === draft.siteId);
         const siteAreas = areas.filter((area) => area.siteId === (site?.id || "") && !area.archiveRequested);
-        const selectedSubcategoryIds = visibleWorkRequired.filter((row) => row.siteId === draft.siteId && row.categoryId === draft.categoryId).map((row) => row.subcategoryId).filter(Boolean);
         const displayNumber = draft.existing ? index + 1 : Math.max(existingCount, visibleWorkRequired.filter((row) => row.existing).length) + visibleWorkRequired.slice(0, index + 1).filter((row) => !row.existing).length;
         return (
           <article key={draft.id} className="rounded-lg border border-border p-3">
@@ -98,13 +97,6 @@ export function CustomerWorkRequiredDraftSection({
               onDeleteArea={(areaId) => {
                 setAreas((current) => current.flatMap((area) => area.id !== areaId ? [area] : area.existing ? [{ ...area, archiveRequested: true }] : []));
                 setWorkRequired((current) => current.map((work) => ({ ...work, areaIds: work.areaIds.filter((id) => id !== areaId) })));
-              }}
-              selectedSubcategoryIds={selectedSubcategoryIds}
-              onAddSubcategory={(subcategoryId) => {
-                if (selectedSubcategoryIds.includes(subcategoryId)) return;
-                const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
-                const next = { ...newCustomerWorkRequiredDraft(draft.siteId), categoryId: draft.categoryId, subcategoryId, title: subcategory?.name || "", areaIds: [...draft.areaIds], priority: draft.priority };
-                setWorkRequired((current) => [...current, next]);
               }}
               onAddNext={() => addWorkRequired(draft.siteId)}
             />

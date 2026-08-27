@@ -125,7 +125,7 @@ const workRequiredMutableFields: Array<keyof WorkRequired> = [
   "site_id",
   "title",
   "work_category_id",
-  "work_subcategory_id",
+  "work_subcategory_ids",
   "area_ids",
   "description",
   "priority",
@@ -311,8 +311,8 @@ function workRequiredRecord(
   const title = String(input.title ?? existing?.title ?? "").trim();
   if (!title) throw new Error("Work Required title is required.");
   const workCategoryId = input.work_category_id ?? existing?.work_category_id;
-  const workSubcategoryId = input.work_subcategory_id ?? existing?.work_subcategory_id;
-  if (!workCategoryId || !workSubcategoryId) throw new Error(`Select a category and subcategory for Work Required "${title}".`);
+  const workSubcategoryIds = uniqueStrings(input.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []);
+  if (!workCategoryId || !workSubcategoryIds.length) throw new Error(`Select a category and at least one subcategory for Work Required "${title}".`);
   const areaIds = uniqueStrings(input.area_ids ?? existing?.area_ids ?? []);
   const siteAreaIds = new Set(areas.filter((area) => area.site_id === (site?.id || "") && !area.is_archived).map((area) => area.id));
   if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) {
@@ -324,7 +324,7 @@ function workRequiredRecord(
     site_id: site?.id || "",
     title,
     work_category_id: workCategoryId,
-    work_subcategory_id: workSubcategoryId,
+    work_subcategory_ids: workSubcategoryIds,
     area_ids: areaIds,
     description: suppliedValue(input, "description", existing?.description),
     structured_items: existing?.structured_items ?? input.structured_items ?? [],
@@ -455,11 +455,11 @@ export function applyCustomerWithSitesSave(
       throw new Error("Site-linked Work Required must belong to one active Site for that Customer.");
     }
     const categoryId = draft.work_category_id ?? existing?.work_category_id;
-    const subcategoryId = draft.work_subcategory_id ?? existing?.work_subcategory_id;
+    const subcategoryIds = uniqueStrings(draft.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []);
     const category = database.master.workCategories.find((row) => row.id === categoryId);
-    const subcategory = database.master.workSubcategories.find((row) => row.id === subcategoryId);
-    if (!category || !subcategory || subcategory.category_id !== category.id) {
-      throw new Error("Every Work Required must use a valid category and its subcategory.");
+    const subcategories = subcategoryIds.map((id) => database.master.workSubcategories.find((row) => row.id === id));
+    if (!category || !subcategoryIds.length || subcategories.some((subcategory) => !subcategory || subcategory.category_id !== category.id)) {
+      throw new Error("Every Work Required must use a valid category and its subcategories.");
     }
     const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, resultingAreas, now);
     if (!workRequiredChanged(existing, next)) continue;

@@ -10,12 +10,11 @@ import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
 const ADD_CATEGORY_VALUE = "__add_work_category__";
-const ADD_SUBCATEGORY_VALUE = "__add_work_subcategory__";
 
 export type WorkRequiredFormDraft = {
   title: string;
   categoryId: string;
-  subcategoryId: string;
+  subcategoryIds: string[];
   areaIds: string[];
   description: string;
   priority: Priority;
@@ -31,7 +30,7 @@ export function emptyWorkRequiredFormDraft(): WorkRequiredFormDraft {
   return {
     title: "",
     categoryId: "",
-    subcategoryId: "",
+    subcategoryIds: [],
     areaIds: [],
     description: "",
     priority: "medium",
@@ -48,8 +47,6 @@ export function WorkRequiredFields({
   onUpdateArea,
   onDeleteArea,
   onAddNext,
-  onAddSubcategory,
-  selectedSubcategoryIds = [],
 }: {
   db: RDashDatabase;
   site?: Pick<Site, "id" | "name">;
@@ -60,12 +57,9 @@ export function WorkRequiredFields({
   onUpdateArea?: (areaId: string, name: string) => void;
   onDeleteArea?: (areaId: string) => void;
   onAddNext?: () => void;
-  onAddSubcategory?: (subcategoryId: string) => void;
-  selectedSubcategoryIds?: string[];
 }) {
   const fieldId = React.useId();
   const categorySelectId = `${fieldId}-category`;
-  const subcategorySelectId = `${fieldId}-subcategory`;
   const [addCategoryOpen, setAddCategoryOpen] = React.useState(false);
   const [addSubcategoryOpen, setAddSubcategoryOpen] = React.useState(false);
   const [newAreaOpen, setNewAreaOpen] = React.useState(false);
@@ -166,7 +160,7 @@ export function WorkRequiredFields({
               }
               setAddCategoryOpen(false);
               setAddSubcategoryOpen(false);
-              onChange({ categoryId: event.target.value, subcategoryId: "", title: "" });
+              onChange({ categoryId: event.target.value, subcategoryIds: [], title: "" });
             }}
             className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
           >
@@ -181,53 +175,34 @@ export function WorkRequiredFields({
               onCancelled={() => setAddCategoryOpen(false)}
               onCreated={(categoryId) => {
                 setAddCategoryOpen(false);
-                onChange({ categoryId, subcategoryId: "", title: "" });
+                onChange({ categoryId, subcategoryIds: [], title: "" });
               }}
               className="mt-1"
             />
           ) : null}
         </div>
         <div>
-          <label htmlFor={subcategorySelectId} className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Subcategory</label>
-          {onAddSubcategory ? <details className="relative mt-1">
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Subcategory</span>
+          <details className="relative mt-1">
             <summary className="flex h-9 cursor-pointer list-none items-center rounded-md border border-input bg-card px-2 text-sm">
-              {value.subcategoryId ? db.master.workSubcategories.find((row) => row.id === value.subcategoryId)?.name : value.categoryId ? "Select work subcategories" : "Select category first"}
-              {selectedSubcategoryIds.length > 1 ? <span className="ml-auto text-xs text-muted-foreground">+{selectedSubcategoryIds.length - 1}</span> : null}
+              {value.subcategoryIds.length ? db.master.workSubcategories.find((row) => row.id === value.subcategoryIds[0])?.name : value.categoryId ? "Select work subcategories" : "Select category first"}
+              {value.subcategoryIds.length > 1 ? <span className="ml-auto text-xs text-muted-foreground">+{value.subcategoryIds.length - 1}</span> : null}
             </summary>
             {value.categoryId ? <div className="absolute z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-card p-1 shadow-popover">
               {subcategories.map((subcategory) => {
-                const selected = selectedSubcategoryIds.includes(subcategory.id);
+                const selected = value.subcategoryIds.includes(subcategory.id);
                 return <label key={subcategory.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
                   <input type="checkbox" checked={selected} onChange={() => {
-                    if (selected) return;
-                    if (!value.subcategoryId) onChange({ subcategoryId: subcategory.id, title: subcategory.name });
-                    else onAddSubcategory(subcategory.id);
+                    const subcategoryIds = selected ? value.subcategoryIds.filter((id) => id !== subcategory.id) : [...value.subcategoryIds, subcategory.id];
+                    const title = subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean).join(" / ");
+                    onChange({ subcategoryIds, title });
                   }} />
                   {subcategory.name}
                 </label>;
               })}
               <button type="button" className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40" onClick={() => setAddSubcategoryOpen(true)}>+ Add subcategory</button>
             </div> : null}
-          </details> : <select
-            id={subcategorySelectId}
-            value={value.subcategoryId}
-            onChange={(event) => {
-              const subcategoryId = event.target.value;
-              if (subcategoryId === ADD_SUBCATEGORY_VALUE) {
-                setAddSubcategoryOpen(true);
-                return;
-              }
-              setAddSubcategoryOpen(false);
-              const title = db.master.workSubcategories.find((row) => row.id === subcategoryId)?.name || "";
-              onChange({ subcategoryId, title });
-            }}
-            disabled={!value.categoryId}
-            className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <option value="">{value.categoryId ? "Select work subcategory" : "Select category first"}</option>
-            {subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}
-            {value.categoryId ? <option value={ADD_SUBCATEGORY_VALUE}>+ Add subcategory</option> : null}
-          </select>}
+          </details>
           {addSubcategoryOpen && value.categoryId ? (
             <AddWorkSubcategoryAction
               key={`work-required-add-subcategory-${value.categoryId}`}
@@ -236,7 +211,9 @@ export function WorkRequiredFields({
               onCancelled={() => setAddSubcategoryOpen(false)}
               onCreated={(subcategoryId, subcategoryName) => {
                 setAddSubcategoryOpen(false);
-                onChange({ subcategoryId, title: subcategoryName });
+                const subcategoryIds = [...new Set([...value.subcategoryIds, subcategoryId])];
+                const title = [...value.subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean), subcategoryName].join(" / ");
+                onChange({ subcategoryIds, title });
               }}
             />
           ) : null}

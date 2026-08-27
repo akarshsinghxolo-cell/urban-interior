@@ -151,7 +151,7 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
         if (item.work_required_id) {
             const work = db.workRequired.find((row) => row.id === item.work_required_id);
             if (!work) fail(context, `Line "${item.title}" Work Required does not exist.`);
-            if (work.work_subcategory_id && work.work_subcategory_id !== subcategory.id) {
+            if (work.work_subcategory_ids?.length && !work.work_subcategory_ids.includes(subcategory.id)) {
                 fail(context, `Line "${item.title}" material belongs to ${subcategory.name}, not the selected Work Required.`);
             }
         }
@@ -185,18 +185,19 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
         }
     }
 }
-export function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_category_id" | "work_subcategory_id" | "structured_items">, context: string) {
+export function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_category_id" | "work_subcategory_ids" | "structured_items">, context: string) {
     const items = work.structured_items || [];
     const hasCategory = Boolean(work.work_category_id);
-    const hasSubcategory = Boolean(work.work_subcategory_id);
+    const hasSubcategory = Boolean(work.work_subcategory_ids?.length);
     if (hasCategory !== hasSubcategory) {
         fail(context, "Work Category and exact Work Subcategory / Work Item must be selected together.");
     }
     if (hasCategory && hasSubcategory) {
         const category = assertWorkCategoryId(db, work.work_category_id, context);
-        const subcategory = assertWorkSubcategoryId(db, work.work_subcategory_id, context);
-        if (category && subcategory && category.id !== subcategory.category_id) {
-            fail(context, `Work Category "${category.id}" conflicts with Work Subcategory "${subcategory.name}".`);
+        const subcategories = work.work_subcategory_ids!.map((id) => assertWorkSubcategoryId(db, id, context));
+        const conflicting = subcategories.find((subcategory) => subcategory && category && category.id !== subcategory.category_id);
+        if (category && conflicting) {
+            fail(context, `Work Category "${category.id}" conflicts with Work Subcategory "${conflicting.name}".`);
         }
     }
     for (const item of items) {

@@ -49,7 +49,7 @@ export type CustomerWorkRequiredDraft = {
   siteId: string;
   title: string;
   categoryId: string;
-  subcategoryId: string;
+  subcategoryIds: string[];
   areaIds: string[];
   description: string;
   priority: Priority;
@@ -191,7 +191,7 @@ export function newCustomerWorkRequiredDraft(siteId: string): CustomerWorkRequir
     siteId,
     title: "",
     categoryId: "",
-    subcategoryId: "",
+    subcategoryIds: [],
     areaIds: [],
     description: "",
     priority: "medium",
@@ -205,7 +205,7 @@ export function draftForWorkRequired(work: WorkRequired): CustomerWorkRequiredDr
     siteId: work.site_id,
     title: work.title || "",
     categoryId: work.work_category_id || "",
-    subcategoryId: work.work_subcategory_id || "",
+    subcategoryIds: work.work_subcategory_ids || [],
     areaIds: work.area_ids || [],
     description: work.description || "",
     priority: work.priority || "medium",
@@ -319,7 +319,7 @@ export function workRequiredPayload(draft: CustomerWorkRequiredDraft): CustomerW
     site_id: draft.siteId,
     title: draft.title.trim(),
     work_category_id: draft.categoryId,
-    work_subcategory_id: draft.subcategoryId,
+    work_subcategory_ids: draft.subcategoryIds,
     area_ids: draft.areaIds,
     description: draft.description.trim() || undefined,
     ...(draft.existing ? {} : { status: "new" as const }),

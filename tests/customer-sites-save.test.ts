@@ -146,7 +146,7 @@ describe("canonical customer and Sites save", () => {
         site_id: "site-new",
         title: "Modular Kitchen",
         work_category_id: "fc2",
-        work_subcategory_id: "fc2_kit",
+        work_subcategory_ids: ["fc2_kit"],
         area_ids: ["area-new"],
         description: "Use moisture-resistant carcass material.",
         priority: "high",
@@ -164,6 +164,26 @@ describe("canonical customer and Sites save", () => {
     expect(result.workRequiredChanges[0].kind).toBe("create");
   });
 
+  test("stores several subcategories on one Work Required", () => {
+    const db = database();
+    db.workRequired = [];
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      workRequired: [{
+        id: "work-multi",
+        site_id: "site-1",
+        title: "PVC False Ceiling / Grid False Ceiling / Gypsum False Ceiling",
+        work_category_id: "fc",
+        work_subcategory_ids: ["fc_pvc", "fc_grid", "fc_gyp"],
+        area_ids: [],
+      }],
+    }, options);
+
+    expect(result.db.workRequired).toHaveLength(1);
+    expect(result.db.workRequired[0].work_subcategory_ids).toEqual(["fc_pvc", "fc_grid", "fc_gyp"]);
+  });
+
   test("maps new Work Required to the customer's sole Site", () => {
     const db = database();
     db.workRequired = [];
@@ -175,7 +195,7 @@ describe("canonical customer and Sites save", () => {
         site_id: "",
         title: "Modular Kitchen",
         work_category_id: "fc2",
-        work_subcategory_id: "fc2_kit",
+        work_subcategory_ids: ["fc2_kit"],
         area_ids: [],
       }],
     }, options);
@@ -202,7 +222,7 @@ describe("canonical customer and Sites save", () => {
         site_id: "",
         title: "Modular Kitchen",
         work_category_id: "fc2",
-        work_subcategory_id: "fc2_kit",
+        work_subcategory_ids: ["fc2_kit"],
         area_ids: ["area-customer"],
       }],
     }, options);
@@ -241,7 +261,7 @@ describe("canonical customer and Sites save", () => {
       site_id: "site-1",
       title: "Old title",
       work_category_id: "fc2",
-      work_subcategory_id: "fc2_kit",
+      work_subcategory_ids: ["fc2_kit"],
       area_ids: ["area-existing"],
       description: "Keep lifecycle context",
       structured_items: [{ id: "line-1", title: "Existing line", quantity: 1, unit_id: "sqft", rate: 10, amount: 10 }],
@@ -263,7 +283,7 @@ describe("canonical customer and Sites save", () => {
         site_id: "site-1",
         title: "Modular Kitchen",
         work_category_id: "fc2",
-        work_subcategory_id: "fc2_kit",
+        work_subcategory_ids: ["fc2_kit"],
         area_ids: ["area-existing"],
         description: "Updated scope notes",
         priority: "high",
@@ -294,7 +314,7 @@ describe("canonical customer and Sites save", () => {
       site_id: "site-1",
       title: "Existing work",
       work_category_id: "fc2",
-      work_subcategory_id: "fc2_kit",
+      work_subcategory_ids: ["fc2_kit"],
       area_ids: [],
       status: "new",
       priority: "medium",
@@ -312,7 +332,7 @@ describe("canonical customer and Sites save", () => {
         site_id: "site-2",
         title: "Existing work",
         work_category_id: "fc2",
-        work_subcategory_id: "fc2_kit",
+        work_subcategory_ids: ["fc2_kit"],
         area_ids: ["area-2"],
       }],
     }, options)).toThrow(/cannot be moved to another Site/i);
