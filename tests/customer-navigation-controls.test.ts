@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
-import { MODULE_GROUPS } from "@/lib/rdash/modules";
+import { ALL_MODULES } from "@/lib/rdash/modules";
 
 test("places Customer Desk first and keeps Sort before Filter", () => {
-  const workspace = MODULE_GROUPS.find((group) => group.id === "workspace");
-  expect(workspace?.modules.slice(0, 2).map((module) => module.id)).toEqual([
+  expect(ALL_MODULES.slice(0, 2).map((module) => module.id)).toEqual([
     "customerDesk",
     "workdesk",
   ]);
