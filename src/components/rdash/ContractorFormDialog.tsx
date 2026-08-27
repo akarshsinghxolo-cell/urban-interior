@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { attachedPreview } from "@/lib/rdash/file-attachments";
+import { attachedPreview, confirmedAttachmentId } from "@/lib/rdash/file-attachments";
 import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
 import {
   coordinateInputError,
@@ -124,8 +124,6 @@ const isPending = (value: MediaValue): value is PendingMedia =>
   typeof value === "object" && "uploadItemId" in value;
 const isExisting = (value: MediaValue): value is ExistingMedia =>
   typeof value === "object" && "attachment_id" in value;
-const attachmentId = (value: MediaValue): string | undefined =>
-  isExisting(value) ? value.attachment_id : isPending(value) ? value.attachmentId : undefined;
 const optionalNumber = (value: string): number | undefined =>
   value.trim() ? Number(value) : undefined;
 
@@ -262,8 +260,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       longitude,
       source_partner_id: sourcePartner?.id,
       source_partner_name: sourcePartner?.name,
-      photo_attachment_id: attachmentId(contractorPhoto),
-      business_card_attachment_id: attachmentId(businessCard),
+      photo_attachment_id: confirmedAttachmentId(contractorPhoto),
+      business_card_attachment_id: confirmedAttachmentId(businessCard),
       reliability_rating: draft.reliability,
       politeness_rating: draft.politeness,
       worker_count_range: draft.workerRange,
