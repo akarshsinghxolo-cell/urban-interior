@@ -692,8 +692,8 @@ export const MODULE_GROUPS: ModuleGroup[] = [
 ];
 
 const MODULE_DISPLAY_ORDER = [
-  "workdesk",
   "customerDesk",
+  "workdesk",
   "salesPipeline",
   "fieldOperations",
   "siteExecution",
