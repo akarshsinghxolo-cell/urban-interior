@@ -397,15 +397,34 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             return null;
         }
     });
+    // Seed the in-app module history with the restored active module so the
+    // header Back button can return to Today after a tab-restore reload
+    // (previously the strip came back but history still thought the user had
+    // never left the workdesk).
+    const restoredActiveTab = restoredTabs?.tabs.find((tab) => tab.id === restoredTabs.activeTabId);
+    const restoredHistoryEntry = restoredActiveTab && restoredActiveTab.moduleId !== "workdesk"
+        ? (() => {
+            try {
+                if (!isRegisteredModuleId(restoredActiveTab.moduleId)) return null;
+                const resolved = resolveRenderer(restoredActiveTab.moduleId);
+                return { id: `nav-${restoredActiveTab.moduleId}`, moduleId: restoredActiveTab.moduleId, label: resolved.label, icon: resolved.icon };
+            } catch {
+                return null;
+            }
+        })()
+        : null;
     const state: RDashState = {
         db: createEmptyWorkspaceDatabase(),
-        activeModuleId: restoredTabs?.activeTabId && restoredTabs.tabs.find((tab) => tab.id === restoredTabs.activeTabId)?.moduleId
-            ? (restoredTabs.tabs.find((tab) => tab.id === restoredTabs.activeTabId) as WorkspaceTab).moduleId
-            : "workdesk",
-        moduleHistory: [
-            { id: "nav-today", moduleId: "workdesk", label: "Today", icon: "🗂️" },
-        ],
-        moduleHistoryIndex: 0,
+        activeModuleId: restoredActiveTab?.moduleId ?? "workdesk",
+        moduleHistory: restoredHistoryEntry
+            ? [
+                { id: "nav-today", moduleId: "workdesk", label: "Today", icon: "🗂️" },
+                restoredHistoryEntry,
+            ]
+            : [
+                { id: "nav-today", moduleId: "workdesk", label: "Today", icon: "🗂️" },
+            ],
+        moduleHistoryIndex: restoredHistoryEntry ? 1 : 0,
         moduleSearch: "",
         workspaceSearch: "",
         tabs: restoredTabs?.tabs ?? [

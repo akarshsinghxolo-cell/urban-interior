@@ -195,6 +195,25 @@ export function createUISlice(ctx: StoreContext): UIActions {
                 contextHistoryIndex: -1,
             };
         }),
+        restoreTabs: (tabs, activeTabId) => commitState((state: any) => {
+            // Undo target for closeTab/closeOtherTabs: reinstates the exact
+            // pre-close snapshot. Unknown or empty snapshots are ignored.
+            if (!Array.isArray(tabs) || tabs.length === 0) return {};
+            const next = tabs.find((tab: WorkspaceTab) => tab.id === activeTabId) || tabs[0];
+            const moduleId = canonicalModuleId(next.moduleId);
+            const resolved = resolveRenderer(moduleId);
+            const history = appendModuleHistory(state, moduleId, resolved.label, resolved.icon);
+            return {
+                tabs,
+                activeTabId: next.id,
+                activeModuleId: moduleId,
+                ...history,
+                mobileNavOpen: false,
+                detailPanel: { kind: null, recordId: null },
+                contextHistory: [],
+                contextHistoryIndex: -1,
+            };
+        }),
         setActiveTab: (id) => {
             const state = get();
             const tab = state.tabs.find((entry: WorkspaceTab) => entry.id === id);

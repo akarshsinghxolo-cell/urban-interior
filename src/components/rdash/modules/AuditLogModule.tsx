@@ -110,16 +110,25 @@ export function AuditLogModule() {
     const systemCount = db.auditLog.filter((e) => e.kind === "system").length;
     const alertCount = db.auditLog.filter((e) => e.kind === "alert").length;
     const todayCount = db.auditLog.filter((e) => relativeDay(e.timestamp) === "Today").length;
-    const grouped = React.useMemo(() => {
+    // Render window: a long-lived workspace accumulates thousands of audit
+    // events — rendering every match as a row freezes phones. Metrics, stats
+    // and export still operate on the full filtered set.
+    const RENDER_CHUNK = 100;
+    const [visibleCount, setVisibleCount] = React.useState(RENDER_CHUNK);
+    React.useEffect(() => {
+        setVisibleCount(RENDER_CHUNK);
+    }, [q, kindFilter, entityTypeFilter, actorFilter, dateRange.from, dateRange.to]);
+    const visibleEntries = React.useMemo(() => entries.slice(0, visibleCount), [entries, visibleCount]);
+    const groupedVisible = React.useMemo(() => {
         const m = new Map<string, AuditLogEntry[]>();
-        entries.forEach((e) => {
+        visibleEntries.forEach((e) => {
             const day = relativeDay(e.timestamp);
             const arr = m.get(day) || [];
             arr.push(e);
             m.set(day, arr);
         });
         return Array.from(m.entries());
-    }, [entries]);
+    }, [visibleEntries]);
 
     /** Real CSV export — generates a CSV from the filtered entries and triggers a download. */
     const exportCsv = () => {
@@ -229,7 +238,7 @@ export function AuditLogModule() {
       </div>
 
       <div className="space-y-4">
-        {grouped.map(([day, dayEntries]) => (<div key={day}>
+        {groupedVisible.map(([day, dayEntries]) => (<div key={day}>
             <div className="sticky top-0 z-10 mb-2 bg-background/80 py-1 backdrop-blur-sm">
               <span className="text-xs font-semibold text-muted-foreground">{day} · {dayEntries.length} events</span>
             </div>
@@ -259,6 +268,15 @@ export function AuditLogModule() {
       </div>
 
       {entries.length === 0 && (<EmptyState title="No events found" description="Try a different search or filter." icon={<History className="h-8 w-8"/>}/>)}
+
+      {visibleEntries.length < entries.length && (
+        <div className="flex flex-col items-center gap-1.5">
+          <Button size="sm" variant="outline" className="min-h-[40px]" onClick={() => setVisibleCount((count) => count + RENDER_CHUNK)}>
+            Load more ({(entries.length - visibleEntries.length).toLocaleString("en-IN")} remaining)
+          </Button>
+          <p className="text-[11px] text-muted-foreground">Showing {visibleEntries.length.toLocaleString("en-IN")} of {entries.length.toLocaleString("en-IN")} events — export always includes the full filtered set.</p>
+        </div>
+      )}
     </div>);
 }
 

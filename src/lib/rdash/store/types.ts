@@ -165,6 +165,7 @@ export interface UIState {
   openTab: (tab: WorkspaceTab) => void;
   closeTab: (id: string) => void;
   closeOtherTabs: (id: string) => void;
+  restoreTabs: (tabs: WorkspaceTab[], activeTabId: string) => void;
   setActiveTab: (id: string) => void;
   selectCustomer: (id: string | null) => void;
   setMobileNavOpen: (v: boolean) => void;

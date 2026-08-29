@@ -3,7 +3,9 @@
 import * as React from "react";
 import { X, XSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { useRDashStore } from "@/lib/rdash/store";
+import type { WorkspaceTab } from "@/lib/rdash/store/ui-types";
 
 function nextIndex(current: number, delta: number, length: number): number {
   return (current + delta + length) % length;
@@ -15,6 +17,7 @@ export function WorkspaceTabs() {
   const setActiveTab = useRDashStore((state) => state.setActiveTab);
   const closeTab = useRDashStore((state) => state.closeTab);
   const closeOtherTabs = useRDashStore((state) => state.closeOtherTabs);
+  const restoreTabs = useRDashStore((state) => state.restoreTabs);
   const tabRefs = React.useRef(new Map<string, HTMLButtonElement>());
 
   const activateAndFocus = React.useCallback((id: string) => {
@@ -22,12 +25,32 @@ export function WorkspaceTabs() {
     window.requestAnimationFrame(() => tabRefs.current.get(id)?.focus());
   }, [setActiveTab]);
 
+  // Every close path offers an Undo toast — closing tabs is destructive and
+  // the ⊗N "close others" pill especially can sweep away a whole working set
+  // with one tap on a phone.
+  const announceClose = React.useCallback((snapshot: { tabs: WorkspaceTab[]; activeTabId: string | null }, closedLabel: string, closedCount: number) => {
+    const previousTabs = snapshot.tabs;
+    const previousActive = snapshot.activeTabId;
+    if (!previousTabs.length || !previousActive) return;
+    toast.info(closedCount > 1 ? `Closed ${closedCount} tabs` : `Closed “${closedLabel}”`, {
+      description: closedCount > 1 ? "Undo restores the full tab set." : undefined,
+      duration: 6000,
+      action: {
+        label: "Undo",
+        onClick: () => restoreTabs(previousTabs, previousActive),
+      },
+    });
+  }, [restoreTabs]);
+
   const closeAndRestoreFocus = React.useCallback((id: string, index: number) => {
+    const snapshot = { tabs, activeTabId };
+    const closedLabel = tabs[index]?.label || "tab";
     const adjacentId = tabs[index + 1]?.id || tabs[index - 1]?.id;
     const focusId = id === activeTabId ? adjacentId : activeTabId || adjacentId;
     closeTab(id);
+    announceClose(snapshot, closedLabel, 1);
     if (focusId) window.requestAnimationFrame(() => tabRefs.current.get(focusId)?.focus());
-  }, [activeTabId, closeTab, tabs]);
+  }, [activeTabId, announceClose, closeTab, tabs]);
 
   // Keep the active module tab visible: on phones the strip overflows and a
   // newly activated tab (opened from the nav drawer, command palette or FAB)
@@ -120,7 +143,11 @@ export function WorkspaceTabs() {
         aria-label={`Close all tabs except ${tabs.find((tab) => tab.id === activeTabId)?.label || "the active tab"}`}
         title={`Close other ${tabs.length - 1} tabs`}
         onClick={() => {
-          if (activeTabId) closeOtherTabs(activeTabId);
+          if (!activeTabId) return;
+          const snapshot = { tabs, activeTabId };
+          const closedCount = tabs.length - 1;
+          closeOtherTabs(activeTabId);
+          announceClose(snapshot, "", closedCount);
         }}
         className="mr-2 mb-1 flex shrink-0 items-center gap-1 self-center rounded-full border border-border bg-card px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
