@@ -23,9 +23,6 @@ export type ContractorProfileRecord = {
   name?: string;
   legal_name?: string;
   phone?: string;
-  whatsapp?: string;
-  alternate_phone?: string;
-  email?: string;
   city?: string;
   locality?: string;
   address?: string;
@@ -63,7 +60,7 @@ export type ContractorProfileRecord = {
 export type ContractorDuplicateConflict = { id: string; name: string; reasons: string[]; hard: boolean };
 
 const CONTRACTOR_PROFILE_KEYS = new Set<keyof ContractorProfileRecord>([
-  "id", "name", "legal_name", "phone", "whatsapp", "alternate_phone", "email", "city", "locality", "address",
+  "id", "name", "legal_name", "phone", "city", "locality", "address",
   "trade", "rating", "active_jobs", "outstanding", "reliability_score", "on_time_pct", "past_jobs_count", "specializations",
   "latitude", "longitude", "photo_attachment_id", "business_card_attachment_id", "reliability_rating", "politeness_rating",
   "worker_count_range", "deadline_commitment", "source_partner_id", "source_partner_name", "status", "categories",
@@ -240,12 +237,12 @@ export function contractorDuplicateConflicts(
   excludeId?: string,
 ): ContractorDuplicateConflict[] {
   const result: ContractorDuplicateConflict[] = [];
-  const candidatePhone = mobile(candidate.phone || candidate.whatsapp);
+  const candidatePhone = mobile(candidate.phone);
   const candidateName = normalizedName(candidate.legal_name || candidate.name);
   const candidateCity = String(candidate.city || "").trim().toLowerCase();
   for (const row of db.master.contractors as ContractorProfileRecord[]) {
     if (!row.id || row.id === excludeId || row.duplicate_of_id) continue;
-    if (candidatePhone && candidatePhone === mobile(row.phone || row.whatsapp)) {
+    if (candidatePhone && candidatePhone === mobile(row.phone)) {
       result.push({ id: row.id, name: String(row.name || row.id), reasons: ["same phone"], hard: true });
       continue;
     }
@@ -264,10 +261,6 @@ export function contractorProfileValidationError(
   if (!String(candidate.name || "").trim()) return "Contractor name is required.";
   const phone = mobile(candidate.phone);
   if (candidate.phone && !/^[6-9]\d{9}$/.test(phone)) return "Enter a valid 10-digit Indian contractor mobile number.";
-  for (const [label, value] of [["WhatsApp", candidate.whatsapp], ["alternate", candidate.alternate_phone]] as const) {
-    if (value && !/^[6-9]\d{9}$/.test(mobile(value))) return `Enter a valid ${label} phone number.`;
-  }
-  if (candidate.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(candidate.email).trim())) return "Enter a valid contractor email address.";
   for (const value of [candidate.available_workers, candidate.service_radius_km]) {
     if (value !== undefined && (!Number.isFinite(Number(value)) || Number(value) < 0)) return "Contractor capacity values must be valid non-negative numbers.";
   }
@@ -303,9 +296,6 @@ export function normalizeContractorForWrite(
     name: String(input.name || "").trim(),
     legal_name: String(input.legal_name || "").trim() || undefined,
     phone: mobile(input.phone) || undefined,
-    whatsapp: mobile(input.whatsapp) || undefined,
-    alternate_phone: mobile(input.alternate_phone) || undefined,
-    email: String(input.email || "").trim().toLowerCase() || undefined,
     city: String(input.city || "").trim() || undefined,
     locality: String(input.locality || "").trim() || undefined,
     address: String(input.address || "").trim() || undefined,
@@ -323,7 +313,7 @@ export function normalizeContractorForWrite(
 
 export function contractorFormProjection(record: ContractorProfileRecord): ContractorProfileRecord {
   const keys: Array<keyof ContractorProfileRecord> = [
-    "name", "legal_name", "phone", "whatsapp", "alternate_phone", "email", "city", "locality", "address", "latitude", "longitude",
+    "name", "legal_name", "phone", "city", "locality", "address", "latitude", "longitude",
     "source_partner_id", "source_partner_name", "photo_attachment_id", "business_card_attachment_id", "reliability_rating",
     "politeness_rating", "worker_count_range", "deadline_commitment", "status", "work_capabilities", "available_workers",
     "service_radius_km", "notes",

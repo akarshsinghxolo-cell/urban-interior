@@ -84,9 +84,6 @@ type Draft = {
   name: string;
   legalName: string;
   phone: string;
-  whatsapp: string;
-  alternatePhone: string;
-  email: string;
   address: string;
   city: string;
   locality: string;
@@ -104,9 +101,6 @@ const EMPTY_DRAFT: Draft = {
   name: "",
   legalName: "",
   phone: "",
-  whatsapp: "",
-  alternatePhone: "",
-  email: "",
   address: "",
   city: "",
   locality: "",
@@ -143,9 +137,6 @@ function draftFromRecord(record: ContractorProfileRecord): Draft {
     name: String(record.name || ""),
     legalName: String(record.legal_name || ""),
     phone: String(record.phone || ""),
-    whatsapp: String(record.whatsapp || ""),
-    alternatePhone: String(record.alternate_phone || ""),
-    email: String(record.email || ""),
     address: String(record.address || ""),
     city: String(record.city || ""),
     locality: String(record.locality || ""),
@@ -250,9 +241,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       name: draft.name,
       legal_name: draft.legalName,
       phone: draft.phone,
-      whatsapp: draft.whatsapp,
-      alternate_phone: draft.alternatePhone,
-      email: draft.email,
       address: draft.address,
       city: draft.city,
       locality: draft.locality,
@@ -657,9 +645,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                 <Input value={draft.name} onChange={(event) => { set("name", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Contractor / firm name" autoFocus={!isEdit} />
                 <Input value={draft.legalName} onChange={(event) => { set("legalName", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Legal / registered name" />
                 <Input value={draft.phone} onChange={(event) => { set("phone", sanitizeIndianMobile(event.target.value)); setDuplicateAcknowledged(false); }} placeholder="Primary mobile" inputMode="numeric" />
-                <Input value={draft.whatsapp} onChange={(event) => set("whatsapp", sanitizeIndianMobile(event.target.value))} placeholder="WhatsApp" inputMode="numeric" />
-                <Input value={draft.alternatePhone} onChange={(event) => set("alternatePhone", sanitizeIndianMobile(event.target.value))} placeholder="Alternate phone" inputMode="numeric" />
-                <Input value={draft.email} onChange={(event) => set("email", event.target.value)} placeholder="Email" type="email" />
                 <select value={draft.status} onChange={(event) => set("status", event.target.value as ContractorLifecycleStatus)} className="h-10 rounded-md border border-input bg-card px-3 text-sm">
                   <option value="onboarding">Onboarding</option>
                   <option value="active">Active</option>

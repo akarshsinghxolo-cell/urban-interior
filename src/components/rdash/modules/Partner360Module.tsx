@@ -460,9 +460,9 @@ function ProfileTab({ mode, selected, model }: any) {
           <InfoCell label="Display name" value={selected.name} />
           <InfoCell label="Legal name" value={selected.legal_name} />
           <InfoCell label="Phone" value={selected.phone} />
-          <InfoCell label="WhatsApp" value={selected.whatsapp || selected.phone} />
-          <InfoCell label="Alternate phone" value={selected.alternate_phone} />
-          <InfoCell label="Email" value={selected.email} />
+          {mode === "vendor" && <InfoCell label="WhatsApp" value={selected.whatsapp || selected.phone} />}
+          {mode === "vendor" && <InfoCell label="Alternate phone" value={selected.alternate_phone} />}
+          {mode === "vendor" && <InfoCell label="Email" value={selected.email} />}
           <InfoCell label="City" value={selected.city} />
           <InfoCell label="Locality" value={selected.locality} />
         </div>

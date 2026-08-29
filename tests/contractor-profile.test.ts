@@ -91,7 +91,6 @@ describe("contractor validation and duplicate prevention", () => {
   });
 
   test("invalid work-type rates and business fields are rejected", () => {
-    expect(contractorProfileValidationError({ name: "Mr Das", email: "invalid" })).toBe("Enter a valid contractor email address.");
     expect(contractorProfileValidationError({ name: "Mr Das", work_capabilities: [{ subcategory_id: "sub-paint", work_type_rates: [{ ...budgetRate, labour_rate: -1 }] }] })).toBe("Contractor rates must be valid non-negative numbers.");
   });
 
@@ -118,13 +117,16 @@ describe("contractor validation and duplicate prevention", () => {
 describe("contractor create persistence and governance projection", () => {
   test("create records preserve the complete normalized form payload", () => {
     const record = contractorMasterRecordForCreate({
-      id: "reserved-id", name: "Complete Contractor", legal_name: "Complete Contractor Private Limited", whatsapp: "9876543210", alternate_phone: "9876543211", email: "accounts@example.com",
+      id: "reserved-id", name: "Complete Contractor", legal_name: "Complete Contractor Private Limited",
       available_workers: 14, service_radius_km: 45,
       notes: "Preferred for complex work", work_capabilities: [{ subcategory_id: "sub-paint", work_type_rates: [budgetRate] }],
       obsolete_payload_field: "discard-me", compliance_documents: [{ id: "doc-1", kind: "insurance", verified: false }],
     } as ContractorProfileRecord, "con-42");
-    expect(record).toMatchObject({ id: "con-42", legal_name: "Complete Contractor Private Limited", email: "accounts@example.com", available_workers: 14, service_radius_km: 45, notes: "Preferred for complex work" });
+    expect(record).toMatchObject({ id: "con-42", legal_name: "Complete Contractor Private Limited", available_workers: 14, service_radius_km: 45, notes: "Preferred for complex work" });
     expect((record as Record<string, unknown>).obsolete_payload_field).toBeUndefined();
+    expect((record as Record<string, unknown>).whatsapp).toBeUndefined();
+    expect((record as Record<string, unknown>).alternate_phone).toBeUndefined();
+    expect((record as Record<string, unknown>).email).toBeUndefined();
     expect(record.compliance_documents).toHaveLength(1);
   });
 

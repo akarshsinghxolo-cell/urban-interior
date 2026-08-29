@@ -1669,9 +1669,6 @@ export interface Contractor {
     name: string;
     legal_name?: string;
     phone?: string;
-    whatsapp?: string;
-    alternate_phone?: string;
-    email?: string;
     city?: string;
     locality?: string;
     address?: string;
