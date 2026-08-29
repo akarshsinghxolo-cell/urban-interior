@@ -407,7 +407,7 @@ export function WorkspacePulseStrip() {
               <CalendarClock className="h-3 w-3 shrink-0" />
               <span className="whitespace-nowrap">{dateStr}</span>
               <span className="text-muted-foreground/40">·</span>
-              <span className="rd-tabular font-semibold text-foreground/80">{timeStr}</span>
+              <span className="rd-tabular whitespace-nowrap font-semibold text-foreground/80">{timeStr}</span>
               {/* Data-freshness indicator: shows when the workspace health was
                   last synced, so users know the numbers are current. */}
               {lastFetchedAt ? (

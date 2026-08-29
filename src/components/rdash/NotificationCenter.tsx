@@ -278,10 +278,10 @@ export function NotificationCenter() {
 
       {open && (<>
           <div className="fixed inset-0 z-40" role="button" tabIndex={0} aria-label="Close notifications" onClick={() => setOpen(false)} onKeyDown={(e) => { if (e.key === "Escape" || e.key === "Enter") setOpen(false); }}/>  {/* STAGE-4-FIX: a11y */}
-          <div className="absolute right-0 top-11 z-50 flex max-h-[32rem] w-[22rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-popover animate-scale-in">
+          <div className="fixed inset-x-3 top-16 z-50 flex max-h-[calc(100dvh-5rem)] flex-col overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-popover animate-scale-in sm:absolute sm:inset-x-auto sm:right-0 sm:top-11 sm:max-h-[32rem] sm:w-[22rem] sm:max-w-[calc(100vw-1.5rem)]">
             <div className="relative border-b border-border bg-gradient-to-r from-primary/[0.06] to-transparent">
               <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-primary to-primary/30"/>
-              <div className="flex items-center justify-between px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-primary"/>
                   <h3 className="text-sm font-semibold">Notifications</h3>
@@ -289,13 +289,13 @@ export function NotificationCenter() {
                   {!notificationCoverageComplete && (<span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">Partial</span>)}
                 </div>
                 <div className="flex items-center gap-1">
-                  {filter !== "all" && filterCoverageComplete && filtered.some((n) => !n.read && !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
+                  {filter !== "all" && filterCoverageComplete && filtered.some((n) => !n.read && !readItems.has(n.id)) && (<button type="button" onClick={() => markCategoryRead(filter)} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10px] font-medium text-primary transition-colors hover:bg-primary/10" title={`Mark all ${CATEGORY_META[filter as NotifCategory].label} as read`}>
                       <CheckCheck className="h-3 w-3"/> Mark these read
                     </button>)}
-                  {unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
+                  {unread.length > 0 && (<button type="button" onClick={markAllRead} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Mark all as read">
                       <CheckCheck className="h-3 w-3"/> Mark all read
                     </button>)}
-                  <button type="button" onClick={dismissAll} className="rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title={notificationCoverageComplete ? "Dismiss all" : "Dismiss loaded alerts"}>
+                  <button type="button" onClick={dismissAll} className="shrink-0 whitespace-nowrap rounded-md px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title={notificationCoverageComplete ? "Dismiss all" : "Dismiss loaded alerts"}>
                     {notificationCoverageComplete ? "Clear" : "Clear loaded"}
                   </button>
                 </div>
@@ -353,7 +353,7 @@ export function NotificationCenter() {
                       <div className="flex shrink-0 items-center gap-0.5">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button type="button" className="rounded p-0.5 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label="Snooze" title="Snooze notification">
+                            <button type="button" className="rounded p-0.5 text-muted-foreground/60 opacity-100 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100" aria-label="Snooze" title="Snooze notification">
                               <BellOff className="h-3 w-3"/>
                             </button>
                           </DropdownMenuTrigger>
@@ -369,7 +369,7 @@ export function NotificationCenter() {
                               </DropdownMenuItem>))}
                           </DropdownMenuContent>
                         </DropdownMenu>
-                        <button type="button" onClick={() => setDismissed((d) => new Set([...d, n.id]))} className="rounded p-0.5 text-muted-foreground/60 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label="Dismiss">
+                        <button type="button" onClick={() => setDismissed((d) => new Set([...d, n.id]))} className="rounded p-0.5 text-muted-foreground/60 opacity-100 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100" aria-label="Dismiss">
                           <X className="h-3 w-3"/>
                         </button>
                       </div>

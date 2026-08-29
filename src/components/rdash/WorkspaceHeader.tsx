@@ -8,6 +8,7 @@ import { useWorkspaceOutbox } from "@/lib/uploads/use-workspace-outbox";
 import { confirmWorkspaceExit } from "@/lib/uploads/workspace-exit-guard";
 import { ThemeToggle } from "./ThemeToggle";
 import { NotificationCenter } from "./NotificationCenter";
+import { ThemeMenuItem } from "./ThemeMenuItem";
 import { CreateMenu } from "./CreateMenu";
 import { DemoModeBadge } from "./DemoModeBadge";
 import { WorkspaceTabs } from "./WorkspaceTabs";
@@ -130,6 +131,7 @@ export function WorkspaceHeader() {
               <DropdownMenuItem onClick={() => setActiveModule("systemSettings")}>
                 <Settings className="mr-2 h-4 w-4" /> Workspace settings
               </DropdownMenuItem>
+              <ThemeMenuItem />
               <DropdownMenuItem onClick={() => setActiveModule("dataExport")}>
                 <Download className="mr-2 h-4 w-4" /> Export workspace
               </DropdownMenuItem>
