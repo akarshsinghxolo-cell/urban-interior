@@ -23,6 +23,7 @@ import type { RDashDatabase, Thread, ThreadKind, ThreadMessage, ThreadMessageMen
 import { genId, nowIso } from "./store/helpers";
 import { mapEntityTypeToThreadKind } from "./entity-thread-map";
 import { threadParentExists } from "./business-rules";
+import { canonicalThreadRecordIdForParent } from "./thread-record-id";
 import { parseMentions, mentionThreadKindForEntityType } from "./mentions";
 
 /**
@@ -149,10 +150,16 @@ export function backfillSeedThreads(input: RDashDatabase): RDashDatabase {
     const siteName = (id?: string | null): string | undefined =>
         id ? db.sites.find((s) => s.id === id)?.name : undefined;
 
-    // 1. customers → kind "generic", title = customer name.
+    // 1. customers → kind "generic", title = customer name. Customer
+    //    conversations have exactly one persisted identity:
+    //    customer-conversation:<customer_id> (see thread-record-id.ts),
+    //    so the canonical record ID is used here instead of the bare
+    //    customer ID. Bare Customer IDs are rejected by
+    //    threadParentExists and would fail workspace validation.
     for (const c of db.customers) {
         const ts = c.created_at || nowIso();
-        const thread = findOrCreateThread(ctx, "generic", c.id, c.name, ts);
+        const recordId = canonicalThreadRecordIdForParent(db, "generic", c.id);
+        const thread = findOrCreateThread(ctx, "generic", recordId, c.name, ts);
         appendSystemMessage(thread, "Customer onboarded", stagger(ts, 60_000));
     }
 
@@ -411,7 +418,7 @@ function seedConversationMessages(ctx: BackfillContext, db: RDashDatabase): void
     const sales = staffName("staff-sales");
 
     // --- Mr. Das customer thread: onboarding conversation ---
-    const dasCust = find("generic", "cust-das");
+    const dasCust = find("generic", canonicalThreadRecordIdForParent(db, "generic", "cust-das"));
     if (dasCust) {
         const base = dasCust.created_at;
         appendMessage(dasCust, `Hi Mr. Das, welcome to Urban Castle! I'm ${sales}, your project coordinator. Looking forward to transforming your spaces.`, "comment", stagger(base, 3_600_000), sales, "Sales / Telecaller");
@@ -807,7 +814,7 @@ function seedProjectLifecycle(ctx: BackfillContext, db: RDashDatabase): void {
     // =================================================================
     // 8. COMMUNICATION MESSAGES on customer thread (cust-das)
     // =================================================================
-    const dasCust = find("generic", customerId);
+    const dasCust = find("generic", canonicalThreadRecordIdForParent(db, "generic", customerId));
     if (dasCust) {
         const base = dasCust.created_at;
         appendMessage(dasCust, `[WhatsApp] Drawing shared with customer — concept design DRG-2026-501.`, "comment", stagger(base, 7 * DAY), sales, "Sales / Telecaller");

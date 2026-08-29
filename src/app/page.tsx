@@ -5,6 +5,6 @@ import { Toaster } from "@/components/ui/sonner";
 export default function Home() {
     return (<ThemeProvider attribute="class" defaultTheme="system" enableSystem={true} disableTransitionOnChange>
       <UrbanCastleApp />
-      <Toaster richColors position="top-right"/>
+      <Toaster richColors position="top-right" mobileOffset={16} toastOptions={{ className: "max-w-[calc(100vw-2rem)]" }}/>
     </ThemeProvider>);
 }

@@ -9,7 +9,6 @@ import {
   CheckCircle2,
   ClipboardCheck,
   HardHat,
-  Mail,
   MapPin,
   MessageCircle,
   Pencil,
@@ -180,7 +179,6 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
       partner.category,
       partner.trade,
       partner.legal_name,
-      partner.email,
     ].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [partners, query]);
 
@@ -229,7 +227,7 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
     );
   }
 
-  const wa = whatsappHref(selected.whatsapp || selected.phone);
+  const wa = whatsappHref(selected.phone);
   const maps = mapHref(selected);
   const requiredCompliance = model.compliance.filter((item) => !item.optional);
   const completionPct = Math.round((requiredCompliance.filter((item) => item.complete).length / Math.max(1, requiredCompliance.length)) * 100);
@@ -280,7 +278,6 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
                   <p className="mt-1 text-xs text-muted-foreground">{selected.legal_name && selected.legal_name !== selected.name ? `${selected.legal_name} · ` : ""}{mode === "vendor" ? selected.category || "Material supplier" : selected.trade || selected.categories?.join(", ") || "Trade contractor"}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     {selected.phone && <a href={`tel:${selected.phone}`} className="inline-flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3" />{selected.phone}</a>}
-                    {selected.email && <a href={`mailto:${selected.email}`} className="inline-flex items-center gap-1 hover:text-primary"><Mail className="h-3 w-3" />{selected.email}</a>}
                     {(selected.locality || selected.city) && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{[selected.locality, selected.city].filter(Boolean).join(", ")}</span>}
                   </div>
                 </div>
@@ -460,9 +457,6 @@ function ProfileTab({ mode, selected, model }: any) {
           <InfoCell label="Display name" value={selected.name} />
           <InfoCell label="Legal name" value={selected.legal_name} />
           <InfoCell label="Phone" value={selected.phone} />
-          {mode === "vendor" && <InfoCell label="WhatsApp" value={selected.whatsapp || selected.phone} />}
-          {mode === "vendor" && <InfoCell label="Alternate phone" value={selected.alternate_phone} />}
-          {mode === "vendor" && <InfoCell label="Email" value={selected.email} />}
           <InfoCell label="City" value={selected.city} />
           <InfoCell label="Locality" value={selected.locality} />
         </div>
@@ -639,9 +633,6 @@ function VendorBusinessDialog({ partner, open, onClose }: { partner: PartnerReco
     if (!open) return;
     setDraft({
       legal_name: partner.legal_name || "",
-      email: partner.email || "",
-      whatsapp: partner.whatsapp || partner.phone || "",
-      alternate_phone: partner.alternate_phone || "",
       status: partner.status || "active",
       gstin: partner.gstin || "",
       pan: partner.pan || "",
@@ -664,9 +655,6 @@ function VendorBusinessDialog({ partner, open, onClose }: { partner: PartnerReco
   const save = () => {
     const common = {
       legal_name: draft.legal_name.trim() || undefined,
-      email: draft.email.trim() || undefined,
-      whatsapp: draft.whatsapp.trim() || undefined,
-      alternate_phone: draft.alternate_phone.trim() || undefined,
       status: draft.status,
       notes: draft.notes.trim() || undefined,
     };
@@ -694,7 +682,7 @@ function VendorBusinessDialog({ partner, open, onClose }: { partner: PartnerReco
       <DialogContent className="max-h-[92vh] max-w-3xl overflow-hidden p-0">
         <DialogHeader className="border-b border-border px-5 py-4"><DialogTitle>Vendor business details</DialogTitle><DialogDescription>Structured identity, tax, banking, commercial and operational readiness fields used by the 360° workspace.</DialogDescription></DialogHeader>
         <div className="rd-scroll max-h-[68vh] space-y-4 overflow-y-auto px-5 py-4">
-          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Identity and lifecycle</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.legal_name || ""} onChange={(e) => set("legal_name", e.target.value)} placeholder="Legal / registered name" /><Input value={draft.email || ""} onChange={(e) => set("email", e.target.value)} placeholder="Email" type="email" /><Input value={draft.whatsapp || ""} onChange={(e) => set("whatsapp", e.target.value)} placeholder="WhatsApp number" /><Input value={draft.alternate_phone || ""} onChange={(e) => set("alternate_phone", e.target.value)} placeholder="Alternate phone" /><select value={draft.status || "active"} onChange={(e) => set("status", e.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blocked">Blocked</option><option value="inactive">Inactive</option></select></div></section>
+          <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Identity and lifecycle</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.legal_name || ""} onChange={(e) => set("legal_name", e.target.value)} placeholder="Legal / registered name" /><select value={draft.status || "active"} onChange={(e) => set("status", e.target.value)} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blocked">Blocked</option><option value="inactive">Inactive</option></select></div></section>
           <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Tax and banking</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.gstin || ""} onChange={(e) => set("gstin", e.target.value.toUpperCase())} placeholder="GSTIN" /><Input value={draft.pan || ""} onChange={(e) => set("pan", e.target.value.toUpperCase())} placeholder="PAN" /><Input value={draft.bank_account || ""} onChange={(e) => set("bank_account", e.target.value)} placeholder="Bank account number" /><Input value={draft.ifsc || ""} onChange={(e) => set("ifsc", e.target.value.toUpperCase())} placeholder="IFSC" /></div><label className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs"><input type="checkbox" checked={Boolean(draft.verified_bank)} onChange={(e) => set("verified_bank", e.target.checked)} />Bank details independently verified</label></section>
           <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Commercial terms</p><div className="grid gap-2 sm:grid-cols-2"><Input value={draft.payment_terms || ""} onChange={(e) => set("payment_terms", e.target.value)} placeholder="Payment terms" /><Input value={draft.credit_days ?? ""} onChange={(e) => set("credit_days", e.target.value)} placeholder="Credit days" type="number" /><Input value={draft.credit_limit ?? ""} onChange={(e) => set("credit_limit", e.target.value)} placeholder="Credit limit" type="number" /><Input value={draft.minimum_order_value ?? ""} onChange={(e) => set("minimum_order_value", e.target.value)} placeholder="Minimum order value" type="number" /><Input value={draft.standard_lead_time_days ?? ""} onChange={(e) => set("standard_lead_time_days", e.target.value)} placeholder="Standard lead time (days)" type="number" /><Input value={draft.udyam_no || ""} onChange={(e) => set("udyam_no", e.target.value)} placeholder="MSME / Udyam number" /><Input value={draft.warranty_terms || ""} onChange={(e) => set("warranty_terms", e.target.value)} placeholder="Warranty terms" className="sm:col-span-2" /></div></section>
           <section className="space-y-2"><p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Internal notes</p><Textarea value={draft.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={3} placeholder="Relationship notes, special conditions, escalation or operating instructions" /></section>

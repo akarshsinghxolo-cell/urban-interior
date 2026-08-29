@@ -60,9 +60,6 @@ type Draft = {
   name: string;
   legalName: string;
   phone: string;
-  whatsapp: string;
-  alternatePhone: string;
-  email: string;
   gstin: string;
   vendorType: VendorType;
   status: "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
@@ -76,7 +73,7 @@ type Draft = {
 };
 
 const EMPTY_DRAFT: Draft = {
-  name: "", legalName: "", phone: "", whatsapp: "", alternatePhone: "", email: "", gstin: "",
+  name: "", legalName: "", phone: "", gstin: "",
   vendorType: "dealer", status: "onboarding", address: "", city: "", locality: "",
   reliability: "average", delivery: "average", returnPolicy: "available", notes: "",
 };
@@ -98,9 +95,6 @@ function draftFromRecord(record: VendorProfileRecord): Draft {
     name: String(record.name || ""),
     legalName: String(record.legal_name || ""),
     phone: String(record.phone || ""),
-    whatsapp: String(record.whatsapp || ""),
-    alternatePhone: String(record.alternate_phone || ""),
-    email: String(record.email || ""),
     gstin: String(record.gstin || ""),
     vendorType: (record.vendor_type || "dealer") as VendorType,
     status: (record.status || "onboarding") as Draft["status"],
@@ -164,9 +158,6 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     name: draft.name,
     legal_name: draft.legalName,
     phone: draft.phone,
-    whatsapp: draft.whatsapp,
-    alternate_phone: draft.alternatePhone,
-    email: draft.email,
     gstin: draft.gstin,
     vendor_type: draft.vendorType,
     status: draft.status,
@@ -401,7 +392,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const shopFile = mediaFile(shopPhoto, db);
 
   return <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto"><DialogHeader><DialogTitle>{editId ? "Edit Vendor" : "Add Vendor"}</DialogTitle><DialogDescription>One canonical Vendor profile for identity, location, GST and supply capability. PAN, banking, payment/credit terms, warranty, Udyam and bank verification are intentionally excluded.</DialogDescription></DialogHeader><div className="space-y-5">
-    <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Identity & contact</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Vendor name"><Input value={draft.name} onChange={(e) => set("name", e.target.value)} /></Field><Field label="Legal / registered name"><Input value={draft.legalName} onChange={(e) => set("legalName", e.target.value)} /></Field><Field label="Vendor type"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.vendorType} onChange={(e) => set("vendorType", e.target.value as VendorType)}><option value="manufacturer">Manufacturer</option><option value="distributor">Distributor</option><option value="dealer">Dealer</option><option value="retailer">Retailer</option><option value="service_provider">Service provider</option><option value="other">Other</option></select></Field><Field label="Lifecycle"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.status} onChange={(e) => set("status", e.target.value as Draft["status"])}><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blacklisted">Blacklisted</option><option value="inactive">Inactive</option></select></Field><Field label="Mobile"><Input value={draft.phone} onChange={(e) => set("phone", e.target.value)} /></Field><Field label="WhatsApp"><Input value={draft.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} /></Field><Field label="Alternate mobile"><Input value={draft.alternatePhone} onChange={(e) => set("alternatePhone", e.target.value)} /></Field><Field label="Email"><Input type="email" value={draft.email} onChange={(e) => set("email", e.target.value)} /></Field><Field label="GSTIN"><Input value={draft.gstin} onChange={(e) => set("gstin", e.target.value.toUpperCase())} /></Field></div></section>
+    <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Identity & contact</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Vendor name"><Input value={draft.name} onChange={(e) => set("name", e.target.value)} /></Field><Field label="Legal / registered name"><Input value={draft.legalName} onChange={(e) => set("legalName", e.target.value)} /></Field><Field label="Vendor type"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.vendorType} onChange={(e) => set("vendorType", e.target.value as VendorType)}><option value="manufacturer">Manufacturer</option><option value="distributor">Distributor</option><option value="dealer">Dealer</option><option value="retailer">Retailer</option><option value="service_provider">Service provider</option><option value="other">Other</option></select></Field><Field label="Lifecycle"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.status} onChange={(e) => set("status", e.target.value as Draft["status"])}><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blacklisted">Blacklisted</option><option value="inactive">Inactive</option></select></Field><Field label="Mobile"><Input value={draft.phone} onChange={(e) => set("phone", e.target.value)} /></Field><Field label="GSTIN"><Input value={draft.gstin} onChange={(e) => set("gstin", e.target.value.toUpperCase())} /></Field></div></section>
 
     <section className="rounded-xl border border-border bg-muted/10 p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold">Location</h3><p className="text-[10px] text-muted-foreground">Fresh master-location GPS also reverse-geocodes full address, city and locality.</p></div><Button type="button" size="sm" variant="outline" disabled={gpsLoading} onClick={() => void captureGps()}><Navigation className="mr-1.5 h-3.5 w-3.5" />{gpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="City"><Input value={draft.city} onChange={(e) => set("city", e.target.value)} /></Field><Field label="Locality"><Input value={draft.locality} onChange={(e) => set("locality", e.target.value)} /></Field><Field label="Coordinates"><Input value={coordinates} onChange={(e) => updateCoordinates(e.target.value)} placeholder="26.8467, 80.9462" /></Field><div className="sm:col-span-3"><Field label="Full address"><Textarea rows={2} value={draft.address} onChange={(e) => set("address", e.target.value)} /></Field></div></div></section>
 

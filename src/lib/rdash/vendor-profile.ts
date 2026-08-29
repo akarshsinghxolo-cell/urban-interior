@@ -23,9 +23,6 @@ export type VendorSupplyCapability = {
 export type VendorProfileRecord = Partial<Vendor> & {
   id?: string;
   legal_name?: string;
-  whatsapp?: string;
-  alternate_phone?: string;
-  email?: string;
   gstin?: string;
   vendor_type?: VendorType;
   status?: VendorLifecycleStatus;
@@ -184,9 +181,6 @@ export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDat
     name: compact(input.name),
     legal_name: compact(input.legal_name) || undefined,
     phone: compact(input.phone) || undefined,
-    whatsapp: compact(input.whatsapp) || undefined,
-    alternate_phone: compact(input.alternate_phone) || undefined,
-    email: compact(input.email).toLowerCase() || undefined,
     city: compact(input.city) || undefined,
     locality: compact(input.locality) || undefined,
     address: compact(input.address) || undefined,
@@ -216,12 +210,8 @@ export function vendorProfileValidationError(vendor: VendorProfileRecord) {
   if (!compact(vendor.name)) return "Vendor name is required.";
   const phone = indianPhoneDigits(vendor.phone);
   if (phone && phone.length !== 10) return "Vendor mobile number must be a valid Indian mobile number.";
-  const alternate = indianPhoneDigits(vendor.alternate_phone);
-  if (alternate && alternate.length !== 10) return "Alternate mobile number must be a valid Indian mobile number.";
   const gstin = compact(vendor.gstin).toUpperCase();
   if (gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) return "GSTIN format is invalid.";
-  const email = compact(vendor.email);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return "Email format is invalid.";
   if (vendor.latitude != null && (!Number.isFinite(vendor.latitude) || vendor.latitude < -90 || vendor.latitude > 90)) return "Latitude is invalid.";
   if (vendor.longitude != null && (!Number.isFinite(vendor.longitude) || vendor.longitude < -180 || vendor.longitude > 180)) return "Longitude is invalid.";
   return null;

@@ -804,7 +804,7 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
             const materialCount = works.reduce((sum, work) => sum + (scopesByWork.get(work.id) || []).length, 0);
             return <section key={category.id} className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex flex-wrap items-center gap-2 border-b border-border bg-gradient-to-r from-muted/70 to-transparent px-3 py-2.5">
-          <button type="button" onClick={() => setExpanded((current) => ({ ...current, [category.id]: !isExpanded }))} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <button type="button" onClick={() => setExpanded((current) => ({ ...current, [category.id]: !isExpanded }))} className="flex min-w-0 w-full sm:w-auto sm:min-w-0 sm:flex-1 items-center gap-2 text-left">
             {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
             <span className="min-w-0 flex-1">
               {editingCategoryId === category.id ? (<Input autoFocus defaultValue={category.name} onClick={(event) => event.stopPropagation()} onBlur={(event) => { updateCategory(category.id, { name: event.target.value }); setEditingCategoryId(null); }} onKeyDown={(event) => {
@@ -818,9 +818,11 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
               <span className="text-[10px] text-muted-foreground">{works.length} sub categories - {materialCount} scoped materials</span>
             </span>
           </button>
-          <Button size="icon" variant="ghost" aria-label={`Edit ${category.name}`} onClick={() => setEditingCategoryId(category.id)}><Pencil className="h-4 w-4"/></Button>
-          <Button size="sm" variant="outline" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Sub category</Button>
-          <Button size="icon" variant="ghost" aria-label={`Delete ${category.name}`} onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+          <div className="flex w-full items-center gap-1.5 sm:w-auto">
+            <Button size="icon" variant="ghost" aria-label={`Edit ${category.name}`} onClick={() => setEditingCategoryId(category.id)}><Pencil className="h-4 w-4"/></Button>
+            <Button size="sm" variant="outline" className="flex-1 sm:flex-none" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Sub category</Button>
+            <Button size="icon" variant="ghost" aria-label={`Delete ${category.name}`} onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+          </div>
         </div>
         {isExpanded ? <div className="p-3">
           <div className="grid gap-3">

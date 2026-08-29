@@ -33,12 +33,18 @@ export function attachedFileById(db: RDashDatabase, attachmentId?: ID): Attached
 }
 export function assetPreview(asset: FileAsset): FilePreviewSource {
     const managedDriveFile = asset.storage_provider === "google_drive" && asset.storage_mode === "managed";
+    const proxyBase = managedDriveFile && asset.google_file_id
+        ? `/api/google-drive/stream?fileId=${encodeURIComponent(asset.google_file_id)}`
+        : undefined;
     return {
         fileName: asset.file_name,
         mimeType: asset.mime_type,
         googleFileId: managedDriveFile ? asset.google_file_id : undefined,
         url: asset.web_view_link,
         thumbnailUrl: asset.thumbnail_url,
+        proxyUrl: proxyBase
+            ? `${proxyBase}&account=${encodeURIComponent(asset.storage_account_id || "")}`
+            : undefined,
     };
 }
 export function attachedPreview(db: RDashDatabase, attachmentId?: ID): FilePreviewSource | undefined {

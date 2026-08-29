@@ -153,7 +153,10 @@ export function AutoGeofenceMonitor() {
         const watchId = navigator.geolocation.watchPosition(onPosition, () => {
             if (!permissionNoticeShown.current) {
                 permissionNoticeShown.current = true;
-                toast.info("Automatic geofence is unavailable. Use Manual Check-in / Check-out with live GPS.");
+                toast.info("Automatic geofence is unavailable. Use Manual Check-in / Check-out with live GPS.", {
+                    description: "Tap to dismiss. Check-in reminders still work.",
+                    duration: 8000,
+                });
             }
         }, { enableHighAccuracy: true, maximumAge: 15000, timeout: 20000 });
         return () => navigator.geolocation.clearWatch(watchId);

@@ -71,12 +71,28 @@ describe("canonical Vendor profile", () => {
 
     expect(normalized.name).toBe("ABC Electricals");
     expect(normalized.legal_name).toBe("ABC Electricals Private Limited");
-    expect(normalized.email).toBe("sales@abc.in");
     expect(normalized.status).toBe("active");
     expect(normalized.supply_capabilities).toHaveLength(1);
     for (const excluded of ["pan", "bank_account", "payment_terms", "credit_days", "credit_limit", "warranty_terms", "udyam_no", "verified_bank", "article_ids"]) {
       expect(excluded in normalized).toBe(false);
     }
+  });
+
+  test("stale WhatsApp / alternate phone / email keys are stripped on every write", () => {
+    const state = db();
+    const normalized = normalizeVendorForWrite({
+      id: "ven-legacy",
+      name: "Legacy Supplier",
+      phone: "9876543210",
+      whatsapp: "+91 9800000000",
+      alternate_phone: "+91 9800000001",
+      email: "legacy@supplier.example",
+    } as any, state, { id: "ven-legacy" }) as unknown as Record<string, unknown>;
+
+    for (const removed of ["whatsapp", "alternate_phone", "email"]) {
+      expect(removed in normalized).toBe(false);
+    }
+    expect(normalized.phone).toBe("9876543210");
   });
 
   test("supply_capabilities is the only Vendor capability model", () => {

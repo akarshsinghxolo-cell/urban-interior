@@ -9,7 +9,7 @@ export function StatusBadge({ label, className, }: {
     className?: string;
 }) {
     const display = label.replaceAll("_", " ");
-    return (<Badge variant="outline" className={cn("shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", className)}>
+    return (<Badge variant="outline" title={display} className={cn("max-w-full shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", className)}>
       {display}
     </Badge>);
 }

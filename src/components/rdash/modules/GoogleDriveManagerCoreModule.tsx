@@ -4,6 +4,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import type { FileAsset, StorageAccount } from "@/lib/rdash/types";
 import { accountIsAtSwitchThreshold, selectWriteStorageAccount } from "@/lib/rdash/storage";
 import { FilePreview } from "../FilePreview";
+import { assetPreview } from "@/lib/rdash/file-attachments";
 import { cn } from "@/lib/utils";
 import {
   Archive,
@@ -317,7 +318,7 @@ export function GoogleDriveManagerModule() {
               <div className="max-h-96 divide-y divide-border overflow-y-auto">
                 {files.map((item) => { const parent = accounts.find((a) => a.id === item.storage_account_id); const links = (db.entityFileAttachments || []).filter((l: any) => l.file_asset_id === item.id); const openUrl = authorizedOpenUrl(item); return (
                   <div key={item.id} className="flex items-start gap-3 px-4 py-3">
-                    <FilePreview file={{ fileName: item.file_name, mimeType: item.mime_type, googleFileId: item.storage_mode === "managed" ? item.google_file_id : undefined, url: item.web_view_link, thumbnailUrl: item.thumbnail_url }} compact controls={false} className="mt-0.5 w-20 shrink-0" />
+                    <FilePreview file={assetPreview(item)} compact controls={false} className="mt-0.5 w-20 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{item.file_name}</p>
                       <p className="truncate text-[10px] text-muted-foreground">{item.kind.replaceAll("_", " ")} · {parent?.label || "External Drive file"}</p>

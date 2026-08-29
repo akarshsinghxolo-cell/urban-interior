@@ -8,7 +8,8 @@ import { ContextRow, type ContextAction } from "../ContextMenuHost";
 import { buildCustomerActions, buildTaskActions, buildQuotationActions, buildPaymentActions, buildVisitActions } from "../recordActions";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
 import { SiteFormDialog } from "../SiteFormDialog";
-import { FilePreview } from "../FilePreview";
+import { FilePreview, type FilePreviewSource } from "../FilePreview";
+import { assetPreview } from "@/lib/rdash/file-attachments";
 import { EntityFilesCard } from "../EntityFilesCard";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
@@ -213,9 +214,9 @@ export function CustomerDesk({ view }: {
               <div className="flex items-start gap-3">
                 <Avatar name={p.name} size={40}/>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-bold text-foreground">{p.name}</p>
-                    <StatusBadge label={progress.label} className="bg-primary/10 text-primary border-primary/20"/>
+                  <div className="flex items-start justify-between gap-2 pr-9">
+                    <p className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">{p.name}</p>
+                    <StatusBadge label={progress.label} className="max-w-[52%] bg-primary/10 text-primary border-primary/20"/>
                   </div>
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3"/> {p.phone || "—"}</p>
                   <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin className="h-3 w-3"/> {locationLabel}</p>
@@ -403,11 +404,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
         const filesById = new Map((db.master.fileAssets || []).map((file: any) => [file.id, file]));
         const results: Array<{
             id: string;
-            fileName: string;
-            mimeType?: string;
-            googleFileId?: string;
-            url?: string;
-            thumbnailUrl?: string;
+            preview: FilePreviewSource;
             label: string;
         }> = [];
         const seen = new Set<string>();
@@ -416,7 +413,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
             if (!file || seen.has(file.id))
                 return;
             seen.add(file.id);
-            results.push({ id: file.id, fileName: file.file_name, mimeType: file.mime_type, googleFileId: file.storage_mode === "managed" ? file.google_file_id : undefined, url: file.web_view_link, thumbnailUrl: file.thumbnail_url, label: label || file.kind?.replaceAll("_", " ") || "File" });
+            results.push({ id: file.id, preview: assetPreview(file as any), label: label || file.kind?.replaceAll("_", " ") || "File" });
         };
         relatedAttachments.forEach((attachment) => add(attachment.file_asset_id, `${attachment.entity_type.replace(/_/g, " ")} · ${attachment.role}`));
         relatedReferenceAssignments.forEach((assignment: any) => {
@@ -493,10 +490,10 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
     ];
     return (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <Avatar name={name} size={48}/>
-          <div>
-            <h2 className="text-lg font-bold tracking-tight">{name}</h2>
+          <div className="min-w-0">
+            <h2 className="break-words text-lg font-bold leading-snug tracking-tight">{name}</h2>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
               {phone ? <a href={`tel:${phone}`} className="flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3"/>{phone}</a> : <span className="flex items-center gap-1"><Phone className="h-3 w-3"/>—</span>}
               {email && <a href={`mailto:${email}`} className="flex items-center gap-1 hover:text-primary"><Mail className="h-3 w-3"/>{email}</a>}
@@ -504,12 +501,13 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
               {sites.length > 1 && <span className="flex items-center gap-1"><Building className="h-3 w-3"/>{sites.length} Sites</span>}
             </div>
             <p className="mt-1 text-xs font-medium text-foreground/80">{sites.length ? `${sites.length} site${sites.length === 1 ? "" : "s"}` : "No site added"}</p>
+            <div className="mt-1.5 sm:hidden"><StatusBadge label={progress.label} className="bg-primary/10 text-primary border-primary/20"/></div>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <StatusBadge label={progress.label} className="bg-primary/10 text-primary border-primary/20"/>
-          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setEditCustomerOpen(true)}>
-            <Pencil className="h-3.5 w-3.5"/> Edit
+        <div className="flex shrink-0 items-center gap-1">
+          <StatusBadge label={progress.label} className="hidden bg-primary/10 text-primary border-primary/20 sm:inline-flex"/>
+          <Button size="sm" variant="outline" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={() => setEditCustomerOpen(true)}>
+            <Pencil className="h-3.5 w-3.5"/><span className="hidden sm:inline">Edit</span>
           </Button>
         </div>
       </div>
@@ -926,17 +924,13 @@ function CustomerFileGallery({ title, empty, files }: {
     empty: string;
     files: Array<{
         id: string;
-        fileName: string;
-        mimeType?: string;
-        googleFileId?: string;
-        url?: string;
-        thumbnailUrl?: string;
+        preview: FilePreviewSource;
         label: string;
     }>;
 }) {
     return (<section className="rounded-lg border border-border bg-background p-3">
       <div className="mb-2 flex items-center justify-between gap-2"><p className="text-xs font-semibold">{title}</p><span className="text-[10px] text-muted-foreground">Click a thumbnail to fetch the file</span></div>
-      {files.length ? <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{files.map((file) => <div key={file.id} className="min-w-0"><FilePreview file={{ fileName: file.fileName, mimeType: file.mimeType, googleFileId: file.googleFileId, url: file.url, thumbnailUrl: file.thumbnailUrl }} compact controls/><p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.label}>{file.label}</p></div>)}</div> : <p className="rounded-md border border-dashed border-border py-3 text-center text-xs text-muted-foreground">{empty}</p>}
+      {files.length ? <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{files.map((file) => <div key={file.id} className="min-w-0"><FilePreview file={file.preview} compact controls/><p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.label}>{file.label}</p></div>)}</div> : <p className="rounded-md border border-dashed border-border py-3 text-center text-xs text-muted-foreground">{empty}</p>}
     </section>);
 }
 function CustomerActivitySection({ title, empty, rows }: {
@@ -1218,14 +1212,14 @@ function CustomerTimelineView({ customerId, name, tasks, quotations, payments, v
     };
     return (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <Avatar name={name} size={48}/>
-          <div>
-            <h2 className="text-lg font-bold tracking-tight">{name}</h2>
+          <div className="min-w-0">
+            <h2 className="break-words text-lg font-bold leading-snug tracking-tight">{name}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">Timeline · {entries.length} activities</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <StatusBadge label="TIMELINE" className="bg-primary/10 text-primary border-primary/20"/>
         </div>
       </div>
