@@ -13,6 +13,7 @@ import { CreateMenu } from "./CreateMenu";
 import { DemoModeBadge } from "./DemoModeBadge";
 import { WorkspaceTabs } from "./WorkspaceTabs";
 import { WorkspaceLocationBreadcrumbs } from "./WorkspaceLocationBreadcrumbs";
+import { OfflineBanner } from "./OfflineBanner";
 import { EnhancedSearch } from "./EnhancedSearch";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -147,6 +148,7 @@ export function WorkspaceHeader() {
         <WorkspaceLocationBreadcrumbs />
         <WorkspaceTabs />
       </div>
+      <OfflineBanner />
     </header>
   );
 }

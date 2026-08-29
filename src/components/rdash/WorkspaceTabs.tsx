@@ -57,6 +57,18 @@ export function WorkspaceTabs() {
   // can otherwise sit entirely outside the visible area with no indication
   // of where the user landed.
   const tablistRef = React.useRef<HTMLDivElement | null>(null);
+  // Scroll-affordance edges: fade masks appear only on the sides that still
+  // have off-screen tabs, so the strip reads as scrollable instead of cut off.
+  const [scrollEdges, setScrollEdges] = React.useState({ left: false, right: false });
+  const updateScrollEdges = React.useCallback(() => {
+    const strip = tablistRef.current;
+    if (!strip) return;
+    const max = strip.scrollWidth - strip.clientWidth;
+    setScrollEdges({ left: strip.scrollLeft > 4, right: strip.scrollLeft < max - 4 });
+  }, []);
+  React.useEffect(() => {
+    updateScrollEdges();
+  }, [tabs, updateScrollEdges]);
   React.useEffect(() => {
     const strip = tablistRef.current;
     const activeNode = activeTabId ? tabRefs.current.get(activeTabId) : undefined;
@@ -72,11 +84,13 @@ export function WorkspaceTabs() {
 
   return (
     <div className="flex items-stretch">
+    <div className="relative flex min-w-0 flex-1 items-stretch">
     <div
       ref={tablistRef}
       role="tablist"
       aria-label="Open workspace modules"
       aria-orientation="horizontal"
+      onScroll={updateScrollEdges}
       className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-[var(--page-pad)] pb-1 rd-scroll"
     >
       {tabs.map((tab, index) => {
@@ -136,6 +150,13 @@ export function WorkspaceTabs() {
           </div>
         );
       })}
+    </div>
+    {scrollEdges.left ? (
+      <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 z-10 w-7 bg-gradient-to-r from-background via-background/70 to-transparent" />
+    ) : null}
+    {scrollEdges.right ? (
+      <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 z-10 w-7 bg-gradient-to-l from-background via-background/70 to-transparent" />
+    ) : null}
     </div>
     {tabs.length > 3 ? (
       <button

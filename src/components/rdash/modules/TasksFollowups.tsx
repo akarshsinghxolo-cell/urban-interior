@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { WORKSPACE_URL_NAVIGATION_ENABLED } from "@/lib/rdash/workspace-history-url";
+import { workspacePathForModule } from "@/lib/rdash/workspace-routes";
 import {
     isWorkspaceTaskScope,
     workspaceTaskScopeRequest,
@@ -35,6 +36,7 @@ const SCOPES: {
 }[] = [
     { key: "all", label: "All" },
     { key: "today", label: "Today" },
+    { key: "overdue", label: "Overdue" },
     { key: "daily", label: "Daily" },
     { key: "weekly", label: "Weekly" },
     { key: "client", label: "Client" },
@@ -61,6 +63,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
     const runFollowupReconciliation = useRDashStore((s) => s.runFollowupReconciliation);
     const currentUser = useRDashStore((s) => s.currentUser);
     const activeWorkspaceModuleId = useRDashStore((state) => state.activeModuleId);
+    const setTaskScopeIntent = useRDashStore((s) => s.setTaskScopeIntent);
     const user = currentUser();
     // I: "+ New follow-up" dialog state.
     const [createFollowupOpen, setCreateFollowupOpen] = React.useState(false);
@@ -101,6 +104,65 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
         setScope(request.scope);
         replaceScopeUrl(request.scope, search);
     }, [replaceScopeUrl, search, urlScopeEnabled]);
+    // I: One-shot deep-link scope intent (set by other modules, e.g. the
+    // workdesk hub's "Due today" / "Overdue" focus chips). Applied on mount;
+    // the mirror goes through window.location because after an in-app module
+    // switch the Next router pathname still reads /workspace while the
+    // history-synced address bar shows /workspace/tasks.
+    //
+    // The intent is deliberately NOT cleared at apply time: StrictMode's dev
+    // double-mount would consume it on the first pass and drop it on the
+    // remount. Instead it stays in the store (idempotent to re-apply) and is
+    // cleared only when the user picks a different scope themselves, or when
+    // it is overwritten by the next intent.
+    const appliedScopeIntentRef = React.useRef<WorkspaceTaskScope | null>(null);
+    // Gate on becoming the frontmost module, not just on mount: open modules
+    // are kept alive (hidden tabpanels), so the hub can deep-link into an
+    // ALREADY-MOUNTED Tasks instance and the intent must still apply.
+    //
+    // The intent is deliberately NOT cleared at apply time: StrictMode's dev
+    // double-mount would consume it on the first pass and drop it on the
+    // remount. It stays in the store (idempotent to re-apply) and is retired
+    // only when the applied intent no longer matches the visible scope —
+    // i.e. the user picked a different scope themselves — or when the next
+    // intent overwrites it.
+    React.useEffect(() => {
+        if (activeWorkspaceModuleId !== moduleId)
+            return;
+        const intent = useRDashStore.getState().taskScopeIntent;
+        const applied = appliedScopeIntentRef.current;
+        if (intent && applied !== intent) {
+            appliedScopeIntentRef.current = intent;
+            setScope(intent);
+            // Mirror into the address bar via the module's canonical path: at
+            // this point the history-sync may not have rewritten the URL away
+            // from /workspace yet (parent effects run after children), and the
+            // Next router pathname always lags behind after in-app switches.
+            if (typeof window !== "undefined" && window.location.pathname.startsWith("/workspace")) {
+                try {
+                    const modulePath = workspacePathForModule("tasks");
+                    if (modulePath) {
+                        const nextUrl = workspaceUrlWithTaskScope(modulePath, window.location.search, intent);
+                        if (nextUrl !== `${window.location.pathname}${window.location.search}`) {
+                            window.history.replaceState(window.history.state, "", nextUrl);
+                        }
+                        const queryIndex = nextUrl.indexOf("?");
+                        currentSearchRef.current = queryIndex >= 0 ? nextUrl.slice(queryIndex + 1) : "";
+                    }
+                }
+                catch { }
+            }
+            setActiveSavedViewId(null);
+            return;
+        }
+        // A new pending intent always differs from `applied`, so reaching here
+        // with a scope mismatch means the user picked a different scope —
+        // retire the intent for good.
+        if (applied && scope !== applied) {
+            appliedScopeIntentRef.current = null;
+            setTaskScopeIntent(null);
+        }
+    }, [activeWorkspaceModuleId, moduleId, scope, setTaskScopeIntent]);
     React.useEffect(() => {
         if (!urlScopeEnabled)
             return;
@@ -258,6 +320,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
         if (!presets) {
             switch (scope) {
                 case "today": return t.due_date === todayStr;
+                case "overdue": return isDateOnlyOverdue(t.due_date) && (t.status === "todo" || t.status === "in_progress");
                 case "daily": return t.task_scope === "general";
                 case "weekly": return t.task_scope === "office";
                 case "client": return t.task_scope === "client";

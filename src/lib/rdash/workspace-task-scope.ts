@@ -1,6 +1,7 @@
 export const WORKSPACE_TASK_SCOPES = [
   "all",
   "today",
+  "overdue",
   "daily",
   "weekly",
   "client",

@@ -11,6 +11,7 @@ describe("workspace task scope URLs", () => {
     expect(WORKSPACE_TASK_SCOPES).toEqual([
       "all",
       "today",
+      "overdue",
       "daily",
       "weekly",
       "client",
@@ -20,7 +21,7 @@ describe("workspace task scope URLs", () => {
     ]);
     for (const scope of WORKSPACE_TASK_SCOPES) expect(isWorkspaceTaskScope(scope)).toBe(true);
     expect(isWorkspaceTaskScope("calls")).toBe(false);
-    expect(isWorkspaceTaskScope("overdue")).toBe(false);
+    expect(isWorkspaceTaskScope("yesterday")).toBe(false);
   });
 
   test("uses All when scope is absent", () => {
@@ -44,7 +45,7 @@ describe("workspace task scope URLs", () => {
 
   test("rejects empty, unsupported and repeated values", () => {
     expect(workspaceTaskScopeRequest("scope=")).toEqual({ scope: "all", explicit: true, valid: false });
-    expect(workspaceTaskScopeRequest("scope=overdue")).toEqual({ scope: "all", explicit: true, valid: false });
+    expect(workspaceTaskScopeRequest("scope=yesterday")).toEqual({ scope: "all", explicit: true, valid: false });
     expect(workspaceTaskScopeRequest("scope=today&scope=staff")).toEqual({
       scope: "all",
       explicit: true,

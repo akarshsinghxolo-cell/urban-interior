@@ -7,6 +7,7 @@ import type {
   IntegrityReport, RepairResult, CascadeResult,
 } from "../types";
 import type { SaveCustomerWithSitesInput } from "../customer-sites-save";
+import type { WorkspaceTaskScope } from "../workspace-task-scope";
 import type { GpsCapture } from "../gps";
 import type { StaffLocationPing } from "../staff-location";
 import type {
@@ -188,6 +189,15 @@ export interface UIState {
   reportFilter: { reportId?: string; customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string } | null;
   setReportFilter: (filter: { reportId?: string; customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string }) => void;
   clearReportFilter: () => void;
+  /**
+   * I: One-shot scope intent for Tasks & Follow-ups. Any module can call
+   * setTaskScopeIntent(scope) + setActiveModule("tasks") to deep-link into
+   * the tasks module with a pre-applied scope (e.g. the workdesk hub's
+   * "Overdue" focus chip). TasksFollowups consumes it once on mount, applies
+   * it, mirrors it into the ?scope= URL and clears it back to null.
+   */
+  taskScopeIntent: WorkspaceTaskScope | null;
+  setTaskScopeIntent: (scope: WorkspaceTaskScope | null) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

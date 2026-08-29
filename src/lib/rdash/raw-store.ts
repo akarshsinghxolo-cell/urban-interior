@@ -528,6 +528,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         savedViews: [],
         quotationAcceptanceDialog: null,
         reportFilter: null,
+        taskScopeIntent: null,
         // ── UI slice (Phase 3o) — 31 UI actions: openCreateDialog, closeCreateDialog,
         //     openActionDialog, closeActionDialog, setCommandPaletteOpen, addSavedView,
         //     deleteSavedView, renameSavedView, openQuotationAcceptanceDialog,
@@ -710,6 +711,12 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             continue;
         const action = value as StateAction;
         actionState[name] = ((...args: any[]) => runWorkspaceTransaction(name, () => action(...args))) as StateAction;
+    }
+    // Dev-only console handle for QA/debugging (agent-browser rounds): read
+    // state or drive actions from the console without shipping a handle to
+    // production bundles.
+    if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+        (window as unknown as { __ucStore?: unknown }).__ucStore = { getState: get, subscribe: (listener: () => void) => useRDashStore.subscribe(listener) };
     }
     return state;
 });

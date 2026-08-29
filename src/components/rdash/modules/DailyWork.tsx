@@ -1,6 +1,6 @@
 "use client";
 import * as React from "react";
-import { Ban, BellOff, CheckCircle2, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Package, } from "lucide-react";
+import { Ban, BellOff, CheckCircle2, ChevronRight, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Package, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
 import { addDays } from "@/lib/rdash/store/helpers";
@@ -36,6 +36,8 @@ function EmptyCta({ label, onClick }: { label: string; onClick: () => void }) {
 
 function DailyKpiBanner() {
     const db = useRDashStore((s) => s.db);
+    const setActiveModule = useRDashStore((s) => s.setActiveModule);
+    const setTaskScopeIntent = useRDashStore((s) => s.setTaskScopeIntent);
     const today = indiaDate();
     const weekAgo = React.useMemo(() => {
         const d = new Date();
@@ -43,9 +45,20 @@ function DailyKpiBanner() {
         d.setHours(0, 0, 0, 0);
         return d;
     }, []);
+    const prevWeekStart = React.useMemo(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 14);
+        d.setHours(0, 0, 0, 0);
+        return d;
+    }, []);
     const weeklyRevenue = db.customerReceipts
         .filter((r) => new Date(r.received_at) >= weekAgo)
         .reduce((t, r) => t + r.amount, 0);
+    const prevWeeklyRevenue = db.customerReceipts
+        .filter((r) => { const at = new Date(r.received_at); return at >= prevWeekStart && at < weekAgo; })
+        .reduce((t, r) => t + r.amount, 0);
+    const revenueDelta = weeklyRevenue - prevWeeklyRevenue;
+    const revenueDeltaPct = prevWeeklyRevenue > 0 ? Math.round((revenueDelta / prevWeeklyRevenue) * 100) : null;
     const quotationMetrics = calculateQuotationMetrics(db.quotations);
     const pipelineValue = quotationMetrics.pipelineValue;
     const conversionRate = quotationMetrics.conversionRate;
@@ -61,10 +74,15 @@ function DailyKpiBanner() {
         { label: "Conversion", value: `${conversionRate}%`, tone: "warning", icon: <Target className="h-3.5 w-3.5"/> },
         { label: "Active jobs", value: formatINRShort(activeJobValue), tone: "default", icon: <Briefcase className="h-3.5 w-3.5"/> },
     ];
+    const revenueDeltaLabel = prevWeeklyRevenue > 0
+        ? `${revenueDeltaPct! >= 0 ? "▲" : "▼"} ${Math.abs(revenueDeltaPct!)}% vs prev 7d`
+        : revenueDelta > 0
+            ? "▲ New revenue vs prev 7d"
+            : null;
     const focus = [
-        { label: "Due today", value: tasksDueToday, icon: <CalendarClock className="h-3.5 w-3.5"/>, tone: tasksDueToday > 0 ? "warning" : "muted" },
-        { label: "Overdue", value: overdueTasks, icon: <AlertCircle className="h-3.5 w-3.5"/>, tone: overdueTasks > 0 ? "danger" : "muted" },
-        { label: "Visits today", value: visitsToday, icon: <MapPin className="h-3.5 w-3.5"/>, tone: visitsToday > 0 ? "primary" : "muted" },
+        { label: "Due today", value: tasksDueToday, icon: <CalendarClock className="h-3.5 w-3.5"/>, tone: tasksDueToday > 0 ? "warning" : "muted", hint: "Open in Tasks", onClick: () => { setTaskScopeIntent("today"); setActiveModule("tasks"); } },
+        { label: "Overdue", value: overdueTasks, icon: <AlertCircle className="h-3.5 w-3.5"/>, tone: overdueTasks > 0 ? "danger" : "muted", hint: "Open in Tasks", onClick: () => { setTaskScopeIntent("overdue"); setActiveModule("tasks"); } },
+        { label: "Visits today", value: visitsToday, icon: <MapPin className="h-3.5 w-3.5"/>, tone: visitsToday > 0 ? "primary" : "muted", hint: "Open Calendar", onClick: () => setActiveModule("calendarRecurring") },
     ];
     return (<section aria-label="Today at a glance" className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-gradient-to-br from-card via-card to-muted/40 shadow-card">
       <div className="grid gap-0 sm:grid-cols-[1.6fr_1fr]">
@@ -78,6 +96,7 @@ function DailyKpiBanner() {
               <div className="min-w-0">
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{kpi.label}</p>
                 <p className="rd-tabular truncate text-sm font-bold text-foreground">{kpi.value}</p>
+                {kpi.label === "Revenue (7d)" && revenueDeltaLabel ? (<p className={"rd-tabular truncate text-[10px] font-semibold " + (revenueDeltaPct !== null && revenueDeltaPct < 0 ? "text-destructive" : "text-success")}>{revenueDeltaLabel}</p>) : null}
               </div>
             </div>))}
           </div>
@@ -85,15 +104,18 @@ function DailyKpiBanner() {
         <div className="bg-muted/20 p-3.5">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Today's focus</p>
           <div className="flex flex-col gap-2">
-            {focus.map((f) => (<div key={f.label} className="flex items-center justify-between gap-2 rounded-md bg-background/70 px-2.5 py-1.5">
-              <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            {focus.map((f) => (<button key={f.label} type="button" onClick={f.onClick} title={f.hint} className="group/focus flex min-h-11 items-center justify-between gap-2 rounded-md bg-background/70 px-2.5 py-1.5 text-left transition-all hover:bg-background hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.99]">
+              <span className="flex items-center gap-2 text-xs font-medium text-muted-foreground transition-colors group-hover/focus:text-foreground">
                 <span className={"flex h-6 w-6 items-center justify-center rounded-md " + (f.tone === "warning" ? "bg-warning/10 text-warning" : f.tone === "danger" ? "bg-destructive/10 text-destructive" : f.tone === "primary" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
                   {f.icon}
                 </span>
                 {f.label}
               </span>
-              <span className={"rd-tabular text-sm font-bold " + (f.tone === "danger" ? "text-destructive" : f.tone === "warning" ? "text-warning" : f.tone === "primary" ? "text-primary" : "text-foreground")}>{f.value}</span>
-            </div>))}
+              <span className="flex items-center gap-1">
+                <span className={"rd-tabular text-sm font-bold " + (f.tone === "danger" ? "text-destructive" : f.tone === "warning" ? "text-warning" : f.tone === "primary" ? "text-primary" : "text-foreground")}>{f.value}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-all group-hover/focus:translate-x-0.5 group-hover/focus:text-foreground" aria-hidden />
+              </span>
+            </button>))}
           </div>
         </div>
       </div>

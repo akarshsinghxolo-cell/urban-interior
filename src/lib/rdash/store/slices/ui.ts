@@ -52,7 +52,8 @@ type UIActions = Omit<UIState,
     | "detailPanel" | "contextHistory" | "contextHistoryIndex"
     | "actionDialog" | "commandPaletteOpen" | "savedViews"
     | "quotationAcceptanceDialog"
-    | "reportFilter">;
+    | "reportFilter"
+    | "taskScopeIntent">;
 
 export function createUISlice(ctx: StoreContext): UIActions {
     const { commitState, get } = ctx;
@@ -474,5 +475,12 @@ export function createUISlice(ctx: StoreContext): UIActions {
          */
         setReportFilter: (filter) => commitState({ reportFilter: filter }),
         clearReportFilter: () => commitState({ reportFilter: null }),
+        /**
+         * I: One-shot scope intent for Tasks & Follow-ups (see UIState).
+         * Callers pair this with setActiveModule("tasks"); the module applies
+         * the scope on mount and clears the intent. Passing null cancels a
+         * pending intent without navigating.
+         */
+        setTaskScopeIntent: (scope) => commitState({ taskScopeIntent: scope }),
     };
 }
