@@ -5,6 +5,7 @@ import { useRDashStore, siteFinancials, contractorOutstandingTotal } from "@/lib
 import { formatINRShort } from "@/lib/rdash/format";
 import { Button } from "@/components/ui/button";
 import { MetricCard, StatusBadge } from "../primitives";
+import { CashFlowChart } from "../CashFlowChart";
 
 export type ReceivableAging = {
     notDue: { amount: number; count: number };
@@ -96,6 +97,8 @@ export function FinanceOverviewModule() {
           <div><p className="text-[10px] uppercase text-muted-foreground">Payables / margin</p><p className="font-mono text-xs font-semibold">{formatINRShort(financials.vendorPayable + financials.contractorPayable)} / {formatINRShort(financials.grossMargin)}</p><StatusBadge label={site.stage.replaceAll("_", " ")} className="mt-1 bg-muted text-muted-foreground border-border"/></div>
         </div>)}</div>
     </section>
+
+    <CashFlowChart />
 
     <div className="grid gap-3 lg:grid-cols-3">
       <FinancePath title="Customer money" description="Quotation / work order → customer invoice → collection receipt. Service records must have a Site; retail remains explicitly retail." action="Open collections" onClick={() => setActiveModule("payments")}/>

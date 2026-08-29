@@ -16,6 +16,7 @@ import { configureWorkspaceOutboxScope } from "@/lib/uploads/workspace-outbox";
 const DetailPanel = React.lazy(() => import("./DetailPanelWithHistory").then((module) => ({ default: module.DetailPanelWithHistory })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
+import { OnboardingWizard } from "./OnboardingWizard";
 import { PromptDialogProvider } from "./PromptDialog";
 import { ConfirmDialogProvider } from "./ConfirmDialog";
 const ActionDialogsHost = React.lazy(() => import("./ActionDialogs").then((module) => ({ default: module.ActionDialogsHost })));
@@ -209,6 +210,7 @@ export function RDashApp() {
           <React.Suspense fallback={null}>
             <QuickAddSheet open={quickAddOpen} onOpenChange={setQuickAddOpen}/>
           </React.Suspense>
+          <OnboardingWizard />
           <footer className="rd-sidebar-header mt-auto hidden shrink-0 items-center justify-between gap-2 border-t border-border px-[var(--page-pad)] py-2 text-[11px] text-muted-foreground md:flex">
             <div className="flex items-center gap-2">
               <span className="flex h-4 w-4 items-center justify-center rounded bg-primary/10 text-[8px] font-black text-primary">

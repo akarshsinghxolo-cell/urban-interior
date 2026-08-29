@@ -3,6 +3,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { MODULE_GROUPS } from "@/lib/rdash/modules";
+import { commandMatchScore, compareCommandMatches } from "@/lib/rdash/command-palette-score";
 import { relativeTime } from "@/lib/rdash/format";
 import {
     Search, CornerDownLeft, Zap, UserPlus, ListPlus, FilePlus2, MapPinPlus, PhoneCall,
@@ -235,10 +236,18 @@ export function CommandPalette() {
                 .sort((a, b) => a.groupPriority - b.groupPriority || a.label.localeCompare(b.label))
                 .slice(0, 50);
         }
-        const ql = q.toLowerCase();
+        // Score matches by text quality (exact label > prefix > substring >
+        // group > keywords) before falling back to group ordering, so typing
+        // "Finance" selects the Finance module — not the first submodule whose
+        // nav group happens to be named "Finance".
         return commands
-            .filter((c) => c.label.toLowerCase().includes(ql) || c.group.toLowerCase().includes(ql) || (c.keywords || "").toLowerCase().includes(ql))
-            .sort((a, b) => a.groupPriority - b.groupPriority || a.label.localeCompare(b.label))
+            .map((c) => ({ item: c, matchScore: commandMatchScore(c, q) }))
+            .filter((entry) => entry.matchScore >= 0)
+            .sort((a, b) => compareCommandMatches(
+                { matchScore: a.matchScore, groupPriority: a.item.groupPriority, label: a.item.label },
+                { matchScore: b.matchScore, groupPriority: b.item.groupPriority, label: b.item.label },
+            ))
+            .map((entry) => entry.item)
             .slice(0, 100);
     }, [commands, q]);
     const grouped = React.useMemo(() => {

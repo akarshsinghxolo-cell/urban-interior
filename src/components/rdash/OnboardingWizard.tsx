@@ -85,6 +85,7 @@ const STEPS: Step[] = [
 export function OnboardingWizard() {
   const [show, setShow] = React.useState(false);
   const [step, setStep] = React.useState(0);
+  const dialogRef = React.useRef<HTMLDivElement | null>(null);
 
   // Check localStorage on mount — show if not completed
   React.useEffect(() => {
@@ -101,6 +102,20 @@ export function OnboardingWizard() {
     setShow(false);
   }, []);
 
+  // Escape dismisses (the backdrop div never receives keyboard focus, so the
+  // handler must live on the document while the wizard is open).
+  React.useEffect(() => {
+    if (!show) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        dismiss();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [show, dismiss]);
+
   if (!show) return null;
 
   const current = STEPS[step];
@@ -108,9 +123,14 @@ export function OnboardingWizard() {
   const isLast = step === STEPS.length - 1;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={dismiss}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in" onClick={dismiss}>
       <div
-        className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl animate-scale-in"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        className="relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl animate-scale-in rd-scroll"
+        style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom, 0px))" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -147,7 +167,7 @@ export function OnboardingWizard() {
         </div>
 
         {/* Title + description */}
-        <h2 className="text-center text-lg font-bold tracking-tight">{current.title}</h2>
+        <h2 id="onboarding-title" className="text-center text-lg font-bold tracking-tight">{current.title}</h2>
         <p className="mt-1.5 text-center text-sm text-muted-foreground">{current.description}</p>
 
         {/* Tips */}

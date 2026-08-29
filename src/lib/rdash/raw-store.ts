@@ -16,6 +16,8 @@ import { deletedWorkspaceOperationVersionKeys, workspaceRowVersionState } from "
 import { invalidateWorkspaceClientCaches } from "./client-auth";
 import { beginWorkspaceOutboxResetBarrier, cancelWorkspaceOutboxResetBarrier, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";
 import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
+import { persistWorkspaceTabs, restoreWorkspaceTabs } from "./tab-persistence";
+import { isRegisteredModuleId, resolveRenderer } from "./modules";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
 import { attendancePolicyForStaff, attendancePolicyForVisit, createDefaultAttendancePolicy } from "./attendance-policy";
 // Re-export UI types from the store/ subfolder (Phase 1 split)
@@ -252,9 +254,17 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         });
     };
     const commitState = (partial: StateUpdate) => {
+        // Persist the tab strip whenever a commit touches it (open/close/activate
+        // tabs) so a reload restores the same working set.
+        const maybePersistTabs = (previous: { tabs?: WorkspaceTab[]; activeTabId?: string | null }, next: Partial<RDashState>) => {
+            if (!("tabs" in next) && !("activeTabId" in next)) return;
+            const merged = { ...previous, ...next } as { tabs: WorkspaceTab[]; activeTabId: string | null };
+            if (Array.isArray(merged.tabs)) persistWorkspaceTabs(merged.tabs, merged.activeTabId);
+        };
         if (activeWorkspaceTransaction) {
             setBase((state) => {
                 const next = typeof partial === "function" ? partial(state) : partial;
+                maybePersistTabs(state, next);
                 if (!next.db)
                     return next;
                 if (!activeWorkspaceTransaction!.baselineDb) {
@@ -269,6 +279,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         let persisted: RDashDatabase | null = null;
         setBase((state) => {
             const next = typeof partial === "function" ? partial(state) : partial;
+            maybePersistTabs(state, next);
             if (!next.db)
                 return next;
             const db = attachCustomerLabels(applyVendorRateAverages(state.db, next.db));
@@ -375,19 +386,32 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
     const coreSlice = createCoreSlice(ctx);
     // UI slice (Phase 3o) — 31 UI actions. State field initializers stay inline below.
     const uiSlice = createUISlice(ctx);
+    // Tab persistence: restore the session's open tab strip across reloads
+    // (labels re-resolved from the registry; unknown moduleIds dropped).
+    const restoredTabs = restoreWorkspaceTabs((moduleId) => {
+        try {
+            if (!isRegisteredModuleId(moduleId)) return null;
+            const resolved = resolveRenderer(moduleId);
+            return { label: resolved.label, icon: resolved.icon };
+        } catch {
+            return null;
+        }
+    });
     const state: RDashState = {
         db: createEmptyWorkspaceDatabase(),
-        activeModuleId: "workdesk",
+        activeModuleId: restoredTabs?.activeTabId && restoredTabs.tabs.find((tab) => tab.id === restoredTabs.activeTabId)?.moduleId
+            ? (restoredTabs.tabs.find((tab) => tab.id === restoredTabs.activeTabId) as WorkspaceTab).moduleId
+            : "workdesk",
         moduleHistory: [
             { id: "nav-today", moduleId: "workdesk", label: "Today", icon: "🗂️" },
         ],
         moduleHistoryIndex: 0,
         moduleSearch: "",
         workspaceSearch: "",
-        tabs: [
+        tabs: restoredTabs?.tabs ?? [
             { id: "tab-today", moduleId: "workdesk", label: "🗂️ Today", icon: "🗂️" },
         ],
-        activeTabId: "tab-today",
+        activeTabId: restoredTabs?.activeTabId ?? "tab-today",
         selectedCustomerId: null,
         mobileNavOpen: false,
         sidebarCollapsed: false,

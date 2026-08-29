@@ -6,7 +6,7 @@ import { formatINR, formatINRShort } from "@/lib/rdash/format";
 import { cn } from "@/lib/utils";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  ResponsiveContainer,
 } from "recharts";
 
 /**

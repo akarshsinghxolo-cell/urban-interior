@@ -2,6 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { NotificationSettings } from "../NotificationSettings";
+import { ProfileNameEditor } from "../ProfileNameEditor";
 import { Search, Wallet, FileText, MapPin, Building2, Users, Package, Wrench, BarChart3, Settings as SettingsIcon, Database, Inbox, Download, Upload, History, ShieldCheck, Workflow, ArrowLeft, CheckSquare, Play, Pause, CheckCircle2, Phone, Plus, Sun, Moon, Pencil, } from "lucide-react";
 import { useRDashStore, type SavedView } from "@/lib/rdash/store";
 import { MetricCard, StatusBadge, Avatar, EmptyState, WorkflowChip, WorkflowConnector } from "../primitives";
@@ -659,7 +660,6 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
     const activeSubmoduleId = moduleId;
     const { theme, setTheme } = useTheme();
     const role = useRDashStore((s) => s.authUser?.role || "Unauthenticated");
-    const authUser = useRDashStore((s) => s.authUser);
     const addStaff = useRDashStore((s) => s.addStaff);
     const [editStaffId, setEditStaffId] = React.useState<string | undefined>(undefined);
     const [staffEditOpen, setStaffEditOpen] = React.useState(false);
@@ -692,7 +692,7 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
               <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary"><Users className="h-4 w-4"/></span>
               <h3 className="text-sm font-semibold">Active Role</h3>
             </div>
-            <p className="mb-1 text-xs text-muted-foreground">Signed in as <span className="font-semibold text-foreground">{authUser?.name || "Authenticated user"}</span></p>
+            <p className="mb-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">Signed in as <ProfileNameEditor /></p>
             <p className="text-xs text-muted-foreground">Server-assigned role: <span className="font-semibold text-foreground">{role}</span></p>
             <p className="mt-3 text-[11px] text-muted-foreground">Role changes are managed by the administrator in the server role registry and cannot be changed from this browser.</p>
           </div>
