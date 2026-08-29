@@ -6,9 +6,10 @@ import { useRDashStore } from "@/lib/rdash/store";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import { MetricCard, Avatar, StatusBadge, EmptyState } from "../primitives";
 import { formatINR, formatDate, indiaBusinessDate, relativeDay, titleCase } from "@/lib/rdash/format";
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, MapPin, CheckCircle2, DollarSign, ClipboardList, Truck, Plus, } from "lucide-react";
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, MapPin, CheckCircle2, DollarSign, ClipboardList, Truck, Plus, Download, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { buildCalendarICS, type IcsEventInput } from "@/lib/rdash/calendar-ics";
 type EventType = "visit" | "task" | "payment" | "delivery";
 interface CalEvent {
     id: string;
@@ -137,11 +138,39 @@ export function CalendarModule() {
             <p className="text-xs text-muted-foreground">Visits, tasks, payments and deliveries in one view</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <Button size="sm" variant="outline" onClick={() => setCursor(new Date(year, month - 1, 1))}><ChevronLeft className="h-4 w-4"/></Button>
           <span className="min-w-[140px] text-center text-sm font-semibold">{monthName}</span>
           <Button size="sm" variant="outline" onClick={() => setCursor(new Date(year, month + 1, 1))}><ChevronRight className="h-4 w-4"/></Button>
           <Button size="sm" variant="ghost" onClick={() => { setCursor(new Date()); setSelectedDate(ymd(new Date())); }}>Today</Button>
+          <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={() => {
+            const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+            const monthEvents = allEvents.filter((e) => e.date.startsWith(monthPrefix) && filter.has(e.type));
+            if (monthEvents.length === 0) {
+                toast.info("No events in this month to export");
+                return;
+            }
+            const icsEvents: IcsEventInput[] = monthEvents.map((e) => ({
+                uid: `${e.id}@urban-castle`,
+                title: e.title,
+                date: e.date,
+                time: e.time,
+                description: [e.subtitle, e.status ? `Status: ${e.status}` : null, e.amount != null ? `Amount: ${formatINR(e.amount)}` : null].filter(Boolean).join(" · ") || undefined,
+            }));
+            const ics = buildCalendarICS(icsEvents, { calendarName: `Urban Castle — ${monthName}` });
+            const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `urban-castle-${monthPrefix}.ics`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            toast.success(`Exported ${monthEvents.length} events — open the file to add them to your calendar`);
+        }} title="Download this month as an .ics file for your phone calendar">
+            <Download className="h-3.5 w-3.5"/> .ics
+          </Button>
         </div>
       </div>
 
@@ -163,20 +192,20 @@ export function CalendarModule() {
         })}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
+        <div className="min-w-0 rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
           <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => <div key={d} className="py-1">{d}</div>)}
           </div>
           <div className="grid grid-cols-7 gap-1">
             {cells.map((d, i) => {
             if (!d)
-                return <div key={i} className="aspect-square rounded-md bg-muted/20"/>;
+                return <div key={i} className="h-16 rounded-md bg-muted/20 sm:aspect-square sm:h-auto"/>;
             const key = ymd(d);
             const dayEvents = eventsByDate.get(key) || [];
             const isToday = key === today;
             const isSelected = key === selectedDate;
-            return (<button key={i} type="button" onClick={() => setSelectedDate(key)} className={cn("relative flex aspect-square flex-col items-start gap-0.5 rounded-md border p-1 text-left transition-all hover:border-primary/40 hover:shadow-sm", isSelected ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border bg-background", isToday && !isSelected && "border-primary/40 bg-primary/[0.03]")}>
+            return (<button key={i} type="button" onClick={() => setSelectedDate(key)} className={cn("relative flex h-16 flex-col items-start gap-0.5 rounded-md border p-1 text-left transition-all hover:border-primary/40 hover:shadow-sm sm:aspect-square sm:h-auto", isSelected ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-border bg-background", isToday && !isSelected && "border-primary/40 bg-primary/[0.03]")}>
                   <span className={cn("text-xs font-semibold", isToday ? "text-primary" : "text-foreground")}>{d.getDate()}</span>
                   <div className="flex flex-1 flex-col gap-0.5 overflow-hidden">
                     {dayEvents.slice(0, 3).map((e) => {

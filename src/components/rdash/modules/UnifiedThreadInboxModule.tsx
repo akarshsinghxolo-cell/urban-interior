@@ -296,10 +296,10 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
     return (<div className="flex h-full flex-col gap-0">
         {/* Header */}
         <div className="shrink-0 border-b border-border bg-card/50 px-4 pb-3 pt-4">
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
+            <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 items-center gap-2.5">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><Inbox className="h-5 w-5"/></span>
-                    <div>
+                    <div className="min-w-0">
                         <h2 className="flex items-center gap-2 text-base font-bold tracking-tight text-foreground">
                             Thread Inbox
                             {unreadThreadCount > 0 && (
@@ -308,10 +308,10 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                                 </span>
                             )}
                         </h2>
-                        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                            {db.threads.length} threads · {allFeed.length} messages
+                        <p className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span className="whitespace-nowrap">{db.threads.length} threads · {allFeed.length} messages</span>
                             {recentMessageCount > 0 && (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                                <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
                                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success"/>
                                     {recentMessageCount} new · {recentThreadCount} active
                                 </span>
@@ -319,14 +319,14 @@ export function UnifiedThreadInboxModule({ entityTypeFilter, statusFilter }: { e
                         </p>
                     </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex w-full items-center gap-2 sm:w-auto sm:shrink-0">
                     {unreadThreadCount > 0 && (
-                        <button type="button" onClick={markAllRead} className="inline-flex h-9 items-center gap-1 rounded-lg border border-border bg-card px-2.5 text-[11px] font-medium text-muted-foreground transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary hover:shadow-sm" title={`Mark all ${unreadThreadCount} unread threads as read`}>
+                        <button type="button" onClick={markAllRead} className="inline-flex h-9 shrink-0 items-center gap-1 rounded-lg border border-border bg-card px-2.5 text-[11px] font-medium text-muted-foreground transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary hover:shadow-sm" title={`Mark all ${unreadThreadCount} unread threads as read`}>
                             <CheckCheck className="h-3.5 w-3.5"/>
                             <span className="hidden sm:inline">Mark all read</span>
                         </button>
                     )}
-                    <div className="relative w-32 shrink-0 sm:w-52">
+                    <div className="relative min-w-0 flex-1 sm:w-52 sm:shrink-0">
                         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"/>
                         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search messages…" className="h-9 rounded-lg bg-muted/40 pl-8 pr-2 text-xs"/>
                     </div>
@@ -515,13 +515,13 @@ function InboxMessageCard({ message: m, thread, onOpen, isPinned, onTogglePin, i
                 ) : (
                     <Avatar name={m.author_name} size={24}/>
                 )}
-                <span className="text-xs font-semibold text-foreground">{m.author_name || "System"}</span>
-                {m.author_role && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{m.author_role}</span>}
+                <span className="min-w-0 truncate text-xs font-semibold text-foreground">{m.author_name || "System"}</span>
+                {m.author_role && <span className="hidden rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground sm:inline">{m.author_role}</span>}
                 {/* Kind badge */}
                 {kindBadgeLabel && (
-                    <span className={cn("rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider", kindTone)}>{kindBadgeLabel}</span>
+                    <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider", kindTone)}>{kindBadgeLabel}</span>
                 )}
-                <span title={formatDate(m.created_at)} className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground/70"><Clock className="h-2.5 w-2.5 opacity-50"/>{relativeDay(m.created_at)}</span>
+                <span title={formatDate(m.created_at)} className="hidden shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground/70 sm:inline-flex"><Clock className="h-2.5 w-2.5 opacity-50"/>{relativeDay(m.created_at)}</span>
                 {/* Entity context badge — colored by entity type */}
                 <button type="button" onClick={onOpen} className={cn("ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold transition-colors", entityTone)} title={`Open ${entityLabel}: ${thread.title}`}>
                     <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60"/>
@@ -534,17 +534,17 @@ function InboxMessageCard({ message: m, thread, onOpen, isPinned, onTogglePin, i
                 <MessageBody body={m.body}/>
                 {/* Thread title link + actions */}
                 <div className="mt-2 flex items-center gap-2">
-                    <button type="button" onClick={onOpen} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-primary">
-                        <MessagesSquare className="h-3 w-3"/>
-                        <span className="max-w-md truncate">{thread.title}</span>
+                    <button type="button" onClick={onOpen} className="inline-flex min-w-0 flex-1 items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-primary">
+                        <MessagesSquare className="h-3 w-3 shrink-0"/>
+                        <span className="max-w-full truncate">{thread.title}</span>
                     </button>
-                    {/* Pin/unpin button — always visible if pinned, hover-only otherwise */}
-                    <button type="button" onClick={onTogglePin} className={cn("inline-flex items-center gap-0.5 text-[10px] font-medium transition-all hover:underline", isPinned ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100")} title={isPinned ? "Unpin thread" : "Pin thread for quick access"}>
+                    {/* Pin/unpin button — always visible on touch, hover-reveal on desktop */}
+                    <button type="button" onClick={onTogglePin} className={cn("inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium transition-all hover:underline sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100", isPinned ? "text-primary opacity-100" : "text-muted-foreground")} title={isPinned ? "Unpin thread" : "Pin thread for quick access"}>
                         {isPinned ? <Pin className="h-3 w-3 fill-primary"/> : <Pin className="h-3 w-3"/>}
                         {isPinned ? "Pinned" : "Pin"}
                     </button>
                     {/* Mark as unread / read toggle */}
-                    <button type="button" onClick={onToggleUnread} className={cn("inline-flex items-center gap-0.5 text-[10px] font-medium transition-all hover:underline", isUnread ? "text-primary opacity-100" : "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100")} title={isUnread ? "Mark as read" : "Mark as unread"}>
+                    <button type="button" onClick={onToggleUnread} className={cn("inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium transition-all hover:underline sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100", isUnread ? "text-primary opacity-100" : "text-muted-foreground")} title={isUnread ? "Mark as read" : "Mark as unread"}>
                         {isUnread ? <CheckCheck className="h-3 w-3"/> : <Circle className="h-3 w-3"/>}
                         {isUnread ? "Read" : "Unread"}
                     </button>
@@ -555,12 +555,12 @@ function InboxMessageCard({ message: m, thread, onOpen, isPinned, onTogglePin, i
                             () => toast.success("Message copied to clipboard"),
                             () => toast.error("Could not copy to clipboard"),
                         );
-                    }} className="inline-flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100" title="Copy message to clipboard">
+                    }} className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-muted-foreground transition-opacity hover:underline sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100" title="Copy message to clipboard">
                         <Copy className="h-3 w-3"/>Copy
                     </button>
                     {/* Quick reply toggle — only for comment/decision/proof (not system/alert) */}
                     {!isSystem && !isAlert && (
-                        <button type="button" onClick={() => setShowReply((v) => !v)} className="inline-flex items-center gap-0.5 text-[10px] font-medium text-primary opacity-0 transition-opacity hover:underline group-hover:opacity-100 focus-visible:opacity-100" title="Quick reply">
+                        <button type="button" onClick={() => setShowReply((v) => !v)} className="inline-flex shrink-0 items-center gap-0.5 text-[10px] font-medium text-primary transition-opacity hover:underline sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100" title="Quick reply">
                             <Send className="h-3 w-3"/>Reply
                         </button>
                     )}

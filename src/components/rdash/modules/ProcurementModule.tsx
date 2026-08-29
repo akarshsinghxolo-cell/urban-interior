@@ -1034,33 +1034,41 @@ function CreatePODialog(props: CreatePODialogProps) {
               Edited rates will be saved to the selected vendor’s exact material price matrix with a PO source history entry.
             </p>)}
           <div className="overflow-x-auto rd-scroll rounded-lg border border-border">
-            <div className="min-w-[560px]">
-            <div className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_auto] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="min-w-0 sm:min-w-[560px]">
+            <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_auto]">
               <span>Submodule material</span>
               <span className="text-right">Qty</span>
               <span className="text-right">Rate</span>
               <span className="text-right">Amount</span>
               <span className="text-center">—</span>
             </div>
-            {resolvedRows.map((r) => (<div key={r.row.id} className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_auto] items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-0">
-                <SearchableMaterialPicker value={r.row.work_required_article_id} options={catalogOptions} onChange={(workRequiredArticleId) => onUpdateRow(r.row.id, {
+            {resolvedRows.map((r) => (<div key={r.row.id} className="grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-2 text-xs last:border-0 sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_auto]">
+                <div className="col-span-4 min-w-0 sm:col-span-1">
+                  <SearchableMaterialPicker value={r.row.work_required_article_id} options={catalogOptions} onChange={(workRequiredArticleId) => onUpdateRow(r.row.id, {
                 work_required_article_id: workRequiredArticleId,
                 rate: null,
             })}/>
-                <input type="number" min={0} step="any" value={r.row.quantity} onChange={(e) => onUpdateRow(r.row.id, {
+                </div>
+                <div className="flex h-8 items-center gap-1 rounded-md border border-input bg-card px-2 font-mono outline-none ring-ring focus-within:ring-2">
+                  <span aria-hidden className="text-[10px] font-semibold text-muted-foreground sm:hidden">×</span>
+                  <input aria-label="Quantity" type="number" min={0} step="any" value={r.row.quantity} onChange={(e) => onUpdateRow(r.row.id, {
                 quantity: Number(e.target.value) || 0,
-            })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-right font-mono text-xs outline-none ring-ring focus-visible:ring-2"/>
-                <input aria-label={`${r.article?.name || "Material"} exact vendor rate`} type="number" min={0} step="0.01" disabled={!form.vendor_id || !r.scope} value={r.row.rate ?? (r.vendorRate?.quoted_rate ?? "")} onChange={(event) => {
+            })} className="h-full w-full min-w-0 bg-transparent text-right outline-none"/>
+                </div>
+                <div className={cn("flex h-8 items-center gap-1 rounded-md border border-input px-2 font-mono outline-none ring-ring focus-within:ring-2", !form.vendor_id || !r.scope ? "bg-muted text-muted-foreground" : "bg-card")}>
+                  <span aria-hidden className="text-[10px] font-semibold text-muted-foreground sm:hidden">₹</span>
+                  <input aria-label={`${r.article?.name || "Material"} exact vendor rate`} type="number" min={0} step="0.01" disabled={!form.vendor_id || !r.scope} value={r.row.rate ?? (r.vendorRate?.quoted_rate ?? "")} onChange={(event) => {
                 const input = event.target.value;
                 const next = Number(input);
                 onUpdateRow(r.row.id, {
                     rate: input === "" || !Number.isFinite(next) ? null : Math.max(0, next),
                 });
-            }} placeholder={form.vendor_id ? "Enter rate" : "Select vendor"} className="h-8 w-full rounded-md border border-input bg-card px-2 text-right font-mono text-xs outline-none ring-ring focus-visible:ring-2 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"/>
+            }} placeholder={form.vendor_id ? "Enter rate" : "Select vendor"} className="h-full w-full min-w-0 bg-transparent text-right outline-none disabled:cursor-not-allowed disabled:bg-transparent disabled:text-muted-foreground"/>
+                </div>
                 <span className="text-right font-mono font-semibold">
                   {formatINR(r.amount)}
                 </span>
-                <button type="button" onClick={() => onRemoveRow(r.row.id)} className="mx-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40" disabled={resolvedRows.length === 1} title="Remove row">
+                <button type="button" onClick={() => onRemoveRow(r.row.id)} className="mx-auto flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-40" disabled={resolvedRows.length === 1} title="Remove row" aria-label={`Remove ${r.article?.name || "material"} row`}>
                   <Trash2 className="h-3.5 w-3.5"/>
                 </button>
               </div>))}

@@ -436,21 +436,21 @@ export function ReportsModule({ reportId }: {
         toast.success(`${title} PDF opened in a new window — use "Save as PDF" in the print dialog`);
     };
     return (<div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <BarChart3 className="h-5 w-5"/>
           </span>
-          <div>
-            <h2 className="text-lg font-bold tracking-tight">{titleFor(id)}</h2>
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold tracking-tight text-balance">{titleFor(id)}</h2>
             <p className="text-xs text-muted-foreground">{subtitleFor(id)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportPdf}>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+          <Button variant="outline" size="sm" onClick={exportPdf} className="shrink-0 whitespace-nowrap">
             <FileText className="mr-1.5 h-3.5 w-3.5"/> Export PDF
           </Button>
-          <Button variant="outline" size="sm" onClick={exportCsv}>
+          <Button variant="outline" size="sm" onClick={exportCsv} className="shrink-0 whitespace-nowrap">
             <Download className="mr-1.5 h-3.5 w-3.5"/> Export CSV
           </Button>
         </div>
