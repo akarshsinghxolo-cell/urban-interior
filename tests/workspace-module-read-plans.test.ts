@@ -42,6 +42,9 @@ const EXACT_MODULES = [
   "userApprovals",
   "approvalPolicies",
   "auditLog",
+  "controlBrainWorkflows",
+  "dataImport",
+  "systemSettings",
   "customerTimeline",
   "customerRequests",
   "salesPipeline",
@@ -77,7 +80,6 @@ describe("exact module workspace read plans", () => {
       "hrStaff",
       "masterSetup",
       "reportsDesk",
-      "systemSettings",
       "integrity",
     ]) {
       const target = workspaceReadTargetForModule(moduleId);

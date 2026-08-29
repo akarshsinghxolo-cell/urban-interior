@@ -3,7 +3,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Search, UserPlus, FilePlus2, Phone, MapPin, Mail, MessageCircle, Navigation, CalendarClock, Wallet, FileText, ListChecks, Activity, Building, Plus, Ruler, CheckCircle2, AlertTriangle, Pencil, Package, Truck, Receipt, Send, } from "lucide-react";
 import { useRDashStore, siteFinancials, type ContextCustomerTab } from "@/lib/rdash/store";
-import { Avatar, StatusBadge, MetricCard, SectionHeader, EmptyState } from "../primitives";
+import { Avatar, CopyValueButton, StatusBadge, MetricCard, SectionHeader, EmptyState } from "../primitives";
 import { ContextRow, type ContextAction } from "../ContextMenuHost";
 import { buildCustomerActions, buildTaskActions, buildQuotationActions, buildPaymentActions, buildVisitActions } from "../recordActions";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
@@ -495,7 +495,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
           <div className="min-w-0">
             <h2 className="break-words text-lg font-bold leading-snug tracking-tight">{name}</h2>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-              {phone ? <a href={`tel:${phone}`} className="flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3"/>{phone}</a> : <span className="flex items-center gap-1"><Phone className="h-3 w-3"/>—</span>}
+              {phone ? <span className="inline-flex items-center gap-0.5"><a href={`tel:${phone}`} className="flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3"/>{phone}</a><CopyValueButton value={phone} label="Mobile number"/></span> : <span className="flex items-center gap-1"><Phone className="h-3 w-3"/>—</span>}
               {email && <a href={`mailto:${email}`} className="flex items-center gap-1 hover:text-primary"><Mail className="h-3 w-3"/>{email}</a>}
               {singleSite?.address && (mapHref ? <a href={mapHref} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary"><MapPin className="h-3 w-3"/>{singleSite.address}</a> : <span className="flex items-center gap-1"><MapPin className="h-3 w-3"/>{singleSite.address}</span>)}
               {sites.length > 1 && <span className="flex items-center gap-1"><Building className="h-3 w-3"/>{sites.length} Sites</span>}

@@ -185,7 +185,10 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem={true} disableTransitionOnChange>
       {bootstrapped ? <UrbanCastleApp historyEnabled={historyEnabled} /> : <WorkspaceRouteLoading />}
-      <Toaster richColors position="top-right" />
+      {/* One Toaster per route root. The shared wrapper (ui/sonner) picks the
+          responsive position itself — never pin position here, it used to force
+          top-right on phones and cover the sticky workspace header. */}
+      <Toaster richColors />
       {children}
     </ThemeProvider>
   );

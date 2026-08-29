@@ -40,7 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Avatar, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
+import { Avatar, CopyValueButton, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { EntityFormDialog } from "../EntityFormDialog";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 
@@ -277,7 +277,7 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
                   <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-xl font-bold">{selected.name}</h2><StatusBadge label={titleCase(selected.status || "active")} className={lifecycleClass(selected.status)} /></div>
                   <p className="mt-1 text-xs text-muted-foreground">{selected.legal_name && selected.legal_name !== selected.name ? `${selected.legal_name} · ` : ""}{mode === "vendor" ? selected.category || "Material supplier" : selected.trade || selected.categories?.join(", ") || "Trade contractor"}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                    {selected.phone && <a href={`tel:${selected.phone}`} className="inline-flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3" />{selected.phone}</a>}
+                    {selected.phone && <span className="inline-flex items-center gap-0.5"><a href={`tel:${selected.phone}`} className="inline-flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3" />{selected.phone}</a><CopyValueButton value={selected.phone} label="Mobile number" /></span>}
                     {(selected.locality || selected.city) && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{[selected.locality, selected.city].filter(Boolean).join(", ")}</span>}
                   </div>
                 </div>

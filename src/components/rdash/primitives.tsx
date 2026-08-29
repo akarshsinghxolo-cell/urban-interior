@@ -1,5 +1,7 @@
 "use client";
 import * as React from "react";
+import { Check, Copy } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { initials as toInitials } from "@/lib/rdash/format";
@@ -12,6 +14,39 @@ export function StatusBadge({ label, className, }: {
     return (<Badge variant="outline" title={display} className={cn("max-w-full shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", className)}>
       {display}
     </Badge>);
+}
+
+/** Click-to-copy affordance for phone/contact numbers — long-press selection is awkward on touch. */
+export function CopyValueButton({ value, label = "Number", className }: {
+    value: string;
+    label?: string;
+    className?: string;
+}) {
+    const [copied, setCopied] = React.useState(false);
+    const copy = React.useCallback(async (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(value);
+            setCopied(true);
+            toast.success(`${label} copied`, { description: value, duration: 2500 });
+            setTimeout(() => setCopied(false), 1600);
+        } catch {
+            toast.error("Copy failed — long-press the number to copy manually.");
+        }
+    }, [value, label]);
+    return (<button
+        type="button"
+        onClick={copy}
+        aria-label={`Copy ${label.toLowerCase()} ${value}`}
+        title={`Copy ${label.toLowerCase()} ${value}`}
+        className={cn(
+            "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+            copied && "text-success",
+            className,
+        )}>
+        {copied ? <Check className="h-3.5 w-3.5"/> : <Copy className="h-3.5 w-3.5"/>}
+    </button>);
 }
 
 const AVATAR_COLORS = [

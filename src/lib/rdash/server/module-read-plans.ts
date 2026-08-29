@@ -51,6 +51,9 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   userApprovals: Object.freeze(["staffRolePermissions", "auditLog"]),
   approvalPolicies: Object.freeze(["actions", "approvalPolicies", "auditLog"]),
   auditLog: Object.freeze(["auditLog"]),
+  controlBrainWorkflows: Object.freeze(["automationRules", "auditLog"]),
+  dataImport: Object.freeze(["customers", "sites"]),
+  systemSettings: Object.freeze(["customers", "quotations", "workOrders", "tasks", "visits", "master.staff"]),
 });
 
 type ExactPlan = {
