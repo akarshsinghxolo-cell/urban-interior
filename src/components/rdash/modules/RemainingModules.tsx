@@ -11,6 +11,7 @@ import {
   Layers,
   ListChecks,
   MapPin,
+  MessageCircle,
   Plus,
   Printer,
   ShieldCheck,
@@ -39,6 +40,7 @@ import {
   isWonSalesStatus,
 } from "@/lib/rdash/metrics";
 import { useRDashStore, type SavedView } from "@/lib/rdash/store";
+import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
 import type { DetailPanelKind } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { Avatar, EmptyState, MetricCard, StatusBadge } from "../primitives";
@@ -305,7 +307,13 @@ export function QuotationExtrasModule({ submodule }: { submodule: string }) {
         <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Printer className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Print / Export</h2><p className="text-xs text-muted-foreground">Generate PDF or print quotations for customers</p></div></div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><MetricCard label="Quotations" value={db.quotations.length} tone="primary" icon={<FileText className="h-4 w-4" />} /><MetricCard label="Ready to print" value={db.quotations.filter((quotation) => quotation.status !== "draft").length} tone="success" icon={<Printer className="h-4 w-4" />} /><MetricCard label="Drafts" value={db.quotations.filter((quotation) => quotation.status === "draft").length} tone="warning" icon={<FileText className="h-4 w-4" />} /><MetricCard label="Total value" value={formatINRShort(db.quotations.reduce((sum, quotation) => sum + quotation.total_amount, 0))} tone="default" icon={<DollarSign className="h-4 w-4" />} /></div>
         <div className="rd-stagger grid gap-3 lg:grid-cols-2">
-          {db.quotations.map((quotation) => <div key={quotation.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><div className="flex items-center justify-between"><div className="flex items-center gap-2.5"><Avatar name={quotation.customer_name || "Customer"} size={36} /><div><p className="text-sm font-bold">{quotation.quotation_no}</p><p className="text-[11px] text-muted-foreground">{quotation.customer_name || "Customer"} · {formatINR(quotation.total_amount)}</p></div></div><StatusBadge label={titleCase(quotation.status)} className={quotation.status === "accepted" ? "border-success/20 bg-success/10 text-success" : "border-primary/20 bg-primary/10 text-primary"} /></div><div className="mt-3 flex gap-2"><Button size="sm" variant="outline" className="text-xs" onClick={() => { openDetail("quotation", quotation.id); setTimeout(() => window.print(), 500); }}><Printer className="mr-1 h-3.5 w-3.5" /> Print</Button><Button size="sm" variant="outline" className="text-xs" onClick={() => openDetail("quotation", quotation.id)}><FileText className="mr-1 h-3.5 w-3.5" /> Open</Button></div></div>)}
+          {db.quotations.map((quotation) => <div key={quotation.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card"><div className="flex items-center justify-between"><div className="flex items-center gap-2.5"><Avatar name={quotation.customer_name || "Customer"} size={36} /><div><p className="text-sm font-bold">{quotation.quotation_no}</p><p className="text-[11px] text-muted-foreground">{quotation.customer_name || "Customer"} · {formatINR(quotation.total_amount)}</p></div></div><StatusBadge label={titleCase(quotation.status)} className={quotation.status === "accepted" ? "border-success/20 bg-success/10 text-success" : "border-primary/20 bg-primary/10 text-primary"} /></div><div className="mt-3 flex flex-wrap gap-2"><Button size="sm" variant="outline" className="text-xs" onClick={() => { openDetail("quotation", quotation.id); setTimeout(() => window.print(), 500); }}><Printer className="mr-1 h-3.5 w-3.5" /> Print</Button><Button size="sm" variant="outline" className="text-xs" onClick={async () => {
+            const outcome = await shareQuotationText(buildQuotationShareText(quotation));
+            if (outcome === "native-shared") toast.success("Quotation summary shared");
+            else if (outcome === "whatsapp-opened") toast.success("WhatsApp opened with the quotation summary");
+            else if (outcome === "copied") toast.success("Quotation summary copied — paste it in any chat");
+            else toast.error("Sharing was cancelled");
+          }}><MessageCircle className="mr-1 h-3.5 w-3.5" /> Share</Button><Button size="sm" variant="outline" className="text-xs" onClick={() => openDetail("quotation", quotation.id)}><FileText className="mr-1 h-3.5 w-3.5" /> Open</Button></div></div>)}
         </div>
       </div>
     );

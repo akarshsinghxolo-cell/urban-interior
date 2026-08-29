@@ -12,12 +12,13 @@ import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
-import { X, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
+import { X, MessageCircle, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { areaDependencySummary } from "@/lib/rdash/business-rules";
+import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
 import { MapView, type MapPoint } from "./MapView";
 import { visitToMapPoints } from "./visitMap";
 import { promptDialog } from "./PromptDialog";
@@ -955,6 +956,15 @@ function QuotationOverview({ q }: {
         <Button size="sm" variant="outline" onClick={() => { toast.info("Opening print view…"); setTimeout(() => window.print(), 300); }} className="no-print">
           <Download className="mr-1.5 h-3.5 w-3.5"/> Print / PDF
         </Button>
+        <Button size="sm" variant="outline" className="no-print" onClick={async () => {
+          const outcome = await shareQuotationText(buildQuotationShareText(q));
+          if (outcome === "native-shared") toast.success("Quotation summary shared");
+          else if (outcome === "whatsapp-opened") toast.success("WhatsApp opened with the quotation summary");
+          else if (outcome === "copied") toast.success("Quotation summary copied — paste it in any chat");
+          else toast.error("Sharing was cancelled");
+        }}>
+          <MessageCircle className="mr-1.5 h-3.5 w-3.5"/> Share
+        </Button>
       </div>
       {reviseOpen && (<div className="mt-4 rounded-lg border border-primary/30 bg-primary/[0.04] p-3">
           <p className="mb-2 text-xs font-semibold">Create editable revision</p>
@@ -1114,7 +1124,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     };
     return (<div className="overflow-hidden rounded-lg border border-border">
 
-      <div className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr]">
         <span>Item</span>
         <span className="text-right">Qty</span>
         <span className="text-right">Rate</span>
@@ -1124,13 +1134,19 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
 
       {items.length === 0 ? (<div className="px-3 py-6 text-center text-xs text-muted-foreground">
           No line items yet. Click "Add item" to build the quotation.
-        </div>) : (items.map((it) => (<div key={it.id} className="group grid grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr] gap-2 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20">
-            <input type="text" defaultValue={it.title} onBlur={(e) => { if (e.target.value !== it.title)
-            updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
-            <input type="number" defaultValue={it.quantity} min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
-            updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
-            <input type="number" defaultValue={it.rate} min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
-            updateQuotationItem(quotationId, it.id, { rate: v }); }} className="rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono text-muted-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
+        </div>) : (items.map((it) => (<div key={it.id} className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr]">
+            <input type="text" defaultValue={it.title} aria-label="Item title" onBlur={(e) => { if (e.target.value !== it.title)
+            updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1"/>
+            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card">
+              <span aria-hidden className="text-[10px] font-semibold text-muted-foreground">×</span>
+              <input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
+            updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+            </div>
+            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground">
+              <span aria-hidden className="text-[10px] font-semibold">₹</span>
+              <input type="number" defaultValue={it.rate} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
+            updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+            </div>
             <span className="py-0.5 text-right font-mono font-semibold text-foreground">{formatINR(it.amount)}</span>
             <div className="flex items-center justify-center gap-0.5">
               <button type="button" onClick={() => setItemFilesId(it.id)} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Files for ${it.title}`} title="Line-item files"><Paperclip className="h-3 w-3"/></button>
@@ -1140,16 +1156,16 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             </div>
           </div>)))}
 
-      <div className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr] gap-2 bg-muted/30 px-3 py-2 text-xs font-bold">
+      <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr] sm:gap-2">
         <span>Subtotal</span>
-        <span />
-        <span />
+        <span className="hidden sm:block" />
+        <span className="hidden sm:block" />
         <span className="text-right font-mono text-primary">{formatINR(total)}</span>
-        <span />
+        <span className="hidden sm:block" />
       </div>
 
-      {adding ? (<div className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr] gap-2 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs">
-          <div ref={titleWrapRef} className="relative min-w-0">
+      {adding ? (<div className="grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr]">
+          <div ref={titleWrapRef} className="relative col-span-4 min-w-0 sm:col-span-1">
             <input type="text" value={newTitle} onChange={(e) => { setNewTitle(e.target.value); setShowSuggest(true); setSuggestIdx(-1); }} onKeyDown={(e) => {
                 if (e.key === "Enter") {
                     if (suggestIdx >= 0 && suggestions[suggestIdx]) {
@@ -1177,7 +1193,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                     setSuggestIdx((i) => Math.max(i - 1, 0));
                 }
             }} onFocus={() => setShowSuggest(true)} placeholder="Type to search articles…" autoFocus className="min-w-0 w-full rounded border border-border bg-card px-1.5 py-1 text-foreground outline-none focus:border-primary" role="combobox" aria-expanded={showSuggest && suggestions.length > 0} aria-controls="article-suggest-list" aria-activedescendant={suggestIdx >= 0 ? `article-suggest-${suggestIdx}` : undefined}/>
-            {showSuggest && suggestions.length > 0 && (<div id="article-suggest-list" role="listbox" className="absolute left-0 top-full z-50 mt-1 w-72 overflow-hidden rounded-md border border-border bg-card shadow-popover animate-scale-in">
+            {showSuggest && suggestions.length > 0 && (<div id="article-suggest-list" role="listbox" className="absolute left-0 top-full z-50 mt-1 w-full max-w-72 overflow-hidden rounded-md border border-border bg-card shadow-popover animate-scale-in sm:w-72">
                 <div className="border-b border-border bg-muted/30 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Articles</div>
                 {suggestions.map((s, i) => (<button key={s.article.id} id={`article-suggest-${i}`} role="option" aria-selected={i === suggestIdx} type="button" onMouseEnter={() => setSuggestIdx(i)} onMouseDown={(e) => { e.preventDefault(); applySuggestion(s); }} className={cn("flex w-full items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-left last:border-0 transition-colors", i === suggestIdx ? "bg-primary text-primary-foreground" : "hover:bg-accent")}>
                     <div className="min-w-0 flex-1">
@@ -1190,13 +1206,19 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                   </button>))}
               </div>)}
           </div>
-          <input type="number" value={newQty} onChange={(e) => setNewQty(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
+          <div className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 font-mono outline-none focus-within:border-primary">
+            <span aria-hidden className="text-[10px] font-semibold text-muted-foreground sm:hidden">×</span>
+            <input type="number" value={newQty} aria-label="Quantity" placeholder="Qty" onChange={(e) => setNewQty(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
             handleAdd(); if (e.key === "Escape")
-            setAdding(false); }} min="0" step="0.01" className="rounded border border-border bg-card px-1.5 py-1 text-right font-mono outline-none focus:border-primary"/>
-          <input type="number" value={newRate} onChange={(e) => setNewRate(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
+            setAdding(false); }} min="0" step="0.01" className="min-w-0 w-full bg-transparent text-right outline-none"/>
+          </div>
+          <div className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 font-mono text-muted-foreground outline-none focus-within:border-primary focus-within:text-foreground">
+            <span aria-hidden className="text-[10px] font-semibold sm:hidden">₹</span>
+            <input type="number" value={newRate} aria-label="Rate" onChange={(e) => setNewRate(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
             handleAdd(); if (e.key === "Escape")
-            setAdding(false); }} min="0" step="1" placeholder="auto" className="rounded border border-border bg-card px-1.5 py-1 text-right font-mono outline-none focus:border-primary"/>
-          <span className="py-1 text-right font-mono text-muted-foreground">—</span>
+            setAdding(false); }} min="0" step="1" placeholder="auto" className="min-w-0 w-full bg-transparent text-right outline-none"/>
+          </div>
+          <span className="hidden py-1 text-right font-mono text-muted-foreground sm:block">—</span>
           <div className="flex items-center justify-center gap-0.5">
             <button type="button" onClick={handleAdd} className="rounded p-1 text-primary hover:bg-primary/10" aria-label="Confirm add"><Plus className="h-3.5 w-3.5"/></button>
             <button type="button" onClick={() => setAdding(false)} className="rounded p-1 text-muted-foreground hover:bg-accent" aria-label="Cancel add"><X className="h-3.5 w-3.5"/></button>
@@ -1254,7 +1276,7 @@ function QuotationMilestoneEditor({ quotationId, milestones, totalAmount, }: {
     };
     return (<div className="overflow-hidden rounded-lg border border-border">
 
-      <div className="grid grid-cols-[1.5fr_0.5fr_1fr_0.3fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.5fr_0.5fr_1fr_0.3fr]">
         <span>Milestone</span>
         <span className="text-right">%</span>
         <span>Due event</span>
@@ -1263,10 +1285,10 @@ function QuotationMilestoneEditor({ quotationId, milestones, totalAmount, }: {
 
       {milestones.length === 0 ? (<div className="px-3 py-6 text-center text-xs text-muted-foreground">
           No milestones. Add payment stages (e.g. Advance 30%, On delivery 50%, On handover 20%).
-        </div>) : (milestones.map((m) => (<div key={m.id} className="group grid grid-cols-[1.5fr_0.5fr_1fr_0.3fr] gap-2 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20">
-            <input type="text" defaultValue={m.label} onBlur={(e) => { if (e.target.value !== m.label)
-            updateMilestone(quotationId, m.id, { label: e.target.value }); }} className="min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
-            <input type="number" defaultValue={m.percentage} min="0" max="100" step="5" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== m.percentage)
+        </div>) : (milestones.map((m) => (<div key={m.id} className="group grid grid-cols-[3.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.5fr_0.5fr_1fr_0.3fr]">
+            <input type="text" defaultValue={m.label} aria-label="Milestone label" onBlur={(e) => { if (e.target.value !== m.label)
+            updateMilestone(quotationId, m.id, { label: e.target.value }); }} className="col-span-3 min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1"/>
+            <input type="number" defaultValue={m.percentage} aria-label="Percentage" min="0" max="100" step="5" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== m.percentage)
             updateMilestone(quotationId, m.id, { percentage: v }); }} className="rounded border border-transparent bg-transparent px-1 py-0.5 text-right font-mono hover:border-border focus:border-primary focus:bg-card focus:outline-none"/>
             <select defaultValue={m.due_event} onChange={(e) => updateMilestone(quotationId, m.id, { due_event: e.target.value })} className="min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-muted-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none">
               {DUE_EVENTS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
@@ -1276,17 +1298,17 @@ function QuotationMilestoneEditor({ quotationId, milestones, totalAmount, }: {
             </button>
           </div>)))}
 
-      <div className={cn("grid grid-cols-[1.5fr_0.5fr_1fr_0.3fr] gap-2 px-3 py-2 text-xs font-bold", isOver ? "bg-destructive/10" : isComplete ? "bg-success/10" : "bg-muted/30")}>
+      <div className={cn("flex items-center justify-between gap-2 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[1.5fr_0.5fr_1fr_0.3fr] sm:gap-2", isOver ? "bg-destructive/10" : isComplete ? "bg-success/10" : "bg-muted/30")}>
         <span>Total</span>
         <span className={cn("text-right font-mono", isOver ? "text-destructive" : isComplete ? "text-success" : "text-foreground")}>{totalPct}%</span>
-        <span className="font-mono font-semibold text-muted-foreground">{formatINR(Math.round(totalAmount * totalPct / 100))}</span>
-        <span></span>
+        <span className="text-right font-mono font-semibold text-muted-foreground sm:text-left">{formatINR(Math.round(totalAmount * totalPct / 100))}</span>
+        <span className="hidden sm:block"></span>
       </div>
 
-      {adding ? (<div className="grid grid-cols-[1.5fr_0.5fr_1fr_0.3fr] gap-2 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs">
-          <input type="text" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
+      {adding ? (<div className="grid grid-cols-[3.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs sm:grid-cols-[1.5fr_0.5fr_1fr_0.3fr]">
+          <input type="text" value={newLabel} aria-label="Milestone label" onChange={(e) => setNewLabel(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
             handleAdd(); if (e.key === "Escape")
-            setAdding(false); }} placeholder="Milestone label…" autoFocus className="min-w-0 rounded border border-border bg-card px-1.5 py-1 text-foreground outline-none focus:border-primary"/>
+            setAdding(false); }} placeholder="Milestone label…" autoFocus className="col-span-3 min-w-0 rounded border border-border bg-card px-1.5 py-1 text-foreground outline-none focus:border-primary sm:col-span-1"/>
           <input type="number" value={newPct} onChange={(e) => setNewPct(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
             handleAdd(); if (e.key === "Escape")
             setAdding(false); }} min="0" max="100" step="5" className="rounded border border-border bg-card px-1.5 py-1 text-right font-mono outline-none focus:border-primary"/>
