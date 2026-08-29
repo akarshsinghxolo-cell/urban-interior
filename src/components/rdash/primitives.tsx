@@ -11,8 +11,12 @@ export function StatusBadge({ label, className, }: {
     className?: string;
 }) {
     const display = label.replaceAll("_", " ");
-    return (<Badge variant="outline" title={display} className={cn("max-w-full shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", className)}>
-      {display}
+    // The shadcn Badge is inline-flex; text-ellipsis on the container itself is
+    // ignored by flex layout and centered content clips on BOTH sides (mid-word
+    // on the left). The text therefore lives in an inner min-w-0 span whose own
+    // truncate gives a proper end-of-text ellipsis.
+    return (<Badge variant="outline" title={display} className={cn("max-w-full shrink-0 overflow-hidden rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", className)}>
+      <span className="min-w-0 truncate">{display}</span>
     </Badge>);
 }
 

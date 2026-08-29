@@ -16,6 +16,7 @@ import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { FilePreview } from "../FilePreview";
 import { attachedFileById, assetPreview } from "@/lib/rdash/file-attachments";
+import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 type PendingProof = QueuedWorkflowFile & {
     id: string;
     file_name: string;
@@ -403,14 +404,14 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
               <div className="grid gap-3 rounded-lg border border-primary/20 bg-primary/[0.025] p-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Receiving photos / proof <span className="text-destructive">*</span></label>
-                  <Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={(event) => captureProofs(event, "receiving")} className="h-8 text-xs"/>
+                  <ManagedFilePicker label="Add receiving proofs" accept={MANAGED_FILE_ACCEPT} multiple onPick={(event) => captureProofs(event, "receiving")} className="min-h-8 py-1.5 text-[11px]"/>
                   <p className="text-[10px] text-muted-foreground">At least one receiving file is required. Uploads start immediately and continue after the GRN dialog closes.</p>
                   {receivingProofs.length > 0 && <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">{receivingProofs.map((proof) => <div key={proof.id} className="relative"><FilePreview file={{ fileName: proof.file_name, mimeType: proof.mime_type, url: proof.url }} compact controls/><button type="button" onClick={() => void removeReceivingProof(proof)} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>)}</div>}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Delivery challan no. & proof <span className="text-destructive">*</span></label>
                   <Input value={challanNo} onChange={(event) => setChallanNo(event.target.value)} placeholder="e.g. DC-8745" className="h-8 text-xs"/>
-                  <Input type="file" accept={MANAGED_FILE_ACCEPT} onChange={(event) => captureProofs(event, "challan")} className="h-8 text-xs"/>
+                  <ManagedFilePicker label="Add challan copy" accept={MANAGED_FILE_ACCEPT} onPick={(event) => captureProofs(event, "challan")} className="min-h-8 py-1.5 text-[11px]"/>
                   <p className="text-[10px] text-muted-foreground">A challan image, video, or PDF is queued immediately and linked to the GRN.</p>
                   {challanProof && <div className="relative max-w-40"><FilePreview file={{ fileName: challanProof.file_name, mimeType: challanProof.mime_type, url: challanProof.url }} compact controls/><button type="button" onClick={() => void removeChallanProof()} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>}
                 </div>

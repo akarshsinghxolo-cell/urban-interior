@@ -28,10 +28,27 @@ export function WorkspaceTabs() {
     if (focusId) window.requestAnimationFrame(() => tabRefs.current.get(focusId)?.focus());
   }, [activeTabId, closeTab, tabs]);
 
+  // Keep the active module tab visible: on phones the strip overflows and a
+  // newly activated tab (opened from the nav drawer, command palette or FAB)
+  // can otherwise sit entirely outside the visible area with no indication
+  // of where the user landed.
+  const tablistRef = React.useRef<HTMLDivElement | null>(null);
+  React.useEffect(() => {
+    const strip = tablistRef.current;
+    const activeNode = activeTabId ? tabRefs.current.get(activeTabId) : undefined;
+    if (!strip || !activeNode || !strip.contains(activeNode)) return;
+    const centered = activeNode.offsetLeft - (strip.clientWidth - activeNode.offsetWidth) / 2;
+    const next = Math.max(0, Math.min(centered, strip.scrollWidth - strip.clientWidth));
+    if (Math.abs(strip.scrollLeft - next) > 1) {
+      strip.scrollTo({ left: next, behavior: "smooth" });
+    }
+  }, [activeTabId, tabs]);
+
   if (tabs.length === 0) return null;
 
   return (
     <div
+      ref={tablistRef}
       role="tablist"
       aria-label="Open workspace modules"
       aria-orientation="horizontal"

@@ -183,7 +183,7 @@ function CustomerQuotationDialog({ request, onClose }: {
                 </DialogHeader>
 
                 <div className="flex flex-col gap-3 py-2">
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <Field label="Customer *">
                         <Select value={customerId} onValueChange={(value) => {
                             const sites = db.sites.filter((site) => site.customer_id === value && !site.is_archived);
@@ -249,7 +249,7 @@ function CustomerQuotationDialog({ request, onClose }: {
                         )}
                     </Field>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <Field label="Quotation title">
                             <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Modular kitchen — 3BHK" autoFocus />
                         </Field>

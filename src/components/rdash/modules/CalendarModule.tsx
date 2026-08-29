@@ -10,6 +10,7 @@ import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, MapPin, CheckCircl
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { buildCalendarICS, type IcsEventInput } from "@/lib/rdash/calendar-ics";
+import { isIcsShareAbort, shareOrDownloadIcsFile } from "@/lib/rdash/calendar-share";
 type EventType = "visit" | "task" | "payment" | "delivery";
 interface CalEvent {
     id: string;
@@ -158,17 +159,18 @@ export function CalendarModule() {
                 description: [e.subtitle, e.status ? `Status: ${e.status}` : null, e.amount != null ? `Amount: ${formatINR(e.amount)}` : null].filter(Boolean).join(" · ") || undefined,
             }));
             const ics = buildCalendarICS(icsEvents, { calendarName: `Urban Castle — ${monthName}` });
-            const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `urban-castle-${monthPrefix}.ics`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            setTimeout(() => URL.revokeObjectURL(url), 1000);
-            toast.success(`Exported ${monthEvents.length} events — open the file to add them to your calendar`);
-        }} title="Download this month as an .ics file for your phone calendar">
+            const filename = `urban-castle-${monthPrefix}.ics`;
+            void (async () => {
+                try {
+                    const delivery = await shareOrDownloadIcsFile(ics, filename, `Urban Castle — ${monthName}`);
+                    toast.success(delivery === "shared"
+                        ? `Shared ${monthEvents.length} events — pick your calendar app to add them`
+                        : `Exported ${monthEvents.length} events — open the file to add them to your calendar`);
+                } catch (error) {
+                    if (!isIcsShareAbort(error)) toast.error("Calendar export failed — please try again");
+                }
+            })();
+        }} title="Share this month to your phone calendar (.ics)">
             <Download className="h-3.5 w-3.5"/> .ics
           </Button>
         </div>

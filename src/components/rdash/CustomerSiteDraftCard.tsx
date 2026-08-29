@@ -20,6 +20,7 @@ import {
   enqueueWorkflowFiles,
   withLocalPreview,
 } from "@/lib/uploads/workflow-upload";
+import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 import type { UploadBatchId } from "@/lib/uploads/upload-types";
 import {
   SITE_TYPES,
@@ -286,7 +287,7 @@ export function CustomerSiteDraftCard({
 
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground" htmlFor={`site-files-${draft.id}`}>Site photos and files</label>
-            <Input id={`site-files-${draft.id}`} type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={addPhotos} className="mt-1 h-9 text-sm" />
+            <ManagedFilePicker label="Add photos or files" accept={MANAGED_FILE_ACCEPT} multiple fileCount={existingFiles.length + draft.pendingPhotos.length} onPick={addPhotos} className="mt-1" />
             {(existingFiles.length > 0 || draft.pendingPhotos.length > 0) && (
               <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                 {existingFiles.map(({ attachment, asset }) => (

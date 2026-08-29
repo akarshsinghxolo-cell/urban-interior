@@ -51,6 +51,7 @@ import { createWorkTypeId, workTypesForSubcategory } from "@/lib/rdash/work-type
 import type { WorkSubcategory } from "@/lib/rdash/types";
 import { FilePreview } from "./FilePreview";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
+import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 
 export type ContractorFormDialogProps = {
   open: boolean;
@@ -602,11 +603,12 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   ) => (
     <div>
       <label className="text-[10px] font-semibold uppercase text-muted-foreground">{label}</label>
-      <Input
-        type="file"
+      <ManagedFilePicker
+        label={`Upload ${label.toLowerCase()}`}
         accept={MANAGED_FILE_ACCEPT}
-        onChange={(event) => void uploadMedia(event, setter, field, label)}
-        className="h-11 text-sm"
+        fileCount={value ? 1 : 0}
+        onPick={(event) => void uploadMedia(event, setter, field, label)}
+        className="min-h-11"
       />
       {value && mediaFile(value, db) ? (
         <div className="relative mt-1">

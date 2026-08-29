@@ -19,6 +19,7 @@ import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from 
 import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";
 import { MapView } from "@/components/rdash/MapView";
 import { confirmedPhotoAttachmentIds } from "./customer-sites-form-model";
+import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 const SITE_TYPES: Array<{
     value: Site["site_type"];
     label: string;
@@ -341,7 +342,7 @@ export function SiteFormDialog({ open, onClose, customerId, siteId, onSaved, }: 
           </div>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos & files</label>
-            <Input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={addPhotos} className="mt-1 h-9 text-sm"/>
+            <ManagedFilePicker label="Add photos or files" accept={MANAGED_FILE_ACCEPT} multiple fileCount={existingFiles.length + pendingPhotos.length} onPick={addPhotos} className="mt-1"/>
             {(existingFiles.length > 0 || pendingPhotos.length > 0) && <div className="mt-2 grid grid-cols-4 gap-2">
               {existingFiles.map(({ attachment, asset }) => <div key={attachment.id} className="group relative"><FilePreview file={assetPreview(asset)} compact controls/><button type="button" onClick={() => setDetachAttachmentIds((current) => [...new Set([...current, attachment.id])])} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Detach ${asset.file_name}`}><X className="h-3 w-3"/></button></div>)}
               {pendingPhotos.map((photo) => <div key={photo.id} className="group relative"><FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls/><button type="button" onClick={() => void removePendingPhoto(photo)} className="absolute right-0 top-0 rounded-full bg-background/80 p-0.5 text-destructive opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3"/></button></div>)}

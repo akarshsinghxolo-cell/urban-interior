@@ -43,6 +43,7 @@ import {
 import { Avatar, CopyValueButton, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { EntityFormDialog } from "../EntityFormDialog";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
+import { useActiveTabScroll } from "@/components/rdash/use-active-tab-scroll";
 
 export type Partner360Mode = "vendor" | "contractor";
 
@@ -164,6 +165,7 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
   const [query, setQuery] = React.useState("");
   const [selectedId, setSelectedId] = React.useState<string>(() => partners[0]?.id || "");
   const [tab, setTab] = React.useState<TabId>("overview");
+  const { stripRef, bindActiveTab } = useActiveTabScroll(tab);
   const [entityDialogOpen, setEntityDialogOpen] = React.useState(false);
   const [entityEditId, setEntityEditId] = React.useState<string | undefined>(undefined);
   const [businessDialogOpen, setBusinessDialogOpen] = React.useState(false);
@@ -305,10 +307,10 @@ export function Partner360Module({ mode }: { mode: Partner360Mode }) {
             </div>
           </section>
 
-          <div className="flex overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-card rd-scroll">
+          <div ref={stripRef} className="flex overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-card rd-scroll">
             {TABS.map((entry) => {
               const TabIcon = entry.icon;
-              return <button key={entry.id} type="button" onClick={() => setTab(entry.id)} className={cn("flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold", tab === entry.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><TabIcon className="h-3.5 w-3.5" />{entry.label}</button>;
+              return <button key={entry.id} ref={bindActiveTab(entry.id)} type="button" onClick={() => setTab(entry.id)} className={cn("flex min-h-[40px] shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold", tab === entry.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><TabIcon className="h-3.5 w-3.5" />{entry.label}</button>;
             })}
           </div>
 

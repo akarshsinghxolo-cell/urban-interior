@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { PartnerGovernanceModule } from "./PartnerGovernanceModule";
 import { Partner360Module } from "./Partner360Module";
 import { ContractorDetailModule } from "./ContractorDetailModule";
+import { useActiveTabScroll } from "@/components/rdash/use-active-tab-scroll";
 
 type View = "overview" | "operations" | "records";
 
@@ -17,16 +18,19 @@ const views = [
 
 export function ContractorWorkspaceModule() {
   const [view, setView] = React.useState<View>("overview");
+  const { stripRef, bindActiveTab } = useActiveTabScroll(view);
 
   return (
     <div className="space-y-4">
       <div
+        ref={stripRef}
         className="flex overflow-x-auto rounded-xl border border-border bg-card p-1.5 shadow-card"
         aria-label="Contractor workspace sections"
       >
         {views.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            ref={bindActiveTab(id)}
             type="button"
             onClick={() => setView(id)}
             aria-pressed={view === id}

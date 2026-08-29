@@ -12,6 +12,7 @@ import { formatINR, formatINRShort } from "@/lib/rdash/format";
 import { EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useActiveTabScroll } from "@/components/rdash/use-active-tab-scroll";
 const TABS = [
     { id: "overview", label: "Overview", icon: Building2 },
     { id: "areas", label: "Areas & Scope", icon: Ruler },
@@ -76,6 +77,7 @@ export function SiteExecutionModule({ initialTab }: {
     const activeSites = db.sites.filter((site) => !site.is_archived);
     const [selectedSiteId, setSelectedSiteId] = React.useState<string>(() => activeSites[0]?.id || "");
     const [tab, setTab] = React.useState<TabId>(() => isTabId(initialTab) ? initialTab : "overview");
+    const { stripRef, bindActiveTab } = useActiveTabScroll(tab);
     const [newSiteOpen, setNewSiteOpen] = React.useState(false);
     const [editSiteOpen, setEditSiteOpen] = React.useState(false);
     const [newAreaOpen, setNewAreaOpen] = React.useState(false);
@@ -438,10 +440,10 @@ export function SiteExecutionModule({ initialTab }: {
             </div>
           </div>
 
-          <div className="flex overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-card">
+          <div ref={stripRef} className="flex overflow-x-auto rounded-lg border border-border bg-card p-1 shadow-card">
             {TABS.map((entry) => {
             const Icon = entry.icon;
-            return <button key={entry.id} type="button" onClick={() => setTab(entry.id)} className={cn("flex shrink-0 min-h-[40px] items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold", tab === entry.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><Icon className="h-3.5 w-3.5"/>{entry.label}</button>;
+            return <button key={entry.id} ref={bindActiveTab(entry.id)} type="button" onClick={() => setTab(entry.id)} className={cn("flex shrink-0 min-h-[40px] items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold", tab === entry.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}><Icon className="h-3.5 w-3.5"/>{entry.label}</button>;
         })}
           </div>
 

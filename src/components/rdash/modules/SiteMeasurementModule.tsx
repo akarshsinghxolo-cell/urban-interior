@@ -16,6 +16,7 @@ import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
 import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
+import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 interface AreaMeasurement {
     id?: string;
     name: string;
@@ -402,7 +403,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
           </div>
           <div className="mt-3">
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Site photos & videos</label>
-            <input type="file" accept={MANAGED_FILE_ACCEPT} multiple onChange={async (e) => {
+            <ManagedFilePicker label="Add measurement photos or videos" accept={MANAGED_FILE_ACCEPT} multiple fileCount={uploadedMedia.length} onPick={async (e) => {
             const files = Array.from(e.target.files || []);
             if (!files.length) return;
             try {
@@ -437,7 +438,7 @@ function MeasurementDialog({ visitId, record, initialAreas, onClose, onSave }: {
             } finally {
                 e.currentTarget.value = "";
             }
-        }} className="block w-full text-xs file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"/>
+        }}/>
             {uploadedMedia.length > 0 && (<div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
                 {uploadedMedia.map((m) => (<div key={m.uploadItemId} className="group relative overflow-hidden rounded-md border border-border bg-muted/30">
                     <FilePreview file={{ fileName: m.fileName, mimeType: m.mimeType, url: m.previewUrl }} compact controls/>

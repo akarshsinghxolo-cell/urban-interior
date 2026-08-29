@@ -327,7 +327,10 @@ export function Sidebar() {
       </aside>
 
       {mobileNavOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
+        <div
+          className="fixed inset-0 z-50 lg:hidden"
+          onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setMobileNavOpen(false); } }}
+        >
           <div
             className="absolute inset-0 bg-foreground/35 backdrop-blur-sm"
             role="button"
