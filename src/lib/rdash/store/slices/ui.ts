@@ -178,6 +178,23 @@ export function createUISlice(ctx: StoreContext): UIActions {
                 contextHistoryIndex: -1,
             };
         }),
+        closeOtherTabs: (id) => commitState((state: any) => {
+            const keep = state.tabs.find((tab: WorkspaceTab) => tab.id === id);
+            if (!keep || state.tabs.length <= 1) return {};
+            const moduleId = canonicalModuleId(keep.moduleId);
+            const resolved = resolveRenderer(moduleId);
+            const history = appendModuleHistory(state, moduleId, resolved.label, resolved.icon);
+            return {
+                tabs: [keep],
+                activeTabId: keep.id,
+                activeModuleId: moduleId,
+                ...history,
+                mobileNavOpen: false,
+                detailPanel: { kind: null, recordId: null },
+                contextHistory: [],
+                contextHistoryIndex: -1,
+            };
+        }),
         setActiveTab: (id) => {
             const state = get();
             const tab = state.tabs.find((entry: WorkspaceTab) => entry.id === id);

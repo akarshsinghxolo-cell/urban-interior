@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { X, XSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 
@@ -14,6 +14,7 @@ export function WorkspaceTabs() {
   const activeTabId = useRDashStore((state) => state.activeTabId);
   const setActiveTab = useRDashStore((state) => state.setActiveTab);
   const closeTab = useRDashStore((state) => state.closeTab);
+  const closeOtherTabs = useRDashStore((state) => state.closeOtherTabs);
   const tabRefs = React.useRef(new Map<string, HTMLButtonElement>());
 
   const activateAndFocus = React.useCallback((id: string) => {
@@ -47,12 +48,13 @@ export function WorkspaceTabs() {
   if (tabs.length === 0) return null;
 
   return (
+    <div className="flex items-stretch">
     <div
       ref={tablistRef}
       role="tablist"
       aria-label="Open workspace modules"
       aria-orientation="horizontal"
-      className="flex items-center gap-1 overflow-x-auto px-[var(--page-pad)] pb-1 rd-scroll"
+      className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-[var(--page-pad)] pb-1 rd-scroll"
     >
       {tabs.map((tab, index) => {
         const active = tab.id === activeTabId;
@@ -103,7 +105,7 @@ export function WorkspaceTabs() {
                 type="button"
                 aria-label={`Close ${tab.label} tab`}
                 onClick={() => closeAndRestoreFocus(tab.id, index)}
-                className="mr-1 flex h-7 w-7 items-center justify-center rounded text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground/70 opacity-100 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:opacity-0 sm:group-hover:opacity-100"
               >
                 <X className="h-3 w-3" aria-hidden />
               </button>
@@ -111,6 +113,21 @@ export function WorkspaceTabs() {
           </div>
         );
       })}
+    </div>
+    {tabs.length > 3 ? (
+      <button
+        type="button"
+        aria-label={`Close all tabs except ${tabs.find((tab) => tab.id === activeTabId)?.label || "the active tab"}`}
+        title={`Close other ${tabs.length - 1} tabs`}
+        onClick={() => {
+          if (activeTabId) closeOtherTabs(activeTabId);
+        }}
+        className="mr-2 mb-1 flex shrink-0 items-center gap-1 self-center rounded-full border border-border bg-card px-2 py-1 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <XSquare className="h-3 w-3" aria-hidden />
+        {tabs.length - 1}
+      </button>
+    ) : null}
     </div>
   );
 }

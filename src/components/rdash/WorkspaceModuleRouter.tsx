@@ -78,7 +78,40 @@ const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedVie
 const EMPTY_PERMISSIONS: unknown[] = [];
 
 export function ModuleLoadingFallback() {
-    return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-6 text-sm text-muted-foreground shadow-card">Loading workspace module...</div>;
+    // Skeleton chrome that mirrors the common module layout (icon + title + KPI
+    // grid + list rows) so switching cold tabs doesn't flash an empty box.
+    return (
+        <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card sm:p-6" role="status" aria-label="Loading workspace module">
+            <span className="sr-only">Loading workspace module...</span>
+            <div className="flex items-center gap-3">
+                <div className="h-9 w-9 shrink-0 animate-pulse rounded-lg bg-muted" />
+                <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-4 w-32 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-48 max-w-full animate-pulse rounded bg-muted/70" />
+                </div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[0, 1, 2, 3].map((row) => (
+                    <div key={row} className="rounded-lg border border-border p-3">
+                        <div className="h-2.5 w-16 animate-pulse rounded bg-muted" />
+                        <div className="mt-2 h-5 w-10 animate-pulse rounded bg-muted/80" />
+                    </div>
+                ))}
+            </div>
+            <div className="mt-4 space-y-2.5">
+                {[0, 1, 2].map((row) => (
+                    <div key={row} className="flex items-center gap-3 rounded-lg border border-border px-3 py-2.5">
+                        <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
+                        <div className="min-w-0 flex-1 space-y-1.5">
+                            <div className="h-3 w-2/5 animate-pulse rounded bg-muted" />
+                            <div className="h-2.5 w-3/5 animate-pulse rounded bg-muted/70" />
+                        </div>
+                        <div className="h-6 w-14 shrink-0 animate-pulse rounded-full bg-muted/60" />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
 }
 
 function ModuleDataStateFallback({ status, error }: { status: WorkspaceDataLoadStatus; error?: string }) {

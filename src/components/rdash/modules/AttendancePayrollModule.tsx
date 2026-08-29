@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
+import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 import { MapView } from "../MapView";
 import type { SalaryAdjustment } from "@/lib/rdash/types";
 function ymd(value: Date) {
@@ -67,7 +68,10 @@ export function AttendancePayrollModule() {
     const [regularizeReason, setRegularizeReason] = React.useState("");
     const reconciledRef = React.useRef(false);
     const policyStaff = (db.master.staff.find((staff) => staff.id === selectedPolicyStaffId) || defaultPolicyStaff);
-    const policy = policyStaff?.attendance_policy || { office_name: "", office_latitude: undefined, office_longitude: undefined, geofence_radius_meters: 100, work_start_time: "09:30", work_end_time: "18:30", grace_minutes: 15, half_day_hours: 4, full_day_hours: 8, overtime_threshold_hours: 9, week_off_days: [] };
+    // MOBILE-QA FIX: the previous inline fallback used stale/wrong keys (geofence_radius_meters,
+    // grace_minutes, half_day_hours...) so every "Verification rules" sentence and the policy form
+    // rendered with empty numbers whenever a staff row had no attendance_policy yet.
+    const policy = React.useMemo(() => normalizeAttendancePolicy(policyStaff?.attendance_policy), [policyStaff?.attendance_policy]);
     React.useEffect(() => {
         if (activeStaff.some((staff) => staff.id === selectedPolicyStaffId))
             return;

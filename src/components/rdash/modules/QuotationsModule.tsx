@@ -195,7 +195,7 @@ export function QuotationsModule({ filterPresets, statusFilter, view, }: {
           </div>
           {!isRevisions && (<>
               <button type="button" onClick={() => { setSelectMode((s) => !s); if (selectMode)
-            setSelectedIds(new Set()); }} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", selectMode ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground")}>
+            setSelectedIds(new Set()); }} className={cn("inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", selectMode ? "border-primary bg-primary text-primary-foreground shadow-sm" : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground")}>
                 <CheckSquare className="h-3.5 w-3.5"/> {selectMode ? "Exit select" : "Select"}
               </button>
               {selectMode && filteredQuotes.length > 1 && (<button type="button" onClick={() => setSelectedIds(new Set(filteredQuotes.map((qq) => qq.id)))} className="text-[11px] font-medium text-primary hover:underline">
