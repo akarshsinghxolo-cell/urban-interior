@@ -14,6 +14,15 @@ import { workTypesForSubcategory } from "./work-types";
 const installedStores = new WeakSet<object>();
 const WRITE_ROLES = new Set(["Owner", "Operations Manager", "OWNER", "OPERATIONS_MANAGER"]);
 
+type TransactionRunner = <T>(name: string, fn: () => T) => T;
+
+function workspaceTransactionRunner(store: RDashStore): TransactionRunner {
+  const runner = (store as unknown as { __runInWorkspaceTransaction?: TransactionRunner }).__runInWorkspaceTransaction;
+  // Fallback keeps the policy usable in non-browser tests without the store
+  // extension; the real store always provides the runner.
+  return runner || ((name, fn) => fn());
+}
+
 type RDashStore = UseBoundStore<StoreApi<RDashState>>;
 
 function assertContractorPermission(state: RDashState, action: string) {
@@ -83,8 +92,9 @@ export function installContractorStorePolicy(store: RDashStore): void {
   const initial = store.getState();
   const originalAddContractor = initial.addContractor;
   const originalUpdateContractor = initial.updateContractor;
+  const inTransaction = workspaceTransactionRunner(store);
 
-  const addContractor: RDashState["addContractor"] = (input) => {
+  const addContractor: RDashState["addContractor"] = (input) => inTransaction("addContractor", () => {
     const state = store.getState();
     assertContractorPermission(state, "create contractors");
     const normalized = normalizeContractorForWrite(input as ContractorProfileRecord, state.db, {
@@ -99,9 +109,13 @@ export function installContractorStorePolicy(store: RDashStore): void {
     const id = originalAddContractor(normalized as never);
     synchronizeRateProjection(store, id);
     return id;
-  };
+  });
 
-  const updateContractor: RDashState["updateContractor"] = (id, suppliedPatch) => {
+  // One transaction, ONE workspace save: the capability row travels together
+  // with its workSubcategories and rate-projection changes. Splitting them
+  // into separate saves made the projection sync land as a rates-ONLY commit,
+  // which the server used to reject ("read-only projections").
+  const updateContractor: RDashState["updateContractor"] = (id, suppliedPatch) => inTransaction("updateContractor", () => {
     const state = store.getState();
     assertContractorPermission(state, "update contractors");
     const before = state.db.master.contractors.find((row) => row.id === id) as ContractorProfileRecord | undefined;
@@ -130,9 +144,9 @@ export function installContractorStorePolicy(store: RDashStore): void {
     synchronizeWorkTypeCatalog(store, normalized.work_capabilities || []);
     originalUpdateContractor(id, normalized as never);
     synchronizeRateProjection(store, id);
-  };
+  });
 
-  const addContractorRate: RDashState["addContractorRate"] = (rate) => {
+  const addContractorRate: RDashState["addContractorRate"] = (rate) => inTransaction("addContractorRate", () => {
     const state = store.getState();
     assertContractorPermission(state, "edit contractor rates");
     const contractor = state.db.master.contractors.find((row) => row.id === rate.contractor_id) as ContractorProfileRecord | undefined;
@@ -176,7 +190,7 @@ export function installContractorStorePolicy(store: RDashStore): void {
         && row.work_type_id === workType.id,
     );
     return refreshed?.id || `crate-${contractorId}-${next.subcategory_id}-${workType.id}`;
-  };
+  });
 
   store.setState({
     addContractor,

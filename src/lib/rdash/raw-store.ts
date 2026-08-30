@@ -120,6 +120,12 @@ function isOverdueDate(dueDate: string | undefined, at = new Date()) {
 // upsertPaymentFollowup moved to finance-helpers (Phase 3f)
 // upsertMissedVisitFollowup moved to slices/visits.ts (Phase 3l)
 // detailRecordExists, detailRecordCustomerId, contextDetailPanel moved to slices/ui.ts (Phase 3o)
+// Boundary policies (contractor-store-policy) compose several primitive
+// actions into ONE workspace save via this runner; it is created inside the
+// store closure and attached to the store right after create() below.
+type WorkspaceTransactionRunner = <T>(name: string, fn: () => T) => T;
+let workspaceTransactionRunnerRef: WorkspaceTransactionRunner | null = null;
+
 export const useRDashStore = create<RDashState>()((setBase, get) => {
     type StateUpdate = Partial<RDashState> | ((state: RDashState) => Partial<RDashState>);
     let serverRevisionForQueue = 0;
@@ -379,6 +385,12 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             }
         }
     };
+    // Boundary policies (contractor-store-policy) must compose several
+    // primitive actions into ONE workspace save; expose the transaction runner
+    // via a module ref — the store const is still initializing here (TDZ), so
+    // the actual attach happens right after create() below. `ponytail:` one
+    // store, one ref.
+    workspaceTransactionRunnerRef = runWorkspaceTransaction;
     // Core slice (Phase 3o) — 7 extractable core actions. hydrateSecureWorkspace +
     // resetDatabase stay inline below because they read/write closure vars
     // (serverRevisionForQueue, lastAcceptedServerRevision, lastAcceptedServerDb,
@@ -720,5 +732,10 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
     }
     return state;
 });
+// Attach AFTER create() — referencing the const inside its own initializer
+// would be a TDZ ReferenceError (caught in dev QA).
+if (workspaceTransactionRunnerRef) {
+    (useRDashStore as unknown as { __runInWorkspaceTransaction?: WorkspaceTransactionRunner }).__runInWorkspaceTransaction = workspaceTransactionRunnerRef;
+}
 // Re-export pure selectors from the store/ subfolder (Phase 1 split)
 export { computeJobPnL, allJobPnLs, vendorBalance, customerBalance, siteFinancials, jobBids, contractorSettlements, contractorBids, contractorOutstanding, contractorOutstandingTotal, inventoryValuation, } from "./store/selectors";

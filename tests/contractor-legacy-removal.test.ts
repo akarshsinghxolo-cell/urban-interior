@@ -63,10 +63,22 @@ describe("Contractor legacy-path removal", () => {
     expect(detail).toContain("contractorRateProjection(db, c)");
   });
 
-  test("Contractor Rates are read-only at the server commit boundary", async () => {
+  test("Contractor Rates are canonicalized (never trusted) at the server commit boundary", async () => {
     const server = await source("src/lib/rdash/server/authorized-commit.ts");
-    expect(server).toContain("Contractor Rates are read-only projections");
-    expect(server).toContain('operations.filter((operation) => operation.collection !== "master.contractorRates")');
+    // Rates-only commits re-project from stored capabilities instead of being
+    // rejected — the old hard rejection broke legitimate edits (Task 17).
+    expect(server).toContain("canonicalizeContractorRateOperations(");
     expect(server).toContain("contractorRateProjection(");
+    expect(server).not.toContain("read-only projections");
+    expect(server).toContain('operations.filter((operation) => operation.collection !== "master.contractorRates")');
+  });
+
+  test("Contractor store policy saves capabilities and rate projection in ONE transaction", async () => {
+    const policy = await source("src/lib/rdash/contractor-store-policy.ts");
+    expect(policy).toContain("inTransaction(\"updateContractor\"");
+    expect(policy).toContain("inTransaction(\"addContractor\"");
+    expect(policy).toContain("inTransaction(\"addContractorRate\"");
+    const store = await source("src/lib/rdash/raw-store.ts");
+    expect(store).toContain("__runInWorkspaceTransaction");
   });
 });

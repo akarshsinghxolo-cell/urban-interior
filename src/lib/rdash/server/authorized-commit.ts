@@ -134,29 +134,45 @@ function canonicalizeContractorRateOperations(
 ): WorkspaceOperation[] {
   const contractorOperation = operations.find((operation) => operation.collection === "master.contractors");
   const hasRateOperation = operations.some((operation) => operation.collection === "master.contractorRates");
+  if (!hasRateOperation) return operations;
+
+  // Contractor rates are a projection of work capabilities: client rate rows
+  // are never trusted — the projection is re-derived from the stored profile.
+  // A rates-ONLY commit (client save chains can land the capability row one
+  // queue tick before its projection sync) re-projects from the already-stored
+  // capabilities instead of rejecting the user's edit — same semantics as the
+  // vendorRates canonicalization above.
+  const touchedIds = new Set<string>();
+  for (const row of contractorOperation?.upsert || []) {
+    const id = String(row.id || "").trim();
+    if (id) touchedIds.add(id);
+  }
+  for (const id of contractorOperation?.deleteIds || []) {
+    if (id) touchedIds.add(id);
+  }
   if (!contractorOperation) {
-    if (hasRateOperation) {
-      throw new Error("INVALID:Contractor Rates are read-only projections. Update Contractor work capabilities instead.");
+    for (const operation of operations) {
+      if (operation.collection !== "master.contractorRates") continue;
+      for (const row of operation.upsert || []) {
+        const id = String(row.contractor_id || "").trim();
+        if (id) touchedIds.add(id);
+      }
+      for (const id of operation.deleteIds || []) {
+        const deleted = (current.master.contractorRates || []).find((rate) => rate.id === id);
+        if (deleted?.contractor_id) touchedIds.add(deleted.contractor_id);
+      }
     }
-    return operations;
   }
 
   const profileOperations = operations.filter((operation) => operation.collection !== "master.contractorRates");
   const candidate = applyWorkspaceOperations(current, profileOperations);
   let contractorRates = current.master.contractorRates || [];
-  const touchedIds = new Set<string>();
-  for (const row of contractorOperation.upsert || []) {
-    const id = String(row.id || "").trim();
-    if (id) touchedIds.add(id);
-  }
-  for (const id of contractorOperation.deleteIds || []) {
-    if (id) touchedIds.add(id);
-  }
-
   for (const contractorId of touchedIds) {
     const contractor = candidate.master.contractors.find((row) => row.id === contractorId);
     if (!contractor) {
-      contractorRates = contractorRates.filter((rate) => rate.contractor_id !== contractorId);
+      // Contractor delete cascades the projection; an unknown contractor in a
+      // rates-only commit leaves orphan rows alone (nothing to re-project).
+      if (contractorOperation) contractorRates = contractorRates.filter((rate) => rate.contractor_id !== contractorId);
       continue;
     }
     contractorRates = contractorRateProjection(
