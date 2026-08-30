@@ -2,6 +2,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
+import type { WorkspaceTab } from "@/lib/rdash/store";
 import { MODULE_GROUPS } from "@/lib/rdash/modules";
 import { commandMatchScore, compareCommandMatches } from "@/lib/rdash/command-palette-score";
 import { relativeTime } from "@/lib/rdash/format";
@@ -63,6 +64,8 @@ export function CommandPalette() {
     const recentCreated = useRDashStore((s) => s.recentCreated);
     const commandPaletteOpen = useRDashStore((s) => s.commandPaletteOpen);
     const setCommandPaletteOpen = useRDashStore((s) => s.setCommandPaletteOpen);
+    const moduleHistory = useRDashStore((s) => s.moduleHistory);
+    const activeModuleId = useRDashStore((s) => s.activeModuleId);
     const [q, setQ] = React.useState("");
     const [history, setHistory] = React.useState<string[]>(readCommandHistory);
     const [activeIdx, setActiveIdx] = React.useState(0);
@@ -279,6 +282,18 @@ export function CommandPalette() {
         return arr;
     }, [grouped]);
     const showingHistory = !q.trim() && history.length > 0;
+    // Latest visited modules, newest first, current module excluded.
+    const recentModules = React.useMemo(() => {
+        const seen = new Set<string>();
+        const out: WorkspaceTab[] = [];
+        for (let i = moduleHistory.length - 1; i >= 0 && out.length < 4; i--) {
+            const tab = moduleHistory[i];
+            if (tab.moduleId === activeModuleId || seen.has(tab.moduleId)) continue;
+            seen.add(tab.moduleId);
+            out.push(tab);
+        }
+        return out;
+    }, [moduleHistory, activeModuleId]);
     const executeCommand = React.useCallback((item: CommandItem | undefined) => {
         if (!item) return;
         addToHistory(q);
@@ -361,6 +376,19 @@ export function CommandPalette() {
           <button type="button" onClick={() => setOpen(false)} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Close command palette"><X className="h-4 w-4"/></button>
         </div>
         <div id="command-palette-results" ref={listRef} role="listbox" aria-label="Search results" className="max-h-[50vh] overflow-y-auto rd-scroll p-1.5">
+          {!q.trim() && recentModules.length > 0 && (
+            <div className="border-b border-border/50 px-2.5 pb-2.5 pt-2">
+              <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Recent modules</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                {recentModules.map((tab) => (
+                  <button key={tab.id} type="button" onClick={() => { setActiveModule(tab.moduleId); setOpen(false); }} className={cn("flex min-h-11 items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 text-left transition-colors hover:border-primary/40 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring")} aria-label={`Open ${tab.label}`}>
+                    <span aria-hidden="true" className="shrink-0 rounded bg-background/70 px-1 text-sm">{tab.icon || <Zap className="h-3.5 w-3.5 opacity-60"/>}</span>
+                    <span className="truncate text-xs font-medium text-foreground/90">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {showingHistory ? (
               <div className="px-2.5 py-2">
                 <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70">Recent searches</p>
@@ -368,7 +396,7 @@ export function CommandPalette() {
                   {history.map((term, i) => {
                     const active = i === activeIdx;
                     return (
-                      <button key={term.toLocaleLowerCase()} id={`command-history-option-${i}`} role="option" aria-selected={active} data-idx={i} tabIndex={-1} type="button" onMouseEnter={() => setActiveIdx(i)} onClick={() => { setQ(term); setActiveIdx(0); }} className={cn("rounded-md border px-2 py-1 text-[11px] transition-colors", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground")}>
+                      <button key={term.toLocaleLowerCase()} id={`command-history-option-${i}`} role="option" aria-selected={active} data-idx={i} tabIndex={-1} type="button" onMouseEnter={() => setActiveIdx(i)} onClick={() => { setQ(term); setActiveIdx(0); }} className={cn("min-h-11 rounded-md border px-3 py-2 text-[11px] transition-colors", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground")}>
                         {term}
                       </button>
                     );
@@ -388,7 +416,7 @@ export function CommandPalette() {
             const c = entry.item;
             const ai = entry.flatIdx;
             const active = ai === activeIdx;
-            return (<button key={c.id} id={`command-option-${c.id}`} role="option" aria-selected={active} data-idx={ai} tabIndex={-1} type="button" onMouseEnter={() => setActiveIdx(ai)} onClick={() => executeCommand(c)} className={cn("group flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-all duration-100", active ? "bg-primary text-primary-foreground translate-x-0.5" : "hover:bg-accent")}>
+            return (<button key={c.id} id={`command-option-${c.id}`} role="option" aria-selected={active} data-idx={ai} tabIndex={-1} type="button" onMouseEnter={() => setActiveIdx(ai)} onClick={() => executeCommand(c)} className={cn("group flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-all duration-100 sm:min-h-0 sm:py-1.5", active ? "bg-primary text-primary-foreground translate-x-0.5" : "hover:bg-accent")}>
                   {c.iconNode ? (<span className={cn("flex h-5 w-5 shrink-0 items-center justify-center", active ? "text-primary-foreground" : "text-muted-foreground")}>{c.iconNode}</span>) : c.icon ? (<span className="text-sm">{c.icon}</span>) : (<Zap className={cn("h-3.5 w-3.5 shrink-0", active ? "text-primary-foreground/70" : "opacity-60")}/>)}
                   <div className="min-w-0 flex-1">
                     <p className={cn("truncate text-xs font-medium", active ? "text-primary-foreground" : "text-foreground")}>{c.label}</p>
