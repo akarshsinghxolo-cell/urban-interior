@@ -450,6 +450,8 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
     // Advance payment toggle pre-checked, so the new milestone lands in this customer's
     // Advances tab without the user having to remember to flip the toggle.
     const [advanceDialogOpen, setAdvanceDialogOpen] = React.useState(false);
+    // Overview scope filter: clicking an area chip shows only the work captured in that area.
+    const [scopeAreaId, setScopeAreaId] = React.useState<string | null>(null);
     const openTasks = relatedTasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
     const customerInvoices = db.invoices.filter((invoice) => invoice.customer_id === customerId);
     const customerAdvances = payments.filter((p) => p.is_advance);
@@ -547,6 +549,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                 {(sites.length ? sites : [undefined]).map((site) => {
                     const scopedAreas = customerAreas.filter((area) => area.site_id === (site?.id || "") || (Boolean(singleSite) && !area.site_id));
                     const scopedWork = customerWorkRequired.filter((work) => work.site_id === (site?.id || "") || (Boolean(singleSite) && !work.site_id));
+                    const visibleWork = scopeAreaId ? scopedWork.filter((work) => (work.area_ids || []).includes(scopeAreaId)) : scopedWork;
                     return <div key={site?.id || "customer-level"} className="rounded-md border border-border bg-muted/20 p-2.5">
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -555,8 +558,12 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                         </div>
                         <span className="text-[10px] text-muted-foreground">{scopedAreas.length} Area{scopedAreas.length === 1 ? "" : "s"} · {scopedWork.length} Work Required</span>
                       </div>
-                      {scopedAreas.length ? <div className="mt-2 flex flex-wrap gap-1">{scopedAreas.map((area) => <span key={area.id} className="rounded border border-border bg-card px-1.5 py-0.5 text-[10px]">{area.name}</span>)}</div> : null}
-                      {scopedWork.length ? <div className="mt-2 grid gap-1">{scopedWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{work.title}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
+                      {scopedAreas.length ? <div className="mt-2 flex flex-wrap gap-1">{scopedAreas.map((area) => {
+                        const active = scopeAreaId === area.id;
+                        const areaWorkCount = scopedWork.filter((work) => (work.area_ids || []).includes(area.id)).length;
+                        return <button key={area.id} type="button" aria-pressed={active} onClick={() => setScopeAreaId(active ? null : area.id)} title={`Show only work required in ${area.name}`} className={cn("rounded border px-1.5 py-0.5 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-muted")}>{area.name}<span className={cn("ml-1 font-mono", active ? "text-primary-foreground/80" : "text-muted-foreground/70")}>{areaWorkCount}</span></button>;
+                      })}</div> : null}
+                      {scopedWork.length ? (visibleWork.length ? <div className="mt-2 grid gap-1">{visibleWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{work.title}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required in the selected area — tap the area again to see all.</p>) : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
                     </div>;
                 })}
               </div>
