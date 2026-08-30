@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { Customer, RDashDatabase } from "@/lib/rdash/types";
 import type { CustomerIdentityMatch } from "@/lib/rdash/customer-identity";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
+import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import {
   validIndianPhone,
   type CustomerDraft,
@@ -38,6 +39,10 @@ export function CustomerDetailsFields({
   openExistingCustomer: (customerId: string) => void;
 }) {
   const [showReferralDropdown, setShowReferralDropdown] = React.useState(false);
+  // Closes on any outside pointerdown — the old blur+120ms hack kept the list
+  // open on mobile taps of non-focusable areas.
+  const referralRootRef = React.useRef<HTMLDivElement>(null);
+  useDismissOnOutside(showReferralDropdown, () => setShowReferralDropdown(false), referralRootRef);
   const [activeReferralIndex, setActiveReferralIndex] = React.useState(0);
   const referralOptions = React.useMemo(() => {
     const query = customer.referralQuery.trim().toLowerCase();
@@ -117,7 +122,7 @@ export function CustomerDetailsFields({
         </div>
       )}
 
-      <div className="relative">
+      <div className="relative" ref={referralRootRef}>
         <Field label="Recommended by" htmlFor="customer-referral">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -136,7 +141,7 @@ export function CustomerDetailsFields({
                 setShowReferralDropdown(true);
               }}
               onFocus={() => setShowReferralDropdown(true)}
-              onBlur={() => window.setTimeout(() => setShowReferralDropdown(false), 120)}
+              onBlur={() => setShowReferralDropdown(false)}
               onKeyDown={handleReferralKeyDown}
               placeholder="Search customers, contractors, vendors, or source partners"
             />

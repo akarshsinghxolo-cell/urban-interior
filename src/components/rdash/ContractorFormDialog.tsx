@@ -35,6 +35,7 @@ import {
   type QueuedWorkflowFile,
 } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import {
   canonicalContractorCapabilities,
@@ -203,6 +204,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [referralQuery, setReferralQuery] = React.useState("");
   const [referralId, setReferralId] = React.useState<string>();
   const [referralOpen, setReferralOpen] = React.useState(false);
+  const referralRef = React.useRef<HTMLDivElement>(null);
+  useDismissOnOutside(referralOpen, () => setReferralOpen(false), referralRef);
   const [baselineStatus, setBaselineStatus] = React.useState<string | undefined>();
   const [baselineComplianceDocuments, setBaselineComplianceDocuments] = React.useState<ContractorProfileRecord["compliance_documents"]>();
   const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
@@ -674,7 +677,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
             <section className="relative space-y-1">
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Referral</p>
-              <div className="relative">
+              <div ref={referralRef} className="relative">
                 <Search className="absolute left-2.5 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
                   value={referralQuery}

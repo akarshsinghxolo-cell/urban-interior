@@ -160,6 +160,18 @@ type PriorityItem = {
 type SnoozeDuration = "1h" | "4h" | "tomorrow" | "tomorrow_9am" | "next_monday";
 function TodaysPrioritiesBanner({ items, onSnooze }: { items: PriorityItem[]; onSnooze?: (item: PriorityItem, duration: SnoozeDuration) => void }) {
     const [snoozeFor, setSnoozeFor] = React.useState<string | null>(null);
+    // Snooze menu closes on any pointerdown outside its trigger/popover.
+    React.useEffect(() => {
+        if (!snoozeFor)
+            return;
+        const closeOnOutsidePointer = (event: PointerEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (!target?.closest?.("[data-snooze-menu]"))
+                setSnoozeFor(null);
+        };
+        document.addEventListener("pointerdown", closeOnOutsidePointer);
+        return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    }, [snoozeFor]);
     if (items.length === 0)
         return null;
     const top = items.slice(0, 5);
@@ -203,10 +215,10 @@ function TodaysPrioritiesBanner({ items, onSnooze }: { items: PriorityItem[]; on
               {item.priority ? (<span className={"shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase " + priorityChipClass(item.priority)}>{item.priority}</span>) : null}
               {item.due ? (<span className={"shrink-0 text-[10px] font-semibold " + (isDateOnlyOverdue(item.due) ? "text-destructive" : "text-muted-foreground")}>{isDateOnlyOverdue(item.due) ? "Overdue" : "Today"}</span>) : null}
             </button>
-            {onSnooze ? (<button type="button" aria-label="Snooze" title="Snooze" onClick={(e) => { e.stopPropagation(); setSnoozeFor(snoozeFor === item.id ? null : item.id); }} className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
+            {onSnooze ? (<button type="button" aria-label="Snooze" title="Snooze" data-snooze-menu="" onClick={(e) => { e.stopPropagation(); setSnoozeFor(snoozeFor === item.id ? null : item.id); }} className="shrink-0 rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-warning/10 hover:text-warning focus-visible:opacity-100 group-hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
                 <BellOff className="h-3.5 w-3.5"/>
               </button>) : null}
-            {onSnooze && snoozeFor === item.id ? (<div className="absolute right-2 top-full z-20 mt-1 w-32 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-soft" role="menu">
+            {onSnooze && snoozeFor === item.id ? (<div data-snooze-menu="" className="absolute right-2 top-full z-20 mt-1 w-32 overflow-hidden rounded-lg border border-border bg-popover p-1 shadow-soft" role="menu">
                 {snoozeOptions.map((opt) => (<button key={opt.dur} type="button" role="menuitem" onClick={(e) => { e.stopPropagation(); setSnoozeFor(null); onSnooze(item, opt.dur); }} className="block w-full rounded-md px-2 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-warning/10 hover:text-warning focus-visible:outline-none focus-visible:bg-warning/10">
                     {opt.label}
                   </button>))}
