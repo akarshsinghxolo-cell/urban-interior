@@ -1,7 +1,7 @@
 import type { WorkspaceEntityKind } from "./workspace-entity-routes";
 import { isWorkspaceEntityLocation, resolveWorkspaceLocation } from "./workspace-entity-routes";
 
-export interface WorkspaceRouteSelection {
+interface WorkspaceRouteSelection {
   moduleId: string;
   canonicalPath: string;
   title: string;

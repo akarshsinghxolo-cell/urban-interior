@@ -55,7 +55,7 @@ import { FilePreview } from "./FilePreview";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 
-export type ContractorFormDialogProps = {
+type ContractorFormDialogProps = {
   open: boolean;
   onClose: () => void;
   onSaved?: (id: string) => void;

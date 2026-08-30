@@ -1,4 +1,4 @@
-export type WorkspaceRowVersions = Record<string, number>;
+type WorkspaceRowVersions = Record<string, number>;
 
 let snapshot: WorkspaceRowVersions = {};
 

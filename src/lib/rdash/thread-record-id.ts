@@ -1,6 +1,6 @@
 import type { RDashDatabase, ThreadKind } from "./types";
 
-export const CUSTOMER_CONVERSATION_THREAD_PREFIX = "customer-conversation:";
+const CUSTOMER_CONVERSATION_THREAD_PREFIX = "customer-conversation:";
 
 export function customerConversationThreadRecordId(customerId: string): string {
   const id = String(customerId || "").trim();
@@ -8,12 +8,6 @@ export function customerConversationThreadRecordId(customerId: string): string {
   return `${CUSTOMER_CONVERSATION_THREAD_PREFIX}${id}`;
 }
 
-export function customerIdFromConversationThreadRecordId(recordId: string): string | undefined {
-  const id = String(recordId || "").trim();
-  if (!id.startsWith(CUSTOMER_CONVERSATION_THREAD_PREFIX)) return undefined;
-  const customerId = id.slice(CUSTOMER_CONVERSATION_THREAD_PREFIX.length).trim();
-  return customerId || undefined;
-}
 
 /**
  * Thread callers identify their domain parent with the normal entity ID. The

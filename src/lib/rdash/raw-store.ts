@@ -584,7 +584,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 workspaceSyncError: null,
             });
             try {
-                await resetWorkspaceOutboxAfterWorkspaceReset(accepted, payload.revision);
+                await resetWorkspaceOutboxAfterWorkspaceReset(accepted);
             } catch (error) {
                 const message = "The workspace was reset on the server, but old local pending changes could not be cleared. This tab has paused background replay; keep it open and retry after closing other Urban Castle tabs.";
                 console.error("[workspace-reset] Local cleanup failed after server reset.", error);

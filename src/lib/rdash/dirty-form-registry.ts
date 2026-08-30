@@ -1,5 +1,5 @@
-export type DirtyFormResolution = "save" | "discard" | "stay";
-export type DirtyFormTaskResult = void | boolean | Promise<void | boolean>;
+type DirtyFormResolution = "save" | "discard" | "stay";
+type DirtyFormTaskResult = void | boolean | Promise<void | boolean>;
 
 export interface DirtyFormRegistration {
   id: string;
@@ -18,7 +18,7 @@ interface PendingNavigationInternal {
   onStay?: () => void;
 }
 
-export interface DirtyFormSummary {
+interface DirtyFormSummary {
   id: string;
   label: string;
 }

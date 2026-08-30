@@ -6,7 +6,7 @@ import { getSupabaseAdminClient, getSupabaseAuthClient, isSupabaseConfigured } f
 
 export const AUTH_COOKIE = "uc_session";
 export const AUTH_REFRESH_COOKIE = "uc_auth_refresh";
-export type RDashRole = "Owner" | "Operations Manager" | "Field Staff" | "Sales / Telecaller" | "Procurement Staff" | "Finance" | "Accounts / Admin";
+type RDashRole = "Owner" | "Operations Manager" | "Field Staff" | "Sales / Telecaller" | "Procurement Staff" | "Finance" | "Accounts / Admin";
 
 export interface AuthenticatedUser {
     userId: string;
@@ -35,7 +35,7 @@ type SupabaseAuthUser = {
     user_metadata?: Record<string, unknown>;
 };
 
-export type RenewableAuthSession = {
+type RenewableAuthSession = {
     user: Omit<AuthenticatedUser, "expiresAt">;
     refreshToken: string;
 };
@@ -65,7 +65,7 @@ export function signSession(user: Omit<AuthenticatedUser, "expiresAt">) {
     return `${payload}.${sign(payload)}`;
 }
 
-export function verifySession(token?: string | null): AuthenticatedUser | null {
+function verifySession(token?: string | null): AuthenticatedUser | null {
     if (!token) return null;
     const [payload, provided] = token.split(".");
     if (!payload || !provided) return null;
@@ -145,10 +145,10 @@ export const expiredRefreshTokenCookie = () => ({
     maxAge: 0,
 });
 
-export const AUTH_HEADER = "authorization";
+const AUTH_HEADER = "authorization";
 
 /** Extract a session token from Authorization: Bearer, falling back to cookie. */
-export function extractSessionToken(request?: NextRequest): string | null {
+function extractSessionToken(request?: NextRequest): string | null {
     if (request) {
         const authHeader = request.headers.get(AUTH_HEADER);
         if (authHeader && authHeader.toLowerCase().startsWith("bearer ")) {

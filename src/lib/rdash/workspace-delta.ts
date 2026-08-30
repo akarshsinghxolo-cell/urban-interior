@@ -25,7 +25,7 @@ export interface WorkspaceDeltaPayload {
   loadMs?: number;
 }
 
-export type StaffDeltaProjection = "directory" | "full";
+type StaffDeltaProjection = "directory" | "full";
 
 const KNOWN_COLLECTIONS = new Set<string>([
   ...topLevelCollections.map(String),
@@ -84,7 +84,7 @@ export function workspaceCollectionFilterParam(database: RDashDatabase): string 
 }
 
 /** Converts a delta response into the same operation format used by local commits. */
-export function workspaceDeltaOperations(
+function workspaceDeltaOperations(
   delta: WorkspaceDeltaPayload,
   loadedCollections: Set<string> | null = null,
 ): WorkspaceOperation[] {

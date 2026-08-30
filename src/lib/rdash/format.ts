@@ -16,7 +16,7 @@ export function formatINRShort(n: number | undefined | null): string {
         return "₹" + (n / 1000).toFixed(1) + "k";
     return "₹" + Math.round(n);
 }
-export const INDIA_TIME_ZONE = "Asia/Kolkata";
+const INDIA_TIME_ZONE = "Asia/Kolkata";
 export function formatDate(iso: string | undefined | null): string {
     if (!iso)
         return "—";

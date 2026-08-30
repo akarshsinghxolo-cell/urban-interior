@@ -13,7 +13,7 @@ import type {
 import type { FileAssetKind, FileAttachmentRole } from "@/lib/rdash/types";
 export { uploadPurposeForEntity } from "./upload-purpose";
 
-export interface WorkflowUploadFile extends EnqueueUploadFileOptions {
+interface WorkflowUploadFile extends EnqueueUploadFileOptions {
   file: File;
 }
 
@@ -28,7 +28,7 @@ export interface QueuedWorkflowFile {
   previewUrl: string;
 }
 
-export interface QueuedWorkflowBatch {
+interface QueuedWorkflowBatch {
   batchId: UploadBatchId;
   files: QueuedWorkflowFile[];
   attachmentIds: AttachmentId[];
@@ -85,7 +85,7 @@ export function withLocalPreview(queued: QueuedWorkflowFile, file: File): Queued
   return { ...queued, previewUrl: URL.createObjectURL(file) };
 }
 
-export function revokeWorkflowPreview(file: Pick<QueuedWorkflowFile, "previewUrl">): void {
+function revokeWorkflowPreview(file: Pick<QueuedWorkflowFile, "previewUrl">): void {
   if (file.previewUrl?.startsWith("blob:")) URL.revokeObjectURL(file.previewUrl);
 }
 
@@ -94,6 +94,3 @@ export async function cancelQueuedWorkflowFile(file: Pick<QueuedWorkflowFile, "u
   await uploadQueueStore.cancelItem(file.uploadItemId);
 }
 
-export async function cancelQueuedWorkflowBatch(batchId: UploadBatchId): Promise<void> {
-  await uploadQueueStore.cancelBatch(batchId);
-}

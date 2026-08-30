@@ -1,8 +1,8 @@
-export type CoordinatePair = {
+type CoordinatePair = {
     latitude: number;
     longitude: number;
 };
-export function isValidCoordinatePair(value: Partial<CoordinatePair> | null | undefined): value is CoordinatePair {
+function isValidCoordinatePair(value: Partial<CoordinatePair> | null | undefined): value is CoordinatePair {
     return Boolean(value &&
         Number.isFinite(value.latitude) &&
         Number.isFinite(value.longitude) &&

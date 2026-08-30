@@ -7,7 +7,7 @@ import type { ContextDetailTab, DetailPanelKind } from "./store/ui-types";
  */
 const DETAIL_TABS = new Set<ContextDetailTab>(["overview", "thread"]);
 
-export interface WorkspaceDetailTabRequest {
+interface WorkspaceDetailTabRequest {
   tab: ContextDetailTab;
   explicit: boolean;
   invalid: boolean;

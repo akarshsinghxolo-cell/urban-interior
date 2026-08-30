@@ -1,6 +1,6 @@
 import type { WorkSubcategory, WorkTypeRate } from "./types";
 
-export const DEFAULT_WORK_TYPE_NAME = "Standard";
+const DEFAULT_WORK_TYPE_NAME = "Standard";
 
 function slug(value: string): string {
   return value

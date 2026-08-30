@@ -1,10 +1,10 @@
-export type LocationSearchResult = {
+type LocationSearchResult = {
     display_name: string;
     lat: string;
     lon: string;
     address?: Record<string, string>;
 };
-export type ReverseLocationResult = {
+type ReverseLocationResult = {
     display_name?: string;
     address?: Record<string, string>;
 };

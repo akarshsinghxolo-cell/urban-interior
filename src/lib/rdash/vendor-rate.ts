@@ -1,5 +1,4 @@
 import type {
-  LineItem,
   Master,
   PurchaseOrder,
   VendorBill,
@@ -9,7 +8,7 @@ import type {
 } from "./types";
 import { resolveArticleRateConfig } from "./article-rate-config";
 
-export interface VendorRateUpdateInput {
+interface VendorRateUpdateInput {
   vendorId: string;
   articleId: string;
   variantId?: string;
@@ -46,7 +45,7 @@ function closeHistory(rows: VendorRateHistory[], rateKey: string, at: string) {
     : row);
 }
 
-export function canonicalVendorRateRecord(row: Record<string, unknown>): VendorRate | undefined {
+function canonicalVendorRateRecord(row: Record<string, unknown>): VendorRate | undefined {
   const id = String(row.id || "").trim();
   const vendorId = String(row.vendor_id || "").trim();
   const articleId = String(row.article_id || "").trim();
@@ -125,54 +124,7 @@ export function applyVendorRateUpdates(master: Master, changes: VendorRateUpdate
   return { ...master, vendorRates, vendorRateHistories };
 }
 
-function articleIdForLine(master: Master, line: Pick<LineItem, "article_id" | "work_required_article_id">) {
-  if (line.article_id) return line.article_id;
-  return line.work_required_article_id
-    ? master.subcategoryArticleMap.find((row) => row.id === line.work_required_article_id)?.article_id
-    : undefined;
-}
 
-export function vendorRateUpdatesFromPurchaseOrder(master: Master, po: PurchaseOrder, changedBy?: string): VendorRateUpdateInput[] {
-  return po.items.flatMap((line) => {
-    const articleId = articleIdForLine(master, line);
-    if (!articleId || !line.rate || line.rate <= 0) return [];
-    return [{
-      vendorId: po.vendor_id,
-      articleId,
-      variantId: line.variant_id,
-      quotedRate: line.rate,
-      articleName: articleName(master, articleId, line.title),
-      workRequiredArticleId: line.work_required_article_id,
-      sourceType: "PO" as const,
-      sourceId: po.id,
-      sourceNo: po.po_no,
-      changedBy,
-      notes: `Observed from purchase order ${po.po_no}.`,
-    }];
-  });
-}
-
-export function linkVendorRateUsageFromPO(master: Master, po: PurchaseOrder, changedBy?: string, updatedAt = new Date().toISOString()): Master {
-  const histories = [...master.vendorRateHistories];
-  for (const line of po.items || []) {
-    const articleId = articleIdForLine(master, line);
-    const amount = money(line.rate);
-    if (!articleId || amount <= 0) continue;
-    const current = master.vendorRates.find((row) => row.vendor_id === po.vendor_id && row.article_id === articleId && (row.variant_id || "") === (line.variant_id || ""));
-    if (!current || money(current.quoted_rate) !== amount) continue;
-    const change: VendorRateUpdateInput = { vendorId: po.vendor_id, articleId, variantId: line.variant_id, quotedRate: amount };
-    histories.push({
-      id: historyId(change, updatedAt, "-usage"), vendor_rate_id: current.id,
-      vendor_id: po.vendor_id, article_id: articleId, article_name: articleName(master, articleId, line.title),
-      work_required_article_id: line.work_required_article_id, variant_id: line.variant_id,
-      unit_id: currentUnit(master, articleId, line.variant_id), old_rate: amount, new_rate: amount,
-      source_type: "PO", source_id: po.id, source_no: po.po_no, status: "active",
-      effective_from: updatedAt.slice(0, 10), changed_by: changedBy,
-      notes: `Used by purchase order ${po.po_no} (quoted rate unchanged).`, created_at: updatedAt,
-    });
-  }
-  return { ...master, vendorRateHistories: histories };
-}
 
 export function createInitialVendorRate(master: Master, input: VendorRateUpdateInput, updatedAt = new Date().toISOString()) {
   return applyVendorRateUpdates(master, [{ ...input, sourceType: input.sourceType || "MANUAL", sourceNo: input.sourceNo || "Vendor Price Matrix", notes: input.notes || "Initial quoted rate created from Vendor Price Matrix." }], updatedAt);

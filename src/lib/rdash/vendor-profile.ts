@@ -1,6 +1,6 @@
 import type { RDashDatabase, Vendor, VendorRate } from "./types";
 
-export type VendorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
+type VendorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
 export type VendorType = "manufacturer" | "distributor" | "dealer" | "retailer" | "service_provider" | "other";
 export type VendorAvailability = "in_stock" | "limited" | "on_order" | "unknown";
 
@@ -33,7 +33,7 @@ export type VendorProfileRecord = Partial<Vendor> & {
   updated_at?: string;
 };
 
-export type VendorDuplicateConflict = {
+type VendorDuplicateConflict = {
   id: string;
   name: string;
   hard: boolean;
@@ -41,7 +41,7 @@ export type VendorDuplicateConflict = {
   similarity?: number;
 };
 
-export type VendorCommercialProfile = {
+type VendorCommercialProfile = {
   rateCount: number;
   activeRateCount: number;
   lowestQuotedRate?: number;
@@ -56,7 +56,7 @@ export type VendorCommercialProfile = {
   averageActualDeliveryDays?: number;
 };
 
-export type VendorPerformanceScore = {
+type VendorPerformanceScore = {
   overall: number;
   delivery: number;
   quality: number;
@@ -68,7 +68,7 @@ export type VendorPerformanceScore = {
   scoredRateCount: number;
 };
 
-export type VendorRecommendation = {
+type VendorRecommendation = {
   vendorId: string;
   vendorName: string;
   score: number;
@@ -80,7 +80,7 @@ export type VendorRecommendation = {
   reasons: string[];
 };
 
-export type VendorTimelineEvent = {
+type VendorTimelineEvent = {
   id: string;
   at: string;
   kind: "profile" | "rfq" | "bid" | "po" | "grn" | "bill" | "payment" | "audit";
@@ -114,7 +114,7 @@ const average = (values: number[]) => values.length ? values.reduce((sum, value)
 const clampScore = (value: number) => Math.max(0, Math.min(100, round(value)));
 const uniqueStrings = (values: unknown[]) => [...new Set(values.map((value) => compact(value)).filter(Boolean))];
 
-export function normalizeVendorName(value: unknown) {
+function normalizeVendorName(value: unknown) {
   return lower(value)
     .replace(/\b(private|pvt|limited|ltd|llp|traders|trader|enterprises|enterprise|and|&|co|company)\b/g, " ")
     .replace(/[^a-z0-9]+/g, " ")
@@ -130,7 +130,7 @@ function bigrams(value: string) {
   return result;
 }
 
-export function vendorNameSimilarity(left: unknown, right: unknown) {
+function vendorNameSimilarity(left: unknown, right: unknown) {
   const a = normalizeVendorName(left);
   const b = normalizeVendorName(right);
   if (!a || !b) return 0;

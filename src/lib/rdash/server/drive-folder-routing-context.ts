@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-export type DriveFolderRoutingContext = {
+type DriveFolderRoutingContext = {
   sourceFlow?: string;
   attachmentField?: string;
   attachmentFieldMode?: string;

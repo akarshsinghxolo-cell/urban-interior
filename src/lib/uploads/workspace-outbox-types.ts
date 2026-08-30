@@ -9,7 +9,7 @@ export type WorkspaceOutboxStatus =
   | "failed_retryable"
   | "failed_permanent";
 
-export interface WorkspaceOutboxSummary {
+interface WorkspaceOutboxSummary {
   collection: string;
   upsertIds: string[];
   deleteIds: string[];

@@ -45,7 +45,7 @@ import { EntityFormDialog } from "../EntityFormDialog";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { useActiveTabScroll } from "@/components/rdash/use-active-tab-scroll";
 
-export type Partner360Mode = "vendor" | "contractor";
+type Partner360Mode = "vendor" | "contractor";
 
 type TabId = "overview" | "profile" | "commercial" | "work" | "finance" | "compliance" | "activity";
 

@@ -17,7 +17,7 @@ export type WorkspaceDataLoadStatus =
   | "loaded"
   | "error";
 
-export interface WorkspaceTargetLoadState {
+interface WorkspaceTargetLoadState {
   status: WorkspaceDataLoadStatus;
   error?: string;
 }

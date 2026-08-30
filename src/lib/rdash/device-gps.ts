@@ -1,11 +1,11 @@
 import type { GeoActionSource } from "./types";
 import type { GpsCapture } from "./gps";
 
-export type DeviceGpsMode = "transaction" | "master-location" | "tracking";
+type DeviceGpsMode = "transaction" | "master-location" | "tracking";
 
-export const MASTER_LOCATION_MAX_ACCURACY_M = 75;
+const MASTER_LOCATION_MAX_ACCURACY_M = 75;
 
-export const DEVICE_GPS_OPTIONS: Record<DeviceGpsMode, PositionOptions> = {
+const DEVICE_GPS_OPTIONS: Record<DeviceGpsMode, PositionOptions> = {
   transaction: {
     enableHighAccuracy: true,
     timeout: 15_000,
@@ -23,7 +23,7 @@ export const DEVICE_GPS_OPTIONS: Record<DeviceGpsMode, PositionOptions> = {
   },
 };
 
-export type CaptureDevicePositionOptions = {
+type CaptureDevicePositionOptions = {
   mode?: DeviceGpsMode;
   maxAccuracyM?: number;
 };
@@ -65,7 +65,7 @@ function validatePosition(
   return position;
 }
 
-export function captureDevicePosition(
+function captureDevicePosition(
   options: CaptureDevicePositionOptions = {},
 ): Promise<GeolocationPosition> {
   const mode = options.mode || "transaction";
@@ -108,18 +108,6 @@ export async function captureDeviceGps(
   };
 }
 
-export function watchDevicePosition(
-  onPosition: PositionCallback,
-  onError?: PositionErrorCallback,
-): () => void {
-  const api = geolocation();
-  const watchId = api.watchPosition(
-    onPosition,
-    onError,
-    DEVICE_GPS_OPTIONS.tracking,
-  );
-  return () => api.clearWatch(watchId);
-}
 
 export function deviceGpsErrorMessage(error: unknown) {
   if (error instanceof Error && error.message) return error.message;

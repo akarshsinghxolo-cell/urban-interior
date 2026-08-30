@@ -3,9 +3,9 @@ import { STAFF_ROLE_KEYS, type StaffRoleKey } from "../staff-operations";
 import { getSupabaseAdminClient, isSupabaseConfigured } from "../../supabase/server";
 import type { AuthenticatedUser } from "./auth";
 
-export type RDashUserApprovalStatus = "pending" | "active" | "rejected" | "inactive";
+type RDashUserApprovalStatus = "pending" | "active" | "rejected" | "inactive";
 
-export interface RDashUserRoleAssignment {
+interface RDashUserRoleAssignment {
   id: string;
   user_id: string;
   email: string | null;
@@ -20,7 +20,7 @@ export interface RDashUserRoleAssignment {
   updated_at: string;
 }
 
-export interface StaffIdentityDriftRow {
+interface StaffIdentityDriftRow {
   identity_key: string;
   role_assignment_id: string | null;
   user_id: string | null;
@@ -46,22 +46,22 @@ export interface StaffIdentityDriftRow {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE_ASSIGNMENT_SELECT = "id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at";
 
-export function normalizeAuthEmail(email: string) {
+function normalizeAuthEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-export function assertSupabaseAuthConfigured() {
+function assertSupabaseAuthConfigured() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase Auth is not fully configured. Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY. Legacy aliases SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are also accepted.");
   }
 }
 
-export function normalizeRequestedRole(role: string | undefined): StaffRoleKey {
+function normalizeRequestedRole(role: string | undefined): StaffRoleKey {
   const requested = String(role || "FIELD_STAFF").trim().toUpperCase().replace(/[\s/-]+/g, "_");
   return (STAFF_ROLE_KEYS as readonly string[]).includes(requested) ? requested as StaffRoleKey : "FIELD_STAFF";
 }
 
-export function validateSignupInput(input: { email?: string; password?: string; displayName?: string }) {
+function validateSignupInput(input: { email?: string; password?: string; displayName?: string }) {
   const email = normalizeAuthEmail(input.email || "");
   const password = String(input.password || "");
   const displayName = String(input.displayName || "").trim();
@@ -125,7 +125,7 @@ async function syncStaffIdentity(input: {
   };
 }
 
-export async function findAuthUserByEmail(email: string): Promise<User | null> {
+async function findAuthUserByEmail(email: string): Promise<User | null> {
   const admin = getSupabaseAdminClient();
   const target = normalizeAuthEmail(email);
   const { data, error } = await (admin as unknown as {
@@ -213,7 +213,7 @@ export async function createPendingAccessRequest(input: {
   }
 }
 
-export function assertOwner(user: AuthenticatedUser) {
+function assertOwner(user: AuthenticatedUser) {
   if (user.role !== "Owner") throw new Error("Only the Owner can manage Urban Castle login approvals.");
 }
 

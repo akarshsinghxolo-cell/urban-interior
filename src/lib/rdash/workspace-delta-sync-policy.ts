@@ -1,4 +1,4 @@
-export interface WorkspaceDeltaSyncSafety {
+interface WorkspaceDeltaSyncSafety {
   authenticated: boolean;
   workspaceSyncStatus: string;
   outboxReady: boolean;

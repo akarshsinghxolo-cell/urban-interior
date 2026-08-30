@@ -7,9 +7,9 @@ import {
   type StaffPermissionRecord,
 } from "./staff-operations";
 
-export type WorkspaceRouteAccess = "pending" | "allowed" | "denied";
+type WorkspaceRouteAccess = "pending" | "allowed" | "denied";
 
-export interface WorkspaceRouteAccessDecision {
+interface WorkspaceRouteAccessDecision {
   status: WorkspaceRouteAccess;
   moduleId: string;
   moduleLabel: string;

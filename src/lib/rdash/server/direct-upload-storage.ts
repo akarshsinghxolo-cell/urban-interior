@@ -9,7 +9,6 @@ import {
   MAX_UPLOAD_BYTES,
   nowIso,
   safeSegment,
-  practicalFolderName,
   driveFetch,
 } from "./direct-upload-storage-core";
 
@@ -20,7 +19,6 @@ export {
   MAX_UPLOAD_BYTES,
   nowIso,
   safeSegment,
-  practicalFolderName,
   driveFetch,
 };
 

@@ -2,7 +2,7 @@ import type { RDashDatabase, VendorRate } from "./types";
 import { resolveArticleRateConfig } from "./article-rate-config";
 
 const EPSILON = 1e-9;
-export type SelectedVendorArticleRate = {
+type SelectedVendorArticleRate = {
   sourceId: string;
   vendorId: string;
   articleId: string;
@@ -16,7 +16,7 @@ export type SelectedVendorArticleRate = {
   configComplete: boolean;
   conversionError?: string;
 };
-export type ArticleVendorRateAverage = {
+type ArticleVendorRateAverage = {
   articleId: string;
   baseUnit?: string;
   average?: number;

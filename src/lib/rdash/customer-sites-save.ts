@@ -22,13 +22,13 @@ export type SaveCustomerWithSitesInput = {
   detachAttachmentIds?: string[];
 };
 
-export type CustomerFieldChange = {
+type CustomerFieldChange = {
   field: keyof Customer;
   before: unknown;
   after: unknown;
 };
 
-export type SiteSaveChange = {
+type SiteSaveChange = {
   siteId: string;
   kind: "create" | "update";
   archived?: boolean;
@@ -36,21 +36,21 @@ export type SiteSaveChange = {
   after: Site;
 };
 
-export type AreaSaveChange = {
+type AreaSaveChange = {
   areaId: string;
   kind: "create" | "update";
   before?: Area;
   after: Area;
 };
 
-export type WorkRequiredSaveChange = {
+type WorkRequiredSaveChange = {
   workRequiredId: string;
   kind: "create" | "update";
   before?: WorkRequired;
   after: WorkRequired;
 };
 
-export type SaveCustomerWithSitesResult = {
+type SaveCustomerWithSitesResult = {
   db: RDashDatabase;
   customerId: string;
   siteIds: string[];

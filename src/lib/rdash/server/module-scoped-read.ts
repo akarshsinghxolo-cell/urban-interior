@@ -22,6 +22,7 @@ import {
   type WorkspacePagination,
   type WorkspaceSubset,
 } from "./workspace";
+import { mergeRows, rowsFor } from "./rows";
 
 export * from "./module-scoped-collections";
 export * from "./module-read-plans";
@@ -39,33 +40,6 @@ export interface ModuleScopedWorkspace extends WorkspaceSubset {
   loadMs: number;
   pageOnly?: boolean;
 }
-
-function rowsFor(database: RDashDatabase, collection: string): Array<Record<string, unknown>> {
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length);
-    const value = (database.master as unknown as Record<string, unknown>)?.[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
-function mergeRows(
-  current: Array<Record<string, unknown>>,
-  incoming: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const merged = new Map<string, Record<string, unknown>>();
-  for (const row of current) {
-    const id = String(row.id || "").trim();
-    if (id) merged.set(id, row);
-  }
-  for (const row of incoming) {
-    const id = String(row.id || "").trim();
-    if (id) merged.set(id, row);
-  }
-  return [...merged.values()];
-}
-
 function mergedPagination(
   current?: WorkspacePagination,
   incoming?: WorkspacePagination,

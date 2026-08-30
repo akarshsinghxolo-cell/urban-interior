@@ -6,7 +6,7 @@ import type { FilterPreset } from "@/lib/rdash/modules";
 import { Bookmark, BookmarkPlus, X, Check, Pencil, Star } from "lucide-react";
 import { toast } from "sonner";
 import { loadSavedViews, SAVED_VIEWS_STORAGE_KEY } from "@/lib/rdash/saved-views-storage";
-export interface SavedViewsBarProps {
+interface SavedViewsBarProps {
     workspaceKey: string;
     presets?: FilterPreset[] | null;
     currentPresetId?: string;

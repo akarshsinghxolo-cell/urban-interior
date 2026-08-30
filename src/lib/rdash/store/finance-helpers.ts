@@ -14,7 +14,7 @@ import { assertFinanceContext } from "../business-rules";
 import { formatINR } from "../format";
 import { businessDate, today, nowIso, genId } from "./helpers";
 
-export function milestoneOrder(payment: Payment): number | null {
+function milestoneOrder(payment: Payment): number | null {
     const label = (payment.milestone_label || "").toLowerCase();
     if (!label)
         return null;
@@ -36,7 +36,7 @@ export function milestoneOrder(payment: Payment): number | null {
     return 3;
 }
 
-export function paymentSequenceGroup(payment: Payment): string | null {
+function paymentSequenceGroup(payment: Payment): string | null {
     return (payment.work_order_id ||
         payment.quotation_id ||
         payment.work_required_id ||
@@ -95,35 +95,11 @@ export function assertServiceFinanceContext(db: RDashDatabase, input: {
     return context;
 }
 
-export function paymentFollowupTitle(payment: Payment): string {
+function paymentFollowupTitle(payment: Payment): string {
     return `Payment follow-up · ${payment.customer_name || "Customer"} · ${payment.milestone_label || formatINR(payment.amount || 0)}`;
 }
 
-export function invoiceStatusFromPayment(payment: Payment): CustomerInvoice["status"] {
-    if (payment.status === "received")
-        return "paid";
-    if (payment.status === "partial")
-        return "partial";
-    if (payment.status === "overdue")
-        return "overdue";
-    if (payment.status === "cancelled")
-        return "cancelled";
-    return "issued";
-}
 
-export function paymentStatusFromInvoice(status: CustomerInvoice["status"]): Payment["status"] | null {
-    if (status === "paid")
-        return "received";
-    if (status === "partial")
-        return "partial";
-    if (status === "overdue")
-        return "overdue";
-    if (status === "cancelled")
-        return "cancelled";
-    if (status === "issued")
-        return "pending";
-    return null;
-}
 
 export function buildInvoiceDraftFromPayment(payment: Payment, nextNo: string, threadId?: string): CustomerInvoice {
     const paidAmount = 0;
@@ -265,7 +241,7 @@ export function upsertPaymentFollowup(state: any, payment: Payment, dueDate = pa
  * Normalise a free-text payment due-event description into one of the known
  * canonical event strings used by the milestone scheduler.
  */
-export function canonicalPaymentEvent(value?: string) {
+function canonicalPaymentEvent(value?: string) {
     const normalized = (value || "")
         .trim()
         .toLowerCase()
@@ -340,7 +316,7 @@ export function eventMatchesPaymentTrigger(event: string | undefined, trigger: "
 // the SiteProfitabilityModule computeSitePnLs both delegate to it now.
 // ─────────────────────────────────────────────────────────────────────────
 
-export interface WorkOrderPnLResult {
+interface WorkOrderPnLResult {
     work_order_id: string;
     work_order_no: string;
     site_id?: string;

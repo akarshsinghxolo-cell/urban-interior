@@ -10,6 +10,7 @@ import {
 } from "../staff-operations";
 import type { WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
+import { rowId, rowsFor } from "./rows";
 
 const threadParentCollection: Record<string, string> = {
   quotation: "quotations",
@@ -34,22 +35,6 @@ const threadParentCollection: Record<string, string> = {
   execution_log: "executionLogs",
   workRequired: "workRequired",
 };
-
-function rowsFor(database: RDashDatabase | undefined, collection: string): Array<Record<string, unknown>> {
-  if (!database) return [];
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length) as keyof Master;
-    const value = database.master?.[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
-function rowId(row: Record<string, unknown>) {
-  return String(row.id || "");
-}
-
 function parentReference(collection: string, id: string) {
   return `${collection}:${id}`;
 }

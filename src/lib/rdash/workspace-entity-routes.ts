@@ -19,10 +19,8 @@ export type WorkspaceEntityKind = Extract<
   | "contractorBill"
 >;
 
-// Compatibility name retained for the Stage 6 imports.
-export type CoreWorkspaceEntityKind = WorkspaceEntityKind;
 
-export interface WorkspaceEntityRouteDefinition {
+interface WorkspaceEntityRouteDefinition {
   kind: WorkspaceEntityKind;
   moduleId: string;
   collection:
@@ -46,7 +44,7 @@ export interface WorkspaceEntityRouteDefinition {
   permissionModule: string;
 }
 
-export interface WorkspaceEntityLocation extends WorkspaceRouteMatch {
+interface WorkspaceEntityLocation extends WorkspaceRouteMatch {
   entity: {
     kind: WorkspaceEntityKind;
     id: string;
@@ -54,7 +52,7 @@ export interface WorkspaceEntityLocation extends WorkspaceRouteMatch {
   };
 }
 
-export type WorkspaceLocation = WorkspaceRouteMatch | WorkspaceEntityLocation;
+type WorkspaceLocation = WorkspaceRouteMatch | WorkspaceEntityLocation;
 
 const ENTITY_ROUTE_DEFINITIONS: readonly WorkspaceEntityRouteDefinition[] = [
   { kind: "customer", moduleId: "customerDesk", collection: "customers", permissionModule: "customers" },
@@ -211,5 +209,5 @@ export function isWorkspaceEntityLocation(
   return Boolean(location && "entity" in location);
 }
 
-export const CORE_WORKSPACE_ENTITY_ROUTES = Object.freeze([...ENTITY_ROUTE_DEFINITIONS]);
+const CORE_WORKSPACE_ENTITY_ROUTES = Object.freeze([...ENTITY_ROUTE_DEFINITIONS]);
 export const WORKSPACE_ENTITY_ROUTES = CORE_WORKSPACE_ENTITY_ROUTES;

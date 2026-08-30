@@ -20,7 +20,7 @@ export type WorkRequiredFormDraft = {
   priority: Priority;
 };
 
-export type NewWorkArea = {
+type NewWorkArea = {
   name: string;
   areaType: Area["area_type"];
   notes: string;

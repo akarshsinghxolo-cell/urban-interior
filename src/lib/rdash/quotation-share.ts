@@ -59,7 +59,7 @@ export function whatsappShareUrl(text: string): string {
     return `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 
-export type QuotationShareOutcome = "native-shared" | "whatsapp-opened" | "copied" | "failed";
+type QuotationShareOutcome = "native-shared" | "whatsapp-opened" | "copied" | "failed";
 
 function canUseClipboard(): boolean {
     return typeof navigator !== "undefined" && !!navigator.clipboard?.writeText;

@@ -76,7 +76,7 @@ export function quotationAcceptanceWarnings(db: RDashDatabase, quotation: Quotat
  * Pure: takes the db snapshot, returns a defaults object. Caller decides
  * whether to apply each field (caller-provided values always win).
  */
-export interface QuotationDefaults {
+interface QuotationDefaults {
     /** ISO date string (YYYY-MM-DD) — today + active validity default_days (or +30 if none). */
     valid_until: string;
     /** Number of days the validity was computed from. */

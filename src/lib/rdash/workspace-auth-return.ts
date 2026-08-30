@@ -1,6 +1,6 @@
 export const WORKSPACE_RETURN_COOKIE = "uc_workspace_return_to";
 export const WORKSPACE_RETURN_MAX_AGE_SECONDS = 10 * 60;
-export const WORKSPACE_DEFAULT_ENTRY_PATH = "/workspace";
+const WORKSPACE_DEFAULT_ENTRY_PATH = "/workspace";
 
 /**
  * Accepts only same-origin paths inside the workspace namespace. This helper is

@@ -30,7 +30,7 @@ export type RowScopedWorkspaceEntityKind = Extract<
   WorkspaceEntityKind,
   "customer" | "site"
 >;
-export type WorkspaceReadStrategy =
+type WorkspaceReadStrategy =
   | "unknown"
   | "bootstrap"
   | "full"

@@ -1,4 +1,5 @@
 import type { RDashDatabase } from "./types";
+import { mergeRows } from "./server/rows";
 
 export interface WorkspacePageCursor {
   offset: number;
@@ -9,27 +10,6 @@ export interface WorkspacePageCursor {
 }
 
 export type WorkspacePageState = Record<string, WorkspacePageCursor>;
-
-function rowId(row: Record<string, unknown>): string {
-  return String(row.id || "").trim();
-}
-
-function mergeRows(
-  current: Array<Record<string, unknown>>,
-  incoming: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const merged = new Map<string, Record<string, unknown>>();
-  for (const row of current) {
-    const id = rowId(row);
-    if (id) merged.set(id, row);
-  }
-  for (const row of incoming) {
-    const id = rowId(row);
-    if (id) merged.set(id, row);
-  }
-  return [...merged.values()];
-}
-
 function paginationFrom(database: RDashDatabase): WorkspacePageState {
   const raw = (database as unknown as Record<string, unknown>)._workspace_pagination;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};

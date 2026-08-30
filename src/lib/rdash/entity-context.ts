@@ -1,5 +1,5 @@
 import type { FileAttachmentEntityType, ID, RDashDatabase } from "./types";
-export type EntityOwnerKind = "customer" | "vendor" | "contractor" | "system";
+type EntityOwnerKind = "customer" | "vendor" | "contractor" | "system";
 const entityTypes: readonly FileAttachmentEntityType[] = [
     "customer", "site", "room", "workRequired", "measurement_revision", "quotation", "quotation_item", "accepted_scope",
     "workOrder", "boq", "boq_item", "variation_request", "vendor_rfq", "vendor_bid", "purchase_order", "grn", "stock_movement", "vendor_bill", "vendor_payment",

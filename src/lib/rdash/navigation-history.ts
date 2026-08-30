@@ -5,10 +5,10 @@ import type {
   WorkspaceOverlaySnapshot,
 } from "./store/ui-types";
 
-export const ROOT_MODULE = "workdesk";
-export const HISTORY_MARKER = "urban-castle-navigation-v3" as const;
+const ROOT_MODULE = "workdesk";
+const HISTORY_MARKER = "urban-castle-navigation-v3" as const;
 
-export type NavigationLayer =
+type NavigationLayer =
   | { type: "root" }
   | { type: "module"; moduleId: string }
   | { type: "detail"; kind: string; recordId: string; panelTab?: string }
@@ -22,9 +22,9 @@ export interface BrowserNavigationState {
   snapshot: WorkspaceNavigationSnapshot;
 }
 
-export const ROOT_LAYER: NavigationLayer = { type: "root" };
+const ROOT_LAYER: NavigationLayer = { type: "root" };
 
-export function overlayKey(overlay: WorkspaceOverlaySnapshot): string {
+function overlayKey(overlay: WorkspaceOverlaySnapshot): string {
   switch (overlay.type) {
     case "commandPalette":
     case "mobileNav":
@@ -43,7 +43,7 @@ export function overlayKey(overlay: WorkspaceOverlaySnapshot): string {
   }
 }
 
-export function layersEqual(left: NavigationLayer, right: NavigationLayer): boolean {
+function layersEqual(left: NavigationLayer, right: NavigationLayer): boolean {
   if (left.type !== right.type) return false;
   if (left.type === "module" && right.type === "module") return left.moduleId === right.moduleId;
   if (left.type === "detail" && right.type === "detail") {
@@ -81,7 +81,7 @@ export function navigationLayers(snapshot: WorkspaceNavigationSnapshot): Navigat
   return layers;
 }
 
-export function snapshotForLayers(
+function snapshotForLayers(
   desired: WorkspaceNavigationSnapshot,
   layers: NavigationLayer[],
 ): WorkspaceNavigationSnapshot {

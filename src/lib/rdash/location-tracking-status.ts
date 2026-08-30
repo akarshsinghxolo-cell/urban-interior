@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-export type LocationTrackingState = {
+type LocationTrackingState = {
   status:
     | "disabled"
     | "checking"

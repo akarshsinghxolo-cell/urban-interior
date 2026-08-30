@@ -10,7 +10,7 @@ import {
   getModuleScopedWorkspacePage,
 } from "./module-scoped-read";
 
-export interface ModuleScopedRouteOptions {
+interface ModuleScopedRouteOptions {
   moduleId: string;
   errorLabel: string;
   timingLabel: string;

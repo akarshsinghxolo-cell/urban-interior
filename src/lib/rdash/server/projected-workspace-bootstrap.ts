@@ -23,7 +23,7 @@ export const WORKSPACE_FOUNDATION_COLLECTIONS = Object.freeze([
   "master.workOptionValues",
 ] as const);
 
-export const WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS = Object.freeze([
+const WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS = Object.freeze([
   "staffRolePermissions",
   "master.staff",
   ...WORKSPACE_FOUNDATION_COLLECTIONS,

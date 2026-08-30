@@ -23,14 +23,14 @@ export const STAFF_ROLE_LABELS: Record<StaffRoleKey, string> = {
   ACCOUNTS_ADMIN: "Accounts / Admin",
 };
 
-export const STAFF_ROLE_BY_LABEL: Record<string, StaffRoleKey> = Object.fromEntries(
+const STAFF_ROLE_BY_LABEL: Record<string, StaffRoleKey> = Object.fromEntries(
   Object.entries(STAFF_ROLE_LABELS).flatMap(([key, label]) => [
     [label.toLowerCase(), key],
     [key.toLowerCase(), key],
   ]),
 ) as Record<string, StaffRoleKey>;
 
-export type StaffPermissionAction = "view" | "create" | "update" | "approve" | "delete";
+type StaffPermissionAction = "view" | "create" | "update" | "approve" | "delete";
 export interface StaffPermissionRecord {
   id: string;
   role_key: StaffRoleKey;
@@ -44,65 +44,10 @@ export interface StaffPermissionRecord {
   updated_at: string;
 }
 
-export interface PayrollPeriodRecord {
-  id: string;
-  month: number;
-  year: number;
-  status: "draft" | "generated" | "approved" | "paid" | "cancelled";
-  generated_at: string;
-  approved_by_staff_id?: string;
-}
 
-export interface PayrollLineRecord {
-  id: string;
-  payroll_period_id: string;
-  staff_id: string;
-  base_salary: number;
-  present_days: number;
-  absent_days: number;
-  paid_leave_days: number;
-  overtime_amount: number;
-  advance_deduction: number;
-  other_deductions: number;
-  gross_pay: number;
-  net_payable: number;
-  payment_status: "pending" | "approved" | "paid" | "held";
-  deduction_explanation?: string;
-  calendar_reason_map?: Array<{ date: string; reason: string; amount: number }>;
-}
 
-export interface SalaryAdjustmentRecord {
-  id: string;
-  staff_id: string;
-  payroll_period_id?: string;
-  adjustment_date: string;
-  type: "overtime" | "advance" | "deduction" | "bonus" | "hold";
-  amount: number;
-  reason: string;
-  status: "draft" | "approved" | "rejected";
-  approved_by_staff_id?: string;
-}
 
-export interface LeaveRequestRecord {
-  id: string;
-  staff_id: string;
-  start_date: string;
-  end_date: string;
-  leave_type: "paid" | "unpaid" | "sick" | "casual";
-  status: "requested" | "approved" | "rejected" | "cancelled";
-  reason?: string;
-  approved_by_staff_id?: string;
-}
 
-export interface StaffDocumentRecord {
-  id: string;
-  staff_id: string;
-  document_type: "photo" | "aadhaar" | "pan" | "id_proof" | "address_proof" | "bank" | "other";
-  document_no?: string;
-  file_asset_id?: string;
-  status: "pending" | "verified" | "expired" | "rejected";
-  created_at: string;
-}
 
 export const STAFF_MODULES = [
   ["workspace", "Workspace"],
@@ -394,7 +339,7 @@ export function moduleForCollection(collection: string): string {
   return map[collection] || "workspace";
 }
 
-export function enrichStaffRecords(staff: Staff[]): Staff[] {
+function enrichStaffRecords(staff: Staff[]): Staff[] {
   return staff.map((member, index) => {
     const role_key = normalizeRoleKey((member as Staff & { role_key?: string }).role_key || member.role);
     const policy = member.attendance_policy || createDefaultAttendancePolicy();

@@ -1,4 +1,4 @@
-export type WorkspaceSaveOutcome = "confirmed" | "pending" | "rejected";
+type WorkspaceSaveOutcome = "confirmed" | "pending" | "rejected";
 
 export function classifyWorkspaceSaveOutcome(
   httpStatus: number,

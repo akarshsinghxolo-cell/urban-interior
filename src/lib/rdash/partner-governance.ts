@@ -2,7 +2,7 @@ import type { ID } from "./types";
 
 export type PartnerGovernanceMode = "vendor" | "contractor";
 
-export type PartnerDocumentStatus = "valid" | "expiring" | "expired" | "unverified";
+type PartnerDocumentStatus = "valid" | "expiring" | "expired" | "unverified";
 
 export type PartnerDocumentKind =
   | "gst_registration"
@@ -56,14 +56,14 @@ export interface VendorArticleCapability {
   updated_at: string;
 }
 
-export interface PartnerDuplicateCandidate {
+interface PartnerDuplicateCandidate {
   leftId: ID;
   rightId: ID;
   score: number;
   reasons: string[];
 }
 
-export interface PartnerPaymentReadiness {
+interface PartnerPaymentReadiness {
   ready: boolean;
   blockers: string[];
   warnings: string[];
@@ -96,7 +96,7 @@ export function governanceId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function normalizePartnerName(value?: string): string {
+function normalizePartnerName(value?: string): string {
   return String(value || "")
     .toLowerCase()
     .replace(/\b(pvt|private|ltd|limited|llp|company|co|enterprises|enterprise|traders|trading|contractor|contractors)\b/g, " ")
@@ -105,16 +105,16 @@ export function normalizePartnerName(value?: string): string {
     .replace(/\s+/g, " ");
 }
 
-export function normalizePhone(value?: string): string {
+function normalizePhone(value?: string): string {
   const digits = String(value || "").replace(/\D/g, "");
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
-export function normalizeTaxId(value?: string): string {
+function normalizeTaxId(value?: string): string {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-export function normalizeBankAccount(value?: string): string {
+function normalizeBankAccount(value?: string): string {
   return String(value || "").replace(/\D/g, "");
 }
 

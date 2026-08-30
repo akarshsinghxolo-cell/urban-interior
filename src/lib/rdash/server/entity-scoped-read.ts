@@ -13,6 +13,7 @@ import {
 import { mergeWorkspaceSubsets } from "./module-scoped-read";
 import { getProjectedWorkspacePermissions } from "./projected-workspace-bootstrap";
 import { getWorkspaceSubset, type WorkspaceSubset } from "./workspace";
+import { rowsFor } from "./rows";
 
 // Entity-scoped reads are the authoritative Customer/Site detail architecture.
 const MAX_ENTITY_IDS = 500;
@@ -82,17 +83,6 @@ export interface EntityScopedWorkspace extends WorkspaceSubset {
   rowCount: number;
   loadMs: number;
 }
-
-function rowsFor(database: RDashDatabase, collection: string): Array<Record<string, unknown>> {
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length);
-    const value = (database.master as unknown as Record<string, unknown>)?.[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
 function unique(values: unknown[]): string[] {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).slice(0, MAX_ENTITY_IDS);
 }

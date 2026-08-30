@@ -64,7 +64,7 @@ export function managedPreviewUrl(file: FilePreviewSource) {
     return file.url || "";
 }
 
-export function managedThumbnailUrl(file: FilePreviewSource, width = 360) {
+function managedThumbnailUrl(file: FilePreviewSource, width = 360) {
     if (file.proxyUrl)
         return `${file.proxyUrl}&mode=thumb&w=${Math.max(120, Math.min(1600, Math.round(width)))}`;
     if (file.googleFileId) {
@@ -82,7 +82,7 @@ export function managedOpenUrl(file: FilePreviewSource) {
     return "";
 }
 
-export function managedDownloadUrl(file: FilePreviewSource) {
+function managedDownloadUrl(file: FilePreviewSource) {
     if (file.proxyUrl)
         return `${file.proxyUrl}&mode=media&download=1&name=${encodeURIComponent(file.fileName)}`;
     if (file.googleFileId)

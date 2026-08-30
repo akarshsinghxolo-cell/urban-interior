@@ -8,7 +8,7 @@ import type { AuthenticatedUser } from "./auth";
 import { collectionsForWorkspaceReadTarget } from "./module-read-plans";
 import { getWorkspaceSubset } from "./workspace";
 
-export interface WorkspaceDeltaAccess {
+interface WorkspaceDeltaAccess {
   target: WorkspaceReadTarget;
   collections: Set<string>;
   droppedCollectionCount: number;

@@ -38,7 +38,7 @@ async function assertSupabaseSchemaReady(): Promise<void> {
   }
 }
 
-export interface WorkspaceSnapshot {
+interface WorkspaceSnapshot {
   revision: number;
   data: RDashDatabase;
   updatedAt: string;
@@ -46,17 +46,17 @@ export interface WorkspaceSnapshot {
   bumpedRowVersions?: Record<string, number>;
 }
 
-export interface WorkspaceWithRevisions extends WorkspaceSnapshot {
+interface WorkspaceWithRevisions extends WorkspaceSnapshot {
   rowVersions?: Record<string, number>;
 }
 
-export interface WorkspaceOperationCommitResult {
+interface WorkspaceOperationCommitResult {
   revision: number;
   updatedAt: string;
   bumpedRowVersions?: Record<string, number>;
 }
 
-export interface WorkspacePaginationEntry {
+interface WorkspacePaginationEntry {
   offset: number;
   limit: number;
   returned: number;
@@ -157,7 +157,7 @@ export async function saveWorkspace(
   };
 }
 
-export function assertWorkspaceResetRequest(user: AuthenticatedUser, confirmation: string) {
+function assertWorkspaceResetRequest(user: AuthenticatedUser, confirmation: string) {
   if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner may reset the workspace.");
   if (confirmation.trim() !== "RESET WORKSPACE") throw new Error('INVALID:Type "RESET WORKSPACE" exactly to confirm the reset.');
 }

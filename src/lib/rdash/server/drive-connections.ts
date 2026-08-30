@@ -79,7 +79,7 @@ function sameGoogleIdentity(
   return Boolean(leftEmail && rightEmail && leftEmail === rightEmail);
 }
 
-export type DriveConnectionSummary = {
+type DriveConnectionSummary = {
   id: string;
   email?: string;
   googleAccountId?: string;
@@ -270,7 +270,7 @@ async function getCachedAccessToken(connectionId: string, refreshTokenValue: str
   return token;
 }
 
-export function invalidateTokenCache(connectionId?: string) {
+function invalidateTokenCache(connectionId?: string) {
   if (connectionId) {
     tokenCache.delete(connectionId);
   } else {

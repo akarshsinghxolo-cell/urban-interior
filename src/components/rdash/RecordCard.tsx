@@ -3,7 +3,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Avatar, StatusBadge } from "./primitives";
 import { ContextRow, type ContextAction } from "./ContextMenuHost";
-import { priorityStyle, relativeDay, isOverdue, formatINR, formatINRShort, } from "@/lib/rdash/format";
+import { priorityStyle, relativeDay, isOverdue, formatINRShort, } from "@/lib/rdash/format";
 import type { Priority } from "@/lib/rdash/types";
 
 interface RecordCardProps {
@@ -102,5 +102,3 @@ export function RecordCard({ title, subtitle, customerName, status, priority, du
       </ContextRow>
     );
 }
-
-export { formatINR };

@@ -1,6 +1,6 @@
 import type { Article, ArticleVariant } from "./types";
 
-export type ArticleRateConfig = {
+type ArticleRateConfig = {
   rateUnit?: string;
   baseUnit?: string;
   conversionQuantity?: number;

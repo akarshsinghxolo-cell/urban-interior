@@ -421,7 +421,7 @@ function MentionBody({ body }: { body: string }) {
             openDetail(et as any, seg.mention.entity_id);
         }
         else {
-            console.log("[mention] unhandled entity_type", seg.mention);
+            console.warn("[mention] unhandled entity_type", seg.mention);
         }
     }} className="mx-0.5 inline-flex items-center rounded bg-primary/10 px-1 py-0.5 text-[12px] font-medium text-primary align-baseline hover:bg-primary/20 hover:underline" title={`Open ${seg.mention.entity_type} ${seg.mention.entity_id}`}>
           <AtSign className="mr-0.5 h-3 w-3"/>{seg.mention.label}

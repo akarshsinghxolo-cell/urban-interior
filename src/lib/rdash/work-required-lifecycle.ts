@@ -6,7 +6,7 @@ import type {
   WorkRequiredStatus,
 } from "./types";
 
-export const SALES_WORK_REQUIRED_STAGES: readonly WorkRequiredStatus[] = [
+const SALES_WORK_REQUIRED_STAGES: readonly WorkRequiredStatus[] = [
   "new",
   "contacted",
   "visit_scheduled",
@@ -43,7 +43,7 @@ const WORKFLOW_OWNED_STAGES = new Set<WorkRequiredStatus>([
 
 const ACTIVE_QUOTATION_STATUSES = new Set<QuotationStatus>(["draft", "sent", "accepted"]);
 
-export interface WorkRequiredTransitionDecision {
+interface WorkRequiredTransitionDecision {
   allowed: boolean;
   requiresReason: boolean;
   reason?: string;

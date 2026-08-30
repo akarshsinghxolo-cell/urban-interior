@@ -42,8 +42,6 @@
 import type { ForeignKeyRule } from "../types";
 
 export type { ForeignKeyRule };
-export type OnDeletePolicy = ForeignKeyRule["onDelete"];
-
 // ─────────────────────────────────────────────────────────────────────────
 // Customer-domain FKs
 // ─────────────────────────────────────────────────────────────────────────
@@ -487,10 +485,6 @@ export const FOREIGN_KEYS: ForeignKeyRule[] = [
     ...unenforcedFks,
 ];
 
-/** Return every FK rule whose child collection is `collection`. */
-export function fksForCollection(collection: string): ForeignKeyRule[] {
-    return FOREIGN_KEYS.filter((rule) => rule.collection === collection);
-}
 
 /** Return every FK rule whose parent collection is `collection`
  *  (i.e. the rules that govern what happens when a row in `collection`

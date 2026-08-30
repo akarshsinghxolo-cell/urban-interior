@@ -27,7 +27,7 @@ import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { Followup, Task, Visit, WorkOrder } from "@/lib/rdash/types";
 
-export type EditableEntityType = "task" | "followup" | "visit" | "workOrder";
+type EditableEntityType = "task" | "followup" | "visit" | "workOrder";
 
 type EditableEntity = Task | Followup | Visit | WorkOrder;
 

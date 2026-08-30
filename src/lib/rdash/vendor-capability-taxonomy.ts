@@ -7,14 +7,14 @@ export type VendorCapabilityTaxonomyMaster = {
   subcategoryArticleMap: WorkRequiredArticle[];
 };
 
-export type VendorCapabilityTaxonomySelection = {
+type VendorCapabilityTaxonomySelection = {
   categoryIds: string[];
   subcategoryIds: string[];
 };
 
 const unique = (values: string[]) => [...new Set(values.filter(Boolean))];
 
-export function vendorArticleSubcategoryIds(
+function vendorArticleSubcategoryIds(
   master: VendorCapabilityTaxonomyMaster,
   articleId: string,
 ): string[] {
