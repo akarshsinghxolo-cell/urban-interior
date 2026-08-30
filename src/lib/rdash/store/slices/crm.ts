@@ -748,37 +748,45 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 .filter((area: any) => area.site_id === workRequired.site_id)
                 .map((area: any) => [normaliseAreaName(area.name), area.id]));
             const lineKeys = new Set<string>();
-            const existingKeys = new Set((workRequired.structured_items || []).map((item: any) => [item.area_id || "", item.category_id || "", item.work_required_article_id || "", item.variant_id || "", item.unit_id || ""].join("::")));
+            const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "variant_id" | "unit_id">) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.variant_id || "", item.unit_id || ""].join("::");
+            const existingKeys = new Set((workRequired.structured_items || []).map(scopeKey));
             const resolvedItems: LineItem[] = lines.map((line: any, index: any) => {
                 if (line.site_id !== workRequired.site_id) {
                     throw new Error(`${context}: line ${index + 1} must stay on Site "${state.db.sites.find((site: any) => site.id === workRequired.site_id)?.name || workRequired.site_id}".`);
                 }
                 assertSiteBelongsToCustomer(state.db, line.site_id, workRequired.customer_id, context);
                 if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
-                    throw new Error(`${context}: line ${index + 1} requires a quantity greater than zero.`);
+                    throw new Error(`${context}: line ${index + 1} requires a wall area/length greater than zero.`);
                 }
-                if (!line.category_id || !line.subcategory_id || !line.article_id || !line.unit_id) {
-                    throw new Error(`${context}: line ${index + 1} requires Area, Category, Subcategory, Article, Quantity, and Unit.`);
+                if (!line.category_id || !line.subcategory_id) {
+                    throw new Error(`${context}: line ${index + 1} requires Area, Category, and Subcategory.`);
                 }
                 const category = assertWorkCategoryId(state.db, line.category_id, context)!;
                 const subcategory = assertWorkSubcategoryId(state.db, line.subcategory_id, context)!;
                 if (subcategory.category_id !== category.id) {
                     throw new Error(`${context}: line ${index + 1} has a Subcategory outside its selected Category.`);
                 }
-                const article = state.db.master.articles.find((row: any) => row.id === line.article_id);
-                if (!article)
+                // Detailed-area capture: Article/Variant are optional (dimensions replaced
+                // catalog picks). Unit is derived from the dimensions: wall height present
+                // → sqft, height empty (e.g. roof railing) → running feet. sqft/rft are
+                // always present in the master catalog.
+                const article = line.article_id
+                    ? state.db.master.articles.find((row: any) => row.id === line.article_id)
+                    : undefined;
+                if (line.article_id && !article)
                     throw new Error(`${context}: line ${index + 1} article does not exist.`);
-                const mapping = state.db.master.subcategoryArticleMap.find((row: any) => row.work_required_id === subcategory.id && row.article_id === article.id);
-                if (!mapping) {
+                const mapping = article
+                    ? state.db.master.subcategoryArticleMap.find((row: any) => row.work_required_id === subcategory.id && row.article_id === article.id)
+                    : undefined;
+                if (article && !mapping) {
                     throw new Error(`${context}: line ${index + 1} article is not available under the selected Subcategory.`);
                 }
-                const unit = state.db.master.units.find((row: any) => row.id === line.unit_id);
-                if (!unit)
-                    throw new Error(`${context}: line ${index + 1} unit does not exist.`);
+                const unitId = line.unit_id || (Number(line.height_ft) > 0 ? "sqft" : "rft");
+                const unit = state.db.master.units.find((row: { id: string }) => row.id === unitId);
                 const variant = line.variant_id
                     ? state.db.master.articleVariants.find((row: any) => row.id === line.variant_id)
                     : undefined;
-                if (line.variant_id && (!variant || variant.article_id !== article.id)) {
+                if (line.variant_id && (!variant || (article && variant.article_id !== article.id))) {
                     throw new Error(`${context}: line ${index + 1} variant does not belong to the selected Article.`);
                 }
                 let areaId = line.area_id;
@@ -819,31 +827,40 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         areaId = area.id;
                     }
                 }
-                const duplicateKey = [areaId, category.id, mapping.id, variant?.id || "", unit.id].join("::");
+                const duplicateKey = [areaId, category.id, mapping?.id || subcategory.id, variant?.id || "", unit?.id || ""].join("::");
                 if (lineKeys.has(duplicateKey) || existingKeys.has(duplicateKey)) {
-                    throw new Error(`${context}: line ${index + 1} duplicates an existing structured work line. Edit the existing line instead.`);
+                    throw new Error(`${context}: line ${index + 1} duplicates an existing detailed area line. Edit the existing line instead.`);
                 }
                 lineKeys.add(duplicateKey);
                 const primaryRate = primaryWorkType(subcategory);
                 const contractorAverage = contractorWorkTypeAverages(state.db.master.contractorRates, subcategory.id, primaryRate.id);
-                const rate = mapping.reference_rate || article.base_rate || contractorAverage.total_rate || 0;
-                const title = `${area.name} · ${article.name}`;
+                const rate = mapping?.reference_rate || article?.base_rate || contractorAverage.total_rate || 0;
+                const title = `${area.name} · ${article?.name || subcategory.name}`;
+                const num = (value: unknown) => {
+                    const parsed = Number(value);
+                    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+                };
                 return {
                     id: genId("req-line"),
                     title,
                     description: line.notes?.trim() || undefined,
-                    article_id: article.id,
+                    article_id: article?.id,
                     category_id: category.id,
+                    subcategory_id: subcategory.id,
                     work_required_id: workRequired.id,
-                    work_required_article_id: mapping.id,
+                    work_required_article_id: mapping?.id,
                     variant_id: variant?.id,
+                    length_ft: num(line.length_ft),
+                    breadth_ft: num(line.breadth_ft),
+                    height_ft: num(line.height_ft),
+                    floor_ceiling_area: num(line.floor_area),
                     site_id: workRequired.site_id,
                     area_id: area.id,
                     site_name: state.db.sites.find((site: any) => site.id === workRequired.site_id)?.name,
                     area_name: area.name,
                     quantity: line.quantity,
-                    unit_id: unit.id,
-                    unit_name: unit.name,
+                    unit_id: unit?.id,
+                    unit_name: unit?.name,
                     rate,
                     amount: Math.round(line.quantity * rate * 100) / 100,
                     tax_rate: rate > 0 ? 18 : undefined,
@@ -852,7 +869,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             });
             const workAreaIds = Array.from(new Set([...workRequired.area_ids, ...resolvedItems.map((item: any) => item.area_id!).filter(Boolean)]));
             const summary = resolvedItems
-                .map((item: any) => `${item.area_name} → ${item.title.replace(`${item.area_name} · `, "")} → ${item.quantity} ${item.unit_name || ""}`)
+                .map((item: any) => `${item.area_name} → ${item.title.replace(`${item.area_name} · `, "")} → ${item.quantity}${item.unit_name ? ` ${item.unit_name}` : ""}`)
                 .join("\n");
             commitState((snapshot: any) => ({
                 db: {

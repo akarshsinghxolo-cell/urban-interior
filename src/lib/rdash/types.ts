@@ -180,6 +180,14 @@ export interface LineItem {
     issued_qty?: number;
     consumed_qty?: number;
     supply_responsibility?: "company" | "contractor" | "customer";
+    // Detailed-area capture (wall/floor measurement): raw room dimensions in ft.
+    // quantity stores the computed wall area (2·(L+B)·H) or running feet (2·(L+B)
+    // when height is empty, e.g. roof railings); editable for doors/openings.
+    subcategory_id?: ID;
+    length_ft?: number;
+    breadth_ft?: number;
+    height_ft?: number;
+    floor_ceiling_area?: number;
 }
 export type QuotationItem = LineItem;
 export interface QuotationCoverage {

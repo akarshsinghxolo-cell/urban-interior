@@ -217,7 +217,9 @@ export interface CrmState {
   captureStructuredWorkRequired: (workRequiredId: string, lines: Array<{
     site_id: string; area_id?: string; area_name?: string; create_area?: boolean;
     area_type?: import("../types").AreaType; category_id: string; subcategory_id: string;
-    article_id: string; variant_id?: string; quantity: number; unit_id: string; notes?: string;
+    article_id?: string; variant_id?: string; quantity: number;
+    length_ft?: number; breadth_ft?: number; height_ft?: number; floor_area?: number;
+    unit_id?: string; notes?: string;
   }>) => void;
 }
 

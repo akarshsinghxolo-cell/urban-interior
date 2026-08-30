@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Search, UserPlus, FilePlus2, Phone, MapPin, Mail, MessageCircle, Navigation, CalendarClock, Wallet, FileText, ListChecks, Activity, Building, Plus, Ruler, CheckCircle2, AlertTriangle, Pencil, Package, Truck, Receipt, Send, } from "lucide-react";
+import { Search, UserPlus, FilePlus2, Phone, MapPin, Mail, MessageCircle, Navigation, CalendarClock, Wallet, FileText, ListChecks, Activity, Building, Plus, CheckCircle2, AlertTriangle, Pencil, Package, Truck, Receipt, Send, Check, ChevronDown, } from "lucide-react";
 import { useRDashStore, siteFinancials, type ContextCustomerTab } from "@/lib/rdash/store";
 import { Avatar, CopyValueButton, StatusBadge, MetricCard, SectionHeader, EmptyState } from "../primitives";
 import { ContextRow, type ContextAction } from "../ContextMenuHost";
@@ -681,17 +681,6 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                           <p className="font-mono text-xs font-semibold text-warning">{formatINRShort(fin.receivable)}</p>
                         </div>
                       </div>
-                      {siteAreas.length > 0 && (<div className="mt-3">
-                          <p className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground">
-                            <Ruler className="h-3 w-3"/> Areas ({siteAreas.length})
-                          </p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {siteAreas.map((r) => (<span key={r.id} className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px]" title={r.notes}>
-                                <span className="font-medium">{r.name}</span>
-                                {r.length && r.width ? (<span className="ml-1.5 font-mono text-muted-foreground">{r.length}×{r.width} {r.unit || "ft"} = {(r.length * r.width).toFixed(0)}</span>) : null}
-                              </span>))}
-                          </div>
-                        </div>)}
                       <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5">
                         <div className="flex items-center justify-between gap-2">
                           <div>
@@ -705,16 +694,19 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
                         {(() => {
                             const siteWorkRequired = customerWorkRequired.filter((work) => work.site_id === site.id || (Boolean(singleSite) && !work.site_id));
                             return siteWorkRequired.length ? (<div className="mt-2 flex flex-col gap-1.5">
-                              {siteWorkRequired.map((work) => (<div key={work.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+                              {siteWorkRequired.map((work) => {
+                                  const workAreaNames = (work.area_ids || []).map((areaId) => siteAreas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
+                                  return (<div key={work.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
                                   <div className="min-w-0">
                                     <p className="truncate text-xs font-semibold">{work.title}</p>
-                                    <p className="text-[10px] text-muted-foreground">{work.structured_items?.length || 0} structured line(s) · {workRequiredStatusStyle(work.status).label}</p>
+                                    <p className="truncate text-[10px] text-muted-foreground">{work.structured_items?.length || 0} structured line(s) · {workRequiredStatusStyle(work.status).label}{workAreaNames ? ` with ${workAreaNames}` : ""}</p>
                                   </div>
                                   <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]" onClick={() => setCaptureWorkRequiredId(work.id)}>
-                                    <ListChecks className="mr-1 h-3.5 w-3.5"/> Capture structured work
+                                    <ListChecks className="mr-1 h-3.5 w-3.5"/> Capture detailed area
                                   </Button>
-                                </div>))}
-                            </div>) : (<p className="mt-2 rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No Work Required exists for this Site. Add one before capturing a structured scope.</p>);
+                                </div>);
+                              })}
+                            </div>) : (<p className="mt-2 rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No Work Required exists for this Site. Add one before capturing a detailed area.</p>);
                         })()}
                       </div>
                       {fin.workOrders.length > 0 && (<div className="mt-3">
@@ -904,7 +896,7 @@ export function CustomerPortfolioContext({ customerId, name, phone, email, reqSt
             return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={(lines) => {
                     try {
                         captureStructuredWorkRequired(work.id, lines);
-                        toast.success(`Captured ${lines.length} structured work line(s) for ${work.title}`);
+                        toast.success(`Captured ${lines.length} detailed area line(s) for ${work.title}`);
                         setCaptureWorkRequiredId(null);
                         return true;
                     }
@@ -1273,6 +1265,45 @@ function CustomerTimelineView({ customerId, name, tasks, quotations, payments, v
         </div>)}
     </div>);
 }
+// Compact select-with-tickboxes dropdown: each row shows a checkbox reflecting
+// what is required/already selected, ticked rows float to the top, and category
+// groups are separated by blank space. Single-select for the line value.
+function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, ariaLabel, }: {
+    value?: string;
+    groups: Array<{ key: string; items: Array<{ id: string; name: string }> }>;
+    ticked: Set<string>;
+    placeholder: string;
+    disabled?: boolean;
+    onChange: (id: string) => void;
+    ariaLabel: string;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
+    return (<div className="relative">
+      <button type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
+        <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || placeholder}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
+      </button>
+      {open && (<>
+        <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} aria-hidden="true"/>
+        <div role="listbox" aria-label={ariaLabel} onKeyDown={(event) => { if (event.key === "Escape")
+            setOpen(false); }} className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg rd-scroll">
+          {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
+              {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
+              {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
+            const isTicked = ticked.has(item.id);
+            return (<button key={item.id} type="button" role="option" aria-selected={value === item.id} title={isTicked ? "Required in this work or already selected" : undefined} onClick={() => { onChange(item.id); setOpen(false); }} className={cn("flex min-h-9 w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent", value === item.id && "bg-primary/10 font-medium")}>
+                  <span aria-hidden="true" className={cn("flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border", isTicked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{isTicked && <Check className="h-2.5 w-2.5"/>}</span>
+                  <span className="truncate">{item.name}</span>
+                </button>);
+        })}
+            </React.Fragment>))}
+        </div>
+      </>)}
+    </div>);
+}
+// Rounds to 2 decimals and returns a string for the number inputs.
+const areaStr = (value: number) => String(Math.round(value * 100) / 100);
 function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSave, }: {
     workRequired: import("@/lib/rdash/types").WorkRequired;
     site: import("@/lib/rdash/types").Site;
@@ -1286,10 +1317,11 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         area_type?: import("@/lib/rdash/types").AreaType;
         category_id: string;
         subcategory_id: string;
-        article_id: string;
-        variant_id?: string;
+        length_ft?: number;
+        breadth_ft?: number;
+        height_ft?: number;
+        floor_area?: number;
         quantity: number;
-        unit_id: string;
         notes?: string;
     }>) => boolean;
 }) {
@@ -1302,13 +1334,14 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         area_type?: import("@/lib/rdash/types").AreaType;
         category_id?: string;
         subcategory_id?: string;
-        article_id?: string;
-        variant_id?: string;
-        quantity: string;
-        unit_id?: string;
+        length?: string;
+        breadth?: string;
+        height?: string;
+        wall_area: string;
+        floor_area?: string;
         notes?: string;
     };
-    const freshLine = (): DraftLine => ({ quantity: "1", category_id: workRequired.work_category_id });
+    const freshLine = (): DraftLine => ({ wall_area: "", category_id: workRequired.work_category_id });
     const initialLines = (): DraftLine[] => {
         const areaIds = workRequired.area_ids.filter((areaId) => areas.some((area) => area.id === areaId && !area.is_archived));
         const subcategoryIds = workRequired.work_subcategory_ids || [];
@@ -1322,15 +1355,30 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     };
     const [lines, setLines] = React.useState<DraftLine[]>(initialLines);
     const updateLine = (index: number, patch: Partial<DraftLine>) => setLines((current) => current.map((line, row) => row === index ? { ...line, ...patch } : line));
+    // Dimension edits auto-fill both areas; wall/ceiling values stay editable
+    // afterwards (doors, openings) until a dimension changes again.
+    const updateDims = (index: number, patch: Partial<DraftLine>) => setLines((current) => current.map((line, row) => {
+        if (row !== index)
+            return line;
+        const next = { ...line, ...patch };
+        const l = Number(next.length) || 0;
+        const b = Number(next.breadth) || 0;
+        const h = Number(next.height) || 0;
+        if (l > 0 && b > 0) {
+            next.floor_area = areaStr(l * b);
+            // Height present → wall area 2·(L+B)·H; height empty (e.g. roof railing)
+            // → running feet 2·(L+B).
+            next.wall_area = areaStr(h > 0 ? 2 * (l + b) * h : 2 * (l + b));
+        }
+        return next;
+    }));
     const addLine = () => setLines((current) => [...current, freshLine()]);
     const removeLine = (index: number) => setLines((current) => current.filter((_, row) => row !== index));
-    const mappingFor = React.useCallback((line: DraftLine) => db.master.subcategoryArticleMap.find((mapping) => mapping.work_required_id === line.subcategory_id && mapping.article_id === line.article_id), [db.master.subcategoryArticleMap]);
     const lineKey = React.useCallback((line: DraftLine) => {
         const area = line.area_id || (line.create_area && line.area_name ? `new:${normalizeAreaName(line.area_name)}` : "");
-        const mapping = mappingFor(line)?.id || "";
-        return area && line.category_id && mapping && line.unit_id ? [area, line.category_id, mapping, line.variant_id || "", line.unit_id].join("::") : "";
-    }, [mappingFor]);
-    const existingKeys = React.useMemo(() => new Set((workRequired.structured_items || []).map((item) => [item.area_id || "", item.category_id || "", item.work_required_article_id || "", item.variant_id || "", item.unit_id || ""].join("::"))), [workRequired.structured_items]);
+        return area && line.category_id && line.subcategory_id ? [area, line.category_id, line.subcategory_id].join("::") : "";
+    }, []);
+    const existingKeys = React.useMemo(() => new Set((workRequired.structured_items || []).map((item) => [item.area_id || "", item.category_id || "", item.subcategory_id || item.work_required_article_id || ""].join("::"))), [workRequired.structured_items]);
     const duplicateIndexes = React.useMemo(() => {
         const seen = new Set<string>();
         const duplicates = new Set<number>();
@@ -1344,8 +1392,8 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         return duplicates;
     }, [existingKeys, lineKey, lines]);
     const validLine = (line: DraftLine) => Boolean((line.area_id || (line.create_area && line.area_name?.trim())) &&
-        line.category_id && line.subcategory_id && line.article_id && line.unit_id &&
-        Number.isFinite(Number(line.quantity)) && Number(line.quantity) > 0);
+        line.category_id && line.subcategory_id &&
+        Number.isFinite(Number(line.wall_area)) && Number(line.wall_area) > 0);
     const validLines = lines.filter(validLine);
     const canSave = validLines.length === lines.length && lines.length > 0 && duplicateIndexes.size === 0;
     const areaTypes: Array<{
@@ -1356,22 +1404,39 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     ];
     const renderLine = (line: DraftLine, index: number) => {
         const subcategories = line.category_id ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id) : [];
-        const mappings = line.subcategory_id ? db.master.subcategoryArticleMap.filter((row) => row.work_required_id === line.subcategory_id) : [];
-        const articles = mappings.map((mapping) => db.master.articles.find((row) => row.id === mapping.article_id)).filter((row): row is NonNullable<typeof row> => Boolean(row));
-        const variants = line.article_id ? db.master.articleVariants.filter((row) => row.article_id === line.article_id) : [];
         const duplicate = duplicateIndexes.has(index);
+        // Ticked categories: required by work captured in this line's Area, the work
+        // being captured, previous captures, and the other lines in this session.
+        const areaWorkCategories = line.area_id
+            ? db.workRequired
+                .filter((row) => row.site_id === site.id && (row.area_ids || []).includes(line.area_id!))
+                .map((row) => row.work_category_id)
+            : [];
+        const categoryTicks = new Set([workRequired.work_category_id,
+            ...(workRequired.structured_items || []).map((item) => item.category_id),
+            ...areaWorkCategories,
+            ...lines.filter((_, row) => row !== index).map((row) => row.category_id),
+        ].filter((id): id is string => Boolean(id)));
+        // Ticked subcategories: the work's own subcategories, previous captures and
+        // the other lines in this session.
+        const subTicks = new Set([
+            ...(workRequired.work_subcategory_ids || []),
+            ...(workRequired.structured_items || []).map((item) => item.subcategory_id),
+            ...lines.filter((_, row) => row !== index).map((row) => row.subcategory_id),
+        ].filter((id): id is string => Boolean(id)));
+        const subOptions = subcategories.map((subcategory) => ({ id: subcategory.id, name: subcategory.name }));
         return (<div key={index} className={cn("rounded-lg border p-3", duplicate ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-muted/20")}>
         <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-muted-foreground">Line {index + 1}</span>{lines.length > 1 && <button type="button" onClick={() => removeLine(index)} className="text-muted-foreground hover:text-destructive" aria-label={`Remove line ${index + 1}`}><Plus className="h-3.5 w-3.5 rotate-45"/></button>}</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Area *</label>
             <select value={line.create_area ? "__new__" : line.area_id || ""} onChange={(event) => {
-                const value = event.target.value;
-                if (value === "__new__")
-                    updateLine(index, { area_id: undefined, area_name: "", create_area: true, area_type: "other" });
-                else
-                    updateLine(index, { area_id: value || undefined, area_name: undefined, create_area: false, area_type: undefined });
-            }} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
+            const value = event.target.value;
+            if (value === "__new__")
+                updateLine(index, { area_id: undefined, area_name: "", create_area: true, area_type: "other", length: undefined, breadth: undefined, height: undefined, wall_area: "", floor_area: undefined });
+            else
+                updateLine(index, { area_id: value || undefined, area_name: undefined, create_area: false, area_type: undefined, length: undefined, breadth: undefined, height: undefined, wall_area: "", floor_area: undefined });
+        }} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
               <option value="">— select area —</option>
               {areas.filter((area) => !area.is_archived).map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
               <option value="__new__">+ Create new area</option>
@@ -1380,44 +1445,45 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
           {line.create_area && <><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">New area name *</label><Input value={line.area_name || ""} onChange={(event) => updateLine(index, { area_name: event.target.value })} placeholder="e.g. Living Room" className="h-8 text-xs"/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Area type *</label><select value={line.area_type || "other"} onChange={(event) => updateLine(index, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">{areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}</select></div></>}
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
-            <select value={line.category_id || ""} onChange={(event) => updateLine(index, { category_id: event.target.value || undefined, subcategory_id: undefined, article_id: undefined, variant_id: undefined, unit_id: undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs"><option value="">— select category —</option>{db.master.workCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+            <TickDropdown value={line.category_id} ariaLabel="Category" placeholder="— select category —" onChange={(categoryId) => updateLine(index, { category_id: categoryId, subcategory_id: undefined })} ticked={categoryTicks} groups={[{ key: "all", items: db.master.workCategories.map((category) => ({ id: category.id, name: category.name })) }]}/>
           </div>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
-            <select value={line.subcategory_id || ""} disabled={!line.category_id} onChange={(event) => updateLine(index, { subcategory_id: event.target.value || undefined, article_id: undefined, variant_id: undefined, unit_id: undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— select subcategory —</option>{subcategories.map((subcategory) => <option key={subcategory.id} value={subcategory.id}>{subcategory.name}</option>)}</select>
+            <TickDropdown value={line.subcategory_id} ariaLabel="Subcategory" placeholder="— select subcategory —" disabled={!line.category_id} onChange={(subcategoryId) => updateLine(index, { subcategory_id: subcategoryId })} ticked={subTicks} groups={subOptions.length ? [
+            { key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id)) },
+            { key: "others", items: subOptions.filter((option) => !subTicks.has(option.id)) },
+        ].filter((group) => group.items.length) : []}/>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Article *</label>
-            <select value={line.article_id || ""} disabled={!line.subcategory_id} onChange={(event) => {
-                const articleId = event.target.value || undefined;
-                const mapping = mappings.find((row) => row.article_id === articleId);
-                const article = db.master.articles.find((row) => row.id === articleId);
-                const subcategory = db.master.workSubcategories.find((row) => row.id === line.subcategory_id);
-                updateLine(index, { article_id: articleId, variant_id: undefined, unit_id: mapping?.unit_id || subcategory?.unit_id || article?.default_unit_id || article?.unit_id });
-            }} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— select article —</option>{articles.map((article) => <option key={article.id} value={article.id}>{article.name}</option>)}</select>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Length (ft)</label>
+            <Input type="number" min="0" step="any" inputMode="decimal" value={line.length || ""} onChange={(event) => updateDims(index, { length: event.target.value })} placeholder="—" className="h-8 text-xs"/>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Variant</label>
-            <select value={line.variant_id || ""} disabled={!line.article_id} onChange={(event) => updateLine(index, { variant_id: event.target.value || undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— optional —</option>{variants.map((variant) => <option key={variant.id} value={variant.id}>{variant.name}</option>)}</select>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Breadth (ft)</label>
+            <Input type="number" min="0" step="any" inputMode="decimal" value={line.breadth || ""} onChange={(event) => updateDims(index, { breadth: event.target.value })} placeholder="—" className="h-8 text-xs"/>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Quantity *</label>
-            <Input type="number" min="0.01" step="any" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.target.value })} className="h-8 text-xs"/>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Height (ft)</label>
+            <Input type="number" min="0" step="any" inputMode="decimal" value={line.height || ""} onChange={(event) => updateDims(index, { height: event.target.value })} placeholder="empty = running ft" className="h-8 text-xs"/>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Unit *</label>
-            <select value={line.unit_id || ""} disabled={!line.article_id} onChange={(event) => updateLine(index, { unit_id: event.target.value || undefined })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs disabled:cursor-not-allowed disabled:opacity-60"><option value="">— select unit —</option>{db.master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol} · {unit.name}</option>)}</select>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Wall area / length *</label>
+            <Input type="number" min="0" step="any" inputMode="decimal" value={line.wall_area} onChange={(event) => updateLine(index, { wall_area: event.target.value })} placeholder="auto from L×B×H" title="Auto: 2×(L+B)×H sqft, or 2×(L+B) running ft without height. Edit to deduct doors." className="h-8 text-xs"/>
           </div>
-          <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(index, { notes: event.target.value })} placeholder="Customer preference, finish, dimensions or scope note" className="h-8 text-xs"/></div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Floor / ceiling area</label>
+            <Input type="number" min="0" step="any" inputMode="decimal" value={line.floor_area || ""} onChange={(event) => updateLine(index, { floor_area: event.target.value })} placeholder="auto L×B" className="h-8 text-xs"/>
+          </div>
+          <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(index, { notes: event.target.value })} placeholder="Customer preference, finish, doors/openings or scope note" className="h-8 text-xs"/></div>
         </div>
         {duplicate && <p className="mt-2 text-[11px] text-destructive">This line duplicates an already captured scope. Edit the earlier line instead.</p>}
       </div>);
     };
     return (<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
       <div className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture structured work</h3><p className="text-[11px] text-muted-foreground">{site.name} · {workRequired.title}</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">This capture is locked to <strong>{site.name}</strong>. Area, Category, Subcategory, Article, Quantity, and Unit are required. Choose an existing Area or explicitly create one.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{lines.map(renderLine)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5"/> Add line</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const saved = onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, article_id: line.article_id!, variant_id: line.variant_id, quantity: Number(line.quantity), unit_id: line.unit_id!, notes: line.notes?.trim() || undefined }))); if (saved) commitBatches(); }}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
+        <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · {workRequired.title}</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">This capture is locked to <strong>{site.name}</strong>. Area, Category, Subcategory, and Wall area/length are required. Length × Breadth × Height auto-fills both areas (e.g. a 5×6×10 ft bathroom → 220 sqft of wall); leave Height empty for running feet (railings). Adjust any area to deduct doors and openings.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{lines.map(renderLine)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5"/> Add line</Button></div>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const saved = onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, length_ft: Number(line.length) > 0 ? Number(line.length) : undefined, breadth_ft: Number(line.breadth) > 0 ? Number(line.breadth) : undefined, height_ft: Number(line.height) > 0 ? Number(line.height) : undefined, floor_area: Number(line.floor_area) > 0 ? Number(line.floor_area) : undefined, quantity: Number(line.wall_area), notes: line.notes?.trim() || undefined }))); if (saved) commitBatches(); }}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
       </div>
     </div>);
 }
