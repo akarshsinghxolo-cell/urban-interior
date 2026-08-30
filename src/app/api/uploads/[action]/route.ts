@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { resolvePublicOrigin } from "@/lib/rdash/server/public-origin";
+import { bindDirectUpload, initiateDirectUpload } from "@/lib/rdash/server/direct-upload-initiate";
 import {
-  bindDirectUpload,
   cancelDirectUpload,
   finalizeDirectUpload,
-  initiateDirectUpload,
   listPendingDirectUploads,
   reportDirectUploadProgress,
   retryDirectUpload,
-} from "@/lib/rdash/server/direct-upload";
+} from "@/lib/rdash/server/direct-upload-finalize";
 import type {
   BindUploadRequest,
   FinalizeUploadRequest,

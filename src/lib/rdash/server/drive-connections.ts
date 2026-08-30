@@ -178,10 +178,6 @@ export async function readGoogleDriveOAuthConfig(origin?: string) {
   };
 }
 
-export async function saveGoogleDriveOAuthConfig(_user: AuthenticatedUser, _input: { clientId?: string; clientSecret?: string; credentialsKey?: string }) {
-  throw new Error(`Google Drive OAuth credentials are server secrets. Set GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET, and ${TOKEN_KEY_ENV} in Vercel environment variables instead of saving them from the browser.`);
-}
-
 async function config() {
   const clientId = envValue("GOOGLE_DRIVE_OAUTH_CLIENT_ID");
   const clientSecret = envValue("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET");

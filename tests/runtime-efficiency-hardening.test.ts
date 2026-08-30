@@ -238,9 +238,7 @@ describe("runtime efficiency hardening", () => {
     expect(workspace).not.toContain("getWorkspace(");
     expect(workspace).toContain('"X-UC-Read-Architecture": "scoped-only"');
     expect(moduleRead).not.toContain("UC_MODULE_SCOPED_READS");
-    expect(moduleRead).toContain("MODULE_SCOPED_READS_ENABLED = true");
     expect(entityRead).not.toContain("UC_ENTITY_SCOPED_READS");
-    expect(entityRead).toContain("ENTITY_SCOPED_READS_ENABLED = true");
     expect(readState).not.toContain('mode === "full"\n          ? "full"');
   });
 

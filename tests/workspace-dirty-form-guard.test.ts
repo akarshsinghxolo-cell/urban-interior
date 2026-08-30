@@ -123,8 +123,6 @@ describe("dirty form integration boundaries", () => {
       "Record vendor bid",
       "Invite contractor bid",
       "Direct Award Contractor",
-      "Add New Customer",
-      "Edit Customer",
       "Add Site",
       "Edit Site",
       "Record Supplier Invoice",

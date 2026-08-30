@@ -173,21 +173,6 @@ export function workRequiredStatusAfterContractorAward(current: WorkRequiredStat
   return "awarded";
 }
 
-export function workRequiredStatusForWorkOrder(status: WorkOrderStatus): WorkRequiredStatus {
-  switch (status) {
-    case "scheduled":
-      return "awarded";
-    case "in_progress":
-      return "in_progress";
-    case "completed":
-      return "completed";
-    case "on_hold":
-    case "abandoned":
-    case "cancelled":
-      return "on_hold";
-  }
-}
-
 function workRequiredStatusFromWorkOrderStatuses(
   statuses: readonly WorkOrderStatus[],
 ): WorkRequiredStatus | null {

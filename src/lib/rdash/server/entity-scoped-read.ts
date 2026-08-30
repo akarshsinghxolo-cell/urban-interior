@@ -15,7 +15,6 @@ import { getProjectedWorkspacePermissions } from "./projected-workspace-bootstra
 import { getWorkspaceSubset, type WorkspaceSubset } from "./workspace";
 
 // Entity-scoped reads are the authoritative Customer/Site detail architecture.
-export const ENTITY_SCOPED_READS_ENABLED = true;
 const MAX_ENTITY_IDS = 500;
 
 export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([

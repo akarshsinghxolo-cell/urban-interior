@@ -304,15 +304,6 @@ async function supabaseCredentials(
  * Authorization is then derived from the linked active Staff record or the
  * temporary role-mapping compatibility table.
  */
-export async function authenticateCredentials(
-    emailInput: string,
-    password: string,
-): Promise<Omit<AuthenticatedUser, "expiresAt"> | null> {
-    const email = emailInput.trim().toLowerCase();
-    if (!email || !password) return null;
-    return supabaseCredentials(email, password);
-}
-
 /** Sign in and preserve Supabase's rotating refresh token in a server-only cookie. */
 export async function authenticateCredentialsWithSession(
     emailInput: string,

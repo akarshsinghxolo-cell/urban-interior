@@ -19,7 +19,6 @@ import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
 import { persistWorkspaceTabs, restoreWorkspaceTabs } from "./tab-persistence";
 import { isRegisteredModuleId, resolveRenderer } from "./modules";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
-import { attendancePolicyForStaff, attendancePolicyForVisit, createDefaultAttendancePolicy } from "./attendance-policy";
 // Re-export UI types from the store/ subfolder (Phase 1 split)
 export type { WorkspaceTab, DetailPanelKind, ContextCustomerTab, ContextDetailTab, ContextHistoryEntry, DetailPanelState, ContextRecord, CurrentUserContext, AuthenticatedWorkspaceUser, WorkspaceSyncStatus, GuardResult, SavedView, CreateDialogKind, CreateDialogRequest, } from "./store/ui-types";
 import type { WorkspaceTab, DetailPanelKind, ContextCustomerTab, ContextDetailTab, ContextHistoryEntry, DetailPanelState, ContextRecord, CurrentUserContext, AuthenticatedWorkspaceUser, WorkspaceSyncStatus, GuardResult, SavedView, CreateDialogKind, CreateDialogRequest, } from "./store/ui-types";
@@ -40,86 +39,6 @@ import { createTasksSlice } from "./store/slices/tasks";
 import { createCrmSlice } from "./store/slices/crm";
 import { createUISlice } from "./store/slices/ui";
 import { createCoreSlice } from "./store/slices/core";
-import { googleFileIdFromUrl, isStoredMediaUrl, userForRole, userForAnyRole, addDays, isOwnerOrOperations } from "./store/helpers";
-import {
-    milestoneOrder, paymentSequenceGroup, assertPaymentMilestoneSequence,
-    dateOnlyFrom, isPaymentChaseNeeded, assertServiceFinanceContext,
-    paymentFollowupTitle, invoiceStatusFromPayment, paymentStatusFromInvoice,
-    buildInvoiceDraftFromPayment, syncInvoiceWithPayment,
-    isOpenFollowup, findOpenLinkedFollowup, upsertPaymentFollowup,
-    canonicalPaymentEvent, materializePaymentSchedule, eventMatchesPaymentTrigger,
-} from "./store/finance-helpers";
-// inferAttachmentRole, resolveAttachmentEntityLabel moved to files slice (Phase 3c)
-// userForRole, userForAnyRole moved to helpers (Phase 3g)
-function permissionError(role: string, action: string) {
-    return new Error(`Permission denied: ${role} cannot ${action}.`);
-}
-function assertRole(role: string, allowed: string[], action: string) {
-    if (!allowed.includes(role))
-        throw permissionError(role, action);
-}
-// contractorPaymentProofStatus moved to helpers (Phase 3h)
-// milestoneOrder, paymentSequenceGroup, assertPaymentMilestoneSequence moved to finance-helpers (Phase 3f)
-function visitRoutePoint(kind: VisitRoutePoint["kind"], latitude: number, longitude: number, source: VisitRoutePoint["source"], note?: string): VisitRoutePoint {
-    return {
-        id: genId(`route-${kind}`),
-        kind,
-        latitude,
-        longitude,
-        captured_at: nowIso(),
-        source,
-        note,
-    };
-}
-// resolveVisitLocation moved to slices/visits.ts (Phase 3l)
-function genId(prefix: string) {
-    return `${prefix}-${Date.now().toString(36)}${Math.random()
-        .toString(36)
-        .slice(2, 6)}`;
-}
-const nowIso = () => new Date().toISOString();
-// coverageAcceptedValue, quotationAcceptanceWarnings moved to store/quotations-helpers.ts (Phase 3j)
-// assertQuotationEditable, assertQuotationStatusTransition moved to slices/quotations.ts (Phase 3j)
-const today = () => businessDate();
-// dateOnlyFrom moved to finance-helpers (Phase 3f)
-// addDays moved to helpers (Phase 3h)
-// isStoredMediaUrl moved to store/helpers.ts (Phase 3i)
-// googleFileIdFromUrl moved to store/helpers.ts (Phase 3c)
-// canonicalPaymentEvent, materializePaymentSchedule, eventMatchesPaymentTrigger moved to finance-helpers (Phase 3h)
-// isOpenFollowup moved to finance-helpers (Phase 3f)
-// BUSINESS_DECISION_TASK_TYPES, isBusinessDecisionTask moved to slices/tasks.ts (Phase 3m)
-function businessDate(value = new Date()) {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kolkata",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).formatToParts(value);
-    const pick = (type: string) => parts.find((part) => part.type === type)?.value || "";
-    return `${pick("year")}-${pick("month")}-${pick("day")}`;
-}
-function isOverdueDate(dueDate: string | undefined, at = new Date()) {
-    return Boolean(dueDate && dueDate < businessDate(at));
-}
-// isScheduledBefore moved to slices/tasks.ts (Phase 3m)
-// visitAssigneeType, activeStaffMember, activeContractor, assertVisitOwnership moved to slices/visits.ts (Phase 3l)
-// isOwnerOrOperations moved to store/helpers.ts (Phase 3l)
-// isAssignedToActor moved to slices/tasks.ts (Phase 3m)
-// assertTaskActor moved to slices/tasks.ts (Phase 3m)
-// assertFollowupActor moved to slices/tasks.ts (Phase 3m)
-// assertVisitTimeWindow, visitAssigneeKey, assertVisitSchedulingAvailability moved to slices/visits.ts (Phase 3l)
-// nextRecurringRun moved to slices/tasks.ts (Phase 3m)
-// normalizeVisitSchedule moved to slices/visits.ts (Phase 3l)
-// isPaymentChaseNeeded, assertServiceFinanceContext moved to finance-helpers (Phase 3f)
-// assertProcurementContext moved to slices/procurement.ts (Phase 3i)
-// Work Required lifecycle policies live in work-required-lifecycle.ts and are shared across slices.
-// paymentFollowupTitle, invoiceStatusFromPayment, paymentStatusFromInvoice,
-// buildInvoiceDraftFromPayment, syncInvoiceWithPayment moved to finance-helpers (Phase 3f)
-// Hydration is pure; record creation belongs to explicit business actions.
-// quotationWorkRequiredIds, primaryWorkRequiredId, upsertQuotationFollowup moved to slices/quotations.ts (Phase 3j)
-// upsertPaymentFollowup moved to finance-helpers (Phase 3f)
-// upsertMissedVisitFollowup moved to slices/visits.ts (Phase 3l)
-// detailRecordExists, detailRecordCustomerId, contextDetailPanel moved to slices/ui.ts (Phase 3o)
 // Boundary policies (contractor-store-policy) compose several primitive
 // actions into ONE workspace save via this runner; it is created inside the
 // store closure and attached to the store right after create() below.

@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { formatBytes } from "@/lib/rdash/format";
 import { AlertCircle, CheckCircle2, CloudOff, File, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -163,10 +164,3 @@ function StatusBadge({ item, online }: { item: UploadItemRecord; online: boolean
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold capitalize", failed ? "bg-destructive/10 text-destructive" : waiting || temporaryPaused ? "bg-warning/10 text-warning" : "bg-primary/10 text-primary")}><Icon className="h-3 w-3" />{label}</span>;
 }
 
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
-  const value = bytes / Math.pow(1024, index);
-  return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-}

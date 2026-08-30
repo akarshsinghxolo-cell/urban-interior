@@ -160,23 +160,6 @@ export function buildWorkCategoryCatalog(): CatalogCore {
         workOptionValues: [],
     };
 }
-export function buildCatalogDemoVendorRates(master: Master): VendorRate[] {
-    const vendorIds = master.vendors.map((vendor) => vendor.id);
-    if (!vendorIds.length) return [];
-    return master.articles.flatMap((article, articleIndex) => {
-        const reference = master.subcategoryArticleMap.find((row) => row.article_id === article.id)?.reference_rate;
-        const baseRate = Number(reference || article.base_rate || 1) || 1;
-        return vendorIds.map((vendorId, vendorIndex) => ({
-            id: `catalog-vr-${vendorId}-${article.id}`.replace(/[^a-zA-Z0-9_-]/g, "_"),
-            vendor_id: vendorId,
-            article_id: article.id,
-            quoted_rate: Math.max(1, Math.round(baseRate * (vendorIndex % 2 === 0 ? 0.96 : 1.04) * 100) / 100),
-            status: "active" as const,
-            created_at: timestamp,
-            updated_at: timestamp,
-        }));
-    });
-}
 function ensureMediaCollections(input: Master): Master {
     return {
         ...input,

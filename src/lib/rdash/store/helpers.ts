@@ -3,6 +3,7 @@
  * Extracted from store.ts during Phase 3 split — pure functions, no state.
  */
 import type { RDashDatabase } from "../types";
+import { indiaBusinessDate } from "../format";
 import type { CurrentUserContext, GuardResult } from "./ui-types";
 
 export function genId(prefix: string): string {
@@ -22,14 +23,7 @@ export function genId(prefix: string): string {
 export const nowIso = (): string => new Date().toISOString();
 
 export function businessDate(value = new Date()): string {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kolkata",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-    }).formatToParts(value);
-    const pick = (type: string) => parts.find((part) => part.type === type)?.value || "";
-    return `${pick("year")}-${pick("month")}-${pick("day")}`;
+    return indiaBusinessDate(value);
 }
 
 export const today = (): string => businessDate();

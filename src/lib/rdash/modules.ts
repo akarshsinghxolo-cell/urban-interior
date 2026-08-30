@@ -721,9 +721,6 @@ export const ALL_MODULES: ModuleDef[] = MODULE_GROUPS
       (MODULE_DISPLAY_RANK.get(right.id) ?? Number.MAX_SAFE_INTEGER),
   );
 
-export const ALL_SUBMODULES: Submodule[] = ALL_MODULES.flatMap(
-  (module) => module.submodules,
-);
 
 export interface ModuleRoute {
   id: string;
@@ -796,26 +793,8 @@ export const REGISTERED_MODULE_IDS = new Set<string>(
 );
 export const DEFAULT_MODULE_ID = "workdesk";
 
-export function findModule(id: string): ModuleDef | undefined {
-  return ALL_MODULES.find((module) => module.id === id);
-}
 
-export function findSubmodule(
-  id: string,
-): { module?: ModuleDef; sub?: Submodule } {
-  const route = MODULE_ROUTE_REGISTRY.get(id);
-  if (!route?.isSubmodule) return {};
 
-  const moduleDef = findModule(route.moduleId);
-  const sub = moduleDef?.submodules.find(
-    (candidate) => candidate.id === id,
-  );
-  return { module: moduleDef, sub };
-}
-
-export function getModuleRoute(id: string): ModuleRoute | undefined {
-  return MODULE_ROUTE_REGISTRY.get(canonicalLegacyModuleId(id));
-}
 
 export function canonicalModuleId(id: string): string {
   const canonicalId = canonicalLegacyModuleId(id);
@@ -830,82 +809,4 @@ export function isRegisteredModuleId(id: string): boolean {
 
 export function resolveRenderer(id: string): ModuleRoute {
   return MODULE_ROUTE_REGISTRY.get(canonicalModuleId(id))!;
-}
-
-function stableFilter(filter?: Record<string, string>) {
-  if (!filter) return "";
-  return Object.entries(filter)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([key, value]) => `${key}:${value}`)
-    .join("|");
-}
-
-export function validateModuleRegistry(): string[] {
-  const issues: string[] = [];
-
-  for (const route of MODULE_ROUTE_REGISTRY.values()) {
-    if (!route.id.trim()) issues.push("A module route has an empty id.");
-    if (!route.label.trim()) {
-      issues.push(`Module route ${route.id} has an empty label.`);
-    }
-    if (!route.renderer) {
-      issues.push(`Module route ${route.id} has no screen renderer.`);
-    }
-    if (
-      route.isSubmodule &&
-      !MODULE_ROUTE_REGISTRY.has(route.moduleId)
-    ) {
-      issues.push(
-        `Submodule ${route.id} points to missing module ${route.moduleId}.`,
-      );
-    }
-  }
-
-  const signatures = new Map<string, ModuleRoute>();
-  for (const route of MODULE_ROUTE_REGISTRY.values()) {
-    const signature = [
-      route.renderer,
-      route.dataSource || "",
-      stableFilter(route.filter),
-    ].join("::");
-    const previous = signatures.get(signature);
-    if (previous && previous.moduleId === route.moduleId) {
-      issues.push(
-        `Semantic duplicate routes ${previous.id} and ${route.id} use the same renderer, data source and filter inside ${route.moduleId}.`,
-      );
-    } else {
-      signatures.set(signature, route);
-    }
-  }
-
-  return issues;
-}
-
-export function groupSubmoduleCount(groupId: string): number {
-  const group = MODULE_GROUPS.find((entry) => entry.id === groupId);
-  return group
-    ? group.modules.reduce(
-        (count, moduleDef) => count + moduleDef.submodules.length,
-        0,
-      )
-    : 0;
-}
-
-export function moduleSubmoduleCount(moduleId: string): number {
-  const moduleDef = findModule(moduleId);
-  return moduleDef ? moduleDef.submodules.length : 0;
-}
-
-export function groupActiveCount(
-  groupId: string,
-  db: import("./types").RDashDatabase,
-): number {
-  const group = MODULE_GROUPS.find((entry) => entry.id === groupId);
-  if (!group) return 0;
-
-  return group.modules.reduce(
-    (count, moduleDef) =>
-      count + (moduleDef.activePredicate?.(db) ? 1 : 0),
-    0,
-  );
 }

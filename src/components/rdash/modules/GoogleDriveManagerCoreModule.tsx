@@ -1,5 +1,7 @@
 "use client";
 import * as React from "react";
+import { genId } from "@/lib/rdash/store/helpers";
+import { formatBytes } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { FileAsset, StorageAccount } from "@/lib/rdash/types";
 import { accountIsAtSwitchThreshold, selectWriteStorageAccount } from "@/lib/rdash/storage";
@@ -46,7 +48,6 @@ type OAuthConfig = {
 type Tab = "overview" | "connect" | "oauth" | "guide";
 
 const now = () => new Date().toISOString();
-const makeId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 const isHttpUrl = (v?: string) => /^https:\/\//.test(v || "");
 
 function authorizedOpenUrl(file?: FileAsset) {
@@ -182,7 +183,7 @@ export function GoogleDriveManagerModule() {
     if (!fileDraft.accountId || !fileDraft.name.trim() || !isHttpUrl(fileDraft.url)) return toast.error("Choose the Drive account and enter a valid file link");
     const ts = now();
     const row: FileAsset = {
-      id: makeId("drivefile"),
+      id: genId("drivefile"),
       storage_account_id: fileDraft.accountId,
       google_file_id: fileDraft.googleFileId.trim() || undefined,
       file_name: fileDraft.name.trim(),
@@ -477,9 +478,3 @@ function Capacity({ account }: { account: StorageAccount }) {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (!bytes || bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
-}

@@ -56,22 +56,7 @@ import {
 import { Avatar, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { entityFiles } from "@/lib/rdash/file-attachments";
-import { Partner360Module } from "./Partner360Module";
 import { ContractorFormDialog } from "../ContractorFormDialog";
-
-export function Partner360Phase2Workspace({ mode }: { mode: PartnerGovernanceMode }) {
-  const [view, setView] = React.useState<"relationship" | "governance">("relationship");
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-card">
-        <button type="button" onClick={() => setView("relationship")} className={cn("rounded-lg px-4 py-2 text-xs font-semibold", view === "relationship" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>360° relationship</button>
-        <button type="button" onClick={() => setView("governance")} className={cn("rounded-lg px-4 py-2 text-xs font-semibold", view === "governance" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>Phase 2 governance</button>
-        <span className="ml-auto px-2 text-[10px] text-muted-foreground">Capabilities · documents · expiry · duplicate control</span>
-      </div>
-      {view === "relationship" ? <Partner360Module mode={mode} /> : <PartnerGovernanceModule mode={mode} />}
-    </div>
-  );
-}
 
 type GovernanceTab = "capabilities" | "documents" | "duplicates";
 type PartnerRecord = Record<string, any> & { id: string; name: string; phone?: string; city?: string; status?: string; work_capabilities?: import("@/lib/rdash/contractor-profile").ContractorCapability[] };

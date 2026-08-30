@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { getWorkspace } from "@/lib/rdash/server/workspace";
-import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity";
+import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity/checker";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
 import { cleanupExpiredStaffRouteBundles } from "@/lib/rdash/server/staff-location";
 

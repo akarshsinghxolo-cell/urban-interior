@@ -110,7 +110,6 @@ describe("entity-scoped collection policy", () => {
 
   test("entity reader is always on, revision-safe, and uses canonical Customer thread IDs", async () => {
     const source = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
-    expect(source).toContain("ENTITY_SCOPED_READS_ENABLED = true");
     expect(source).not.toContain("UC_ENTITY_SCOPED_READS");
     expect(source).toContain('error.message !== "READ_CONFLICT"');
     expect(source).toContain("getProjectedWorkspacePermissions()");

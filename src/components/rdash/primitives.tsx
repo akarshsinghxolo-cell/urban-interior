@@ -194,21 +194,6 @@ export function EmptyState({ title, description, icon, action, tone = "default",
     </div>);
 }
 
-export function WorkflowStep({ label, state = "default", }: {
-    label: string;
-    state?: "default" | "active" | "done" | "pending";
-}) {
-    const cls = {
-        default: "bg-muted text-muted-foreground border-border",
-        active: "bg-primary text-primary-foreground border-primary",
-        done: "bg-success/15 text-success border-success/25",
-        pending: "bg-warning/10 text-warning border-warning/25",
-    }[state];
-    return (<span className={cn("inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold", cls)}>
-      {label}
-    </span>);
-}
-
 export function WorkflowStepRich({ index, title, description, meta, state = "default", }: {
     index: string;
     title: string;

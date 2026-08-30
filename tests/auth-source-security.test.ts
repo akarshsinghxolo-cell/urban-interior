@@ -24,7 +24,7 @@ describe("server authentication source security", () => {
   });
 
   test("routes every non-empty credential attempt through Supabase Auth", () => {
-    expect(authSource).toContain("return supabaseCredentials(email, password);");
+    expect(authSource).toContain("return supabaseCredentialSession(email, password);");
     expect(authSource).toContain("auth.auth.signInWithPassword({ email, password })");
   });
 

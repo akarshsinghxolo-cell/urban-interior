@@ -113,33 +113,6 @@ function secureMutationAudit(user: AuthenticatedUser, operations: ReturnType<typ
   };
 }
 
-export function enforceMutation(user: AuthenticatedUser, current: RDashDatabase, candidate: RDashDatabase) {
-  const trustedCandidate = structuredClone(candidate);
-
-  assertNotImplicitSeedReset(current, trustedCandidate);
-
-  // Audit history is server-owned. Browser-supplied additions, removals, and edits are discarded.
-  trustedCandidate.auditLog = structuredClone(current.auditLog);
-
-  const operations = diffWorkspaceOperations(current, trustedCandidate);
-  assertWorkspaceMutationAllowed(user, operations, current);
-
-  const issues = introducedIntegrityIssues(
-    validateBusinessData(current),
-    validateBusinessData(trustedCandidate),
-  );
-  if (issues.length) throw new Error(`INVALID:${issues[0]}`);
-
-  if (!operations.length) return trustedCandidate;
-
-  trustedCandidate.auditLog = [
-    secureMutationAudit(user, operations),
-    ...current.auditLog,
-  ].slice(0, 5000);
-
-  return trustedCandidate;
-}
-
 /** Commits already-authorized row operations with PostgreSQL workspace/row CAS. */
 export async function commitWorkspaceOperations(
   revision: number,

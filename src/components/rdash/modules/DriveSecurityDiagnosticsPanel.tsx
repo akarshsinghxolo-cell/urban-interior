@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { formatBytes } from "@/lib/rdash/format";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -104,13 +105,6 @@ function formatDate(value: string | null) {
   return parsed.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 }
 
-function formatBytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const index = Math.min(units.length - 1, Math.floor(Math.log(value) / Math.log(1024)));
-  const amount = value / Math.pow(1024, index);
-  return `${amount.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
-}
 
 function SecretFingerprint({ value, missingLabel = "Not configured" }: { value: string | null; missingLabel?: string }) {
   if (!value) return <span className="text-muted-foreground">{missingLabel}</span>;

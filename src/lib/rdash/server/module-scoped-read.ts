@@ -28,7 +28,6 @@ export * from "./module-read-plans";
 export * from "./projected-workspace-bootstrap";
 
 // Scoped reads are the runtime architecture, not an optional rollout mode.
-export const MODULE_SCOPED_READS_ENABLED = true;
 const FOUNDATION_COLLECTIONS = new Set<string>(WORKSPACE_FOUNDATION_COLLECTIONS);
 
 export interface ModuleScopedWorkspace extends WorkspaceSubset {

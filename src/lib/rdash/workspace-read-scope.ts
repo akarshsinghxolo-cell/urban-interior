@@ -181,18 +181,6 @@ export function workspaceReadScopeFromMode(
     : "bootstrap";
 }
 
-export function workspaceReadScopeFromDatabase(
-  database: unknown,
-): WorkspaceReadScope {
-  const value =
-    database && typeof database === "object"
-      ? String(
-          (database as Record<string, unknown>)._workspace_read_scope || "",
-        )
-      : "";
-  return workspaceReadScopeFromMode(value);
-}
-
 export function tryWorkspaceReadTargetForModule(
   moduleId: string | null | undefined,
 ): WorkspaceReadTarget | null {
