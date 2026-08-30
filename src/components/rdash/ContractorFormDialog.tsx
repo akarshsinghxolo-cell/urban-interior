@@ -39,6 +39,7 @@ import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import {
   canonicalContractorCapabilities,
+  contractorCapabilityDraftRows,
   contractorDuplicateConflicts,
   contractorFormProjection,
   contractorProfileValidationError,
@@ -153,36 +154,76 @@ function draftFromRecord(record: ContractorProfileRecord): Draft {
   };
 }
 
+// The draft shows exactly the STORED work-type rows. Catalog types are offered
+// by the Add-work-type picker instead of being fabricated as empty rows —
+// fabricated rows resurrected deleted work types on every reopen and kept
+// Save disabled when the user removed a rate-less row (no payload change).
 function capabilitiesToDraft(capabilities: ContractorCapability[], subcategories: WorkSubcategory[]): CapabilityDraft[] {
-  return capabilities.map((row) => ({
-    subcategory_id: row.subcategory_id,
-    subcategory_name: row.subcategory_name,
-    work_type_rates: (() => {
-      const subcategory = subcategories.find((item) => item.id === row.subcategory_id);
-      const stored = new Map((row.work_type_rates || []).map((rate) => [rate.work_type_id, rate]));
-      const catalog = (subcategory ? workTypesForSubcategory(subcategory) : []).map((workType) => {
-        const rate = stored.get(workType.id);
-        stored.delete(workType.id);
-        return {
-          work_type_id: workType.id,
-          work_type_name: workType.name,
-          unit_id: rate?.unit_id || workType.unit_id || subcategory?.unit_id || "pcs",
-          material_rate: rate?.material_rate == null ? "" : String(rate.material_rate),
-          labour_rate: rate?.labour_rate == null ? "" : String(rate.labour_rate),
-          notes: rate?.notes || "",
-        };
-      });
-      return [...catalog, ...Array.from(stored.values()).map((rate) => ({
-        work_type_id: rate.work_type_id,
-        work_type_name: rate.work_type_name || "",
-        unit_id: rate.unit_id || subcategory?.unit_id || "pcs",
-        material_rate: rate.material_rate == null ? "" : String(rate.material_rate),
-        labour_rate: rate.labour_rate == null ? "" : String(rate.labour_rate),
-        notes: rate.notes || "",
-        custom: true,
-      }))];
-    })(),
-  }));
+  return capabilities.map((row) => {
+    const subcategory = subcategories.find((item) => item.id === row.subcategory_id);
+    return {
+      subcategory_id: row.subcategory_id,
+      subcategory_name: row.subcategory_name || subcategory?.name,
+      work_type_rates: contractorCapabilityDraftRows(row, subcategory),
+    };
+  });
+}
+
+function AddWorkTypeMenu({ subcategory, existingIds, disabled, onAdd }: {
+  subcategory?: WorkSubcategory;
+  existingIds: Set<string>;
+  disabled?: boolean;
+  onAdd: (row: { work_type_id: string; work_type_name: string; unit_id: string; custom: boolean }) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  useDismissOnOutside(open, () => setOpen(false), rootRef);
+  // The subcategory can vanish from the catalog while a capability still
+  // references it; there is then nothing left to offer in the picker.
+  if (!subcategory) return null;
+  const remaining = workTypesForSubcategory(subcategory).filter((row) => !existingIds.has(row.id));
+  const pick = (row: { work_type_id: string; work_type_name: string; unit_id: string; custom: boolean }) => {
+    onAdd(row);
+    setOpen(false);
+  };
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        aria-label={`Add work type to ${subcategory.name}`}
+        disabled={disabled}
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex items-center gap-1 rounded border border-dashed px-2 py-1 text-[10px] font-semibold text-primary disabled:opacity-50"
+      >
+        <Plus className="h-3 w-3" />Add work type
+      </button>
+      {open ? (
+        <div role="menu" aria-label={`Work types for ${subcategory.name}`} className="absolute bottom-full left-0 z-30 mb-1 max-h-48 w-56 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+          {remaining.map((row) => (
+            <button
+              key={row.id}
+              type="button"
+              role="menuitem"
+              onClick={() => pick({ work_type_id: row.id, work_type_name: row.name, unit_id: row.unit_id || subcategory.unit_id || "pcs", custom: false })}
+              className="block w-full truncate rounded px-2 py-2 text-left text-[11px] hover:bg-muted"
+            >
+              {row.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => pick({ work_type_id: `wt-${subcategory.id}-draft-${crypto.randomUUID()}`, work_type_name: "", unit_id: subcategory.unit_id || "pcs", custom: true })}
+            className="mt-0.5 block w-full truncate rounded border-t px-2 py-2 text-left text-[11px] font-semibold text-primary hover:bg-muted"
+          >
+            + Custom work type…
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function ContractorFormDialog({ open, onClose, onSaved, editId }: ContractorFormDialogProps) {
@@ -546,17 +587,12 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setCapabilities((values) =>
       values.some((value) => value.subcategory_id === subcategoryId)
         ? values.filter((value) => value.subcategory_id !== subcategoryId)
+        // Capability starts empty: work types are added explicitly via the
+        // picker, so the draft only ever contains rows the user asked for.
         : [...values, {
             subcategory_id: row.id,
             subcategory_name: row.name,
-            work_type_rates: workTypesForSubcategory(row).map((workType) => ({
-              work_type_id: workType.id,
-              work_type_name: workType.name,
-              unit_id: workType.unit_id || row.unit_id || "pcs",
-              material_rate: "",
-              labour_rate: "",
-              notes: "",
-            })),
+            work_type_rates: [],
           }],
     );
     setDuplicateAcknowledged(false);
@@ -575,22 +611,25 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       : capability,
   ));
 
-  const addCapabilityWorkType = (subcategoryId: string) => setCapabilities((values) => values.map((capability) => {
-    if (capability.subcategory_id !== subcategoryId) return capability;
-    const subcategory = allSubcategories.find((row) => row.id === subcategoryId);
-    return {
-      ...capability,
-      work_type_rates: [...capability.work_type_rates, {
-        work_type_id: `wt-${subcategoryId}-draft-${crypto.randomUUID()}`,
-        work_type_name: "",
-        unit_id: subcategory?.unit_id || "pcs",
-        material_rate: "",
-        labour_rate: "",
-        notes: "",
-        custom: true,
-      }],
-    };
-  }));
+  const addCapabilityWorkTypeRow = (
+    subcategoryId: string,
+    row: { work_type_id: string; work_type_name: string; unit_id: string; custom: boolean },
+  ) => setCapabilities((values) => values.map((capability) =>
+    capability.subcategory_id === subcategoryId
+      ? {
+          ...capability,
+          work_type_rates: [...capability.work_type_rates, {
+            work_type_id: row.work_type_id,
+            work_type_name: row.work_type_name,
+            unit_id: row.unit_id,
+            material_rate: "",
+            labour_rate: "",
+            notes: "",
+            custom: row.custom,
+          }],
+        }
+      : capability,
+  ));
 
   const removeCapabilityWorkType = (subcategoryId: string, workTypeId: string) => setCapabilities((values) => values.map((capability) =>
     capability.subcategory_id === subcategoryId
@@ -790,7 +829,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                         <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="shrink-0 text-destructive"><X className="h-4 w-4" /></button>
                       </div>
                       <div className="mt-2 rounded-md border">
-                        {capability.work_type_rates.map((rate) => {
+                        {capability.work_type_rates.length ? capability.work_type_rates.map((rate) => {
                           const average = contractorWorkTypeAverages(db.master.contractorRates, capability.subcategory_id, rate.work_type_id, editId);
                           const total = (Number(rate.material_rate) || 0) + (Number(rate.labour_rate) || 0);
                           return (
@@ -832,8 +871,17 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                             {average.contractor_count ? <p className="text-[9px] text-muted-foreground sm:col-span-2 lg:col-span-3">Other contractors avg: material ₹{Math.round(average.material_rate || 0)} · labour ₹{Math.round(average.labour_rate || 0)} · total ₹{Math.round(average.total_rate || 0)} ({average.contractor_count})</p> : null}
                             <button type="button" aria-label={`Remove ${rate.work_type_name || "work type"}`} onClick={() => removeCapabilityWorkType(capability.subcategory_id, rate.work_type_id)} className="absolute right-2 top-2 text-destructive"><X className="h-3.5 w-3.5" /></button>
                           </div>
-                        );})}
-                        <button type="button" onClick={() => addCapabilityWorkType(capability.subcategory_id)} className="m-2 inline-flex items-center gap-1 rounded border border-dashed px-2 py-1 text-[10px] font-semibold text-primary"><Plus className="h-3 w-3" />Add work type</button>
+                        );}) : (
+                          <p className="px-2 py-2 text-[10px] text-muted-foreground">No work types yet — add the work this contractor performs, then fill its rates.</p>
+                        )}
+                        <div className="m-2 flex items-center gap-2">
+                          <AddWorkTypeMenu
+                            subcategory={allSubcategories.find((row) => row.id === capability.subcategory_id)}
+                            existingIds={new Set(capability.work_type_rates.map((rate) => rate.work_type_id))}
+                            onAdd={(row) => addCapabilityWorkTypeRow(capability.subcategory_id, row)}
+                          />
+                          <span className="text-[9px] text-muted-foreground">Rows without any rate are not saved.</span>
+                        </div>
                       </div>
                     </div>
                   );

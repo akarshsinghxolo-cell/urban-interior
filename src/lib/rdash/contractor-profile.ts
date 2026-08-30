@@ -1,4 +1,4 @@
-import type { RDashDatabase } from "./types";
+import type { RDashDatabase, WorkSubcategory } from "./types";
 import { workTypesForSubcategory } from "./work-types";
 
 export type ContractorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
@@ -134,6 +134,44 @@ export function canonicalContractorCapabilities(
     });
   }
   return Array.from(merged.values());
+}
+
+export type ContractorCapabilityDraftRow = {
+  work_type_id: string;
+  work_type_name: string;
+  unit_id: string;
+  material_rate: string;
+  labour_rate: string;
+  notes: string;
+  custom: boolean;
+};
+
+/**
+ * Draft rows for the contractor edit form: exactly the STORED work-type rows.
+ * Catalog types the contractor never recorded are NOT fabricated as empty
+ * rows — they are offered by the "Add work type" picker instead. Fabricated
+ * rows made deleted work types reappear after every save (the payload drops
+ * rate-less rows, so removing a fabricated row was not even a change) and
+ * left Save disabled on pure removals.
+ */
+export function contractorCapabilityDraftRows(
+  capability: ContractorCapability,
+  subcategory?: Pick<WorkSubcategory, "unit_id" | "work_types">,
+): ContractorCapabilityDraftRow[] {
+  const catalog = new Map(
+    (subcategory ? workTypesForSubcategory(subcategory as WorkSubcategory) : []).map((row) => [row.id, row]),
+  );
+  return (capability.work_type_rates || []).map((rate) => ({
+    work_type_id: rate.work_type_id,
+    work_type_name: rate.work_type_name || catalog.get(rate.work_type_id)?.name || "",
+    unit_id: rate.unit_id || catalog.get(rate.work_type_id)?.unit_id || subcategory?.unit_id || "pcs",
+    material_rate: rate.material_rate == null ? "" : String(rate.material_rate),
+    labour_rate: rate.labour_rate == null ? "" : String(rate.labour_rate),
+    notes: rate.notes || "",
+    // Rows whose id is not in the catalog (hand-named custom types, or types
+    // later removed from the catalog) keep an editable name field.
+    custom: !catalog.has(rate.work_type_id),
+  }));
 }
 
 export function contractorGovernanceCapabilityProjection(contractorId: string, capabilities: ContractorCapability[]): Array<Record<string, unknown>> {
