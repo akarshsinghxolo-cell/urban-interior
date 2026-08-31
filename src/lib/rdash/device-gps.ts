@@ -5,22 +5,24 @@ type DeviceGpsMode = "transaction" | "master-location" | "tracking";
 
 const MASTER_LOCATION_MAX_ACCURACY_M = 75;
 
-const DEVICE_GPS_OPTIONS: Record<DeviceGpsMode, PositionOptions> = {
-  transaction: {
-    enableHighAccuracy: true,
-    timeout: 15_000,
-    maximumAge: 0,
-  },
-  "master-location": {
-    enableHighAccuracy: true,
-    timeout: 15_000,
-    maximumAge: 0,
-  },
-  tracking: {
-    enableHighAccuracy: true,
-    timeout: 20_000,
-    maximumAge: 15_000,
-  },
+// Two-stage capture: try the precise GPS fix first, then fall back to a
+// balanced (Wi-Fi/network) fix. High-accuracy-only captures routinely time
+// out indoors or on a cold GPS fix; the fallback stage returns a coarser fix
+// instead of failing, so forms still capture coordinates. maximumAge lets the
+// browser hand back a recent cached fix instantly instead of restarting.
+const DEVICE_GPS_STAGES: Record<DeviceGpsMode, PositionOptions[]> = {
+  transaction: [
+    { enableHighAccuracy: true, timeout: 10_000, maximumAge: 15_000 },
+    { enableHighAccuracy: false, timeout: 12_000, maximumAge: 60_000 },
+  ],
+  "master-location": [
+    { enableHighAccuracy: true, timeout: 10_000, maximumAge: 15_000 },
+    { enableHighAccuracy: false, timeout: 12_000, maximumAge: 60_000 },
+  ],
+  tracking: [
+    { enableHighAccuracy: true, timeout: 15_000, maximumAge: 15_000 },
+    { enableHighAccuracy: false, timeout: 12_000, maximumAge: 30_000 },
+  ],
 };
 
 type CaptureDevicePositionOptions = {
@@ -65,7 +67,30 @@ function validatePosition(
   return position;
 }
 
-function captureDevicePosition(
+function isPositionError(error: unknown): error is GeolocationPositionError {
+  return typeof error === "object"
+    && error !== null
+    && typeof (error as { code?: unknown }).code === "number"
+    && typeof (error as { TIMEOUT?: unknown }).TIMEOUT === "number";
+}
+
+function requestPosition(api: Geolocation, options: PositionOptions): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    api.getCurrentPosition(
+      (position) => {
+        try {
+          resolve(validatePosition(position));
+        } catch (error) {
+          reject(error);
+        }
+      },
+      reject,
+      options,
+    );
+  });
+}
+
+async function captureDevicePosition(
   options: CaptureDevicePositionOptions = {},
 ): Promise<GeolocationPosition> {
   const mode = options.mode || "transaction";
@@ -73,26 +98,19 @@ function captureDevicePosition(
     options.maxAccuracyM
     ?? (mode === "master-location" ? MASTER_LOCATION_MAX_ACCURACY_M : undefined);
 
-  return new Promise((resolve, reject) => {
-    let api: Geolocation;
+  const api = geolocation();
+  let lastPositionError: unknown;
+  for (const stageOptions of DEVICE_GPS_STAGES[mode]) {
     try {
-      api = geolocation();
+      const position = await requestPosition(api, stageOptions);
+      return validatePosition(position, maxAccuracyM);
     } catch (error) {
-      reject(error);
-      return;
+      if (!isPositionError(error)) throw error; // accuracy/validation failure: retrying cannot fix it
+      lastPositionError = error;
+      if (error.code === error.PERMISSION_DENIED) throw error; // retrying cannot fix it either
     }
-    api.getCurrentPosition(
-      (position) => {
-        try {
-          resolve(validatePosition(position, maxAccuracyM));
-        } catch (error) {
-          reject(error);
-        }
-      },
-      reject,
-      DEVICE_GPS_OPTIONS[mode],
-    );
-  });
+  }
+  throw lastPositionError;
 }
 
 export async function captureDeviceGps(

@@ -11,7 +11,8 @@ import { FilePreview } from "./FilePreview";
 import { cn } from "@/lib/utils";
 import type { RDashDatabase, Site } from "@/lib/rdash/types";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
-import { reverseGeocodeWithNominatim, searchAddressWithNominatim } from "@/lib/rdash/location-search";
+import { reverseGeocodeWithNominatim, searchAddressWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
+import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
 import {
@@ -48,6 +49,7 @@ export function CustomerSiteDraftCard({
   onDetachExisting: (attachmentId: string) => void;
 }) {
   const [gpsLoading, setGpsLoading] = React.useState(false);
+  const gpsSequenceRef = React.useRef(0);
   const [locationSearch, setLocationSearch] = React.useState(draft.address);
   const [searchingLocation, setSearchingLocation] = React.useState(false);
   const [searchResults, setSearchResults] = React.useState<Array<{
@@ -83,26 +85,48 @@ export function CustomerSiteDraftCard({
     });
   };
 
-  const captureGps = () => {
-    if (!navigator.geolocation) return toast.error("GPS is not available on this device");
+  // Capture coordinates, then autofill only the fields the user left empty —
+  // a slow reverse lookup must never clobber text they typed meanwhile, and
+  // a newer capture must discard stale lookup results (sequence guard).
+  const captureGps = async () => {
+    const sequence = ++gpsSequenceRef.current;
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition((position) => {
-      const { latitude, longitude } = position.coords;
-      applyCoordinates(latitude, longitude);
-      setGpsLoading(false);
-      reverseGeocodeWithNominatim(latitude, longitude).then((data) => {
-        const address = data?.address || {};
-        onChange({
-          address: data?.display_name || draft.address,
-          city: address.city || address.town || address.village || draft.city,
-          locality: address.suburb || address.neighbourhood || draft.locality,
-        });
-        if (data?.display_name) setLocationSearch(data.display_name);
-      }).catch(() => undefined);
-    }, (error) => {
-      setGpsLoading(false);
-      toast.error(`GPS error: ${error.message}`);
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+    const fillable = {
+      address: !draft.address.trim(),
+      city: !draft.city.trim(),
+      locality: !draft.locality.trim(),
+    };
+    const searchBeforeCapture = locationSearch;
+    try {
+      const capture = await captureDeviceGps({ mode: "transaction" });
+      if (sequence !== gpsSequenceRef.current) return;
+      applyCoordinates(capture.latitude, capture.longitude);
+      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      try {
+        const data = await reverseGeocodeWithNominatim(capture.latitude, capture.longitude);
+        if (sequence !== gpsSequenceRef.current) return;
+        const patch: Partial<SiteDraft> = {};
+        if (fillable.address && data?.display_name) patch.address = data.display_name;
+        if (fillable.city) { const city = addressCity(data?.address); if (city) patch.city = city; }
+        if (fillable.locality) { const locality = addressLocality(data?.address); if (locality) patch.locality = locality; }
+        if (Object.keys(patch).length > 0) {
+          onChange(patch);
+          toast.success("Address details autofilled from GPS");
+        }
+        const displayName = data?.display_name;
+        if (displayName) setLocationSearch((current) => (current === searchBeforeCapture ? displayName : current));
+      } catch (lookupError) {
+        if (sequence === gpsSequenceRef.current) {
+          toast.error(lookupError instanceof Error && lookupError.message ? lookupError.message : "Address autofill failed. Coordinates were kept.");
+        }
+      }
+    } catch (gpsError) {
+      if (sequence === gpsSequenceRef.current) {
+        toast.error(deviceGpsErrorMessage(gpsError));
+      }
+    } finally {
+      if (sequence === gpsSequenceRef.current) setGpsLoading(false);
+    }
   };
 
   const searchAddress = async () => {

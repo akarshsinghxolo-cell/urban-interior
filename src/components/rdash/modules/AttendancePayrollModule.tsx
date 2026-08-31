@@ -54,7 +54,7 @@ export function AttendancePayrollModule() {
     const activeStaff = React.useMemo(() => db.master.staff.filter((staff) => staff.status === "active"), [db.master.staff]);
     const defaultPolicyStaff = activeStaff.find((staff) => staff.id === user.staffId) || activeStaff[0] || db.master.staff[0];
     const disposedRef = React.useRef(false);
-    React.useEffect(() => () => { disposedRef.current = true; }, []);  // STAGE-4-FIX: unmount guard
+    React.useEffect(() => { disposedRef.current = false; /* StrictMode dev remount */ return () => { disposedRef.current = true; }; }, []);  // STAGE-4-FIX: unmount guard
     const [weekOffset, setWeekOffset] = React.useState(0);
     const [attendanceMode, setAttendanceMode] = React.useState<"office" | "field_visit">("office");
     const [selectedVisitId, setSelectedVisitId] = React.useState("");

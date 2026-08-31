@@ -59,7 +59,7 @@ export function FieldModeModule() {
     const fileInputRef = React.useRef<HTMLInputElement>(null);
     const lastTrackingPointAt = React.useRef(0);
     const disposedRef = React.useRef(false);
-    React.useEffect(() => () => { disposedRef.current = true; }, []);  // STAGE-4-FIX: unmount guard
+    React.useEffect(() => { disposedRef.current = false; /* StrictMode dev remount */ return () => { disposedRef.current = true; }; }, []);  // STAGE-4-FIX: unmount guard
     // STAGE-4-FIX: deps without db.visits (was tearing down watchPosition on
     // every visit mutation, dropping GPS points). Read visits via getState().
     const activeVisitId = React.useMemo(() => {

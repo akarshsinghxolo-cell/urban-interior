@@ -19,7 +19,8 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { attachedPreview, confirmedAttachmentId } from "@/lib/rdash/file-attachments";
-import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
+import { reverseGeocodeWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
+import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import {
   coordinateInputError,
   formatCoordinatePair,
@@ -258,9 +259,13 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const baselineRef = React.useRef<ContractorProfileRecord>({});
   const baselineCoordinateRef = React.useRef("");
   const disposedRef = React.useRef(false);
+  const gpsSequenceRef = React.useRef(0);
 
-  React.useEffect(() => () => {
-    disposedRef.current = true;
+  React.useEffect(() => {
+    disposedRef.current = false; // reset for StrictMode's dev mount/unmount/remount cycle
+    return () => {
+      disposedRef.current = true;
+    };
   }, []);
 
   const allCategories = db.master.workCategories;
@@ -511,30 +516,43 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     }
   }
 
-  function captureGps() {
-    if (!navigator.geolocation) return toast.error("GPS is unavailable.");
+  // Coordinates first; then autofill only empty fields — a slow reverse
+  // lookup must never clobber or wipe text the user typed, and a newer
+  // capture discards stale lookup results (sequence guard).
+  async function captureGps() {
+    const sequence = ++gpsSequenceRef.current;
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        if (disposedRef.current) return;
-        const next = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-        setLatitude(next.latitude);
-        setLongitude(next.longitude);
-        setCoordinates(formatCoordinatePair(next));
-        setGpsLoading(false);
-        void reverseGeocodeWithNominatim(next.latitude, next.longitude).then((result) => {
-          if (!result?.display_name || disposedRef.current) return;
-          set("address", result.display_name);
-          set("city", result.address?.city || result.address?.town || result.address?.village || "");
-          set("locality", result.address?.suburb || result.address?.neighbourhood || "");
-        });
-      },
-      (error) => {
-        setGpsLoading(false);
-        toast.error(`GPS error: ${error.message}`);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+    const fillable = {
+      address: !draft.address.trim(),
+      city: !draft.city.trim(),
+      locality: !draft.locality.trim(),
+    };
+    try {
+      const capture = await captureDeviceGps({ mode: "transaction" });
+      if (sequence !== gpsSequenceRef.current || disposedRef.current) return;
+      const next = { latitude: capture.latitude, longitude: capture.longitude };
+      setLatitude(next.latitude);
+      setLongitude(next.longitude);
+      setCoordinates(formatCoordinatePair(next));
+      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
+      try {
+        const result = await reverseGeocodeWithNominatim(next.latitude, next.longitude);
+        if (sequence !== gpsSequenceRef.current || disposedRef.current || !result?.display_name) return;
+        if (fillable.address) set("address", result.display_name);
+        if (fillable.city) { const city = addressCity(result.address); if (city) set("city", city); }
+        if (fillable.locality) { const locality = addressLocality(result.address); if (locality) set("locality", locality); }
+      } catch (lookupError) {
+        if (sequence === gpsSequenceRef.current && !disposedRef.current) {
+          toast.error(lookupError instanceof Error && lookupError.message ? lookupError.message : "Address autofill failed. Coordinates were kept.");
+        }
+      }
+    } catch (gpsError) {
+      if (sequence === gpsSequenceRef.current && !disposedRef.current) {
+        toast.error(`GPS error: ${deviceGpsErrorMessage(gpsError)}`);
+      }
+    } finally {
+      if (sequence === gpsSequenceRef.current && !disposedRef.current) setGpsLoading(false);
+    }
   }
 
   async function uploadMedia(

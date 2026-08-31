@@ -144,7 +144,17 @@ export function WorkspaceHealthWidget() {
     );
   }
 
-  if (error || !summary) {
+  // Local/in-memory data layers can serve a structurally partial summary;
+  // degrade to the retry strip instead of crashing the whole module page.
+  const summaryIncomplete =
+    !summary
+    || !BADGE_CONFIG[summary.healthBadge]
+    || !summary.integrity
+    || !summary.operations
+    || !summary.commercial
+    || !summary.recentActivity;
+
+  if (error || !summary || summaryIncomplete) {
     return (
       <section
         aria-label="Workspace health"

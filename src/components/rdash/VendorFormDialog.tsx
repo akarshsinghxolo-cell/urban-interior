@@ -12,7 +12,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { attachedPreview, confirmedAttachmentId } from "@/lib/rdash/file-attachments";
-import { reverseGeocodeWithNominatim } from "@/lib/rdash/location-search";
+import { reverseGeocodeWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
@@ -147,10 +147,14 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const [baselineMetadata, setBaselineMetadata] = React.useState<Pick<VendorProfileRecord, "source_partner_id" | "source_partner_name" | "created_at">>({});
   const [baselineKey, setBaselineKey] = React.useState("");
   const disposedRef = React.useRef(false);
+  const gpsSequenceRef = React.useRef(0);
   const formId = `vendor-form:${editId || "new"}`;
   const { registerBatch, commitBatches } = useUploadDraft(open);
 
-  React.useEffect(() => () => { disposedRef.current = true; }, []);
+  React.useEffect(() => {
+    disposedRef.current = false; // reset for StrictMode's dev mount/unmount/remount cycle
+    return () => { disposedRef.current = true; };
+  }, []);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
   const currentPayload = React.useMemo((): VendorProfileRecord => normalizeVendorForWrite({
@@ -307,22 +311,38 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     const parsed = parseCoordinatePair(value);
     if (parsed) { setLatitude(parsed.latitude); setLongitude(parsed.longitude); setCoordinates(formatCoordinatePair(parsed)); }
   }
+  // Coordinates first; then autofill only empty fields — a slow reverse
+  // lookup must never clobber or wipe text the user typed, and a newer
+  // capture discards stale lookup results (sequence guard).
   async function captureGps() {
+    const sequence = ++gpsSequenceRef.current;
     setGpsLoading(true);
+    const fillable = {
+      address: !draft.address.trim(),
+      city: !draft.city.trim(),
+      locality: !draft.locality.trim(),
+    };
     try {
       const capture = await captureDeviceGps({ mode: "master-location" });
-      if (disposedRef.current) return;
+      if (sequence !== gpsSequenceRef.current || disposedRef.current) return;
       const next = { latitude: capture.latitude, longitude: capture.longitude };
       setLatitude(next.latitude); setLongitude(next.longitude); setCoordinates(formatCoordinatePair(next));
       toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
-      void reverseGeocodeWithNominatim(next.latitude, next.longitude).then((result) => {
-        if (!result?.display_name || disposedRef.current) return;
-        set("address", result.display_name);
-        set("city", result.address?.city || result.address?.town || result.address?.village || "");
-        set("locality", result.address?.suburb || result.address?.neighbourhood || "");
-      });
-    } catch (error) { if (!disposedRef.current) toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`); }
-    finally { if (!disposedRef.current) setGpsLoading(false); }
+      try {
+        const result = await reverseGeocodeWithNominatim(next.latitude, next.longitude);
+        if (sequence !== gpsSequenceRef.current || disposedRef.current || !result?.display_name) return;
+        if (fillable.address) set("address", result.display_name);
+        if (fillable.city) { const city = addressCity(result.address); if (city) set("city", city); }
+        if (fillable.locality) { const locality = addressLocality(result.address); if (locality) set("locality", locality); }
+      } catch (lookupError) {
+        if (sequence === gpsSequenceRef.current && !disposedRef.current) {
+          toast.error(lookupError instanceof Error && lookupError.message ? lookupError.message : "Address autofill failed. Coordinates were kept.");
+        }
+      }
+    } catch (error) {
+      if (sequence === gpsSequenceRef.current && !disposedRef.current) toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
+    }
+    finally { if (sequence === gpsSequenceRef.current && !disposedRef.current) setGpsLoading(false); }
   }
   async function uploadMedia(event: React.ChangeEvent<HTMLInputElement>, setter: (value: MediaValue) => void, attachmentField: string, caption: string) {
     const file = event.target.files?.[0];

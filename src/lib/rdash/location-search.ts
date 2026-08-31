@@ -24,3 +24,19 @@ export async function reverseGeocodeWithNominatim(latitude: number, longitude: n
     const response = await fetch(`/api/location/reverse?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`);
     return readJson<ReverseLocationResult>(response);
 }
+
+// Nominatim (and fallback providers) use different address keys per region —
+// Indian results often carry city_district/quarter instead of suburb. These
+// helpers give every GPS autofill the same broad extraction.
+export function addressCity(address?: Record<string, string>) {
+    for (const key of ["city", "town", "village", "municipality"]) {
+        if (address?.[key]) return address[key];
+    }
+    return "";
+}
+export function addressLocality(address?: Record<string, string>) {
+    for (const key of ["suburb", "neighbourhood", "city_district", "quarter", "residential"]) {
+        if (address?.[key]) return address[key];
+    }
+    return "";
+}
