@@ -15,7 +15,12 @@ export function useDismissOnOutside(
             if (!ref.current?.contains(event.target as Node)) onClose();
         };
         const onKeyDown = (event: KeyboardEvent) => {
-            if (event.key === "Escape") onClose();
+            // A layer above (dialog/popover) already consumed this Escape.
+            if (event.defaultPrevented) return;
+            if (event.key === "Escape") {
+                event.preventDefault();
+                onClose();
+            }
         };
         document.addEventListener("pointerdown", onPointerDown);
         document.addEventListener("keydown", onKeyDown);

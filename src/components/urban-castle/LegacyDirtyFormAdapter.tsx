@@ -325,6 +325,9 @@ export function LegacyDirtyFormAdapter(): null {
 
     const onKeyDownCapture = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      // An open popover/select is the top layer and owns Escape (closes the panel);
+      // the next Escape reaches this guard.
+      if (document.querySelector("[data-radix-popper-content-wrapper]")) return;
       const entry = topDirtyEntry();
       if (!entry) return;
       event.preventDefault();

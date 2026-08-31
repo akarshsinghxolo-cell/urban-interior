@@ -42,6 +42,9 @@ export function DetailPanel() {
     }, [detail.fromModule, setContextDetailTab]);
     React.useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
+            // An open dialog/popover handles Escape first and marks it defaultPrevented;
+            // only a free Escape closes the detail panel.
+            if (e.defaultPrevented) return;
             if (e.key === "Escape")
                 closeDetail();
         };
