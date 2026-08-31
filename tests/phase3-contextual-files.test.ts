@@ -59,18 +59,16 @@ describe("Phase 3 contextual files", () => {
   });
 
   test("site files attach only after the Site mutation is confirmed", async () => {
-    const site = await read("src/components/rdash/SiteFormDialog.tsx");
+    const editor = await read("src/components/rdash/CustomerSitesDialog.tsx");
     const draft = await read("src/components/rdash/CustomerSiteDraftCard.tsx");
     const model = await read("src/components/rdash/customer-sites-form-model.ts");
     const save = await read("src/lib/rdash/customer-sites-save.ts");
-    expect(site).toContain('classified.role === "photo" ? { attachmentField: "photo_attachment_ids"');
-    expect(site).toContain("confirmedPhotoAttachmentIds(existingAttachmentIds, detachAttachmentIds)");
-    const siteSaveStart = site.indexOf("saveCustomerWithSites({");
-    expect(siteSaveStart).toBeGreaterThanOrEqual(0);
-    expect(site.indexOf("await awaitServerSync();", siteSaveStart))
-      .toBeLessThan(site.indexOf("commitBatches();", siteSaveStart));
-    expect(site).toContain("detachAttachmentIds,");
-    expect(site).toContain("setDetachAttachmentIds");
+    const editorSaveStart = editor.indexOf("saveCustomerWithSites({");
+    expect(editorSaveStart).toBeGreaterThanOrEqual(0);
+    expect(editor.indexOf("await awaitServerSync();", editorSaveStart))
+      .toBeLessThan(editor.indexOf("commitBatches();", editorSaveStart));
+    expect(editor).toContain("detachAttachmentIds,");
+    expect(editor).toContain("setDetachAttachmentIds");
     expect(draft).toContain('draft.existing ? entityFiles(db, "site", draft.id) : []');
     expect(draft).toContain('classified.role === "photo" ? { attachmentField: "photo_attachment_ids"');
     expect(model).toContain("photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds)");
@@ -95,9 +93,9 @@ describe("Phase 3 contextual files", () => {
   });
 
   test("site edit language treats uploads as files rather than photos only", async () => {
-    const site = await read("src/components/rdash/SiteFormDialog.tsx");
-    expect(site).toContain("Site photos & files");
-    expect(site).toContain("property information and files belong here—not on the Customer record");
+    const draft = await read("src/components/rdash/CustomerSiteDraftCard.tsx");
+    expect(draft).toContain("Site photos and files");
+    expect(draft).toContain('caption: "Site file"');
   });
 });
 
@@ -360,7 +358,6 @@ describe("Phase 3 re-audit", () => {
     expect(status).toContain("!item.deferred");
 
     const draftFiles = [
-      "src/components/rdash/SiteFormDialog.tsx",
       "src/components/rdash/VendorFormDialog.tsx",
       "src/components/rdash/ContractorFormDialog.tsx",
       "src/components/rdash/CustomerSiteDraftCard.tsx",

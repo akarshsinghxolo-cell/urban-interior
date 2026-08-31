@@ -123,8 +123,6 @@ describe("dirty form integration boundaries", () => {
       "Record vendor bid",
       "Invite contractor bid",
       "Direct Award Contractor",
-      "Add Site",
-      "Edit Site",
       "Record Supplier Invoice",
       "Request contractor payment",
       "Add Staff Operations Profile",
@@ -137,7 +135,6 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain('[role="switch"]');
     expect(source).toContain('button[title^="Preview "]');
     expect(source).toContain("selectedButtonValues");
-    expect(source).toContain("saveTimeoutMs: 4_000");
     expect(source).toContain("entry.config.saveTimeoutMs");
     expect(source).toContain("syncAllManagedDialogs");
     expect(source).toContain("onFormValueCapture");

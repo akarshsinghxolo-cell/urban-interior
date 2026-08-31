@@ -7,7 +7,6 @@ import { Avatar, CopyValueButton, StatusBadge, MetricCard, SectionHeader, EmptyS
 import { ContextRow, type ContextAction } from "../ContextMenuHost";
 import { buildCustomerActions, buildTaskActions, buildQuotationActions, buildPaymentActions, buildVisitActions } from "../recordActions";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
-import { SiteFormDialog } from "../SiteFormDialog";
 import { FilePreview, type FilePreviewSource } from "../FilePreview";
 import { assetPreview } from "@/lib/rdash/file-attachments";
 import { EntityFilesCard } from "../EntityFilesCard";
@@ -913,9 +912,15 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
             return site ? (<WorkRequiredCreateDialog open customerId={customerId} site={site} initialAreaIds={areas.filter((area) => area.site_id === site.id && !area.is_archived).map((area) => area.id)} onOpenChange={(next) => { if (!next)
                 setCreateWorkRequiredSiteId(null); }} onCreated={(id) => { setCaptureWorkRequiredId(id); }}/>) : null;
         })()}
-      <SiteFormDialog open={addSiteOpen} customerId={customerId} onClose={() => setAddSiteOpen(false)} onSaved={() => setAddSiteOpen(false)}/>
-      <SiteFormDialog open={Boolean(editSiteId)} customerId={customerId} siteId={editSiteId} onClose={() => setEditSiteId(undefined)} onSaved={() => setEditSiteId(undefined)}/>
-      <CustomerSitesDialog editId={customerId} open={editCustomerOpen} onClose={() => setEditCustomerOpen(false)}/>
+      {/* ponytail single master: Add site / Edit site / Edit customer all open the
+          same CustomerSitesDialog; only the entry intent differs. */}
+      <CustomerSitesDialog
+        editId={customerId}
+        open={editCustomerOpen || addSiteOpen || Boolean(editSiteId)}
+        autoAddSite={addSiteOpen}
+        expandSiteId={editSiteId}
+        onClose={() => { setEditCustomerOpen(false); setAddSiteOpen(false); setEditSiteId(undefined); }}
+      />
       {/* B-5: Local RecordPaymentDialog pre-configured for advance creation (opened from "Add advance"). */}
       <RecordPaymentDialog open={advanceDialogOpen} onOpenChange={(v) => !v && setAdvanceDialogOpen(false)} customerId={customerId} defaultIsAdvance/>
     </div>);

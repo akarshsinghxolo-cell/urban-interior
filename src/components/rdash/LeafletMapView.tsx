@@ -126,7 +126,10 @@ function FitMap({
         { padding: [28, 28], maxZoom: 17, animate: false },
       );
     }
-    requestAnimationFrame(() => map.invalidateSize());
+    // ponytail: the dialog can unmount the map before this frame runs —
+    // cancel it instead of crashing on a removed Leaflet internal.
+    const frame = requestAnimationFrame(() => map.invalidateSize());
+    return () => cancelAnimationFrame(frame);
   }, [fallbackCenter, key, map, points]);
 
   React.useEffect(() => {

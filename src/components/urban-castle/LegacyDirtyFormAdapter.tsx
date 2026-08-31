@@ -20,8 +20,6 @@ const LEGACY_DIALOG_CONFIGS: readonly LegacyDialogConfig[] = [
   { title: /^Record Article-wise Vendor Bid$/i, label: "Vendor bid form", saveButton: /^Record bid$/i },
   { title: /^Invite contractor bid\b/i, label: "Contractor bid form", saveButton: /^Record bid$/i },
   { title: /^Direct Award Contractor\b/i, label: "Direct Award Contractor form", saveButton: /^Create direct-award Work Order$/i },
-  { title: /^Add Site$/i, label: "Site form", saveButton: /^Add Site$/i, saveTimeoutMs: 4_000 },
-  { title: /^Edit Site$/i, label: "Site form", saveButton: /^Save Site$/i, saveTimeoutMs: 4_000 },
   { title: /^Record Supplier Invoice$/i, label: "Vendor bill form", saveButton: /^Create draft invoice$/i },
   { title: /^Request contractor payment$/i, label: "Contractor RA bill form", saveButton: /^Submit bill$/i },
   { title: /^Add Staff Operations Profile$/i, label: "Staff Operations profile", saveButton: /^Create staff$/i },

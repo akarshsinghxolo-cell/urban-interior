@@ -50,11 +50,17 @@ export function CustomerSitesDialog({
   onClose,
   editId,
   onSaved,
+  autoAddSite,
+  expandSiteId,
 }: {
   open: boolean;
   onClose: () => void;
   editId?: string;
   onSaved?: (customerId: string) => void;
+  /** Entry points like "Add site" open the same form with one pre-added Site draft. */
+  autoAddSite?: boolean;
+  /** Entry points like "Edit site" expand that Site's card inside the same form. */
+  expandSiteId?: string;
 }) {
   const db = useRDashStore((state) => state.db);
   const saveCustomerWithSites = useRDashStore((state) => state.saveCustomerWithSites);
@@ -77,9 +83,20 @@ export function CustomerSitesDialog({
   const initialise = React.useCallback(() => {
     const existing = editId ? db.customers.find((row) => row.id === editId) : undefined;
     const nextCustomer = existing ? draftForCustomer(existing) : emptyCustomerDraft();
-    const nextSites = existing
+    const siteDrafts = existing
       ? db.sites.filter((site) => site.customer_id === existing.id && !site.is_archived).map(draftForSite)
       : [];
+    // ponytail: same default-name rule as the Add Customer form — a new Site draft
+    // pre-fills "«customer» Site" (empty for a new customer) and follows renames.
+    let autoAddedSiteId: string | undefined;
+    if (autoAddSite) {
+      const added = newSiteDraft(nextCustomer.name);
+      siteDrafts.push(added);
+      autoAddedSiteId = added.id;
+    }
+    const nextSites = expandSiteId
+      ? siteDrafts.map((site) => (site.id === expandSiteId ? { ...site, expanded: true } : site))
+      : siteDrafts;
     const nextSiteIds = new Set(nextSites.map((site) => site.id));
     const nextCustomerWork = existing
       ? db.workRequired.filter((work) => work.customer_id === existing.id && (!work.site_id || nextSiteIds.has(work.site_id)))
@@ -100,9 +117,15 @@ export function CustomerSitesDialog({
     setWorkRequired(nextWorkRequired);
     setDetachAttachmentIds([]);
     setSameNameAcknowledged(false);
-    setBaseline(fingerprint(nextCustomer, nextSites, [], false, nextAreas, nextWorkRequired));
+    // The auto-added draft is intent, not existing data: it stays out of the
+    // baseline so "Save changes" is enabled the moment the dialog opens. The
+    // rest of the baseline mirrors the initialised state exactly.
+    const baselineSites = autoAddedSiteId
+      ? nextSites.filter((site) => site.id !== autoAddedSiteId)
+      : nextSites;
+    setBaseline(fingerprint(nextCustomer, baselineSites, [], false, nextAreas, nextWorkRequired));
     dirtyFormRegistry.markClean(formId);
-  }, [db.areas, db.customers, db.sites, db.workRequired, editId, formId]);
+  }, [autoAddSite, db.areas, db.customers, db.sites, db.workRequired, editId, expandSiteId, formId]);
 
   React.useEffect(() => {
     if (!open) {

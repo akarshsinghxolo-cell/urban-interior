@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { SiteFormDialog } from "@/components/rdash/SiteFormDialog";
+import { CustomerSitesDialog } from "@/components/rdash/CustomerSitesDialog";
 import { WorkRequiredCreateDialog } from "@/components/rdash/WorkRequiredCreateDialog";
 import { useRDashStore } from "@/lib/rdash/store";
 import { formatINR, formatINRShort } from "@/lib/rdash/format";
@@ -397,7 +397,11 @@ export function SiteExecutionModule({ initialTab }: {
         setActiveModule("procurementInventory");
     };
     if (!selectedSite) {
-        return (<EmptyState icon={<Building2 className="h-6 w-6"/>} title="Create the first site" description="A site belongs to a customer and becomes the operating context for areas, work, quotations, contractor bidding, BOQ, procurement and finance." action={<Button onClick={() => setNewSiteOpen(true)}><Plus className="mr-1.5 h-4 w-4"/> Add Site</Button>}/>);
+        return (<>
+          <EmptyState icon={<Building2 className="h-6 w-6"/>} title="Create the first site" description="A site belongs to a customer and becomes the operating context for areas, work, quotations, contractor bidding, BOQ, procurement and finance." action={<Button onClick={() => setNewSiteOpen(true)}><Plus className="mr-1.5 h-4 w-4"/> Add Customer &amp; Site</Button>}/>
+          {/* Rendered here too: the empty state returns before the main tree. */}
+          <CustomerSitesDialog open={newSiteOpen} autoAddSite onClose={() => setNewSiteOpen(false)}/>
+        </>);
     }
     return (<div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-[270px_minmax(0,1fr)]">
@@ -569,8 +573,9 @@ export function SiteExecutionModule({ initialTab }: {
         </section>
       </div>
 
-      <SiteFormDialog open={newSiteOpen} onClose={() => setNewSiteOpen(false)} onSaved={(id) => { setSelectedSiteId(id); setNewSiteOpen(false); }}/>
-      <SiteFormDialog open={editSiteOpen} customerId={selectedSite.customer_id} siteId={selectedSite.id} onClose={() => setEditSiteOpen(false)} onSaved={() => setEditSiteOpen(false)}/>
+      {/* ponytail single master: site creation/edits go through the customer form. */}
+      <CustomerSitesDialog open={newSiteOpen} autoAddSite onClose={() => setNewSiteOpen(false)}/>
+      <CustomerSitesDialog editId={selectedSite.customer_id} open={editSiteOpen} expandSiteId={selectedSite.id} onClose={() => setEditSiteOpen(false)}/>
       {newAreaOpen && <Modal title={`Add Area · ${selectedSite.name}`} onClose={() => setNewAreaOpen(false)}><div className="space-y-3"><Field label="Area name"><Input value={areaName} onChange={(event) => setAreaName(event.target.value)} placeholder="Master Bedroom"/></Field><Field label="Area type"><select value={areaType} onChange={(event) => setAreaType(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">{["bedroom", "guest_room", "living_room", "kitchen", "bathroom", "balcony", "staircase", "rooftop", "office_cabin", "reception", "meeting_room", "pantry", "facade", "common_area", "other"].map((type) => <option key={type} value={type}>{titleFromType(type)}</option>)}</select></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setNewAreaOpen(false)}>Cancel</Button><Button onClick={createArea}>Add Area</Button></div></div></Modal>}
       {vendorBidRfqId && (() => { const rfq = db.vendorRfqs.find((entry) => entry.id === vendorBidRfqId); const boq = rfq ? db.boqs.find((entry) => entry.id === rfq.boq_id) : undefined; const bidItems = (boq?.items || []).filter((item) => rfq?.item_ids.includes(item.id)); const total = bidItems.reduce((sum, item) => sum + item.quantity * (Number(vendorBidRates[item.id]) || 0), 0); return <Modal title="Record Article-wise Vendor Bid" onClose={() => setVendorBidRfqId(null)}><div className="space-y-3"><Field label="Vendor"><select value={vendorBidVendorId} onChange={(event) => setVendorBidVendorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select vendor</option>{rfq?.vendor_ids.map((id) => db.master.vendors.find((vendor) => vendor.id === id)).filter(Boolean).map((vendor) => <option key={vendor!.id} value={vendor!.id}>{vendor!.name}</option>)}</select></Field><div className="rounded-md border border-border"><div className="grid grid-cols-[1fr_72px_92px_92px] gap-2 border-b border-border bg-muted/40 px-3 py-2 text-[10px] font-semibold uppercase text-muted-foreground"><span>BOQ article</span><span className="text-right">Qty</span><span className="text-right">Bid rate</span><span className="text-right">Amount</span></div>{bidItems.map((item) => <div key={item.id} className="grid grid-cols-[1fr_72px_92px_92px] items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-0"><span className="truncate font-medium">{item.title}</span><span className="text-right font-mono">{item.quantity} {item.unit_name || ""}</span><Input inputMode="decimal" value={vendorBidRates[item.id] || ""} onChange={(event) => setVendorBidRates((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="0" className="h-8 text-right font-mono"/><span className="text-right font-mono">{formatINRShort(item.quantity * (Number(vendorBidRates[item.id]) || 0))}</span></div>)}</div><div className="grid grid-cols-2 gap-3"><Field label="Delivery days"><Input inputMode="numeric" value={vendorBidDeliveryDays} onChange={(event) => setVendorBidDeliveryDays(event.target.value)} placeholder="e.g. 3"/></Field><div className="rounded-md bg-muted/40 px-3 py-2"><p className="text-[10px] font-semibold uppercase text-muted-foreground">Bid total</p><p className="font-mono text-sm font-bold">{formatINRShort(total)}</p></div></div><p className="text-[11px] text-muted-foreground">Each requested BOQ article needs the vendor's actual rate. No reference or fallback rate can create a project PO.</p><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setVendorBidRfqId(null)}>Cancel</Button><Button onClick={saveVendorBid}>Record bid</Button></div></div></Modal>; })()}
       {newWorkOpen && selectedSite && <WorkRequiredCreateDialog open customerId={selectedSite.customer_id} site={selectedSite} initialAreaIds={newWorkAreaId ? [newWorkAreaId] : []} onOpenChange={(next) => { if (!next) {
