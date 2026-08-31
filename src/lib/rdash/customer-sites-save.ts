@@ -1,5 +1,6 @@
-import type { Area, Customer, EntityFileAttachment, RDashDatabase, Site, WorkRequired } from "./types";
+import type { Area, Customer, EntityFileAttachment, Master, RDashDatabase, Site, WorkRequired } from "./types";
 import { assertUniqueCustomerIdentity } from "./customer-identity";
+import { resolveWorkTypes } from "./work-types";
 
 export type CustomerSiteSaveDraft = Partial<Site> & {
   id?: string;
@@ -126,6 +127,7 @@ const workRequiredMutableFields: Array<keyof WorkRequired> = [
   "title",
   "work_category_id",
   "work_subcategory_ids",
+  "work_type_ids",
   "area_ids",
   "description",
   "priority",
@@ -300,6 +302,7 @@ function workRequiredRecord(
   customer: Customer,
   site: Site | undefined,
   areas: Area[],
+  master: Master,
   now: string,
 ): WorkRequired {
   if (existing && existing.customer_id !== customer.id) {
@@ -313,6 +316,11 @@ function workRequiredRecord(
   const workCategoryId = input.work_category_id ?? existing?.work_category_id;
   const workSubcategoryIds = uniqueStrings(input.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []);
   if (!workCategoryId || !workSubcategoryIds.length) throw new Error(`Select a category and at least one subcategory for Work Required "${title}".`);
+  const workTypeIds = uniqueStrings(input.work_type_ids ?? existing?.work_type_ids ?? []);
+  const selectedSubcategories = master.workSubcategories.filter((row) => workSubcategoryIds.includes(row.id));
+  if (workTypeIds.some((workTypeId) => !resolveWorkTypes(selectedSubcategories, workTypeIds).some((row) => row.id === workTypeId))) {
+    throw new Error(`Every work type for Work Required "${title}" must belong to one of its selected subcategories.`);
+  }
   const areaIds = uniqueStrings(input.area_ids ?? existing?.area_ids ?? []);
   const siteAreaIds = new Set(areas.filter((area) => area.site_id === (site?.id || "") && !area.is_archived).map((area) => area.id));
   if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) {
@@ -325,6 +333,7 @@ function workRequiredRecord(
     title,
     work_category_id: workCategoryId,
     work_subcategory_ids: workSubcategoryIds,
+    work_type_ids: workTypeIds,
     area_ids: areaIds,
     description: suppliedValue(input, "description", existing?.description),
     structured_items: existing?.structured_items ?? input.structured_items ?? [],
@@ -461,7 +470,7 @@ export function applyCustomerWithSitesSave(
     if (!category || !subcategoryIds.length || subcategories.some((subcategory) => !subcategory || subcategory.category_id !== category.id)) {
       throw new Error("Every Work Required must use a valid category and its subcategories.");
     }
-    const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, resultingAreas, now);
+    const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, resultingAreas, database.master, now);
     if (!workRequiredChanged(existing, next)) continue;
     next.updated_at = now;
     const kind: WorkRequiredSaveChange["kind"] = existing ? "update" : "create";

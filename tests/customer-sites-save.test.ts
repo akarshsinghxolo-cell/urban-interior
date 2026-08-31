@@ -184,6 +184,52 @@ describe("canonical customer and Sites save", () => {
     expect(result.db.workRequired[0].work_subcategory_ids).toEqual(["fc_pvc", "fc_grid", "fc_gyp"]);
   });
 
+  test("persists selected work types alongside the subcategories", () => {
+    const db = database();
+    db.workRequired = [];
+    const subcategory = db.master.workSubcategories.find((row) => row.id === "fc2_kit")!;
+    subcategory.work_types = [
+      { id: "wt-fc2_kit-standard", name: "Standard", unit_id: "rft" },
+      { id: "wt-fc2_kit-premium", name: "Premium", unit_id: "rft" },
+      { id: "wt-fc2_kit-luxury", name: "Luxury", unit_id: "rft" },
+    ];
+    const result = applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      workRequired: [{
+        id: "work-wt",
+        site_id: "site-1",
+        title: "Kitchen Cabinets (Modular)",
+        work_category_id: "fc2",
+        work_subcategory_ids: ["fc2_kit"],
+        work_type_ids: ["wt-fc2_kit-premium", "wt-fc2_kit-luxury"],
+        area_ids: [],
+      }],
+    }, options);
+
+    expect(result.db.workRequired).toHaveLength(1);
+    expect(result.db.workRequired[0].work_type_ids).toEqual(["wt-fc2_kit-premium", "wt-fc2_kit-luxury"]);
+    expect(result.workRequiredChanges[0].kind).toBe("create");
+  });
+
+  test("rejects a work type outside the selected subcategories", () => {
+    const db = database();
+    db.workRequired = [];
+    expect(() => applyCustomerWithSitesSave(db, {
+      customerId: "customer-1",
+      customer: { name: "Existing Customer" },
+      workRequired: [{
+        id: "work-wt-bad",
+        site_id: "site-1",
+        title: "Kitchen Cabinets (Modular)",
+        work_category_id: "fc2",
+        work_subcategory_ids: ["fc2_kit"],
+        work_type_ids: ["wt-fc_pvc-standard"],
+        area_ids: [],
+      }],
+    }, options)).toThrow(/work type/);
+  });
+
   test("maps new Work Required to the customer's sole Site", () => {
     const db = database();
     db.workRequired = [];

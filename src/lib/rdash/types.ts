@@ -108,6 +108,7 @@ export interface WorkRequired {
     title: string;
     work_category_id?: ID;
     work_subcategory_ids?: ID[];
+    work_type_ids?: ID[];
     area_ids: ID[];
     description?: string;
     structured_items?: LineItem[];
@@ -184,6 +185,7 @@ export interface LineItem {
     // quantity stores the computed wall area (2·(L+B)·H) or running feet (2·(L+B)
     // when height is empty, e.g. roof railings); editable for doors/openings.
     subcategory_id?: ID;
+    work_type_id?: ID;
     length_ft?: number;
     breadth_ft?: number;
     height_ft?: number;

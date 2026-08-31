@@ -17,6 +17,7 @@ import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
 import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, workByCustomerFallback, } from "@/lib/rdash/format";
 import { workByCustomer } from "@/lib/rdash/seed";
+import { workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
@@ -1319,6 +1320,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         area_type?: import("@/lib/rdash/types").AreaType;
         category_id: string;
         subcategory_id: string;
+        work_type_id?: string;
         length_ft?: number;
         breadth_ft?: number;
         height_ft?: number;
@@ -1336,6 +1338,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         area_type?: import("@/lib/rdash/types").AreaType;
         category_id?: string;
         subcategory_id?: string;
+        work_type_id?: string;
         length?: string;
         breadth?: string;
         height?: string;
@@ -1343,16 +1346,22 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         floor_area?: string;
         notes?: string;
     };
+    const workTypesFor = (subcategoryId: string | undefined) => {
+        const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
+        return subcategory ? workTypesForSubcategory(subcategory) : [];
+    };
     const freshLine = (): DraftLine => ({ wall_area: "", category_id: workRequired.work_category_id });
     const initialLines = (): DraftLine[] => {
         const areaIds = workRequired.area_ids.filter((areaId) => areas.some((area) => area.id === areaId && !area.is_archived));
         const subcategoryIds = workRequired.work_subcategory_ids || [];
+        const workTypeIds = workRequired.work_type_ids || [];
         const scopedAreas: Array<string | undefined> = areaIds.length ? areaIds : [undefined];
         const scopedSubcategories: Array<string | undefined> = subcategoryIds.length ? subcategoryIds : [undefined];
         return scopedSubcategories.flatMap((subcategoryId) => scopedAreas.map((areaId) => ({
             ...freshLine(),
             area_id: areaId,
             subcategory_id: subcategoryId,
+            work_type_id: subcategoryId ? workTypesFor(subcategoryId).find((workType) => workTypeIds.includes(workType.id))?.id : undefined,
         })));
     };
     const [lines, setLines] = React.useState<DraftLine[]>(initialLines);
@@ -1378,9 +1387,9 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     const removeLine = (index: number) => setLines((current) => current.filter((_, row) => row !== index));
     const lineKey = React.useCallback((line: DraftLine) => {
         const area = line.area_id || (line.create_area && line.area_name ? `new:${normalizeAreaName(line.area_name)}` : "");
-        return area && line.category_id && line.subcategory_id ? [area, line.category_id, line.subcategory_id].join("::") : "";
+        return area && line.category_id && line.subcategory_id ? [area, line.category_id, line.subcategory_id, line.work_type_id || ""].join("::") : "";
     }, []);
-    const existingKeys = React.useMemo(() => new Set((workRequired.structured_items || []).map((item) => [item.area_id || "", item.category_id || "", item.subcategory_id || item.work_required_article_id || ""].join("::"))), [workRequired.structured_items]);
+    const existingKeys = React.useMemo(() => new Set((workRequired.structured_items || []).map((item) => [item.area_id || "", item.category_id || "", item.subcategory_id || item.work_required_article_id || "", item.work_type_id || ""].join("::"))), [workRequired.structured_items]);
     const duplicateIndexes = React.useMemo(() => {
         const seen = new Set<string>();
         const duplicates = new Set<number>();
@@ -1427,6 +1436,12 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             ...lines.filter((_, row) => row !== index).map((row) => row.subcategory_id),
         ].filter((id): id is string => Boolean(id)));
         const subOptions = subcategories.map((subcategory) => ({ id: subcategory.id, name: subcategory.name }));
+        const workTypeOptions = workTypesFor(line.subcategory_id).map((workType) => ({ id: workType.id, name: workType.name }));
+        const workTypeTicks = new Set([
+            ...(workRequired.work_type_ids || []),
+            ...(workRequired.structured_items || []).map((item) => item.work_type_id),
+            ...lines.filter((_, row) => row !== index).map((row) => row.work_type_id),
+        ].filter((id): id is string => Boolean(id)));
         return (<div key={index} className={cn("rounded-lg border p-3", duplicate ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-muted/20")}>
         <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-muted-foreground">Line {index + 1}</span>{lines.length > 1 && <button type="button" onClick={() => removeLine(index)} className="text-muted-foreground hover:text-destructive" aria-label={`Remove line ${index + 1}`}><Plus className="h-3.5 w-3.5 rotate-45"/></button>}</div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1447,13 +1462,20 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
           {line.create_area && <><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">New area name *</label><Input value={line.area_name || ""} onChange={(event) => updateLine(index, { area_name: event.target.value })} placeholder="e.g. Living Room" className="h-8 text-xs"/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Area type *</label><select value={line.area_type || "other"} onChange={(event) => updateLine(index, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">{areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}</select></div></>}
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
-            <TickDropdown value={line.category_id} ariaLabel="Category" placeholder="— select category —" onChange={(categoryId) => updateLine(index, { category_id: categoryId, subcategory_id: undefined })} ticked={categoryTicks} groups={[{ key: "all", items: db.master.workCategories.map((category) => ({ id: category.id, name: category.name })) }]}/>
+            <TickDropdown value={line.category_id} ariaLabel="Category" placeholder="— select category —" onChange={(categoryId) => updateLine(index, { category_id: categoryId, subcategory_id: undefined, work_type_id: undefined })} ticked={categoryTicks} groups={[{ key: "all", items: db.master.workCategories.map((category) => ({ id: category.id, name: category.name })) }]}/>
           </div>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
-            <TickDropdown value={line.subcategory_id} ariaLabel="Subcategory" placeholder="— select subcategory —" disabled={!line.category_id} onChange={(subcategoryId) => updateLine(index, { subcategory_id: subcategoryId })} ticked={subTicks} groups={subOptions.length ? [
+            <TickDropdown value={line.subcategory_id} ariaLabel="Subcategory" placeholder="— select subcategory —" disabled={!line.category_id} onChange={(subcategoryId) => updateLine(index, { subcategory_id: subcategoryId, work_type_id: undefined })} ticked={subTicks} groups={subOptions.length ? [
             { key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id)) },
             { key: "others", items: subOptions.filter((option) => !subTicks.has(option.id)) },
+        ].filter((group) => group.items.length) : []}/>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work type</label>
+            <TickDropdown value={line.work_type_id} ariaLabel="Work type" placeholder="— select work type —" disabled={!line.subcategory_id} onChange={(workTypeId) => updateLine(index, { work_type_id: workTypeId || undefined })} ticked={workTypeTicks} groups={workTypeOptions.length ? [
+            { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id)) },
+            { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id)) },
         ].filter((group) => group.items.length) : []}/>
           </div>
           <div>
@@ -1485,7 +1507,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
       <div className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · {workRequired.title}</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
         <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">This capture is locked to <strong>{site.name}</strong>. Area, Category, Subcategory, and Wall area/length are required. Length × Breadth × Height auto-fills both areas (e.g. a 5×6×10 ft bathroom → 220 sqft of wall); leave Height empty for running feet (railings). Adjust any area to deduct doors and openings.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{lines.map(renderLine)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5"/> Add line</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const saved = onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, length_ft: Number(line.length) > 0 ? Number(line.length) : undefined, breadth_ft: Number(line.breadth) > 0 ? Number(line.breadth) : undefined, height_ft: Number(line.height) > 0 ? Number(line.height) : undefined, floor_area: Number(line.floor_area) > 0 ? Number(line.floor_area) : undefined, quantity: Number(line.wall_area), notes: line.notes?.trim() || undefined }))); if (saved) commitBatches(); }}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const saved = onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, work_type_id: line.work_type_id, length_ft: Number(line.length) > 0 ? Number(line.length) : undefined, breadth_ft: Number(line.breadth) > 0 ? Number(line.breadth) : undefined, height_ft: Number(line.height) > 0 ? Number(line.height) : undefined, floor_area: Number(line.floor_area) > 0 ? Number(line.floor_area) : undefined, quantity: Number(line.wall_area), notes: line.notes?.trim() || undefined }))); if (saved) commitBatches(); }}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
       </div>
     </div>);
 }

@@ -24,7 +24,7 @@ import type { Customer, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
-import { primaryWorkType } from "../../work-types";
+import { primaryWorkType, workTypesForSubcategory } from "../../work-types";
 import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
@@ -57,6 +57,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 title: work.title || "New work required",
                 work_category_id: work.work_category_id,
                 work_subcategory_ids: work.work_subcategory_ids || [],
+                work_type_ids: work.work_type_ids || [],
                 area_ids: work.area_ids || [],
                 description: work.description,
                 structured_items: work.structured_items || [],
@@ -748,7 +749,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 .filter((area: any) => area.site_id === workRequired.site_id)
                 .map((area: any) => [normaliseAreaName(area.name), area.id]));
             const lineKeys = new Set<string>();
-            const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "variant_id" | "unit_id">) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.variant_id || "", item.unit_id || ""].join("::");
+            const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "work_type_id" | "variant_id" | "unit_id">) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::");
             const existingKeys = new Set((workRequired.structured_items || []).map(scopeKey));
             const resolvedItems: LineItem[] = lines.map((line: any, index: any) => {
                 if (line.site_id !== workRequired.site_id) {
@@ -765,6 +766,12 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 const subcategory = assertWorkSubcategoryId(state.db, line.subcategory_id, context)!;
                 if (subcategory.category_id !== category.id) {
                     throw new Error(`${context}: line ${index + 1} has a Subcategory outside its selected Category.`);
+                }
+                const workType = line.work_type_id
+                    ? workTypesForSubcategory(subcategory).find((row) => row.id === line.work_type_id)
+                    : undefined;
+                if (line.work_type_id && !workType) {
+                    throw new Error(`${context}: line ${index + 1} work type does not belong to the selected Subcategory.`);
                 }
                 // Detailed-area capture: Article/Variant are optional (dimensions replaced
                 // catalog picks). Unit is derived from the dimensions: wall height present
@@ -827,15 +834,15 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         areaId = area.id;
                     }
                 }
-                const duplicateKey = [areaId, category.id, mapping?.id || subcategory.id, variant?.id || "", unit?.id || ""].join("::");
+                const duplicateKey = [areaId, category.id, mapping?.id || subcategory.id, workType?.id || "", variant?.id || "", unit?.id || ""].join("::");
                 if (lineKeys.has(duplicateKey) || existingKeys.has(duplicateKey)) {
                     throw new Error(`${context}: line ${index + 1} duplicates an existing detailed area line. Edit the existing line instead.`);
                 }
                 lineKeys.add(duplicateKey);
-                const primaryRate = primaryWorkType(subcategory);
+                const primaryRate = workType || primaryWorkType(subcategory);
                 const contractorAverage = contractorWorkTypeAverages(state.db.master.contractorRates, subcategory.id, primaryRate.id);
                 const rate = mapping?.reference_rate || article?.base_rate || contractorAverage.total_rate || 0;
-                const title = `${area.name} · ${article?.name || subcategory.name}`;
+                const title = `${area.name} · ${article?.name || subcategory.name}${workType && workType.name !== "Standard" ? ` · ${workType.name}` : ""}`;
                 const num = (value: unknown) => {
                     const parsed = Number(value);
                     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
@@ -847,6 +854,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     article_id: article?.id,
                     category_id: category.id,
                     subcategory_id: subcategory.id,
+                    work_type_id: workType?.id,
                     work_required_id: workRequired.id,
                     work_required_article_id: mapping?.id,
                     variant_id: variant?.id,

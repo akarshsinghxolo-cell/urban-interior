@@ -9,6 +9,7 @@ import { SiteFormDialog } from "@/components/rdash/SiteFormDialog";
 import { WorkRequiredCreateDialog } from "@/components/rdash/WorkRequiredCreateDialog";
 import { useRDashStore } from "@/lib/rdash/store";
 import { formatINR, formatINRShort } from "@/lib/rdash/format";
+import { workTypeNamesForIds } from "@/lib/rdash/work-types";
 import { EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -131,10 +132,12 @@ export function SiteExecutionModule({ initialTab }: {
     const scopeMeta = (work: (typeof workRequired)[number]) => {
         const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
         const subcategories = (work.work_subcategory_ids || []).map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean);
+        const workTypes = workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids);
         return {
             categoryName: category?.name || work.title,
             subcategoryName: subcategories.join(" / ") || undefined,
-            label: [category?.name || work.title, subcategories.join(" / ")].filter(Boolean).join(" · "),
+            workTypeName: workTypes.join(" / ") || undefined,
+            label: [category?.name || work.title, subcategories.join(" / "), workTypes.join(" / ")].filter(Boolean).join(" · "),
         };
     };
     const activeQuotationForWork = (workId: string) => quotations.find((quotation) =>

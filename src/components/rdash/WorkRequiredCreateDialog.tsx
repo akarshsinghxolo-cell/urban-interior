@@ -53,6 +53,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
         title: draft.title.trim(),
         work_category_id: draft.categoryId,
         work_subcategory_ids: draft.subcategoryIds,
+        work_type_ids: draft.workTypeIds,
         area_ids: draft.areaIds,
         description: draft.description.trim() || undefined,
         status: "new",

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
+import { pruneWorkTypeIds, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
@@ -15,6 +16,7 @@ export type WorkRequiredFormDraft = {
   title: string;
   categoryId: string;
   subcategoryIds: string[];
+  workTypeIds: string[];
   areaIds: string[];
   description: string;
   priority: Priority;
@@ -31,6 +33,7 @@ export function emptyWorkRequiredFormDraft(): WorkRequiredFormDraft {
     title: "",
     categoryId: "",
     subcategoryIds: [],
+    workTypeIds: [],
     areaIds: [],
     description: "",
     priority: "medium",
@@ -68,6 +71,10 @@ export function WorkRequiredFields({
   const [customAreaType, setCustomAreaType] = React.useState("");
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
   const subcategories = db.master.workSubcategories.filter((row) => row.category_id === value.categoryId);
+  const selectedWorkTypes = value.subcategoryIds.flatMap((subcategoryId) => {
+    const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
+    return subcategory ? workTypesForSubcategory(subcategory).map((workType) => ({ subcategory, workType })) : [];
+  });
   const areaTypeOptions = [
     ...AREA_TYPES,
     ...areas.map((area) => {
@@ -160,7 +167,7 @@ export function WorkRequiredFields({
               }
               setAddCategoryOpen(false);
               setAddSubcategoryOpen(false);
-              onChange({ categoryId: event.target.value, subcategoryIds: [], title: "" });
+              onChange({ categoryId: event.target.value, subcategoryIds: [], workTypeIds: [], title: "" });
             }}
             className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
           >
@@ -175,7 +182,7 @@ export function WorkRequiredFields({
               onCancelled={() => setAddCategoryOpen(false)}
               onCreated={(categoryId) => {
                 setAddCategoryOpen(false);
-                onChange({ categoryId, subcategoryIds: [], title: "" });
+                onChange({ categoryId, subcategoryIds: [], workTypeIds: [], title: "" });
               }}
               className="mt-1"
             />
@@ -194,8 +201,9 @@ export function WorkRequiredFields({
                 return <label key={subcategory.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
                   <input type="checkbox" checked={selected} onChange={() => {
                     const subcategoryIds = selected ? value.subcategoryIds.filter((id) => id !== subcategory.id) : [...value.subcategoryIds, subcategory.id];
+                    const workTypeIds = pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds);
                     const title = subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean).join(" / ");
-                    onChange({ subcategoryIds, title });
+                    onChange({ subcategoryIds, workTypeIds, title });
                   }} />
                   {subcategory.name}
                 </label>;
@@ -219,6 +227,32 @@ export function WorkRequiredFields({
           ) : null}
         </div>
       </div>
+
+      {selectedWorkTypes.length ? (
+        <div>
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Types</span>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">Grade within each selected subcategory, e.g. Kitchen Cabinets (Modular) · Premium.</p>
+          <div className="mt-1 grid gap-1 rounded-md border border-border bg-card p-2 sm:grid-cols-2">
+            {selectedWorkTypes.map(({ subcategory, workType }) => {
+              const selected = value.workTypeIds.includes(workType.id);
+              return (
+                <label key={workType.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-accent/40">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    onChange={() => onChange({
+                      workTypeIds: selected
+                        ? value.workTypeIds.filter((id) => id !== workType.id)
+                        : [...value.workTypeIds, workType.id],
+                    })}
+                  />
+                  <span className="min-w-0 truncate" title={`${subcategory.name} · ${workType.name}`}>{subcategory.name} · <span className="font-medium">{workType.name}</span></span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <label>
         <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required title *</span>

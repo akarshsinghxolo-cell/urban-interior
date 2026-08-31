@@ -3,6 +3,9 @@ import { describe, expect, test } from "vitest";
 import {
   defaultWorkTypeId,
   normalizeWorkSubcategoryWorkTypes,
+  pruneWorkTypeIds,
+  resolveWorkTypes,
+  workTypeNamesForIds,
   workTypesForSubcategory,
 } from "../src/lib/rdash/work-types";
 
@@ -42,6 +45,77 @@ describe("work-type master", () => {
       ["Budget", "sqft", "Budget finish"],
       ["Luxury", "sqft", "Luxury finish"],
     ]);
+  });
+
+  test("resolveWorkTypes and workTypeNamesForIds resolve rows across subcategories", () => {
+    const subcategories = [
+      { id: "sub-kitchen", category_id: "cat-wood", name: "Kitchen Cabinets (Modular)", work_types: [
+        { id: "wt-sub-kitchen-premium", name: "Premium" },
+        { id: "wt-sub-kitchen-luxury", name: "Luxury" },
+        { id: "wt-sub-kitchen-economy", name: "Economy" },
+      ] },
+      { id: "sub-wardrobe", category_id: "cat-wood", name: "Wardrobes", work_types: [
+        { id: "wt-sub-wardrobe-premium", name: "Premium" },
+      ] },
+    ];
+
+    const rows = resolveWorkTypes(subcategories, ["wt-sub-kitchen-luxury", "wt-sub-wardrobe-premium", "wt-sub-kitchen-missing"]);
+    expect(rows.map((row) => row.id)).toEqual(["wt-sub-kitchen-luxury", "wt-sub-wardrobe-premium"]);
+    expect(workTypeNamesForIds(subcategories, ["wt-sub-kitchen-luxury", "wt-sub-wardrobe-premium"])).toEqual(["Luxury", "Premium"]);
+    expect(workTypeNamesForIds(subcategories, undefined)).toEqual([]);
+  });
+
+  test("pruneWorkTypeIds keeps only work types of the selected subcategories", () => {
+    const subcategories = [
+      { id: "sub-kitchen", category_id: "cat-wood", name: "Kitchen Cabinets (Modular)", work_types: [
+        { id: "wt-sub-kitchen-premium", name: "Premium" },
+        { id: "wt-sub-kitchen-luxury", name: "Luxury" },
+      ] },
+      { id: "sub-wardrobe", category_id: "cat-wood", name: "Wardrobes", work_types: [
+        { id: "wt-sub-wardrobe-premium", name: "Premium" },
+      ] },
+    ];
+
+    expect(pruneWorkTypeIds(subcategories, ["sub-kitchen"], ["wt-sub-kitchen-premium", "wt-sub-wardrobe-premium"]))
+      .toEqual(["wt-sub-kitchen-premium"]);
+    expect(pruneWorkTypeIds(subcategories, [], ["wt-sub-kitchen-premium"])).toEqual([]);
+  });
+});
+
+describe("work types in the customer add/edit form and shared creation paths", () => {
+  test("WorkRequiredFields exposes the work-type picker and prunes on subcategory change", () => {
+    const source = read("../src/components/rdash/WorkRequiredFields.tsx");
+    expect(source).toContain("Work Types");
+    expect(source).toContain("workTypeIds");
+    expect(source).toContain("pruneWorkTypeIds");
+    expect(source).toContain("value.workTypeIds.includes(workType.id)");
+  });
+
+  test("the shared WorkRequiredCreateDialog persists work_type_ids", () => {
+    const source = read("../src/components/rdash/WorkRequiredCreateDialog.tsx");
+    expect(source).toContain("work_type_ids: draft.workTypeIds");
+  });
+
+  test("the detailed-area capture editor selects a work type per line", () => {
+    const source = read("../src/components/rdash/modules/CustomerDesk.tsx");
+    expect(source).toContain('ariaLabel="Work type"');
+    expect(source).toContain("workTypeTicks");
+    expect(source).toContain("work_type_id: line.work_type_id");
+  });
+});
+
+describe("customer-module single canonical create dialog", () => {
+  test("CreateMenuCore no longer carries the duplicated quotation branch", () => {
+    const source = read("../src/components/rdash/CreateMenuCore.tsx");
+    expect(source).not.toContain("addQuotation");
+    expect(source).not.toContain("General scope");
+    expect(source).not.toContain('kind === "quotation"');
+  });
+
+  test("CreateMenu routes quotation dialogs to the single customer quotation dialog", () => {
+    const source = read("../src/components/rdash/CreateMenu.tsx");
+    expect(source).toContain('createDialog?.kind === "quotation"');
+    expect(source).toContain("CustomerQuotationDialog");
   });
 });
 

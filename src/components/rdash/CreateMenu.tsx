@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import { CalendarClock, Check, FilePlus2 } from "lucide-react";
 import { notifyCreated } from "@/lib/rdash/notify";
+import { workTypeNamesForIds } from "@/lib/rdash/work-types";
 import { useRDashStore, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { WorkRequired } from "@/lib/rdash/types";
 
@@ -76,10 +77,12 @@ function CustomerQuotationDialog({ request, onClose }: {
         setWorkRequiredIds(ids);
         setTitle(ids.map((id) => matchingWorkRequired.find((work) => work.id === id)?.title).filter(Boolean).join(" / ") || defaultTitle());
     };
-    const workRequiredLabel = (work: WorkRequired) => (work.work_subcategory_ids || [])
+    const workRequiredLabel = (work: WorkRequired) => [(work.work_subcategory_ids || [])
         .map((id) => db.master.workSubcategories.find((subcategory) => subcategory.id === id)?.name)
         .filter(Boolean)
-        .join(" + ") || work.title;
+        .join(" + "),
+        ...workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids),
+    ].filter(Boolean).join(" · ") || work.title;
 
     const handleSubmit = () => {
         if (!customerId) {

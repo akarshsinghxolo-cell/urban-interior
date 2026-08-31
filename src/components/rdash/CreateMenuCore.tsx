@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "
 import { toast } from "sonner";
 import { notifyCreated, notifyConverted } from "@/lib/rdash/notify";
 import { useRDashStore, type CreateDialogKind, type CreateDialogRequest } from "@/lib/rdash/store";
-import type { VisitType, WorkRequired } from "@/lib/rdash/types";
+import type { VisitType } from "@/lib/rdash/types";
 import { indiaDateTimeInputValue } from "@/lib/rdash/format";
-import { Plus, ListPlus, FilePlus2, MapPinPlus, PhoneCall, Check, CalendarClock, } from "lucide-react";
+import { workTypeNamesForIds } from "@/lib/rdash/work-types";
+import { Plus, ListPlus, FilePlus2, MapPinPlus, PhoneCall, Check, } from "lucide-react";
 const CREATE_OPTIONS: {
     kind: CreateDialogKind;
     label: string;
@@ -104,10 +105,8 @@ function CreateDialog({ request, onClose }: {
     const { kind, customerId: prefillCustomerId, siteId: prefillSiteId, workRequiredId: prefillWorkRequiredId, visitType: prefillVisitType } = request;
     const db = useRDashStore((s) => s.db);
     const addTask = useRDashStore((s) => s.addTask);
-    const addQuotation = useRDashStore((s) => s.addQuotation);
     const addVisit = useRDashStore((s) => s.addVisit);
     const addFollowup = useRDashStore((s) => s.addFollowup);
-    const addWorkRequired = useRDashStore((s) => s.addWorkRequired);
     const addRecentCreated = useRDashStore((s) => s.addRecentCreated);
     const openDetail = useRDashStore((s) => s.openDetail);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
@@ -157,9 +156,6 @@ function CreateDialog({ request, onClose }: {
     const [visitVendorId, setVisitVendorId] = React.useState("");
     const [visitWorkRequiredId, setVisitWorkRequiredId] = React.useState("");
     const [followupType, setFollowupType] = React.useState<"call" | "quotation" | "payment" | "general">("call");
-    const [quoteWorkRequiredId, setQuoteWorkRequiredId] = React.useState("");
-    const [quoteSiteId, setQuoteSiteId] = React.useState("");
-    const [validUntil, setValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
     const [submitting, setSubmitting] = React.useState(false);
     React.useEffect(() => {
         setTitle("");
@@ -172,9 +168,6 @@ function CreateDialog({ request, onClose }: {
         setVisitScheduledAt(indiaDateTimeInputValue(new Date(Date.now() + 86400000)));
         setFollowupDueAt(indiaDateTimeInputValue(new Date(Date.now() + 86400000)));
         setVisitDuration("60");
-        setValidUntil(new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
-        setQuoteWorkRequiredId(prefillWorkRequiredId || "");
-        setQuoteSiteId(prefillSiteId || "");
         setVisitSiteId(prefillSiteId || "");
         setVisitTargetType("site");
         setVisitVendorId("");
@@ -204,79 +197,6 @@ function CreateDialog({ request, onClose }: {
                 addRecentCreated({ id, kind: "task", label: title.trim() });
                 notifyCreated("task", id, title.trim(), `Due ${dueDate} · ${priority} priority`);
                 openDetail("task", id);
-            }
-            else if (kind === "quotation") {
-                if (!customerId) {
-                    toast.error("Please select a customer");
-                    setSubmitting(false);
-                    return;
-                }
-                const cust = customers.find((c) => c.id === customerId);
-                // Resolve a Work Required for the selected customer. If none exists yet, auto-create a "General scope" Work Required against the customer's first site so the quotation can be drafted immediately.
-                let workRequired = quoteWorkRequiredId ? db.workRequired.find((row) => row.id === quoteWorkRequiredId && row.customer_id === customerId) : undefined;
-                let resolvedSiteId = workRequired?.site_id || quoteSiteId || "";
-                if (!workRequired) {
-                    const fallbackSite = quoteSiteId ? db.sites.find((row) => row.id === quoteSiteId && row.customer_id === customerId) : db.sites.find((row) => row.customer_id === customerId && !row.is_archived);
-                    if (!fallbackSite) {
-                        toast.error("Add a customer Site first (Customer Desk → Add Site) before creating a quotation.");
-                        setSubmitting(false);
-                        return;
-                    }
-                    resolvedSiteId = fallbackSite.id;
-                    const scopeTitle = title.trim() ? `${title.trim()} — scope` : "General scope";
-                    try {
-                        const newId = addWorkRequired({
-                            customer_id: customerId,
-                            site_id: fallbackSite.id,
-                            title: scopeTitle,
-                            area_ids: [],
-                            status: "new",
-                            priority: "medium",
-                        });
-                        // db is the React-state snapshot and may be stale immediately after addWorkRequired — synthesise the row locally so the quotation can be drafted in the same tick.
-                        workRequired = { id: newId, customer_id: customerId, site_id: fallbackSite.id, title: scopeTitle, area_ids: [], structured_items: [], status: "new" as const, priority: "medium" as const } as unknown as WorkRequired;
-                    }
-                    catch (err) {
-                        toast.error(err instanceof Error ? err.message : "Could not create Work Required for this site.");
-                        setSubmitting(false);
-                        return;
-                    }
-                }
-                const site = db.sites.find((row) => row.id === resolvedSiteId);
-                if (!site) {
-                    toast.error("A quotation requires a valid customer site");
-                    setSubmitting(false);
-                    return;
-                }
-                if (!workRequired) {
-                    toast.error("Could not resolve Work Required for this quotation.");
-                    setSubmitting(false);
-                    return;
-                }
-                const qTitle = title.trim() || `${site.name} · ${workRequired.title}`;
-                const id = addQuotation({
-                    customer_id: customerId,
-                    site_id: site.id,
-                    coverage: [{
-                            id: `coverage-${Date.now().toString(36)}`,
-                            work_required_id: workRequired.id,
-                            area_ids: workRequired.area_ids,
-                            measurement_revision_ids: db.measurementRevisions.filter((revision) => revision.site_id === site.id && workRequired.area_ids.includes(revision.area_id)).map((revision) => revision.id),
-                            coverage_label: workRequired.title,
-                            status: "proposed",
-                        }],
-                    title: qTitle,
-                    valid_until: validUntil,
-                    status: "draft",
-                });
-                if (!id) {
-                    toast.error("Quotation could not be created. Check the selected site and work coverage.");
-                    setSubmitting(false);
-                    return;
-                }
-                addRecentCreated({ id, kind: "quotation", label: qTitle });
-                notifyCreated("quotation", id, qTitle, `Draft for ${cust?.name || "customer"} · ${site.name} · valid until ${validUntil}`);
-                openDetail("quotation", id);
             }
             else if (kind === "visit") {
                 if (!customerId) {
@@ -438,43 +358,6 @@ function CreateDialog({ request, onClose }: {
               </Field>
             </>)}
 
-          {kind === "quotation" && (<>
-              <Field label="Customer *">
-                <Select value={customerId} onValueChange={(value) => { setCustomerId(value); setQuoteWorkRequiredId(""); setQuoteSiteId(""); }}>
-                  <SelectTrigger><SelectValue placeholder="Select customer…"/></SelectTrigger>
-                  <SelectContent>
-                    {customers.map((c) => { const site = db.sites.find((entry) => entry.customer_id === c.id); return <SelectItem key={c.id} value={c.id}>{c.name}{site?.city ? ` · ${site.city}` : ""}</SelectItem>; })}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Site (optional)">
-                <Select value={quoteSiteId} onValueChange={(value) => { setQuoteSiteId(value); setQuoteWorkRequiredId(""); }} disabled={!customerId}>
-                  <SelectTrigger><SelectValue placeholder={customerId ? "Pick a customer site (or leave to auto-pick)" : "Select customer first"}/></SelectTrigger>
-                  <SelectContent>
-                    {db.sites.filter((site) => site.customer_id === customerId && !site.is_archived).map((site) => <SelectItem key={site.id} value={site.id}>{site.name}{site.locality ? ` · ${site.locality}` : ""}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="Work Required (optional)">
-                <Select value={quoteWorkRequiredId} onValueChange={setQuoteWorkRequiredId} disabled={!customerId}>
-                  <SelectTrigger><SelectValue placeholder={customerId ? "Pick existing scope or auto-create general scope" : "Select customer first"}/></SelectTrigger>
-                  <SelectContent>
-                    {db.workRequired.filter((row) => row.customer_id === customerId && (!quoteSiteId || row.site_id === quoteSiteId)).map((row) => {
-                const site = db.sites.find((candidate) => candidate.id === row.site_id);
-                return <SelectItem key={row.id} value={row.id}>{site?.name || "Unknown site"} · {row.title}</SelectItem>;
-            })}
-                    {db.workRequired.filter((row) => row.customer_id === customerId && (!quoteSiteId || row.site_id === quoteSiteId)).length === 0 && <SelectItem value="__auto__" disabled>↪ Auto-create "General scope" on submit</SelectItem>}
-                  </SelectContent>
-                </Select>
-                {customerId && db.workRequired.filter((row) => row.customer_id === customerId && (!quoteSiteId || row.site_id === quoteSiteId)).length === 0 && <p className="mt-1 text-[11px] text-muted-foreground">No work required captured yet — a "General scope" will be created automatically when you submit, so you can start drafting the quotation right away. Capture detailed scope later from Sites & Execution.</p>}
-              </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Quotation title"><Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Modular kitchen — 3BHK" autoFocus/></Field>
-                <Field label="Valid until"><Input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)}/></Field>
-              </div>
-              <p className="rounded-md border border-dashed border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground"><CalendarClock className="mr-1 inline h-3 w-3"/>Every service quotation is tied to one customer site and selected work coverage. It opens in an editable composer for line items, milestones, terms and revisions.</p>
-            </>)}
-
           {kind === "visit" && (<>
               <Field label="Customer *">
                 <Select value={customerId} onValueChange={(value) => { setCustomerId(value); setVisitSiteId(""); setVisitWorkRequiredId(""); }}>
@@ -513,7 +396,8 @@ function CreateDialog({ request, onClose }: {
                         const areaNames = work.area_ids.map((areaId) => db.areas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
                         const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
                         const subcategories = (work.work_subcategory_ids || []).map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean);
-                        const scope = [category?.name || work.title, subcategories.join(" / ")].filter(Boolean).join(" · ");
+                        const workTypes = workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids);
+                        const scope = [category?.name || work.title, subcategories.join(" / "), workTypes.join(" / ")].filter(Boolean).join(" · ");
                         return <SelectItem key={work.id} value={work.id}>{areaNames || "Site-wide"} → {scope}</SelectItem>;
                     })}
                   </SelectContent>
