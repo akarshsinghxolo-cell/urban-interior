@@ -355,7 +355,7 @@ export async function recordStaffRouteBundle(
   return bundle;
 }
 
-export async function listStaffRouteBundles(
+async function listStaffRouteBundles(
   user: AuthenticatedUser,
   options: {
     staffId?: string | null;

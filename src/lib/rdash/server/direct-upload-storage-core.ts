@@ -1,6 +1,5 @@
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
-import { getGoogleDriveAccessToken } from "./google-drive";
-import type { RDashDatabase, StorageAccount } from "../types";
+import type { StorageAccount } from "../types";
 
 export const DRIVE_API = "https://www.googleapis.com/drive/v3";
 export const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3/files";
@@ -47,60 +46,6 @@ export async function driveFetch(accessToken: string, url: string, init?: Reques
   });
 }
 
-async function liveAccountAccess(account: StorageAccount): Promise<{
-  account: StorageAccount;
-  accessToken: string;
-  used: number;
-  limit: number;
-}> {
-  const accessToken = await getGoogleDriveAccessToken(account);
-  const response = await driveFetch(accessToken, `${DRIVE_API}/about?fields=storageQuota(limit,usage)`);
-  const payload = await response.json().catch(() => ({})) as {
-    storageQuota?: { limit?: string; usage?: string };
-    error?: { message?: string };
-  };
-  if (!response.ok) throw new Error(payload.error?.message || `Could not read quota for ${account.label}.`);
-  return {
-    account,
-    accessToken,
-    used: Number(payload.storageQuota?.usage || account.quota_used_bytes || 0),
-    limit: Number(payload.storageQuota?.limit || account.quota_limit_bytes || 0),
-  };
-}
-
-export async function selectUploadAccount(db: RDashDatabase, batchId: string, incomingBytes: number) {
-  const admin = getSupabaseAdminClient();
-  const { data: existingBatch, error: existingBatchError } = await admin
-    .from("uc_upload_batches")
-    .select("storage_account_id")
-    .eq("id", batchId)
-    .maybeSingle();
-  if (existingBatchError) throw new Error(existingBatchError.message);
-
-  const accounts = [...(db.master.storageAccounts || [])]
-    .filter((account) => account.status === "connected" && account.write_enabled !== false)
-    .sort((a, b) => a.priority_order - b.priority_order || a.label.localeCompare(b.label));
-  if (!accounts.length) throw new Error("Connect at least one Google Drive account before uploading files.");
-
-  if (existingBatch?.storage_account_id) {
-    const pinned = accounts.find((account) => account.id === existingBatch.storage_account_id);
-    if (!pinned) throw new Error("The Drive account pinned to this upload batch is no longer available.");
-    return liveAccountAccess(pinned);
-  }
-
-  const errors: string[] = [];
-  for (const account of accounts) {
-    try {
-      const access = await liveAccountAccess(account);
-      const limit = access.limit || 15 * 1024 * 1024 * 1024;
-      const threshold = Math.max(1, Math.min(100, Number(account.switch_threshold_percent || 85))) / 100;
-      if (access.used + incomingBytes <= limit * threshold) return access;
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : `Could not use ${account.label}.`);
-    }
-  }
-  throw new Error(errors[0] || "No connected Drive account has enough configured capacity.");
-}
 
 export type FolderSegment = { name: string; key: string };
 

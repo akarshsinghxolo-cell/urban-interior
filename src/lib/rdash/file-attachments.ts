@@ -1,14 +1,8 @@
 import type { EntityFileAttachment, FileAsset, FileAttachmentEntityType, FileAttachmentRole, ID, RDashDatabase, } from "./types";
 import type { FilePreviewSource } from "@/components/rdash/FilePreview";
-export type AttachedFile = {
+type AttachedFile = {
     attachment: EntityFileAttachment;
     asset: FileAsset;
-};
-export type FileAttachmentReference = {
-    attachment_id: ID;
-    caption?: string;
-    captured_at?: string;
-    type?: string;
 };
 export function entityFiles(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: ID, role?: FileAttachmentRole): AttachedFile[] {
     return (db.entityFileAttachments || [])
@@ -58,13 +52,6 @@ export function confirmedAttachmentId(value: unknown): ID | undefined {
     const id = (value as { attachment_id?: unknown }).attachment_id;
     return typeof id === "string" && id ? id : undefined;
 }
-export function attachmentIdsForEntity(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: ID, role?: FileAttachmentRole): ID[] {
-    return entityFiles(db, entityType, entityId, role).map((item) => item.attachment.id);
-}
-export function displayNameForAttachment(db: RDashDatabase, attachmentId?: ID, fallback = "Attached file") {
-    return attachedFileById(db, attachmentId)?.asset.file_name || fallback;
-}
-
 export function attachedFilesForIds(db: RDashDatabase, attachmentIds: ID[] | undefined): AttachedFile[] {
   return (attachmentIds || [])
     .map((id) => attachedFileById(db, id))

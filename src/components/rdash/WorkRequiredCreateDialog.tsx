@@ -9,7 +9,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import type { Site } from "@/lib/rdash/types";
 import { emptyWorkRequiredFormDraft, WorkRequiredFields, type WorkRequiredFormDraft } from "./WorkRequiredFields";
 
-export interface WorkRequiredCreateDialogProps {
+interface WorkRequiredCreateDialogProps {
   open: boolean;
   customerId: string;
   site: Site;

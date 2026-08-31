@@ -8,7 +8,7 @@
  * chooser of Google Calendar / Samsung Calendar), and falls back to a plain
  * file download everywhere else (iOS Safari download, desktop browsers).
  */
-export type IcsDelivery = "shared" | "downloaded";
+type IcsDelivery = "shared" | "downloaded";
 
 export async function shareOrDownloadIcsFile(
     ics: string,

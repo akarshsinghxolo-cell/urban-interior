@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { AlertTriangle } from "lucide-react";
 
-export interface ConfirmDialogConfig {
+interface ConfirmDialogConfig {
   title: string;
   description?: string;
   confirmLabel?: string;

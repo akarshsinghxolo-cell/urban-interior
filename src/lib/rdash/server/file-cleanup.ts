@@ -4,7 +4,7 @@ import { commitWorkspaceOperations, getWorkspaceSubset } from "./workspace";
 import { DRIVE_API, driveFetch } from "./direct-upload-storage";
 import type { FileAsset, RDashDatabase, StorageAccount } from "../types";
 
-export type FileCleanupResult = {
+type FileCleanupResult = {
   deleted: boolean;
   driveDeleted?: boolean;
   reason?: "missing" | "referenced" | "external_reference" | "account_missing";

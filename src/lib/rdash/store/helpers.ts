@@ -28,7 +28,7 @@ export function businessDate(value = new Date()): string {
 
 export const today = (): string => businessDate();
 
-export function permissionError(role: string, action: string): Error {
+function permissionError(role: string, action: string): Error {
     return new Error(`Permission denied: ${role} cannot ${action}.`);
 }
 
@@ -43,19 +43,6 @@ export function googleFileIdFromUrl(value?: string): string | undefined {
     return match?.[1];
 }
 
-/**
- * Test whether a URL points to a Google Drive stored media resource. Used by
- * the procurement slice (fileGRN) and by inline store.ts execution-log /
- * variation code to gate proof uploads on the Google Drive host.
- *
- * Moved from store.ts to helpers.ts during Phase 3i so the procurement slice
- * (fileGRN) and the remaining inline store.ts call sites (execution log
- * uploads, variation material-receipt confirmation) can share a single
- * implementation.
- */
-export function isStoredMediaUrl(value?: string): boolean {
-    return /^https:\/\/drive\.google\.com\//.test(value || "");
-}
 
 /**
  * Resolve a synthetic CurrentUserContext for the first active staff member

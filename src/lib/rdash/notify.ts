@@ -59,14 +59,6 @@ export function notifyCreated(kind: EntityKind, id: string, title: string, descr
         },
     });
 }
-export function notifyUpdated(kind: EntityKind, title: string, description?: string) {
-    const label = KIND_LABEL[kind];
-    const emoji = KIND_EMOJI[kind];
-    toast.success(`${emoji} ${label} updated`, {
-        description: description || title,
-        duration: 3500,
-    });
-}
 export function notifyConverted(fromKind: EntityKind, toKind: EntityKind, toId: string, title: string) {
     const fromLabel = KIND_LABEL[fromKind];
     const toLabel = KIND_LABEL[toKind];
@@ -86,13 +78,5 @@ export function notifyCompleted(kind: "task" | "payment", title: string) {
     toast.success(`${emoji} ${label} completed`, {
         description: title,
         duration: 4000,
-    });
-}
-export function notifyStatusChange(kind: EntityKind, newStatus: string, title: string) {
-    const label = KIND_LABEL[kind];
-    const emoji = KIND_EMOJI[kind];
-    toast.success(`${emoji} ${label} → ${newStatus}`, {
-        description: title,
-        duration: 3500,
     });
 }

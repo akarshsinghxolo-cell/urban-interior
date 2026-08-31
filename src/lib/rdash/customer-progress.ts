@@ -65,7 +65,7 @@ function progressForWorkRequired(workRequired: WorkRequired | undefined): Custom
  *
  * Pure function — no store access.
  */
-export function customerCollectionPenalty(db: RDashDatabase, customerId: string): number {
+function customerCollectionPenalty(db: RDashDatabase, customerId: string): number {
     const invoices = db.invoices.filter((inv) => inv.customer_id === customerId);
     if (!invoices.length)
         return 0;

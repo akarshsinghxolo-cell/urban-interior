@@ -1,4 +1,4 @@
-import type { AttendancePolicy, RDashDatabase, Staff } from "./types";
+import type { AttendancePolicy, RDashDatabase } from "./types";
 export function createDefaultAttendancePolicy(): AttendancePolicy {
     return {
         office_name: "Office location not configured",
@@ -32,7 +32,4 @@ export function attendancePolicyForStaff(db: Pick<RDashDatabase, "master">, staf
 }
 export function attendancePolicyForVisit(db: Pick<RDashDatabase, "master">, visit: Pick<import("./types").Visit, "staff_id">): AttendancePolicy {
     return attendancePolicyForStaff(db, visit.staff_id);
-}
-export function withAttendancePolicy(staff: Staff, patch: Partial<AttendancePolicy>): Staff {
-    return { ...staff, attendance_policy: normalizeAttendancePolicy({ ...staff.attendance_policy, ...patch }) };
 }

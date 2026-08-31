@@ -1,8 +1,8 @@
 import type { WorkspaceOutboxSnapshot } from "./workspace-outbox-types";
 
-export type WorkspaceExitAction = "reload" | "sign-out" | "leave";
+type WorkspaceExitAction = "reload" | "sign-out" | "leave";
 
-export interface WorkspaceExitRisk {
+interface WorkspaceExitRisk {
   shouldWarn: boolean;
   pendingCount: number;
   hasConflict: boolean;

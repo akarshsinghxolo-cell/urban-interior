@@ -6,7 +6,7 @@ import type {
   FileAssetKind,
 } from "@/lib/rdash/types";
 
-export type Brand<T, Name extends string> = T & { readonly __brand: Name };
+type Brand<T, Name extends string> = T & { readonly __brand: Name };
 
 export type UploadBatchId = Brand<string, "UploadBatchId">;
 export type UploadItemId = Brand<string, "UploadItemId">;
@@ -58,7 +58,7 @@ export type UploadPurpose =
   | "reference_media"
   | "diagnostic";
 
-export type UploadItemStatus =
+type UploadItemStatus =
   | "queued"
   | "preparing"
   | "starting_session"
@@ -73,7 +73,7 @@ export type UploadItemStatus =
   | "cleanup_pending"
   | "cancelled";
 
-export type UploadBatchStatus =
+type UploadBatchStatus =
   | "open"
   | "uploading"
   | "waiting"

@@ -6,7 +6,7 @@
  * time so disabling a category actually stops its notifications.
  */
 
-export type NotificationCategory = "approvals" | "overdue" | "integrity";
+type NotificationCategory = "approvals" | "overdue" | "integrity";
 
 export interface NotificationPreferences {
   enabled: boolean;
@@ -16,7 +16,7 @@ export interface NotificationPreferences {
   sound: boolean;
 }
 
-export const NOTIFICATION_SETTINGS_STORAGE_KEY = "uc_notif_settings";
+const NOTIFICATION_SETTINGS_STORAGE_KEY = "uc_notif_settings";
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   enabled: true,

@@ -8,6 +8,7 @@ import {
   getWorkspaceSubset,
   type WorkspaceSubset,
 } from "./workspace";
+import { mergeRows, rowsFor, rowId } from "./rows";
 
 const MAX_DEPENDENCY_ROUNDS = 5;
 
@@ -122,21 +123,6 @@ const THREAD_KIND_TO_COLLECTION: Readonly<Record<string, string>> = Object.freez
 });
 
 type IdPlan = Map<string, Set<string>>;
-
-function rowId(row: Record<string, unknown>): string {
-  return String(row.id || "").trim();
-}
-
-function rowsFor(database: RDashDatabase, collection: string): Array<Record<string, unknown>> {
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length);
-    const value = (database.master as unknown as Record<string, unknown>)[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
 function addId(plan: IdPlan, collection: string, value: unknown) {
   const id = typeof value === "string" ? value.trim() : "";
   if (!id) return;
@@ -220,19 +206,6 @@ function removeLoaded(plan: IdPlan, database: RDashDatabase) {
     if (!ids.size) plan.delete(collection);
   }
 }
-
-function mergeRows(
-  current: Array<Record<string, unknown>>,
-  incoming: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const merged = new Map(current.map((row) => [rowId(row), row]));
-  for (const row of incoming) {
-    const id = rowId(row);
-    if (id) merged.set(id, row);
-  }
-  return [...merged.values()];
-}
-
 function mergeSubsets(target: WorkspaceSubset, source: WorkspaceSubset): WorkspaceSubset {
   if (target.revision !== source.revision) throw new Error("READ_CONFLICT");
   const data = structuredClone(target.data) as RDashDatabase;

@@ -7,7 +7,7 @@ export interface GpsCapture {
     captured_at?: string;
     action_source?: GeoActionSource;
 }
-export interface GpsVerification {
+interface GpsVerification {
     distance_m: number;
     expected_latitude: number;
     expected_longitude: number;
@@ -23,7 +23,7 @@ export function distanceMeters(fromLatitude: number, fromLongitude: number, toLa
         + Math.cos(radians(fromLatitude)) * Math.cos(radians(toLatitude)) * Math.sin(deltaLongitude / 2) ** 2;
     return Math.round(earthRadiusM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
-export function assertDeviceGps(capture: GpsCapture, policy: AttendancePolicy) {
+function assertDeviceGps(capture: GpsCapture, policy: AttendancePolicy) {
     if (!Number.isFinite(capture.latitude) || !Number.isFinite(capture.longitude)) {
         throw new Error("A real device GPS location is required.");
     }

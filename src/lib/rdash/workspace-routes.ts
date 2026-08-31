@@ -10,7 +10,7 @@ import {
 
 export const WORKSPACE_ROOT_PATH = "/workspace";
 
-export interface WorkspaceRouteDefinition {
+interface WorkspaceRouteDefinition {
   moduleId: string;
   canonicalPath: string;
   aliases?: readonly string[];

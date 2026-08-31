@@ -119,10 +119,3 @@ export function mapEntityTypeToThreadKind(entityType: string): ThreadKind | null
     return ENTITY_TYPE_TO_THREAD_KIND[entityType] || null;
 }
 
-/**
- * Check if an entity type is known (has a ThreadKind mapping).
- * Useful for validation before attempting to open a thread.
- */
-export function isKnownEntityType(entityType: string): boolean {
-    return entityType in ENTITY_TYPE_TO_THREAD_KIND;
-}

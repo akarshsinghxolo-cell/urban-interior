@@ -19,12 +19,11 @@ let snapshot = EMPTY_SNAPSHOT;
 let hydratePromise: Promise<void> | null = null;
 let flushPromise: Promise<WorkspaceOutboxFlushResult> | null = null;
 let acceptedWorkspace: RDashDatabase | null = null;
-let acceptedRevision = 0;
 let resetBarrier = false;
 let activeScope: { workspaceId: string; ownerUserId: string } | null = null;
 const listeners = new Set<() => void>();
 
-export interface WorkspaceOutboxFlushResult {
+interface WorkspaceOutboxFlushResult {
   replayed: boolean;
   conflict: boolean;
   payload?: WorkspaceCommitResponsePayload;
@@ -106,7 +105,6 @@ export function configureWorkspaceOutboxScope(scope: { workspaceId: string; owne
   if (activeScope?.workspaceId === scope.workspaceId && activeScope.ownerUserId === scope.ownerUserId) return;
   activeScope = { workspaceId: scope.workspaceId, ownerUserId: scope.ownerUserId };
   acceptedWorkspace = null;
-  acceptedRevision = 0;
   hydratePromise = null;
   void refresh().catch((error) => console.error("[WorkspaceOutbox] Could not switch account scope", error));
 }
@@ -114,14 +112,12 @@ export function configureWorkspaceOutboxScope(scope: { workspaceId: string; owne
 export function clearWorkspaceOutboxScope(): void {
   activeScope = null;
   acceptedWorkspace = null;
-  acceptedRevision = 0;
   hydratePromise = null;
   emit([], true);
 }
 
 export function clearWorkspaceAcceptedBaseline(): void {
   acceptedWorkspace = null;
-  acceptedRevision = 0;
 }
 
 export async function beginWorkspaceOutboxResetBarrier(): Promise<void> {
@@ -145,10 +141,8 @@ export function cancelWorkspaceOutboxResetBarrier(): void {
 
 export async function resetWorkspaceOutboxAfterWorkspaceReset(
   base: RDashDatabase,
-  revision: number,
 ): Promise<void> {
   acceptedWorkspace = structuredClone(base) as RDashDatabase;
-  acceptedRevision = Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
   hydratePromise = null;
   emit([], true);
   const items = await readScopedWorkspaceOutbox();
@@ -188,7 +182,6 @@ function responseWithPayload(response: Response, payload: WorkspaceCommitRespons
 function rememberAcceptedWorkspace(payload: WorkspaceCommitResponsePayload): void {
   if (!payload.data || typeof payload.revision !== "number") return;
   acceptedWorkspace = structuredClone(payload.data) as RDashDatabase;
-  acceptedRevision = payload.revision;
 }
 
 function acceptCompactCommit(
@@ -200,8 +193,7 @@ function acceptCompactCommit(
     rememberAcceptedWorkspace(payload);
   } else if (acceptedWorkspace && typeof payload.revision === "number") {
     acceptedWorkspace = applyWorkspaceOperations(acceptedWorkspace, patches);
-    acceptedRevision = payload.revision;
-  }
+    }
 
   const { data: _discardedWorkspace, ...compact } = payload;
   return {
@@ -499,27 +491,4 @@ export async function flushWorkspaceOutbox(): Promise<WorkspaceOutboxFlushResult
   }
 }
 
-export function getAcceptedWorkspaceRevision(): number {
-  return acceptedRevision;
-}
 
-export function createDeferredWorkspaceCommitResponse(
-  operationId: string,
-  fallbackRevision: number,
-): Response {
-  const payload: WorkspaceCommitResponsePayload = {
-    status: "processing",
-    operationId,
-    retryAfterSeconds: 10,
-    revision: acceptedRevision || fallbackRevision,
-  };
-  return new Response(JSON.stringify(payload), {
-    status: 202,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      "Retry-After": "10",
-      "X-UC-Outbox-Deferred": "1",
-    },
-  });
-}

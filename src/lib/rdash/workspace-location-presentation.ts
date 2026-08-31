@@ -7,7 +7,7 @@ import type {
   DetailPanelState,
 } from "./store/ui-types";
 
-export type PresentableDetailKind = Exclude<DetailPanelKind, null>;
+type PresentableDetailKind = Exclude<DetailPanelKind, null>;
 
 export function workspaceRecordKindLabel(kind: PresentableDetailKind): string {
   const labels: Partial<Record<PresentableDetailKind, string>> = {
@@ -25,7 +25,7 @@ export function workspaceRecordKindLabel(kind: PresentableDetailKind): string {
   return labels[kind] || titleCase(kind);
 }
 
-export function workspaceRecordForPresentation(
+function workspaceRecordForPresentation(
   db: RDashDatabase,
   kind: PresentableDetailKind,
   id: string,
@@ -110,7 +110,7 @@ export function workspaceRecordTitle(
   }
 }
 
-export function workspaceViewLabel(
+function workspaceViewLabel(
   detail: DetailPanelState,
   contextHistory: ContextHistoryEntry[],
   contextHistoryIndex: number,
@@ -123,7 +123,7 @@ export function workspaceViewLabel(
   return view === "overview" ? undefined : titleCase(view);
 }
 
-export interface WorkspaceLocationPresentation {
+interface WorkspaceLocationPresentation {
   moduleLabel: string;
   kindLabel?: string;
   recordLabel?: string;

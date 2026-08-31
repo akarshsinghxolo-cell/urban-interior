@@ -1,7 +1,4 @@
-import type {
-  ModuleWorkspaceReadScope,
-  WorkspaceReadTarget,
-} from "../workspace-read-scope";
+import type { WorkspaceReadTarget } from "../workspace-read-scope";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
   boundedPageLimits,
@@ -9,7 +6,7 @@ import {
   pageCollectionsForTarget,
 } from "./module-page-read-plans";
 
-export interface WorkspaceModuleReadPlan {
+interface WorkspaceModuleReadPlan {
   collections: readonly string[];
   limitsByCollection?: Readonly<Record<string, number>>;
   strategy: "module" | "scope";
@@ -144,6 +141,3 @@ export function moduleReadPlanSavings(
   };
 }
 
-export function scopeCollectionCount(scope: ModuleWorkspaceReadScope): number {
-  return COLLECTIONS_BY_SCOPE[scope].length;
-}

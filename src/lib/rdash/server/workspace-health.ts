@@ -1,6 +1,6 @@
 import { getSupabaseAdminClient } from "../../supabase/server";
 
-export interface WorkspaceHealthAggregate {
+interface WorkspaceHealthAggregate {
   revision: number;
   healthBadge: "healthy" | "watch" | "attention";
   attentionCount: number;

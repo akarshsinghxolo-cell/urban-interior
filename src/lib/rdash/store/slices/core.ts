@@ -39,15 +39,11 @@ import { checkWorkspaceIntegrity } from "../../integrity/checker";
 import { repairIntegrityIssues } from "../../integrity/repair";
 import { cascadeDelete } from "../../integrity/cascade";
 
-// Re-export for backward compatibility — other files that imported
-// mapEntityTypeToThreadKind from core.ts still work.
-export { mapEntityTypeToThreadKind };
-
 /**
  * The extractable CoreState actions. `hydrateSecureWorkspace` and
  * `resetDatabase` stay inline in store.ts.
  */
-export type CoreSliceActions = Pick<CoreState,
+type CoreSliceActions = Pick<CoreState,
     | "replaceStaffLocationPings"
     | "upsertStaffLocationPing"
     | "currentUser"

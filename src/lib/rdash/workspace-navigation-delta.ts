@@ -14,7 +14,7 @@ import type { WorkspaceReadCacheEntry } from "./workspace-read-cache";
 
 const MAX_DELTA_PAGES_PER_NAVIGATION = 5;
 
-export type WorkspaceNavigationRevalidationResult =
+type WorkspaceNavigationRevalidationResult =
   | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean; deletedRowVersionKeys: string[] }
   | { kind: "reload"; reason: string }
   | { kind: "unauthorized" };

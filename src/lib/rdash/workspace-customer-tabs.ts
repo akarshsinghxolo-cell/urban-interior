@@ -13,7 +13,7 @@ const CUSTOMER_TABS = new Set<ContextCustomerTab>([
   "activity",
 ]);
 
-export interface WorkspaceCustomerTabRequest {
+interface WorkspaceCustomerTabRequest {
   tab: ContextCustomerTab;
   explicit: boolean;
   invalid: boolean;

@@ -9,6 +9,7 @@ import {
   masterCollections,
   topLevelCollections,
 } from "./workspace-operations";
+import { mergeRows, rowsFor } from "./server/rows";
 
 export const WORKSPACE_SESSION_FOUNDATION_COLLECTIONS = Object.freeze([
   "master.units",
@@ -35,20 +36,6 @@ const ALL_COLLECTIONS = Object.freeze([
 function metadata(database: RDashDatabase): Record<string, unknown> {
   return database as unknown as Record<string, unknown>;
 }
-
-function rowsFor(
-  database: RDashDatabase,
-  collection: string,
-): Array<Record<string, unknown>> {
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length);
-    const value = (database.master as unknown as Record<string, unknown>)[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
 function setRows(
   database: RDashDatabase,
   collection: string,
@@ -61,23 +48,6 @@ function setRows(
   }
   (database as unknown as Record<string, unknown>)[collection] = rows;
 }
-
-function mergeRows(
-  current: Array<Record<string, unknown>>,
-  incoming: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const rows = new Map<string, Record<string, unknown>>();
-  for (const row of current) {
-    const id = String(row.id || "").trim();
-    if (id) rows.set(id, row);
-  }
-  for (const row of incoming) {
-    const id = String(row.id || "").trim();
-    if (id) rows.set(id, row);
-  }
-  return [...rows.values()];
-}
-
 function representedCollections(database: RDashDatabase): string[] {
   const data = metadata(database);
   const declared = data._workspace_read_collections;

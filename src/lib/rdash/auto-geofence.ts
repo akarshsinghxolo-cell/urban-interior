@@ -1,9 +1,9 @@
-import { distanceMeters, isInsideGeofence, isOutsideExitGeofence, type GpsCapture } from "./gps";
+import { isInsideGeofence, isOutsideExitGeofence } from "./gps";
 export type GeofenceDwellState = {
     enteredAt?: number;
     exitedAt?: number;
 };
-export type GeofenceDecision = "enter_ready" | "exit_ready" | "inside_waiting" | "outside_waiting" | "neutral";
+type GeofenceDecision = "enter_ready" | "exit_ready" | "inside_waiting" | "outside_waiting" | "neutral";
 export function updateGeofenceDwell(state: GeofenceDwellState, distance_m: number, options: {
     radius_m: number;
     exit_buffer_m: number;
@@ -31,12 +31,4 @@ export function updateGeofenceDwell(state: GeofenceDwellState, distance_m: numbe
         };
     }
     return { state: {}, decision: "neutral" };
-}
-export function geofenceDistance(capture: Pick<GpsCapture, "latitude" | "longitude">, target?: {
-    latitude?: number;
-    longitude?: number;
-}) {
-    if (target?.latitude == null || target?.longitude == null)
-        return undefined;
-    return distanceMeters(capture.latitude, capture.longitude, target.latitude, target.longitude);
 }

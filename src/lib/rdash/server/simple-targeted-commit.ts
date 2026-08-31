@@ -13,6 +13,7 @@ import {
   type WorkspaceReadPlan,
   type WorkspaceSubset,
 } from "./workspace";
+import { rowsFor, rowId } from "./rows";
 
 const SIMPLE_TARGETED_COLLECTIONS = new Set(["customers", "sites", "attendance"]);
 const MAX_SIMPLE_TARGETED_ROWS = 50;
@@ -24,11 +25,6 @@ export interface SimpleTargetedPreparation {
   authorizeAndValidateMs: number;
   queryCount: number;
 }
-
-function rowId(row: Record<string, unknown>): string {
-  return String(row.id || "").trim();
-}
-
 function addId(target: Record<string, Set<string>>, collection: string, value: unknown) {
   const id = typeof value === "string" ? value.trim() : "";
   if (!id) return;
@@ -90,17 +86,6 @@ function buildReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]
     ),
   };
 }
-
-function rowsFor(database: RDashDatabase, collection: string): Array<Record<string, unknown>> {
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length);
-    const value = (database.master as unknown as Record<string, unknown>)[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
 function validateCandidate(database: RDashDatabase, operations: WorkspaceOperation[]) {
   try {
     for (const operation of operations) {

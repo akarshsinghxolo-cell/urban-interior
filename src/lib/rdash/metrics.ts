@@ -33,7 +33,7 @@ export function isOpenSalesStatus(status: WorkRequired["status"]): boolean {
   return OPEN_SALES_STATUSES.has(status);
 }
 
-export interface SalesPipelineMetricOptions {
+interface SalesPipelineMetricOptions {
   wonWorkRequiredIds?: ReadonlySet<string>;
 }
 

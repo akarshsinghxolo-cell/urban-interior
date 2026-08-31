@@ -48,7 +48,7 @@ export function pipelineStageForSiteStage(stage: Site["stage"]): WorkRequiredSta
   return SITE_PROGRESS[stage].stage;
 }
 
-export function pipelineStageForCustomerProgress(progress: CustomerProgress): WorkRequiredStatus {
+function pipelineStageForCustomerProgress(progress: CustomerProgress): WorkRequiredStatus {
   return CUSTOMER_PROGRESS_STAGE[progress.key];
 }
 

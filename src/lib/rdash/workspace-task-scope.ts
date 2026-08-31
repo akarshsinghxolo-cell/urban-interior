@@ -18,7 +18,7 @@ export function isWorkspaceTaskScope(value: unknown): value is WorkspaceTaskScop
   return typeof value === "string" && WORKSPACE_TASK_SCOPE_SET.has(value);
 }
 
-export interface WorkspaceTaskScopeRequest {
+interface WorkspaceTaskScopeRequest {
   scope: WorkspaceTaskScope;
   explicit: boolean;
   valid: boolean;

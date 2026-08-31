@@ -1,6 +1,6 @@
 import type { ID } from "./types";
 
-export type StaffLocationSource = "browser_foreground";
+type StaffLocationSource = "browser_foreground";
 
 export interface StaffLocationPing {
   id: ID;
@@ -26,9 +26,9 @@ export interface StaffRouteBundle {
   created_at?: string;
 }
 
-export type StaffRouteSpeedBand = "fast" | "slow" | "stopped";
+type StaffRouteSpeedBand = "fast" | "slow" | "stopped";
 
-export interface StaffRouteStop {
+interface StaffRouteStop {
   id: string;
   staff_id: ID;
   latitude: number;
@@ -39,7 +39,7 @@ export interface StaffRouteStop {
   point_count: number;
 }
 
-export interface StaffRouteSegment {
+interface StaffRouteSegment {
   id: string;
   staff_id: ID;
   from: StaffLocationPing;
@@ -50,7 +50,7 @@ export interface StaffRouteSegment {
   duration_seconds: number;
 }
 
-export interface StaffRouteSummary {
+interface StaffRouteSummary {
   point_count: number;
   distance_m: number;
   moving_minutes: number;
@@ -58,12 +58,12 @@ export interface StaffRouteSummary {
   max_speed_kmh: number;
 }
 
-export const STAFF_LOCATION_STALE_AFTER_MS = 70 * 60_000;
+const STAFF_LOCATION_STALE_AFTER_MS = 70 * 60_000;
 export const STAFF_ROUTE_RETENTION_MS = 14 * 24 * 60 * 60 * 1_000;
-export const STAFF_ROUTE_FAST_KMH = 15;
-export const STAFF_ROUTE_STOPPED_KMH = 0.8;
-export const STAFF_ROUTE_STOP_RADIUS_M = 35;
-export const STAFF_ROUTE_MIN_STOP_MS = 2 * 60_000;
+const STAFF_ROUTE_FAST_KMH = 15;
+const STAFF_ROUTE_STOPPED_KMH = 0.8;
+const STAFF_ROUTE_STOP_RADIUS_M = 35;
+const STAFF_ROUTE_MIN_STOP_MS = 2 * 60_000;
 
 export function distanceMeters(
   a: Pick<StaffLocationPing, "latitude" | "longitude">,
@@ -80,7 +80,7 @@ export function distanceMeters(
   return 2 * earthRadius * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-export function speedBand(speedKmh: number): StaffRouteSpeedBand {
+function speedBand(speedKmh: number): StaffRouteSpeedBand {
   if (speedKmh > STAFF_ROUTE_FAST_KMH) return "fast";
   if (speedKmh <= STAFF_ROUTE_STOPPED_KMH) return "stopped";
   return "slow";

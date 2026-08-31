@@ -117,7 +117,7 @@ function selectedButtonValues(dialog: HTMLElement): unknown[] {
     ]);
 }
 
-export function legacyDialogFingerprint(dialog: HTMLElement): string {
+function legacyDialogFingerprint(dialog: HTMLElement): string {
   const controls = Array.from(dialog.querySelectorAll(CONTROL_SELECTOR));
   return JSON.stringify({
     controls: controls.map(controlValue),

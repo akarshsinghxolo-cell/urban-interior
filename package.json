@@ -6,7 +6,7 @@
     "node": "24.x"
   },
   "scripts": {
-    "dev": "next dev -p 3000 2>&1 | tee dev.log",
+    "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -38,8 +38,7 @@
     "test:customer-sites-legacy": "vitest run tests/customer-sites-legacy-removal.test.ts",
     "test:contractor-profile": "vitest run tests/contractor-profile.test.ts tests/contractor-legacy-removal.test.ts",
     "test:vendor-module": "vitest run tests/vendor-profile.test.ts tests/vendor-rate-average.test.ts tests/vendor-legacy-removal.test.ts",
-    "test": "vitest run",
-    "test:all": "vitest run"
+    "test": "vitest run"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

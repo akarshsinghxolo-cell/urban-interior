@@ -19,7 +19,7 @@ export const LEGACY_MODULE_ALIASES = Object.freeze({
   taxReport: "financialAnalytics",
 } as const);
 
-export type LegacyModuleId = keyof typeof LEGACY_MODULE_ALIASES;
+type LegacyModuleId = keyof typeof LEGACY_MODULE_ALIASES;
 
 export function canonicalLegacyModuleId(moduleId: string): string {
   return LEGACY_MODULE_ALIASES[moduleId as LegacyModuleId] || moduleId;

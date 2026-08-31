@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
-export interface PromptDialogConfig {
+interface PromptDialogConfig {
   title: string;
   description?: string;
   label?: string;
@@ -141,15 +141,3 @@ export function PromptDialogProvider({ children }: { children: React.ReactNode }
   );
 }
 
-export function usePromptDialog() {
-  const ctx = React.useContext(PromptDialogContext);
-  if (!ctx) {
-    // Fallback: if no provider, use window.prompt
-    return {
-      prompt: async (config: PromptDialogConfig): Promise<string | null> => {
-        return promptDialog(config);
-      },
-    };
-  }
-  return ctx;
-}

@@ -387,7 +387,7 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
     }
 }
 
-export interface CascadeOptions {
+interface CascadeOptions {
     softDelete?: boolean;
     maxDepth?: number;
 }
@@ -466,19 +466,3 @@ export function cascadeDelete(
     return { db: result.success ? ctx.db : inputDb, result };
 }
 
-/**
- * DRY-RUN mode: compute what WOULD be deleted/blocked/nullified without
- * actually modifying the database. Returns the same CascadeResult shape
- * but the `db` field is unchanged.
- *
- * Implementation: we run the real cascade on a clone and discard the clone,
- * keeping only the result. This is simpler than maintaining two code paths.
- */
-export function cascadeDeleteDryRun(
-    db: RDashDatabase,
-    collection: string,
-    id: string,
-    options: CascadeOptions = {},
-): CascadeResult {
-    return cascadeDelete(db, collection, id, options).result;
-}

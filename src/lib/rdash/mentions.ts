@@ -20,7 +20,7 @@
 import type { ThreadKind } from "./types";
 import { mapEntityTypeToThreadKind } from "./entity-thread-map";
 
-export interface ParsedMention {
+interface ParsedMention {
     entity_type: string;
     entity_id: string;
     label: string;
@@ -91,7 +91,7 @@ export function parseMentions(body: string): ParsedMention[] {
     return out;
 }
 
-export type RenderSegment =
+type RenderSegment =
     | { type: "text"; text: string }
     | { type: "mention"; text: string; mention: ParsedMention };
 

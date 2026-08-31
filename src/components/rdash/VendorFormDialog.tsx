@@ -36,7 +36,7 @@ import {
 } from "@/lib/rdash/vendor-capability-taxonomy";
 import { FilePreview } from "./FilePreview";
 
-export type VendorFormDialogProps = {
+type VendorFormDialogProps = {
   open: boolean;
   onClose: () => void;
   onSaved?: (id: string) => void;

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { getSessionToken, initAuthFetch } from "./client-auth";
 
-export type WorkspaceHealthBadge = "healthy" | "watch" | "attention";
+type WorkspaceHealthBadge = "healthy" | "watch" | "attention";
 
 export interface WorkspaceHealthSummary {
   status: string;
@@ -81,16 +81,16 @@ function emit(patch: Partial<HealthState>) {
   for (const listener of listeners) listener();
 }
 
-export function getWorkspaceHealthSnapshot() {
+function getWorkspaceHealthSnapshot() {
   return state;
 }
 
-export function subscribeWorkspaceHealth(listener: () => void) {
+function subscribeWorkspaceHealth(listener: () => void) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-export async function loadWorkspaceHealth(options: { force?: boolean } = {}) {
+async function loadWorkspaceHealth(options: { force?: boolean } = {}) {
   const force = options.force === true;
   const fresh = state.summary && state.fetchedAt && state.fetchedAt + FRESH_MS > Date.now();
   if (!force && fresh) return state.summary;
@@ -122,11 +122,11 @@ export async function loadWorkspaceHealth(options: { force?: boolean } = {}) {
   return request;
 }
 
-export function refreshWorkspaceHealth(manual = true) {
+function refreshWorkspaceHealth(manual = true) {
   return loadWorkspaceHealth({ force: manual });
 }
 
-export function invalidateWorkspaceHealth() {
+function invalidateWorkspaceHealth() {
   emit({ fetchedAt: null });
   if (typeof window === "undefined" || listeners.size === 0) return;
   if (invalidationTimer !== null) window.clearTimeout(invalidationTimer);

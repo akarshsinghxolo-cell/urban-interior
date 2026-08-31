@@ -6,7 +6,7 @@ import type { WorkspaceReadTarget } from "../workspace-read-scope";
  * and collections that drive aggregate counters must stay complete until the
  * server supplies row-ID projections / aggregate counts for those screens.
  */
-export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   customerTimeline: Object.freeze([
     "customers", "sites", "areas", "workRequired", "quotations", "workOrders",
     "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
@@ -51,7 +51,7 @@ export const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>
  * from their loaded arrays; truncating those arrays would create false business
  * metrics even if a Load-more control existed.
  */
-export const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string, number>>>> = Object.freeze({
+const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string, number>>>> = Object.freeze({
   customerTimeline: Object.freeze({
     executionLogs: 100,
     commSends: 100,
@@ -65,7 +65,7 @@ export const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string,
  * exact but intentionally unpaginated. They reduce egress without turning a
  * partial page into a false business total.
  */
-export const MODULE_COMPLETE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+const MODULE_COMPLETE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   salesAnalytics: Object.freeze([
     "customers", "sites", "workRequired", "quotations", "workOrders", "payments",
     "customerReceipts",

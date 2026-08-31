@@ -77,7 +77,7 @@ const CalendarRecurringCombined = React.lazy(() => import("./WorkdeskCombinedVie
 
 const EMPTY_PERMISSIONS: unknown[] = [];
 
-export function ModuleLoadingFallback() {
+function ModuleLoadingFallback() {
     // Skeleton chrome that mirrors the common module layout (icon + title + KPI
     // grid + list rows) so switching cold tabs doesn't flash an empty box.
     return (
@@ -154,7 +154,7 @@ function ModuleDataStateFallback({ status, error }: { status: WorkspaceDataLoadS
     </div>;
 }
 
-export function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
+function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
     const pathname = usePathname();
     const route = resolveRenderer(moduleId);
     const activeModuleId = route.id;

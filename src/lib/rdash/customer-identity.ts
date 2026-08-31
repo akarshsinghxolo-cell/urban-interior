@@ -1,17 +1,17 @@
 import type { ID, Customer } from "./types";
-export type CustomerIdentityField = "phone" | "whatsapp" | "alternate_phone" | "email";
+type CustomerIdentityField = "phone" | "whatsapp" | "alternate_phone" | "email";
 export interface CustomerIdentityMatch {
     customer: Customer;
     fields: CustomerIdentityField[];
 }
-export interface CustomerIdentityInput {
+interface CustomerIdentityInput {
     name?: string;
     phone?: string;
     whatsapp?: string;
     alternate_phone?: string;
     email?: string;
 }
-export class CustomerIdentityConflictError extends Error {
+class CustomerIdentityConflictError extends Error {
     readonly matches: CustomerIdentityMatch[];
     constructor(matches: CustomerIdentityMatch[]) {
         const summary = matches
@@ -25,7 +25,7 @@ export class CustomerIdentityConflictError extends Error {
 function labelForField(field: CustomerIdentityField) {
     return field === "alternate_phone" ? "alternate phone" : field;
 }
-export function normalizePhone(value?: string | null) {
+function normalizePhone(value?: string | null) {
     const digits = String(value || "").replace(/\D/g, "");
     if (!digits)
         return "";
@@ -38,7 +38,7 @@ export function normalizePhone(value?: string | null) {
     }
     return withoutInternationalPrefix;
 }
-export function normalizeEmail(value?: string | null) {
+function normalizeEmail(value?: string | null) {
     return String(value || "").trim().toLowerCase();
 }
 export function normalizeCustomerName(value?: string | null) {
@@ -47,7 +47,7 @@ export function normalizeCustomerName(value?: string | null) {
         .toLowerCase()
         .replace(/\s+/g, " ");
 }
-export function customerIdentityValues(input: CustomerIdentityInput) {
+function customerIdentityValues(input: CustomerIdentityInput) {
     const values: Partial<Record<CustomerIdentityField, string>> = {
         phone: normalizePhone(input.phone),
         whatsapp: normalizePhone(input.whatsapp),

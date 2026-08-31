@@ -14,6 +14,7 @@ import {
   type WorkspaceReadPlan,
   type WorkspaceSubset,
 } from "./workspace";
+import { mergeRows, rowsFor, rowId } from "./rows";
 
 const VENDOR_RATE_COLLECTIONS = new Set(["master.vendorRates", "master.vendorRateHistories"]);
 const TARGETED_COLLECTIONS = new Set([
@@ -51,21 +52,6 @@ type ThreadParentTarget = {
   collection: string;
   id: string;
 };
-
-function rowId(row: Record<string, unknown>): string {
-  return String(row.id || "").trim();
-}
-
-function rowsFor(database: RDashDatabase, collection: string): Array<Record<string, unknown>> {
-  if (collection.startsWith("master.")) {
-    const key = collection.slice("master.".length);
-    const value = (database.master as unknown as Record<string, unknown>)?.[key];
-    return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-  }
-  const value = (database as unknown as Record<string, unknown>)[collection];
-  return Array.isArray(value) ? value as Array<Record<string, unknown>> : [];
-}
-
 function emptyPlan(): MutableReadPlan {
   return { fullCollections: new Set(), rowsByCollection: new Map() };
 }
@@ -322,16 +308,6 @@ function markAttempted(
     attemptedRows.set(collection, attempted);
   }
 }
-
-function mergeRows(
-  current: Array<Record<string, unknown>>,
-  incoming: Array<Record<string, unknown>>,
-): Array<Record<string, unknown>> {
-  const merged = new Map(current.map((row) => [rowId(row), row]));
-  for (const row of incoming) merged.set(rowId(row), row);
-  return [...merged.values()];
-}
-
 function mergeWorkspaceData(target: RDashDatabase, source: RDashDatabase): RDashDatabase {
   const result = structuredClone(target) as RDashDatabase;
   for (const [key, value] of Object.entries(source as unknown as Record<string, unknown>)) {
