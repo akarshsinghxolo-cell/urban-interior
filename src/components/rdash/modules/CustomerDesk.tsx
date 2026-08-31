@@ -1285,13 +1285,14 @@ function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, 
     const rootRef = React.useRef<HTMLDivElement>(null);
     useDismissOnOutside(open, () => setOpen(false), rootRef);
     const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
-    return (<div ref={rootRef} className="relative">
+    return (<div ref={rootRef} className="relative" onKeyDown={(event) => { if (open && event.key === "Escape") {
+        event.stopPropagation(); // close only the panel, not the host dialog
+        setOpen(false); } }}>
       <button type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
         <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || placeholder}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
       </button>
-      {open && (<div role="listbox" aria-label={ariaLabel} onKeyDown={(event) => { if (event.key === "Escape")
-            setOpen(false); }} className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg rd-scroll">
+      {open && (<div role="listbox" aria-label={ariaLabel} className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg rd-scroll">
           {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
               {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
               {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {

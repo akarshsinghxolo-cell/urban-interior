@@ -9,6 +9,7 @@ import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
 import { pruneWorkTypeIds, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
+import { MultiTickDropdown } from "./MultiTickDropdown";
 
 const ADD_CATEGORY_VALUE = "__add_work_category__";
 
@@ -75,6 +76,25 @@ export function WorkRequiredFields({
     const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
     return subcategory ? workTypesForSubcategory(subcategory).map((workType) => ({ subcategory, workType })) : [];
   });
+  const workTypeGroups = value.subcategoryIds.flatMap((subcategoryId) => {
+    const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
+    if (!subcategory) return [];
+    return [{
+      key: subcategory.id,
+      items: workTypesForSubcategory(subcategory).map((workType) => ({
+        id: workType.id,
+        name: `${subcategory.name} · ${workType.name}`,
+      })),
+    }];
+  });
+  const toggleWorkType = (workType: { id: string }) => {
+    const selected = value.workTypeIds.includes(workType.id);
+    onChange({
+      workTypeIds: selected
+        ? value.workTypeIds.filter((id) => id !== workType.id)
+        : [...value.workTypeIds, workType.id],
+    });
+  };
   const areaTypeOptions = [
     ...AREA_TYPES,
     ...areas.map((area) => {
@@ -190,27 +210,34 @@ export function WorkRequiredFields({
         </div>
         <div>
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Subcategory</span>
-          <details className="relative mt-1">
-            <summary className="flex h-9 cursor-pointer list-none items-center rounded-md border border-input bg-card px-2 text-sm">
-              {value.subcategoryIds.length ? db.master.workSubcategories.find((row) => row.id === value.subcategoryIds[0])?.name : value.categoryId ? "Select work subcategories" : "Select category first"}
-              {value.subcategoryIds.length > 1 ? <span className="ml-auto text-xs text-muted-foreground">+{value.subcategoryIds.length - 1}</span> : null}
-            </summary>
-            {value.categoryId ? <div className="absolute z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-card p-1 shadow-popover">
-              {subcategories.map((subcategory) => {
-                const selected = value.subcategoryIds.includes(subcategory.id);
-                return <label key={subcategory.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
-                  <input type="checkbox" checked={selected} onChange={() => {
-                    const subcategoryIds = selected ? value.subcategoryIds.filter((id) => id !== subcategory.id) : [...value.subcategoryIds, subcategory.id];
-                    const workTypeIds = pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds);
-                    const title = subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean).join(" / ");
-                    onChange({ subcategoryIds, workTypeIds, title });
-                  }} />
-                  {subcategory.name}
-                </label>;
-              })}
-              <button type="button" className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40" onClick={() => setAddSubcategoryOpen(true)}>+ Add subcategory</button>
-            </div> : null}
-          </details>
+          <div className="mt-1">
+            <MultiTickDropdown
+              ariaLabel="Primary subcategory"
+              selected={value.subcategoryIds}
+              groups={subcategories.map((subcategory) => ({ key: subcategory.id, items: [{ id: subcategory.id, name: subcategory.name }] }))}
+              disabled={!value.categoryId}
+              placeholder={value.categoryId ? "Select work subcategories" : "Select category first"}
+              onToggle={(subcategoryId) => {
+                const selected = value.subcategoryIds.includes(subcategoryId);
+                const subcategoryIds = selected ? value.subcategoryIds.filter((id) => id !== subcategoryId) : [...value.subcategoryIds, subcategoryId];
+                const workTypeIds = pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds);
+                const title = subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean).join(" / ");
+                onChange({ subcategoryIds, workTypeIds, title });
+              }}
+              footer={(close) => (
+                <button
+                  type="button"
+                  className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
+                  onClick={() => {
+                    close();
+                    setAddSubcategoryOpen(true);
+                  }}
+                >
+                  + Add subcategory
+                </button>
+              )}
+            />
+          </div>
           {addSubcategoryOpen && value.categoryId ? (
             <AddWorkSubcategoryAction
               key={`work-required-add-subcategory-${value.categoryId}`}
@@ -232,24 +259,18 @@ export function WorkRequiredFields({
         <div>
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Types</span>
           <p className="mt-0.5 text-[11px] text-muted-foreground">Grade within each selected subcategory, e.g. Kitchen Cabinets (Modular) · Premium.</p>
-          <div className="mt-1 grid gap-1 rounded-md border border-border bg-card p-2 sm:grid-cols-2">
-            {selectedWorkTypes.map(({ subcategory, workType }) => {
-              const selected = value.workTypeIds.includes(workType.id);
-              return (
-                <label key={workType.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-accent/40">
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    onChange={() => onChange({
-                      workTypeIds: selected
-                        ? value.workTypeIds.filter((id) => id !== workType.id)
-                        : [...value.workTypeIds, workType.id],
-                    })}
-                  />
-                  <span className="min-w-0 truncate" title={`${subcategory.name} · ${workType.name}`}>{subcategory.name} · <span className="font-medium">{workType.name}</span></span>
-                </label>
-              );
-            })}
+          {/* ponytail: same tick-dropdown format as subcategories; no "+ Add
+              work type" row here — creation stays in the master module and
+              AddWorkTypeMenu (contractor rates), since with several
+              subcategories selected the target would be ambiguous. */}
+          <div className="mt-1">
+            <MultiTickDropdown
+              ariaLabel="Work types"
+              selected={value.workTypeIds}
+              groups={workTypeGroups}
+              placeholder="Select work types"
+              onToggle={(workTypeId) => toggleWorkType({ id: workTypeId })}
+            />
           </div>
         </div>
       ) : null}
