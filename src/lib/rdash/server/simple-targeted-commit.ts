@@ -18,7 +18,7 @@ import { rowsFor, rowId } from "./rows";
 const SIMPLE_TARGETED_COLLECTIONS = new Set(["customers", "sites", "attendance"]);
 const MAX_SIMPLE_TARGETED_ROWS = 50;
 
-export interface SimpleTargetedPreparation {
+interface SimpleTargetedPreparation {
   current: WorkspaceSubset;
   operations: WorkspaceOperation[];
   loadMs: number;

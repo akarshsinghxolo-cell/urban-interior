@@ -241,7 +241,7 @@ function openExternalShare(channel: string, customer: ReturnType<typeof useCusto
     void navigator.clipboard?.writeText(text);
     return "Share text copied";
 }
-export function SendCatalogueDialog({ open, onOpenChange, customerId }: {
+function SendCatalogueDialog({ open, onOpenChange, customerId }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
     customerId?: string;
@@ -262,7 +262,7 @@ export function SendCatalogueDialog({ open, onOpenChange, customerId }: {
         return toast.error("Choose a customer-shareable catalogue"); const links = selectedRows.map((item) => assetUrl(db, item.drive_asset_id, item.catalog_url)).filter(Boolean); const text = `Hello ${customer?.name || ""},\n\nHere are the requested catalogues:\n${selectedRows.map((item, index) => `${index + 1}. ${item.title}${links[index] ? `\n${links[index]}` : ""}`).join("\n\n")}`; const outcome = openExternalShare(channel, customer, text); sendComm({ channel: "catalogue", customer_id: customer?.id || "", staff_name: "Owner", subject: selectedRows.map((item) => item.title).join(", "), body: text, status: "prepared" }); toast.success(outcome, { description: `${selectedRows.length} catalogue${selectedRows.length === 1 ? "" : "s"} logged as prepared` }); onOpenChange(false); closeActionDialog(); };
     return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-[520px]"><DialogHeader><DialogTitle className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary"><BookOpen className="h-4 w-4"/></span>Send Catalogue</DialogTitle><DialogDescription>Shares the actual catalogue links registered in Drive, without creating copies.</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4"><fieldset className="grid gap-2"><legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer-shareable catalogues</legend>{catalogues.map((item) => { const checked = selected.includes(item.id); return <label key={item.id} className={checked ? "flex cursor-pointer items-center gap-3 rounded-md border border-primary/40 bg-primary/[0.04] px-3 py-2 text-sm" : "flex cursor-pointer items-center gap-3 rounded-md border border-border px-3 py-2 text-sm hover:bg-accent/40"}><Checkbox checked={checked} onCheckedChange={() => toggle(item.id)}/><span className="min-w-0 flex-1"><span className="block truncate font-medium">{item.title}</span><span className="block truncate text-[10px] text-muted-foreground">{assetUrl(db, item.drive_asset_id, item.catalog_url) || "No share link"}</span></span></label>; })}{!catalogues.length ? <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">No customer-shareable catalogues are configured. Add them in Media, Catalogues & Pinterest.</p> : null}</fieldset><ShareChannel value={channel} onChange={setChannel} id="cat-channel"/><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" disabled={!selected.length}><Send className="mr-1.5 h-3.5 w-3.5"/>Prepare share</Button></DialogFooter></form></DialogContent></Dialog>;
 }
-export function SendReferenceMediaDialog({ open, onOpenChange, customerId }: {
+function SendReferenceMediaDialog({ open, onOpenChange, customerId }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
     customerId?: string;
@@ -283,7 +283,7 @@ export function SendReferenceMediaDialog({ open, onOpenChange, customerId }: {
         return toast.error("Choose at least one reference item"); const text = `Hello ${customer?.name || ""},\n\nHere are the selected design references:\n${selectedRows.map((item, index) => `${index + 1}. ${item.title}\n${assetUrl(db, item.drive_asset_id, item.media_url)}`).join("\n\n")}`; const outcome = openExternalShare(channel, customer, text); sendComm({ channel: "reference", customer_id: customer?.id || "", staff_name: "Owner", subject: selectedRows.map((item) => item.title).join(", "), body: text, status: "prepared" }); toast.success(outcome, { description: `${selectedRows.length} reference item${selectedRows.length === 1 ? "" : "s"} logged as prepared` }); onOpenChange(false); closeActionDialog(); };
     return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="sm:max-w-[620px]"><DialogHeader><DialogTitle className="flex items-center gap-2"><span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10 text-primary"><ImageIcon className="h-4 w-4"/></span>Send Reference Media</DialogTitle><DialogDescription>Select Drive-backed or direct-link references for the customer.</DialogDescription></DialogHeader><form onSubmit={submit} className="grid gap-4"><fieldset className="grid gap-2"><legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Reference library</legend><div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{media.map((item) => { const checked = selected.includes(item.id); return <button key={item.id} type="button" onClick={() => toggle(item.id)} className={checked ? "flex min-h-20 items-start gap-2 rounded-lg border border-primary bg-primary/[0.04] p-3 text-left" : "flex min-h-20 items-start gap-2 rounded-lg border border-border p-3 text-left hover:bg-accent/40"}><Checkbox checked={checked} onCheckedChange={() => toggle(item.id)}/><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{item.title}</span><span className="mt-1 block line-clamp-2 text-[10px] text-muted-foreground">{assetUrl(db, item.drive_asset_id, item.media_url) || "No share link"}</span></span></button>; })}</div>{!media.length ? <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">No customer-shareable reference media has been added yet.</p> : null}</fieldset><ShareChannel value={channel} onChange={setChannel} id="ref-channel"/><DialogFooter><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="submit" disabled={!selected.length}><Send className="mr-1.5 h-3.5 w-3.5"/>Prepare share</Button></DialogFooter></form></DialogContent></Dialog>;
 }
-export function SendPinterestBoardDialog({ open, onOpenChange, customerId }: {
+function SendPinterestBoardDialog({ open, onOpenChange, customerId }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
     customerId?: string;
@@ -345,7 +345,7 @@ const MATERIAL_GROUPS: {
         ],
     },
 ];
-export function SendMaterialOptionsDialog({ open, onOpenChange, customerId, }: {
+function SendMaterialOptionsDialog({ open, onOpenChange, customerId, }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
     customerId?: string;

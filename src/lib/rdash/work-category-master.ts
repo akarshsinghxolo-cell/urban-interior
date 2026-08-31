@@ -68,7 +68,7 @@ export function resolveUnitId(value: string | undefined) {
     };
     return aliases[normalized] || normalized || "pcs";
 }
-export type CatalogCore = Pick<Master, "catalog_version" | "units" | "workCategories" | "workSubcategories" | "articles" | "articleVariants" | "subcategoryArticleMap" | "workOptionGroups" | "workOptionValues">;
+type CatalogCore = Pick<Master, "catalog_version" | "units" | "workCategories" | "workSubcategories" | "articles" | "articleVariants" | "subcategoryArticleMap" | "workOptionGroups" | "workOptionValues">;
 export function buildWorkCategoryCatalog(): CatalogCore {
     const units: MasterUnit[] = unitDefinitions.map(([id, name, family]) => ({ id, symbol: id, name, family }));
     const unitIds = new Set(units.map((unit) => unit.id));
@@ -173,7 +173,7 @@ function ensureMediaCollections(input: Master): Master {
         referenceMedia: input.referenceMedia || [],
     };
 }
-export function normalizeCatalogMaster(input: Master): Master {
+function normalizeCatalogMaster(input: Master): Master {
     const storageNormalized = normalizeStorageMaster(ensureMediaCollections(input));
     const normalizedInput: Master = {
         ...storageNormalized,
@@ -276,7 +276,7 @@ export function prepareWorkspaceData(db: Partial<RDashDatabase>): RDashDatabase 
         stockMovements: safe(db.stockMovements).map((item) => ({ ...item, article_id: item.article_id && master.articles.some((article) => article.id === item.article_id) ? item.article_id : undefined })),
     };
 }
-export type CatalogIssue = {
+type CatalogIssue = {
     severity: "error" | "warning";
     message: string;
 };

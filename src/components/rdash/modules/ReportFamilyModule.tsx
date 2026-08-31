@@ -5,7 +5,7 @@ import { BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReportsModule } from "./ReportsModule";
 
-export type ReportFamily = "sales" | "collections" | "operations" | "financial";
+type ReportFamily = "sales" | "collections" | "operations" | "financial";
 
 type ReportOption = { id: string; label: string };
 

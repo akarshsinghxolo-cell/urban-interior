@@ -657,4 +657,4 @@ if (workspaceTransactionRunnerRef) {
     (useRDashStore as unknown as { __runInWorkspaceTransaction?: WorkspaceTransactionRunner }).__runInWorkspaceTransaction = workspaceTransactionRunnerRef;
 }
 // Re-export pure selectors from the store/ subfolder (Phase 1 split)
-export { computeJobPnL, allJobPnLs, vendorBalance, customerBalance, siteFinancials, jobBids, contractorSettlements, contractorBids, contractorOutstanding, contractorOutstandingTotal, inventoryValuation, } from "./store/selectors";
+export { computeJobPnL, allJobPnLs, vendorBalance, customerBalance, siteFinancials, contractorSettlements, contractorBids, contractorOutstanding, contractorOutstandingTotal, inventoryValuation, } from "./store/selectors";

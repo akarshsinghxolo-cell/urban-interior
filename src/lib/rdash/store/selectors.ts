@@ -116,12 +116,6 @@ export function siteFinancials(db: RDashDatabase, siteId: string) {
     };
 }
 
-export function jobBids(db: RDashDatabase, workOrderId: string) {
-    return db.contractorBids
-        .filter((b) => b.work_order_id === workOrderId)
-        .sort((a, b) => (a.quote_amount || 0) - (b.quote_amount || 0));
-}
-
 export function contractorSettlements(db: RDashDatabase, contractorId: string) {
     return db.contractorSettlements.filter((s) => s.contractor_id === contractorId);
 }

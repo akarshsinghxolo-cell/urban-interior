@@ -1,22 +1,16 @@
 import type { ID, RDashDatabase } from "./types";
 type CustomerLabelRecord = object;
-export function getCustomer(db: RDashDatabase, customerId?: ID | null) {
+function getCustomer(db: RDashDatabase, customerId?: ID | null) {
     return customerId ? db.customers.find((customer) => customer.id === customerId) : undefined;
 }
 export function customerName(db: RDashDatabase, customerId?: ID | null, fallback = "Customer") {
     return getCustomer(db, customerId)?.name || fallback;
 }
-export function customerIdForJob(db: RDashDatabase, workOrderId?: ID | null) {
+function customerIdForJob(db: RDashDatabase, workOrderId?: ID | null) {
     return workOrderId ? db.workOrders.find((workOrder) => workOrder.id === workOrderId)?.customer_id : undefined;
 }
 export function customerNameForJob(db: RDashDatabase, workOrderId?: ID | null, fallback = "Customer") {
     return customerName(db, customerIdForJob(db, workOrderId), fallback);
-}
-export function customerIdForQuotation(db: RDashDatabase, quotationId?: ID | null) {
-    return quotationId ? db.quotations.find((quotation) => quotation.id === quotationId)?.customer_id : undefined;
-}
-export function customerNameForQuotation(db: RDashDatabase, quotationId?: ID | null, fallback = "Customer") {
-    return customerName(db, customerIdForQuotation(db, quotationId), fallback);
 }
 function defineCustomerLabel(record: CustomerLabelRecord, resolve: () => string) {
     delete (record as {

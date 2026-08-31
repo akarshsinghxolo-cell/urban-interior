@@ -20,13 +20,13 @@ type RDashUserRoleRow = {
   updated_at: string;
 };
 
-export type GenericRecordRow = {
+type GenericRecordRow = {
   collection: string;
   id: string;
   dataJson: string;
 };
 
-export type CanonicalStaffEntityRow = {
+type CanonicalStaffEntityRow = {
   id: string;
   workspace_id: string;
   revision: number;

@@ -116,14 +116,14 @@ type RestEntityRow = {
   data: unknown;
 };
 
-export type RestWorkspaceReadPlan = {
+type RestWorkspaceReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
   limitsByCollection?: Record<string, number>;
   offsetsByCollection?: Record<string, number>;
 };
 
-export type RestWorkspaceSubset = {
+type RestWorkspaceSubset = {
   revision: number;
   data: RDashDatabase;
   updatedAt: string;
@@ -332,7 +332,7 @@ export async function getRestWorkspace(): Promise<{
   };
 }
 
-export interface AtomicCommitResult {
+interface AtomicCommitResult {
   upserted: number;
   deleted: number;
   conflicts: number;
@@ -420,6 +420,3 @@ export async function resetRestWorkspace(): Promise<{
   return getRestWorkspace();
 }
 
-export async function getRestWorkspaceRevision(): Promise<number> {
-  return (await readRevision()).revision;
-}

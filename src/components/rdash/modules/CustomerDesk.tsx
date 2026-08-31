@@ -331,7 +331,7 @@ function CustomerDuplicateMergeControl() {
       </Dialog>
     </>);
 }
-export function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, budget, tasks, quotations, payments, visits, sites, areas, taskDispatch, quoteDispatch, customerDispatch, }: {
+function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, budget, tasks, quotations, payments, visits, sites, areas, taskDispatch, quoteDispatch, customerDispatch, }: {
     customerId: string;
     name: string;
     phone: string;

@@ -1,7 +1,7 @@
 import type { RDashDatabase } from "./types";
 import { mergeRows } from "./server/rows";
 
-export interface WorkspacePageCursor {
+interface WorkspacePageCursor {
   offset: number;
   limit: number;
   returned: number;
@@ -9,7 +9,7 @@ export interface WorkspacePageCursor {
   nextOffset?: number;
 }
 
-export type WorkspacePageState = Record<string, WorkspacePageCursor>;
+type WorkspacePageState = Record<string, WorkspacePageCursor>;
 function paginationFrom(database: RDashDatabase): WorkspacePageState {
   const raw = (database as unknown as Record<string, unknown>)._workspace_pagination;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -82,8 +82,4 @@ export function mergeWorkspacePage(
 
 export function workspacePageState(database: RDashDatabase): WorkspacePageState {
   return paginationFrom(database);
-}
-
-export function workspaceHasMorePages(database: RDashDatabase): boolean {
-  return Object.values(paginationFrom(database)).some((cursor) => cursor.hasMore && cursor.nextOffset != null);
 }

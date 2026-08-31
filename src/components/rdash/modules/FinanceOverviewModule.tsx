@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { MetricCard, StatusBadge } from "../primitives";
 import { CashFlowChart } from "../CashFlowChart";
 
-export type ReceivableAging = {
+type ReceivableAging = {
     notDue: { amount: number; count: number };
     d1_30: { amount: number; count: number };
     d31_60: { amount: number; count: number };

@@ -21,4 +21,4 @@ function Badge({ className, variant, asChild = false, ...props }: React.Componen
     const Comp = asChild ? Slot : "span";
     return (<Comp data-slot="badge" className={cn(badgeVariants({ variant }), className)} {...props}/>);
 }
-export { Badge, badgeVariants };
+export { Badge };

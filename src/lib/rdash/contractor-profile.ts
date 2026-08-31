@@ -3,7 +3,7 @@ import { workTypesForSubcategory } from "./work-types";
 
 export type ContractorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
 
-export type ContractorWorkTypeRate = {
+type ContractorWorkTypeRate = {
   work_type_id: string;
   work_type_name?: string;
   unit_id?: string;
@@ -57,7 +57,7 @@ export type ContractorProfileRecord = {
   performance_recomputed_at?: string;
 };
 
-export type ContractorDuplicateConflict = { id: string; name: string; reasons: string[]; hard: boolean };
+type ContractorDuplicateConflict = { id: string; name: string; reasons: string[]; hard: boolean };
 
 const CONTRACTOR_PROFILE_KEYS = new Set<keyof ContractorProfileRecord>([
   "id", "name", "legal_name", "phone", "city", "locality", "address",
@@ -136,7 +136,7 @@ export function canonicalContractorCapabilities(
   return Array.from(merged.values());
 }
 
-export type ContractorCapabilityDraftRow = {
+type ContractorCapabilityDraftRow = {
   work_type_id: string;
   work_type_name: string;
   unit_id: string;

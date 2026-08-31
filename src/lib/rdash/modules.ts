@@ -119,7 +119,7 @@ export interface ModuleDef {
   activePredicate?: (db: import("./types").RDashDatabase) => boolean;
 }
 
-export interface ModuleGroup {
+interface ModuleGroup {
   id: string;
   label: string;
   icon?: string;

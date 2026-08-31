@@ -45,13 +45,13 @@ export interface Customer {
     created_at: string;
     updated_at: string;
 }
-export type FileAttachmentReference = {
+type FileAttachmentReference = {
     attachment_id: ID;
     caption?: string;
     captured_at?: string;
     type?: string;
 };
-export type SiteStage = "enquiry" | "planning" | "quoted" | "awarded" | "execution" | "on_hold" | "completed" | "cancelled";
+type SiteStage = "enquiry" | "planning" | "quoted" | "awarded" | "execution" | "on_hold" | "completed" | "cancelled";
 export interface Site {
     id: ID;
     customer_id: ID;
@@ -78,7 +78,7 @@ export interface Site {
     updated_at: string;
 }
 export type AreaType = string;
-export type AreaStage = "unmeasured" | "measured" | "quoted" | "active" | "completed";
+type AreaStage = "unmeasured" | "measured" | "quoted" | "active" | "completed";
 export interface Area {
     id: ID;
     site_id: ID;
@@ -284,7 +284,7 @@ export type WorkOrderStatus = "scheduled" | "in_progress" | "on_hold" | "complet
  *  - "bid" = formal ContractorBid round was run and a bid was selected (reward the rigid path)
  *  - "direct_award" = manager skipped bidding and assigned directly to a trusted contractor (audited exception)
  *  - "repeat" = repeat award to the same contractor from a prior job */
-export type ContractorSelectionMethod = "bid" | "direct_award" | "repeat";
+type ContractorSelectionMethod = "bid" | "direct_award" | "repeat";
 export interface WorkOrder {
     id: ID;
     work_order_no: string;
@@ -327,7 +327,7 @@ export interface WorkOrder {
 export type VisitStatus = "scheduled" | "en_route" | "checked_in" | "report_pending" | "completed" | "missed" | "cancelled";
 export type VisitType = "measurement" | "site_visit" | "delivery" | "collection" | "inspection" | "handover";
 export type VisitProof = FileAttachmentReference;
-export type VisitRoutePointKind = "planned" | "en_route" | "check_in" | "tracking" | "check_out";
+type VisitRoutePointKind = "planned" | "en_route" | "check_in" | "tracking" | "check_out";
 export interface VisitRoutePoint {
     id: ID;
     kind: VisitRoutePointKind;
@@ -339,7 +339,7 @@ export interface VisitRoutePoint {
     note?: string;
 }
 export type GeoActionSource = "manual" | "auto_geofence";
-export type VisitLocationTarget = "site" | "vendor";
+type VisitLocationTarget = "site" | "vendor";
 export interface Visit {
     id: ID;
     customer_id: ID;
@@ -407,7 +407,7 @@ export interface Visit {
 }
 export type Priority = "low" | "medium" | "high" | "urgent";
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "review" | "completed" | "cancelled";
-export type TaskScope = "general" | "site" | "client" | "office";
+type TaskScope = "general" | "site" | "client" | "office";
 export interface Task {
     id: ID;
     customer_id?: ID;
@@ -452,7 +452,7 @@ export interface Task {
     updated_at: string;
 }
 export type FollowupStatus = "pending" | "scheduled" | "completed" | "missed" | "closed";
-export type FollowupType = "call" | "quotation" | "payment" | "general" | "note";
+type FollowupType = "call" | "quotation" | "payment" | "general" | "note";
 export type FollowupOutcome = "contacted" | "not_reached" | "callback_scheduled" | "promise_received" | "converted" | "lost" | "not_applicable";
 export interface Followup {
     id: ID;
@@ -498,7 +498,7 @@ export interface FinanceContextLink {
 }
 export type PaymentStatus = "pending" | "partial" | "received" | "overdue" | "cancelled";
 export type InvoiceStatus = "draft" | "issued" | "partial" | "paid" | "overdue" | "cancelled";
-export type PaymentScheduleState = "scheduled" | "awaiting_event" | "triggered";
+type PaymentScheduleState = "scheduled" | "awaiting_event" | "triggered";
 export interface Payment extends FinanceContextLink {
     id: ID;
     customer_id: ID;
@@ -664,7 +664,6 @@ export interface PurchaseOrder {
     updated_at: string;
 }
 export type GRNStatus = "draft" | "pending_receipt_verification" | "received_pending_invoice_match" | "matched" | "mismatched" | "closed";
-export type OperationalProof = FileAttachmentReference;
 export interface GRN {
     id: ID;
     grn_no: string;
@@ -1040,7 +1039,7 @@ export interface WorkOrderCostLine {
 // "withdrawn" status IS reachable from the UI via the EditContractorBidDialog
 // (FIX-CONTRACTOR-BATCH1 / F.5). "open" is kept so the type reflects the
 // intended lifecycle (open → submitted | selected | rejected | withdrawn).
-export type ContractorBidStatus = "open" | "submitted" | "selected" | "rejected" | "withdrawn";
+type ContractorBidStatus = "open" | "submitted" | "selected" | "rejected" | "withdrawn";
 export interface ContractorBid {
     id: ID;
     bid_no: string;
@@ -1235,8 +1234,8 @@ export interface Thread {
     created_at: string;
     updated_at: string;
 }
-export type AttendanceMode = "office" | "field_visit" | "manual_adjustment" | "auto_absent";
-export type GpsVerificationStatus = "verified" | "outside_geofence" | "low_accuracy" | "manual_review";
+type AttendanceMode = "office" | "field_visit" | "manual_adjustment" | "auto_absent";
+type GpsVerificationStatus = "verified" | "outside_geofence" | "low_accuracy" | "manual_review";
 export interface AttendancePolicy {
     office_name: string;
     office_latitude?: number;
@@ -1297,7 +1296,7 @@ export interface AttendanceRecord {
 // --- 14. Attendance domain ---
     updated_at?: string;
 }
-export interface StaffLocationPingRecord {
+interface StaffLocationPingRecord {
     id: ID;
     staff_id: ID;
     latitude: number;
@@ -1320,7 +1319,7 @@ export interface StaffRolePermission {
     can_delete: boolean;
     updated_at: string;
 }
-export interface StaffAuthUser {
+interface StaffAuthUser {
     id: ID;
     staff_id: ID;
     email: string;
@@ -1619,7 +1618,7 @@ export interface ArticleVariant {
     created_at?: string;
     updated_at?: string;
 }
-export type VendorStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
+type VendorStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
 export type VendorType = "manufacturer" | "distributor" | "dealer" | "retailer" | "service_provider" | "other";
 export type VendorAvailability = "in_stock" | "limited" | "on_order" | "unknown";
 export interface VendorSupplyCapability {
@@ -1744,7 +1743,7 @@ export interface Contractor {
     performance_recomputed_at?: string;
 }
 export type StaffRoleKey = "OWNER" | "OPERATIONS_MANAGER" | "FIELD_STAFF" | "SALES_TELECALLER" | "PROCUREMENT_STAFF" | "FINANCE" | "ACCOUNTS_ADMIN";
-export type StaffSalaryType = "monthly" | "daily_wage" | "contract";
+type StaffSalaryType = "monthly" | "daily_wage" | "contract";
 export interface Staff {
     id: ID;
     code?: string;
@@ -1792,8 +1791,8 @@ export interface CommissionRule {
     category_id?: ID;
 }
 export type VendorRateSourceType = "PO" | "VENDOR_BILL" | "MANUAL" | "SEED";
-export type VendorRateStatus = "active" | "inactive";
-export type VendorRateHistoryStatus = "active" | "superseded";
+type VendorRateStatus = "active" | "inactive";
+type VendorRateHistoryStatus = "active" | "superseded";
 export interface VendorRate {
     id: ID;
     vendor_id: ID;
@@ -1840,9 +1839,9 @@ export interface ContractorRate {
     notes?: string;
 }
 export type FileAssetKind = "document" | "media" | "catalogue" | "drawing" | "site_proof" | "other";
-export type FileAssetStorageMode = "managed" | "external_reference";
-export type FileAssetSyncStatus = "uploaded" | "uploading" | "failed";
-export type StorageAccountStatus = "connected" | "reconnect_required" | "paused" | "disabled";
+type FileAssetStorageMode = "managed" | "external_reference";
+type FileAssetSyncStatus = "uploaded" | "uploading" | "failed";
+type StorageAccountStatus = "connected" | "reconnect_required" | "paused" | "disabled";
 export interface StorageAccount {
     id: ID;
     label: string;
@@ -1914,7 +1913,7 @@ export interface FileAsset {
     created_at: string;
     updated_at: string;
 }
-export interface StorageFolderInstanceDraft {
+interface StorageFolderInstanceDraft {
     id: ID;
     storage_account_id: ID;
     template_id: ID;

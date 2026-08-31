@@ -1,6 +1,6 @@
 import { resolveCustomerIdFromLinks, type CustomerLinkInput } from "./customer-relations";
 import { findCustomerIdentityMatches } from "./customer-identity";
-import type { Area, FinanceContextLink, ID, LineItem, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
+import type { FinanceContextLink, ID, LineItem, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
 export class BusinessRuleError extends Error {
     constructor(message: string) {
         super(message);
@@ -185,7 +185,7 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
         }
     }
 }
-export function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_category_id" | "work_subcategory_ids" | "structured_items">, context: string) {
+function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_category_id" | "work_subcategory_ids" | "structured_items">, context: string) {
     const items = work.structured_items || [];
     const hasCategory = Boolean(work.work_category_id);
     const hasSubcategory = Boolean(work.work_subcategory_ids?.length);
@@ -386,7 +386,7 @@ export function assertFinanceContext(db: RDashDatabase, record: FinanceRecord, c
         }
     }
 }
-export type AreaDependencySummary = Record<"workRequired" | "measurements" | "quotationCoverage" | "quotationLines" | "acceptedScopes" | "workOrders" | "boqs" | "purchaseOrders" | "grns" | "dispatches" | "payments" | "invoices" | "receipts" | "contractorBills" | "drawings" | "referenceAssignments" | "driveAttachments" | "total", number>;
+type AreaDependencySummary = Record<"workRequired" | "measurements" | "quotationCoverage" | "quotationLines" | "acceptedScopes" | "workOrders" | "boqs" | "purchaseOrders" | "grns" | "dispatches" | "payments" | "invoices" | "receipts" | "contractorBills" | "drawings" | "referenceAssignments" | "driveAttachments" | "total", number>;
 export function areaDependencySummary(db: RDashDatabase, areaId: ID): AreaDependencySummary {
     const quotationCoverage = db.quotations.reduce((count, quote) => count + quote.coverage.filter((coverage) => coverage.area_ids.includes(areaId)).length, 0);
     const quotationLines = db.quotations.reduce((count, quote) => count + [...(quote.scope_lines || []), ...(quote.items || [])].filter((item) => item.area_id === areaId).length, 0);
@@ -881,7 +881,4 @@ export function validateBusinessData(db: RDashDatabase) {
 }
 export function replaceAreaId(ids: ID[] | undefined, fromAreaId: ID, toAreaId: ID) {
     return unique((ids || []).map((id) => id === fromAreaId ? toAreaId : id));
-}
-export function activeAreasForSite(db: RDashDatabase, siteId: ID): Area[] {
-    return db.areas.filter((area) => area.site_id === siteId && !area.is_archived);
 }

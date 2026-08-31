@@ -74,7 +74,7 @@ export const SITE_RELATION_COLLECTIONS = Object.freeze([
   "commissions",
 ] as const);
 
-export interface EntityScopedWorkspace extends WorkspaceSubset {
+interface EntityScopedWorkspace extends WorkspaceSubset {
   scope: "customer" | "site";
   mode: "customer-row" | "site-row";
   entityKind: RowScopedWorkspaceEntityKind;
