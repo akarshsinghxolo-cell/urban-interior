@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
-import { pruneWorkTypeIds, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { pruneWorkTypeIds, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 import { MultiTickDropdown } from "./MultiTickDropdown";
@@ -89,10 +89,14 @@ export function WorkRequiredFields({
   });
   const toggleWorkType = (workType: { id: string }) => {
     const selected = value.workTypeIds.includes(workType.id);
+    const workTypeIds = selected
+      ? value.workTypeIds.filter((id) => id !== workType.id)
+      : [...value.workTypeIds, workType.id];
+    // The title IS the selection (quotation line label): re-derive on every
+    // work-type change so the quotation always quotes what is ticked.
     onChange({
-      workTypeIds: selected
-        ? value.workTypeIds.filter((id) => id !== workType.id)
-        : [...value.workTypeIds, workType.id],
+      workTypeIds,
+      title: workRequiredTitleFromSelection(db.master.workSubcategories, value.subcategoryIds, workTypeIds),
     });
   };
   const areaTypeOptions = [
@@ -220,8 +224,14 @@ export function WorkRequiredFields({
               onToggle={(subcategoryId) => {
                 const selected = value.subcategoryIds.includes(subcategoryId);
                 const subcategoryIds = selected ? value.subcategoryIds.filter((id) => id !== subcategoryId) : [...value.subcategoryIds, subcategoryId];
-                const workTypeIds = pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds);
-                const title = subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean).join(" / ");
+                // Default one work type per subcategory (its first/primary),
+                // remaining grades stay tickable below in the dropdown.
+                const workTypeIds = withPrimaryWorkTypeIds(
+                  db.master.workSubcategories,
+                  subcategoryIds,
+                  pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds),
+                );
+                const title = workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds);
                 onChange({ subcategoryIds, workTypeIds, title });
               }}
               footer={(close) => (
@@ -244,11 +254,12 @@ export function WorkRequiredFields({
               categoryId={value.categoryId}
               initiallyAdding
               onCancelled={() => setAddSubcategoryOpen(false)}
-              onCreated={(subcategoryId, subcategoryName) => {
+              onCreated={(subcategoryId) => {
                 setAddSubcategoryOpen(false);
                 const subcategoryIds = [...new Set([...value.subcategoryIds, subcategoryId])];
-                const title = [...value.subcategoryIds.map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean), subcategoryName].join(" / ");
-                onChange({ subcategoryIds, title });
+                const workTypeIds = withPrimaryWorkTypeIds(db.master.workSubcategories, subcategoryIds, pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds));
+                const title = workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds);
+                onChange({ subcategoryIds, workTypeIds, title });
               }}
             />
           ) : null}
@@ -277,7 +288,10 @@ export function WorkRequiredFields({
 
       <label>
         <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required title *</span>
-        <Input value={value.title} onChange={(event) => onChange({ title: event.target.value })} placeholder="Select a subcategory or enter a title" className="mt-1" />
+        {/* ponytail: the title is derived, not typed — it mirrors the ticked
+            work types so quotation line labels always match the selection. */}
+        <Input value={value.title} readOnly placeholder="Select a subcategory" className="mt-1 cursor-default bg-muted/30" aria-readonly />
+        <span className="mt-0.5 block text-[10px] text-muted-foreground">Auto-filled from the selected work types — this is the line label used in quotations.</span>
       </label>
 
       <label>

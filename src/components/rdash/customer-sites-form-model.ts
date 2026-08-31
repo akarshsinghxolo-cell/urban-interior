@@ -1,8 +1,9 @@
-import type { Area, Customer, Priority, Site, WorkRequired } from "@/lib/rdash/types";
+import type { Area, Customer, Master, Priority, Site, WorkRequired } from "@/lib/rdash/types";
 import type { CustomerAreaSaveDraft, CustomerSiteSaveDraft, CustomerWorkRequiredSaveDraft } from "@/lib/rdash/customer-sites-save";
 import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { formatCoordinatePair } from "@/lib/rdash/coordinates";
+import { withPrimaryWorkTypeIds, workRequiredTitleFromSelection } from "@/lib/rdash/work-types";
 
 export type PendingSiteFile = QueuedWorkflowFile & {
   id: string;
@@ -200,15 +201,25 @@ export function newCustomerWorkRequiredDraft(siteId: string): CustomerWorkRequir
   };
 }
 
-export function draftForWorkRequired(work: WorkRequired): CustomerWorkRequiredDraft {
+export function draftForWorkRequired(work: WorkRequired, master?: Master): CustomerWorkRequiredDraft {
+  const subcategoryIds = work.work_subcategory_ids || [];
+  // Apply the "one work type per subcategory" default at load so saved rows
+  // open quotation-ready; keep the saved title when there is nothing to
+  // derive from (legacy rows without subcategories).
+  const workTypeIds = master
+    ? withPrimaryWorkTypeIds(master.workSubcategories, subcategoryIds, work.work_type_ids)
+    : work.work_type_ids || [];
+  const derivedTitle = master && subcategoryIds.length
+    ? workRequiredTitleFromSelection(master.workSubcategories, subcategoryIds, workTypeIds)
+    : "";
   return {
     id: work.id,
     existing: true,
     siteId: work.site_id,
-    title: work.title || "",
+    title: derivedTitle || work.title || "",
     categoryId: work.work_category_id || "",
-    subcategoryIds: work.work_subcategory_ids || [],
-    workTypeIds: work.work_type_ids || [],
+    subcategoryIds,
+    workTypeIds,
     areaIds: work.area_ids || [],
     description: work.description || "",
     priority: work.priority || "medium",

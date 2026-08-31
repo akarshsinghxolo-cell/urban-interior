@@ -108,7 +108,7 @@ export function CustomerSitesDialog({
     const nextWorkRequired = existing
       ? nextCustomerWork
         .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
-        .map(draftForWorkRequired)
+        .map((work) => draftForWorkRequired(work, db.master))
       : [];
     previousCustomerNameRef.current = nextCustomer.name;
     setCustomer(nextCustomer);
@@ -125,7 +125,7 @@ export function CustomerSitesDialog({
       : nextSites;
     setBaseline(fingerprint(nextCustomer, baselineSites, [], false, nextAreas, nextWorkRequired));
     dirtyFormRegistry.markClean(formId);
-  }, [autoAddSite, db.areas, db.customers, db.sites, db.workRequired, editId, expandSiteId, formId]);
+  }, [autoAddSite, db.areas, db.customers, db.master, db.sites, db.workRequired, editId, expandSiteId, formId]);
 
   React.useEffect(() => {
     if (!open) {

@@ -2,8 +2,11 @@
 
 import * as React from "react";
 import { Plus, Trash2, Wrench } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { useRDashStore } from "@/lib/rdash/store";
 import type { RDashDatabase } from "@/lib/rdash/types";
+import { confirmDialog } from "./ConfirmDialog";
 import { WorkRequiredFields } from "./WorkRequiredFields";
 import {
   newAreaDraft,
@@ -36,8 +39,32 @@ export function CustomerWorkRequiredDraftSection({
   const liveSiteIds = new Set(liveSites.map((site) => site.id));
   const visibleWorkRequired = workRequired.filter((draft) => !draft.siteId || liveSiteIds.has(draft.siteId));
   const existingCount = customerId ? db.workRequired.filter((work) => work.customer_id === customerId).length : 0;
+  const cascadeDeleteRecord = useRDashStore((s) => s.cascadeDeleteRecord);
 
   const addWorkRequired = (siteId = "") => setWorkRequired((current) => [...current, newCustomerWorkRequiredDraft(siteId)]);
+
+  // New drafts are unsaved state — drop them from the array. Existing rows
+  // go through the store's cascade delete (restrict rules, audit, sync);
+  // the sync layer diffs the committed db and emits the server deleteIds.
+  const deleteWorkRequired = async (draft: CustomerWorkRequiredDraft, displayNumber: number) => {
+    const label = draft.title.trim() || `Work Required ${displayNumber}`;
+    if (draft.existing) {
+      const confirmed = await confirmDialog({
+        title: `Delete ${label}?`,
+        description: `"${label}" will be permanently removed from this customer. This cannot be undone.`,
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!confirmed) return;
+      const result = cascadeDeleteRecord("workRequired", draft.id);
+      if (!result.success) {
+        toast.error(result.blocked[0]?.reason || `"${label}" cannot be deleted while linked records exist.`);
+        return;
+      }
+      toast.success(`Deleted ${label}`);
+    }
+    setWorkRequired((current) => current.filter((row) => row.id !== draft.id));
+  };
 
   const updateWorkRequired = (id: string, patch: Partial<CustomerWorkRequiredDraft>) => {
     setWorkRequired((current) => current.map((draft) => draft.id === id ? { ...draft, ...patch } : draft));
@@ -76,11 +103,16 @@ export function CustomerWorkRequiredDraftSection({
                 <option value="">{customerName.trim() || "Customer"}</option>
                 {liveSites.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
               </select>
-              {draft.existing ? null : (
-                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setWorkRequired((current) => current.filter((row) => row.id !== draft.id))} aria-label={`Remove Work Required ${index + 1}`}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 shrink-0 text-destructive"
+                onClick={() => void deleteWorkRequired(draft, displayNumber)}
+                aria-label={`${draft.existing ? "Delete" : "Remove"} Work Required ${displayNumber}`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </div>
             <WorkRequiredFields
               db={db}

@@ -101,3 +101,52 @@ export function pruneWorkTypeIds(
   );
   return (workTypeIds || []).filter((id) => valid.has(String(id)));
 }
+
+/**
+ * Ensure every selected subcategory keeps at least its primary (first) work
+ * type ticked — quotation rates resolve per work type, so a subcategory with
+ * zero selected work types would have nothing to quote. Existing selections
+ * are preserved in order; missing primaries are appended.
+ */
+export function withPrimaryWorkTypeIds(
+  workSubcategories: WorkSubcategory[],
+  subcategoryIds: ID[],
+  workTypeIds: ID[] | undefined,
+): ID[] {
+  const selected = (workTypeIds || []).map(String);
+  for (const subcategoryId of subcategoryIds) {
+    const subcategory = workSubcategories.find((row) => row.id === subcategoryId);
+    if (!subcategory) continue;
+    const rows = workTypesForSubcategory(subcategory);
+    if (!rows.some((row) => selected.includes(row.id))) selected.push(rows[0].id);
+  }
+  return selected;
+}
+
+/**
+ * Quotation-facing title derived from the selection: one
+ * "subcategory · work type" segment per selected work type, joined with
+ * " / ". Falls back to the selected subcategory names when no work types are
+ * ticked (legacy rows), and to "" when nothing is selected at all.
+ */
+export function workRequiredTitleFromSelection(
+  workSubcategories: WorkSubcategory[],
+  subcategoryIds: ID[],
+  workTypeIds: ID[] | undefined,
+): string {
+  const selectedSubcategories = workSubcategories.filter((row) => subcategoryIds.includes(row.id));
+  if (!selectedSubcategories.length) return "";
+  const rows = resolveWorkTypes(selectedSubcategories, workTypeIds);
+  if (!rows.length) {
+    return selectedSubcategories.map((row) => row.name).join(" / ");
+  }
+  const subcategoryNameByWorkTypeId = new Map<string, string>();
+  for (const subcategory of selectedSubcategories) {
+    for (const workType of workTypesForSubcategory(subcategory)) {
+      subcategoryNameByWorkTypeId.set(workType.id, subcategory.name);
+    }
+  }
+  return rows
+    .map((row) => `${subcategoryNameByWorkTypeId.get(row.id) || row.name} · ${row.name}`)
+    .join(" / ");
+}
