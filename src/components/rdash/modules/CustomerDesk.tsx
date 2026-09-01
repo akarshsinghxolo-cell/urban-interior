@@ -16,7 +16,8 @@ import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
 import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, workByCustomerFallback, } from "@/lib/rdash/format";
 import { workByCustomer } from "@/lib/rdash/seed";
-import { workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS } from "@/lib/rdash/work-types";
+import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
@@ -894,10 +895,13 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
       {captureWorkRequiredId && (() => {
             const work = db.workRequired.find((row) => row.id === captureWorkRequiredId);
             const site = work ? sites.find((row) => row.id === work.site_id) : undefined;
-            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={(lines) => {
+            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={({ lines, removedItemIds }) => {
                     try {
-                        captureStructuredWorkRequired(work.id, lines);
-                        toast.success(`Captured ${lines.length} detailed area line(s) for ${work.title}`);
+                        captureStructuredWorkRequired(work.id, lines, { removedItemIds });
+                        const parts: string[] = [];
+                        if (lines.length) parts.push(`Captured ${lines.length} detailed area work item(s) for ${work.title}`);
+                        if (removedItemIds.length) parts.push(`removed ${removedItemIds.length} existing item(s)`);
+                        toast.success(parts.join(" · ") || "Nothing to save");
                         setCaptureWorkRequiredId(null);
                         return true;
                     }
@@ -1313,207 +1317,424 @@ function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, 
 }
 // Rounds to 2 decimals and returns a string for the number inputs.
 const areaStr = (value: number) => String(Math.round(value * 100) / 100);
+const MEASURE_OPTIONS = ["wall", "floor_ceiling", "wall_ceiling", "length"] as const;
+type MeasureBasis = (typeof MEASURE_OPTIONS)[number];
+
+type DetailedDraftLine = {
+    key: string;
+    category_id?: string;
+    subcategory_id?: string;
+    work_type_id?: string;
+    measure: MeasureBasis;
+    walls: 1 | 2;
+    wall_area: string;
+    notes?: string;
+};
+
+type DetailedAreaGroup = {
+    key: string;
+    area_id?: string;
+    area_name?: string;
+    create_area?: boolean;
+    area_type?: import("@/lib/rdash/types").AreaType;
+    open: boolean;
+    length: string;
+    breadth: string;
+    height: string;
+    lines: DetailedDraftLine[];
+    removedExistingIds: string[];
+};
+
 function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSave, }: {
     workRequired: import("@/lib/rdash/types").WorkRequired;
     site: import("@/lib/rdash/types").Site;
     areas: import("@/lib/rdash/types").Area[];
     onClose: () => void;
-    onSave: (lines: Array<{
-        site_id: string;
-        area_id?: string;
-        area_name?: string;
-        create_area?: boolean;
-        area_type?: import("@/lib/rdash/types").AreaType;
-        category_id: string;
-        subcategory_id: string;
-        work_type_id?: string;
-        length_ft?: number;
-        breadth_ft?: number;
-        height_ft?: number;
-        floor_area?: number;
-        quantity: number;
-        notes?: string;
-    }>) => boolean;
+    onSave: (payload: {
+        lines: Array<{
+            site_id: string;
+            area_id?: string;
+            area_name?: string;
+            create_area?: boolean;
+            area_type?: import("@/lib/rdash/types").AreaType;
+            category_id: string;
+            subcategory_id: string;
+            work_type_id?: string;
+            length_ft?: number;
+            breadth_ft?: number;
+            height_ft?: number;
+            floor_area?: number;
+            quantity: number;
+            unit_id?: string;
+            notes?: string;
+        }>;
+        removedItemIds: string[];
+    }) => boolean;
 }) {
     const db = useRDashStore((state) => state.db);
     const { registerBatch, commitBatches } = useUploadDraft(true);
-    type DraftLine = {
-        area_id?: string;
-        area_name?: string;
-        create_area?: boolean;
-        area_type?: import("@/lib/rdash/types").AreaType;
-        category_id?: string;
-        subcategory_id?: string;
-        work_type_id?: string;
-        length?: string;
-        breadth?: string;
-        height?: string;
-        wall_area: string;
-        floor_area?: string;
-        notes?: string;
-    };
     const workTypesFor = (subcategoryId: string | undefined) => {
         const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
         return subcategory ? workTypesForSubcategory(subcategory) : [];
     };
-    const freshLine = (): DraftLine => ({ wall_area: "", category_id: workRequired.work_category_id });
-    const initialLines = (): DraftLine[] => {
-        const areaIds = workRequired.area_ids.filter((areaId) => areas.some((area) => area.id === areaId && !area.is_archived));
-        const subcategoryIds = workRequired.work_subcategory_ids || [];
-        const workTypeIds = workRequired.work_type_ids || [];
-        const scopedAreas: Array<string | undefined> = areaIds.length ? areaIds : [undefined];
-        const scopedSubcategories: Array<string | undefined> = subcategoryIds.length ? subcategoryIds : [undefined];
-        return scopedSubcategories.flatMap((subcategoryId) => scopedAreas.map((areaId) => ({
-            ...freshLine(),
-            area_id: areaId,
-            subcategory_id: subcategoryId,
-            work_type_id: subcategoryId ? workTypesFor(subcategoryId).find((workType) => workTypeIds.includes(workType.id))?.id : undefined,
-        })));
+    const measureHintFor = (subcategoryId: string | undefined): MeasureBasis => {
+        const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
+        return defaultMeasureBasisFor(subcategory?.name);
     };
-    const [lines, setLines] = React.useState<DraftLine[]>(initialLines);
-    const updateLine = (index: number, patch: Partial<DraftLine>) => setLines((current) => current.map((line, row) => row === index ? { ...line, ...patch } : line));
-    // Dimension edits auto-fill both areas; wall/ceiling values stay editable
-    // afterwards (doors, openings) until a dimension changes again.
-    const updateDims = (index: number, patch: Partial<DraftLine>) => setLines((current) => current.map((line, row) => {
-        if (row !== index)
-            return line;
-        const next = { ...line, ...patch };
-        const l = Number(next.length) || 0;
-        const b = Number(next.breadth) || 0;
-        const h = Number(next.height) || 0;
-        if (l > 0 && b > 0) {
-            next.floor_area = areaStr(l * b);
-            // Height present → wall area 2·(L+B)·H; height empty (e.g. roof railing)
-            // → running feet 2·(L+B).
-            next.wall_area = areaStr(h > 0 ? 2 * (l + b) * h : 2 * (l + b));
+    const rateFor = (subcategoryId: string | undefined, workTypeId: string | undefined) => {
+        const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
+        if (!subcategory) return undefined;
+        const workType = workTypeId ? workTypesFor(subcategoryId).find((row) => row.id === workTypeId) : undefined;
+        const tier = workType || primaryWorkType(subcategory);
+        return contractorWorkTypeAverages(db.master.contractorRates, subcategory.id, tier.id).total_rate;
+    };
+    const groupDims = (group: DetailedAreaGroup) => ({
+        length: Number(group.length) || 0,
+        breadth: Number(group.breadth) || 0,
+        height: Number(group.height) || 0,
+    });
+    const lineQuantity = (line: DetailedDraftLine, group: DetailedAreaGroup) =>
+        measuredQuantity(line.measure, groupDims(group), line.walls);
+    const freshLine = (group: DetailedAreaGroup): DetailedDraftLine => {
+        const subcategoryIds = (workRequired.work_subcategory_ids || []).filter((id) => !workRequired.work_category_id || db.master.workSubcategories.find((row) => row.id === id)?.category_id === workRequired.work_category_id);
+        const subcategoryId = subcategoryIds[0];
+        const measure = measureHintFor(subcategoryId);
+        const { quantity } = measuredQuantity(measure, groupDims(group), 1);
+        return {
+            key: `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+            category_id: workRequired.work_category_id,
+            subcategory_id: subcategoryId,
+            work_type_id: subcategoryId ? workTypesFor(subcategoryId)[0]?.id : undefined,
+            measure,
+            walls: 1,
+            wall_area: quantity > 0 ? areaStr(quantity) : "",
+        };
+    };
+    const initialGroups = (): DetailedAreaGroup[] => {
+        const groups: DetailedAreaGroup[] = [];
+        const ensure = (areaId: string | undefined, name: string | undefined): DetailedAreaGroup => {
+            const existing = groups.find((group) => (areaId ? group.area_id === areaId : false));
+            if (existing) return existing;
+            const area = areaId ? areas.find((row) => row.id === areaId) : undefined;
+            const group: DetailedAreaGroup = {
+                key: areaId || `new-group-${groups.length}-${Math.random().toString(36).slice(2, 7)}`,
+                area_id: areaId,
+                area_name: area?.name || name,
+                open: groups.length === 0,
+                length: area?.length ? String(area.length) : "",
+                breadth: area?.width ? String(area.width) : "",
+                height: area?.height ? String(area.height) : "",
+                lines: [],
+                removedExistingIds: [],
+            };
+            groups.push(group);
+            return group;
+        };
+        // ponytail: reuse the Area's own L/W/H as the shared dimension source, so the
+        // capture view and the saved area record tell the same story.
+        workRequired.area_ids.forEach((areaId) => ensure(areaId, undefined));
+        (workRequired.structured_items || []).forEach((item) => ensure(item.area_id, item.area_name));
+        if (!groups.length) {
+            groups.push({
+                key: `new-group-0-${Math.random().toString(36).slice(2, 7)}`,
+                create_area: true,
+                area_name: "",
+                area_type: "other",
+                open: true,
+                length: "",
+                breadth: "",
+                height: "",
+                lines: [],
+                removedExistingIds: [],
+            });
         }
+        return groups;
+    };
+    const [groups, setGroups] = React.useState<DetailedAreaGroup[]>(initialGroups);
+    const updateGroup = (groupKey: string, patch: Partial<DetailedAreaGroup>) => setGroups((current) => current.map((group) => {
+        if (group.key !== groupKey) return group;
+        const next = { ...group, ...patch };
+        // Shared dimensions feed every line's quantity — recompute the auto ones.
+        const dims = groupDims(next);
+        next.lines = next.lines.map((line) => {
+            const { quantity } = measuredQuantity(line.measure, dims, line.walls);
+            return quantity > 0 ? { ...line, wall_area: areaStr(quantity) } : line;
+        });
         return next;
     }));
-    const addLine = () => setLines((current) => [...current, freshLine()]);
-    const removeLine = (index: number) => setLines((current) => current.filter((_, row) => row !== index));
-    const lineKey = React.useCallback((line: DraftLine) => {
-        const area = line.area_id || (line.create_area && line.area_name ? `new:${normalizeAreaName(line.area_name)}` : "");
-        return area && line.category_id && line.subcategory_id ? [area, line.category_id, line.subcategory_id, line.work_type_id || ""].join("::") : "";
-    }, []);
-    const existingKeys = React.useMemo(() => new Set((workRequired.structured_items || []).map((item) => [item.area_id || "", item.category_id || "", item.subcategory_id || item.work_required_article_id || "", item.work_type_id || ""].join("::"))), [workRequired.structured_items]);
-    const duplicateIndexes = React.useMemo(() => {
-        const seen = new Set<string>();
-        const duplicates = new Set<number>();
-        lines.forEach((line, index) => {
-            const key = lineKey(line);
-            if (key && (seen.has(key) || existingKeys.has(key)))
-                duplicates.add(index);
-            if (key)
-                seen.add(key);
-        });
-        return duplicates;
-    }, [existingKeys, lineKey, lines]);
-    const validLine = (line: DraftLine) => Boolean((line.area_id || (line.create_area && line.area_name?.trim())) &&
-        line.category_id && line.subcategory_id &&
-        Number.isFinite(Number(line.wall_area)) && Number(line.wall_area) > 0);
-    const validLines = lines.filter(validLine);
-    const canSave = validLines.length === lines.length && lines.length > 0 && duplicateIndexes.size === 0;
-    const areaTypes: Array<{
-        value: import("@/lib/rdash/types").AreaType;
-        label: string;
-    }> = [
+    const updateLine = (groupKey: string, lineKey: string, patch: Partial<DetailedDraftLine>) => setGroups((current) => current.map((group) => {
+        if (group.key !== groupKey) return group;
+        const dims = groupDims(group);
+        return {
+            ...group,
+            lines: group.lines.map((line) => {
+                if (line.key !== lineKey) return line;
+                const next = { ...line, ...patch };
+                if (patch.measure !== undefined || patch.walls !== undefined) {
+                    const { quantity } = measuredQuantity(next.measure, dims, next.walls);
+                    next.wall_area = quantity > 0 ? areaStr(quantity) : "";
+                }
+                return next;
+            }),
+        };
+    }));
+    const addLine = (groupKey: string) => setGroups((current) => current.map((group) => group.key === groupKey
+        ? { ...group, open: true, lines: [...group.lines, freshLine(group)] }
+        : group));
+    const removeLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => group.key === groupKey
+        ? { ...group, lines: group.lines.filter((line) => line.key !== lineKey) }
+        : group));
+    const addGroup = () => setGroups((current) => [...current.map((group) => ({ ...group, open: false })), {
+        key: `new-group-${current.length}-${Math.random().toString(36).slice(2, 7)}`,
+        create_area: true,
+        area_name: "",
+        area_type: "other" as const,
+        open: true,
+        length: "",
+        breadth: "",
+        height: "",
+        lines: [],
+        removedExistingIds: [],
+    }]);
+    const removeGroup = (groupKey: string) => setGroups((current) => current.flatMap((group) => {
+        if (group.key !== groupKey) return [group];
+        if (group.create_area) return [];
+        // An existing area keeps its saved rows until save: drop drafts now and mark
+        // every saved item for removal so the store can sync the ticks back.
+        return [{ ...group, lines: [], removedExistingIds: Array.from(new Set([
+            ...group.removedExistingIds,
+            ...(workRequired.structured_items || []).filter((item) => item.area_id === group.area_id).map((item) => item.id),
+        ])) }];
+    }));
+    const toggleExistingRemoval = (groupKey: string, itemId: string) => setGroups((current) => current.map((group) => group.key === groupKey
+        ? {
+            ...group,
+            removedExistingIds: group.removedExistingIds.includes(itemId)
+                ? group.removedExistingIds.filter((id) => id !== itemId)
+                : [...group.removedExistingIds, itemId],
+        }
+        : group));
+    const areaTypes: Array<{ value: import("@/lib/rdash/types").AreaType; label: string; }> = [
         { value: "bedroom", label: "Bedroom" }, { value: "guest_room", label: "Guest room" }, { value: "living_room", label: "Living room / Hall" }, { value: "kitchen", label: "Kitchen" }, { value: "bathroom", label: "Bathroom" }, { value: "balcony", label: "Balcony" }, { value: "office_cabin", label: "Office cabin" }, { value: "reception", label: "Reception" }, { value: "other", label: "Other" },
     ];
-    const renderLine = (line: DraftLine, index: number) => {
-        const subcategories = line.category_id ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id) : [];
-        const duplicate = duplicateIndexes.has(index);
-        // Ticked categories: required by work captured in this line's Area, the work
-        // being captured, previous captures, and the other lines in this session.
-        const areaWorkCategories = line.area_id
-            ? db.workRequired
-                .filter((row) => row.site_id === site.id && (row.area_ids || []).includes(line.area_id!))
-                .map((row) => row.work_category_id)
-            : [];
-        const categoryTicks = new Set([workRequired.work_category_id,
-            ...(workRequired.structured_items || []).map((item) => item.category_id),
-            ...areaWorkCategories,
-            ...lines.filter((_, row) => row !== index).map((row) => row.category_id),
-        ].filter((id): id is string => Boolean(id)));
-        // Ticked subcategories: the work's own subcategories, previous captures and
-        // the other lines in this session.
-        const subTicks = new Set([
-            ...(workRequired.work_subcategory_ids || []),
-            ...(workRequired.structured_items || []).map((item) => item.subcategory_id),
-            ...lines.filter((_, row) => row !== index).map((row) => row.subcategory_id),
-        ].filter((id): id is string => Boolean(id)));
-        const subOptions = subcategories.map((subcategory) => ({ id: subcategory.id, name: subcategory.name }));
-        const workTypeOptions = workTypesFor(line.subcategory_id).map((workType) => ({ id: workType.id, name: workType.name }));
-        const workTypeTicks = new Set([
-            ...(workRequired.work_type_ids || []),
-            ...(workRequired.structured_items || []).map((item) => item.work_type_id),
-            ...lines.filter((_, row) => row !== index).map((row) => row.work_type_id),
-        ].filter((id): id is string => Boolean(id)));
-        return (<div key={index} className={cn("rounded-lg border p-3", duplicate ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-muted/20")}>
-        <div className="mb-2 flex items-center justify-between"><span className="text-xs font-semibold text-muted-foreground">Line {index + 1}</span>{lines.length > 1 && <button type="button" onClick={() => removeLine(index)} className="text-muted-foreground hover:text-destructive" aria-label={`Remove line ${index + 1}`}><Plus className="h-3.5 w-3.5 rotate-45"/></button>}</div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+    const existingItemsByArea = React.useMemo(() => {
+        const map = new Map<string, import("@/lib/rdash/types").LineItem[]>();
+        (workRequired.structured_items || []).forEach((item) => {
+            const key = item.area_id || "";
+            map.set(key, [...(map.get(key) || []), item]);
+        });
+        return map;
+    }, [workRequired.structured_items]);
+    // Duplicate keys mirror the store's scopeKey so the dialog and the store can
+    // never disagree about what is already captured.
+    const existingScopeKeys = React.useMemo(() => new Set((workRequired.structured_items || [])
+        .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id)))
+        .map((item) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::"))), [groups, workRequired.structured_items]);
+    const groupIssues = (group: DetailedAreaGroup): string | undefined => {
+        if (group.create_area) {
+            const name = group.area_name?.trim() || "";
+            if (!name) return "Name this area to capture work in it.";
+            if (areas.some((area) => !area.is_archived && normalizeAreaName(area.name) === normalizeAreaName(name))) {
+                return `"${name.trim()}" already exists — add the work inside its own group instead.`;
+            }
+        }
+        return undefined;
+    };
+    const lineIssue = (line: DetailedDraftLine, group: DetailedAreaGroup): string | undefined => {
+        if (!line.category_id || !line.subcategory_id) return "Pick a category and subcategory.";
+        const { quantity } = lineQuantity(line, group);
+        if (!(quantity > 0) && !(Number(line.wall_area) > 0)) return "Enter dimensions or a direct quantity.";
+        return undefined;
+    };
+    const duplicateKeys = React.useMemo(() => {
+        const seen = new Set<string>();
+        const duplicates = new Set<string>();
+        groups.forEach((group) => {
+            const dims = groupDims(group);
+            group.lines.forEach((line) => {
+                const { unit } = measuredQuantity(line.measure, dims, line.walls);
+                const areaPart = group.area_id || (group.create_area && group.area_name ? `new:${normalizeAreaName(group.area_name)}` : "");
+                const key = [areaPart, line.category_id || "", line.subcategory_id || "", line.work_type_id || "", "", unit].join("::");
+                if (areaPart && (seen.has(key) || existingScopeKeys.has(key))) duplicates.add(line.key);
+                if (areaPart) seen.add(key);
+            });
+        });
+        return duplicates;
+    }, [existingScopeKeys, groups]);
+    const validGroups = groups.filter((group) => !groupIssues(group));
+    const validLines = validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)));
+    const totalRemoved = groups.reduce((sum, group) => sum + group.removedExistingIds.length, 0);
+    const totalDraftLines = groups.reduce((sum, group) => sum + group.lines.length, 0);
+    const canSave = validLines.length === totalDraftLines
+        && groups.every((group) => !groupIssues(group))
+        && (validLines.length > 0 || totalRemoved > 0)
+        && duplicateKeys.size === 0;
+    const renderGroup = (group: DetailedAreaGroup) => {
+        const savedItems = (existingItemsByArea.get(group.area_id || "") || [])
+            .filter((item) => !group.removedExistingIds.includes(item.id));
+        const removedCount = group.removedExistingIds.length;
+        const issue = groupIssues(group);
+        const totalQuantity = savedItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
+            + group.lines.reduce((sum, line) => sum + (Number(line.wall_area) || 0), 0);
+        const groupLabel = group.create_area
+            ? (group.area_name?.trim() || "New area")
+            : group.area_name || areas.find((area) => area.id === group.area_id)?.name || "Area";
+        return (<div key={group.key} className={cn("overflow-hidden rounded-lg border", issue ? "border-destructive/50" : "border-border bg-muted/20")}>
+      <div className="flex items-center gap-1 px-2 py-2">
+        <button type="button" aria-expanded={group.open} onClick={() => updateGroup(group.key, { open: !group.open })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left">
+          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", !group.open && "-rotate-90")}/>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-bold">{groupLabel}</span>
+            <span className="block truncate text-[10px] text-muted-foreground">
+              {savedItems.length + group.lines.length} work item(s) · {areaStr(totalQuantity)} total
+              {removedCount > 0 ? ` · ${removedCount} removed on save` : ""}
+            </span>
+          </span>
+        </button>
+        <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]" onClick={() => addLine(group.key)}><Plus className="mr-1 h-3 w-3"/> Add work</Button>
+        <button type="button" onClick={() => removeGroup(group.key)} className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={`Remove all work in ${groupLabel} from this capture`} title="Remove every work item of this area from this capture"><Plus className="h-3.5 w-3.5 rotate-45"/></button>
+      </div>
+      {group.open && (<div className="border-t border-border px-3 py-3">
+        {group.create_area && (<div className="mb-3 grid grid-cols-2 gap-2">
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Area *</label>
-            <select value={line.create_area ? "__new__" : line.area_id || ""} onChange={(event) => {
-            const value = event.target.value;
-            if (value === "__new__")
-                updateLine(index, { area_id: undefined, area_name: "", create_area: true, area_type: "other", length: undefined, breadth: undefined, height: undefined, wall_area: "", floor_area: undefined });
-            else
-                updateLine(index, { area_id: value || undefined, area_name: undefined, create_area: false, area_type: undefined, length: undefined, breadth: undefined, height: undefined, wall_area: "", floor_area: undefined });
-        }} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
-              <option value="">— select area —</option>
-              {areas.filter((area) => !area.is_archived).map((area) => <option key={area.id} value={area.id}>{area.name}</option>)}
-              <option value="__new__">+ Create new area</option>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">New area name *</label>
+            <Input value={group.area_name || ""} onChange={(event) => updateGroup(group.key, { area_name: event.target.value })} placeholder="e.g. Kitchen 2" className="h-8 text-xs"/>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Area type *</label>
+            <select value={group.area_type || "other"} onChange={(event) => updateGroup(group.key, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
+              {areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}
             </select>
           </div>
-          {line.create_area && <><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">New area name *</label><Input value={line.area_name || ""} onChange={(event) => updateLine(index, { area_name: event.target.value })} placeholder="e.g. Living Room" className="h-8 text-xs"/></div><div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Area type *</label><select value={line.area_type || "other"} onChange={(event) => updateLine(index, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">{areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}</select></div></>}
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
-            <TickDropdown value={line.category_id} ariaLabel="Category" placeholder="— select category —" onChange={(categoryId) => updateLine(index, { category_id: categoryId, subcategory_id: undefined, work_type_id: undefined })} ticked={categoryTicks} groups={[{ key: "all", items: db.master.workCategories.map((category) => ({ id: category.id, name: category.name })) }]}/>
+        </div>)}
+        <div className="mb-3 rounded-md border border-dashed border-border bg-background px-2 py-2">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Area dimensions (ft) — shared by the work below</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Length (ft)</label><Input type="number" min="0" step="any" inputMode="decimal" value={group.length} onChange={(event) => updateGroup(group.key, { length: event.target.value })} placeholder="—" className="h-8 text-xs"/></div>
+            <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Breadth (ft)</label><Input type="number" min="0" step="any" inputMode="decimal" value={group.breadth} onChange={(event) => updateGroup(group.key, { breadth: event.target.value })} placeholder="—" className="h-8 text-xs"/></div>
+            <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Height (ft)</label><Input type="number" min="0" step="any" inputMode="decimal" value={group.height} onChange={(event) => updateGroup(group.key, { height: event.target.value })} placeholder="empty = run ft" className="h-8 text-xs"/></div>
           </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
-            <TickDropdown value={line.subcategory_id} ariaLabel="Subcategory" placeholder="— select subcategory —" disabled={!line.category_id} onChange={(subcategoryId) => updateLine(index, { subcategory_id: subcategoryId, work_type_id: undefined })} ticked={subTicks} groups={subOptions.length ? [
-            { key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id)) },
-            { key: "others", items: subOptions.filter((option) => !subTicks.has(option.id)) },
-        ].filter((group) => group.items.length) : []}/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work type</label>
-            <TickDropdown value={line.work_type_id} ariaLabel="Work type" placeholder="— select work type —" disabled={!line.subcategory_id} onChange={(workTypeId) => updateLine(index, { work_type_id: workTypeId || undefined })} ticked={workTypeTicks} groups={workTypeOptions.length ? [
-            { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id)) },
-            { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id)) },
-        ].filter((group) => group.items.length) : []}/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Length (ft)</label>
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.length || ""} onChange={(event) => updateDims(index, { length: event.target.value })} placeholder="—" className="h-8 text-xs"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Breadth (ft)</label>
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.breadth || ""} onChange={(event) => updateDims(index, { breadth: event.target.value })} placeholder="—" className="h-8 text-xs"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Height (ft)</label>
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.height || ""} onChange={(event) => updateDims(index, { height: event.target.value })} placeholder="empty = running ft" className="h-8 text-xs"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Wall area / length *</label>
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.wall_area} onChange={(event) => updateLine(index, { wall_area: event.target.value })} placeholder="auto from L×B×H" title="Auto: 2×(L+B)×H sqft, or 2×(L+B) running ft without height. Edit to deduct doors." className="h-8 text-xs"/>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Floor / ceiling area</label>
-            <Input type="number" min="0" step="any" inputMode="decimal" value={line.floor_area || ""} onChange={(event) => updateLine(index, { floor_area: event.target.value })} placeholder="auto L×B" className="h-8 text-xs"/>
-          </div>
-          <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(index, { notes: event.target.value })} placeholder="Customer preference, finish, doors/openings or scope note" className="h-8 text-xs"/></div>
         </div>
-        {duplicate && <p className="mt-2 text-[11px] text-destructive">This line duplicates an already captured scope. Edit the earlier line instead.</p>}
-      </div>);
+        {savedItems.length > 0 && (<div className="mb-3 space-y-1.5">
+          {savedItems.map((item) => (<div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+            <div className="min-w-0">
+              <p className="truncate text-[11px] font-semibold">{item.title}</p>
+              <p className="truncate text-[10px] text-muted-foreground">{item.quantity}{item.unit_name ? ` ${item.unit_name}` : ""}{item.amount > 0 ? ` · ${formatINR(item.amount)}` : ""}</p>
+            </div>
+            <Button size="sm" variant="outline" className="h-6 shrink-0 text-[10px] text-destructive hover:text-destructive" onClick={() => toggleExistingRemoval(group.key, item.id)}>Remove</Button>
+          </div>))}
+        </div>)}
+        {group.lines.length === 0 && savedItems.length === 0 && (<p className="mb-2 rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No work captured in this area yet. Use “Add work” to add the first item.</p>)}
+        {group.lines.map((line) => {
+            const subcategories = line.category_id ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id) : [];
+            const duplicate = duplicateKeys.has(line.key);
+            // Ticked categories: required by work captured in this line's Area, the work
+            // being captured, previous captures, and the other lines in this session.
+            const areaWorkCategories = group.area_id
+                ? db.workRequired
+                    .filter((row) => row.site_id === site.id && (row.area_ids || []).includes(group.area_id!))
+                    .map((row) => row.work_category_id)
+                : [];
+            const categoryTicks = new Set([workRequired.work_category_id,
+                ...(workRequired.structured_items || []).map((item) => item.category_id),
+                ...areaWorkCategories,
+                ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.category_id)),
+            ].filter((id): id is string => Boolean(id)));
+            // Ticked subcategories: the work's own subcategories, previous captures and
+            // the other lines in this session.
+            const subTicks = new Set([
+                ...(workRequired.work_subcategory_ids || []),
+                ...(workRequired.structured_items || []).map((item) => item.subcategory_id),
+                ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.subcategory_id)),
+            ].filter((id): id is string => Boolean(id)));
+            const subOptions = subcategories.map((subcategory) => ({ id: subcategory.id, name: subcategory.name }));
+            const workTypeOptions = workTypesFor(line.subcategory_id).map((workType) => ({ id: workType.id, name: workType.name }));
+            const workTypeTicks = new Set([
+                ...(workRequired.work_type_ids || []),
+                ...(workRequired.structured_items || []).map((item) => item.work_type_id),
+                ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.work_type_id)),
+            ].filter((id): id is string => Boolean(id)));
+            const lineError = lineIssue(line, group);
+            const rate = rateFor(line.subcategory_id, line.work_type_id);
+            const quantity = Number(line.wall_area) || 0;
+            const estimated = rate ? Math.round(quantity * rate * 100) / 100 : 0;
+            return (<div key={line.key} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-background")}>
+            <div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">New work item</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label="Remove this work item"><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
+                <TickDropdown value={line.category_id} ariaLabel="Category" placeholder="— select category —" onChange={(categoryId) => updateLine(group.key, line.key, { category_id: categoryId, subcategory_id: undefined, work_type_id: undefined })} ticked={categoryTicks} groups={[{ key: "all", items: db.master.workCategories.map((category) => ({ id: category.id, name: category.name })) }]}/>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
+                <TickDropdown value={line.subcategory_id} ariaLabel="Subcategory" placeholder="— select subcategory —" disabled={!line.category_id} onChange={(subcategoryId) => updateLine(group.key, line.key, { subcategory_id: subcategoryId, work_type_id: workTypesFor(subcategoryId)[0]?.id, measure: measureHintFor(subcategoryId) })} ticked={subTicks} groups={subOptions.length ? [
+                    { key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id)) },
+                    { key: "others", items: subOptions.filter((option) => !subTicks.has(option.id)) },
+                ].filter((group2) => group2.items.length) : []}/>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work type</label>
+                <TickDropdown value={line.work_type_id} ariaLabel="Work type" placeholder="— select work type —" disabled={!line.subcategory_id} onChange={(workTypeId) => updateLine(group.key, line.key, { work_type_id: workTypeId || undefined })} ticked={workTypeTicks} groups={workTypeOptions.length ? [
+                    { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id)) },
+                    { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id)) },
+                ].filter((group2) => group2.items.length) : []}/>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Measure *</label>
+                <select value={line.measure} onChange={(event) => updateLine(group.key, line.key, { measure: event.target.value as MeasureBasis })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
+                  {MEASURE_OPTIONS.map((basis) => <option key={basis} value={basis}>{WORK_MEASURE_LABELS[basis]}</option>)}
+                </select>
+              </div>
+              {line.measure === "length" && (<div>
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Walls</label>
+                <select value={line.walls} onChange={(event) => updateLine(group.key, line.key, { walls: Number(event.target.value) === 2 ? 2 : 1 })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
+                  <option value={1}>1 wall (L)</option>
+                  <option value={2}>2 walls (L+B)</option>
+                </select>
+              </div>)}
+              <div>
+                <label className="text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]} *</label>
+                <Input type="number" min="0" step="any" inputMode="decimal" value={line.wall_area} onChange={(event) => updateLine(group.key, line.key, { wall_area: event.target.value })} placeholder={line.measure === "length" ? "rft, or from L / L+B" : "sqft, or from L×B×H"} title="Auto from the area dimensions. Edit to deduct doors, openings or waste." className="h-8 text-xs"/>
+              </div>
+              <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} placeholder="Customer preference, finish, doors/openings or scope note" className="h-8 text-xs"/></div>
+            </div>
+            <p className="mt-1.5 text-[10px] text-muted-foreground">
+              {rate ? `Rate ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"} · Est. ${formatINR(estimated)}` : "Rate comes from the work-type tier (Standard / Premium / Economy / Luxury) at capture."}
+            </p>
+            {(lineError || duplicate) && <p className="mt-1 text-[11px] text-destructive">{duplicate ? "This work item duplicates an already captured scope. Edit the earlier item instead." : lineError}</p>}
+          </div>);
+        })}
+        {issue && <p className="mt-1 text-[11px] text-destructive">{issue}</p>}
+      </div>)}
+    </div>);
     };
     return (<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
       <div className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · {workRequired.title}</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">This capture is locked to <strong>{site.name}</strong>. Area, Category, Subcategory, and Wall area/length are required. Length × Breadth × Height auto-fills both areas (e.g. a 5×6×10 ft bathroom → 220 sqft of wall); leave Height empty for running feet (railings). Adjust any area to deduct doors and openings.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{lines.map(renderLine)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5"/> Add line</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${lines.length} complete line(s)` : "Complete every required field and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const saved = onSave(lines.map((line) => ({ site_id: site.id, area_id: line.area_id, area_name: line.area_name?.trim(), create_area: line.create_area, area_type: line.area_type, category_id: line.category_id!, subcategory_id: line.subcategory_id!, work_type_id: line.work_type_id, length_ft: Number(line.length) > 0 ? Number(line.length) : undefined, breadth_ft: Number(line.breadth) > 0 ? Number(line.breadth) : undefined, height_ft: Number(line.height) > 0 ? Number(line.height) : undefined, floor_area: Number(line.floor_area) > 0 ? Number(line.floor_area) : undefined, quantity: Number(line.wall_area), notes: line.notes?.trim() || undefined }))); if (saved) commitBatches(); }}><CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Capture {lines.length} line(s)</Button></div></div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Every area is one collapsible group sharing its own <strong>Length × Breadth × Height</strong>. Each work item inside is measured by its own basis — tiles use the floor plan, paint uses walls + ceiling, a modular kitchen uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Adjust any area to deduct doors and openings.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${totalRemoved ? ` · ${totalRemoved} removed` : ""}` : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
+            const { quantity: autoQuantity, unit } = measuredQuantity(line.measure, groupDims(group), line.walls);
+            const l = Number(group.length) || 0;
+            const b = Number(group.breadth) || 0;
+            const h = Number(group.height) || 0;
+            return {
+                site_id: site.id,
+                area_id: group.area_id,
+                area_name: group.area_name?.trim(),
+                create_area: group.create_area,
+                area_type: group.area_type,
+                category_id: line.category_id!,
+                subcategory_id: line.subcategory_id!,
+                work_type_id: line.work_type_id,
+                length_ft: l > 0 ? l : undefined,
+                breadth_ft: b > 0 ? b : undefined,
+                height_ft: line.measure === "length" ? undefined : h > 0 ? h : undefined,
+                floor_area: l > 0 && b > 0 ? Math.round(l * b * 100) / 100 : undefined,
+                quantity: Number(line.wall_area) > 0 ? Number(line.wall_area) : autoQuantity,
+                unit_id: unit,
+                notes: line.notes?.trim() || undefined,
+            };
+        })), removedItemIds: groups.flatMap((group) => group.removedExistingIds) }; const saved = onSave(payload); if (saved) commitBatches(); }}>{validLines.length > 0 ? `Capture ${validLines.length} work item(s)` : "Apply removals"}<CheckCircle2 className="ml-1.5 inline h-3.5 w-3.5"/></Button></div></div>
       </div>
     </div>);
 }

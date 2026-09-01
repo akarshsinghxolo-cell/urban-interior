@@ -104,6 +104,17 @@ export function deriveVendorPerformance(
   return deriveVendorPerformanceEvidence(db, vendorIdInput);
 }
 
+/**
+ * Evidence-bearing variant for store actions: evidenceCount === 0 means there
+ * is nothing to reconcile, so the persisted scorecard must stay untouched.
+ */
+export function deriveVendorPerformanceEvidenceExport(
+  db: Pick<RDashDatabase, "purchaseOrders" | "vendorBills">,
+  vendorIdInput: string,
+): PerformanceEvidence {
+  return deriveVendorPerformanceEvidence(db, vendorIdInput);
+}
+
 function deriveVendorPerformanceEvidence(
   db: Pick<RDashDatabase, "purchaseOrders" | "vendorBills">,
   vendorIdInput: string,
@@ -152,6 +163,14 @@ export function deriveContractorPerformance(
   db: Pick<RDashDatabase, "workOrders" | "contractorBills">,
   contractorIdInput: string,
 ): PerformanceFields {
+  return deriveContractorPerformanceEvidence(db, contractorIdInput);
+}
+
+/** Evidence-bearing variant — see deriveVendorPerformanceEvidenceExport. */
+export function deriveContractorPerformanceEvidenceExport(
+  db: Pick<RDashDatabase, "workOrders" | "contractorBills">,
+  contractorIdInput: string,
+): PerformanceEvidence {
   return deriveContractorPerformanceEvidence(db, contractorIdInput);
 }
 

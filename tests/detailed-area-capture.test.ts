@@ -19,25 +19,39 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     expect(desk).not.toContain("Capture structured work");
   });
 
-  test("line editor: dimension fields replace article/variant/unit", async () => {
+  test("area-grouped capture: one collapsible per area with shared dimensions", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    // Annotation 5: ARTICLE → Length; Annotation 6: VARIANT → Breadth + Height.
+    // The flat "Line 1/Line 2" rows are replaced by one collapsible group per
+    // area: expanding "Kitchen 1" shows every work item captured in that kitchen.
+    expect(desk).toContain("DetailedAreaGroup");
+    expect(desk).toContain('aria-expanded={group.open}');
+    expect(desk).toContain(">Area dimensions (ft) — shared by the work below</p>");
     expect(desk).toContain(">Length (ft)</label>");
     expect(desk).toContain(">Breadth (ft)</label>");
     expect(desk).toContain(">Height (ft)</label>");
-    // Quantity → wall area/length, plus a floor/ceiling area box; Unit removed.
-    expect(desk).toContain(">Wall area / length *</label>");
-    expect(desk).toContain(">Floor / ceiling area</label>");
-    expect(desk).not.toContain(">Unit *</label>");
-    expect(desk).not.toContain(">Article *</label>");
-    expect(desk).not.toContain(">Variant</label>");
-    expect(desk).not.toContain(">Quantity *</label>");
+    // Work items can be added or removed from inside the area group, and the
+    // group itself can be dropped from the capture.
+    expect(desk).toContain("Add work</Button>");
+    expect(desk).toContain("Add area</Button>");
+    expect(desk).toContain("toggleExistingRemoval");
+    expect(desk).not.toContain(">Wall area / length *</label>");
   });
 
-  test("wall area auto-fill: 2(L+B)H with height, running feet 2(L+B) without", async () => {
+  test("per-work-type measurement: basis derived per subcategory, direct sqft/rft entry", async () => {
+    const workTypes = await source("src/lib/rdash/work-types.ts");
+    // Tiles → floor plan; paint → walls + ceiling; modular kitchen/railings →
+    // the run of 1–2 walls in running feet. Every basis stays user-editable.
+    expect(workTypes).toContain("defaultMeasureBasisFor");
+    expect(workTypes).toContain('wall: "Wall area (sqft)"');
+    expect(workTypes).toContain('floor_ceiling: "Floor / ceiling area (sqft)"');
+    expect(workTypes).toContain('wall_ceiling: "Walls + ceiling (sqft)"');
+    expect(workTypes).toContain('length: "Running length (rft)"');
+    expect(workTypes).toContain("walls === 2");
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expect(desk).toContain("next.wall_area = areaStr(h > 0 ? 2 * (l + b) * h : 2 * (l + b))");
-    expect(desk).toContain("next.floor_area = areaStr(l * b)");
+    expect(desk).toContain("measuredQuantity(line.measure, groupDims(group), line.walls)");
+    // Measure basis select drives the quantity label; direct entry always allowed.
+    expect(desk).toContain("{WORK_MEASURE_LABELS[line.measure]} *</label>");
+    expect(desk).not.toContain(">Quantity *</label>");
   });
 
   test("category + subcategory dropdowns: tickboxes, ticked first, group gap", async () => {
@@ -54,7 +68,7 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     expect(desk).toContain("row.category_id === line.category_id");
   });
 
-  test("store capture: article/unit optional, unit derived from height", async () => {
+  test("store capture: removals + bidirectional tick sync with the add/edit form", async () => {
     const crm = await source("src/lib/rdash/store/slices/crm.ts");
     expect(crm).toContain("requires Area, Category, and Subcategory.");
     expect(crm).toContain('const unitId = line.unit_id || (Number(line.height_ft) > 0 ? "sqft" : "rft");');
@@ -62,5 +76,28 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     expect(crm).toContain("subcategory_id: subcategory.id");
     expect(crm).toContain("length_ft: num(line.length_ft)");
     expect(crm).toContain("floor_ceiling_area: num(line.floor_area)");
+    // Removals are applied first, then additions; the remaining items decide
+    // which subcategory/work-type/area ticks survive back to the edit form.
+    expect(crm).toContain("removedItemIds");
+    expect(crm).toContain("const keptItems = (workRequired.structured_items || []).filter((item: any) => !removedItemIds.has(item.id));");
+    expect(crm).toContain("nextSubcategoryIds");
+    expect(crm).toContain("nextWorkTypeIds");
+    expect(crm).toContain("removedAreaIds");
+  });
+
+  test("partner scorecards: one derivation shared by actions and reconciliation agent", async () => {
+    // ponytail: the store actions delegate to the same pure derivation the
+    // PerformanceReconciliationAgent uses, so their diff converges instead of
+    // fighting a second formula (infinite "Maximum update depth" loop).
+    const contractors = await source("src/lib/rdash/store/slices/contractors.ts");
+    const procurement = await source("src/lib/rdash/store/slices/procurement.ts");
+    const reconciliation = await source("src/lib/rdash/performance-reconciliation.ts");
+    expect(contractors).toContain("deriveContractorPerformanceEvidenceExport(state.db, contractorId)");
+    expect(procurement).toContain("deriveVendorPerformanceEvidenceExport(state.db, vendorId)");
+    expect(reconciliation).toContain("export function deriveContractorPerformanceEvidenceExport");
+    expect(reconciliation).toContain("export function deriveVendorPerformanceEvidenceExport");
+    // No evidence → nothing to reconcile, no commit, no audit noise.
+    expect(contractors).toContain("if (derived.evidenceCount === 0)");
+    expect(procurement).toContain("if (derived.evidenceCount === 0)");
   });
 });

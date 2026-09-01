@@ -21,6 +21,7 @@ import { formatINR } from "../../format";
 import { assertWorkOrderRelations } from "../../business-rules";
 import { materializePaymentSchedule } from "../finance-helpers";
 import { contractorMasterRecordForCreate, type ContractorProfileRecord } from "../../contractor-profile";
+import { deriveContractorPerformanceEvidenceExport } from "../../performance-reconciliation";
 // I: Import the canonical commission-rule lookup helper exposed by Agent A
 // in masters.ts. Match priority: (1) partner-specific category rule →
 // (2) partner-specific workOrder rule → (3) partner-specific all rule →
@@ -1208,28 +1209,17 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const contractor = state.db.master.contractors.find((c: any) => c.id === contractorId);
             if (!contractor)
                 throw new Error("Contractor not found.");
+            // ponytail single source of truth: derive from the same pure function the
+            // PerformanceReconciliationAgent uses. A second formula here kept disagreeing
+            // with the agent's derivation and both corrected each other forever.
+            const derived = deriveContractorPerformanceEvidenceExport(state.db, contractorId);
+            if (derived.evidenceCount === 0)
+                return;
+            const reliabilityScore = derived.reliability_score;
+            const onTimePct = derived.on_time_pct;
+            const rating = derived.rating;
             const contractorWOs = state.db.workOrders.filter((wo: any) => wo.contractor_id === contractorId);
-            // On-time completion: completed WOs with both dates set.
-            const completedWOs = contractorWOs.filter((wo: any) => wo.actual_end && wo.expected_end);
-            const onTimeWOs = completedWOs.filter((wo: any) => wo.actual_end <= wo.expected_end).length;
-            const onTimePct = completedWOs.length > 0
-                ? Math.round((onTimeWOs / completedWOs.length) * 100)
-                : 0;
-            // RA-bill settled vs disputed rate.
-            const contractorBills = state.db.contractorBills.filter((b: any) => b.contractor_id === contractorId && b.status !== "held");
-            const settledBills = contractorBills.filter((b: any) => b.status === "paid" || b.status === "partly_paid").length;
-            const disputedBills = contractorBills.filter((b: any) => b.status === "disputed").length;
-            const settleRate = contractorBills.length > 0
-                ? Math.round((settledBills / contractorBills.length) * 100)
-                : 100;
-            // Composite reliability score.
-            const disputePenalty = Math.min(30, disputedBills * 10);
-            const reliabilityScore = Math.max(0, Math.min(100, Math.round(onTimePct * 0.55 + settleRate * 0.45) - disputePenalty));
-            const rating = reliabilityScore >= 90 ? 5
-                : reliabilityScore >= 75 ? 4
-                    : reliabilityScore >= 60 ? 3
-                        : reliabilityScore >= 40 ? 2
-                            : 1;
+            const contractorBills = state.db.contractorBills.filter((b: any) => b.contractor_id === contractorId);
             commitState((s: any) => ({
                 db: {
                     ...s.db,
@@ -1250,7 +1240,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             get().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
-                action: `Recomputed contractor performance for ${contractor.name}: reliability=${reliabilityScore}, on-time=${onTimePct}%, rating=${rating} (${contractorWOs.length} WOs, ${contractorBills.length} bills, ${disputedBills} disputed)`,
+                action: `Recomputed contractor performance for ${contractor.name}: reliability=${reliabilityScore}, on-time=${onTimePct}%, rating=${rating} (${contractorWOs.length} WOs, ${contractorBills.length} bills)`,
                 entity_type: "contractor",
                 entity_id: contractorId,
                 entity_label: contractor.name,

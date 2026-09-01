@@ -150,3 +150,68 @@ export function workRequiredTitleFromSelection(
     .map((row) => `${subcategoryNameByWorkTypeId.get(row.id) || row.name} · ${row.name}`)
     .join(" / ");
 }
+
+// ── Detailed-area measurement ────────────────────────────────────────────────
+// One room's L×B×H is shared by every work inside it, but the quantity that a
+// quotation line is priced on depends on the kind of work: tiles consume the
+// floor plan, paint consumes walls plus ceiling, a modular kitchen is a run of
+// one or two walls in running feet. The basis is derived from the subcategory
+// name (catalogue heuristic) and always stays user-editable, including direct
+// sqft / rft entry with no dimensions at all.
+
+export type WorkMeasureBasis = "wall" | "floor_ceiling" | "wall_ceiling" | "length";
+
+const LENGTH_BASIS_PATTERN = /(railing|kitchen|cabinet|wardrobe|counter|skirting|border|moulding|molding|cladding strip)/;
+const FLOOR_BASIS_PATTERN = /(floor|tile|paver|carpet|epoxy|marble|granite|ceiling|gypsum|pop\b|grid)/;
+const PAINT_BASIS_PATTERN = /(paint|putty|texture|distemper|emulsion|enamel|weather ?shield)/;
+
+/** Sensible measurement basis for a subcategory, from its catalogue name. */
+export function defaultMeasureBasisFor(subcategoryName: string | undefined): WorkMeasureBasis {
+  const name = String(subcategoryName || "").toLowerCase();
+  if (LENGTH_BASIS_PATTERN.test(name)) return "length";
+  if (PAINT_BASIS_PATTERN.test(name)) return "wall_ceiling";
+  if (FLOOR_BASIS_PATTERN.test(name)) return "floor_ceiling";
+  return "wall";
+}
+
+export const WORK_MEASURE_LABELS: Record<WorkMeasureBasis, string> = {
+  wall: "Wall area (sqft)",
+  floor_ceiling: "Floor / ceiling area (sqft)",
+  wall_ceiling: "Walls + ceiling (sqft)",
+  length: "Running length (rft)",
+};
+
+export function measureUnitFor(basis: WorkMeasureBasis, heightFt: number): "sqft" | "rft" {
+  if (basis === "length") return "rft";
+  if (basis === "wall" && !(heightFt > 0)) return "rft"; // railing-height wall cladding
+  return "sqft";
+}
+
+/**
+ * Quantity for one quotation line, computed from the shared area dimensions.
+ * height empty on a wall basis falls back to running feet (perimeter), keeping
+ * the legacy railing behaviour. Returns 0 when the needed dimensions are
+ * missing — the caller then requires direct entry.
+ */
+export function measuredQuantity(
+  basis: WorkMeasureBasis,
+  dims: { length: number; breadth: number; height: number },
+  walls: 1 | 2 = 1,
+): { quantity: number; unit: "sqft" | "rft" } {
+  const l = Number(dims.length) || 0;
+  const b = Number(dims.breadth) || 0;
+  const h = Number(dims.height) || 0;
+  const plan = l > 0 && b > 0 ? l * b : 0;
+  const perimeter = l > 0 && b > 0 ? 2 * (l + b) : 0;
+  const unit = measureUnitFor(basis, h);
+  const quantity = basis === "floor_ceiling"
+    ? plan
+    : basis === "wall_ceiling"
+      ? plan > 0 && h > 0 ? plan + perimeter * h : 0
+      : basis === "wall"
+        ? h > 0 ? perimeter * h : perimeter
+        : walls === 2
+          ? l + b
+          : l;
+  return { quantity, unit };
+}

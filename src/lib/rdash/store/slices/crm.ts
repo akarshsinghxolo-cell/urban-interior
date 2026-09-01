@@ -732,12 +732,13 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             });
             return id;
         },
-        captureStructuredWorkRequired: (workRequiredId, lines) => {
+        captureStructuredWorkRequired: (workRequiredId, lines, options) => {
             const state = get();
+            const removedItemIds = new Set(options?.removedItemIds || []);
             const workRequired = state.db.workRequired.find((row: any) => row.id === workRequiredId);
             if (!workRequired)
                 throw new Error("Work Required not found.");
-            if (!lines.length)
+            if (!lines.length && removedItemIds.size === 0)
                 throw new Error("Capture at least one structured work line.");
             const context = "Structured Work Required";
             assertWorkRequiredMatchesContext(state.db, workRequired.id, workRequired.customer_id, workRequired.site_id, context);
@@ -750,7 +751,9 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 .map((area: any) => [normaliseAreaName(area.name), area.id]));
             const lineKeys = new Set<string>();
             const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "work_type_id" | "variant_id" | "unit_id">) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::");
-            const existingKeys = new Set((workRequired.structured_items || []).map(scopeKey));
+            // Removals are applied first: kept items still block duplicate captures.
+            const keptItems = (workRequired.structured_items || []).filter((item: any) => !removedItemIds.has(item.id));
+            const existingKeys = new Set(keptItems.map(scopeKey));
             const resolvedItems: LineItem[] = lines.map((line: any, index: any) => {
                 if (line.site_id !== workRequired.site_id) {
                     throw new Error(`${context}: line ${index + 1} must stay on Site "${state.db.sites.find((site: any) => site.id === workRequired.site_id)?.name || workRequired.site_id}".`);
@@ -875,10 +878,55 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     status: "active",
                 };
             });
-            const workAreaIds = Array.from(new Set([...workRequired.area_ids, ...resolvedItems.map((item: any) => item.area_id!).filter(Boolean)]));
-            const summary = resolvedItems
-                .map((item: any) => `${item.area_name} → ${item.title.replace(`${item.area_name} · `, "")} → ${item.quantity}${item.unit_name ? ` ${item.unit_name}` : ""}`)
-                .join("\n");
+            // Bidirectional sync with the Add/Edit customer form: the capture view is
+            // the per-area master, so adds and removals flow back into the ticked
+            // subcategory / work-type / area lists of the same Work Required record.
+            // ponytail invariant: a Work Required always keeps its Work Category paired
+            // with at least one Work Subcategory (assertWorkRequiredCatalogRelations),
+            // so pruning stops at the last tick instead of emptying the record.
+            const removedItems = (workRequired.structured_items || []).filter((item: any) => removedItemIds.has(item.id));
+            const keptSubcategoryIds = new Set(keptItems.map((item: any) => item.subcategory_id).filter(Boolean));
+            const keptWorkTypeIds = new Set(keptItems.map((item: any) => item.work_type_id).filter(Boolean));
+            const keptAreaIds = new Set(keptItems.map((item: any) => item.area_id).filter(Boolean));
+            const declaredSubcategoryIds = workRequired.work_subcategory_ids || [];
+            const removedSubcategoryIds = Array.from(new Set(removedItems
+                .map((item: any) => item.subcategory_id)
+                .filter((id: string | undefined): id is string => Boolean(id) && !keptSubcategoryIds.has(id))));
+            const survivingSubcategoryIds = declaredSubcategoryIds.filter((id) => !removedSubcategoryIds.includes(id));
+            const subcategoryPruneIds = survivingSubcategoryIds.length
+                ? removedSubcategoryIds
+                // Only tick left: keep it — the declaration outlives its captures.
+                : removedSubcategoryIds.filter((id) => !declaredSubcategoryIds.includes(id));
+            const removedWorkTypeIds = Array.from(new Set(removedItems
+                .map((item: any) => item.work_type_id)
+                .filter((id: string | undefined): id is string => Boolean(id) && !keptWorkTypeIds.has(id))));
+            const declaredAreaIds = workRequired.area_ids || [];
+            const removedAreaIdsRaw = Array.from(new Set(removedItems
+                .map((item: any) => item.area_id)
+                .filter((id: string | undefined): id is string => Boolean(id) && !keptAreaIds.has(id))));
+            const survivingAreaIds = declaredAreaIds.filter((id) => !removedAreaIdsRaw.includes(id));
+            const removedAreaIds = survivingAreaIds.length
+                ? removedAreaIdsRaw
+                : removedAreaIdsRaw.filter((id) => !declaredAreaIds.includes(id));
+            const nextSubcategoryIds = Array.from(new Set([
+                ...(workRequired.work_subcategory_ids || []).filter((id) => !subcategoryPruneIds.includes(id)),
+                ...resolvedItems.map((item: any) => item.subcategory_id).filter(Boolean),
+            ]));
+            const nextWorkTypeIds = Array.from(new Set([
+                ...(workRequired.work_type_ids || []).filter((id) => !removedWorkTypeIds.includes(id)),
+                ...resolvedItems.map((item: any) => item.work_type_id).filter(Boolean),
+            ]));
+            const workAreaIds = Array.from(new Set([
+                ...workRequired.area_ids.filter((id) => !removedAreaIds.includes(id)),
+                ...resolvedItems.map((item: any) => item.area_id!).filter(Boolean),
+            ]));
+            const summary = [
+                ...resolvedItems
+                    .map((item: any) => `${item.area_name} → ${item.title.replace(`${item.area_name} · `, "")} → ${item.quantity}${item.unit_name ? ` ${item.unit_name}` : ""}`),
+                ...removedItems
+                    .filter((item: any) => !resolvedItems.some((fresh: any) => fresh.subcategory_id === item.subcategory_id && fresh.area_id === item.area_id))
+                    .map((item: any) => `Removed ${item.area_name ? `${item.area_name} · ` : ""}${item.title}`),
+            ].join("\n");
             commitState((snapshot: any) => ({
                 db: {
                     ...snapshot.db,
@@ -887,38 +935,49 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         ? {
                             ...row,
                             area_ids: workAreaIds,
-                            structured_items: [...(row.structured_items || []), ...resolvedItems],
+                            work_subcategory_ids: nextSubcategoryIds,
+                            work_type_ids: nextWorkTypeIds,
+                            structured_items: [...(row.structured_items || []).filter((item: any) => !removedItemIds.has(item.id)), ...resolvedItems],
                             updated_at: now,
                         }
                         : row),
                 },
             }));
             const actor = get().currentUser();
+            const captureHeadline = resolvedItems.length && removedItems.length
+                ? `Updated detailed area work for ${workRequired.title}`
+                : resolvedItems.length
+                    ? `Structured work captured for ${workRequired.title}`
+                    : `Detailed area work updated for ${workRequired.title}`;
             const workThreadId = get().openThreadFor("workRequired", workRequired.id, `Work Required · ${workRequired.title}`, [actor.name]);
             const customer = get().db.customers.find((row: any) => row.id === workRequired.customer_id);
             const customerThreadId = get().openThreadFor("generic", `customer-conversation:${workRequired.customer_id}`, `Customer Conversation · ${customer?.name || "Customer"}`, [customer?.name || "Customer", actor.name]);
             get().addThreadReply(workThreadId, {
                 author: actor.name,
                 role: actor.role,
-                body: `Structured work captured for ${workRequired.title}:\n${summary}`,
+                body: `${captureHeadline}:\n${summary}`,
                 kind: "decision",
                 related_thread_id: customerThreadId,
             });
             get().addThreadReply(customerThreadId, {
                 author: actor.name,
                 role: actor.role,
-                body: `Structured work captured for ${workRequired.title} at ${get().db.sites.find((site: any) => site.id === workRequired.site_id)?.name || "the selected Site"}:\n${summary}`,
+                body: `${captureHeadline} at ${get().db.sites.find((site: any) => site.id === workRequired.site_id)?.name || "the selected Site"}:\n${summary}`,
                 kind: "decision",
                 related_thread_id: workThreadId,
             });
             get().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
-                action: `Captured ${resolvedItems.length} structured work line(s) for ${workRequired.title}`,
+                action: resolvedItems.length && removedItems.length
+                    ? `Captured ${resolvedItems.length} and removed ${removedItems.length} detailed area line(s) for ${workRequired.title}`
+                    : resolvedItems.length
+                        ? `Captured ${resolvedItems.length} structured work line(s) for ${workRequired.title}`
+                        : `Removed ${removedItems.length} detailed area line(s) from ${workRequired.title}`,
                 entity_type: "workRequired",
                 entity_id: workRequired.id,
                 entity_label: workRequired.title,
-                kind: "create",
+                kind: "update",
                 cross_post: [
                     ...(workRequired.customer_id ? [{ entity_type: "customer", entity_id: workRequired.customer_id }] : []),
                     ...(workRequired.site_id ? [{ entity_type: "site", entity_id: workRequired.site_id }] : []),

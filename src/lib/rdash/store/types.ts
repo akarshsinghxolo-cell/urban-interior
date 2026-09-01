@@ -220,7 +220,7 @@ export interface CrmState {
     article_id?: string; variant_id?: string; quantity: number;
     length_ft?: number; breadth_ft?: number; height_ft?: number; floor_area?: number;
     unit_id?: string; notes?: string;
-  }>) => void;
+  }>, options?: { removedItemIds?: string[] }) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────

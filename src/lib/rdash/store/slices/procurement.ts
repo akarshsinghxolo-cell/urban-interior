@@ -33,6 +33,7 @@ import { formatINR } from "../../format";
 import { assertWorkOrderRelations, assertAreaBelongsToSite } from "../../business-rules";
 import { eventMatchesPaymentTrigger } from "../finance-helpers";
 import { createDefaultAttendancePolicy } from "../../attendance-policy";
+import { deriveVendorPerformanceEvidenceExport } from "../../performance-reconciliation";
 import { normalizeRoleKey, roleLabel } from "../../staff-operations";
 
 /**
@@ -1290,30 +1291,17 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             const vendor = state.db.master.vendors.find((v: any) => v.id === vendorId);
             if (!vendor)
                 throw new Error("Vendor not found.");
+            // ponytail single source of truth: derive from the same pure function the
+            // PerformanceReconciliationAgent uses, so the agent's diff converges instead
+            // of fighting a second formula (infinite "Maximum update depth" loop).
+            const derived = deriveVendorPerformanceEvidenceExport(state.db, vendorId);
+            if (derived.evidenceCount === 0)
+                return;
+            const reliabilityScore = derived.reliability_score;
+            const onTimePct = derived.on_time_pct;
+            const rating = derived.rating;
             const vendorPOs = state.db.purchaseOrders.filter((po: any) => po.vendor_id === vendorId);
-            // On-time delivery: POs with both actual + expected delivery dates.
-            const deliveredPOs = vendorPOs.filter((po: any) => po.actual_delivery && po.expected_delivery);
-            const onTimeCount = deliveredPOs.filter((po: any) => po.actual_delivery <= po.expected_delivery).length;
-            const onTimePct = deliveredPOs.length > 0
-                ? Math.round((onTimeCount / deliveredPOs.length) * 100)
-                : 0;
-            // Bill-match rate: matched bills vs disputed bills (excluding draft).
-            const vendorBills = state.db.vendorBills.filter((b: any) => b.vendor_id === vendorId && b.status !== "draft");
-            const matchedBills = vendorBills.filter((b: any) => b.matched === true || b.status === "approved" || b.status === "paid" || b.status === "partly_paid").length;
-            const disputedBills = vendorBills.filter((b: any) => b.status === "disputed").length;
-            const matchRate = vendorBills.length > 0
-                ? Math.round((matchedBills / vendorBills.length) * 100)
-                : 100;
-            // Composite reliability score: weighted blend of on-time + match rate,
-            // penalised for disputes.
-            const disputePenalty = Math.min(30, disputedBills * 10);
-            const reliabilityScore = Math.max(0, Math.min(100, Math.round(onTimePct * 0.55 + matchRate * 0.45) - disputePenalty));
-            // Rating: 1-5 stars derived from the reliability score.
-            const rating = reliabilityScore >= 90 ? 5
-                : reliabilityScore >= 75 ? 4
-                    : reliabilityScore >= 60 ? 3
-                        : reliabilityScore >= 40 ? 2
-                            : 1;
+            const vendorBills = state.db.vendorBills.filter((b: any) => b.vendor_id === vendorId);
             commitState((s: any) => ({
                 db: {
                     ...s.db,
@@ -1334,7 +1322,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             get().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
-                action: `Recomputed vendor performance for ${vendor.name}: reliability=${reliabilityScore}, on-time=${onTimePct}%, rating=${rating} (${deliveredPOs.length} POs, ${vendorBills.length} bills, ${disputedBills} disputed)`,
+                action: `Recomputed vendor performance for ${vendor.name}: reliability=${reliabilityScore}, on-time=${onTimePct}%, rating=${rating} (${vendorPOs.length} POs, ${vendorBills.length} bills)`,
                 entity_type: "vendor",
                 entity_id: vendorId,
                 entity_label: vendor.name,
