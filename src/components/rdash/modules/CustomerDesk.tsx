@@ -687,7 +687,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                         <div className="flex items-center justify-between gap-2">
                           <div>
                             <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required</p>
-                            <p className="text-[11px] text-muted-foreground">Capture is locked to this Site and a named work requirement.</p>
+                            <p className="text-[11px] text-muted-foreground">Capture measures work area by area across every work required at this Site.</p>
                           </div>
                           <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCreateWorkRequiredSiteId(site.id)}>
                             <Plus className="mr-1 h-3.5 w-3.5"/> Add work required
@@ -1405,6 +1405,14 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     });
     const lineQuantity = (line: DetailedDraftLine, group: DetailedAreaGroup) =>
         measuredQuantity(line.measure, groupDims(group), line.walls);
+    // One money source for the per-line, per-area and footer totals: captured
+    // rows use their saved amount, drafts use quantity × the work-type tier
+    // rate (contractor average). No rate → no estimate for that line.
+    const lineEstimate = (line: DetailedDraftLine, group: DetailedAreaGroup) => {
+        const rate = rateFor(line.subcategory_id, line.work_type_id);
+        const estimated = rate ? Math.round((Number(line.wall_area) || 0) * rate * 100) / 100 : 0;
+        return { rate, estimated };
+    };
     const freshLine = (group: DetailedAreaGroup): DetailedDraftLine => {
         const subcategoryIds = (workRequired.work_subcategory_ids || []).filter((id) => !workRequired.work_category_id || db.master.workSubcategories.find((row) => row.id === id)?.category_id === workRequired.work_category_id);
         const subcategoryId = subcategoryIds[0];
@@ -1642,6 +1650,12 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     }, [existingScopeKeys, groups]);
     const validGroups = groups.filter((group) => !groupIssues(group));
     const validLines = validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)));
+    const groupEstimate = (group: DetailedAreaGroup) =>
+        (existingItemsByArea.get(group.area_id || "") || [])
+            .filter((item) => !group.removedExistingIds.includes(item.id))
+            .reduce((sum, item) => sum + (item.amount > 0 ? item.amount : 0), 0)
+        + group.lines.reduce((sum, line) => sum + lineEstimate(line, group).estimated, 0);
+    const estimateTotal = groups.reduce((sum, group) => sum + groupEstimate(group), 0);
     const totalRemoved = groups.reduce((sum, group) => sum + group.removedExistingIds.length, 0);
     const totalRemovedSeeds = groups.reduce((sum, group) => sum + group.removedSeeds.length, 0);
     const totalDraftLines = groups.reduce((sum, group) => sum + group.lines.length, 0);
@@ -1649,6 +1663,10 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         && groups.every((group) => !groupIssues(group))
         && (validLines.length > 0 || totalRemoved > 0 || totalRemovedSeeds > 0)
         && duplicateKeys.size === 0;
+    // Everything the capture planned is already saved — a valid idle state, not
+    // an error; the footer must say so instead of the red completion hint.
+    const idle = !canSave && totalDraftLines === 0 && totalRemoved === 0 && totalRemovedSeeds === 0
+        && duplicateKeys.size === 0 && groups.every((group) => !groupIssues(group));
     const renderGroup = (group: DetailedAreaGroup) => {
         const savedItems = (existingItemsByArea.get(group.area_id || "") || [])
             .filter((item) => !group.removedExistingIds.includes(item.id));
@@ -1656,6 +1674,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         const issue = groupIssues(group);
         const totalQuantity = savedItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
             + group.lines.reduce((sum, line) => sum + (Number(line.wall_area) || 0), 0);
+        const totalEstimate = groupEstimate(group);
         const groupLabel = group.create_area
             ? (group.area_name?.trim() || "New area")
             : group.area_name || areas.find((area) => area.id === group.area_id)?.name || "Area";
@@ -1667,6 +1686,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             <span className="block truncate text-sm font-bold">{groupLabel}</span>
             <span className="block truncate text-[10px] text-muted-foreground">
               {savedItems.length + group.lines.length} work item(s) · {areaStr(totalQuantity)} total
+              {totalEstimate > 0 ? ` · ≈ ${formatINR(totalEstimate)}` : ""}
               {removedCount > 0 ? ` · ${removedCount} removed on save` : ""}
             </span>
           </span>
@@ -1739,9 +1759,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.work_type_id)),
             ].filter((id): id is string => Boolean(id)));
             const lineError = lineIssue(line, group);
-            const rate = rateFor(line.subcategory_id, line.work_type_id);
-            const quantity = Number(line.wall_area) || 0;
-            const estimated = rate ? Math.round(quantity * rate * 100) / 100 : 0;
+            const { rate, estimated } = lineEstimate(line, group);
             return (<div key={line.key} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-background")}>
             <div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">{line.seeded ? "Planned work" : "New work item"}</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={line.seeded ? "Remove this planned work from this area" : "Remove this work item"}><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -1792,11 +1810,13 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
       </div>)}
     </div>);
     };
-    return (<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
-      <div className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
+    // Mobile: a full-width bottom sheet (field reps capture on phones, thumbs
+    // rest near the actions); desktop keeps the centered modal.
+    return (<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
+      <div role="dialog" aria-modal="true" aria-label="Capture detailed area" className="relative max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · every area with all of its work required</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
         <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Each area is one collapsible group pre-filled with the work its Work Required rows plan there — each item is measured by its own basis: tiles use the floor plan, paint uses walls + ceiling, a modular kitchen or railing uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Add or remove work here and the Add/Edit customer form follows.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${totalRemoved || totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}` : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
+        <div className="flex items-center justify-between border-t border-border px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"><span className={cn("text-[11px]", canSave || idle ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${estimateTotal > 0 ? ` · ≈ ${formatINR(estimateTotal)} ready for quotation` : ""}${totalRemoved || totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}` : idle ? "All planned work in this capture is already saved." : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
             const { quantity: autoQuantity, unit } = measuredQuantity(line.measure, groupDims(group), line.walls);
             const l = Number(group.length) || 0;
             const b = Number(group.breadth) || 0;

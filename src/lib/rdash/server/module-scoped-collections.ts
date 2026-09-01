@@ -53,6 +53,9 @@ export const CUSTOMER_SCOPE_COLLECTIONS = Object.freeze([
   "master.articleVariants",
   "master.vendors",
   "master.contractors",
+  // The capture detailed-area dialog prices its live estimates from
+  // contractor work-type averages, so the customer scope must carry the rates.
+  "master.contractorRates",
   "master.sourcePartners",
   "master.fileAssets",
 ] as const);

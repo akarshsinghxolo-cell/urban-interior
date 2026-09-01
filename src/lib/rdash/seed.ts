@@ -279,7 +279,31 @@ const master: Master = {
     // Hardcoded seed histories referenced stale vendor_rate_id / work_required_article_id
     // values that were replaced during operational repair, causing integrity violations.
     vendorRateHistories: [],
-    contractorRates: [], customerRateSuggestions: [],
+    // Contractor rate cards power the capture view's live estimates
+    // (quantity x work-type tier average); two bids per key subcategory
+    // keep the "average of active bids" derivation visible in the demo.
+    contractorRates: [
+        { id: "cr-gyp-1", contractor_id: "con-gypsum", trade: "False ceiling", rate: 80, work_subcategory_id: "fc_gyp", work_type_id: "wt-fc_gyp-standard", material_rate: 45, labour_rate: 35, unit_id: "sqft" },
+        { id: "cr-gyp-2", contractor_id: "con-paint", trade: "False ceiling", rate: 80, work_subcategory_id: "fc_gyp", work_type_id: "wt-fc_gyp-standard", material_rate: 48, labour_rate: 32, unit_id: "sqft" },
+        { id: "cr-grid-1", contractor_id: "con-gypsum", trade: "False ceiling", rate: 120, work_subcategory_id: "fc_grid", work_type_id: "wt-fc_grid-standard", material_rate: 75, labour_rate: 45, unit_id: "sqft" },
+        { id: "cr-grid-2", contractor_id: "con-paint-2", trade: "False ceiling", rate: 120, work_subcategory_id: "fc_grid", work_type_id: "wt-fc_grid-standard", material_rate: 72, labour_rate: 48, unit_id: "sqft" },
+        { id: "cr-paint-1", contractor_id: "con-paint", trade: "Painting", rate: 32, work_subcategory_id: "pw_int", work_type_id: "wt-pw_int-standard", material_rate: 18, labour_rate: 14, unit_id: "sqft" },
+        { id: "cr-paint-2", contractor_id: "con-paint-2", trade: "Painting", rate: 31, work_subcategory_id: "pw_int", work_type_id: "wt-pw_int-standard", material_rate: 16, labour_rate: 15, unit_id: "sqft" },
+        { id: "cr-ward-1", contractor_id: "con-gypsum", trade: "Furniture", rate: 1200, work_subcategory_id: "fc2_ward", work_type_id: "wt-fc2_ward-standard", material_rate: 950, labour_rate: 250, unit_id: "sqft" },
+        { id: "cr-ward-2", contractor_id: "con-paint-2", trade: "Furniture", rate: 1160, work_subcategory_id: "fc2_ward", work_type_id: "wt-fc2_ward-standard", material_rate: 900, labour_rate: 260, unit_id: "sqft" },
+        { id: "cr-tv-1", contractor_id: "con-gypsum", trade: "Furniture", rate: 1070, work_subcategory_id: "fc2_tv", work_type_id: "wt-fc2_tv-standard", material_rate: 850, labour_rate: 220, unit_id: "sqft" },
+        { id: "cr-kit-1", contractor_id: "con-gypsum", trade: "Modular kitchen", rate: 1400, work_subcategory_id: "fc2_kit", work_type_id: "wt-fc2_kit-standard", material_rate: 1100, labour_rate: 300, unit_id: "sqft" },
+        { id: "cr-kit-2", contractor_id: "con-paint-2", trade: "Modular kitchen", rate: 1370, work_subcategory_id: "fc2_kit", work_type_id: "wt-fc2_kit-standard", material_rate: 1050, labour_rate: 320, unit_id: "sqft" },
+        { id: "cr-upvc-1", contractor_id: "con-gypsum", trade: "Windows", rate: 480, work_subcategory_id: "uw_ups", work_type_id: "wt-uw_ups-standard", material_rate: 420, labour_rate: 60, unit_id: "sqft" },
+        { id: "cr-upvc-2", contractor_id: "con-paint-2", trade: "Windows", rate: 465, work_subcategory_id: "uw_ups", work_type_id: "wt-uw_ups-standard", material_rate: 400, labour_rate: 65, unit_id: "sqft" },
+        { id: "cr-rglass-1", contractor_id: "con-gypsum", trade: "Railing", rate: 850, work_subcategory_id: "rw_glass", work_type_id: "wt-rw_glass-standard", material_rate: 700, labour_rate: 150, unit_id: "rft" },
+        { id: "cr-rglass-2", contractor_id: "con-paint-2", trade: "Railing", rate: 840, work_subcategory_id: "rw_glass", work_type_id: "wt-rw_glass-standard", material_rate: 680, labour_rate: 160, unit_id: "rft" },
+        { id: "cr-rss-1", contractor_id: "con-gypsum", trade: "Railing", rate: 570, work_subcategory_id: "rw_ss", work_type_id: "wt-rw_ss-standard", material_rate: 450, labour_rate: 120, unit_id: "rft" },
+        { id: "cr-rss-2", contractor_id: "con-paint-2", trade: "Railing", rate: 560, work_subcategory_id: "rw_ss", work_type_id: "wt-rw_ss-standard", material_rate: 430, labour_rate: 130, unit_id: "rft" },
+        { id: "cr-rwpc-1", contractor_id: "con-gypsum", trade: "Railing", rate: 490, work_subcategory_id: "rw_wpc", work_type_id: "wt-rw_wpc-standard", material_rate: 380, labour_rate: 110, unit_id: "rft" },
+        { id: "cr-wallp-1", contractor_id: "con-paint", trade: "Wallpaper", rate: 90, work_subcategory_id: "wt_wp", work_type_id: "wt-wt_wp-standard", material_rate: 65, labour_rate: 25, unit_id: "sqft" },
+        { id: "cr-carpet-1", contractor_id: "con-paint-2", trade: "Flooring", rate: 105, work_subcategory_id: "fl_carpet", work_type_id: "wt-fl_carpet-standard", material_rate: 85, labour_rate: 20, unit_id: "sqft" },
+    ], customerRateSuggestions: [],
     storageAccounts: seedStorageAccounts, storageFolderTemplates: [], storageFolderInstances: [], fileAssets, catalogues, catalogueArticleVendorLinks, pinterestBoards: seedPinterestBoards, referenceMedia,
 };
 const recurringTasks = [
