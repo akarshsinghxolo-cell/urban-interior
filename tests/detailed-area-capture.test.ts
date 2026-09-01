@@ -239,4 +239,50 @@ describe("Detailed-area seed derivation + selection reconciliation (annotation A
     expect(workRequiredDisplayTitle(workSubcategories, { title: "Legacy row", work_subcategory_ids: [], work_type_ids: [] }))
       .toBe("Legacy row");
   });
+
+  test("a linked Measurement Revision pins its area — removing the last captured item there cannot un-tick it", () => {
+    // Regression: removing Master Bedroom's only captured line while capturing
+    // a fresh line in another area pruned the measured area from area_ids;
+    // the server-side relation validator rejected the whole commit (422) and
+    // the capture silently reverted. The measured area must stay ticked.
+    const rec = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: { ...railingWork, area_ids: ["area-rooftop"] },
+      keptItems: [],
+      freshItems: [{ area_id: "area-balcony", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }],
+      droppedSelections: [
+        { work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+        { work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" },
+      ],
+      measurements: [{ work_required_id: "wr-railing", area_id: "area-rooftop" }],
+    });
+    expect(rec.area_ids).toContain("area-rooftop");
+    expect(rec.area_ids).toContain("area-balcony");
+  });
+
+  test("quotation coverage areas are pinned the same way; other rows' measurements do not pin", () => {
+    const rec = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: railingWork,
+      keptItems: [],
+      freshItems: [{ area_id: "area-balcony", subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" }],
+      droppedSelections: [
+        { work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+      ],
+      quotationCoverages: [{ work_required_id: "wr-railing", area_ids: ["area-rooftop"] }],
+      // A measurement tied to a DIFFERENT Work Required must not pin anything here.
+      measurements: [{ work_required_id: "wr-upvc", area_id: "area-kitchen" }],
+    });
+    expect(rec.area_ids).toContain("area-rooftop");
+    expect(rec.area_ids).toContain("area-balcony");
+    expect(rec.area_ids).not.toContain("area-kitchen");
+  });
+
+  test("capture reconcile passes the pin sources (measurements + quotation coverages)", async () => {
+    const crm = await source("src/lib/rdash/store/slices/crm.ts");
+    expect(crm).toContain("measurements: state.db.measurementRevisions");
+    expect(crm).toContain("quotationCoverages: state.db.quotations.flatMap");
+    const workTypes = await source("src/lib/rdash/work-types.ts");
+    expect(workTypes).toContain("pinnedAreaIds");
+  });
 });

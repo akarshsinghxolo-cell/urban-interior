@@ -949,6 +949,11 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     keptItems: keptItemsByWork.get(original.id) || [],
                     freshItems: freshByWork.get(original.id) || [],
                     droppedSelections: droppedByWork.get(original.id) || [],
+                    // Areas pinned by downstream records stay ticked — a dangling
+                    // Measurement Revision or Quotation coverage gets the whole
+                    // commit rejected server-side (the capture would revert).
+                    measurements: state.db.measurementRevisions,
+                    quotationCoverages: state.db.quotations.flatMap((quotation: any) => quotation.coverage || []),
                 });
                 const workTypeIds = withPrimaryWorkTypeIds(workSubcategories, rec.work_subcategory_ids, rec.work_type_ids);
                 const title = workRequiredTitleFromSelection(workSubcategories, rec.work_subcategory_ids, workTypeIds) || original.title;

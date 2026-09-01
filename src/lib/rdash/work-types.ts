@@ -1,4 +1,4 @@
-import type { ID, LineItem, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
+import type { ID, LineItem, MeasurementRevision, QuotationCoverage, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
 
 const DEFAULT_WORK_TYPE_NAME = "Standard";
 
@@ -332,10 +332,13 @@ export function seedDetailedAreaLines(input: {
  * The effective per-area work set E = captured items (kept + fresh) ∪ planned
  * seeds that survived (declared selection minus captured scopes minus the
  * seeds the user deleted). Selections follow E; the invariants stop the prune:
- * a Work Required never loses its last subcategory, work type or area. Single
- * master for both directions — removed saved items and deleted seeds flow
- * through the same reconciliation, so the capture view and the Add/Edit form
- * can never disagree about the ticks.
+ * a Work Required never loses its last subcategory, work type or area, and
+ * never drops an area pinned by a downstream record — a linked Measurement
+ * Revision or a Quotation coverage row must keep its area ticked, else the
+ * server-side relation validators reject the whole commit and the capture
+ * silently reverts. Single master for both directions — removed saved items
+ * and deleted seeds flow through the same reconciliation, so the capture view
+ * and the Add/Edit form can never disagree about the ticks.
  */
 export function reconcileWorkRequiredSelection(input: {
   workSubcategories: WorkSubcategory[];
@@ -343,6 +346,8 @@ export function reconcileWorkRequiredSelection(input: {
   keptItems: Array<Pick<LineItem, "area_id" | "subcategory_id" | "work_type_id">>;
   freshItems: Array<Pick<LineItem, "area_id" | "subcategory_id" | "work_type_id">>;
   droppedSelections: RemovedSelection[];
+  measurements?: Array<Pick<MeasurementRevision, "area_id" | "work_required_id">>;
+  quotationCoverages?: Array<Pick<QuotationCoverage, "work_required_id" | "area_ids">>;
 }): { area_ids: ID[]; work_subcategory_ids: ID[]; work_type_ids: ID[] } {
   const { work, keptItems, freshItems, droppedSelections } = input;
   const keptAsItems = keptItems as LineItem[];
@@ -363,11 +368,22 @@ export function reconcileWorkRequiredSelection(input: {
   const itemSubcategoryIds = new Set(items.map((item) => item.subcategory_id).filter((id): id is string => Boolean(id)));
   const itemWorkTypeIds = new Set(items.map((item) => item.work_type_id).filter((id): id is string => Boolean(id)));
   const itemAreaIds = new Set(items.map((item) => item.area_id).filter((id): id is string => Boolean(id)));
+  // Areas pinned by downstream records: removing the last captured item in a
+  // measured (or quotation-covered) area must keep the area ticked, otherwise
+  // the commit fails validation server-side and the capture reverts.
+  const pinnedAreaIds = new Set<string>();
+  (input.measurements || []).forEach((m) => {
+    if (m.work_required_id === work.id && m.area_id) pinnedAreaIds.add(m.area_id);
+  });
+  (input.quotationCoverages || []).forEach((coverage) => {
+    if (coverage.work_required_id === work.id) (coverage.area_ids || []).forEach((a) => a && pinnedAreaIds.add(a));
+  });
   const nextSubcategoryIds = Array.from(new Set([...itemSubcategoryIds, ...seedSubcategoryIds]));
   const nextWorkTypeIds = Array.from(new Set([...itemWorkTypeIds, ...seedWorkTypeIds]));
-  const nextAreaIds = Array.from(new Set([...itemAreaIds, ...seedAreaIds]));
+  const nextAreaIds = Array.from(new Set([...itemAreaIds, ...seedAreaIds, ...pinnedAreaIds]));
   return {
-    // Invariant clamps: the declaration outlives a total prune of any axis.
+    // Invariant clamps: the declaration outlives a total prune of any axis
+    // (and measured/quotation-covered areas always stay ticked).
     work_subcategory_ids: nextSubcategoryIds.length ? nextSubcategoryIds : (work.work_subcategory_ids || []),
     work_type_ids: nextWorkTypeIds.length ? nextWorkTypeIds : (work.work_type_ids || []),
     area_ids: nextAreaIds.length ? nextAreaIds : (work.area_ids || []),
