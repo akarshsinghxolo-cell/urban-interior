@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
+import { reconcileWorkRequiredSelection, seedDetailedAreaLines, workRequiredDisplayTitle } from "../src/lib/rdash/work-types";
 
 const source = async (path: string) => testFile(path).text();
 
@@ -76,13 +77,35 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     expect(crm).toContain("subcategory_id: subcategory.id");
     expect(crm).toContain("length_ft: num(line.length_ft)");
     expect(crm).toContain("floor_ceiling_area: num(line.floor_area)");
-    // Removals are applied first, then additions; the remaining items decide
-    // which subcategory/work-type/area ticks survive back to the edit form.
+    // Detailed-area capture is the per-area master for the whole Site: lines
+    // target ANY site Work Required (seeded lines carry their source row,
+    // fresh lines resolve by category or create one), and every touched row
+    // re-derives its ticks through the shared reconcileWorkRequiredSelection.
     expect(crm).toContain("removedItemIds");
-    expect(crm).toContain("const keptItems = (workRequired.structured_items || []).filter((item: any) => !removedItemIds.has(item.id));");
-    expect(crm).toContain("nextSubcategoryIds");
-    expect(crm).toContain("nextWorkTypeIds");
-    expect(crm).toContain("removedAreaIds");
+    expect(crm).toContain("removedSelections");
+    expect(crm).toContain("const siteWorks = state.db.workRequired.filter((row: any) => row.site_id === workRequired.site_id);");
+    expect(crm).toContain("const target = targetForLine(line);");
+    expect(crm).toContain("const skeletonFor = (categoryId: string)");
+    expect(crm).toContain("reconcileWorkRequiredSelection({");
+    expect(crm).toContain("withPrimaryWorkTypeIds(workSubcategories, rec.work_subcategory_ids, rec.work_type_ids)");
+  });
+
+  test("capture view pre-populates planned work from every site Work Required selection", async () => {
+    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
+    const workTypes = await source("src/lib/rdash/work-types.ts");
+    // Seeds are derived across all site rows so expanding "Kitchen 1" shows
+    // every work required in that kitchen (annotation C), and deleting a
+    // planned line un-ticks it from the Add/Edit form on save.
+    expect(workTypes).toContain("export function seedDetailedAreaLines");
+    expect(workTypes).toContain("export function reconcileWorkRequiredSelection");
+    expect(workTypes).toContain("export function workRequiredDisplayTitle");
+    expect(desk).toContain("seedDetailedAreaLines({ siteWorks, workSubcategories: db.master.workSubcategories })");
+    expect(desk).toContain("removedSelections: groups.flatMap((group) => group.removedSeeds)");
+    expect(desk).toContain("target_work_required_id: line.target_work_required_id");
+    // Legacy stored titles are not rendered raw anywhere: scorecards, site
+    // rows and detail links show the tier-qualified derived title instead.
+    expect(desk).toContain("workRequiredDisplayTitle(db.master.workSubcategories, work)");
+    expect(desk).not.toContain('{work.title}</span>');
   });
 
   test("partner scorecards: one derivation shared by actions and reconciliation agent", async () => {
@@ -99,5 +122,121 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     // No evidence → nothing to reconcile, no commit, no audit noise.
     expect(contractors).toContain("if (derived.evidenceCount === 0)");
     expect(procurement).toContain("if (derived.evidenceCount === 0)");
+  });
+});
+
+describe("Detailed-area seed derivation + selection reconciliation (annotation A/C)", () => {
+  // Kunal ji-like site: a railing requirement (two subcategories, one Standard
+  // type each) and a UPVC requirement, both covering the Rooftop.
+  const workSubcategories = [
+    { id: "sub-tgr", category_id: "cat-railing", name: "Toughened Glass Railing", unit_id: "rft", work_types: [{ id: "wt-sub-tgr-std", name: "Standard", unit_id: "rft" }] },
+    { id: "sub-ssr", category_id: "cat-railing", name: "SS Railing", unit_id: "rft", work_types: [{ id: "wt-sub-ssr-std", name: "Standard", unit_id: "rft" }] },
+    { id: "sub-upvc", category_id: "cat-windows", name: "UPVC Sliding Windows", unit_id: "sqft", work_types: [{ id: "wt-sub-upvc-std", name: "Standard", unit_id: "sqft" }] },
+  ] as any;
+  const railingWork = {
+    id: "wr-railing",
+    work_category_id: "cat-railing",
+    work_subcategory_ids: ["sub-tgr", "sub-ssr"],
+    work_type_ids: ["wt-sub-tgr-std", "wt-sub-ssr-std"],
+    area_ids: ["area-rooftop"],
+    structured_items: [],
+  } as any;
+  const upvcWork = {
+    id: "wr-upvc",
+    work_category_id: "cat-windows",
+    work_subcategory_ids: ["sub-upvc"],
+    work_type_ids: ["wt-sub-upvc-std"],
+    area_ids: ["area-rooftop", "area-kitchen"],
+    structured_items: [],
+  } as any;
+
+  test("seeds cover every (area × work type) of every site Work Required", () => {
+    const seeds = seedDetailedAreaLines({ siteWorks: [railingWork, upvcWork], workSubcategories });
+    // Rooftop opens with the railing work (both tier-qualified types) AND the
+    // UPVC work — annotation C's "2 works" instead of an empty group.
+    expect(seeds.map((seed) => [seed.area_id, seed.subcategory_id, seed.work_type_id])).toEqual([
+      ["area-rooftop", "sub-tgr", "wt-sub-tgr-std"],
+      ["area-rooftop", "sub-ssr", "wt-sub-ssr-std"],
+      ["area-rooftop", "sub-upvc", "wt-sub-upvc-std"],
+      ["area-kitchen", "sub-upvc", "wt-sub-upvc-std"],
+    ]);
+    // Railing plans running feet; UPVC plans the wall area.
+    expect(seeds[0].measure).toBe("length");
+    expect(seeds[2].measure).toBe("wall");
+  });
+
+  test("already captured scopes are not seeded again", () => {
+    const captured: any = { ...upvcWork, structured_items: [{ id: "li-1", area_id: "area-kitchen", subcategory_id: "sub-upvc", work_type_id: "wt-sub-upvc-std" }] };
+    const seeds = seedDetailedAreaLines({ siteWorks: [railingWork, captured], workSubcategories });
+    expect(seeds.map((seed) => seed.area_id)).toEqual(["area-rooftop", "area-rooftop", "area-rooftop"]);
+  });
+
+  test("deleting a planned seed un-ticks its type and subcategory, clamped at the last tick", () => {
+    const dropped = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: railingWork,
+      keptItems: [],
+      freshItems: [],
+      droppedSelections: [{ work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }],
+    });
+    expect(dropped.work_type_ids).toEqual(["wt-sub-ssr-std"]);
+    expect(dropped.work_subcategory_ids).toEqual(["sub-ssr"]);
+    expect(dropped.area_ids).toEqual(["area-rooftop"]);
+
+    // Dropping every planned work cannot empty the declaration (invariant).
+    const clamped = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: railingWork,
+      keptItems: [],
+      freshItems: [],
+      droppedSelections: [
+        { work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+        { work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" },
+      ],
+    });
+    expect(clamped.work_type_ids).toEqual(["wt-sub-tgr-std", "wt-sub-ssr-std"]);
+    expect(clamped.work_subcategory_ids).toEqual(["sub-tgr", "sub-ssr"]);
+    expect(clamped.area_ids).toEqual(["area-rooftop"]);
+  });
+
+  test("capturing a seed replaces it: the item owns the scope, other seeds survive", () => {
+    const rec = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: railingWork,
+      keptItems: [],
+      freshItems: [{ area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }],
+      droppedSelections: [],
+    });
+    expect(rec.work_type_ids).toEqual(["wt-sub-tgr-std", "wt-sub-ssr-std"]);
+    expect(rec.work_subcategory_ids).toEqual(["sub-tgr", "sub-ssr"]);
+    expect(rec.area_ids).toEqual(["area-rooftop"]);
+  });
+
+  test("removing a captured line drops its declaration (no silent re-seed)", () => {
+    // The store converts removed items into dropped selections before
+    // reconciling — replicate that for the wardrobe-style row where one of
+    // two subcategories is being removed from the only area.
+    const removedAsDropped = [{ work_required_id: "wr-railing", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }];
+    const rec = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: railingWork,
+      keptItems: [{ area_id: "area-rooftop", subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" }],
+      freshItems: [],
+      droppedSelections: removedAsDropped,
+    });
+    expect(rec.work_type_ids).toEqual(["wt-sub-ssr-std"]);
+    expect(rec.work_subcategory_ids).toEqual(["sub-ssr"]);
+    expect(rec.area_ids).toEqual(["area-rooftop"]);
+  });
+
+  test("display title re-derives tier-qualified labels; legacy rows keep their title", () => {
+    expect(workRequiredDisplayTitle(workSubcategories, { ...railingWork, title: "Toughened Glass Railing / SS Railing" }))
+      .toBe("Toughened Glass Railing · Standard / SS Railing · Standard");
+    // Ticked subcategories without explicit work types normalize to the
+    // primary (Standard) tier — the way the Add/Edit form would save them.
+    expect(workRequiredDisplayTitle(workSubcategories, { title: "Gypsum False Ceiling", work_subcategory_ids: ["sub-upvc"], work_type_ids: [] }))
+      .toBe("UPVC Sliding Windows · Standard");
+    expect(workRequiredDisplayTitle(workSubcategories, { title: "Legacy row", work_subcategory_ids: [], work_type_ids: [] }))
+      .toBe("Legacy row");
   });
 });

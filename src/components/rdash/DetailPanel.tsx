@@ -10,6 +10,7 @@ import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
 import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
+import { workRequiredDisplayTitle } from "@/lib/rdash/work-types";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
 import { X, MessageCircle, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
@@ -2199,7 +2200,7 @@ function SiteOverview({ site }: {
         }) : <EmptyContext label="Create areas before defining work, measurements, quotations or procurement."/>}
       </ContextSection>
       <ContextSection title={`Work Required (${works.length})`}>
-        {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={work.title} value={titleCase(work.status)} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="No work has been defined for this site."/>}
+        {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={workRequiredDisplayTitle(db.master.workSubcategories, work)} value={titleCase(work.status)} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="No work has been defined for this site."/>}
       </ContextSection>
       <ContextSection title={`Quotations (${quotes.length})`}>
         {quotes.length ? quotes.map((quote) => <LinkedRow key={quote.id} icon={<FileText className="h-3.5 w-3.5"/>} label={quote.quotation_no} value={`${titleCase(quote.status)} · ${formatINRShort(quote.total_amount)}`} onClick={() => openDetail("quotation", quote.id)}/>) : <EmptyContext label="Create quotations only after covered areas have verified measurements."/>}
@@ -2263,7 +2264,7 @@ function AreaOverview({ area }: {
       </Dialog>
       <EntityFilesCard entityType="room" entityId={area.id} title="Area photos & files" manage={!area.is_archived} showEmpty={!area.is_archived} />
       <ContextSection title={`Work Required in this Area (${works.length})`}>
-        {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={work.title} value={titleCase(work.status)} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="Add area-specific work required before customer quotation or contractor bidding."/>}
+        {works.length ? works.map((work) => <LinkedRow key={work.id} icon={<Wrench className="h-3.5 w-3.5"/>} label={workRequiredDisplayTitle(db.master.workSubcategories, work)} value={titleCase(work.status)} onClick={() => openDetail("workRequired", work.id)}/>) : <EmptyContext label="Add area-specific work required before customer quotation or contractor bidding."/>}
       </ContextSection>
       <ContextSection title={`Measurement Revisions (${measurements.length})`}>
         {measurements.length ? measurements.map((revision) => <div key={revision.id} className="rounded-md border border-border bg-muted/20 px-3 py-2 text-xs"><div className="flex items-center justify-between gap-2"><span className="font-semibold">Revision {revision.revision_no}</span><StatusPill label={titleCase(revision.status)} tone={revision.status === "verified" ? "success" : revision.status === "superseded" ? "default" : "warning"}/></div><p className="mt-1 text-muted-foreground">{revision.length || 0} × {revision.width || 0}{revision.height ? ` × ${revision.height}` : ""} {revision.unit} · {revision.calculated_area || 0} sq ft</p><EntityFilesCard entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id && revision.status !== "superseded"} showEmpty={!area.is_archived && revision.id === latest?.id && revision.status !== "superseded"} /></div>) : <EmptyContext label="No measurement revision has been captured."/>}

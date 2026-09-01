@@ -1,4 +1,4 @@
-import type { ID, WorkSubcategory, WorkTypeRate } from "./types";
+import type { ID, LineItem, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
 
 const DEFAULT_WORK_TYPE_NAME = "Standard";
 
@@ -151,6 +151,28 @@ export function workRequiredTitleFromSelection(
     .join(" / ");
 }
 
+/**
+ * Display title for a saved Work Required row: re-derived from the current
+ * subcategory / work-type selection (tier-qualified, e.g. "Toughened Glass
+ * Railing · Standard / SS Railing · Standard"), falling back to the stored
+ * title when the selection cannot be derived (legacy rows with no
+ * subcategories). One display master so scorecards, site rows and detail
+ * links agree with what the Add/Edit form would save — legacy seed titles
+ * render correctly without a data migration.
+ */
+export function workRequiredDisplayTitle(
+  workSubcategories: WorkSubcategory[],
+  work: Pick<WorkRequired, "title" | "work_subcategory_ids" | "work_type_ids">,
+): string {
+  const subcategoryIds = work.work_subcategory_ids || [];
+  if (!subcategoryIds.length) return work.title;
+  // Apply the same normalization the Add/Edit form applies on load/save:
+  // every ticked subcategory keeps at least its primary work type, so legacy
+  // rows without explicit work types still render "… · Standard".
+  const workTypeIds = withPrimaryWorkTypeIds(workSubcategories, subcategoryIds, work.work_type_ids);
+  return workRequiredTitleFromSelection(workSubcategories, subcategoryIds, workTypeIds) || work.title;
+}
+
 // ── Detailed-area measurement ────────────────────────────────────────────────
 // One room's L×B×H is shared by every work inside it, but the quantity that a
 // quotation line is priced on depends on the kind of work: tiles consume the
@@ -214,4 +236,140 @@ export function measuredQuantity(
           ? l + b
           : l;
   return { quantity, unit };
+}
+
+// ── Capture-view selection sync ──────────────────────────────────────────────
+
+/** One planned work line the capture view derives from a Work Required's
+ *  ticked selection (not yet measured or captured). */
+export type DetailedSeedLine = {
+  work_required_id: string;
+  area_id: string;
+  category_id?: string;
+  subcategory_id: string;
+  work_type_id?: string;
+  measure: WorkMeasureBasis;
+  walls: 1 | 2;
+};
+
+/** A seed the user deleted in the capture view — the Add/Edit form must
+ *  un-tick the corresponding selection (bidirectional sync). */
+export type RemovedSelection = {
+  work_required_id: string;
+  area_id: string;
+  subcategory_id: string;
+  work_type_id?: string;
+};
+
+type SeedSourceWork = Pick<WorkRequired, "id" | "work_category_id" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "structured_items">;
+
+const scopeKeyOf = (areaId: string | undefined, subcategoryId: string | undefined, workTypeId: string | undefined) =>
+  [areaId || "", subcategoryId || "", workTypeId || ""].join("::");
+
+/**
+ * Derive the capture view's planned lines from every site Work Required's
+ * ticked selection: one line per (area × work type) that has no captured line
+ * item yet, across ALL of the site's Work Required rows. This is what makes an
+ * area group open with "Toughened Glass Railing · Standard / SS Railing ·
+ * Standard / …" ready to measure instead of an empty state — the capture view
+ * is the per-area mirror of the Add/Edit form.
+ */
+export function seedDetailedAreaLines(input: {
+  siteWorks: SeedSourceWork[];
+  workSubcategories: WorkSubcategory[];
+}): DetailedSeedLine[] {
+  const captured = new Set<string>();
+  for (const work of input.siteWorks) {
+    for (const item of work.structured_items || []) {
+      if (!item.area_id) continue;
+      captured.add(scopeKeyOf(item.area_id, item.subcategory_id, item.work_type_id));
+    }
+  }
+  const declared = new Set(input.workSubcategories.map((row) => row.id));
+  const subcategoryOfWorkType = (workTypeId: string) =>
+    input.workSubcategories.find((row) => workTypesForSubcategory(row).some((wt) => wt.id === workTypeId));
+  const seeds: DetailedSeedLine[] = [];
+  const seen = new Set<string>();
+  for (const work of input.siteWorks) {
+    const subcategoryIds = (work.work_subcategory_ids || []).filter((id) => declared.has(id));
+    const planned: Array<{ subcategory: WorkSubcategory; workTypeId?: string }> = [];
+    if ((work.work_type_ids || []).length) {
+      for (const workTypeId of work.work_type_ids || []) {
+        const subcategory = subcategoryOfWorkType(workTypeId);
+        // Only seed work types that belong to a subcategory the row declares.
+        if (subcategory && subcategoryIds.includes(subcategory.id)) {
+          planned.push({ subcategory, workTypeId });
+        }
+      }
+    } else {
+      for (const id of subcategoryIds) {
+        planned.push({ subcategory: input.workSubcategories.find((row) => row.id === id)! });
+      }
+    }
+    for (const areaId of work.area_ids || []) {
+      for (const { subcategory, workTypeId } of planned) {
+        const seedTypeId = workTypeId || primaryWorkType(subcategory).id;
+        const key = scopeKeyOf(areaId, subcategory.id, seedTypeId);
+        if (captured.has(key) || seen.has(key)) continue;
+        seen.add(key);
+        seeds.push({
+          work_required_id: work.id,
+          area_id: areaId,
+          category_id: work.work_category_id || subcategory.category_id,
+          subcategory_id: subcategory.id,
+          work_type_id: seedTypeId,
+          measure: defaultMeasureBasisFor(subcategory.name),
+          walls: 1,
+        });
+      }
+    }
+  }
+  return seeds;
+}
+
+/**
+ * Recompute one Work Required's ticked selection after a capture-view save.
+ * The effective per-area work set E = captured items (kept + fresh) ∪ planned
+ * seeds that survived (declared selection minus captured scopes minus the
+ * seeds the user deleted). Selections follow E; the invariants stop the prune:
+ * a Work Required never loses its last subcategory, work type or area. Single
+ * master for both directions — removed saved items and deleted seeds flow
+ * through the same reconciliation, so the capture view and the Add/Edit form
+ * can never disagree about the ticks.
+ */
+export function reconcileWorkRequiredSelection(input: {
+  workSubcategories: WorkSubcategory[];
+  work: SeedSourceWork;
+  keptItems: Array<Pick<LineItem, "area_id" | "subcategory_id" | "work_type_id">>;
+  freshItems: Array<Pick<LineItem, "area_id" | "subcategory_id" | "work_type_id">>;
+  droppedSelections: RemovedSelection[];
+}): { area_ids: ID[]; work_subcategory_ids: ID[]; work_type_ids: ID[] } {
+  const { work, keptItems, freshItems, droppedSelections } = input;
+  const keptAsItems = keptItems as LineItem[];
+  const items = [...keptItems, ...freshItems];
+  const itemScopes = new Set(items.map((item) => scopeKeyOf(item.area_id, item.subcategory_id, item.work_type_id)));
+  const droppedScopes = new Set(droppedSelections.map((row) => scopeKeyOf(row.area_id, row.subcategory_id, row.work_type_id)));
+  // Surviving seeds: the declared selection re-derived against the KEPT items
+  // only (a removed item's scope must not suppress its seed), minus the
+  // scopes the fresh captures now own, minus the seeds the user deleted.
+  const survivingSeeds = seedDetailedAreaLines({
+    siteWorks: [{ ...work, structured_items: keptAsItems }],
+    workSubcategories: input.workSubcategories,
+  }).filter((seed) => !itemScopes.has(scopeKeyOf(seed.area_id, seed.subcategory_id, seed.work_type_id))
+    && !droppedScopes.has(scopeKeyOf(seed.area_id, seed.subcategory_id, seed.work_type_id)));
+  const seedSubcategoryIds = new Set(survivingSeeds.map((seed) => seed.subcategory_id));
+  const seedWorkTypeIds = new Set(survivingSeeds.map((seed) => seed.work_type_id).filter((id): id is string => Boolean(id)));
+  const seedAreaIds = new Set(survivingSeeds.map((seed) => seed.area_id));
+  const itemSubcategoryIds = new Set(items.map((item) => item.subcategory_id).filter((id): id is string => Boolean(id)));
+  const itemWorkTypeIds = new Set(items.map((item) => item.work_type_id).filter((id): id is string => Boolean(id)));
+  const itemAreaIds = new Set(items.map((item) => item.area_id).filter((id): id is string => Boolean(id)));
+  const nextSubcategoryIds = Array.from(new Set([...itemSubcategoryIds, ...seedSubcategoryIds]));
+  const nextWorkTypeIds = Array.from(new Set([...itemWorkTypeIds, ...seedWorkTypeIds]));
+  const nextAreaIds = Array.from(new Set([...itemAreaIds, ...seedAreaIds]));
+  return {
+    // Invariant clamps: the declaration outlives a total prune of any axis.
+    work_subcategory_ids: nextSubcategoryIds.length ? nextSubcategoryIds : (work.work_subcategory_ids || []),
+    work_type_ids: nextWorkTypeIds.length ? nextWorkTypeIds : (work.work_type_ids || []),
+    area_ids: nextAreaIds.length ? nextAreaIds : (work.area_ids || []),
+  };
 }

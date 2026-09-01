@@ -16,7 +16,7 @@ import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
 import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, workByCustomerFallback, } from "@/lib/rdash/format";
 import { workByCustomer } from "@/lib/rdash/seed";
-import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS } from "@/lib/rdash/work-types";
+import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS, workRequiredDisplayTitle, seedDetailedAreaLines, type RemovedSelection } from "@/lib/rdash/work-types";
 import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
@@ -565,7 +565,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                         const areaWorkCount = scopedWork.filter((work) => (work.area_ids || []).includes(area.id)).length;
                         return <button key={area.id} type="button" aria-pressed={active} onClick={() => setScopeAreaId(active ? null : area.id)} title={`Show only work required in ${area.name}`} className={cn("rounded border px-1.5 py-0.5 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-muted")}>{area.name}<span className={cn("ml-1 font-mono", active ? "text-primary-foreground/80" : "text-muted-foreground/70")}>{areaWorkCount}</span></button>;
                       })}</div> : null}
-                      {scopedWork.length ? (visibleWork.length ? <div className="mt-2 grid gap-1">{visibleWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{work.title}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required in the selected area — tap the area again to see all.</p>) : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
+                      {scopedWork.length ? (visibleWork.length ? <div className="mt-2 grid gap-1">{visibleWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required in the selected area — tap the area again to see all.</p>) : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
                     </div>;
                 })}
               </div>
@@ -700,7 +700,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                                   const workAreaNames = (work.area_ids || []).map((areaId) => siteAreas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
                                   return (<div key={work.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
                                   <div className="min-w-0">
-                                    <p className="truncate text-xs font-semibold">{work.title}</p>
+                                    <p className="truncate text-xs font-semibold">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</p>
                                     <p className="truncate text-[10px] text-muted-foreground">{work.structured_items?.length || 0} structured line(s) · {workRequiredStatusStyle(work.status).label}{workAreaNames ? ` with ${workAreaNames}` : ""}</p>
                                   </div>
                                   <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]" onClick={() => setCaptureWorkRequiredId(work.id)}>
@@ -895,12 +895,13 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
       {captureWorkRequiredId && (() => {
             const work = db.workRequired.find((row) => row.id === captureWorkRequiredId);
             const site = work ? sites.find((row) => row.id === work.site_id) : undefined;
-            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={({ lines, removedItemIds }) => {
+            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={({ lines, removedItemIds, removedSelections }) => {
                     try {
-                        captureStructuredWorkRequired(work.id, lines, { removedItemIds });
+                        captureStructuredWorkRequired(work.id, lines, { removedItemIds, removedSelections });
                         const parts: string[] = [];
-                        if (lines.length) parts.push(`Captured ${lines.length} detailed area work item(s) for ${work.title}`);
+                        if (lines.length) parts.push(`Captured ${lines.length} detailed area work item(s) in ${site.name}`);
                         if (removedItemIds.length) parts.push(`removed ${removedItemIds.length} existing item(s)`);
+                        if (removedSelections.length) parts.push(`removed ${removedSelections.length} planned work selection(s)`);
                         toast.success(parts.join(" · ") || "Nothing to save");
                         setCaptureWorkRequiredId(null);
                         return true;
@@ -1329,6 +1330,10 @@ type DetailedDraftLine = {
     walls: 1 | 2;
     wall_area: string;
     notes?: string;
+    // Seeded lines carry the Work Required row they were derived from; fresh
+    // lines let the store resolve (or create) their target by category.
+    target_work_required_id?: string;
+    seeded?: boolean;
 };
 
 type DetailedAreaGroup = {
@@ -1343,6 +1348,9 @@ type DetailedAreaGroup = {
     height: string;
     lines: DetailedDraftLine[];
     removedExistingIds: string[];
+    // Planned seeds the user deleted in this area — the Add/Edit form un-ticks
+    // them on save (bidirectional sync).
+    removedSeeds: RemovedSelection[];
 };
 
 function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSave, }: {
@@ -1360,6 +1368,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             category_id: string;
             subcategory_id: string;
             work_type_id?: string;
+            target_work_required_id?: string;
             length_ft?: number;
             breadth_ft?: number;
             height_ft?: number;
@@ -1369,6 +1378,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             notes?: string;
         }>;
         removedItemIds: string[];
+        removedSelections: RemovedSelection[];
     }) => boolean;
 }) {
     const db = useRDashStore((state) => state.db);
@@ -1411,6 +1421,27 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         };
     };
     const initialGroups = (): DetailedAreaGroup[] => {
+        // The capture view is the per-area master for the whole Site: every
+        // non-archived area gets a collapsible group, and each group is
+        // pre-populated with the planned work derived from ALL of the site's
+        // Work Required selections (seedDetailedAreaLines) — expanding
+        // "Kitchen 1" shows every work required in that kitchen.
+        const siteWorks = db.workRequired.filter((row: any) => row.site_id === site.id);
+        const seeds = seedDetailedAreaLines({ siteWorks, workSubcategories: db.master.workSubcategories });
+        const draftOf = (group: DetailedAreaGroup, seed: import("@/lib/rdash/work-types").DetailedSeedLine): DetailedDraftLine => {
+            const { quantity } = measuredQuantity(seed.measure, groupDims(group), seed.walls);
+            return {
+                key: `seed-${seed.work_required_id}-${seed.area_id}-${seed.subcategory_id}-${seed.work_type_id || "primary"}`,
+                category_id: seed.category_id,
+                subcategory_id: seed.subcategory_id,
+                work_type_id: seed.work_type_id,
+                measure: seed.measure,
+                walls: seed.walls,
+                wall_area: quantity > 0 ? areaStr(quantity) : "",
+                target_work_required_id: seed.work_required_id,
+                seeded: true,
+            };
+        };
         const groups: DetailedAreaGroup[] = [];
         const ensure = (areaId: string | undefined, name: string | undefined): DetailedAreaGroup => {
             const existing = groups.find((group) => (areaId ? group.area_id === areaId : false));
@@ -1420,20 +1451,26 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 key: areaId || `new-group-${groups.length}-${Math.random().toString(36).slice(2, 7)}`,
                 area_id: areaId,
                 area_name: area?.name || name,
-                open: groups.length === 0,
+                open: false,
                 length: area?.length ? String(area.length) : "",
                 breadth: area?.width ? String(area.width) : "",
                 height: area?.height ? String(area.height) : "",
                 lines: [],
                 removedExistingIds: [],
+                removedSeeds: [],
             };
             groups.push(group);
             return group;
         };
         // ponytail: reuse the Area's own L/W/H as the shared dimension source, so the
         // capture view and the saved area record tell the same story.
-        workRequired.area_ids.forEach((areaId) => ensure(areaId, undefined));
+        areas.filter((area) => !area.is_archived).forEach((area) => ensure(area.id, undefined));
+        siteWorks.forEach((work: any) => (work.area_ids || []).forEach((areaId: string) => ensure(areaId, undefined)));
         (workRequired.structured_items || []).forEach((item) => ensure(item.area_id, item.area_name));
+        groups.forEach((group) => {
+            if (!group.area_id) return;
+            group.lines = seeds.filter((seed) => seed.area_id === group.area_id).map((seed) => draftOf(group, seed));
+        });
         if (!groups.length) {
             groups.push({
                 key: `new-group-0-${Math.random().toString(36).slice(2, 7)}`,
@@ -1446,8 +1483,14 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 height: "",
                 lines: [],
                 removedExistingIds: [],
+                removedSeeds: [],
             });
         }
+        // Open the first group that actually has work (planned or captured).
+        const firstWithWork = groups.find((group) => group.lines.length > 0
+            || ((workRequired.structured_items || []).some((item) => item.area_id === group.area_id))
+            || siteWorks.some((work: any) => (work.structured_items || []).some((item: any) => item.area_id && item.area_id === group.area_id)));
+        (firstWithWork || groups[0]).open = true;
         return groups;
     };
     const [groups, setGroups] = React.useState<DetailedAreaGroup[]>(initialGroups);
@@ -1481,9 +1524,21 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     const addLine = (groupKey: string) => setGroups((current) => current.map((group) => group.key === groupKey
         ? { ...group, open: true, lines: [...group.lines, freshLine(group)] }
         : group));
-    const removeLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => group.key === groupKey
-        ? { ...group, lines: group.lines.filter((line) => line.key !== lineKey) }
-        : group));
+    const removeLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => {
+        if (group.key !== groupKey) return group;
+        const dropped = group.lines.find((line) => line.key === lineKey);
+        // Deleting a planned (seeded) line is a scope decision: the Add/Edit form
+        // must un-tick it on save, so remember it as a removed selection.
+        const removedSeeds = dropped?.seeded && dropped.subcategory_id && group.area_id
+            ? [...group.removedSeeds.filter((row) => !(row.subcategory_id === dropped.subcategory_id && row.work_type_id === dropped.work_type_id)), {
+                work_required_id: dropped.target_work_required_id || group.key,
+                area_id: group.area_id,
+                subcategory_id: dropped.subcategory_id,
+                work_type_id: dropped.work_type_id,
+            }]
+            : group.removedSeeds;
+        return { ...group, removedSeeds, lines: group.lines.filter((line) => line.key !== lineKey) };
+    }));
     const addGroup = () => setGroups((current) => [...current.map((group) => ({ ...group, open: false })), {
         key: `new-group-${current.length}-${Math.random().toString(36).slice(2, 7)}`,
         create_area: true,
@@ -1495,15 +1550,28 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         height: "",
         lines: [],
         removedExistingIds: [],
+        removedSeeds: [],
     }]);
     const removeGroup = (groupKey: string) => setGroups((current) => current.flatMap((group) => {
         if (group.key !== groupKey) return [group];
         if (group.create_area) return [];
         // An existing area keeps its saved rows until save: drop drafts now and mark
-        // every saved item for removal so the store can sync the ticks back.
-        return [{ ...group, lines: [], removedExistingIds: Array.from(new Set([
+        // every saved item (of ANY site Work Required) for removal plus every planned
+        // seed as a removed selection, so the store can sync the ticks back.
+        const siteItems = db.workRequired
+            .filter((row: any) => row.site_id === site.id)
+            .flatMap((row: any) => (row.structured_items || []).filter((item: any) => item.area_id === group.area_id).map((item: any) => item.id));
+        const droppedSeeds = group.lines
+            .filter((line) => line.seeded && line.subcategory_id)
+            .map((line) => ({
+                work_required_id: line.target_work_required_id || groupKey,
+                area_id: group.area_id!,
+                subcategory_id: line.subcategory_id!,
+                work_type_id: line.work_type_id,
+            }));
+        return [{ ...group, lines: [], removedSeeds: droppedSeeds, removedExistingIds: Array.from(new Set([
             ...group.removedExistingIds,
-            ...(workRequired.structured_items || []).filter((item) => item.area_id === group.area_id).map((item) => item.id),
+            ...siteItems,
         ])) }];
     }));
     const toggleExistingRemoval = (groupKey: string, itemId: string) => setGroups((current) => current.map((group) => group.key === groupKey
@@ -1518,18 +1586,29 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         { value: "bedroom", label: "Bedroom" }, { value: "guest_room", label: "Guest room" }, { value: "living_room", label: "Living room / Hall" }, { value: "kitchen", label: "Kitchen" }, { value: "bathroom", label: "Bathroom" }, { value: "balcony", label: "Balcony" }, { value: "office_cabin", label: "Office cabin" }, { value: "reception", label: "Reception" }, { value: "other", label: "Other" },
     ];
     const existingItemsByArea = React.useMemo(() => {
+        // Saved rows across ALL of the site's Work Required rows — the capture
+        // view is the per-area master, so an area group lists every captured
+        // item in that area with a Remove that unticks from its own row.
         const map = new Map<string, import("@/lib/rdash/types").LineItem[]>();
-        (workRequired.structured_items || []).forEach((item) => {
-            const key = item.area_id || "";
-            map.set(key, [...(map.get(key) || []), item]);
-        });
+        db.workRequired
+            .filter((row: any) => row.site_id === site.id)
+            .forEach((row: any) => (row.structured_items || []).forEach((item) => {
+                const key = item.area_id || "";
+                map.set(key, [...(map.get(key) || []), item]);
+            }));
         return map;
-    }, [workRequired.structured_items]);
+    }, [db.workRequired, site.id]);
     // Duplicate keys mirror the store's scopeKey so the dialog and the store can
     // never disagree about what is already captured.
-    const existingScopeKeys = React.useMemo(() => new Set((workRequired.structured_items || [])
-        .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id)))
-        .map((item) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::"))), [groups, workRequired.structured_items]);
+    const existingScopeKeys = React.useMemo(() => {
+        const keys = new Set<string>();
+        db.workRequired
+            .filter((row: any) => row.site_id === site.id)
+            .forEach((row: any) => (row.structured_items || [])
+                .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id)))
+                .forEach((item) => keys.add([item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::"))));
+        return keys;
+    }, [db.workRequired, groups, site.id]);
     const groupIssues = (group: DetailedAreaGroup): string | undefined => {
         if (group.create_area) {
             const name = group.area_name?.trim() || "";
@@ -1564,10 +1643,11 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     const validGroups = groups.filter((group) => !groupIssues(group));
     const validLines = validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)));
     const totalRemoved = groups.reduce((sum, group) => sum + group.removedExistingIds.length, 0);
+    const totalRemovedSeeds = groups.reduce((sum, group) => sum + group.removedSeeds.length, 0);
     const totalDraftLines = groups.reduce((sum, group) => sum + group.lines.length, 0);
     const canSave = validLines.length === totalDraftLines
         && groups.every((group) => !groupIssues(group))
-        && (validLines.length > 0 || totalRemoved > 0)
+        && (validLines.length > 0 || totalRemoved > 0 || totalRemovedSeeds > 0)
         && duplicateKeys.size === 0;
     const renderGroup = (group: DetailedAreaGroup) => {
         const savedItems = (existingItemsByArea.get(group.area_id || "") || [])
@@ -1640,17 +1720,21 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 ...areaWorkCategories,
                 ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.category_id)),
             ].filter((id): id is string => Boolean(id)));
-            // Ticked subcategories: the work's own subcategories, previous captures and
-            // the other lines in this session.
+            // Ticked subcategories: every site Work Required's declared
+            // subcategories, previous captures and the other lines in this session.
             const subTicks = new Set([
-                ...(workRequired.work_subcategory_ids || []),
+                ...db.workRequired
+                    .filter((row: any) => row.site_id === site.id)
+                    .flatMap((row: any) => row.work_subcategory_ids || []),
                 ...(workRequired.structured_items || []).map((item) => item.subcategory_id),
                 ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.subcategory_id)),
             ].filter((id): id is string => Boolean(id)));
             const subOptions = subcategories.map((subcategory) => ({ id: subcategory.id, name: subcategory.name }));
             const workTypeOptions = workTypesFor(line.subcategory_id).map((workType) => ({ id: workType.id, name: workType.name }));
             const workTypeTicks = new Set([
-                ...(workRequired.work_type_ids || []),
+                ...db.workRequired
+                    .filter((row: any) => row.site_id === site.id)
+                    .flatMap((row: any) => row.work_type_ids || []),
                 ...(workRequired.structured_items || []).map((item) => item.work_type_id),
                 ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.work_type_id)),
             ].filter((id): id is string => Boolean(id)));
@@ -1659,7 +1743,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             const quantity = Number(line.wall_area) || 0;
             const estimated = rate ? Math.round(quantity * rate * 100) / 100 : 0;
             return (<div key={line.key} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-background")}>
-            <div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">New work item</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label="Remove this work item"><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
+            <div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">{line.seeded ? "Planned work" : "New work item"}</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={line.seeded ? "Remove this planned work from this area" : "Remove this work item"}><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <div>
                 <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
@@ -1710,9 +1794,9 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     };
     return (<div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm animate-fade-in">
       <div className="relative max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · {workRequired.title}</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Every area is one collapsible group sharing its own <strong>Length × Breadth × Height</strong>. Each work item inside is measured by its own basis — tiles use the floor plan, paint uses walls + ceiling, a modular kitchen uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Adjust any area to deduct doors and openings.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${totalRemoved ? ` · ${totalRemoved} removed` : ""}` : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
+        <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · every area with all of its work required</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Each area is one collapsible group pre-filled with the work its Work Required rows plan there — each item is measured by its own basis: tiles use the floor plan, paint uses walls + ceiling, a modular kitchen or railing uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Add or remove work here and the Add/Edit customer form follows.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3"><span className={cn("text-[11px]", canSave ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${totalRemoved || totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}` : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
             const { quantity: autoQuantity, unit } = measuredQuantity(line.measure, groupDims(group), line.walls);
             const l = Number(group.length) || 0;
             const b = Number(group.breadth) || 0;
@@ -1726,6 +1810,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 category_id: line.category_id!,
                 subcategory_id: line.subcategory_id!,
                 work_type_id: line.work_type_id,
+                target_work_required_id: line.target_work_required_id,
                 length_ft: l > 0 ? l : undefined,
                 breadth_ft: b > 0 ? b : undefined,
                 height_ft: line.measure === "length" ? undefined : h > 0 ? h : undefined,
@@ -1734,7 +1819,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 unit_id: unit,
                 notes: line.notes?.trim() || undefined,
             };
-        })), removedItemIds: groups.flatMap((group) => group.removedExistingIds) }; const saved = onSave(payload); if (saved) commitBatches(); }}>{validLines.length > 0 ? `Capture ${validLines.length} work item(s)` : "Apply removals"}<CheckCircle2 className="ml-1.5 inline h-3.5 w-3.5"/></Button></div></div>
+        })), removedItemIds: groups.flatMap((group) => group.removedExistingIds), removedSelections: groups.flatMap((group) => group.removedSeeds) }; const saved = onSave(payload); if (saved) commitBatches(); }}>{validLines.length > 0 ? `Capture ${validLines.length} work item(s)` : "Apply removals"}<CheckCircle2 className="ml-1.5 inline h-3.5 w-3.5"/></Button></div></div>
       </div>
     </div>);
 }

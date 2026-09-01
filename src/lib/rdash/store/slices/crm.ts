@@ -24,7 +24,7 @@ import type { Customer, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
-import { primaryWorkType, workTypesForSubcategory } from "../../work-types";
+import { primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
 import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
@@ -735,10 +735,11 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
         captureStructuredWorkRequired: (workRequiredId, lines, options) => {
             const state = get();
             const removedItemIds = new Set(options?.removedItemIds || []);
+            const removedSelections = options?.removedSelections || [];
             const workRequired = state.db.workRequired.find((row: any) => row.id === workRequiredId);
             if (!workRequired)
                 throw new Error("Work Required not found.");
-            if (!lines.length && removedItemIds.size === 0)
+            if (!lines.length && removedItemIds.size === 0 && removedSelections.length === 0)
                 throw new Error("Capture at least one structured work line.");
             const context = "Structured Work Required";
             assertWorkRequiredMatchesContext(state.db, workRequired.id, workRequired.customer_id, workRequired.site_id, context);
@@ -751,9 +752,54 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 .map((area: any) => [normaliseAreaName(area.name), area.id]));
             const lineKeys = new Set<string>();
             const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "work_type_id" | "variant_id" | "unit_id">) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::");
-            // Removals are applied first: kept items still block duplicate captures.
-            const keptItems = (workRequired.structured_items || []).filter((item: any) => !removedItemIds.has(item.id));
-            const existingKeys = new Set(keptItems.map(scopeKey));
+            // Detailed-area capture is the per-area master for the whole Site:
+            // lines may target ANY Work Required of the site (seeded lines carry
+            // their source row; fresh lines resolve by category or create one),
+            // and saved items of every site row participate in duplicate scope.
+            const siteWorks = state.db.workRequired.filter((row: any) => row.site_id === workRequired.site_id);
+            const keptItemsByWork = new Map<string, any[]>();
+            const existingKeys = new Set<string>();
+            for (const row of siteWorks) {
+                const kept = (row.structured_items || []).filter((item: any) => !removedItemIds.has(item.id));
+                keptItemsByWork.set(row.id, kept);
+                kept.forEach((item: any) => existingKeys.add(scopeKey(item)));
+            }
+            // A line without an explicit target joins the site row that already
+            // declares its category (preferring one with the subcategory ticked);
+            // none exists → a new Work Required is created for that category.
+            const createdWorks = new Map<string, import("../../types").WorkRequired>();
+            const skeletonFor = (categoryId: string): import("../../types").WorkRequired => {
+                let row = createdWorks.get(categoryId);
+                if (!row) {
+                    row = {
+                        id: genId("workRequired"),
+                        customer_id: workRequired.customer_id,
+                        site_id: workRequired.site_id,
+                        title: "",
+                        work_category_id: categoryId,
+                        work_subcategory_ids: [],
+                        work_type_ids: [],
+                        area_ids: [],
+                        structured_items: [],
+                        status: "new",
+                        priority: workRequired.priority || "medium",
+                        created_at: now,
+                        updated_at: now,
+                    };
+                    createdWorks.set(categoryId, row);
+                }
+                return row;
+            };
+            const targetForLine = (line: any): import("../../types").WorkRequired => {
+                const explicit = line.target_work_required_id
+                    ? siteWorks.find((row: any) => row.id === line.target_work_required_id)
+                    : undefined;
+                if (explicit) return explicit;
+                const categoryMatches = siteWorks.filter((row: any) => row.work_category_id && row.work_category_id === line.category_id);
+                return categoryMatches.find((row: any) => (row.work_subcategory_ids || []).includes(line.subcategory_id))
+                    || categoryMatches[0]
+                    || (line.category_id ? skeletonFor(line.category_id) : workRequired);
+            };
             const resolvedItems: LineItem[] = lines.map((line: any, index: any) => {
                 if (line.site_id !== workRequired.site_id) {
                     throw new Error(`${context}: line ${index + 1} must stay on Site "${state.db.sites.find((site: any) => site.id === workRequired.site_id)?.name || workRequired.site_id}".`);
@@ -776,6 +822,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 if (line.work_type_id && !workType) {
                     throw new Error(`${context}: line ${index + 1} work type does not belong to the selected Subcategory.`);
                 }
+                const target = targetForLine(line);
                 // Detailed-area capture: Article/Variant are optional (dimensions replaced
                 // catalog picks). Unit is derived from the dimensions: wall height present
                 // → sqft, height empty (e.g. roof railing) → running feet. sqft/rft are
@@ -858,7 +905,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     category_id: category.id,
                     subcategory_id: subcategory.id,
                     work_type_id: workType?.id,
-                    work_required_id: workRequired.id,
+                    work_required_id: target.id,
                     work_required_article_id: mapping?.id,
                     variant_id: variant?.id,
                     length_ft: num(line.length_ft),
@@ -878,69 +925,99 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     status: "active",
                 };
             });
-            // Bidirectional sync with the Add/Edit customer form: the capture view is
-            // the per-area master, so adds and removals flow back into the ticked
-            // subcategory / work-type / area lists of the same Work Required record.
-            // ponytail invariant: a Work Required always keeps its Work Category paired
-            // with at least one Work Subcategory (assertWorkRequiredCatalogRelations),
-            // so pruning stops at the last tick instead of emptying the record.
-            const removedItems = (workRequired.structured_items || []).filter((item: any) => removedItemIds.has(item.id));
-            const keptSubcategoryIds = new Set(keptItems.map((item: any) => item.subcategory_id).filter(Boolean));
-            const keptWorkTypeIds = new Set(keptItems.map((item: any) => item.work_type_id).filter(Boolean));
-            const keptAreaIds = new Set(keptItems.map((item: any) => item.area_id).filter(Boolean));
-            const declaredSubcategoryIds = workRequired.work_subcategory_ids || [];
-            const removedSubcategoryIds = Array.from(new Set(removedItems
-                .map((item: any) => item.subcategory_id)
-                .filter((id: string | undefined): id is string => Boolean(id) && !keptSubcategoryIds.has(id))));
-            const survivingSubcategoryIds = declaredSubcategoryIds.filter((id) => !removedSubcategoryIds.includes(id));
-            const subcategoryPruneIds = survivingSubcategoryIds.length
-                ? removedSubcategoryIds
-                // Only tick left: keep it — the declaration outlives its captures.
-                : removedSubcategoryIds.filter((id) => !declaredSubcategoryIds.includes(id));
-            const removedWorkTypeIds = Array.from(new Set(removedItems
-                .map((item: any) => item.work_type_id)
-                .filter((id: string | undefined): id is string => Boolean(id) && !keptWorkTypeIds.has(id))));
-            const declaredAreaIds = workRequired.area_ids || [];
-            const removedAreaIdsRaw = Array.from(new Set(removedItems
-                .map((item: any) => item.area_id)
-                .filter((id: string | undefined): id is string => Boolean(id) && !keptAreaIds.has(id))));
-            const survivingAreaIds = declaredAreaIds.filter((id) => !removedAreaIdsRaw.includes(id));
-            const removedAreaIds = survivingAreaIds.length
-                ? removedAreaIdsRaw
-                : removedAreaIdsRaw.filter((id) => !declaredAreaIds.includes(id));
-            const nextSubcategoryIds = Array.from(new Set([
-                ...(workRequired.work_subcategory_ids || []).filter((id) => !subcategoryPruneIds.includes(id)),
-                ...resolvedItems.map((item: any) => item.subcategory_id).filter(Boolean),
-            ]));
-            const nextWorkTypeIds = Array.from(new Set([
-                ...(workRequired.work_type_ids || []).filter((id) => !removedWorkTypeIds.includes(id)),
-                ...resolvedItems.map((item: any) => item.work_type_id).filter(Boolean),
-            ]));
-            const workAreaIds = Array.from(new Set([
-                ...workRequired.area_ids.filter((id) => !removedAreaIds.includes(id)),
-                ...resolvedItems.map((item: any) => item.area_id!).filter(Boolean),
-            ]));
+            // Bidirectional sync with the Add/Edit customer form: EVERY touched
+            // Work Required of the site re-derives its ticked subcategories /
+            // work types / areas from the effective per-area work set (kept +
+            // fresh items ∪ surviving planned seeds) through the shared
+            // reconcileWorkRequiredSelection — removed saved items and deleted
+            // seeds flow through the same master, with the invariants stopping
+            // a total prune (last subcategory / work type / area stay ticked).
+            const freshByWork = new Map<string, any[]>();
+            resolvedItems.forEach((item: any) => {
+                freshByWork.set(item.work_required_id, [...(freshByWork.get(item.work_required_id) || []), item]);
+            });
+            const droppedByWork = new Map<string, typeof removedSelections>();
+            removedSelections.forEach((row) => {
+                droppedByWork.set(row.work_required_id, [...(droppedByWork.get(row.work_required_id) || []), row]);
+            });
+            const workSubcategories = state.db.master.workSubcategories;
+            const patchById = new Map<string, { area_ids: string[]; work_subcategory_ids: string[]; work_type_ids: string[]; title: string }>();
+            const reconcileTarget = (original: import("../../types").WorkRequired) => {
+                const rec = reconcileWorkRequiredSelection({
+                    workSubcategories,
+                    work: original,
+                    keptItems: keptItemsByWork.get(original.id) || [],
+                    freshItems: freshByWork.get(original.id) || [],
+                    droppedSelections: droppedByWork.get(original.id) || [],
+                });
+                const workTypeIds = withPrimaryWorkTypeIds(workSubcategories, rec.work_subcategory_ids, rec.work_type_ids);
+                const title = workRequiredTitleFromSelection(workSubcategories, rec.work_subcategory_ids, workTypeIds) || original.title;
+                patchById.set(original.id, {
+                    area_ids: rec.area_ids,
+                    work_subcategory_ids: rec.work_subcategory_ids,
+                    work_type_ids: workTypeIds,
+                    title,
+                });
+            };
+            const touchedIds = new Set<string>([...freshByWork.keys(), ...droppedByWork.keys()]);
+            for (const row of siteWorks) {
+                if ((row.structured_items || []).some((item: any) => removedItemIds.has(item.id))) touchedIds.add(row.id);
+            }
+            // Removing a captured line is also a scope decision: the row stops
+            // declaring that work (its seed must not silently re-appear), so
+            // removed items flow through the same dropped-selection master.
+            for (const row of siteWorks) {
+                (row.structured_items || []).forEach((item: any) => {
+                    if (!removedItemIds.has(item.id) || !item.area_id || !item.subcategory_id) return;
+                    droppedByWork.set(row.id, [...(droppedByWork.get(row.id) || []), {
+                        work_required_id: row.id,
+                        area_id: item.area_id,
+                        subcategory_id: item.subcategory_id,
+                        work_type_id: item.work_type_id,
+                    }]);
+                });
+            }
+            for (const row of siteWorks) {
+                if (touchedIds.has(row.id)) reconcileTarget(row);
+            }
+            createdWorks.forEach((row) => reconcileTarget(row));
+            const removedItems = siteWorks.flatMap((row: any) => (row.structured_items || []).filter((item: any) => removedItemIds.has(item.id)));
             const summary = [
                 ...resolvedItems
                     .map((item: any) => `${item.area_name} → ${item.title.replace(`${item.area_name} · `, "")} → ${item.quantity}${item.unit_name ? ` ${item.unit_name}` : ""}`),
                 ...removedItems
                     .filter((item: any) => !resolvedItems.some((fresh: any) => fresh.subcategory_id === item.subcategory_id && fresh.area_id === item.area_id))
                     .map((item: any) => `Removed ${item.area_name ? `${item.area_name} · ` : ""}${item.title}`),
+                ...removedSelections
+                    .map((row) => {
+                        const subcategory = workSubcategories.find((r) => r.id === row.subcategory_id);
+                        const tier = subcategory
+                            ? workTypesForSubcategory(subcategory).find((wt) => wt.id === row.work_type_id)?.name
+                            : undefined;
+                        const areaName = state.db.areas.find((r: any) => r.id === row.area_id)?.name;
+                        return `Removed planned work ${areaName ? `${areaName} · ` : ""}${subcategory?.name || row.subcategory_id}${tier ? ` · ${tier}` : ""}`;
+                    }),
             ].join("\n");
             commitState((snapshot: any) => ({
                 db: {
                     ...snapshot.db,
                     areas: [...createdAreas, ...snapshot.db.areas],
-                    workRequired: snapshot.db.workRequired.map((row: any) => row.id === workRequiredId
-                        ? {
+                    workRequired: [
+                        ...Array.from(createdWorks.values()).map((row) => ({
                             ...row,
-                            area_ids: workAreaIds,
-                            work_subcategory_ids: nextSubcategoryIds,
-                            work_type_ids: nextWorkTypeIds,
-                            structured_items: [...(row.structured_items || []).filter((item: any) => !removedItemIds.has(item.id)), ...resolvedItems],
+                            ...(patchById.get(row.id) || {}),
+                            structured_items: freshByWork.get(row.id) || [],
                             updated_at: now,
-                        }
-                        : row),
+                        })),
+                        ...snapshot.db.workRequired.map((row: any) => patchById.has(row.id)
+                            ? {
+                                ...row,
+                                ...patchById.get(row.id),
+                                structured_items: [...(row.structured_items || []).filter((item: any) => !removedItemIds.has(item.id)), ...(freshByWork.get(row.id) || [])],
+                                updated_at: now,
+                            }
+                            : row),
+                    ],
                 },
             }));
             const actor = get().currentUser();
