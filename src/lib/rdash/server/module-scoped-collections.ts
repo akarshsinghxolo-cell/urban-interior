@@ -58,6 +58,10 @@ export const CUSTOMER_SCOPE_COLLECTIONS = Object.freeze([
   "master.contractorRates",
   "master.sourcePartners",
   "master.fileAssets",
+  // Customer attachment previews resolve catalogue/reference-media drive
+  // assets through entityReferenceAssignments (relatedActivityFiles).
+  "master.catalogues",
+  "master.referenceMedia",
 ] as const);
 
 export const SITE_SCOPE_COLLECTIONS = Object.freeze([
@@ -120,6 +124,13 @@ export const SITE_SCOPE_COLLECTIONS = Object.freeze([
 export const WORKDESK_SCOPE_COLLECTIONS = Object.freeze([
   "customers",
   "sites",
+  // DailyWork today panels file execution/dispatch feeds; the unified thread
+  // inbox resolves thread entity references against these three.
+  "areas",
+  "boqs",
+  "variationRequests",
+  "executionLogs",
+  "dispatches",
   "workRequired",
   "quotations",
   "workOrders",
@@ -220,6 +231,9 @@ export const PROCUREMENT_SCOPE_COLLECTIONS = Object.freeze([
   "sites",
   "areas",
   "workRequired",
+  // The BOQ control centre award queue filters acceptedScopes in
+  // "contractor_bidding" status.
+  "acceptedScopes",
   "workOrders",
   "boqs",
   "vendorRfqs",

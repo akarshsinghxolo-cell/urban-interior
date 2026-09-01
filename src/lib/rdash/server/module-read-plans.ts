@@ -20,10 +20,10 @@ const SCOPE_HISTORY_LIMITS = Object.freeze({
 } as const);
 
 const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments"]),
+  tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments", "quotations", "workRequired", "commSends"]),
   blockedRisks: Object.freeze(["customers", "sites", "workOrders", "tasks", "blocked", "risks", "threads", "entityFileAttachments"]),
-  approvals: Object.freeze(["customers", "sites", "quotations", "workOrders", "purchaseOrders", "vendorBills", "contractorPayments", "actions", "approvalPolicies", "threads", "entityFileAttachments"]),
-  calendarRecurring: Object.freeze(["customers", "sites", "workOrders", "tasks", "recurringTasks", "visits", "payments", "purchaseOrders", "attendance", "entityFileAttachments", "master.vendors"]),
+  approvals: Object.freeze(["customers", "sites", "quotations", "workOrders", "purchaseOrders", "vendorBills", "contractorPayments", "actions", "approvalPolicies", "threads", "entityFileAttachments", "risks", "invoices"]),
+  calendarRecurring: Object.freeze(["customers", "sites", "workOrders", "tasks", "recurringTasks", "visits", "payments", "purchaseOrders", "attendance", "entityFileAttachments", "master.vendors", "workRequired", "quotations"]),
   quotationConfig: Object.freeze(["commercialTerms", "paymentTermTemplates", "taxConfigs", "validityConfigs", "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.workOptionGroups", "master.workOptionValues", "master.customerRateSuggestions"]),
   siteMeasurement: Object.freeze(["customers", "sites", "areas", "workRequired", "measurementRevisions", "visits", "entityFileAttachments", "master.units"]),
   visitProofs: Object.freeze(["customers", "sites", "visits", "entityFileAttachments", "master.fileAssets"]),
@@ -33,16 +33,16 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   inventory: Object.freeze(["inventory", "stockMovements", "grns", "dispatches", "purchaseOrders", "entityFileAttachments", "master.articles", "master.vendors"]),
   dispatch: Object.freeze(["customers", "sites", "workOrders", "inventory", "stockMovements", "dispatches", "threads", "entityFileAttachments"]),
   vendorRates: Object.freeze(["entityFileAttachments", "master.units", "master.articles", "master.articleVariants", "master.vendors", "master.vendorRates", "master.vendorRateHistories"]),
-  rateFinder: Object.freeze(["entityFileAttachments", "master.units", "master.articles", "master.articleVariants", "master.vendors", "master.vendorRates", "master.vendorRateHistories"]),
+  rateFinder: Object.freeze(["entityFileAttachments", "master.units", "master.articles", "master.articleVariants", "master.vendors", "master.vendorRates", "master.vendorRateHistories", "quotations"]),
   payments: Object.freeze(["customers", "sites", "workOrders", "payments", "invoices", "customerReceipts", "followups", "threads", "entityFileAttachments", "commercialTerms", "paymentTermTemplates"]),
   invoices: Object.freeze(["customers", "sites", "workOrders", "payments", "invoices", "customerReceipts", "threads", "entityFileAttachments", "taxConfigs"]),
-  vendorBills: Object.freeze(["purchaseOrders", "grns", "vendorBills", "vendorPayments", "threads", "entityFileAttachments", "master.vendors"]),
-  contractorPayments: Object.freeze(["workOrders", "contractorBills", "contractorPayments", "contractorSettlements", "threads", "entityFileAttachments", "master.contractors"]),
+  vendorBills: Object.freeze(["purchaseOrders", "grns", "vendorBills", "vendorPayments", "threads", "entityFileAttachments", "master.vendors", "sites", "workOrders"]),
+  contractorPayments: Object.freeze(["workOrders", "contractorBills", "contractorPayments", "contractorSettlements", "threads", "entityFileAttachments", "master.contractors", "sites", "actions"]),
   commissions: Object.freeze(["customers", "workOrders", "commissions", "threads", "entityFileAttachments", "master.sourcePartners", "master.commissionRules"]),
   gstReturns: Object.freeze(["invoices", "customerReceipts", "vendorBills", "vendorPayments", "taxConfigs", "master.vendors"]),
   driveManager: Object.freeze(["entityFileAttachments", "staffDocuments", "master.storageAccounts", "master.storageFolderTemplates", "master.storageFolderInstances", "master.fileAssets"]),
   communicationCentre: Object.freeze(["customers", "quotations", "tasks", "followups", "threads", "commSends", "entityFileAttachments", "entityReferenceAssignments", "master.articles", "master.vendors", "master.fileAssets", "master.catalogues", "master.catalogueArticleVendorLinks", "master.referenceMedia"]),
-  attendancePayroll: Object.freeze(["attendance", "leaveRequests", "payrollPeriods", "approvalPolicies", "auditLog", "master.staff"]),
+  attendancePayroll: Object.freeze(["attendance", "leaveRequests", "payrollPeriods", "payrollLines", "salaryAdjustments", "visits", "approvalPolicies", "auditLog", "master.staff"]),
   staffSalary: Object.freeze(["attendance", "leaveRequests", "payrollPeriods", "payrollLines", "salaryAdjustments", "staffDocuments", "auditLog", "master.staff"]),
   articleVariants: Object.freeze(["auditLog", "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants", "master.subcategoryArticleMap"]),
   userApprovals: Object.freeze(["staffRolePermissions", "auditLog"]),
@@ -50,7 +50,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
   auditLog: Object.freeze(["auditLog"]),
   controlBrainWorkflows: Object.freeze(["automationRules", "auditLog"]),
   dataImport: Object.freeze(["customers", "sites"]),
-  systemSettings: Object.freeze(["customers", "quotations", "workOrders", "tasks", "visits", "master.staff"]),
+  systemSettings: Object.freeze(["customers", "quotations", "workOrders", "tasks", "visits", "master.staff", "sites", "payments", "customerReceipts", "actions", "risks", "blocked", "followups", "master.vendors", "master.contractors"]),
 });
 
 type ExactPlan = {
