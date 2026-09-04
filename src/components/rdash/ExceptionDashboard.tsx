@@ -46,7 +46,7 @@ export function ExceptionDashboard({ onNavigateAudit }: { onNavigateAudit?: () =
           timestamp: po.created_at,
           amount: po.total_amount,
           entityLabel: po.po_no,
-          onClick: () => setActiveModule("procurement"),
+          onClick: () => setActiveModule("procurementInventory"),
         });
       }
     }

@@ -350,7 +350,7 @@ export function CustomerSitesDialog({
   return (
     <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
       <DialogContent className="max-h-[94vh] max-w-4xl gap-0 overflow-hidden p-0">
-        <form onSubmit={(event) => { event.preventDefault(); void saveAndClose(); }}>
+        <form className="min-w-0" onSubmit={(event) => { event.preventDefault(); void saveAndClose(); }}>
           <DialogHeader className="border-b border-border px-5 py-3">
             <DialogTitle className="flex items-center gap-2 text-base">
               {isEdit ? <Pencil className="h-4 w-4 text-primary" /> : <UserPlus className="h-4 w-4 text-primary" />}
@@ -361,7 +361,7 @@ export function CustomerSitesDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[75vh] space-y-5 overflow-y-auto px-5 py-4 rd-scroll">
+          <div className="max-h-[75vh] space-y-5 overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll">
             <CustomerDetailsFields
               db={db}
               customer={customer}

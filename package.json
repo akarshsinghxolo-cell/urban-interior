@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "next dev -p 3000",
+    "dev:qa": "next dev -p 3100",
+    "qa:mock": "bun run scripts/qa-mock-supabase.ts",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

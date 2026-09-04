@@ -58,7 +58,7 @@ export function DetailPanel() {
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] animate-in fade-in duration-150" onClick={closeDetail}/>
       <aside aria-label="Record context panel" className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl animate-in slide-in-from-right duration-200">
         <PanelHeader tab={tab} setTab={setPanelTab}/>
-        <div className="flex-1 overflow-y-auto rd-scroll">
+        <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden rd-scroll">
           {tab === "overview" && <OverviewBody kind={detail.kind} id={detail.recordId}/>}
           {tab === "thread" && <ThreadBody kind={detail.kind} id={detail.recordId}/>}
         </div>
@@ -199,7 +199,7 @@ function PanelHeader({ tab, setTab }: {
             </p>)}
           </div>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-0.5">
           {/* CRON-5: Favorite/pin button */}
           <FavoriteStarButton />
           <button type="button" onClick={closeDetail} className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive" aria-label="Close panel">

@@ -40,6 +40,7 @@
     "node_modules",
     "examples",
     "upload",
-    "mini-services"
+    "mini-services",
+    "scripts"
   ]
 }

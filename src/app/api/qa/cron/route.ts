@@ -22,8 +22,17 @@ export async function GET(request: NextRequest) {
     || process.env.CRON_BEARER_TOKEN
     || ""
   ).trim();
+  // Fail closed: with no secret configured this route would be a public,
+  // unauthenticated full-workspace integrity scan. The scheduler sees 503
+  // (cron not configured) instead of leaking workspace data.
+  if (!expectedToken) {
+    return NextResponse.json(
+      { ok: false, error: "Cron endpoint disabled: CRON_SECRET is not configured." },
+      { status: 503 },
+    );
+  }
   const authHeader = request.headers.get("authorization") || "";
-  if (expectedToken) {
+  {
     const suppliedToken = authHeader
       .toLowerCase()
       .startsWith("bearer ")

@@ -201,7 +201,7 @@ export function RDashApp() {
         <div className="relative flex min-w-0 flex-1 flex-col">
           <WorkspaceHeader />
           <FavoritesBar />
-          <main className="rd-scroll min-h-0 flex-1 overflow-y-auto pb-20 lg:pb-0">
+          <main className="rd-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden pb-20 lg:pb-0">
             <WorkspaceModulePanels />
           </main>
           <button type="button" aria-label="Quick add" onClick={() => setQuickAddOpen(true)} className="absolute bottom-4 right-4 z-40 grid h-12 w-12 place-items-center rounded-full bg-primary text-primary-foreground shadow-soft transition-all hover:scale-105 hover:bg-primary/90 active:scale-95 animate-pulse-ring lg:hidden" style={{ bottom: "calc(16px + env(safe-area-inset-bottom, 0px))" }}>

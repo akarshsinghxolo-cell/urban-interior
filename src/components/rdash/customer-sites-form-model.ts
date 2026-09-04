@@ -4,6 +4,7 @@ import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { formatCoordinatePair } from "@/lib/rdash/coordinates";
 import { withPrimaryWorkTypeIds, workRequiredTitleFromSelection } from "@/lib/rdash/work-types";
+import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 
 export type PendingSiteFile = QueuedWorkflowFile & {
   id: string;
@@ -260,7 +261,11 @@ export function fingerprint(
 }
 
 export function validIndianPhone(value: string): boolean {
-  return !value || /^[6-9]\d{9}$/.test(value);
+  // Stored/seeded numbers may carry a "+91 " country code or a leading 0
+  // (e.g. "+91 9876501933"); strip formatting and optional prefixes before
+  // testing so a valid 10-digit Indian mobile is never flagged as invalid.
+  if (!value) return true;
+  return /^[6-9]\d{9}$/.test(sanitizeIndianMobile(value));
 }
 
 /**

@@ -203,6 +203,7 @@ export function WorkspacePulseStrip() {
   const db = useRDashStore((s) => s.db);
   const role = useRDashStore((s) => s.authUser?.name || "Owner");
   const setActiveModule = useRDashStore((s) => s.setActiveModule);
+  const setTaskScopeIntent = useRDashStore((s) => s.setTaskScopeIntent);
   const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
   const now = useLiveClock();
 
@@ -459,7 +460,7 @@ export function WorkspacePulseStrip() {
           value={liveWorkOrders.length}
           icon={<Wrench className="h-4 w-4" />}
           accent="green"
-          onClick={() => setActiveModule("sitesExecution")}
+          onClick={() => setActiveModule("siteExecution")}
         />
         <PulseTile
           label="Pipeline"
@@ -474,7 +475,7 @@ export function WorkspacePulseStrip() {
           value={todayActions.length}
           icon={<CalendarClock className="h-4 w-4" />}
           accent="violet"
-          onClick={() => setActiveModule("today")}
+          onClick={() => { setTaskScopeIntent("today"); setActiveModule("tasks"); }}
         />
       </div>
     </section>

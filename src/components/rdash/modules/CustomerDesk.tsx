@@ -136,7 +136,7 @@ export function CustomerDesk({ view }: {
     };
     if (view === "timeline") {
         return (<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           <div className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
@@ -173,7 +173,7 @@ export function CustomerDesk({ view }: {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3">
           {selected ? (<CustomerTimelineView customerId={selected.id} name={selected.name} tasks={selectedTasks} quotations={selectedQuotes} payments={selectedPayments} visits={selectedVisits} sites={selectedSites} auditLog={db.auditLog.filter((a) => (a.entity_type === "customer" && a.entity_id === selected.id) || (a.entity_id && selectedRelatedIds.has(a.entity_id)))} drawings={(db.drawings || []).filter((d) => d.work_order_id && db.workOrders.some((w) => w.id === d.work_order_id && w.customer_id === selected.id))} executionLogs={(db.executionLogs || []).filter((el) => el.work_order_id && db.workOrders.some((w) => w.id === el.work_order_id && w.customer_id === selected.id))} boqs={(db.boqs || []).filter((b) => b.work_order_id && db.workOrders.some((w) => w.id === b.work_order_id && w.customer_id === selected.id))} purchaseOrders={(db.purchaseOrders || []).filter((p) => p.work_order_id && db.workOrders.some((w) => w.id === p.work_order_id && w.customer_id === selected.id))} grns={(db.grns || []).filter((g) => g.work_order_id && db.workOrders.some((w) => w.id === g.work_order_id && w.customer_id === selected.id))} vendorBills={(db.vendorBills || []).filter((vb) => vb.work_order_id && db.workOrders.some((w) => w.id === vb.work_order_id && w.customer_id === selected.id))} workOrders={(db.workOrders || []).filter((w) => w.customer_id === selected.id)} commSends={(db.commSends || []).filter((c) => c.customer_id === selected.id)} />) : (<EmptyState title="No customer selected" description="Pick a customer from the list to view their timeline."/>)}
         </div>
 
@@ -552,20 +552,20 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                     const scopedAreas = customerAreas.filter((area) => area.site_id === (site?.id || "") || (Boolean(singleSite) && !area.site_id));
                     const scopedWork = customerWorkRequired.filter((work) => work.site_id === (site?.id || "") || (Boolean(singleSite) && !work.site_id));
                     const visibleWork = scopeAreaId ? scopedWork.filter((work) => (work.area_ids || []).includes(scopeAreaId)) : scopedWork;
-                    return <div key={site?.id || "customer-level"} className="rounded-md border border-border bg-muted/20 p-2.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-xs font-semibold">{site?.name || name}</p>
+                    return <div key={site?.id || "customer-level"} className="min-w-0 rounded-md border border-border bg-muted/20 p-2.5">
+                      <div className="flex min-w-0 items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="break-words text-xs font-semibold truncate">{site?.name || name}</p>
                           <p className="text-[10px] text-muted-foreground">{site ? site.address || `${site.site_type} · ${site.stage}` : "Customer-level work"}</p>
                         </div>
-                        <span className="text-[10px] text-muted-foreground">{scopedAreas.length} Area{scopedAreas.length === 1 ? "" : "s"} · {scopedWork.length} Work Required</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{scopedAreas.length} Area{scopedAreas.length === 1 ? "" : "s"} · {scopedWork.length} Work Required</span>
                       </div>
                       {scopedAreas.length ? <div className="mt-2 flex flex-wrap gap-1">{scopedAreas.map((area) => {
                         const active = scopeAreaId === area.id;
                         const areaWorkCount = scopedWork.filter((work) => (work.area_ids || []).includes(area.id)).length;
                         return <button key={area.id} type="button" aria-pressed={active} onClick={() => setScopeAreaId(active ? null : area.id)} title={`Show only work required in ${area.name}`} className={cn("rounded border px-1.5 py-0.5 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-muted")}>{area.name}<span className={cn("ml-1 font-mono", active ? "text-primary-foreground/80" : "text-muted-foreground/70")}>{areaWorkCount}</span></button>;
                       })}</div> : null}
-                      {scopedWork.length ? (visibleWork.length ? <div className="mt-2 grid gap-1">{visibleWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required in the selected area — tap the area again to see all.</p>) : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
+                      {scopedWork.length ? (visibleWork.length ? <div className="mt-2 flex flex-col gap-1">{visibleWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required in the selected area — tap the area again to see all.</p>) : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
                     </div>;
                 })}
               </div>
@@ -684,12 +684,12 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                         </div>
                       </div>
                       <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <div className="min-w-0">
                             <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required</p>
                             <p className="text-[11px] text-muted-foreground">Capture measures work area by area across every work required at this Site.</p>
                           </div>
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setCreateWorkRequiredSiteId(site.id)}>
+                          <Button size="sm" variant="outline" className="h-7 shrink-0 text-xs" onClick={() => setCreateWorkRequiredSiteId(site.id)}>
                             <Plus className="mr-1 h-3.5 w-3.5"/> Add work required
                           </Button>
                         </div>
@@ -819,7 +819,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
 
         {tab === "advances" && (<div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
+              <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
                 <MetricCard label="Total advances" value={formatINRShort(customerAdvances.reduce((n, p) => n + p.amount, 0))} tone="primary"/>
                 <MetricCard label="Received advances" value={formatINRShort(receivedAdvanceAmount)} tone="success"/>
                 <MetricCard label="Advance balance" value={formatINRShort(customerAdvances.reduce((sum, payment) => sum + Math.max(0, payment.amount - (payment.received_amount || 0)), 0))} tone="warning"/>
@@ -829,9 +829,9 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
               </Button>
             </div>
             {customerAdvances.length === 0 ? (<EmptyState title="No advances" description="Customer advance payments (marked is_advance) will appear here. Use 'Add advance' to record one." icon={<Wallet className="h-7 w-7"/>}/>) : (<div className="flex flex-col gap-2">
-                {customerAdvances.map((p) => (<div key={p.id} className="rounded-lg border border-border bg-background px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
+                {customerAdvances.map((p) => (<div key={p.id} className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <div className="min-w-0">
                         <p className="text-sm font-medium">{formatINR(p.amount)} · {p.milestone_label || "Advance"}</p>
                         <p className="text-[11px] text-muted-foreground">Received {formatINR(p.received_amount || 0)} · Balance {formatINR(Math.max(0, p.amount - (p.received_amount || 0)))} · Due {relativeDay(p.due_date)}</p>
                         {p.site_id && <p className="text-[10px] text-primary">→ {db.sites.find((s) => s.id === p.site_id)?.name || p.site_id}</p>}
@@ -1814,9 +1814,9 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     // rest near the actions); desktop keeps the centered modal.
     return (<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
       <div role="dialog" aria-modal="true" aria-label="Capture detailed area" className="relative max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3"><div><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · every area with all of its work required</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Each area is one collapsible group pre-filled with the work its Work Required rows plan there — each item is measured by its own basis: tiles use the floor plan, paint uses walls + ceiling, a modular kitchen or railing uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Add or remove work here and the Add/Edit customer form follows.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
-        <div className="flex items-center justify-between border-t border-border px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"><span className={cn("text-[11px]", canSave || idle ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${estimateTotal > 0 ? ` · ≈ ${formatINR(estimateTotal)} ready for quotation` : ""}${totalRemoved || totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}` : idle ? "All planned work in this capture is already saved." : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
+        <div className="flex min-w-0 items-center justify-between border-b border-border px-5 py-3"><div className="min-w-0"><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 shrink-0 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · every area with all of its work required</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
+        <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Each area is one collapsible group pre-filled with the work its Work Required rows plan there — each item is measured by its own basis: tiles use the floor plan, paint uses walls + ceiling, a modular kitchen or railing uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Add or remove work here and the Add/Edit customer form follows.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"><span className={cn("min-w-0 text-[11px]", canSave || idle ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${estimateTotal > 0 ? ` · ≈ ${formatINR(estimateTotal)} ready for quotation` : ""}${totalRemoved || totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}` : idle ? "All planned work in this capture is already saved." : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
             const { quantity: autoQuantity, unit } = measuredQuantity(line.measure, groupDims(group), line.walls);
             const l = Number(group.length) || 0;
             const b = Number(group.breadth) || 0;

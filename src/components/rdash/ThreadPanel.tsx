@@ -535,7 +535,7 @@ export function LineItemTable({ items, highlightSource, }: {
       </div>);
     }
     const total = items.reduce((n, i) => n + i.amount, 0);
-    return (<div className="overflow-hidden rounded-lg border border-border">
+    return (<div className="rd-scroll overflow-x-auto rounded-lg border border-border">
       <div className="grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
         <span>Item</span>
         <span className="text-right">Qty</span>

@@ -130,6 +130,7 @@ function Sparkline({ values, className }: { values: number[]; className?: string
 export function WorkspaceHealthWidget() {
   const { summary, loading, refreshing, error, lastFetchedAt, refresh } = useWorkspaceHealth();
   const setActiveModule = useRDashStore((s) => s.setActiveModule);
+  const setTaskScopeIntent = useRDashStore((s) => s.setTaskScopeIntent);
   const fetchSummary = React.useCallback((manual = false) => refresh(manual), [refresh]);
 
   if (loading) {
@@ -240,7 +241,7 @@ export function WorkspaceHealthWidget() {
             value={summary.operations.dueTodayTasks}
             label="due today"
             tone="primary"
-            onClick={() => setActiveModule("today")}
+            onClick={() => { setTaskScopeIntent("today"); setActiveModule("tasks"); }}
           />
           <MetricChip
             icon={<CheckCircle2 className="h-3.5 w-3.5" />}
@@ -262,7 +263,7 @@ export function WorkspaceHealthWidget() {
             value={summary.operations.activeWorkOrders}
             label="live work"
             tone="success"
-            onClick={() => setActiveModule("sitesExecution")}
+            onClick={() => setActiveModule("siteExecution")}
           />
           <MetricChip
             icon={<Zap className="h-3.5 w-3.5" />}
@@ -282,7 +283,7 @@ export function WorkspaceHealthWidget() {
                 label="cash"
                 tone={summary.finance.cashPosition >= 0 ? "success" : "destructive"}
                 title={`Received ${formatINRShort(summary.finance.totalReceived)} − Paid ${formatINRShort(summary.finance.totalPaidOut)}`}
-                onClick={() => setActiveModule("financeOverview")}
+                onClick={() => setActiveModule("financeDesk")}
               />
               <MetricChip
                 icon={<TrendingUp className="h-3.5 w-3.5" />}
@@ -290,7 +291,7 @@ export function WorkspaceHealthWidget() {
                 label="month"
                 tone="success"
                 title="Customer receipts received this month · 7-day trend shown"
-                onClick={() => setActiveModule("financeOverview")}
+                onClick={() => setActiveModule("financeDesk")}
                 trailing={
                   summary.finance.revenueSeries && summary.finance.revenueSeries.length >= 2 ? (
                     <Sparkline values={summary.finance.revenueSeries.map((p) => p.value)} />
@@ -304,7 +305,7 @@ export function WorkspaceHealthWidget() {
                   label="overdue"
                   tone="destructive"
                   title={`${summary.finance.overdueInvoiceCount} overdue invoice(s)`}
-                  onClick={() => setActiveModule("paymentRecovery")}
+                  onClick={() => setActiveModule("payments")}
                 />
               ) : null}
               {summary.finance.pendingVendorBillValue > 0 ? (

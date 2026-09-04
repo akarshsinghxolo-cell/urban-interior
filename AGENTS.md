@@ -64,3 +64,39 @@ Do not load or change unrelated files merely for completeness. Gather enough con
 ## Completion standard
 
 A task is complete only when the requested behavior is implemented, available verification has been run, failures have been investigated, deployment/database state is known, and the final report distinguishes verified facts from assumptions or remaining risks.
+
+## Local QA stack
+
+A durable local QA backend emulates Supabase (GoTrue + PostgREST + workspace
+RPCs) so browser QA never needs cloud credentials.
+
+- `scripts/qa-mock-supabase.ts` — one Bun HTTP server on `127.0.0.1:3210`
+  (`bun run qa:mock`). Its in-memory database IS the canonical seed:
+  `buildSeedDatabase()` from `src/lib/rdash/seed.ts` flattened into
+  `entity_*` tables. It emulates:
+  - GoTrue token grants (`grant_type=password` / `refresh_token`),
+    `/auth/v1/user`, `/auth/v1/logout`, `/auth/v1/admin/users`.
+  - PostgREST selects/filters/order/limit/offset/range, `Prefer: count=exact`
+    (Content-Range), `return=representation`, upserts
+    (`resolution=merge-duplicates`), duplicate-key 23505 errors, and
+    auto-creation of unknown tables on write (e.g. `uc_workspace_operations`
+    receipts, `uc_upload_*`, `uc_drive_folders`, `GenericRecord`).
+  - RPCs: `commit_workspace_operations` (workspace + row CAS, receipts,
+    change journal), `get_workspace_health_summary_v2`,
+    `sync_staff_identity_bundle`, `get_auth_user_by_email`,
+    `uc_bump_workspace_revision`.
+- QA identities are seeded staff; sign in through the real UI with
+  `owner@urban.test` (Owner) or `ops@urban.test`, `field@urban.test`,
+  `finance@urban.test`, `sales@urban.test`, `procurement@urban.test` —
+  any password is accepted.
+- `.env.local` points `SUPABASE_URL` at `http://127.0.0.1:3210` with QA keys
+  and a local `UC_SESSION_SECRET` (required by the session signer).
+- Start: `bun run qa:mock` in one shell and `bun run dev:qa` in another
+  (Next dev on port 3100), or run both in background. No cloud credentials
+  are needed.
+- Browser automation (agent-browser) must use `http://localhost:3100`,
+  NOT `127.0.0.1` — the mismatch breaks React hydration.
+- Mock state is in-memory only; restart the mock to reset to the pristine
+  seed. `npx tsc --noEmit` stays clean because `scripts/` is excluded from
+  tsconfig (QA-only Bun script).
+

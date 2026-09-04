@@ -213,7 +213,7 @@ export function CustomerSiteDraftCard({
         {!draft.existing && (
           <input type="checkbox" checked={draft.enabled} onChange={(event) => onToggleEnabled(event.target.checked)} aria-label={`Include Site ${index + 1}`} />
         )}
-        <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => onChange({ expanded: !draft.expanded })} aria-expanded={draft.expanded}>
+        <button type="button" className="w-0 min-w-0 flex-1 flex items-center gap-2 text-left" onClick={() => onChange({ expanded: !draft.expanded })} aria-expanded={draft.expanded}>
           <MapPin className="h-4 w-4 text-primary" />
           <span className="truncate text-sm font-semibold">{draft.name.trim() || (draft.existing ? "Unnamed Site" : `New Site ${index + 1}`)}</span>
           <span className="text-[10px] text-muted-foreground">

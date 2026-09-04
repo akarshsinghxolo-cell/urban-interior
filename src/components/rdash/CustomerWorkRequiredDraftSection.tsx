@@ -97,7 +97,7 @@ export function CustomerWorkRequiredDraftSection({
                 value={draft.siteId}
                 onChange={(event) => updateWorkRequired(draft.id, { siteId: event.target.value, areaIds: [] })}
                 disabled={draft.existing && Boolean(draft.siteId)}
-                className="ml-auto h-8 min-w-40 rounded-md border border-input bg-card px-2 text-xs"
+                className="ml-auto h-8 w-auto min-w-0 max-w-full shrink basis-28 rounded-md border border-input bg-card px-2 text-xs"
                 aria-label={`Customer or Site for Work Required ${displayNumber}`}
               >
                 <option value="">{customerName.trim() || "Customer"}</option>

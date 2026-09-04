@@ -234,7 +234,7 @@ export function RateFinderModule() {
               toast.success(`Rate applied to ${quotation.quotation_no} → ${line.title}`);
               setUseInQuotation(null);
           } catch (error) { toast.error(error instanceof Error ? error.message : "Could not apply rate"); }
-      }} onOpenQuotations={() => { setUseInQuotation(null); setActiveModule("quotations"); }}/>} 
+      }} onOpenQuotations={() => { setUseInQuotation(null); setActiveModule("quotationDesk"); }}/>} 
     </div>);
 }
 
