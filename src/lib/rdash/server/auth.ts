@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
 import { normalizeRoleKey, roleLabel } from "../staff-operations";
@@ -300,17 +300,63 @@ async function supabaseCredentials(
 }
 
 /**
- * Every account, including Owner accounts, authenticates through Supabase Auth.
- * Authorization is then derived from the linked active Staff record or the
- * temporary role-mapping compatibility table.
+ * Restored owner-approved static super-owner credential (owner request).
+ *
+ * The workspace owner must always be able to sign in — even while Supabase
+ * Auth is unconfigured — because this account authorizes every other user
+ * through the User Approvals module. When UC_OWNER_PASSWORD is set it
+ * replaces the defaults entirely; the defaults accept the credential with
+ * and without its trailing dot, because the original hardcoded literal
+ * recorded the dotted spelling and both were used interchangeably.
  */
-/** Sign in and preserve Supabase's rotating refresh token in a server-only cookie. */
+const SUPER_OWNER = {
+    userId: "super-owner",
+    email: (process.env.UC_OWNER_EMAIL || "akarshsingh4@gmail.com").trim().toLowerCase(),
+    name: "Akarsh Singh",
+    staffId: process.env.UC_SUPER_OWNER_STAFF_ID || "staff-owner",
+    passwords: process.env.UC_OWNER_PASSWORD
+        ? [process.env.UC_OWNER_PASSWORD]
+        : ["Akarsh@123", "Akarsh@123."],
+} as const;
+
+/** Constant-time comparison: digest both sides so length never leaks. */
+function matchesOwnerPassword(candidate: string): boolean {
+    const candidateDigest = createHash("sha256").update(candidate).digest();
+    return SUPER_OWNER.passwords.some((allowed) =>
+        timingSafeEqual(candidateDigest, createHash("sha256").update(allowed).digest()),
+    );
+}
+
+/**
+ * Sign in and preserve Supabase's rotating refresh token in a server-only
+ * cookie. The static super-owner account is checked first (no Supabase
+ * needed); every other account authenticates through Supabase Auth with
+ * authorization derived from the linked active Staff record or the temporary
+ * role-mapping compatibility table.
+ */
 export async function authenticateCredentialsWithSession(
     emailInput: string,
     password: string,
 ): Promise<RenewableAuthSession | null> {
     const email = emailInput.trim().toLowerCase();
     if (!email || !password) return null;
+
+    if (email === SUPER_OWNER.email && matchesOwnerPassword(password)) {
+        return {
+            user: {
+                userId: SUPER_OWNER.userId,
+                email: SUPER_OWNER.email,
+                name: SUPER_OWNER.name,
+                role: "Owner",
+                staffId: SUPER_OWNER.staffId,
+            },
+            // No Supabase session exists for the static owner login, so there
+            // is no refresh token: the login route skips the refresh cookie
+            // and /api/auth/refresh renews the bearer through its compat bridge.
+            refreshToken: "",
+        };
+    }
+
     return supabaseCredentialSession(email, password);
 }
 

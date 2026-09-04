@@ -40,7 +40,11 @@ export async function POST(request: NextRequest) {
       token,
     }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(sessionCookie(token));
-    response.cookies.set(refreshTokenCookie(renewable.refreshToken));
+    // The static super-owner login has no Supabase session, hence no rotating
+    // refresh token — skip the cookie so /api/auth/refresh uses its compat bridge.
+    if (renewable.refreshToken) {
+      response.cookies.set(refreshTokenCookie(renewable.refreshToken));
+    }
     return response;
   } catch (error) {
     if (error instanceof AuthAccessError) {

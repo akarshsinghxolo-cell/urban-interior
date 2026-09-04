@@ -9,6 +9,8 @@ import {
   QA_OWNER_EMAIL,
   QA_OWNER_PASSWORD,
   recordDrawer,
+  SUPER_OWNER_EMAIL,
+  SUPER_OWNER_PASSWORD,
 } from "./helpers/smoke-actions";
 
 /**
@@ -53,6 +55,23 @@ test.describe("auth", () => {
     await expect(
       pulseRegion(page).getByRole("button", { name: /customers/i }).first(),
     ).toBeVisible();
+  });
+
+  test("the owner-approved static super-owner credential signs in through the real form", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await expect(page).toHaveURL(/\/signin/, { timeout: 90_000 });
+    await page.getByLabel("Work email").fill(SUPER_OWNER_EMAIL);
+    await page.getByLabel("Password", { exact: true }).fill(SUPER_OWNER_PASSWORD);
+    await page
+      .locator("form")
+      .getByRole("button", { name: "Sign in" })
+      .click();
+
+    // Same workdesk markers as the Supabase-backed login above: the static
+    // owner lands on a fully working workspace without any Supabase session.
+    await expect(pulseRegion(page)).toBeVisible({ timeout: 90_000 });
   });
 });
 

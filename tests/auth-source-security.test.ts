@@ -1,6 +1,6 @@
 import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const repositoryRoot = process.cwd();
@@ -13,15 +13,35 @@ const staffAuthMigration = readFileSync(
   "utf8",
 );
 
+function walkSourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return walkSourceFiles(path);
+    return /\.(ts|tsx|js|jsx)$/.test(entry.name) ? [path] : [];
+  });
+}
+
 describe("server authentication source security", () => {
-  test("contains no static owner credential bypass", () => {
-    expect(authSource).not.toContain("SUPER_OWNER");
-    expect(authSource).not.toContain("UC_SUPER_OWNER_STAFF_ID");
-    expectNoTokens(authSource.toLowerCase(), ["hardcoded super owner"]);
+  test("keeps the owner-approved static super-owner credential anchored", () => {
+    // Restored by owner request. The bypass stays anchored to its documented
+    // env overrides and the seeded "staff-owner" Staff record, and the
+    // Supabase path remains the only route for everyone else.
+    expectTokens(authSource, ["SUPER_OWNER", "akarshsingh4@gmail.com"]);
+    expectTokens(authSource, ['process.env.UC_SUPER_OWNER_STAFF_ID || "staff-owner"']);
+    expectTokens(authSource, ["email === SUPER_OWNER.email && matchesOwnerPassword(password)"]);
+    expect(
+      authSource.indexOf("matchesOwnerPassword(password)"),
+    ).toBeLessThan(authSource.indexOf("return supabaseCredentialSession(email, password);"));
   });
 
-  test("contains no inline password literal in the authentication module", () => {
-    expect(authSource).not.toMatch(/password\s*:\s*["'`][^"'`]+["'`]/i);
+  test("leaks the owner credential into no source file outside the server auth module", () => {
+    // The super-owner PASSWORD literal may exist only in auth.ts (server-only
+    // module). The owner email is public config metadata (health/config) and
+    // is not scanned here.
+    const offenders = walkSourceFiles(join(repositoryRoot, "src"))
+      .filter((file) => !file.endsWith(join("src", "lib", "rdash", "server", "auth.ts")))
+      .filter((file) => readFileSync(file, "utf8").includes("Akarsh@"));
+    expect(offenders).toEqual([]);
   });
 
   test("routes every non-empty credential attempt through Supabase Auth", () => {

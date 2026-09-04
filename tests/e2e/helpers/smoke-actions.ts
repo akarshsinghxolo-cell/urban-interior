@@ -14,6 +14,15 @@ import { expect, type Page } from "@playwright/test";
 export const QA_OWNER_EMAIL = "owner@urban.test";
 export const QA_OWNER_PASSWORD = "urban-castle-qa-password";
 
+/**
+ * Owner-approved static super-owner credential (src/lib/rdash/server/auth.ts).
+ * Exercised through the real sign-in form below so a future removal of the
+ * static owner bypass fails CI — exactly the regression that once shipped
+ * silently and locked the owner out.
+ */
+export const SUPER_OWNER_EMAIL = "akarshsingh4@gmail.com";
+export const SUPER_OWNER_PASSWORD = "Akarsh@123";
+
 /** The live pulse strip on the Workdesk dashboard. */
 export function pulseRegion(page: Page) {
   return page.getByRole("region", { name: "Workspace pulse" });

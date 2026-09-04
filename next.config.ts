@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   // gateway host (LAN IP via Caddy :81 → localhost:3000). Without this,
   // Next.js dev blocks /_next resources for that origin and the app never
   // hydrates in agent-browser QA sessions.
-  allowedDevOrigins: ["localhost", "127.0.0.1", "21.0.10.248"],
+  allowedDevOrigins: ["localhost", "127.0.0.1", "21.0.10.248", "21.0.17.71"],
 };
 
 export default nextConfig;
