@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { persistWorkspaceTabs, restoreWorkspaceTabs } from "../src/lib/rdash/tab-persistence";
@@ -43,7 +44,7 @@ describe("workspace tab persistence (session scope)", () => {
   test("the store restores persisted tabs on boot and persists on every tab-touching commit", async () => {
     const raw = await source("src/lib/rdash/raw-store.ts");
     expect(raw).toContain('restoreWorkspaceTabs');
-    expect(raw).toContain("persistWorkspaceTabs(merged.tabs, merged.activeTabId)");
+    expectTokens(raw, ["persistWorkspaceTabs(merged.tabs, merged.activeTabId)"]);
     expect(raw).toContain("isRegisteredModuleId(moduleId)");
   });
 });
@@ -51,25 +52,25 @@ describe("workspace tab persistence (session scope)", () => {
 describe("dormant components wired into the workspace", () => {
   test("OnboardingWizard is mounted in the authenticated app shell with dialog semantics", async () => {
     const app = await source("src/components/rdash/RDashApp.tsx");
-    expect(app).toContain('<OnboardingWizard />');
+    expectTokens(app, ["<OnboardingWizard />"]);
     const wizard = await source("src/components/rdash/OnboardingWizard.tsx");
     expect(wizard).toContain('role="dialog"');
     expect(wizard).toContain('aria-modal="true"');
     expect(wizard).toContain('uc_onboarding_completed');
     // Escape must dismiss (backdrop click alone is not keyboard accessible).
-    expect(wizard).toContain('if (event.key === "Escape")');
+    expectTokens(wizard, ['if (event.key === "Escape")']);
   });
 
   test("CashFlowChart renders inside the Finance overview module", async () => {
     const finance = await source("src/components/rdash/modules/FinanceOverviewModule.tsx");
-    expect(finance).toContain('import { CashFlowChart } from "../CashFlowChart"');
-    expect(finance).toContain("<CashFlowChart />");
+    expectTokens(finance, ['import { CashFlowChart } from "../CashFlowChart"']);
+    expectTokens(finance, ["<CashFlowChart />"]);
   });
 
   test("ProfileNameEditor is offered in Settings → Active Role", async () => {
     const settings = await source("src/components/rdash/modules/GenericModule.tsx");
-    expect(settings).toContain("import { ProfileNameEditor } from \"../ProfileNameEditor\"");
-    expect(settings).toContain("Signed in as <ProfileNameEditor />");
+    expectTokens(settings, ['import { ProfileNameEditor } from "../ProfileNameEditor"']);
+    expectTokens(settings, ["Signed in as <ProfileNameEditor />"]);
     // The backing endpoint must exist for the editor to function.
     const fs = await import("node:fs");
     expect(fs.existsSync("src/app/api/auth/profile/route.ts")).toBe(true);

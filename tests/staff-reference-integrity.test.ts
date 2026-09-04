@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -122,7 +123,7 @@ describe("canonical Staff references", () => {
     const migration = await readFile(STAFF_REFERENCE_MIGRATION, "utf8");
     const legacyRelationName = ["Staff", "Profile"].join("");
 
-    expect(migration).toContain("generated always as");
+    expectTokens(migration, ["generated always as"]);
     expect(migration).toContain("entity_attendance_staff_fkey");
     expect(migration).toContain("entity_visits_staff_fkey");
     expect(migration).toContain("entity_payroll_lines_staff_fkey");
@@ -130,7 +131,7 @@ describe("canonical Staff references", () => {
     expect(migration).toContain("entity_salary_adjustments_staff_fkey");
     expect(migration).toContain("STAFF_ASSIGNMENT_REQUIRES_ACTIVE_STAFF");
     expect(migration).toContain("STAFF_DELETE_FORBIDDEN_USE_INACTIVE");
-    expect(migration).toContain("on delete restrict");
+    expectTokens(migration, ["on delete restrict"]);
     expect(migration).toContain(`drop view if exists public.\"${legacyRelationName}\"`);
   });
 });

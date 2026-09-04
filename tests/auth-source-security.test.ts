@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,7 +17,7 @@ describe("server authentication source security", () => {
   test("contains no static owner credential bypass", () => {
     expect(authSource).not.toContain("SUPER_OWNER");
     expect(authSource).not.toContain("UC_SUPER_OWNER_STAFF_ID");
-    expect(authSource.toLowerCase()).not.toContain("hardcoded super owner");
+    expectNoTokens(authSource.toLowerCase(), ["hardcoded super owner"]);
   });
 
   test("contains no inline password literal in the authentication module", () => {
@@ -24,19 +25,19 @@ describe("server authentication source security", () => {
   });
 
   test("routes every non-empty credential attempt through Supabase Auth", () => {
-    expect(authSource).toContain("return supabaseCredentialSession(email, password);");
-    expect(authSource).toContain("auth.auth.signInWithPassword({ email, password })");
+    expectTokens(authSource, ["return supabaseCredentialSession(email, password);"]);
+    expectTokens(authSource, ["auth.auth.signInWithPassword({ email, password })"]);
   });
 
   test("uses one workspace-scoped indexed Staff lookup", () => {
-    expect(authSource).toContain('const WORKSPACE_ID = process.env.UC_WORKSPACE_ID || "default";');
-    expect(authSource).toContain('.eq("workspace_id", WORKSPACE_ID)');
-    expect(authSource).toContain('.eq("auth_user_id_gen" as never, user.id)');
+    expectTokens(authSource, ['const WORKSPACE_ID = process.env.UC_WORKSPACE_ID || "default";']);
+    expectTokens(authSource, ['.eq("workspace_id", WORKSPACE_ID)']);
+    expectTokens(authSource, ['.eq("auth_user_id_gen" as never, user.id)']);
     expect(authSource).not.toContain("generatedLookupError");
-    expect(authSource).not.toContain('eq("workspace_id", "default")');
-    expect(staffAuthMigration).toContain("generated always as (nullif(data ->> 'auth_user_id', '')) stored");
+    expectNoTokens(authSource, ['eq("workspace_id", "default")']);
+    expectTokens(staffAuthMigration, ["generated always as (nullif(data ->> 'auth_user_id', '')) stored"]);
     expect(staffAuthMigration).toContain("entity_master_staff_workspace_auth_user_idx");
-    expect(staffAuthMigration).toContain("(workspace_id, auth_user_id_gen)");
+    expectTokens(staffAuthMigration, ["(workspace_id, auth_user_id_gen)"]);
   });
 
   test("keeps the app bearer short-lived while Supabase refresh access is renewable", () => {
@@ -45,18 +46,18 @@ describe("server authentication source security", () => {
     const logout = readFileSync(join(repositoryRoot, "src/app/api/auth/logout/route.ts"), "utf8");
     const shell = readFileSync(join(repositoryRoot, "src/components/urban-castle/UrbanCastleApp.tsx"), "utf8");
 
-    expect(authSource).toContain("export const SESSION_TTL = 28800");
-    expect(authSource).toContain('export const AUTH_REFRESH_COOKIE = "uc_auth_refresh"');
-    expect(authSource).toContain('httpOnly: true');
-    expect(authSource).toContain('sameSite: "strict" as const');
-    expect(authSource).toContain("auth.auth.refreshSession({ refresh_token: refreshToken })");
+    expectTokens(authSource, ["export const SESSION_TTL = 28800"]);
+    expectTokens(authSource, ['export const AUTH_REFRESH_COOKIE = "uc_auth_refresh"']);
+    expectTokens(authSource, ["httpOnly: true"]);
+    expectTokens(authSource, ['sameSite: "strict" as const']);
+    expectTokens(authSource, ["auth.auth.refreshSession({ refresh_token: refreshToken })"]);
     expect(authSource).toContain("authorizedUserFromSupabase(data.user)");
     expect(login).toContain("refreshTokenCookie(renewable.refreshToken)");
     expect(refresh).toContain("extractRefreshToken(request)");
     expect(refresh).toContain("refreshAuthenticatedSession(refreshToken)");
     expect(logout).toContain("expiredRefreshTokenCookie()");
     expect(shell).toContain('locks.request("uc-auth-session-refresh"');
-    expect(shell).toContain("AUTH_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000");
+    expectTokens(shell, ["AUTH_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000"]);
     expect(shell).toContain("<RenewableSessionGate>");
   });
 

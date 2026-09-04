@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
@@ -20,15 +21,15 @@ describe("Contractor legacy-path removal", () => {
     const policy = await source("src/lib/rdash/contractor-store-policy.ts");
     const governance = await source("src/components/rdash/modules/PartnerGovernanceModule.tsx");
     expect(profile).toContain("Array.isArray(contractor.work_capabilities)");
-    expect(profile).not.toContain("const legacyUnmapped");
+    expectNoTokens(profile, ["const legacyUnmapped"]);
     expect(profile).not.toContain("capabilities_v2");
     expect(policy).not.toContain("capabilities_v2");
-    expect(policy).toContain("must be linked to a Work Subcategory");
-    expect(governance).toContain("canonicalContractorCapabilities(selected, db)");
-    expect(governance).not.toContain("capabilities_v2: contractorGovernanceCapabilityProjection");
-    expect(governance).not.toContain("else if (Array.isArray(patch.capabilities_v2))");
-    expect(governance).toContain("canonicalContractorCapabilities(partner, db).length");
-    expect(governance).toContain("OperationalMediaPanel entityType={mode}");
+    expectTokens(policy, ["must be linked to a Work Subcategory"]);
+    expectTokens(governance, ["canonicalContractorCapabilities(selected, db)"]);
+    expectNoTokens(governance, ["capabilities_v2: contractorGovernanceCapabilityProjection"]);
+    expectNoTokens(governance, ["else if (Array.isArray(patch.capabilities_v2))"]);
+    expectTokens(governance, ["canonicalContractorCapabilities(partner, db).length"]);
+    expectTokens(governance, ["OperationalMediaPanel entityType={mode}"]);
   });
 
   test("Contractor types and shared helpers expose no compatibility fallback", async () => {
@@ -42,25 +43,25 @@ describe("Contractor legacy-path removal", () => {
     expect(contractorStart).toBeGreaterThanOrEqual(0);
     expect(contractorEnd).toBeGreaterThan(contractorStart);
     expect(contractorType).not.toContain("capabilities_v2");
-    expect(governance).toContain("export function vendorCapabilities");
-    expect(governance).not.toContain("export function partnerCapabilities");
+    expectTokens(governance, ["export function vendorCapabilities"]);
+    expectNoTokens(governance, ["export function partnerCapabilities"]);
     expect(governance).not.toContain("partner.work_capabilities");
     expect(governanceUi).toContain("vendorCapabilities(selected)");
     expect(governanceUi).toContain("vendorCapabilities(partner)");
-    expect(governanceUi).toContain("canonicalContractorCapabilities(selected, db)");
+    expectTokens(governanceUi, ["canonicalContractorCapabilities(selected, db)"]);
   });
 
   test("Contractor referrals and operations do not use the removed paths", async () => {
     const form = await source("src/components/rdash/ContractorFormDialog.tsx");
     const detail = await source("src/components/rdash/modules/ContractorDetailModule.tsx");
     expect(form).not.toContain("legacyReferral");
-    expect(form).not.toContain("Legacy free-text referrals");
+    expectNoTokens(form, ["Legacy free-text referrals"]);
     expect(form).not.toContain("business_gst");
     expect(form).not.toContain("bank_account");
     expect(form).not.toContain("supervisor_name");
     expect(form).not.toContain("concurrent_site_limit");
-    expect(form).toContain("Add work type");
-    expect(detail).toContain("contractorRateProjection(db, c)");
+    expectTokens(form, ["Add work type"]);
+    expectTokens(detail, ["contractorRateProjection(db, c)"]);
   });
 
   test("Contractor Rates are canonicalized (never trusted) at the server commit boundary", async () => {
@@ -69,8 +70,8 @@ describe("Contractor legacy-path removal", () => {
     // rejected — the old hard rejection broke legitimate edits (Task 17).
     expect(server).toContain("canonicalizeContractorRateOperations(");
     expect(server).toContain("contractorRateProjection(");
-    expect(server).not.toContain("read-only projections");
-    expect(server).toContain('operations.filter((operation) => operation.collection !== "master.contractorRates")');
+    expectNoTokens(server, ["read-only projections"]);
+    expectTokens(server, ['operations.filter((operation) => operation.collection !== "master.contractorRates")']);
   });
 
   test("Contractor store policy saves capabilities and rate projection in ONE transaction", async () => {

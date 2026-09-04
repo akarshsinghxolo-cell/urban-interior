@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
+import { collapse, expectNoTokens, expectTokens } from "./helpers/source-contract";
 
 const quickActionsPath = "src/components/rdash/QuickActionsToolbar.tsx";
 const quickAddPath = "src/components/rdash/QuickAddSheet.tsx";
@@ -19,7 +20,7 @@ test("Quick Actions toolbar and its global shortcuts are removed", () => {
 
   const app = readFileSync(appPath, "utf8");
   expect(app.includes("QuickActionsToolbar")).toBe(false);
-  expect(app.includes("Quick actions toolbar")).toBe(false);
+  expectNoTokens(app, ["Quick actions toolbar"]);
   expect(app.includes("Alt+1-6")).toBe(false);
 });
 
@@ -34,7 +35,10 @@ test("runtime source contains no Quick Actions feature mount or label", () => {
   for (const path of runtimeSourceFiles("src")) {
     const source = readFileSync(path, "utf8");
     for (const token of forbidden) {
-      expect(source.includes(token), `${path} still contains ${token}`).toBe(false);
+      expect(
+        collapse(source).includes(collapse(token)),
+        `${path} still contains ${token}`,
+      ).toBe(false);
     }
   }
 });
@@ -43,5 +47,5 @@ test("Quick Add remains available as the separate mobile create workflow", () =>
   expect(existsSync(quickAddPath)).toBe(true);
   const app = readFileSync(appPath, "utf8");
   expect(app.includes("QuickAddSheet")).toBe(true);
-  expect(app.includes('aria-label="Quick add"')).toBe(true);
+  expectTokens(app, ['aria-label="Quick add"']);
 });

@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import {
@@ -151,12 +152,12 @@ describe("delta journal migration and API contract", () => {
       "supabase/migrations/20260728055820_workspace_revision_change_journal.sql",
     ).text()).replace(/\r\n/g, "\n");
 
-    expect(migration).toContain("create table if not exists public.entity_workspace_change_batches");
-    expect(migration).toContain("alter table public.entity_workspace_change_batches enable row level security");
-    expect(migration).toContain("revoke all on table public.entity_workspace_change_batches from public, anon, authenticated");
-    expect(migration).toContain("grant select, insert, delete on table public.entity_workspace_change_batches to service_role");
-    expect(migration).toContain("is_baseline = true");
-    expect(migration).toContain("journal_operations jsonb");
+    expectTokens(migration, ["create table if not exists public.entity_workspace_change_batches"]);
+    expectTokens(migration, ["alter table public.entity_workspace_change_batches enable row level security"]);
+    expectTokens(migration, ["revoke all on table public.entity_workspace_change_batches from public, anon, authenticated"]);
+    expectTokens(migration, ["grant select, insert, delete on table public.entity_workspace_change_batches to service_role"]);
+    expectTokens(migration, ["is_baseline = true"]);
+    expectTokens(migration, ["journal_operations jsonb"]);
 
     const journalInsert = migration.indexOf("insert into public.entity_workspace_change_batches (\n    workspace_id,\n    revision");
     const revisionUpdate = migration.indexOf("update public.entity_workspace_revision\n     set revision = next_workspace_revision");
@@ -169,47 +170,47 @@ describe("delta journal migration and API contract", () => {
     expect(route).toContain("requireSession(request)");
     expect(route).toContain('searchParams.get("afterRevision")');
     expect(route).toContain('headers.get("x-uc-delta-module")');
-    expect(route).toContain("authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)");
+    expectTokens(route, ["authorizeWorkspaceDeltaTarget(user, moduleId, requestedCollections)"]);
     expect(route).toContain("getWorkspaceChanges(");
     expect(route).toContain("DIRECTORY_PROJECTION_COLLECTIONS");
-    expect(route).toContain("canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
-    expect(route).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
-    expect(route).toContain("canReturnFullStaffRows = canReadFullStaff && !foundationProjection");
+    expectTokens(route, ["canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS"]);
+    expectTokens(route, ['request.headers.get("x-uc-foundation-delta") === "1"']);
+    expectTokens(route, ["canReturnFullStaffRows = canReadFullStaff && !foundationProjection"]);
     expect(route).toContain('"X-UC-Delta-Full-Reload"');
-    expect(route).toContain('"Cache-Control": "private, no-store, max-age=0"');
-    expect(route).toContain('"X-Content-Type-Options": "nosniff"');
-    expect(route).toContain('errorJson("afterRevision must be a non-negative integer.", 400)');
-    expect(route).toContain('errorJson("Your session is missing or expired.", 401)');
-    expect(route).toContain('errorJson(message.slice("FORBIDDEN:".length), 403)');
-    expect(route).toContain('errorJson("Workspace changes are temporarily unavailable.", 503');
+    expectTokens(route, ['"Cache-Control": "private, no-store, max-age=0"']);
+    expectTokens(route, ['"X-Content-Type-Options": "nosniff"']);
+    expectTokens(route, ['errorJson("afterRevision must be a non-negative integer.", 400)']);
+    expectTokens(route, ['errorJson("Your session is missing or expired.", 401)']);
+    expectTokens(route, ['errorJson(message.slice("FORBIDDEN:".length), 403)']);
+    expectTokens(route, ['errorJson("Workspace changes are temporarily unavailable.", 503']);
   });
 
   test("bounds server reads and constrains batches to one coherent current revision", async () => {
     const source = await testFile("src/lib/rdash/server/workspace-changes.ts").text();
-    expect(source).toContain("MAX_WORKSPACE_DELTA_BATCHES + 1");
-    expect(source).toContain('.lte("revision", currentRevision)');
-    expect(source).toContain('.eq("is_baseline", false)');
+    expectTokens(source, ["MAX_WORKSPACE_DELTA_BATCHES + 1"]);
+    expectTokens(source, ['.lte("revision", currentRevision)']);
+    expectTokens(source, ['.eq("is_baseline", false)']);
     expect(source).toContain("revision_too_old");
     expect(source).toContain("journal_gap");
     expect(source).toContain("invalid_journal");
     expect(source).toContain("projection_changed");
     expect(source).toContain("refreshOnOmittedCollections");
-    expect(source).toContain("PostgreSQL deletes every collection");
+    expectTokens(source, ["PostgreSQL deletes every collection"]);
   });
 
   test("runs destructive reset through the same atomic revision-CAS transaction", async () => {
     const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const workspace = await testFile("src/lib/rdash/server/workspace.ts").text();
 
-    expect(rest).toContain("const current = await getRestWorkspace()");
-    expect(rest).toContain("diffWorkspaceOperations(current.data, seedData)");
-    expect(rest).toContain("commitRestOperations(operations, current.revision, {})");
+    expectTokens(rest, ["const current = await getRestWorkspace()"]);
+    expectTokens(rest, ["diffWorkspaceOperations(current.data, seedData)"]);
+    expectTokens(rest, ["commitRestOperations(operations, current.revision, {})"]);
     expect(rest).toContain("customer-conversation:${thread.record_id}");
-    expect(rest).toContain("Could not read workspace collection ${collection}");
-    expect(rest).not.toContain("Existing reset behavior is intentionally preserved for now");
-    expect(rest).not.toContain('revision: 0,\n      updated_at: new Date().toISOString()');
+    expectTokens(rest, ["Could not read workspace collection ${collection}"]);
+    expectNoTokens(rest, ["Existing reset behavior is intentionally preserved for now"]);
+    expectNoTokens(rest, ["revision: 0, updated_at: new Date().toISOString()"]);
     expect(workspace).not.toContain("resetWorkspaceChangeJournal");
     expect(workspace).not.toContain("canonicalizeResetCustomerThreads");
-    expect(workspace).toContain("return resetRestWorkspace()");
+    expectTokens(workspace, ["return resetRestWorkspace()"]);
   });
 });

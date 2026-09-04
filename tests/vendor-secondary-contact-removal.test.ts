@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
@@ -11,8 +12,8 @@ describe("Vendor secondary-contact removal", () => {
     expect(form).not.toContain("alternate_phone");
     expect(form).not.toContain("alternatePhone");
     expect(form).not.toContain('type="email"');
-    expect(form).toContain('Field label="Mobile"');
-    expect(form).toContain('Field label="GSTIN"');
+    expectTokens(form, ['Field label="Mobile"']);
+    expectTokens(form, ['Field label="GSTIN"']);
   });
 
   test("the Vendor type and canonical write path expose no secondary contacts", async () => {
@@ -34,9 +35,9 @@ describe("Vendor secondary-contact removal", () => {
 
   test("Vendor 360 surfaces are free of secondary-contact cells and actions", async () => {
     const partner360 = await source("src/components/rdash/modules/Partner360Module.tsx");
-    expect(partner360).not.toContain('InfoCell label="WhatsApp"');
-    expect(partner360).not.toContain('InfoCell label="Alternate phone"');
-    expect(partner360).not.toContain('InfoCell label="Email"');
+    expectNoTokens(partner360, ['InfoCell label="WhatsApp"']);
+    expectNoTokens(partner360, ['InfoCell label="Alternate phone"']);
+    expectNoTokens(partner360, ['InfoCell label="Email"']);
     expect(partner360).not.toContain("partner.whatsapp");
     expect(partner360).not.toContain("partner.alternate_phone");
     expect(partner360).not.toContain("partner.email");
@@ -51,17 +52,17 @@ describe("Vendor secondary-contact removal", () => {
 
   test("Vendor business dialog keeps identity, tax, banking and commercial terms", async () => {
     const partner360 = await source("src/components/rdash/modules/Partner360Module.tsx");
-    expect(partner360).toContain("Vendor business details");
+    expectTokens(partner360, ["Vendor business details"]);
     expect(partner360).toContain('placeholder="GSTIN"');
     expect(partner360).toContain('placeholder="PAN"');
-    expect(partner360).toContain('placeholder="Bank account number"');
+    expectTokens(partner360, ['placeholder="Bank account number"']);
     expect(partner360).toContain('placeholder="IFSC"');
-    expect(partner360).toContain('placeholder="Payment terms"');
+    expectTokens(partner360, ['placeholder="Payment terms"']);
   });
 
   test("partner governance duplicate detection matches on the canonical mobile only", async () => {
     const governance = await source("src/lib/rdash/partner-governance.ts");
     expect(governance).toContain("normalizePhone(left.phone)");
-    expect(governance).not.toContain("left.phone || left.whatsapp");
+    expectNoTokens(governance, ["left.phone || left.whatsapp"]);
   });
 });

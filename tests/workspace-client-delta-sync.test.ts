@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { afterEach, describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { buildSeedDatabase } from "@/lib/rdash/seed";
@@ -235,16 +236,16 @@ describe("delta synchronization safety policy", () => {
     expect(source).toContain("overlay.db");
     expect(source).toContain("mergeWorkspaceRowVersions");
     expect(source).toContain("deletedDeltaVersionKeys");
-    expect(source).toContain("new AbortController()");
-    expect(source).toContain("Delta journal did not advance");
+    expectTokens(source, ["new AbortController()"]);
+    expectTokens(source, ["Delta journal did not advance"]);
     expect(source).toContain("visibilitychange");
     expect(source).toContain('window.addEventListener("online"');
-    expect(source).toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"');
-    expect(source).toContain("DELTA_POLL_INTERVAL_MS = 15 * 60_000");
-    expect(source).not.toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"');
+    expectTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"']);
+    expectTokens(source, ["DELTA_POLL_INTERVAL_MS = 15 * 60_000"]);
+    expectNoTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"']);
     expect(source).not.toContain("initialTimer");
     expect(source).not.toContain("activeModuleId");
-    expect(source).not.toContain("DELTA_POLL_INTERVAL_MS = 30_000");
+    expectNoTokens(source, ["DELTA_POLL_INTERVAL_MS = 30_000"]);
   });
 
   test("row-version bridge installs before passive workspace hydration", async () => {
@@ -252,7 +253,7 @@ describe("delta synchronization safety policy", () => {
     const app = await testFile("src/components/urban-castle/UrbanCastleApp.tsx").text();
     expect(source).toContain("React.useLayoutEffect");
     expect(source).toContain("workspaceRowVersionState.merge(input.rowVersions)");
-    expect(source).toContain("hydrateSecureWorkspace: wrapped");
+    expectTokens(source, ["hydrateSecureWorkspace: wrapped"]);
     expect(app).toContain("useInstallWorkspaceRowVersionBridge()");
     expect(app.indexOf("useInstallWorkspaceRowVersionBridge()"))
       .toBeLessThan(app.indexOf("useInstallDirtyFormNavigationGuards()"));
@@ -264,7 +265,7 @@ describe("delta synchronization safety policy", () => {
     expect(source).toContain("MAX_COLLECTION_FILTERS");
     expect(source).toContain("knownWorkspaceCollection");
     expect(source).toContain('"X-UC-Delta-Filtered"');
-    expect(source).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
+    expectTokens(source, ['request.headers.get("x-uc-foundation-delta") === "1"']);
     expect(source).toContain("canReturnFullStaffRows");
   });
 });

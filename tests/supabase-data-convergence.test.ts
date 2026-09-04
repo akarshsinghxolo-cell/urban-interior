@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
@@ -14,11 +15,11 @@ describe("Supabase persistence convergence", () => {
     const server = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const drive = await testFile("src/lib/rdash/server/drive-connections.ts").text();
 
-    expect(migration).toContain("drop function if exists public.commit_operations");
-    expect(migration).toContain("drop function if exists public.write_workspace_snapshot");
-    expect(migration).toContain("drop function if exists public.uc_bump_workspace_revision");
-    expect(migration).toContain('drop table if exists public."CollectionMeta"');
-    expect(migration).not.toContain('drop table if exists public."GenericRecord"');
+    expectTokens(migration, ["drop function if exists public.commit_operations"]);
+    expectTokens(migration, ["drop function if exists public.write_workspace_snapshot"]);
+    expectTokens(migration, ["drop function if exists public.uc_bump_workspace_revision"]);
+    expectTokens(migration, ['drop table if exists public."CollectionMeta"']);
+    expectNoTokens(migration, ['drop table if exists public."GenericRecord"']);
 
     expect(server).toContain('admin.rpc("commit_workspace_operations"');
     expect(server).not.toContain('admin.rpc("commit_operations"');
@@ -28,14 +29,14 @@ describe("Supabase persistence convergence", () => {
   test("binds every workspace collection to its canonical entity table", async () => {
     const migration = await testFile(MIGRATION).text();
 
-    expect(migration).toContain("rename to commit_workspace_operations_internal");
-    expect(migration).toContain("v_expected_table := 'entity_' || replace(v_collection, '.', '_')");
-    expect(migration).toContain("v_table is distinct from v_expected_table");
+    expectTokens(migration, ["rename to commit_workspace_operations_internal"]);
+    expectTokens(migration, ["v_expected_table := 'entity_' || replace(v_collection, '.', '_')"]);
+    expectTokens(migration, ["v_table is distinct from v_expected_table"]);
     expect(migration).toContain("INVALID_COLLECTION_TABLE");
-    expect(migration).toContain("perform set_config('uc.write_source', 'workspace-commit', true)");
-    expect(migration).toContain("return public.commit_workspace_operations_internal(");
-    expect(migration).toContain("revoke all on function public.commit_workspace_operations_internal");
-    expect(migration).toContain("from public, anon, authenticated, service_role");
+    expectTokens(migration, ["perform set_config('uc.write_source', 'workspace-commit', true)"]);
+    expectTokens(migration, ["return public.commit_workspace_operations_internal("]);
+    expectTokens(migration, ["revoke all on function public.commit_workspace_operations_internal"]);
+    expectTokens(migration, ["from public, anon, authenticated, service_role"]);
   });
 
   test("sanitizes Staff credentials before response, persistence and journaling", async () => {
@@ -43,19 +44,19 @@ describe("Supabase persistence convergence", () => {
     const operationGuard = await testFile(OPERATION_SANITIZE_MIGRATION).text();
     const authorized = await testFile("src/lib/rdash/server/authorized-commit.ts").text();
 
-    expect(tableGuard).toContain("new.data := coalesce(new.data, '{}'::jsonb)");
-    expect(tableGuard).toContain("- 'temporary_password'");
-    expect(tableGuard).toContain("- 'force_password_change'");
-    expect(operationGuard).toContain("create or replace function public.uc_sanitize_workspace_operations");
-    expect(operationGuard).toContain("v_row - 'temporary_password' - 'force_password_change'");
-    expect(operationGuard).toContain("v_operations := public.uc_sanitize_workspace_operations(p_operations)");
-    expect(operationGuard).toContain("v_operations := public.uc_expand_contractor_rate_operations");
-    expect(operationGuard).toContain("return public.commit_workspace_operations_internal(");
+    expectTokens(tableGuard, ["new.data := coalesce(new.data, '{}'::jsonb)"]);
+    expectTokens(tableGuard, ["- 'temporary_password'"]);
+    expectTokens(tableGuard, ["- 'force_password_change'"]);
+    expectTokens(operationGuard, ["create or replace function public.uc_sanitize_workspace_operations"]);
+    expectTokens(operationGuard, ["v_row - 'temporary_password' - 'force_password_change'"]);
+    expectTokens(operationGuard, ["v_operations := public.uc_sanitize_workspace_operations(p_operations)"]);
+    expectTokens(operationGuard, ["v_operations := public.uc_expand_contractor_rate_operations"]);
+    expectTokens(operationGuard, ["return public.commit_workspace_operations_internal("]);
 
-    expect(authorized).toContain("function sanitizeWorkspaceOperations(");
-    expect(authorized).toContain("delete safe.temporary_password;");
-    expect(authorized).toContain("delete safe.force_password_change;");
-    expect(authorized).toContain("let commitOperations = sanitizeWorkspaceOperations(operations);");
+    expectTokens(authorized, ["function sanitizeWorkspaceOperations("]);
+    expectTokens(authorized, ["delete safe.temporary_password;"]);
+    expectTokens(authorized, ["delete safe.force_password_change;"]);
+    expectTokens(authorized, ["let commitOperations = sanitizeWorkspaceOperations(operations);"]);
   });
 
   test("journals auth-driven master staff synchronization exactly once", async () => {
@@ -64,51 +65,51 @@ describe("Supabase persistence convergence", () => {
       "supabase/migrations/20260724054622_staff_identity_atomic_sync.sql",
     ).text();
 
-    expect(staffIdentity).toContain("for update;");
+    expectTokens(staffIdentity, ["for update;"]);
     expect(staffIdentity).toContain("'auth-system'");
-    expect(staffIdentity).toContain("v_next_workspace_revision := v_workspace_revision + 1");
+    expectTokens(staffIdentity, ["v_next_workspace_revision := v_workspace_revision + 1"]);
 
-    expect(migration).toContain("create or replace function public.uc_journal_auth_staff_master_write()");
-    expect(migration).toContain("current_setting('uc.write_source', true) = 'workspace-commit'");
-    expect(migration).toContain("if new.updated_by is distinct from 'auth-system'");
-    expect(migration).toContain("v_next_revision := v_current_revision + 1");
-    expect(migration).toContain("'collection', 'master.staff'");
-    expect(migration).toContain("'master.staff:' || new.id");
-    expect(migration).toContain("create trigger entity_master_staff_auth_journal");
+    expectTokens(migration, ["create or replace function public.uc_journal_auth_staff_master_write()"]);
+    expectTokens(migration, ["current_setting('uc.write_source', true) = 'workspace-commit'"]);
+    expectTokens(migration, ["if new.updated_by is distinct from 'auth-system'"]);
+    expectTokens(migration, ["v_next_revision := v_current_revision + 1"]);
+    expectTokens(migration, ["'collection', 'master.staff'"]);
+    expectTokens(migration, ["'master.staff:' || new.id"]);
+    expectTokens(migration, ["create trigger entity_master_staff_auth_journal"]);
   });
 
   test("keeps workspace Staff and auth/profile mirrors on explicit ownership boundaries", async () => {
     const migration = await testFile(STAFF_MIRROR_MIGRATION).text();
 
-    expect(migration).toContain("create or replace function public.uc_sanitize_workspace_staff_auth_fields()");
-    expect(migration).toContain("create trigger entity_master_staff_workspace_auth_sanitize");
-    expect(migration).toContain("create or replace function public.uc_sync_workspace_staff_mirrors()");
-    expect(migration).toContain("current_setting('uc.write_source', true) is distinct from 'workspace-commit'");
+    expectTokens(migration, ["create or replace function public.uc_sanitize_workspace_staff_auth_fields()"]);
+    expectTokens(migration, ["create trigger entity_master_staff_workspace_auth_sanitize"]);
+    expectTokens(migration, ["create or replace function public.uc_sync_workspace_staff_mirrors()"]);
+    expectTokens(migration, ["current_setting('uc.write_source', true) is distinct from 'workspace-commit'"]);
     expect(migration).toContain("STAFF_AUTH_LINK_MUST_USE_AUTH_FLOW");
     expect(migration).toContain("STAFF_LOGIN_MUST_USE_AUTH_FLOW");
     expect(migration).toContain("STAFF_LOGIN_EMAIL_MUST_USE_AUTH_FLOW");
     expect(migration).toContain("STAFF_LOGIN_ACCESS_MUST_USE_AUTH_FLOW");
     expect(migration).toContain("STAFF_ACCESS_MUST_USE_AUTH_FLOW");
     expect(migration).toContain("STAFF_ROLE_ASSIGNMENT_NOT_FOUND");
-    expect(migration).toContain('insert into public."StaffProfile"');
-    expect(migration).toContain("update public.uc_user_roles");
-    expect(migration).toContain("where id = v_role_assignment_id");
-    expect(migration).toContain("create trigger entity_master_staff_workspace_mirror");
+    expectTokens(migration, ['insert into public."StaffProfile"']);
+    expectTokens(migration, ["update public.uc_user_roles"]);
+    expectTokens(migration, ["where id = v_role_assignment_id"]);
+    expectTokens(migration, ["create trigger entity_master_staff_workspace_mirror"]);
     expect(migration).toContain("STAFF_AUTH_LINK_DELETE_MUST_USE_AUTH_FLOW");
-    expect(migration).toContain("create trigger entity_master_staff_workspace_delete_guard");
+    expectTokens(migration, ["create trigger entity_master_staff_workspace_delete_guard"]);
   });
 
   test("routes Staff login changes to User Approvals and declares the persisted auth link", async () => {
     const dialog = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
     const types = await testFile("src/lib/rdash/types.ts").text();
 
-    expect(dialog).toContain("Login access is managed in User Approvals");
-    expect(dialog).toContain("Passwords are never stored in Staff workspace data");
-    expect(dialog).toContain("temporary_password: undefined");
-    expect(dialog).toContain("force_password_change: undefined");
-    expect(dialog).not.toContain("Temporary password");
+    expectTokens(dialog, ["Login access is managed in User Approvals"]);
+    expectTokens(dialog, ["Passwords are never stored in Staff workspace data"]);
+    expectTokens(dialog, ["temporary_password: undefined"]);
+    expectTokens(dialog, ["force_password_change: undefined"]);
+    expectNoTokens(dialog, ["Temporary password"]);
     expect(dialog).not.toContain("ChangeMe_UrbanCastle_2026!");
-    expect(types).toContain("auth_user_id?: string;");
+    expectTokens(types, ["auth_user_id?: string;"]);
   });
 
   test("makes Contractor Rates an atomic projection visible to server and database", async () => {
@@ -117,62 +118,62 @@ describe("Supabase persistence convergence", () => {
     const authorized = await testFile("src/lib/rdash/server/authorized-commit.ts").text();
     const profile = await testFile("src/lib/rdash/contractor-profile.ts").text();
 
-    expect(migration).toContain("create or replace function public.uc_contractor_rate_projection_rows");
-    expect(migration).toContain("p_contractor -> 'work_capabilities'");
-    expect(migration).toContain("p_contractor -> 'capabilities_v2'");
-    expect(migration).toContain("'crate-' || v_contractor_id || '-' || v_subcategory_id");
-    expect(migration).toContain("create or replace function public.uc_expand_contractor_rate_operations");
-    expect(migration).toContain("v_op ->> 'collection' <> 'master.contractors'");
-    expect(migration).toContain("'collection', 'master.contractorRates'");
-    expect(migration).toContain("'table', 'entity_master_contractorRates'");
-    expect(migration).toContain("v_operations := public.uc_expand_contractor_rate_operations");
-    expect(migration).toContain("return public.commit_workspace_operations_internal(");
-    expect(migration).toContain("One-time live-data convergence");
+    expectTokens(migration, ["create or replace function public.uc_contractor_rate_projection_rows"]);
+    expectTokens(migration, ["p_contractor -> 'work_capabilities'"]);
+    expectTokens(migration, ["p_contractor -> 'capabilities_v2'"]);
+    expectTokens(migration, ["'crate-' || v_contractor_id || '-' || v_subcategory_id"]);
+    expectTokens(migration, ["create or replace function public.uc_expand_contractor_rate_operations"]);
+    expectTokens(migration, ["v_op ->> 'collection' <> 'master.contractors'"]);
+    expectTokens(migration, ["'collection', 'master.contractorRates'"]);
+    expectTokens(migration, ["'table', 'entity_master_contractorRates'"]);
+    expectTokens(migration, ["v_operations := public.uc_expand_contractor_rate_operations"]);
+    expectTokens(migration, ["return public.commit_workspace_operations_internal("]);
+    expectTokens(migration, ["One-time live-data convergence"]);
     expect(migration).toContain("'contractor-rate-projection'");
-    expect(migration).toContain("v_next_revision := v_current_revision + 1");
+    expectTokens(migration, ["v_next_revision := v_current_revision + 1"]);
     expect(migration).toContain("is_baseline");
 
-    expect(revisionFix).toContain("v_projection_ids text[]");
-    expect(revisionFix).toContain("v_contractor_projection := public.uc_contractor_rate_projection_rows");
-    expect(revisionFix).toContain("not (v_existing_id = any(v_projection_ids))");
-    expect(revisionFix).toContain("preserving stable row revisions");
+    expectTokens(revisionFix, ["v_projection_ids text[]"]);
+    expectTokens(revisionFix, ["v_contractor_projection := public.uc_contractor_rate_projection_rows"]);
+    expectTokens(revisionFix, ["not (v_existing_id = any(v_projection_ids))"]);
+    expectTokens(revisionFix, ["preserving stable row revisions"]);
 
-    expect(authorized).toContain('import { contractorRateProjection } from "../contractor-profile";');
-    expect(authorized).toContain("function canonicalizeContractorRateOperations(");
-    expect(authorized).toContain("contractorRates = contractorRateProjection(");
-    expect(authorized).toContain("canonicalizeContractorRateOperations(current.data, commitOperations)");
+    expectTokens(authorized, ['import { contractorRateProjection } from "../contractor-profile";']);
+    expectTokens(authorized, ["function canonicalizeContractorRateOperations("]);
+    expectTokens(authorized, ["contractorRates = contractorRateProjection("]);
+    expectTokens(authorized, ["canonicalizeContractorRateOperations(current.data, commitOperations)"]);
     expect(profile).toContain("workTypesForSubcategory(subcategory)");
-    expect(profile).toContain("rate.work_type_id === workTypeRate.work_type_id");
-    expect(profile).toContain("work_type_name: workTypeName");
+    expectTokens(profile, ["rate.work_type_id === workTypeRate.work_type_id"]);
+    expectTokens(profile, ["work_type_name: workTypeName"]);
   });
 
   test("persists the work catalog in Supabase and stops runtime JSON replacement", async () => {
     const migration = await testFile(WORK_CATALOG_MIGRATION).text();
     const commitRest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
 
-    expect(migration).toContain('insert into public."entity_master_units"');
-    expect(migration).toContain('insert into public."entity_master_workCategories"');
-    expect(migration).toContain('insert into public."entity_master_workSubcategories"');
-    expect(migration).toContain('insert into public."entity_master_articles"');
-    expect(migration).toContain('insert into public."entity_master_subcategoryArticleMap"');
-    expect(migration).toContain("data = excluded.data ||");
+    expectTokens(migration, ['insert into public."entity_master_units"']);
+    expectTokens(migration, ['insert into public."entity_master_workCategories"']);
+    expectTokens(migration, ['insert into public."entity_master_workSubcategories"']);
+    expectTokens(migration, ['insert into public."entity_master_articles"']);
+    expectTokens(migration, ['insert into public."entity_master_subcategoryArticleMap"']);
+    expectTokens(migration, ["data = excluded.data ||"]);
     expect(migration).toContain("'work-catalog-seed'");
-    expect(migration).toContain("is_baseline = true");
+    expectTokens(migration, ["is_baseline = true"]);
 
-    expect(commitRest).toContain('import { WORK_CATALOG_VERSION } from "../work-category-master";');
-    expect(commitRest).toContain("master.catalog_version = WORK_CATALOG_VERSION;");
+    expectTokens(commitRest, ['import { WORK_CATALOG_VERSION } from "../work-category-master";']);
+    expectTokens(commitRest, ["master.catalog_version = WORK_CATALOG_VERSION;"]);
   });
 
   test("establishes a fresh journal baseline after historical gaps", async () => {
     const migration = await testFile(MIGRATION).text();
     const delta = await testFile("src/lib/rdash/server/workspace-changes.ts").text();
 
-    expect(migration).toContain("from public.entity_workspace_revision r");
-    expect(migration).toContain("on conflict (workspace_id, revision) do update");
-    expect(migration).toContain("set is_baseline = true");
+    expectTokens(migration, ["from public.entity_workspace_revision r"]);
+    expectTokens(migration, ["on conflict (workspace_id, revision) do update"]);
+    expectTokens(migration, ["set is_baseline = true"]);
 
-    expect(delta).toContain("afterRevision < baselineRevision");
-    expect(delta).toContain('reason: "revision_too_old"');
+    expectTokens(delta, ["afterRevision < baselineRevision"]);
+    expectTokens(delta, ['reason: "revision_too_old"']);
   });
 
   test("keeps the current application on one workspace commit RPC", async () => {

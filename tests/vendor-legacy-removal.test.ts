@@ -23,7 +23,8 @@ describe("Vendor canonical architecture", () => {
     const block = types.slice(start, end);
     for (const field of ["quoted_rate", "vendor_id", "article_id", "variant_id", "status", "created_at", "updated_at"]) expect(block).toContain(field);
     for (const legacy of ["unit_id", "work_required_article_id", "gst_inclusive", "gst_rate", "discount_pct", "freight_amount", "valid_from", "current_source_type", "article_name"]) expect(block).not.toContain(legacy);
-    expect(block).not.toContain("\n    rate:");
+    // No legacy bare `rate:` field, whatever the interface indentation is.
+    expect(block).not.toMatch(/^[ \t]*rate[ \t]*:/m);
   });
   test("all Vendor rate configuration resolves through Article/Variant", async () => {
     const resolver = await source("src/lib/rdash/article-rate-config.ts");

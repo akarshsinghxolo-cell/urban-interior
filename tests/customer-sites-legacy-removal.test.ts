@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 
@@ -30,18 +31,18 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   const sites = customerSitesDialog.indexOf("<CustomerSiteDraftCard");
   const workRequired = customerSitesDialog.indexOf("<CustomerWorkRequiredDraftSection");
 
-  expect(customerSitesDialog).toContain('isEdit ? "Edit Customer and Sites" : "Add New Customer"');
+  expectTokens(customerSitesDialog, ['isEdit ? "Edit Customer and Sites" : "Add New Customer"']);
   expect(sites).toBeGreaterThanOrEqual(0);
   expect(workRequired).toBeGreaterThan(sites);
   expect(customerSitesDialog).not.toContain("CustomerWorkInterests");
   expect(customerDetailsFields).not.toContain("CustomerWorkInterests");
   expect(customerSitesDialog).toContain("draftForWorkRequired");
-  expect(workRequiredFields).not.toContain("suggested from this customer");
-  expect(workRequiredFields).toContain("+ Add category");
-  expect(workRequiredFields).toContain("+ Add subcategory");
+  expectNoTokens(workRequiredFields, ["suggested from this customer"]);
+  expectTokens(workRequiredFields, ["+ Add category"]);
+  expectTokens(workRequiredFields, ["+ Add subcategory"]);
   expect(workRequiredFields.indexOf("Covered Areas")).toBeLessThan(workRequiredFields.indexOf("Primary Category"));
-  expect(workRequiredFields).toContain('site?.name || "this Customer"');
+  expectTokens(workRequiredFields, ['site?.name || "this Customer"']);
   expect(createMenu).toContain('type="checkbox"');
   expect(createMenu).toContain('selectedWorkRequired.map');
-  expect(createMenu).toContain('`${customer.name}${site ? ` · ${site.name}` : ""}`');
+  expectTokens(createMenu, ['`${customer.name}${site ? ` · ${site.name}` : ""}`']);
 });

@@ -1,13 +1,14 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
 
 describe("Google Drive transaction simplification", () => {
   test("keeps transfer progress local and uses a fixed Drive chunk size", async () => {
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
-    expect(transfer).toContain("const CHUNK_SIZE = 8 * 1024 * 1024");
+    expectTokens(transfer, ["const CHUNK_SIZE = 8 * 1024 * 1024"]);
     expect(transfer).not.toContain('jsonPost("progress"');
     expect(transfer).not.toContain("chunkSize(");
-    expect(transfer).toContain("preferredStorageAccountId: batch.storageAccountId");
+    expectTokens(transfer, ["preferredStorageAccountId: batch.storageAccountId"]);
   });
 
   test("keeps durable upload jobs and recreates dead resumable sessions", async () => {
@@ -15,21 +16,21 @@ describe("Google Drive transaction simplification", () => {
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
     const indexedDb = await readFile("src/lib/uploads/upload-indexed-db.ts", "utf8");
 
-    expect(indexedDb).toContain('const DB_NAME = "urban-castle-uploads"');
-    expect(store).toContain("await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt })");
-    expect(store).toContain("await persistItem(item)");
+    expectTokens(indexedDb, ['const DB_NAME = "urban-castle-uploads"']);
+    expectTokens(store, ["await uploadIndexedDb.putBlob({ uploadItemId: itemId, blob: file, createdAt })"]);
+    expectTokens(store, ["await persistItem(item)"]);
     expect(transfer).toContain("sessionKnownExpired(current)");
     expect(transfer).toContain("resetDriveSession");
-    expect(transfer).toContain("response.status >= 400 && response.status < 500 && response.status !== 429");
+    expectTokens(transfer, ["response.status >= 400 && response.status < 500 && response.status !== 429"]);
     expect(transfer).toContain("refreshClientSession()");
   });
 
   test("backs temporary failures off with jitter and honors Retry-After", async () => {
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
-    expect(transfer).toContain("function retryDelayMs(retryCount: number)");
-    expect(transfer).toContain("0.75 + Math.random() * 0.5");
+    expectTokens(transfer, ["function retryDelayMs(retryCount: number)"]);
+    expectTokens(transfer, ["0.75 + Math.random() * 0.5"]);
     expect(transfer).toContain("responseRetryAfterMs(response)");
-    expect(transfer).toContain("const hintedDelay");
+    expectTokens(transfer, ["const hintedDelay"]);
   });
 
   test("waits for every persisted attachment target and retries automatically", async () => {
@@ -37,45 +38,45 @@ describe("Google Drive transaction simplification", () => {
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
 
     expect(initiate).toContain("assertUploadTargetReady");
-    expect(initiate).toContain("uploadPurposeAllowedForEntity(targetEntityType, purpose)");
-    expect(initiate).toContain('targetEntityType === "general"');
-    expect(initiate).toContain('resolveEntityContext(db, targetEntityType, targetEntityId, "Upload target")');
-    expect(initiate).not.toContain("function uploadTargetExists");
-    expect(initiate).toContain('targetEntityType === "general"');
-    expect(initiate).toContain("assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose)");
+    expectTokens(initiate, ["uploadPurposeAllowedForEntity(targetEntityType, purpose)"]);
+    expectTokens(initiate, ['targetEntityType === "general"']);
+    expectTokens(initiate, ['resolveEntityContext(db, targetEntityType, targetEntityId, "Upload target")']);
+    expectNoTokens(initiate, ["function uploadTargetExists"]);
+    expectTokens(initiate, ['targetEntityType === "general"']);
+    expectTokens(initiate, ["assertUploadTargetReady(workspace.data, input.targetEntityType, input.targetEntityId, input.purpose)"]);
     expect(transfer).toContain("targetReadyRetryDelayMs");
-    expect(transfer).toContain('status: "paused"');
-    expect(transfer).toContain('lastErrorCode: "TARGET_NOT_READY"');
+    expectTokens(transfer, ['status: "paused"']);
+    expectTokens(transfer, ['lastErrorCode: "TARGET_NOT_READY"']);
     expect(transfer).toContain("scheduleNextRetry()");
   });
 
   test("does not let a terminal file block later files in the same batch", async () => {
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
-    expect(store).toContain("snapshot.items.find((entry) => entry.batchId === batch.id && itemIsProcessable(entry))");
+    expectTokens(store, ["snapshot.items.find((entry) => entry.batchId === batch.id && itemIsProcessable(entry))"]);
     expect(store).not.toContain("firstItemByBatch");
   });
 
   test("rejects invalid purpose-owner pairs before they enter the durable queue", async () => {
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
     const pendingPanel = await readFile("src/components/uploads/PendingUploadsPanel.tsx", "utf8");
-    expect(store).toContain("uploadPurposeAllowedForEntity(input.targetEntityType, input.purpose)");
-    expect(pendingPanel).toContain('targetEntityType: "general"');
-    expect(pendingPanel).toContain('purpose: "diagnostic"');
-    expect(pendingPanel).not.toContain('targetEntityType: "communication",\n        targetEntityId: reserveEntityId("diagnostic")');
+    expectTokens(store, ["uploadPurposeAllowedForEntity(input.targetEntityType, input.purpose)"]);
+    expectTokens(pendingPanel, ['targetEntityType: "general"']);
+    expectTokens(pendingPanel, ['purpose: "diagnostic"']);
+    expectNoTokens(pendingPanel, ['targetEntityType: "communication", targetEntityId: reserveEntityId("diagnostic")']);
   });
 
   test("scopes pending-file deduplication to the same record and purpose", async () => {
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
-    expect(store).toContain("entry.targetEntityType === batch.targetEntityType");
-    expect(store).toContain("entry.targetEntityId === batch.targetEntityId");
-    expect(store).toContain("entry.purpose === batch.purpose");
+    expectTokens(store, ["entry.targetEntityType === batch.targetEntityType"]);
+    expectTokens(store, ["entry.targetEntityId === batch.targetEntityId"]);
+    expectTokens(store, ["entry.purpose === batch.purpose"]);
   });
 
   test("does not require a persisted server upload batch or noisy lifecycle events", async () => {
     const initiate = await readFile("src/lib/rdash/server/direct-upload-initiate.ts", "utf8");
     expect(initiate).not.toContain('.from("uc_upload_batches").upsert');
-    expect(initiate).not.toContain('event_type: "session_started"');
-    expect(initiate).not.toContain('event_type: "bound"');
+    expectNoTokens(initiate, ['event_type: "session_started"']);
+    expectNoTokens(initiate, ['event_type: "bound"']);
     expect(initiate).toContain("input.preferredStorageAccountId");
   });
 
@@ -83,8 +84,8 @@ describe("Google Drive transaction simplification", () => {
     const persistence = await readFile("src/lib/rdash/server/direct-upload-persistence.ts", "utf8");
     const finalizer = await readFile("src/lib/rdash/server/direct-upload-finalize-core.ts", "utf8");
 
-    expect(persistence).toContain('import { AsyncLocalStorage } from "node:async_hooks"');
-    expect(persistence).toContain("uploadCommitContext.run({ upserts: [] }, work)");
+    expectTokens(persistence, ['import { AsyncLocalStorage } from "node:async_hooks"']);
+    expectTokens(persistence, ["uploadCommitContext.run({ upserts: [] }, work)"]);
     expect(persistence).toContain("commitWorkspaceOperations");
     expect(persistence).toContain("getWorkspaceSubset");
     expect(persistence).toContain('"master.storageFolderInstances"');
@@ -98,11 +99,11 @@ describe("Google Drive transaction simplification", () => {
     expect(persistence).not.toContain("enterWith");
     expect(persistence).not.toContain('rpc("uc_bump_workspace_revision"');
     expect(persistence).not.toContain("getSupabaseAdminClient");
-    expect(finalizer).toContain("uploadPurposeAllowedForEntity(serverTargetType, serverPurpose)");
-    expect(finalizer).toContain("existingFolderInstance?.template_id || `canonical-${serverPurpose}`");
+    expectTokens(finalizer, ["uploadPurposeAllowedForEntity(serverTargetType, serverPurpose)"]);
+    expectTokens(finalizer, ["existingFolderInstance?.template_id || `canonical-${serverPurpose}`"]);
     expect(finalizer).toContain('upsertEntityRow("entity_master_storageFolderTemplates"');
-    expect(finalizer).toContain("withUploadCommitContext(async () =>");
-    expect(finalizer).toContain("await bumpWorkspaceRevision()");
+    expectTokens(finalizer, ["withUploadCommitContext(async () =>"]);
+    expectTokens(finalizer, ["await bumpWorkspaceRevision()"]);
   });
 
   test("preserves contextual attachment labels and Work Required thread routing", async () => {
@@ -111,21 +112,21 @@ describe("Google Drive transaction simplification", () => {
     const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");
     const threadPanel = await readFile("src/components/rdash/ThreadPanel.tsx", "utf8");
 
-    expect(entityContext).toContain("export function resolveAttachmentEntityLabel");
-    expect(files).toContain('import { resolveAttachmentEntityLabel, resolveEntityContext } from "../../entity-context"');
-    expect(finalizer).toContain("entity_label: resolveAttachmentEntityLabel(workspace.data, serverTargetType, serverTargetId)");
-    expect(finalizer).toContain('resolveEntityContext(workspace.data, serverTargetType, serverTargetId, "Upload finalization")');
-    expect(finalizer).not.toContain("context = undefined");
+    expectTokens(entityContext, ["export function resolveAttachmentEntityLabel"]);
+    expectTokens(files, ['import { resolveAttachmentEntityLabel, resolveEntityContext } from "../../entity-context"']);
+    expectTokens(finalizer, ["entity_label: resolveAttachmentEntityLabel(workspace.data, serverTargetType, serverTargetId)"]);
+    expectTokens(finalizer, ['resolveEntityContext(workspace.data, serverTargetType, serverTargetId, "Upload finalization")']);
+    expectNoTokens(finalizer, ["context = undefined"]);
     expect(threadPanel).toContain("resolveThreadRecordEntityType");
-    expect(entityContext).toContain('recordType === "workRequired"');
+    expectTokens(entityContext, ['recordType === "workRequired"']);
   });
 
   test("recovers when workspace persistence succeeded before the upload job status update", async () => {
     const finalizer = await readFile("src/lib/rdash/server/direct-upload-finalize-core.ts", "utf8");
-    expect(finalizer).toContain("registeredResult(admin, item, input)");
-    expect(finalizer).toContain("await markUploadCompleted(admin, item, existingResult");
-    expect(finalizer).toContain("Could not mark batch completed");
-    expect(finalizer).toContain("Could not write completion event");
+    expectTokens(finalizer, ["registeredResult(admin, item, input)"]);
+    expectTokens(finalizer, ["await markUploadCompleted(admin, item, existingResult"]);
+    expectTokens(finalizer, ["Could not mark batch completed"]);
+    expectTokens(finalizer, ["Could not write completion event"]);
   });
 
   test("uses public Google Drive URLs without Vercel on the normal preview path", async () => {
@@ -152,9 +153,9 @@ describe("Google Drive transaction simplification", () => {
 
   test("keeps external Drive references on their original URL", async () => {
     const attachments = await readFile("src/lib/rdash/file-attachments.ts", "utf8");
-    expect(attachments).toContain('asset.storage_provider === "google_drive" && asset.storage_mode === "managed"');
-    expect(attachments).toContain("googleFileId: managedDriveFile ? asset.google_file_id : undefined");
-    expect(attachments).toContain("url: asset.web_view_link");
+    expectTokens(attachments, ['asset.storage_provider === "google_drive" && asset.storage_mode === "managed"']);
+    expectTokens(attachments, ["googleFileId: managedDriveFile ? asset.google_file_id : undefined"]);
+    expectTokens(attachments, ["url: asset.web_view_link"]);
   });
 
   test("removes the local-file provider from the active routes, validation, and shared contract", async () => {
@@ -164,18 +165,18 @@ describe("Google Drive transaction simplification", () => {
     const types = await readFile("src/lib/rdash/types.ts", "utf8");
     const businessRules = await readFile("src/lib/rdash/business-rules.ts", "utf8");
 
-    expect(manager).toContain("Direct Google Drive uploads");
-    expect(manager).toContain("does not fall back to Vercel local storage");
-    expect(manager).not.toContain("Local storage fallback is active");
+    expectTokens(manager, ["Direct Google Drive uploads"]);
+    expectTokens(manager, ["does not fall back to Vercel local storage"]);
+    expectNoTokens(manager, ["Local storage fallback is active"]);
     expect(manager).not.toContain("download/uploads/");
     expect(files).not.toContain("/api/local-file/");
-    expect(files).not.toContain('storageAccountId === "local"');
+    expectNoTokens(files, ['storageAccountId === "local"']);
     expect(thumbnail).not.toContain('fileId.startsWith("local-")');
-    expect(types).toContain('storage_provider: "google_drive";');
-    expect(types).not.toContain('storage_provider: "google_drive" | "local";');
-    expect(businessRules).not.toContain('storage_provider === "local"');
-    expect(businessRules).not.toContain('storage_account_id === "local"');
-    expect(businessRules).not.toContain('storage_account_id !== "local"');
+    expectTokens(types, ['storage_provider: "google_drive";']);
+    expectNoTokens(types, ['storage_provider: "google_drive" | "local";']);
+    expectNoTokens(businessRules, ['storage_provider === "local"']);
+    expectNoTokens(businessRules, ['storage_account_id === "local"']);
+    expectNoTokens(businessRules, ['storage_account_id !== "local"']);
   });
 
   test("claims the last unreferenced FileAsset before deleting its managed Drive object", async () => {
@@ -183,27 +184,27 @@ describe("Google Drive transaction simplification", () => {
     const cleanup = await readFile("src/lib/rdash/server/file-cleanup.ts", "utf8");
     const cleanupRoute = await readFile("src/app/api/google-drive/cleanup/route.ts", "utf8");
 
-    expect(files).toContain("requestFileAssetCleanupAfterSync(get, attachment.file_asset_id)");
+    expectTokens(files, ["requestFileAssetCleanupAfterSync(get, attachment.file_asset_id)"]);
     expect(cleanup).toContain("fileAssetHasReferences");
     expect(cleanup).toContain("entityFileAttachments");
-    expect(cleanup).toContain("drive_asset_id === fileAssetId");
-    expect(cleanup).toContain("attachment.file_asset_id === fileAssetId");
+    expectTokens(cleanup, ["drive_asset_id === fileAssetId"]);
+    expectTokens(cleanup, ["attachment.file_asset_id === fileAssetId"]);
     expect(cleanup).toContain("claimUnreferencedFileAsset");
     expect(cleanup).toContain("restoreFileAsset");
-    expect(cleanup).toContain('deleteIds: [fileAssetId]');
-    expect(cleanup).toContain('{ method: "DELETE" }');
+    expectTokens(cleanup, ["deleteIds: [fileAssetId]"]);
+    expectTokens(cleanup, ['{ method: "DELETE" }']);
     expect(cleanup.indexOf('deleteIds: [fileAssetId]')).toBeLessThan(cleanup.indexOf("const deleted = await driveFetch"));
-    expect(cleanup).toContain('reason: "external_reference"');
-    expect(cleanup).toContain("driveDeleted: false");
+    expectTokens(cleanup, ['reason: "external_reference"']);
+    expectTokens(cleanup, ["driveDeleted: false"]);
     expect(cleanupRoute).toContain("cleanupUnreferencedManagedFile");
   });
 
   test("preserves the canonical folder hierarchy and Drive folder registry", async () => {
     const hierarchy = await readFile("src/lib/rdash/server/drive-folder-hierarchy.ts", "utf8");
     const storage = await readFile("src/lib/rdash/server/direct-upload-storage.ts", "utf8");
-    expect(hierarchy).toContain('leaf("Customers", "root:customers")');
-    expect(hierarchy).toContain('leaf("Procurement", "root:procurement")');
-    expect(hierarchy).toContain('leaf("Vendors", "root:vendors")');
+    expectTokens(hierarchy, ['leaf("Customers", "root:customers")']);
+    expectTokens(hierarchy, ['leaf("Procurement", "root:procurement")']);
+    expectTokens(hierarchy, ['leaf("Vendors", "root:vendors")']);
     expect(storage).toContain("ensureCanonicalFolderPath");
     expect(storage).toContain('segment.key.includes(":commercial")');
   });
@@ -220,16 +221,16 @@ describe("Google Drive transaction simplification", () => {
       expect(transfer).not.toContain(`status: "${removedStatus}"`);
     }
 
-    expect(store).toContain('status: online ? "queued" : "paused"');
-    expect(store).toContain('lastErrorCode: online ? undefined : NETWORK_ERROR_CODE');
-    expect(transfer).toContain('status: "paused"');
-    expect(transfer).toContain('lastErrorCode: "TARGET_NOT_READY"');
-    expect(transfer).toContain('lastErrorCode: network ? "NETWORK" : "TEMPORARY_ERROR"');
-    expect(transfer).not.toContain('lastErrorMessage: message,\n      });\n      return;\n    }\n\n    const offline');
+    expectTokens(store, ['status: online ? "queued" : "paused"']);
+    expectTokens(store, ["lastErrorCode: online ? undefined : NETWORK_ERROR_CODE"]);
+    expectTokens(transfer, ['status: "paused"']);
+    expectTokens(transfer, ['lastErrorCode: "TARGET_NOT_READY"']);
+    expectTokens(transfer, ['lastErrorCode: network ? "NETWORK" : "TEMPORARY_ERROR"']);
+    expectNoTokens(transfer, ["lastErrorMessage: message, }); return; } const offline"]);
 
-    expect(migration).toContain("where status = 'waiting_for_network'");
-    expect(migration).toContain("where status = 'failed_retryable'");
-    expect(migration).toContain("where status = 'waiting_for_entity'");
-    expect(migration).toContain("where status = 'paused'");
+    expectTokens(migration, ["where status = 'waiting_for_network'"]);
+    expectTokens(migration, ["where status = 'failed_retryable'"]);
+    expectTokens(migration, ["where status = 'waiting_for_entity'"]);
+    expectTokens(migration, ["where status = 'paused'"]);
   });
 });

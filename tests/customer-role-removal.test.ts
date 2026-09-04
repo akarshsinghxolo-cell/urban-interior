@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -39,7 +40,7 @@ describe("Customer Roles removal", () => {
 
   test("Data Import counts all Customers rather than a removed role subset", async () => {
     const text = await readFile("src/components/rdash/modules/DataImportModule.tsx", "utf8");
-    expect(text).toContain('label="Existing customers"');
+    expectTokens(text, ['label="Existing customers"']);
     expect(text).toContain("value={db.customers.length}");
   });
 

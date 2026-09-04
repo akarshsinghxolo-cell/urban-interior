@@ -131,6 +131,22 @@ jobs:
         run: npm run lint
       - name: Build application
         run: npm run build
+      - name: Install bun (QA mock runtime)
+        uses: oven-sh/setup-bun@v2
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run e2e smoke pack (real browser UI flows)
+        run: npm run test:e2e
+      - name: Upload e2e artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Commit verified Vendor cleanup
         if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
         run: |

@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import {
@@ -76,7 +77,7 @@ describe("frontend route queue safety", () => {
     expect(helper).toContain("uc:staff-route-queue:v2");
     expect(tracker).toContain("readQueue(staffId)");
     expect(tracker).toContain("writeQueue(staffId");
-    expect(tracker).not.toContain('const STAFF_ROUTE_QUEUE_KEY = "uc:staff-route-queue:v1"');
+    expectNoTokens(tracker, ['const STAFF_ROUTE_QUEUE_KEY = "uc:staff-route-queue:v1"']);
   });
 
   test("stationary tracking has a two-minute browser heartbeat", () => {
@@ -84,7 +85,7 @@ describe("frontend route queue safety", () => {
       "src/components/rdash/StaffLocationTracker.tsx",
       "utf8",
     );
-    expect(tracker).toContain("POSITION_HEARTBEAT_MS = 2 * 60_000");
+    expectTokens(tracker, ["POSITION_HEARTBEAT_MS = 2 * 60_000"]);
     expect(tracker).toContain("requestCurrentPosition");
     expect(tracker).toContain("positionHeartbeat");
   });
@@ -98,7 +99,7 @@ describe("frontend route queue safety", () => {
       tracker.indexOf("if (payload.ignored)"),
       tracker.indexOf("const uploadedIds"),
     );
-    expect(ignoredBranch).toContain("remains queued");
+    expectTokens(ignoredBranch, ["remains queued"]);
     expect(ignoredBranch).not.toContain("writeQueue(");
   });
 });
@@ -109,12 +110,8 @@ describe("field map layout", () => {
       "src/components/rdash/LeafletMapView.tsx",
       "utf8",
     );
-    expect(map).toContain(
-      'className="absolute inset-0 h-full min-h-0 w-full"',
-    );
-    expect(map).not.toContain(
-      'className="h-full min-h-[280px] w-full"',
-    );
+    expectTokens(map, ['className="', "absolute", "inset-0", "h-full", "min-h-0", "w-full"]);
+    expectNoTokens(map, ['className="h-full min-h-[280px] w-full"']);
   });
 });
 

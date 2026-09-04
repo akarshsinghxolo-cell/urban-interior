@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { workspaceModuleReadPlan } from "@/lib/rdash/server/module-read-plans";
@@ -9,22 +10,22 @@ describe("runtime efficiency hardening", () => {
   test("health summary uses one aggregate PostgreSQL RPC", async () => {
     const source = await read("src/lib/rdash/server/workspace-health.ts");
     expect(source).toContain('admin.rpc("get_workspace_health_summary_v2"');
-    expect(source).toContain("queryCount: 1");
-    expect(source).toContain("collectionCount: 0");
+    expectTokens(source, ["queryCount: 1"]);
+    expectTokens(source, ["collectionCount: 0"]);
     expect(source).not.toContain("getWorkspaceSubset");
     expect(source).not.toContain("HEALTH_SUMMARY_COLLECTIONS");
     expect(source).not.toContain("buildOperationalHealth");
 
     const migration = await read("supabase/migrations/20260806131500_get_workspace_health_summary_v2.sql");
-    expect(migration).toContain("create or replace function public.get_workspace_health_summary_v2");
-    expect(migration).toContain("returns jsonb");
-    expect(migration).toContain("security definer");
-    expect(migration).toContain("grant execute on function public.get_workspace_health_summary_v2(text) to service_role");
-    expect(migration).toContain("with recursive");
+    expectTokens(migration, ["create or replace function public.get_workspace_health_summary_v2"]);
+    expectTokens(migration, ["returns jsonb"]);
+    expectTokens(migration, ["security definer"]);
+    expectTokens(migration, ["grant execute on function public.get_workspace_health_summary_v2(text) to service_role"]);
+    expectTokens(migration, ["with recursive"]);
     expect(migration).toContain("quotation_chain");
     expect(migration).toContain("latest_quotations");
     expect(migration).toContain("Asia/Kolkata");
-    expect(migration).toContain("limit 5");
+    expectTokens(migration, ["limit 5"]);
     expect(migration).toContain('"entity_auditLog_workspace_timestamp_idx"');
   });
 
@@ -33,17 +34,17 @@ describe("runtime efficiency hardening", () => {
     expect(route).toContain("getWorkspaceHealthSummary");
     expect(route).not.toContain("getWorkspace(");
     expect(route).not.toContain("checkWorkspaceIntegrity");
-    expect(route).toContain("private, max-age=300, stale-while-revalidate=3600");
+    expectTokens(route, ["private, max-age=300, stale-while-revalidate=3600"]);
   });
 
   test("browser shares duplicate workspace and health requests", async () => {
     const source = await read("src/lib/rdash/client-auth.ts");
     expect(source).toContain("singleFlightWorkspaceRead");
     expect(source).toContain("sharedHealthRead");
-    expect(source).toContain("HEALTH_CACHE_TTL_MS = 5 * 60_000");
+    expectTokens(source, ["HEALTH_CACHE_TTL_MS = 5 * 60_000"]);
     expect(source).toContain("HEALTH_CACHE_PREFIX");
-    expect(source).toContain("navigator as unknown as { locks?: BrowserLocks }");
-    expect(source).toContain("Re-check after entering the cross-tab lock");
+    expectTokens(source, ["navigator as unknown as { locks?: BrowserLocks }"]);
+    expectTokens(source, ["Re-check after entering the cross-tab lock"]);
     expect(source).toContain("readStoredHealthResponse");
     expect(source).toContain("persistHealthResponse");
     expect(source).not.toContain("scoped-health-deferred");
@@ -52,30 +53,30 @@ describe("runtime efficiency hardening", () => {
   test("session refresh keeps the same shared health cache", async () => {
     const source = await read("src/lib/rdash/client-auth.ts");
     expect(source).toContain("decodeSessionIdentity");
-    expect(source).toContain("payload.sub || payload.user_id || payload.email");
-    expect(source).toContain("decodeSessionIdentity(previous) !== decodeSessionIdentity(token)");
-    expect(source).not.toContain("function tokenFingerprint");
+    expectTokens(source, ["payload.sub || payload.user_id || payload.email"]);
+    expectTokens(source, ["decodeSessionIdentity(previous) !== decodeSessionIdentity(token)"]);
+    expectNoTokens(source, ["function tokenFingerprint"]);
   });
 
   test("workspace deduplication follows canonical entity URLs while module reads follow active navigation", async () => {
     const client = await read("src/lib/rdash/client-auth.ts");
-    expect(client).toContain("WORKSPACE_READ_DEDUPE_TTL_MS = 10_000");
-    expect(client).toContain('headers.get("X-UC-Workspace-Path") || window.location.pathname');
-    expect(client).not.toContain('headers.get("X-UC-Workspace-Module") || ""');
+    expectTokens(client, ["WORKSPACE_READ_DEDUPE_TTL_MS = 10_000"]);
+    expectTokens(client, ['headers.get("X-UC-Workspace-Path") || window.location.pathname']);
+    expectNoTokens(client, ['headers.get("X-UC-Workspace-Module") || ""']);
 
     const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
     const resolver = await read("src/lib/rdash/workspace-active-read-target.ts");
-    expect(boundary).toContain("workspaceReadTargetForActiveNavigation(pathname, activeModuleId)");
-    expect(boundary).toContain('"X-UC-Workspace-Module": requestedTarget.moduleId');
-    expect(resolver).toContain("pathTarget.moduleId === activeTarget.moduleId ? pathTarget : activeTarget");
+    expectTokens(boundary, ["workspaceReadTargetForActiveNavigation(pathname, activeModuleId)"]);
+    expectTokens(boundary, ['"X-UC-Workspace-Module": requestedTarget.moduleId']);
+    expectTokens(resolver, ["pathTarget.moduleId === activeTarget.moduleId ? pathTarget : activeTarget"]);
     expect(resolver).toContain("workspaceReadTargetForPath(pathname)");
     expect(resolver).toContain("workspaceReadTargetForModule(activeModuleId)");
   });
 
   test("hidden tabs reuse bounded stale health rather than polling the server", async () => {
     const source = await read("src/lib/rdash/client-auth.ts");
-    expect(source).toContain("HEALTH_HIDDEN_STALE_MS = 24 * 60 * 60_000");
-    expect(source).toContain('document.visibilityState !== "visible"');
+    expectTokens(source, ["HEALTH_HIDDEN_STALE_MS = 24 * 60 * 60_000"]);
+    expectTokens(source, ['document.visibilityState !== "visible"']);
     expect(source).toContain("clearStoredHealthResponses");
   });
 
@@ -85,15 +86,15 @@ describe("runtime efficiency hardening", () => {
     expect(server).toContain("recordStaffRouteBundle");
     expect(server).toContain("cleanupExpiredStaffRouteBundles");
     expect(server).not.toContain('from("StaffLocationPing")');
-    expect(server).not.toContain("const retained =");
-    expect(server).not.toContain("await allPoints()");
+    expectNoTokens(server, ["const retained ="]);
+    expectNoTokens(server, ["await allPoints()"]);
 
     const client = await read("src/components/rdash/StaffLocationTracker.tsx");
-    expect(client).toContain("HOURLY_SYNC_MS = 60 * 60_000");
-    expect(client).toContain("MOVING_CAPTURE_INTERVAL_MS = 30_000");
-    expect(client).toContain("STATIONARY_CAPTURE_INTERVAL_MS = 2 * 60_000");
-    expect(client).toContain("POSITION_HEARTBEAT_MS = 2 * 60_000");
-    expect(client).toContain("POST_TIMEOUT_MS = 15_000");
+    expectTokens(client, ["HOURLY_SYNC_MS = 60 * 60_000"]);
+    expectTokens(client, ["MOVING_CAPTURE_INTERVAL_MS = 30_000"]);
+    expectTokens(client, ["STATIONARY_CAPTURE_INTERVAL_MS = 2 * 60_000"]);
+    expectTokens(client, ["POSITION_HEARTBEAT_MS = 2 * 60_000"]);
+    expectTokens(client, ["POST_TIMEOUT_MS = 15_000"]);
     expect(client).toContain("staffRouteQueueKey(staffId)");
     expect(client).toContain('/api/tracking/routes');
     expect(client).not.toContain('/api/tracking/ping');
@@ -119,25 +120,25 @@ describe("runtime efficiency hardening", () => {
   test("bounded module pages use limit-plus-one without a count query", async () => {
     const rest = await read("src/lib/rdash/server/commit-rest.ts");
     expect(rest).toContain("offsetsByCollection");
-    expect(rest).toContain(".range(offset, offset + configuredLimit)");
-    expect(rest).toContain("rawRows.slice(0, configuredLimit)");
-    expect(rest).toContain("rawRows.length > configuredLimit");
-    expect(rest).not.toContain('count: "exact"');
+    expectTokens(rest, [".range(offset, offset + configuredLimit)"]);
+    expectTokens(rest, ["rawRows.slice(0, configuredLimit)"]);
+    expectTokens(rest, ["rawRows.length > configuredLimit"]);
+    expectNoTokens(rest, ['count: "exact"']);
 
     const route = await read("src/lib/rdash/server/module-scoped-route.ts");
     expect(route).toContain('request.nextUrl.searchParams.getAll("page")');
     expect(route).toContain("getModuleScopedWorkspacePage");
     expect(route).toContain('"X-UC-Read-Page-Only"');
     expect(route).toContain('"X-UC-Read-Has-More"');
-    expect(route).toContain("MODULE_RESPONSE_WARN_BYTES = 512 * 1024");
+    expectTokens(route, ["MODULE_RESPONSE_WARN_BYTES = 512 * 1024"]);
   });
 
   test("browser merges next pages instead of replacing the scoped workspace", async () => {
     const boundary = await read("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx");
     expect(boundary).toContain("mergeWorkspacePage");
-    expect(boundary).toContain("MAX_COLLECTION_PAGES_PER_REQUEST = 4");
-    expect(boundary).toContain('response.headers.get("X-UC-Read-Page-Only") !== "1"');
-    expect(boundary).toContain("payload.revision !== latest.serverRevision");
+    expectTokens(boundary, ["MAX_COLLECTION_PAGES_PER_REQUEST = 4"]);
+    expectTokens(boundary, ['response.headers.get("X-UC-Read-Page-Only") !== "1"']);
+    expectTokens(boundary, ["payload.revision !== latest.serverRevision"]);
     expect(boundary).toContain("workspaceReadCache.store");
   });
 
@@ -148,10 +149,10 @@ describe("runtime efficiency hardening", () => {
     const outbox = await read("src/lib/uploads/workspace-outbox.ts");
     const clientAuth = await read("src/lib/rdash/client-auth.ts");
     expect(rawStore).toContain("workspaceHydrationRevisionIsCurrent(");
-    expect(rawStore).toContain("if (saveEpoch !== syncEpoch) return;");
-    expect(rawStore).toContain("await beginWorkspaceOutboxResetBarrier()");
-    expect(rawStore).toContain("await serverSyncQueue.catch(() => undefined)");
-    expect(rawStore).toContain("rowVersionsCache = null");
+    expectTokens(rawStore, ["if (saveEpoch !== syncEpoch) return;"]);
+    expectTokens(rawStore, ["await beginWorkspaceOutboxResetBarrier()"]);
+    expectTokens(rawStore, ["await serverSyncQueue.catch(() => undefined)"]);
+    expectTokens(rawStore, ["rowVersionsCache = null"]);
     expect(rawStore).toContain("workspaceRowVersionState.replace(undefined)");
     expect(rawStore).toContain("workspaceFoundationRevisionState.replace(payload.revision)");
     expect(rawStore).toContain("workspaceReadCache.clear()");
@@ -159,24 +160,24 @@ describe("runtime efficiency hardening", () => {
     expect(rawStore).toContain("invalidateWorkspaceClientCaches()");
     expect(rawStore).toContain("window.location.reload()");
     expect(boundary).toContain("clearWorkspaceReadRequestCache()");
-    expect(boundary).toContain("result.reason === \"client_ahead\"");
-    expect(boundary).toContain("if (!hydrated)");
+    expectTokens(boundary, ['result.reason === "client_ahead"']);
+    expectTokens(boundary, ["if (!hydrated)"]);
     expect(bridge.indexOf("const accepted = original(input)")).toBeLessThan(bridge.indexOf("workspaceRowVersionState.merge(input.rowVersions)"));
     expect(outbox).toContain("beginWorkspaceOutboxResetBarrier");
-    expect(outbox).toContain("if (resetBarrier) return { replayed: false, conflict: false }");
+    expectTokens(outbox, ["if (resetBarrier) return { replayed: false, conflict: false }"]);
     expect(outbox).toContain("resetWorkspaceOutboxAfterWorkspaceReset");
-    expect(outbox).toContain("await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId)");
-    expect(clientAuth).toContain("if (isWorkspaceRead && !deferReadState)");
+    expectTokens(outbox, ["await uploadIndexedDb.deleteWorkspaceOutbox(item.operationId)"]);
+    expectTokens(clientAuth, ["if (isWorkspaceRead && !deferReadState)"]);
   });
 
   test("module, bounded page and entity reads finish behind a revision fence", async () => {
     const moduleRead = await read("src/lib/rdash/server/module-scoped-read.ts");
     const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
-    expect(moduleRead).toContain("const revisionFence = await getWorkspaceSubset({})");
-    expect(moduleRead).toContain("revisionFence.revision !== scoped.revision");
-    expect(moduleRead).toContain("revisionFence.revision !== page.revision");
-    expect(entityRead).toContain("const revisionFence = await getWorkspaceSubset({})");
-    expect(entityRead).toContain("revisionFence.revision !== merged.revision");
+    expectTokens(moduleRead, ["const revisionFence = await getWorkspaceSubset({})"]);
+    expectTokens(moduleRead, ["revisionFence.revision !== scoped.revision"]);
+    expectTokens(moduleRead, ["revisionFence.revision !== page.revision"]);
+    expectTokens(entityRead, ["const revisionFence = await getWorkspaceSubset({})"]);
+    expectTokens(entityRead, ["revisionFence.revision !== merged.revision"]);
   });
 
   test("pagination metadata survives normalization and offline overlays", async () => {
@@ -184,18 +185,18 @@ describe("runtime efficiency hardening", () => {
     const rawStore = await read("src/lib/rdash/raw-store.ts");
     const sessionMerge = await read("src/lib/rdash/workspace-session-merge.ts");
     const outbox = await read("src/lib/uploads/workspace-outbox.ts");
-    expect(workCategory).toContain("...(db as RDashDatabase)");
-    expect(rawStore).toContain("mergeWorkspaceSnapshot(current.db, db)");
-    expect(sessionMerge).toContain("prepareWorkspaceData(structuredClone(input) as RDashDatabase)");
-    expect(sessionMerge).toContain("structuredClone(current || createEmptyWorkspaceDatabase())");
-    expect(outbox).toContain("acceptedWorkspace = structuredClone(base) as RDashDatabase");
-    expect(outbox).toContain("let db = structuredClone(base) as RDashDatabase");
+    expectTokens(workCategory, ["...(db as RDashDatabase)"]);
+    expectTokens(rawStore, ["mergeWorkspaceSnapshot(current.db, db)"]);
+    expectTokens(sessionMerge, ["prepareWorkspaceData(structuredClone(input) as RDashDatabase)"]);
+    expectTokens(sessionMerge, ["structuredClone(current || createEmptyWorkspaceDatabase())"]);
+    expectTokens(outbox, ["acceptedWorkspace = structuredClone(base) as RDashDatabase"]);
+    expectTokens(outbox, ["let db = structuredClone(base) as RDashDatabase"]);
   });
 
   test("server workspace persistence is Supabase-only with no in-memory fallback backend", async () => {
     const workspace = await read("src/lib/rdash/server/workspace.ts");
     const env = await read(".env.example");
-    expect(workspace).toContain("Supabase/PostgreSQL is the single server workspace persistence system");
+    expectTokens(workspace, ["Supabase/PostgreSQL is the single server workspace persistence system"]);
     expect(workspace).toContain("assertSupabaseSchemaReady");
     expect(workspace).not.toContain("UC_ALLOW_IN_MEMORY_WORKSPACE_FALLBACK");
     expect(workspace).not.toContain("memorySnapshot");
@@ -207,7 +208,7 @@ describe("runtime efficiency hardening", () => {
     const route = await read("src/app/api/operations/commit/route.ts");
     expect(route).toContain("loadOperationSubset");
     expect(route).toContain("operationRowsByCollection");
-    expect(route).toContain("getWorkspaceSubset({ rowsByCollection })");
+    expectTokens(route, ["getWorkspaceSubset({ rowsByCollection })"]);
     expect(route).toContain('commitHeaders("no-op-revision-read"');
     expect(route).not.toContain("getWorkspace(true)");
     expect(route).not.toContain("getWorkspace,");
@@ -220,7 +221,7 @@ describe("runtime efficiency hardening", () => {
 
     expect(authorized).toContain("validationReadPlan");
     expect(authorized).toContain("getWorkspaceSubset(validationReadPlan");
-    expect(authorized).toContain('CommitMode = "row-targeted" | "domain-targeted"');
+    expectTokens(authorized, ['CommitMode = "row-targeted" | "domain-targeted"']);
     expect(authorized).toContain("assertCanonicalThreadOperations");
     expect(authorized).not.toContain("getWorkspace(");
     expect(authorized).not.toContain("phase2-single-read");
@@ -236,10 +237,10 @@ describe("runtime efficiency hardening", () => {
 
     expect(workspace).not.toContain("UC_FULL_WORKSPACE_FALLBACK");
     expect(workspace).not.toContain("getWorkspace(");
-    expect(workspace).toContain('"X-UC-Read-Architecture": "scoped-only"');
+    expectTokens(workspace, ['"X-UC-Read-Architecture": "scoped-only"']);
     expect(moduleRead).not.toContain("UC_MODULE_SCOPED_READS");
     expect(entityRead).not.toContain("UC_ENTITY_SCOPED_READS");
-    expect(readState).not.toContain('mode === "full"\n          ? "full"');
+    expectNoTokens(readState, ['mode === "full" ? "full"']);
   });
 
   test("ordinary and nested Drive uploads use one targeted context architecture", async () => {
@@ -253,15 +254,15 @@ describe("runtime efficiency hardening", () => {
     expect(finalize).toContain("getWorkspaceSubset");
     expect(finalize).not.toContain("getWorkspace(");
     expect(context).toContain("NESTED_TARGET_PARENT_COLLECTION");
-    expect(context).toContain('quotation_item: "quotations"');
-    expect(context).toContain('boq_item: "boqs"');
-    expect(context).toContain('thread_message: "threads"');
+    expectTokens(context, ['quotation_item: "quotations"']);
+    expectTokens(context, ['boq_item: "boqs"']);
+    expectTokens(context, ['thread_message: "threads"']);
     expect(context).toContain("prepareNestedResolverProjection");
     expect(context).toContain("getWorkspaceSubset");
     expect(context).toContain("invalidUploadContext");
     expect(context).not.toContain("getWorkspace(");
     expect(context).not.toContain("COMPATIBILITY_NESTED_TARGETS");
-    expect(context).not.toContain("compatibility full read");
+    expectNoTokens(context, ["compatibility full read"]);
   });
 
   test("normal file cleanup and Drive account maintenance never load or save the whole workspace", async () => {
@@ -280,9 +281,9 @@ describe("runtime efficiency hardening", () => {
   test("canonical Customer thread migration removes the old bare identity", async () => {
     const migration = await read("supabase/migrations/20260815163500_canonical_customer_thread_identity.sql");
     expect(migration).toContain("customer-conversation:");
-    expect(migration).toContain("data->>'record_id' like 'cust-%'");
-    expect(migration).toContain('from public."entity_customers" as customer');
-    expect(migration).toContain("revision = thread.revision + 1");
+    expectTokens(migration, ["data->>'record_id' like 'cust-%'"]);
+    expectTokens(migration, ['from public."entity_customers" as customer']);
+    expectTokens(migration, ["revision = thread.revision + 1"]);
 
     const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
     const authorized = await read("src/lib/rdash/server/authorized-commit.ts");
@@ -292,7 +293,7 @@ describe("runtime efficiency hardening", () => {
     expect(targeted).toContain('recordId.startsWith("customer-conversation:")');
     expect(targeted).not.toContain('recordId.startsWith("cust-")');
     expect(authorized).toContain('recordId.startsWith("cust-")');
-    expect(authorized).toContain("must use customer-conversation:<customer_id>");
+    expectTokens(authorized, ["must use customer-conversation:<customer_id>"]);
     expect(entityRead).toContain("canonicalThreadRecordIds");
     expect(workspace).not.toContain("canonicalizeResetCustomerThreads");
     const resetCanonicalization = resetPersistence.indexOf("customer-conversation:${thread.record_id}");
@@ -324,16 +325,16 @@ describe("runtime efficiency hardening", () => {
     const bootstrap = await read("src/app/api/bootstrap/route.ts");
     const projected = await read("src/lib/rdash/server/projected-workspace-bootstrap.ts");
     const appShell = await read("src/components/urban-castle/UrbanCastleApp.tsx");
-    expect(store).not.toContain('import { buildSeedDatabase } from "./seed"');
+    expectNoTokens(store, ['import { buildSeedDatabase } from "./seed"']);
     expect(store).not.toContain("prepareWorkspaceDatabase(");
-    expect(store).not.toContain('selectedCustomerId: "cust-das"');
-    expect(store).toContain("db: createEmptyWorkspaceDatabase()");
-    expect(store).toContain("mergeWorkspaceSnapshot(current.db, db)");
+    expectNoTokens(store, ['selectedCustomerId: "cust-das"']);
+    expectTokens(store, ["db: createEmptyWorkspaceDatabase()"]);
+    expectTokens(store, ["mergeWorkspaceSnapshot(current.db, db)"]);
     expect(bootstrap).toContain("getProjectedWorkspaceBootstrap(user.staffId)");
     expect(projected).toContain("getProjectedWorkspacePermissions");
-    expect(projected).not.toContain("compatibility read");
-    expect(appShell).toContain('return scope === "workdesk";');
-    expect(appShell).not.toContain('scope === "full"');
+    expectNoTokens(projected, ["compatibility read"]);
+    expectTokens(appShell, ['return scope === "workdesk";']);
+    expectNoTokens(appShell, ['scope === "full"']);
   });
 
   test("does not rehydrate unchanged cached modules or auto-rebase conflicts through workspace reads", async () => {
@@ -341,8 +342,8 @@ describe("runtime efficiency hardening", () => {
     const outbox = await read("src/lib/uploads/workspace-outbox.ts");
     const cache = await read("src/lib/rdash/workspace-read-cache.ts");
     const coreTypes = await read("src/lib/rdash/store/types.ts");
-    expect(boundary).not.toContain("db: cachedTarget.data");
-    expect(boundary).toContain("if (!result.changed)");
+    expectNoTokens(boundary, ["db: cachedTarget.data"]);
+    expectTokens(boundary, ["if (!result.changed)"]);
     expect(boundary).toContain("acceptWorkspaceServerRevision");
     expect(outbox).not.toContain('fetch("/api/workspace"');
     expect(outbox).not.toContain("expectedRevisions");
@@ -355,10 +356,10 @@ describe("runtime efficiency hardening", () => {
     const foundationSync = await read("src/components/urban-castle/WorkspaceFoundationSync.tsx");
     const moduleReader = await read("src/lib/rdash/server/module-scoped-read.ts");
     const appShell = await read("src/components/urban-castle/UrbanCastleApp.tsx");
-    expect(appShell).toContain("<WorkspaceFoundationSync />");
+    expectTokens(appShell, ["<WorkspaceFoundationSync />"]);
     expect(foundationSync).toContain("WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS.join");
     expect(foundationSync).toContain('fetch(`/api/changes?${params.toString()}`');
-    expect(foundationSync).toContain('"X-UC-Delta-Client": "workspace-foundation"');
+    expectTokens(foundationSync, ['"X-UC-Delta-Client": "workspace-foundation"']);
     expect(foundationSync).toContain("workspaceFoundationRevisionState");
     expect(foundationSync).toContain("acceptWorkspaceServerRevision");
     expect(foundationSync).toContain("applyWorkspaceDelta");
@@ -372,12 +373,12 @@ describe("runtime efficiency hardening", () => {
     const foundationSync = await read("src/components/urban-castle/WorkspaceFoundationSync.tsx");
     const changes = await read("src/app/api/changes/route.ts");
     expect(app).toContain("workspaceFoundationRevisionState.replace(payload.revision)");
-    expect(foundationSync).toContain("if (knownFoundationRevision >= serverRevision) return");
+    expectTokens(foundationSync, ["if (knownFoundationRevision >= serverRevision) return"]);
     expect(foundationSync).not.toContain("targetChanged");
-    expect(foundationSync).toContain('"X-UC-Foundation-Delta": "1"');
-    expect(changes).toContain('request.headers.get("x-uc-foundation-delta") === "1"');
-    expect(changes).toContain("canReturnFullStaffRows = canReadFullStaff && !foundationProjection");
-    expect(changes).toContain("canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS");
+    expectTokens(foundationSync, ['"X-UC-Foundation-Delta": "1"']);
+    expectTokens(changes, ['request.headers.get("x-uc-foundation-delta") === "1"']);
+    expectTokens(changes, ["canReturnFullStaffRows = canReadFullStaff && !foundationProjection"]);
+    expectTokens(changes, ["canReturnFullStaffRows ? undefined : DIRECTORY_PROJECTION_COLLECTIONS"]);
   });
 
 });

@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
 import { resolveAttachmentEntityLabel } from "@/lib/rdash/entity-context";
@@ -110,14 +111,14 @@ describe("phase 4 file-system hardening", () => {
 
   test("GST monthly memo reacts to invoices, not quotations", async () => {
     const source = await testFile("src/components/rdash/modules/SalesExtraModules.tsx").text();
-    expect(source).toContain("}, [gstInvoices, db.vendorBills]);");
-    expect(source).not.toContain("}, [db.quotations, db.vendorBills]);");
+    expectTokens(source, ["}, [gstInvoices, db.vendorBills]);"]);
+    expectNoTokens(source, ["}, [db.quotations, db.vendorBills]);"]);
   });
 
   test("Workdesk opens contractor-payment approvals as contractor payments", async () => {
     const source = await testFile("src/components/rdash/modules/DailyWork.tsx").text();
-    expect(source).toContain('openDetail("contractorPayment", approval.linked_record_id)');
-    expect(source).not.toContain('openDetail("workOrder", approval.linked_record_id);\n        }\n    };');
+    expectTokens(source, ['openDetail("contractorPayment", approval.linked_record_id)']);
+    expectNoTokens(source, ['openDetail("workOrder", approval.linked_record_id); } };']);
   });
   test("historical audit rows do not manufacture threads for deleted business records", () => {
     const db = buildSeedDatabase();

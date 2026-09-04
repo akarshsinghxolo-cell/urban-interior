@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { beforeEach, describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
@@ -98,17 +99,17 @@ describe("dirty form integration boundaries", () => {
     expect(app).toContain("DirtyFormNavigationGuard");
     expect(app).toContain("LegacyDirtyFormAdapter");
     expect(history).toContain("dirtyFormRegistry.hasDirtyForms()");
-    expect(history).toContain('phase: "reverting"');
-    expect(exitGuard).toContain("dirtyForms.dirtyForms.length > 0");
-    expect(header).toContain('reason: "reload the workspace"');
-    expect(header).toContain('reason: "sign out"');
+    expectTokens(history, ['phase: "reverting"']);
+    expectTokens(exitGuard, ["dirtyForms.dirtyForms.length > 0"]);
+    expectTokens(header, ['reason: "reload the workspace"']);
+    expectTokens(header, ['reason: "sign out"']);
   });
 
   test("the shared edit dialog registers Save and Discard callbacks", async () => {
     const source = await testFile("src/components/rdash/EditDetailsDialog.tsx").text();
     expect(source).toContain("useDirtyFormRegistration");
-    expect(source).toContain("save: persistChanges");
-    expect(source).toContain("discard: () =>");
+    expectTokens(source, ["save: persistChanges"]);
+    expectTokens(source, ["discard: () =>"]);
     expect(source).toContain("dirtyFormRegistry.markClean(formId)");
   });
 
@@ -133,7 +134,7 @@ describe("dirty form integration boundaries", () => {
       expect(source).toContain(title);
     }
     expect(source).toContain('[role="switch"]');
-    expect(source).toContain('button[title^="Preview "]');
+    expectTokens(source, ['button[title^="Preview "]']);
     expect(source).toContain("selectedButtonValues");
     expect(source).toContain("entry.config.saveTimeoutMs");
     expect(source).toContain("syncAllManagedDialogs");

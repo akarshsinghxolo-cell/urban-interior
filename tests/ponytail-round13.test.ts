@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
@@ -25,17 +26,17 @@ describe("Ponytail round 13 guards", () => {
   test("command palette surfaces recent modules in its empty state", async () => {
     const palette = await source("src/components/rdash/CommandPalette.tsx");
     expect(palette).toContain("s.moduleHistory");
-    expect(palette).toContain("Recent modules");
+    expectTokens(palette, ["Recent modules"]);
     expect(palette).toContain("setActiveModule(tab.moduleId)");
   });
 
   test("palette rows and chips keep 44px touch targets on mobile", async () => {
     const palette = await source("src/components/rdash/CommandPalette.tsx");
     // Result rows: mobile min-height, compact again on sm+.
-    expect(palette).toContain("min-h-11 w-full items-center gap-2.5 rounded-md px-2.5");
-    expect(palette).toContain("sm:min-h-0 sm:py-1.5");
+    expectTokens(palette, ["min-h-11", "w-full", "items-center", "gap-2.5", "rounded-md", "px-2.5"]);
+    expectTokens(palette, ["sm:min-h-0", "sm:py-1.5"]);
     // Recent-search chips and recent-module tiles are touch-sized too.
-    expect(palette).toContain("min-h-11 rounded-md border px-3 py-2 text-[11px]");
-    expect(palette).toContain("min-h-11 items-center gap-2 rounded-md border border-border");
+    expectTokens(palette, ["min-h-11", "rounded-md", "border", "px-3", "py-2", "text-[11px]"]);
+    expectTokens(palette, ["min-h-11", "items-center", "gap-2", "rounded-md", "border", "border-border"]);
   });
 });

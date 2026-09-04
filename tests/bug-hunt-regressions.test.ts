@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import {
@@ -169,27 +170,27 @@ describe("bug hunt: partner performance correctness", () => {
 describe("bug hunt: source-level race and validation guards", () => {
   test("aborts stale scoped reads and validates the request target", async () => {
     const source = await testFile("src/components/urban-castle/WorkspaceScopedReadBoundary.tsx").text();
-    expect(source).toContain("new AbortController()");
-    expect(source).toContain("const requestStillCurrent = () =>");
-    expect(source).toContain("requestSequenceRef.current === requestId");
-    expect(source).toContain("latestTargetKeyRef.current === requestTargetKey");
-    expect(source).toContain("if (!requestStillCurrent()) return");
-    expect(source).not.toContain("inFlightRef.current || error");
+    expectTokens(source, ["new AbortController()"]);
+    expectTokens(source, ["const requestStillCurrent = () =>"]);
+    expectTokens(source, ["requestSequenceRef.current === requestId"]);
+    expectTokens(source, ["latestTargetKeyRef.current === requestTargetKey"]);
+    expectTokens(source, ["if (!requestStillCurrent()) return"]);
+    expectNoTokens(source, ["inFlightRef.current || error"]);
   });
 
   test("delta sync detects non-advancing journals and redirects expired sessions", async () => {
     const source = await testFile("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
-    expect(source).toContain("delta.revision === afterRevision");
-    expect(source).toContain("Delta journal did not advance");
+    expectTokens(source, ["delta.revision === afterRevision"]);
+    expectTokens(source, ["Delta journal did not advance"]);
     expect(source).toContain("clearSessionToken()");
     expect(source).not.toContain("activeModuleId");
   });
 
   test("variation dialog blocks invalid links, precision, and duplicate submissions", async () => {
     const source = await testFile("src/components/rdash/VariationRequestDialog.tsx").text();
-    expect(source).toContain("selectedExecutionLog.work_order_id !== targetWorkOrderId");
-    expect(source).toContain("if (submitting) return");
-    expect(source).toContain("no more than two decimal places");
+    expectTokens(source, ["selectedExecutionLog.work_order_id !== targetWorkOrderId"]);
+    expectTokens(source, ["if (submitting) return"]);
+    expectTokens(source, ["no more than two decimal places"]);
     expect(source).toContain("MAX_DESCRIPTION_LENGTH");
     expect(source).toContain("TERMINAL_WORK_ORDER_STATUSES");
   });
@@ -198,9 +199,9 @@ describe("bug hunt: source-level race and validation guards", () => {
     const scoped = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
     const bootstrap = await testFile("src/app/api/bootstrap/route.ts").text();
     for (const source of [scoped, bootstrap]) {
-      expect(source).toContain('error.message === "UNAUTHORIZED"');
-      expect(source).toContain("authentication service is temporarily unavailable");
-      expect(source).toContain('"X-Content-Type-Options": "nosniff"');
+      expectTokens(source, ['error.message === "UNAUTHORIZED"']);
+      expectTokens(source, ["authentication service is temporarily unavailable"]);
+      expectTokens(source, ['"X-Content-Type-Options": "nosniff"']);
     }
   });
 });

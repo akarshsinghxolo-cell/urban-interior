@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { reconcileWorkRequiredSelection, seedDetailedAreaLines, workRequiredDisplayTitle } from "../src/lib/rdash/work-types";
@@ -8,16 +9,16 @@ describe("Detailed-area capture (annotated UX rework)", () => {
   test("Sites tab: AREAS chip row removed, work meta shows its area names", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
     // Annotation 1: the static "Areas (n)" chip row is gone from the site card.
-    expect(desk).not.toContain("Areas ({siteAreas.length})");
+    expectNoTokens(desk, ["Areas ({siteAreas.length})"]);
     // Annotation 2: each work row lists the areas it belongs to.
-    expect(desk).toContain("` with ${workAreaNames}`");
-    expect(desk).toContain("siteAreas.find((area) => area.id === areaId)?.name");
+    expectTokens(desk, ["` with ${workAreaNames}`"]);
+    expectTokens(desk, ["siteAreas.find((area) => area.id === areaId)?.name"]);
   });
 
   test("capture entry points renamed to 'Capture detailed area'", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expect(desk).toContain("Capture detailed area");
-    expect(desk).not.toContain("Capture structured work");
+    expectTokens(desk, ["Capture detailed area"]);
+    expectNoTokens(desk, ["Capture structured work"]);
   });
 
   test("area-grouped capture: one collapsible per area with shared dimensions", async () => {
@@ -26,16 +27,16 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     // area: expanding "Kitchen 1" shows every work item captured in that kitchen.
     expect(desk).toContain("DetailedAreaGroup");
     expect(desk).toContain('aria-expanded={group.open}');
-    expect(desk).toContain(">Area dimensions (ft) — shared by the work below</p>");
-    expect(desk).toContain(">Length (ft)</label>");
-    expect(desk).toContain(">Breadth (ft)</label>");
-    expect(desk).toContain(">Height (ft)</label>");
+    expectTokens(desk, [">Area dimensions (ft) — shared by the work below</p>"]);
+    expectTokens(desk, [">Length (ft)</label>"]);
+    expectTokens(desk, [">Breadth (ft)</label>"]);
+    expectTokens(desk, [">Height (ft)</label>"]);
     // Work items can be added or removed from inside the area group, and the
     // group itself can be dropped from the capture.
-    expect(desk).toContain("Add work</Button>");
-    expect(desk).toContain("Add area</Button>");
+    expectTokens(desk, ["Add work</Button>"]);
+    expectTokens(desk, ["Add area</Button>"]);
     expect(desk).toContain("toggleExistingRemoval");
-    expect(desk).not.toContain(">Wall area / length *</label>");
+    expectNoTokens(desk, [">Wall area / length *</label>"]);
   });
 
   test("per-work-type measurement: basis derived per subcategory, direct sqft/rft entry", async () => {
@@ -43,16 +44,16 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     // Tiles → floor plan; paint → walls + ceiling; modular kitchen/railings →
     // the run of 1–2 walls in running feet. Every basis stays user-editable.
     expect(workTypes).toContain("defaultMeasureBasisFor");
-    expect(workTypes).toContain('wall: "Wall area (sqft)"');
-    expect(workTypes).toContain('floor_ceiling: "Floor / ceiling area (sqft)"');
-    expect(workTypes).toContain('wall_ceiling: "Walls + ceiling (sqft)"');
-    expect(workTypes).toContain('length: "Running length (rft)"');
-    expect(workTypes).toContain("walls === 2");
+    expectTokens(workTypes, ['wall: "Wall area (sqft)"']);
+    expectTokens(workTypes, ['floor_ceiling: "Floor / ceiling area (sqft)"']);
+    expectTokens(workTypes, ['wall_ceiling: "Walls + ceiling (sqft)"']);
+    expectTokens(workTypes, ['length: "Running length (rft)"']);
+    expectTokens(workTypes, ["walls === 2"]);
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expect(desk).toContain("measuredQuantity(line.measure, groupDims(group), line.walls)");
+    expectTokens(desk, ["measuredQuantity(line.measure, groupDims(group), line.walls)"]);
     // Measure basis select drives the quantity label; direct entry always allowed.
-    expect(desk).toContain("{WORK_MEASURE_LABELS[line.measure]} *</label>");
-    expect(desk).not.toContain(">Quantity *</label>");
+    expectTokens(desk, ["{WORK_MEASURE_LABELS[line.measure]} *</label>"]);
+    expectNoTokens(desk, [">Quantity *</label>"]);
   });
 
   test("category + subcategory dropdowns: tickboxes, ticked first, group gap", async () => {
@@ -62,32 +63,32 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     expect(desk).toContain("categoryTicks");
     // Annotation 4: only the selected category's subcategories, ticked group on
     // top, blank-space separator between the ticked group and the rest.
-    expect(desk).toContain('key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id))');
-    expect(desk).toContain('key: "others", items: subOptions.filter((option) => !subTicks.has(option.id))');
-    expect(desk).toContain("{groupIndex > 0 && <div className=\"h-3\" aria-hidden=\"true\"/>}");
+    expectTokens(desk, ['key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id))']);
+    expectTokens(desk, ['key: "others", items: subOptions.filter((option) => !subTicks.has(option.id))']);
+    expectTokens(desk, ['{groupIndex > 0 && <div className="', "h-3", 'aria-hidden="true"/>}']);
     // Subcategory options stay scoped to the selected category.
-    expect(desk).toContain("row.category_id === line.category_id");
+    expectTokens(desk, ["row.category_id === line.category_id"]);
   });
 
   test("store capture: removals + bidirectional tick sync with the add/edit form", async () => {
     const crm = await source("src/lib/rdash/store/slices/crm.ts");
-    expect(crm).toContain("requires Area, Category, and Subcategory.");
-    expect(crm).toContain('const unitId = line.unit_id || (Number(line.height_ft) > 0 ? "sqft" : "rft");');
-    expect(crm).not.toContain("!line.article_id || !line.unit_id");
-    expect(crm).toContain("subcategory_id: subcategory.id");
-    expect(crm).toContain("length_ft: num(line.length_ft)");
-    expect(crm).toContain("floor_ceiling_area: num(line.floor_area)");
+    expectTokens(crm, ["requires Area, Category, and Subcategory."]);
+    expectTokens(crm, ['const unitId = line.unit_id || (Number(line.height_ft) > 0 ? "sqft" : "rft");']);
+    expectNoTokens(crm, ["!line.article_id || !line.unit_id"]);
+    expectTokens(crm, ["subcategory_id: subcategory.id"]);
+    expectTokens(crm, ["length_ft: num(line.length_ft)"]);
+    expectTokens(crm, ["floor_ceiling_area: num(line.floor_area)"]);
     // Detailed-area capture is the per-area master for the whole Site: lines
     // target ANY site Work Required (seeded lines carry their source row,
     // fresh lines resolve by category or create one), and every touched row
     // re-derives its ticks through the shared reconcileWorkRequiredSelection.
     expect(crm).toContain("removedItemIds");
     expect(crm).toContain("removedSelections");
-    expect(crm).toContain("const siteWorks = state.db.workRequired.filter((row: any) => row.site_id === workRequired.site_id);");
-    expect(crm).toContain("const target = targetForLine(line);");
-    expect(crm).toContain("const skeletonFor = (categoryId: string)");
+    expectTokens(crm, ["const siteWorks = state.db.workRequired.filter((row: any) => row.site_id === workRequired.site_id);"]);
+    expectTokens(crm, ["const target = targetForLine(line);"]);
+    expectTokens(crm, ["const skeletonFor = (categoryId: string)"]);
     expect(crm).toContain("reconcileWorkRequiredSelection({");
-    expect(crm).toContain("withPrimaryWorkTypeIds(workSubcategories, rec.work_subcategory_ids, rec.work_type_ids)");
+    expectTokens(crm, ["withPrimaryWorkTypeIds(workSubcategories, rec.work_subcategory_ids, rec.work_type_ids)"]);
   });
 
   test("capture view pre-populates planned work from every site Work Required selection", async () => {
@@ -96,15 +97,15 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     // Seeds are derived across all site rows so expanding "Kitchen 1" shows
     // every work required in that kitchen (annotation C), and deleting a
     // planned line un-ticks it from the Add/Edit form on save.
-    expect(workTypes).toContain("export function seedDetailedAreaLines");
-    expect(workTypes).toContain("export function reconcileWorkRequiredSelection");
-    expect(workTypes).toContain("export function workRequiredDisplayTitle");
-    expect(desk).toContain("seedDetailedAreaLines({ siteWorks, workSubcategories: db.master.workSubcategories })");
-    expect(desk).toContain("removedSelections: groups.flatMap((group) => group.removedSeeds)");
-    expect(desk).toContain("target_work_required_id: line.target_work_required_id");
+    expectTokens(workTypes, ["export function seedDetailedAreaLines"]);
+    expectTokens(workTypes, ["export function reconcileWorkRequiredSelection"]);
+    expectTokens(workTypes, ["export function workRequiredDisplayTitle"]);
+    expectTokens(desk, ["seedDetailedAreaLines({ siteWorks, workSubcategories: db.master.workSubcategories })"]);
+    expectTokens(desk, ["removedSelections: groups.flatMap((group) => group.removedSeeds)"]);
+    expectTokens(desk, ["target_work_required_id: line.target_work_required_id"]);
     // Legacy stored titles are not rendered raw anywhere: scorecards, site
     // rows and detail links show the tier-qualified derived title instead.
-    expect(desk).toContain("workRequiredDisplayTitle(db.master.workSubcategories, work)");
+    expectTokens(desk, ["workRequiredDisplayTitle(db.master.workSubcategories, work)"]);
     expect(desk).not.toContain('{work.title}</span>');
   });
 
@@ -115,13 +116,13 @@ describe("Detailed-area capture (annotated UX rework)", () => {
     const contractors = await source("src/lib/rdash/store/slices/contractors.ts");
     const procurement = await source("src/lib/rdash/store/slices/procurement.ts");
     const reconciliation = await source("src/lib/rdash/performance-reconciliation.ts");
-    expect(contractors).toContain("deriveContractorPerformanceEvidenceExport(state.db, contractorId)");
-    expect(procurement).toContain("deriveVendorPerformanceEvidenceExport(state.db, vendorId)");
-    expect(reconciliation).toContain("export function deriveContractorPerformanceEvidenceExport");
-    expect(reconciliation).toContain("export function deriveVendorPerformanceEvidenceExport");
+    expectTokens(contractors, ["deriveContractorPerformanceEvidenceExport(state.db, contractorId)"]);
+    expectTokens(procurement, ["deriveVendorPerformanceEvidenceExport(state.db, vendorId)"]);
+    expectTokens(reconciliation, ["export function deriveContractorPerformanceEvidenceExport"]);
+    expectTokens(reconciliation, ["export function deriveVendorPerformanceEvidenceExport"]);
     // No evidence → nothing to reconcile, no commit, no audit noise.
-    expect(contractors).toContain("if (derived.evidenceCount === 0)");
-    expect(procurement).toContain("if (derived.evidenceCount === 0)");
+    expectTokens(contractors, ["if (derived.evidenceCount === 0)"]);
+    expectTokens(procurement, ["if (derived.evidenceCount === 0)"]);
   });
 });
 
@@ -280,8 +281,8 @@ describe("Detailed-area seed derivation + selection reconciliation (annotation A
 
   test("capture reconcile passes the pin sources (measurements + quotation coverages)", async () => {
     const crm = await source("src/lib/rdash/store/slices/crm.ts");
-    expect(crm).toContain("measurements: state.db.measurementRevisions");
-    expect(crm).toContain("quotationCoverages: state.db.quotations.flatMap");
+    expectTokens(crm, ["measurements: state.db.measurementRevisions"]);
+    expectTokens(crm, ["quotationCoverages: state.db.quotations.flatMap"]);
     const workTypes = await source("src/lib/rdash/work-types.ts");
     expect(workTypes).toContain("pinnedAreaIds");
   });

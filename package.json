@@ -1,6 +1,6 @@
 {
   "name": "urban-castle",
-  "version": "0.3.0",
+  "version": "0.4.4",
   "private": true,
   "engines": {
     "node": "24.x"
@@ -40,6 +40,8 @@
     "test:customer-sites-legacy": "vitest run tests/customer-sites-legacy-removal.test.ts",
     "test:contractor-profile": "vitest run tests/contractor-profile.test.ts tests/contractor-legacy-removal.test.ts",
     "test:vendor-module": "vitest run tests/vendor-profile.test.ts tests/vendor-rate-average.test.ts tests/vendor-legacy-removal.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "test": "vitest run"
   },
   "dependencies": {
@@ -76,8 +78,10 @@
     "zustand": "^5.0.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/leaflet": "^1.9.21",
+    "@types/node": "^24.13.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
@@ -85,7 +89,6 @@
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",
     "typescript": "^5",
-    "vitest": "^4.1.10",
-    "@types/node": "^24.13.3"
+    "vitest": "^4.1.10"
   }
 }

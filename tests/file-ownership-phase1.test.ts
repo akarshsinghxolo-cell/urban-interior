@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
 import { resolveAttachmentEntityLabel, resolveEntityContext } from "../src/lib/rdash/entity-context";
@@ -232,8 +233,8 @@ describe("Phase 2 Drive routing", () => {
 
   test("keeps physical folder template metadata stable when multiple purposes share a folder", async () => {
     const source = await readFile("src/lib/rdash/server/direct-upload-finalize-core.ts", "utf8");
-    expect(source).toContain("existingFolderInstance?.template_id || `canonical-${serverPurpose}`");
-    expect(source).toContain("existingFolderInstance?.created_at || timestamp");
+    expectTokens(source, ["existingFolderInstance?.template_id || `canonical-${serverPurpose}`"]);
+    expectTokens(source, ["existingFolderInstance?.created_at || timestamp"]);
   });
   test("routes newly supported business owners into their own human-readable Drive locations", () => {
     const db = dbFixture();

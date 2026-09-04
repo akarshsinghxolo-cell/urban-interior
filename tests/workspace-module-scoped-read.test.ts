@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { REGISTERED_MODULE_IDS } from "@/lib/rdash/modules";
@@ -248,15 +249,15 @@ describe("dedicated scoped read endpoints", () => {
     ]) {
       const source = await testFile(path).text();
       expect(source).toContain("handleModuleScopedRead");
-      expect(source).toContain("export async function GET");
+      expectTokens(source, ["export async function GET"]);
     }
 
     const helper = await testFile("src/lib/rdash/server/module-scoped-route.ts").text();
     expect(helper).toContain("requireSession(request)");
     expect(helper).toContain("tryWorkspaceReadTargetForModule");
     expect(helper).toContain('"X-UC-Read-Mode"');
-    expect(helper).toContain("errorJson(message.slice(\"FORBIDDEN:\".length), 403)");
-    expect(helper).toContain("errorJson(`${options.errorLabel} data is temporarily unavailable.`, 503");
+    expectTokens(helper, ['errorJson(message.slice("FORBIDDEN:".length), 403)']);
+    expectTokens(helper, ["errorJson(`${options.errorLabel} data is temporarily unavailable.`, 503"]);
   });
 });
 

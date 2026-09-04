@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
@@ -12,7 +13,7 @@ const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
  describe("PostgREST egress guardrails", () => {
   test("dashboard health consumers do not install polling timers", () => {
     expect(healthWidget).not.toContain("setInterval(fetchSummary");
-    expect(pulse).not.toContain("setInterval(() => fetchHealth");
+    expectNoTokens(pulse, ["setInterval(() => fetchHealth"]);
     expect(healthWidget).toContain("useWorkspaceHealth");
     expect(pulse).toContain("useWorkspaceHealth");
   });
@@ -45,8 +46,8 @@ const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
 
   test("history-heavy reads have server limits", () => {
     expect(rest).toContain("DEFAULT_COLLECTION_LIMITS");
-    expect(rest).toContain('auditLog: 100');
-    expect(rest).toContain('.order("revision", { ascending: false })');
-    expect(rest).toContain('.range(offset, offset + configuredLimit)');
+    expectTokens(rest, ["auditLog: 100"]);
+    expectTokens(rest, ['.order("revision", { ascending: false })']);
+    expectTokens(rest, [".range(offset, offset + configuredLimit)"]);
   });
 });

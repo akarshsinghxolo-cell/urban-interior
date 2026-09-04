@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
@@ -102,19 +103,19 @@ describe("entity-scoped collection policy", () => {
     const source = await testFile("src/lib/rdash/server/entity-scoped-rest.ts").text();
     expect(source).toContain("SAFE_JSON_FIELD");
     expect(source).toContain("data->>");
-    expect(source).toContain("slice(0, 500)");
+    expectTokens(source, ["slice(0, 500)"]);
     expect(source).toContain("query.or(filters.join");
     expect(source).toContain("quotePostgrestValue");
-    expect(source).toContain("queryCount: 1 + queries.length");
+    expectTokens(source, ["queryCount: 1 + queries.length"]);
   });
 
   test("entity reader is always on, revision-safe, and uses canonical Customer thread IDs", async () => {
     const source = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
     expect(source).not.toContain("UC_ENTITY_SCOPED_READS");
-    expect(source).toContain('error.message !== "READ_CONFLICT"');
+    expectTokens(source, ['error.message !== "READ_CONFLICT"']);
     expect(source).toContain("getProjectedWorkspacePermissions()");
     expect(source).toContain("workspaceRouteAccessDecision");
-    expect(source).toContain('metadata._workspace_read_strategy = "row"');
+    expectTokens(source, ['metadata._workspace_read_strategy = "row"']);
     expect(source).toContain('"proof_attachment_ids"');
     expect(source).toContain("canonicalThreadRecordIds");
     expect(source).toContain("customer-conversation:");

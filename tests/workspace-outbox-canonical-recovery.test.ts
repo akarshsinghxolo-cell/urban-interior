@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import {
   CUSTOMER_CONVERSATION_CANONICAL_ERROR,
@@ -134,9 +135,9 @@ describe("Customer conversation outbox recovery", () => {
 
   test("runs the one-way recovery before both overlay restore and outbox replay", async () => {
     const source = await testFile("src/lib/uploads/workspace-outbox.ts").text();
-    expect(source).toContain('import { recoverQueuedCustomerConversationRecord } from "./workspace-outbox-canonical-recovery";');
-    expect(source).toContain("await recoverCanonicalCustomerConversationOutbox(base);");
-    expect(source).toContain("await recoverCanonicalCustomerConversationOutbox(acceptedWorkspace);");
+    expectTokens(source, ['import { recoverQueuedCustomerConversationRecord } from "./workspace-outbox-canonical-recovery";']);
+    expectTokens(source, ["await recoverCanonicalCustomerConversationOutbox(base);"]);
+    expectTokens(source, ["await recoverCanonicalCustomerConversationOutbox(acceptedWorkspace);"]);
     expect(source.indexOf("await recoverCanonicalCustomerConversationOutbox(base);")).toBeLessThan(
       source.indexOf("const items = (await readScopedWorkspaceOutbox())", source.indexOf("export async function restoreWorkspaceOutboxOverlay")),
     );

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, test } from "vitest";
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 
 const appPath = "src/components/rdash/RDashApp.tsx";
 const headerPath = "src/components/rdash/WorkspaceHeader.tsx";
@@ -8,17 +9,17 @@ const sidebarPath = "src/components/rdash/Sidebar.tsx";
 test("mobile bottom navigation panel is removed from the app shell", () => {
   const app = readFileSync(appPath, "utf8");
 
-  expect(app.includes('aria-label="Mobile priority actions"')).toBe(false);
-  expect(app.includes('label: "Customers"')).toBe(false);
-  expect(app.includes('label: "Visits"')).toBe(false);
-  expect(app.includes('label: "Tasks"')).toBe(false);
-  expect(app.includes('label: "Workdesk"')).toBe(false);
-  expect(app.includes('<span>More</span>')).toBe(false);
+  expectNoTokens(app, ['aria-label="Mobile priority actions"']);
+  expectNoTokens(app, ['label: "Customers"']);
+  expectNoTokens(app, ['label: "Visits"']);
+  expectNoTokens(app, ['label: "Tasks"']);
+  expectNoTokens(app, ['label: "Workdesk"']);
+  expect(app.includes("<span>More</span>")).toBe(false);
   expect(app.includes("activeModuleId")).toBe(false);
   expect(app.includes("setMobileNavOpen")).toBe(false);
   expect(app.includes("indiaBusinessDate")).toBe(false);
-  expect(app.includes("pb-32 lg:pb-0")).toBe(false);
-  expect(app.includes("calc(96px + env(safe-area-inset-bottom, 0px))")).toBe(false);
+  expectNoTokens(app, ["pb-32 lg:pb-0"]);
+  expectNoTokens(app, ["calc(96px + env(safe-area-inset-bottom, 0px))"]);
 });
 
 test("top-left mobile sidebar navigation remains available", () => {
@@ -26,7 +27,7 @@ test("top-left mobile sidebar navigation remains available", () => {
   const sidebar = readFileSync(sidebarPath, "utf8");
 
   expect(header.includes("setMobileNavOpen(true)")).toBe(true);
-  expect(header.includes('aria-label="Open navigation"')).toBe(true);
+  expectTokens(header, ['aria-label="Open navigation"']);
   expect(sidebar.includes("mobileNavOpen")).toBe(true);
   expect(sidebar.includes("setMobileNavOpen(false)")).toBe(true);
 });
@@ -34,18 +35,18 @@ test("top-left mobile sidebar navigation remains available", () => {
 test("mobile sidebar uses one header action instead of overlapping close and collapse buttons", () => {
   const sidebar = readFileSync(sidebarPath, "utf8");
 
-  expect(sidebar.includes("function SidebarContent({ collapsed, onMobileClose }")).toBe(true);
-  expect(sidebar.includes("{onMobileClose ? (")).toBe(true);
-  expect(sidebar.includes('<X className="h-5 w-5" />')).toBe(true);
-  expect(sidebar.includes('<SidebarContent onMobileClose={() => setMobileNavOpen(false)} />')).toBe(true);
-  expect(sidebar.includes('className="absolute right-3 top-3 z-10')).toBe(false);
-  expect(sidebar.includes('aria-label="Collapse sidebar"')).toBe(true);
+  expectTokens(sidebar, ["function SidebarContent({ collapsed, onMobileClose }"]);
+  expectTokens(sidebar, ["{onMobileClose ? ("]);
+  expectTokens(sidebar, ['<X className="', "h-5", "w-5", '" />']);
+  expectTokens(sidebar, ["<SidebarContent onMobileClose={() => setMobileNavOpen(false)} />"]);
+  expectNoTokens(sidebar, ['className="absolute right-3 top-3 z-10']);
+  expectTokens(sidebar, ['aria-label="Collapse sidebar"']);
 });
 
 test("Quick Add remains separate and is repositioned for the removed bottom bar", () => {
   const app = readFileSync(appPath, "utf8");
 
-  expect(app.includes('aria-label="Quick add"')).toBe(true);
+  expectTokens(app, ['aria-label="Quick add"']);
   expect(app.includes("QuickAddSheet")).toBe(true);
-  expect(app.includes("calc(16px + env(safe-area-inset-bottom, 0px))")).toBe(true);
+  expectTokens(app, ["calc(16px + env(safe-area-inset-bottom, 0px))"]);
 });

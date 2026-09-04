@@ -1,3 +1,4 @@
+import { expectNoTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
@@ -12,7 +13,7 @@ describe("deferred egress guardrails", () => {
     expect(notifications).toContain("useWorkspaceHealth");
     expect(app).not.toContain("loadWorkspaceHealth");
     expect(app).not.toContain('fetch("/api/health/summary"');
-    expect(app).not.toContain('toast.warning("Workspace needs attention"');
+    expectNoTokens(app, ['toast.warning("Workspace needs attention"']);
   });
 
   test("catalog upserts are targeted", () => {

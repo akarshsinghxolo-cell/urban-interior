@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { aggregateWorkspaceChangeBatches } from "@/lib/rdash/server/workspace-changes";
@@ -37,8 +38,8 @@ describe("workspace navigation freshness", () => {
     );
     const router = await read("src/components/rdash/WorkspaceModuleRouter.tsx");
 
-    expect(boundary).toContain("workspaceReadTargetForActiveNavigation(pathname, activeModuleId)");
-    expect(router).toContain("workspaceReadTargetForActiveNavigation(pathname, currentActiveModuleId)");
+    expectTokens(boundary, ["workspaceReadTargetForActiveNavigation(pathname, activeModuleId)"]);
+    expectTokens(router, ["workspaceReadTargetForActiveNavigation(pathname, currentActiveModuleId)"]);
     expect(boundary).not.toContain("workspaceReadTargetForPath(pathname)");
   });
 
@@ -47,20 +48,14 @@ describe("workspace navigation freshness", () => {
       "src/components/urban-castle/WorkspaceScopedReadBoundary.tsx",
     );
 
-    expect(source).toContain(
-      "const previousEffectTargetKeyRef = React.useRef(targetKey)",
-    );
-    expect(source).toContain(
-      "const enteredNewTarget = previousEffectTargetKeyRef.current !== targetKey",
-    );
-    expect(source).toContain(
-      "if (!needsExpansion && !enteredNewTarget)",
-    );
-    expect(source).toContain("workspaceReadCache.peek(requestedTarget, authUser)");
-    expect(source).toContain("workspaceReadCache.get(requestedTarget, authUser)");
+    expectTokens(source, ["const previousEffectTargetKeyRef = React.useRef(targetKey)"]);
+    expectTokens(source, ["const enteredNewTarget = previousEffectTargetKeyRef.current !== targetKey"]);
+    expectTokens(source, ["if (!needsExpansion && !enteredNewTarget)"]);
+    expectTokens(source, ["workspaceReadCache.peek(requestedTarget, authUser)"]);
+    expectTokens(source, ["workspaceReadCache.get(requestedTarget, authUser)"]);
     expect(source).toContain("revalidateWorkspaceReadCacheEntry");
-    expect(source).toContain("await useRDashStore.getState().awaitServerSync().catch(() => undefined)");
-    expect(source).toContain('"X-UC-Read-Revalidate": enteredNewTarget ? "navigation-full" : "coverage"');
+    expectTokens(source, ["await useRDashStore.getState().awaitServerSync().catch(() => undefined)"]);
+    expectTokens(source, ['"X-UC-Read-Revalidate": enteredNewTarget ? "navigation-full" : "coverage"']);
   });
 
   test("keeps compatible data visible while navigation refreshes it", async () => {
@@ -71,14 +66,14 @@ describe("workspace navigation freshness", () => {
     // Compatible module data must never be covered by the blocking refresh UI.
     // A small non-blocking Load-more card is allowed when bounded collections
     // advertise another page.
-    expect(source).toContain("if (!needsExpansion) {");
-    expect(source).toContain("workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState)");
-    expect(source).not.toContain("db: cachedTarget.data");
-    expect(source).toContain("if (!result.changed)");
+    expectTokens(source, ["if (!needsExpansion) {"]);
+    expectTokens(source, ["workspaceReadState.restoreCached(requestedTarget, cachedTarget.readState)"]);
+    expectNoTokens(source, ["db: cachedTarget.data"]);
+    expectTokens(source, ["if (!result.changed)"]);
     expect(source).toContain("acceptWorkspaceServerRevision");
-    expect(source).toContain("if (!pageCursors.length && !pageError) return null");
-    expect(source).toContain("More records are available");
-    expect(source).not.toContain("if (!needsExpansion && !enteredNewTarget) return null");
+    expectTokens(source, ["if (!pageCursors.length && !pageError) return null"]);
+    expectTokens(source, ["More records are available"]);
+    expectNoTokens(source, ["if (!needsExpansion && !enteredNewTarget) return null"]);
   });
 
   test("keeps the app shell visible during a first-time module load", async () => {
@@ -88,23 +83,23 @@ describe("workspace navigation freshness", () => {
     );
     const router = await read("src/components/rdash/WorkspaceModuleRouter.tsx");
 
-    expect(app).toContain("const secureWorkspaceReady = secureBootstrapReady;");
-    expect(app).not.toContain('readState.scope !== "bootstrap"');
-    expect(boundary).not.toContain('fixed inset-0 z-[90]');
-    expect(boundary).not.toContain("Refreshing module data");
-    expect(boundary).toContain("if (!error) return null");
-    expect(router).toContain('if (dataLoadState.status !== "loaded")');
+    expectTokens(app, ["const secureWorkspaceReady = secureBootstrapReady;"]);
+    expectNoTokens(app, ['readState.scope !== "bootstrap"']);
+    expectNoTokens(boundary, ["fixed inset-0 z-[90]"]);
+    expectNoTokens(boundary, ["Refreshing module data"]);
+    expectTokens(boundary, ["if (!error) return null"]);
+    expectTokens(router, ['if (dataLoadState.status !== "loaded")']);
     expect(router).toContain('aria-busy="true"');
     expect(router).toContain("animate-pulse");
-    expect(router).toContain("Navigation and the rest of the workspace remain available.");
+    expectTokens(router, ["Navigation and the rest of the workspace remain available."]);
   });
 
   test("caches bounded targets by user and target revision", async () => {
     const source = await read("src/lib/rdash/workspace-read-cache.ts");
-    expect(source).toContain("MAX_CACHE_ENTRIES = 32");
+    expectTokens(source, ["MAX_CACHE_ENTRIES = 32"]);
     expect(source).toContain("workspaceReadTargetKey(target)");
     expect(source).toContain("user.email.trim().toLowerCase()");
-    expect(source).toContain("revision: input.revision");
+    expectTokens(source, ["revision: input.revision"]);
     expect(source).toContain("structuredClone(input.data)");
   });
 
@@ -112,12 +107,12 @@ describe("workspace navigation freshness", () => {
     const source = await read("src/lib/rdash/workspace-navigation-delta.ts");
     expect(source).toContain("workspaceCollectionFilterParam(entry.data)");
     expect(source).toContain('fetch(`/api/changes?${params.toString()}`');
-    expect(source).toContain('"X-UC-Delta-Client": "navigation-cache"');
-    expect(source).toContain('"X-UC-Delta-Module": entry.target.moduleId');
-    expect(source).toContain("applyWorkspaceDelta(entry.data, delta)");
+    expectTokens(source, ['"X-UC-Delta-Client": "navigation-cache"']);
+    expectTokens(source, ['"X-UC-Delta-Module": entry.target.moduleId']);
+    expectTokens(source, ["applyWorkspaceDelta(entry.data, delta)"]);
     expect(source).toContain("mergeWorkspaceRowVersions");
-    expect(source).toContain("changed: boolean");
-    expect(source).toContain("changed = changed || deltaChanged");
+    expectTokens(source, ["changed: boolean"]);
+    expectTokens(source, ["changed = changed || deltaChanged"]);
     expect(source).toContain("deletedRowVersionKeys");
     expect(source).toContain("deletedDeltaVersionKeys(delta)");
   });
@@ -129,7 +124,7 @@ describe("workspace navigation freshness", () => {
     expect(rowGuard).toBeGreaterThan(-1);
     expect(deltaFetch).toBeGreaterThan(-1);
     expect(rowGuard).toBeLessThan(deltaFetch);
-    expect(source).toContain('reason: "row_scope_requires_server_graph"');
+    expectTokens(source, ['reason: "row_scope_requires_server_graph"']);
     expect(source).not.toContain("ROW_SAFE_COLLECTIONS");
     expect(source).not.toContain("row_graph_changed:");
   });
@@ -189,8 +184,8 @@ describe("workspace navigation freshness", () => {
 
   test("aggressive polling remains disabled", async () => {
     const source = await read("src/components/urban-castle/WorkspaceDeltaSync.tsx");
-    expect(source).toContain('NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"');
-    expect(source).toContain("DELTA_POLL_INTERVAL_MS = 15 * 60_000");
-    expect(source).not.toContain("DELTA_POLL_INTERVAL_MS = 30_000");
+    expectTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"']);
+    expectTokens(source, ["DELTA_POLL_INTERVAL_MS = 15 * 60_000"]);
+    expectNoTokens(source, ["DELTA_POLL_INTERVAL_MS = 30_000"]);
   });
 });

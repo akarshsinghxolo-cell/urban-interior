@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import { COLLECTION_TO_TABLE } from "@/lib/rdash/server/commit-rest";
@@ -153,7 +154,7 @@ describe("bootstrap JSON projections", () => {
       "master.workOptionGroups",
       "master.workOptionValues",
     ]);
-    expect(projected).toContain("fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]");
+    expectTokens(projected, ["fullCollections: [...WORKSPACE_FOUNDATION_COLLECTIONS]"]);
     expect(projected).toContain("WORKSPACE_BOOTSTRAP_DATA_COLLECTIONS");
     expect(projected).toContain("...WORKSPACE_FOUNDATION_COLLECTIONS,");
     expect(projected).not.toContain("select(\"id,revision,data\")");
@@ -161,8 +162,8 @@ describe("bootstrap JSON projections", () => {
 
   test("marks entity graphs as partial row reads", async () => {
     const entityRead = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
-    expect(entityRead).toContain('metadata._workspace_read_strategy = "row"');
-    expect(entityRead).toContain('metadata._workspace_foundation_embedded = false');
+    expectTokens(entityRead, ['metadata._workspace_read_strategy = "row"']);
+    expectTokens(entityRead, ["metadata._workspace_foundation_embedded = false"]);
   });
 
   test("exposes plan and page-limit telemetry", async () => {
@@ -174,11 +175,11 @@ describe("bootstrap JSON projections", () => {
 
   test("keeps runtime verification preview-only and token protected", async () => {
     const route = await testFile("src/app/api/internal/preview-read-plans/route.ts").text();
-    expect(route).toContain('process.env.VERCEL_ENV !== "preview"');
+    expectTokens(route, ['process.env.VERCEL_ENV !== "preview"']);
     expect(route).toContain("UC_PREVIEW_VERIFY_TOKEN");
     expect(route).toContain('request.headers.get("x-uc-preview-verifier")');
     expect(route).toContain("timingSafeEqual");
     expect(route).toContain("projectedBootstrap");
-    expect(route).toContain("status: valid ? 200 : 503");
+    expectTokens(route, ["status: valid ? 200 : 503"]);
   });
 });

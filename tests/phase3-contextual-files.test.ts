@@ -1,3 +1,4 @@
+import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { readFile } from "node:fs/promises";
 
@@ -6,7 +7,7 @@ const read = (path: string) => readFile(path, "utf8");
 describe("Phase 3 contextual files", () => {
   test("uses one simple direct-files component with canonical upload routing", async () => {
     const source = await read("src/components/rdash/EntityFilesCard.tsx");
-    expect(source).toContain("entityFiles(db, entityType, entityId)");
+    expectTokens(source, ["entityFiles(db, entityType, entityId)"]);
     expect(source).toContain("uploadPurposeForEntity(entityType)");
     expect(source).toContain("enqueueWorkflowFiles");
     expect(source).toContain("detachEntityFileAttachment");
@@ -16,35 +17,35 @@ describe("Phase 3 contextual files", () => {
   test("customer overview and editor expose direct customer documents", async () => {
     const desk = await read("src/components/rdash/modules/CustomerDesk.tsx");
     const editor = await read("src/components/rdash/CustomerSitesDialog.tsx");
-    expect(desk).toContain('entityType="customer" entityId={customerId} title="Customer documents"');
+    expectTokens(desk, ['entityType="customer" entityId={customerId} title="Customer documents"']);
     expect(editor).toContain('entityType="customer"');
     expect(editor).toContain('entityId={editId}');
-    expect(editor).toContain('title="Customer documents"');
+    expectTokens(editor, ['title="Customer documents"']);
     expect(editor).toContain('manage');
   });
 
   test("site, area, work required, quotation and work order surfaces show their own files", async () => {
     const detail = await read("src/components/rdash/DetailPanel.tsx");
-    expect(detail).toContain('entityType="site" entityId={site.id} title="Site photos & files"');
-    expect(detail).toContain('entityType="room" entityId={area.id} title="Area photos & files" manage={!area.is_archived}');
-    expect(detail).toContain('entityType="workRequired" entityId={work.id} title="Requirement files" manage');
-    expect(detail).toContain('entityType="quotation" entityId={q.id} title="Quotation files & approvals" manage');
-    expect(detail).toContain('entityType="workOrder" entityId={j.id} title="Work Order files" manage');
+    expectTokens(detail, ['entityType="site" entityId={site.id} title="Site photos & files"']);
+    expectTokens(detail, ['entityType="room" entityId={area.id} title="Area photos & files" manage={!area.is_archived}']);
+    expectTokens(detail, ['entityType="workRequired" entityId={work.id} title="Requirement files" manage']);
+    expectTokens(detail, ['entityType="quotation" entityId={q.id} title="Quotation files & approvals" manage']);
+    expectTokens(detail, ['entityType="workOrder" entityId={j.id} title="Work Order files" manage']);
   });
 
   test("measurement visit evidence is not mislabeled as one room revision", async () => {
     const measurement = await read("src/components/rdash/modules/SiteMeasurementModule.tsx");
     const detail = await read("src/components/rdash/DetailPanel.tsx");
-    expect(measurement).toContain('entityType="visit" entityId={r.visitId} title="Measurement visit evidence & references"');
-    expect(detail).toContain('entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id');
+    expectTokens(measurement, ['entityType="visit" entityId={r.visitId} title="Measurement visit evidence & references"']);
+    expectTokens(detail, ['entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id']);
   });
 
   test("accepted scope and variation records can own and manage their approval files", async () => {
     const detail = await read("src/components/rdash/DetailPanel.tsx");
     const variations = await read("src/components/rdash/WorkOrderVariationsPanel.tsx");
-    expect(detail).toContain('entityType="accepted_scope" entityId={scope.id}');
-    expect(detail).toContain('title="Acceptance files" manage showEmpty');
-    expect(variations).toContain('entityType="variation_request" entityId={variation.id} title="Variation files & approval" manage');
+    expectTokens(detail, ['entityType="accepted_scope" entityId={scope.id}']);
+    expectTokens(detail, ['title="Acceptance files" manage showEmpty']);
+    expectTokens(variations, ['entityType="variation_request" entityId={variation.id} title="Variation files & approval" manage']);
   });
 
   test("work order overview exposes related drawing and execution context without duplicating its Variations tab", async () => {
@@ -52,10 +53,10 @@ describe("Phase 3 contextual files", () => {
     const wrapper = await read("src/components/rdash/DetailPanelWithHistory.tsx");
     expect(detail).toContain('label="Drawings"');
     expect(detail).toContain('setActiveModule("drawings")');
-    expect(detail).toContain('label="Execution logs"');
+    expectTokens(detail, ['label="Execution logs"']);
     expect(detail).toContain('setActiveModule("executionLogs")');
     expect(detail).not.toContain('label="Variations"');
-    expect(wrapper).toContain('id: "variations" as const');
+    expectTokens(wrapper, ['id: "variations" as const']);
   });
 
   test("site files attach only after the Site mutation is confirmed", async () => {
@@ -69,11 +70,11 @@ describe("Phase 3 contextual files", () => {
       .toBeLessThan(editor.indexOf("commitBatches();", editorSaveStart));
     expect(editor).toContain("detachAttachmentIds,");
     expect(editor).toContain("setDetachAttachmentIds");
-    expect(draft).toContain('draft.existing ? entityFiles(db, "site", draft.id) : []');
-    expect(draft).toContain('classified.role === "photo" ? { attachmentField: "photo_attachment_ids"');
-    expect(model).toContain("photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds)");
-    expect(model).not.toContain('draft.pendingPhotos.filter((file) => file.mimeType.startsWith("image/"))');
-    expect(save).not.toContain("The selected file is not attached through this Site's photo/file field.");
+    expectTokens(draft, ['draft.existing ? entityFiles(db, "site", draft.id) : []']);
+    expectTokens(draft, ['classified.role === "photo" ? { attachmentField: "photo_attachment_ids"']);
+    expectTokens(model, ["photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds)"]);
+    expectNoTokens(model, ['draft.pendingPhotos.filter((file) => file.mimeType.startsWith("image/"))']);
+    expectNoTokens(save, ["The selected file is not attached through this Site's photo/file field."]);
   });
 
   test("core customer, site, quotation and field scopes load file links and assets", async () => {
@@ -94,8 +95,8 @@ describe("Phase 3 contextual files", () => {
 
   test("site edit language treats uploads as files rather than photos only", async () => {
     const draft = await read("src/components/rdash/CustomerSiteDraftCard.tsx");
-    expect(draft).toContain("Site photos and files");
-    expect(draft).toContain('caption: "Site file"');
+    expectTokens(draft, ["Site photos and files"]);
+    expectTokens(draft, ['caption: "Site file"']);
   });
 });
 
@@ -108,14 +109,14 @@ describe("Phase 3 re-audit", () => {
     const customerDesk = await read("src/components/rdash/modules/CustomerDesk.tsx");
     expect(card).toContain("hiddenAttachmentIds");
     expect(card).toContain("registerBatch?.(queued.batchId)");
-    expect(card).toContain("onDetach ? onDetach(attachment.id) : detachEntityFileAttachment(attachment.id)");
+    expectTokens(card, ["onDetach ? onDetach(attachment.id) : detachEntityFileAttachment(attachment.id)"]);
     expect(card).toContain("allowDetach");
     expect(customerEditor).toContain("hiddenAttachmentIds={detachAttachmentIds}");
     expect(customerEditor).toContain("registerBatch={registerBatch}");
-    expect(customerEditor).toContain("onDetach={(attachmentId) => setDetachAttachmentIds");
+    expectTokens(customerEditor, ["onDetach={(attachmentId) => setDetachAttachmentIds"]);
     expect(customerDesk).toContain("useUploadDraft(true)");
-    expect(customerDesk).toContain("allowDetach={false} registerBatch={registerBatch}");
-    expect(customerDesk).toContain("if (saved) commitBatches()");
+    expectTokens(customerDesk, ["allowDetach={false} registerBatch={registerBatch}"]);
+    expectTokens(customerDesk, ["if (saved) commitBatches()"]);
   });
 
   test("procurement, finance, contractor and operations records expose contextual files", async () => {
@@ -147,21 +148,21 @@ describe("Phase 3 re-audit", () => {
     const detail = await read("src/components/rdash/DetailPanel.tsx");
     const procurement = await read("src/components/rdash/modules/ProcurementModule.tsx");
     const inventory = await read("src/components/rdash/modules/InventoryModule.tsx");
-    expect(detail).toContain('entityType="quotation_item" entityId={itemFilesId}');
-    expect(detail).toContain('entityType="boq_item" entityId={boqItemFilesId}');
-    expect(detail).toContain('entityType="vendor_rate" entityId={rate.id}');
-    expect(detail).toContain('entityType="contractor_bid" entityId={bidFilesId}');
-    expect(detail).toContain('entityType="contractor_settlement" entityId={s.id}');
-    expect(procurement).toContain('entityType="vendor_rfq" entityId={rfq.id}');
-    expect(procurement).toContain('entityType="vendor_bid" entityId={bid.id}');
-    expect(inventory).toContain('entityType="stock_movement" entityId={movementFilesId}');
+    expectTokens(detail, ['entityType="quotation_item" entityId={itemFilesId}']);
+    expectTokens(detail, ['entityType="boq_item" entityId={boqItemFilesId}']);
+    expectTokens(detail, ['entityType="vendor_rate" entityId={rate.id}']);
+    expectTokens(detail, ['entityType="contractor_bid" entityId={bidFilesId}']);
+    expectTokens(detail, ['entityType="contractor_settlement" entityId={s.id}']);
+    expectTokens(procurement, ['entityType="vendor_rfq" entityId={rfq.id}']);
+    expectTokens(procurement, ['entityType="vendor_bid" entityId={bid.id}']);
+    expectTokens(inventory, ['entityType="stock_movement" entityId={movementFilesId}']);
   });
 
   test("partner compliance documents choose a real file instead of exposing attachment IDs", async () => {
     const governance = await read("src/components/rdash/modules/PartnerGovernanceModule.tsx");
-    expect(governance).not.toContain("Attachment ID (optional)");
-    expect(governance).toContain('entityFiles(db, mode, partner.id)');
-    expect(governance).toContain('No linked file');
+    expectNoTokens(governance, ["Attachment ID (optional)"]);
+    expectTokens(governance, ["entityFiles(db, mode, partner.id)"]);
+    expectTokens(governance, ["No linked file"]);
     expect(governance).toContain('fileNameByAttachmentId.get(document.attachment_id)');
   });
 
@@ -221,10 +222,10 @@ describe("Phase 3 re-audit", () => {
     expect(files).toContain("document.attachment_id");
     expect(files).toContain("item.entity_file_attachment_id");
     expect(files).toContain("clearAttachmentReferences({");
-    expect(files).toContain("entityFileAttachments: (s.db.entityFileAttachments || []).filter");
+    expectTokens(files, ["entityFileAttachments: (s.db.entityFileAttachments || []).filter"]);
 
     const crm = await read("src/lib/rdash/store/slices/crm.ts");
-    expect(crm).toContain("requestFileAssetCleanupAfterSync(get, fileAssetId)");
+    expectTokens(crm, ["requestFileAssetCleanupAfterSync(get, fileAssetId)"]);
     expect(crm).toContain("result.detachedAttachmentIds");
   });
 
@@ -345,15 +346,15 @@ describe("Phase 3 re-audit", () => {
       read("src/components/uploads/PendingUploadsPanel.tsx"),
       read("src/components/uploads/UploadStatusIndicator.tsx"),
     ]);
-    expect(store).toContain("if (item.deferred) return false");
-    expect(store).toContain('deferred: Boolean(input.deferProcessing)');
+    expectTokens(store, ["if (item.deferred) return false"]);
+    expectTokens(store, ['deferred: Boolean(input.deferProcessing)']);
     expect(store).toContain("releaseDeferredBatch");
     expect(store).toContain("discardDeferredBatch");
     expect(store).toContain("staleDraftItems");
-    expect(store).toContain("if (item.deferred) {");
+    expectTokens(store, ["if (item.deferred) {"]);
     expect(draft).toContain("releaseDeferredBatch(batchId)");
     expect(draft).toContain("discardDeferredBatch(batchId)");
-    expect(card).toContain("deferProcessing: Boolean(registerBatch)");
+    expectTokens(card, ["deferProcessing: Boolean(registerBatch)"]);
     expect(pending).toContain("!item.deferred");
     expect(status).toContain("!item.deferred");
 
@@ -369,7 +370,7 @@ describe("Phase 3 re-audit", () => {
     ];
     for (const path of draftFiles) {
       const source = await read(path);
-      if (source.includes("registerBatch(queued.batchId)")) expect(source).toContain("deferProcessing: true");
+      if (source.includes("registerBatch(queued.batchId)")) expectTokens(source, ["deferProcessing: true"]);
     }
   });
 
@@ -383,12 +384,12 @@ describe("Phase 3 re-audit", () => {
     expect(contractor).toContain("confirmedAttachmentId(businessCard)");
     expect(vendor).toContain("confirmedAttachmentId(businessCard)");
     expect(vendor).toContain("confirmedAttachmentId(shopPhoto)");
-    expect(store).toContain("The server rejected this change before it could be confirmed.");
+    expectTokens(store, ["The server rejected this change before it could be confirmed."]);
   });
 
   test("manual Drive linking enforces the same canonical owner validation as direct upload", async () => {
     const files = await read("src/lib/rdash/store/slices/files.ts");
-    expect(files).toContain('resolveAttachmentEntityLabel, resolveEntityContext');
+    expectTokens(files, ["resolveAttachmentEntityLabel, resolveEntityContext"]);
     expect(files.match(/resolveEntityContext\(get\(\)\.db, /g)?.length).toBeGreaterThanOrEqual(3);
     expect(files).toContain('"File attachment"');
   });
@@ -402,16 +403,16 @@ describe("Phase 3 re-audit", () => {
       read("src/lib/rdash/server/direct-upload-persistence.ts"),
     ]);
     expect(uiTypes).toContain('"vendorPayment"');
-    expect(navigation).toContain("vendorPayment: db.vendorPayments");
-    expect(detail).toContain("function VendorPaymentEntityOverview");
-    expect(detail).toContain('entityType="vendor_payment" entityId={payment.id} title="Payment proof"');
+    expectTokens(navigation, ["vendorPayment: db.vendorPayments"]);
+    expectTokens(detail, ["function VendorPaymentEntityOverview"]);
+    expectTokens(detail, ['entityType="vendor_payment" entityId={payment.id} title="Payment proof"']);
     expect(detail).toContain("attachmentOwnerPanelTarget");
-    expect(detail).toContain('case "measurement_revision"');
-    expect(detail).toContain('case "thread_message"');
-    expect(partner).not.toContain('openDetail(mode === "vendor" ? "purchaseOrder"');
-    expect(partner).toContain('openDetail(mode === "vendor" ? "po" : "workOrder"');
-    expect(persistence).toContain('boq: "boqs"');
-    expect(persistence).toContain('commission: "commissions"');
+    expectTokens(detail, ['case "measurement_revision"']);
+    expectTokens(detail, ['case "thread_message"']);
+    expectNoTokens(partner, ['openDetail(mode === "vendor" ? "purchaseOrder"']);
+    expectTokens(partner, ['openDetail(mode === "vendor" ? "po" : "workOrder"']);
+    expectTokens(persistence, ['boq: "boqs"']);
+    expectTokens(persistence, ['commission: "commissions"']);
   });
 
 });

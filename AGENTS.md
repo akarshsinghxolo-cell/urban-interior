@@ -100,3 +100,27 @@ RPCs) so browser QA never needs cloud credentials.
   seed. `npx tsc --noEmit` stays clean because `scripts/` is excluded from
   tsconfig (QA-only Bun script).
 
+
+## E2E smoke pack (Playwright)
+
+`tests/e2e/` drives the REAL UI in headless chromium against `next dev` on
+port 3000 + the QA mock on 3210 — the same stack as manual browser QA.
+
+- Run: `npm run test:e2e` (or `bunx playwright test`). Headed:
+  `npm run test:e2e:headed`. Show a failure trace:
+  `npx playwright show-trace <test-results/.../trace.zip>`.
+- `playwright.config.ts` boots BOTH servers itself (`webServer` with explicit
+  mock env vars, `reuseExistingServer: true`) — in CI nothing pre-running is
+  assumed; in the sandbox it reuses the already-running double-forked pair.
+- Session strategy: the `setup` project signs in ONCE through the real form
+  (`tests/e2e/auth.setup.ts`) and saves `test-results/.auth/owner.json`;
+  the `smoke` project reuses it via `storageState`. The login endpoint
+  rate-limits 5 attempts / 15 min per email, so per-test sign-in is
+  impossible by design. Only 2 sign-ins happen per full run (setup + the
+  form test), which fits the limit on a fresh server.
+- Covered today: `/`→`/signin` redirect, real-form sign-in, Customer Desk
+  navigation (sidebar), customer drawer + tab walk, sign-out, and the
+  390×844 mobile overflow guard on the workdesk and the customer drawer
+  (regression net for the Task 26–28 mobile fixes).
+- Selectors are role/label-first on purpose — they survive class refactors;
+  update them only when the UI contract itself changes.

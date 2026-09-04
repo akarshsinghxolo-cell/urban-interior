@@ -1,3 +1,4 @@
+import { expectTokens } from "./helpers/source-contract";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -97,7 +98,7 @@ describe("module navigation ids", () => {
       "src/components/rdash/WorkspacePulseStrip.tsx",
     ]) {
       const text = readFileSync(file, "utf8");
-      expect(text).toContain('setTaskScopeIntent("today"); setActiveModule("tasks");');
+      expectTokens(text, ['setTaskScopeIntent("today"); setActiveModule("tasks");']);
       expect(text).not.toContain('setActiveModule("today")');
     }
   });
