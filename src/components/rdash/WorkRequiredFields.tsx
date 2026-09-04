@@ -21,6 +21,7 @@ export type WorkRequiredFormDraft = {
   areaIds: string[];
   description: string;
   priority: Priority;
+  budget: string;
 };
 
 type NewWorkArea = {
@@ -38,6 +39,7 @@ export function emptyWorkRequiredFormDraft(): WorkRequiredFormDraft {
     areaIds: [],
     description: "",
     priority: "medium",
+    budget: "",
   };
 }
 
@@ -299,12 +301,18 @@ export function WorkRequiredFields({
         <Textarea value={value.description} onChange={(event) => onChange({ description: event.target.value })} placeholder="Scope notes, customer preference, access constraints…" rows={3} className="mt-1" />
       </label>
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <label className="w-36">
-          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Priority</span>
-          <select value={value.priority} onChange={(event) => onChange({ priority: event.target.value as Priority })} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-            <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
-          </select>
-        </label>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="w-36">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Priority</span>
+            <select value={value.priority} onChange={(event) => onChange({ priority: event.target.value as Priority })} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="urgent">Urgent</option>
+            </select>
+          </label>
+          <label className="w-36">
+            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Budget (₹)</span>
+            <Input type="number" min={0} inputMode="numeric" value={value.budget} onChange={(event) => onChange({ budget: event.target.value })} placeholder="e.g. 150000" className="mt-1 h-9 w-full" />
+          </label>
+        </div>
         {onAddNext ? <Button type="button" size="sm" variant="outline" onClick={onAddNext}><Plus className="mr-1 h-3.5 w-3.5" />Add next Work Required</Button> : null}
       </div>
     </div>

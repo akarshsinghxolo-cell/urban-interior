@@ -257,6 +257,8 @@ export function workRequiredStatusStyle(s: WorkRequiredStatus): StatusStyle {
     switch (s) {
         case "new":
             return { label: "New", className: "bg-primary/10 text-primary border-primary/20" };  // STAGE-4-FIX: removed duplicate dead "new" case (was "Qualified" label, unreachable)
+        case "contacted":
+            return { label: "Contacted", className: "bg-primary/10 text-primary border-primary/20" };
         case "visit_scheduled":
             return { label: "Visit planned", className: "bg-warning/10 text-warning border-warning/20" };
         case "measurement_done":
@@ -271,6 +273,10 @@ export function workRequiredStatusStyle(s: WorkRequiredStatus): StatusStyle {
             return { label: "Accepted", className: "bg-success/10 text-success border-success/20" };
         case "contractor_bidding":
             return { label: "Converted to workOrder", className: "bg-success/10 text-success border-success/20" };
+        case "awarded":
+            return { label: "Awarded", className: "bg-success/10 text-success border-success/20" };
+        case "in_progress":
+            return { label: "In progress", className: "bg-success/10 text-success border-success/20" };
         case "completed":
             return { label: "Completed", className: "bg-success/10 text-success border-success/20" };
         case "lost":

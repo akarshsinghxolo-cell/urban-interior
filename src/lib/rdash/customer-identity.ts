@@ -25,7 +25,7 @@ class CustomerIdentityConflictError extends Error {
 function labelForField(field: CustomerIdentityField) {
     return field === "alternate_phone" ? "alternate phone" : field;
 }
-function normalizePhone(value?: string | null) {
+export function normalizePhone(value?: string | null) {
     const digits = String(value || "").replace(/\D/g, "");
     if (!digits)
         return "";

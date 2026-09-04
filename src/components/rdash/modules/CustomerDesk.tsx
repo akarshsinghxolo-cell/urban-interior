@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { Search, UserPlus, FilePlus2, Phone, MapPin, Mail, MessageCircle, Navigation, CalendarClock, Wallet, FileText, ListChecks, Activity, Building, Plus, CheckCircle2, AlertTriangle, Pencil, Package, Truck, Receipt, Send, Check, ChevronDown, } from "lucide-react";
+import { Search, UserPlus, FilePlus2, Phone, MapPin, Mail, MessageCircle, Navigation, CalendarClock, Wallet, FileText, ListChecks, Activity, Building, Plus, CheckCircle2, AlertTriangle, Pencil, Package, Truck, Receipt, Send, Check, ChevronDown, ArrowRight, } from "lucide-react";
 import { useRDashStore, siteFinancials, type ContextCustomerTab } from "@/lib/rdash/store";
 import { Avatar, CopyValueButton, StatusBadge, MetricCard, SectionHeader, EmptyState } from "../primitives";
 import { ContextRow, type ContextAction } from "../ContextMenuHost";
@@ -21,6 +21,7 @@ import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
+import { customerLifecycleGaps, customerMatchesQuery, type CustomerPendingAction } from "@/lib/rdash/customer-desk-queries";
 import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds, latestQuotationRevisions } from "@/lib/rdash/metrics";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -68,9 +69,7 @@ export function CustomerDesk({ view }: {
     // The Edit context-menu action on a customer row uses this to open the form directly,
     // instead of just opening the detail panel and forcing the user to click Edit again.
     const [editCustomerId, setEditCustomerId] = React.useState<string | undefined>(undefined);
-    const filtered = db.customers.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()) ||
-        p.phone.includes(q) ||
-        db.sites.some((site) => site.customer_id === p.id && [site.name, site.address, site.locality, site.city, site.building_name].filter(Boolean).join(" ").toLowerCase().includes(q.toLowerCase())))
+    const filtered = db.customers.filter((p) => customerMatchesQuery(db, p, q))
         .filter((p) => filter === "all" ||
         (filter === "with-site" ? db.sites.some((site) => site.customer_id === p.id) :
             filter === "without-site" ? !db.sites.some((site) => site.customer_id === p.id) : p.status === filter))
@@ -141,7 +140,7 @@ export function CustomerDesk({ view }: {
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"/>
+                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer" aria-label="Search customers" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"/>
               </div>
               <Button size="sm" variant="default" className="gap-1.5" onClick={() => setAddCustomerOpen(true)}>
                 <UserPlus className="h-4 w-4"/> <span className="hidden sm:inline">Add</span>
@@ -187,7 +186,7 @@ export function CustomerDesk({ view }: {
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"/>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer" aria-label="Search customers" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"/>
           </div>
           <Button size="sm" variant="default" className="gap-1.5" onClick={() => setAddCustomerOpen(true)}>
             <UserPlus className="h-4 w-4"/> <span className="hidden sm:inline">Add</span>
@@ -223,7 +222,7 @@ export function CustomerDesk({ view }: {
                   <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3"/> {p.phone || "—"}</p>
                   <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin className="h-3 w-3"/> {locationLabel}</p>
                   <p className="mt-2 line-clamp-2 text-xs text-foreground/70">{work}</p>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" aria-label={`${progress.label}: ${progress.percent}%`}><div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }}/></div>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}><div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }}/></div>
                 </div>
               </div>
             </ContextRow>);
@@ -455,6 +454,23 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
     // Overview scope filter: clicking an area chip shows only the work captured in that area.
     const [scopeAreaId, setScopeAreaId] = React.useState<string | null>(null);
     const openTasks = relatedTasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
+    // Pending actions = open tasks + sales-lifecycle gaps (visit/measurement/quotation/budget/site).
+    // Derived from the same data as the progress hint above, so this section can never again
+    // claim "fully actioned" while the hint says "plan a visit" (audit problem #2/#7).
+    const lifecycleGaps = React.useMemo(() => customerLifecycleGaps(db, customerId), [db, customerId]);
+    const pendingCount = openTasks.length + lifecycleGaps.length;
+    const gapAction = React.useCallback((gap: CustomerPendingAction) => {
+        if (gap.key === "visit")
+            customerDispatch.openCreateDialog({ kind: "visit", customerId });
+        else if (gap.key === "quotation")
+            customerDispatch.openCreateDialog({ kind: "quotation", customerId });
+        else if (gap.key === "site")
+            setAddSiteOpen(true);
+        else if (gap.key === "measurement")
+            selectCustomerTab("sites");
+        else if (gap.key === "budget")
+            setEditCustomerOpen(true);
+    }, [customerDispatch, customerId, selectCustomerTab]);
     const customerInvoices = db.invoices.filter((invoice) => invoice.customer_id === customerId);
     const customerAdvances = payments.filter((p) => p.is_advance);
     const customerAdvanceIds = new Set(customerAdvances.map((payment) => payment.id));
@@ -516,8 +532,12 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
         </div>
       </div>
       <div className="mt-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
-        <div className="flex items-center justify-between gap-3"><span className="text-xs font-medium">{progress.summary}</span><span className="text-[10px] font-mono text-muted-foreground">{progress.percent}%</span></div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }}/></div>
+        <div className="flex items-center justify-between gap-3"><span className="text-xs font-medium">{progress.summary}</span>
+          <span className="flex shrink-0 items-center gap-2"><span className="text-[10px] font-mono text-muted-foreground">{progress.percent}%</span>
+            {lifecycleGaps.some((gap) => gap.key === "visit") && <Button size="sm" variant="outline" className="h-6 gap-1 px-2 text-[11px]" onClick={() => customerDispatch.openCreateDialog({ kind: "visit", customerId })}><MapPin className="h-3 w-3"/> Plan visit</Button>}
+          </span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}><div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }}/></div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {currentJob ? (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openDetail("workOrder", currentJob.id)}><Building className="mr-1 h-3.5 w-3.5"/> Open workOrder</Button>) : currentQuote ? (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openDetail("quotation", currentQuote.id)}><FileText className="mr-1 h-3.5 w-3.5"/> {currentQuote.status === "draft" ? "Edit quotation" : "Open quotation"}</Button>) : (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5"/> Create quotation</Button>)}
@@ -531,8 +551,8 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
     else
         toast.info("No phone number on file"); }}><Phone className="mr-1 h-3.5 w-3.5"/> Call</Button>
       </div>
-      <div className="mt-4 flex items-center gap-1 overflow-x-auto border-b border-border pb-px rd-scroll rd-scroll-fade">
-        {tabs.map((t) => (<button key={t.key} type="button" onClick={() => selectCustomerTab(t.key)} className={cn("flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-xs font-medium transition-colors", tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
+      <div className="mt-4 flex items-center gap-1 overflow-x-auto border-b border-border pb-px rd-scroll rd-scroll-fade" role="tablist" aria-label="Customer record sections">
+        {tabs.map((t) => (<button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => selectCustomerTab(t.key)} className={cn("flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-xs font-medium transition-colors", tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
             {t.icon}
             {t.label}
           </button>))}
@@ -619,8 +639,15 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                   </div>
                 ) : null;
             })()}
-            <SectionHeader title="Pending actions" count={openTasks.length}/>
-            {openTasks.length === 0 ? (<EmptyState title="No pending actions" description="This customer is fully actioned."/>) : (<div className="grid gap-2 sm:grid-cols-2">
+            <SectionHeader title="Pending actions" count={pendingCount}/>
+            {pendingCount === 0 ? (<EmptyState title="No pending actions" description="This customer is fully actioned."/>) : (<div className="grid gap-2 sm:grid-cols-2">
+                {lifecycleGaps.map((gap) => (<ContextRow key={gap.key} onSelect={() => gapAction(gap)} className="rounded-lg border border-border bg-background px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium">{gap.label}</p>
+                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-primary">Resolve<ArrowRight className="h-3 w-3"/></span>
+                    </div>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{gap.hint}</p>
+                  </ContextRow>))}
                 {openTasks.slice(0, 4).map((t) => (<ContextRow key={t.id} actions={buildTaskActions(t.id, taskDispatch, { onOpen: () => openDetail("task", t.id), readOnly: true })} onSelect={() => openDetail("task", t.id)} className="rounded-lg border border-border bg-background px-3 py-2">
                     <p className="truncate text-sm font-medium">{t.title}</p>
                     <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">

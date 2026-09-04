@@ -56,11 +56,15 @@ export type CustomerWorkRequiredDraft = {
   areaIds: string[];
   description: string;
   priority: Priority;
+  budget: string;
 };
 
 export type CustomerDraft = {
   name: string;
   phone: string;
+  whatsapp: string;
+  alternatePhone: string;
+  email: string;
   notes: string;
   referralQuery: string;
   referralLegacyName: string;
@@ -94,21 +98,28 @@ export const AREA_TYPES: Array<{ value: Area["area_type"]; label: string }> = [
   { value: "other", label: "Other" },
 ];
 
-export function defaultSiteName(customerName: string): string {
+export function defaultSiteName(customerName: string, locality?: string): string {
   const trimmed = customerName.trim();
-  return trimmed ? `${trimmed} Site` : "";
+  if (!trimmed) return "";
+  const localityName = locality?.trim();
+  return localityName ? `${trimmed} · ${localityName}` : `${trimmed} Site`;
 }
 
-export function siteNameFollowsCustomer(site: Pick<SiteDraft, "existing" | "name">, previousCustomerName: string): boolean {
+export function siteNameFollowsCustomer(site: Pick<SiteDraft, "existing" | "name" | "locality">, previousCustomerName: string): boolean {
   if (site.existing) return false;
   const currentName = site.name.trim();
-  return !currentName || currentName === defaultSiteName(previousCustomerName);
+  return !currentName
+    || currentName === defaultSiteName(previousCustomerName)
+    || currentName === defaultSiteName(previousCustomerName, site.locality);
 }
 
 export function emptyCustomerDraft(): CustomerDraft {
   return {
     name: "",
     phone: "",
+    whatsapp: "",
+    alternatePhone: "",
+    email: "",
     notes: "",
     referralQuery: "",
     referralLegacyName: "",
@@ -120,6 +131,9 @@ export function draftForCustomer(customer: Customer): CustomerDraft {
   return {
     name: customer.name || "",
     phone: customer.phone || "",
+    whatsapp: customer.whatsapp || "",
+    alternatePhone: customer.alternate_phone || "",
+    email: customer.email || "",
     notes: customer.notes || "",
     referralQuery: customer.source_partner_name || "",
     referralLegacyName: customer.source_partner_id ? "" : customer.source_partner_name || "",
@@ -199,6 +213,7 @@ export function newCustomerWorkRequiredDraft(siteId: string): CustomerWorkRequir
     areaIds: [],
     description: "",
     priority: "medium",
+    budget: "",
   };
 }
 
@@ -224,6 +239,7 @@ export function draftForWorkRequired(work: WorkRequired, master?: Master): Custo
     areaIds: work.area_ids || [],
     description: work.description || "",
     priority: work.priority || "medium",
+    budget: work.budget == null ? "" : String(work.budget),
   };
 }
 
@@ -268,6 +284,20 @@ export function validIndianPhone(value: string): boolean {
   return /^[6-9]\d{9}$/.test(sanitizeIndianMobile(value));
 }
 
+export function validCustomerEmail(value: string): boolean {
+  // Basic presence check: a non-empty email only needs an "@" to be usable.
+  const trimmed = value.trim();
+  return !trimmed || trimmed.includes("@");
+}
+
+export function workRequiredBudgetValue(value: string): number | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  // Invalid or negative input is treated as empty rather than blocking save.
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
 /**
  * Only attachment rows already confirmed by PostgreSQL belong in the Site
  * mutation. Deferred uploads append their attachment IDs atomically after the
@@ -285,6 +315,9 @@ export function customerPayload(draft: CustomerDraft): Partial<Customer> {
   return {
     name: draft.name.trim(),
     phone: draft.phone.trim(),
+    whatsapp: draft.whatsapp.trim() || undefined,
+    alternate_phone: draft.alternatePhone.trim() || undefined,
+    email: draft.email.trim() || undefined,
     source_partner_id: draft.referralSelected?.id,
     source_partner_name: draft.referralSelected?.name
       || (draft.referralQuery.trim() === draft.referralLegacyName ? draft.referralLegacyName || undefined : undefined),
@@ -344,5 +377,6 @@ export function workRequiredPayload(draft: CustomerWorkRequiredDraft): CustomerW
     description: draft.description.trim() || undefined,
     ...(draft.existing ? {} : { status: "new" as const }),
     priority: draft.priority,
+    budget: workRequiredBudgetValue(draft.budget),
   };
 }

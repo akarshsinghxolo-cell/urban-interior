@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { Site } from "@/lib/rdash/types";
+import { workRequiredBudgetValue } from "./customer-sites-form-model";
 import { emptyWorkRequiredFormDraft, WorkRequiredFields, type WorkRequiredFormDraft } from "./WorkRequiredFields";
 
 interface WorkRequiredCreateDialogProps {
@@ -58,6 +59,7 @@ export function WorkRequiredCreateDialog({ open, customerId, site, initialAreaId
         description: draft.description.trim() || undefined,
         status: "new",
         priority: draft.priority,
+        budget: workRequiredBudgetValue(draft.budget),
       });
       toast.success(`Work Required created for ${site.name}`);
       onCreated?.(id);

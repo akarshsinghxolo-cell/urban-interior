@@ -35,6 +35,7 @@ import {
     areaDependencySummary, replaceAreaId,
 } from "../../business-rules";
 import { applyCustomerWithSitesSave } from "../../customer-sites-save";
+import { siteArchiveBlockers } from "../../site-lifecycle";
 import { requestFileAssetCleanupAfterSync } from "./files";
 
 export function createCrmSlice(ctx: StoreContext): CrmState {
@@ -355,6 +356,9 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             const reason = options.reason.trim();
             if (!reason)
                 throw new Error("An archive reason is required for a Site.");
+            const blockers = siteArchiveBlockers(get().db, id);
+            if (blockers.total > 0)
+                throw new Error(`Site has ${blockers.total} linked record(s) (${blockers.workRequired} work required, ${blockers.visits} visits, ${blockers.workOrders} work orders) — reassign or complete them before archiving.`);
             const actor = get().currentUser();
             const now = nowIso();
             commitState((state: any) => ({

@@ -19,6 +19,7 @@ import type { StoreContext } from "../context";
 import { assertRole, genId, nowIso, today, addDays, contractorPaymentProofStatus } from "../helpers";
 import { formatINR } from "../../format";
 import { assertWorkOrderRelations } from "../../business-rules";
+import { advanceSitesStage } from "../../site-lifecycle";
 import { materializePaymentSchedule } from "../finance-helpers";
 import { contractorMasterRecordForCreate, type ContractorProfileRecord } from "../../contractor-profile";
 import { deriveContractorPerformanceEvidenceExport } from "../../performance-reconciliation";
@@ -300,6 +301,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     workRequired: s.db.workRequired.map((row: any) => row.id === acceptedScope.work_required_id
                         ? { ...row, status: workRequiredStatusAfterContractorAward(row.status), updated_at: now }
                         : row),
+                    // Site stage: awarding a contractor creates the Work Order and starts execution.
+                    sites: advanceSitesStage(s.db.sites, acceptedScope.site_id, "execution", now),
                 },
             }));
             if (!existingWorkOrder) {
@@ -462,6 +465,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     workRequired: s.db.workRequired.map((row: any) => row.id === acceptedScope.work_required_id
                         ? { ...row, status: workRequiredStatusAfterContractorAward(row.status), updated_at: now }
                         : row),
+                    // Site stage: awarding a contractor creates the Work Order and starts execution.
+                    sites: advanceSitesStage(s.db.sites, acceptedScope.site_id, "execution", now),
                 },
             }));
             if (!existingWorkOrder) {

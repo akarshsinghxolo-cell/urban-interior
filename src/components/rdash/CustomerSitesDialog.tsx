@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useRDashStore } from "@/lib/rdash/store";
 import { findCustomerIdentityMatches, findSameNameCustomers } from "@/lib/rdash/customer-identity";
+import { titleCaseCustomerName } from "@/lib/rdash/customer-record";
 import { coordinateInputError } from "@/lib/rdash/coordinates";
 import { cancelQueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
@@ -30,6 +31,7 @@ import {
   siteNameFollowsCustomer,
   sitePayload,
   workRequiredPayload,
+  validCustomerEmail,
   validIndianPhone,
   type AreaDraft,
   type CustomerDraft,
@@ -75,6 +77,9 @@ export function CustomerSitesDialog({
   const [detachAttachmentIds, setDetachAttachmentIds] = React.useState<string[]>([]);
   const [baseline, setBaseline] = React.useState("");
   const [sameNameAcknowledged, setSameNameAcknowledged] = React.useState(false);
+  // Site-name defaults mirror the stored customer casing so new Sites never
+  // bake in raw lowercase input ("rahul chobay Site" → "Rahul Chobay Site").
+  const defaultCustomerName = titleCaseCustomerName(customer.name);
   const { registerBatch, commitBatches } = useUploadDraft(open);
   const formId = `customer-sites:${editId || "new"}`;
   const initializedKeyRef = React.useRef<string | null>(null);
@@ -110,7 +115,7 @@ export function CustomerSitesDialog({
         .toSorted((left, right) => left.created_at.localeCompare(right.created_at))
         .map((work) => draftForWorkRequired(work, db.master))
       : [];
-    previousCustomerNameRef.current = nextCustomer.name;
+    previousCustomerNameRef.current = titleCaseCustomerName(nextCustomer.name);
     setCustomer(nextCustomer);
     setSites(nextSites);
     setAreas(nextAreas);
@@ -141,12 +146,12 @@ export function CustomerSitesDialog({
   React.useEffect(() => {
     if (!open) return;
     const previousCustomerName = previousCustomerNameRef.current;
-    if (previousCustomerName === customer.name) return;
-    const nextDefaultName = defaultSiteName(customer.name);
+    const nextDefaultCustomerName = titleCaseCustomerName(customer.name);
+    if (previousCustomerName === nextDefaultCustomerName) return;
     setSites((current) => current.map((site) => siteNameFollowsCustomer(site, previousCustomerName)
-      ? { ...site, name: nextDefaultName }
+      ? { ...site, name: defaultSiteName(nextDefaultCustomerName, site.locality) }
       : site));
-    previousCustomerNameRef.current = customer.name;
+    previousCustomerNameRef.current = nextDefaultCustomerName;
   }, [customer.name, open]);
 
   const currentFingerprint = React.useMemo(
@@ -187,7 +192,10 @@ export function CustomerSitesDialog({
 
   const duplicateMatches = React.useMemo(() => findCustomerIdentityMatches(db.customers, {
     phone: customer.phone,
-  }, { excludeCustomerId: editId }), [customer.phone, db.customers, editId]);
+    whatsapp: customer.whatsapp,
+    alternate_phone: customer.alternatePhone,
+    email: customer.email,
+  }, { excludeCustomerId: editId }), [customer.phone, customer.whatsapp, customer.alternatePhone, customer.email, db.customers, editId]);
 
   const sameNameMatches = React.useMemo(
     () => findSameNameCustomers(db.customers, { name: customer.name }, { excludeCustomerId: editId }),
@@ -202,6 +210,7 @@ export function CustomerSitesDialog({
   const formIsValid = React.useMemo(() => {
     if (!customer.name.trim()) return false;
     if (!validIndianPhone(customer.phone) || duplicateMatches.length) return false;
+    if (!validIndianPhone(customer.whatsapp) || !validIndianPhone(customer.alternatePhone) || !validCustomerEmail(customer.email)) return false;
     if (sameNameMatches.length && !sameNameAcknowledged) return false;
     const sitesValid = sites.filter((site) => site.existing || site.enabled).every((site) => {
       if (site.archiveRequested) return Boolean(site.archiveReason.trim());
@@ -388,13 +397,13 @@ export function CustomerSitesDialog({
 
             <section className="space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /><div><h3 className="text-sm font-semibold">Sites</h3><p className="text-[11px] text-muted-foreground">Sites are optional. New Sites default to “{defaultSiteName(customer.name) || "Customer Name Site"}”.</p></div></div>
-                <Button type="button" size="sm" variant="outline" onClick={() => setSites((current) => [...current, newSiteDraft(customer.name)])}><Plus className="mr-1 h-3.5 w-3.5" />Add Site</Button>
+                <div className="flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /><div><h3 className="text-sm font-semibold">Sites</h3><p className="text-[11px] text-muted-foreground">Sites are optional. New Sites default to “{defaultSiteName(defaultCustomerName) || "Customer Name Site"}”.</p></div></div>
+                <Button type="button" size="sm" variant="outline" onClick={() => setSites((current) => [...current, newSiteDraft(defaultCustomerName)])}><Plus className="mr-1 h-3.5 w-3.5" />Add Site</Button>
               </div>
               {sites.length === 0 && (
                 <div className="rounded-lg border border-dashed border-border p-5 text-center">
                   <p className="text-sm font-medium">No Site added</p><p className="mt-1 text-xs text-muted-foreground">The customer can be saved without a Site.</p>
-                  <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => setSites([newSiteDraft(customer.name)])}><Plus className="mr-1 h-3.5 w-3.5" />Add first Site</Button>
+                  <Button type="button" size="sm" variant="outline" className="mt-3" onClick={() => setSites([newSiteDraft(defaultCustomerName)])}><Plus className="mr-1 h-3.5 w-3.5" />Add first Site</Button>
                 </div>
               )}
               {sites.map((site, index) => (

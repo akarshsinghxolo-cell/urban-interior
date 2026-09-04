@@ -98,4 +98,26 @@ describe("Sales Pipeline progression fallbacks", () => {
     expect(pipelineStageForSiteStage("on_hold")).toBe("on_hold");
     expect(pipelineStageForSiteStage("cancelled")).toBe("lost");
   });
+
+  test("continues the Site-stage fallback ladder beyond planning instead of pinning Sites at Planning 25%", () => {
+    const ladder = [
+      { stage: "quoted", label: "Quoted", percent: 60 },
+      { stage: "awarded", label: "Awarded", percent: 75 },
+      { stage: "execution", label: "Execution", percent: 88 },
+      { stage: "on_hold", label: "On hold", percent: 50 },
+      { stage: "completed", label: "Completed", percent: 100 },
+      { stage: "cancelled", label: "Cancelled", percent: 0 },
+    ] as const;
+    for (const step of ladder) {
+      const db = database();
+      db.sites = [{ ...db.sites[0], stage: step.stage }];
+      const entry = buildProgressionPipelineEntries(db).find((candidate) => candidate.site_id === "site-1");
+      expect(entry).toMatchObject({
+        source: "site_progress",
+        stage: pipelineStageForSiteStage(step.stage),
+        progress_label: step.label,
+        progress_percent: step.percent,
+      });
+    }
+  });
 });

@@ -11,6 +11,7 @@ import type { CustomerIdentityMatch } from "@/lib/rdash/customer-identity";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import {
+  validCustomerEmail,
   validIndianPhone,
   type CustomerDraft,
 } from "./customer-sites-form-model";
@@ -88,6 +89,15 @@ export function CustomerDetailsFields({
         </Field>
         <Field label="Contact number" htmlFor="customer-phone">
           <PhoneInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({ ...current, phone }))} placeholder="9876543210" />
+        </Field>
+        <Field label="WhatsApp number" htmlFor="customer-whatsapp">
+          <PhoneInput id="customer-whatsapp" value={customer.whatsapp} onChange={(whatsapp) => setCustomer((current) => ({ ...current, whatsapp }))} placeholder="9876543210" />
+        </Field>
+        <Field label="Alternate phone" htmlFor="customer-alternate-phone">
+          <PhoneInput id="customer-alternate-phone" value={customer.alternatePhone} onChange={(alternatePhone) => setCustomer((current) => ({ ...current, alternatePhone }))} placeholder="9876543210" />
+        </Field>
+        <Field label="Email" htmlFor="customer-email">
+          <EmailInput id="customer-email" value={customer.email} onChange={(email) => setCustomer((current) => ({ ...current, email }))} placeholder="name@example.com" />
         </Field>
       </div>
       {duplicateMatches.length > 0 && (
@@ -188,6 +198,11 @@ export function CustomerDetailsFields({
 function PhoneInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   const invalid = Boolean(value && !validIndianPhone(value));
   return <div><Input id={id} value={value} onChange={(event) => onChange(sanitizeIndianMobile(event.target.value))} placeholder={placeholder} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter 10 digits starting with 6, 7, 8, or 9</p>}</div>;
+}
+
+function EmailInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
+  const invalid = !validCustomerEmail(value);
+  return <div><Input id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type="email" inputMode="email" autoComplete="email" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter an email address containing @, or leave it empty</p>}</div>;
 }
 
 function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {

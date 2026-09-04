@@ -33,9 +33,37 @@ export function DetailPanel() {
     const db = useRDashStore((s) => s.db);
     const setContextDetailTab = useRDashStore((s) => s.setContextDetailTab);
     const [tab, setTab] = React.useState<Tab>("overview");
+    const asideRef = React.useRef<HTMLElement | null>(null);
     React.useEffect(() => {
         setTab((detail.panelTab || "overview") as Tab);
     }, [detail.kind, detail.recordId, detail.panelTab]);
+    // Dialog semantics (audit #10): move focus into the panel when it opens and
+    // restore it to the invoker when it closes. The panel unmounts on close, so
+    // the effect cleanup is the restore hook.
+    React.useEffect(() => {
+        if (!detail.kind || !detail.recordId)
+            return;
+        const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        asideRef.current?.focus();
+        return () => { previous?.focus(); };
+    }, [detail.kind, detail.recordId]);
+    const onAsideKeyDown = React.useCallback((e: React.KeyboardEvent) => {
+        if (e.key !== "Tab" || !asideRef.current)
+            return;
+        const focusables = asideRef.current.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])');
+        if (!focusables.length)
+            return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+        }
+        else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+        }
+    }, []);
     const setPanelTab = React.useCallback((next: Tab) => {
         setTab(next);
         if (detail.fromModule === "context")
@@ -56,7 +84,7 @@ export function DetailPanel() {
         return null;
     return (<>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] animate-in fade-in duration-150" onClick={closeDetail}/>
-      <aside aria-label="Record context panel" className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl animate-in slide-in-from-right duration-200">
+      <aside ref={asideRef} role="dialog" aria-modal="true" tabIndex={-1} onKeyDown={onAsideKeyDown} aria-label="Record context panel" className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl outline-none animate-in slide-in-from-right duration-200">
         <PanelHeader tab={tab} setTab={setPanelTab}/>
         <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden rd-scroll">
           {tab === "overview" && <OverviewBody kind={detail.kind} id={detail.recordId}/>}

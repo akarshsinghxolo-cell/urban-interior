@@ -16,6 +16,24 @@ const CUSTOMER_RECORD_FIELDS = [
 ] as const satisfies readonly (keyof Customer)[];
 
 
+/**
+ * Canonical display casing for customer names: trim + collapse whitespace,
+ * then capitalize only tokens that carry NO uppercase at all ("rahul chobay"
+ * → "Rahul Chobay"). Mixed-case tokens ("MC Gupta", "McDonald", "SK Traders")
+ * pass through untouched so intentional casing is never mangled.
+ */
+export function titleCaseCustomerName(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((token) => {
+      if (!token || /[A-Z]/.test(token) || !/[a-z]/i.test(token)) return token;
+      return token.charAt(0).toUpperCase() + token.slice(1);
+    })
+    .join(" ");
+}
+
 export function canonicalizeCustomerRow(row: Record<string, unknown>): Record<string, unknown> {
   const safe: Record<string, unknown> = {};
   for (const field of CUSTOMER_RECORD_FIELDS) {
@@ -30,7 +48,7 @@ export function normalizeCustomerRow(row: unknown): Customer {
   const status = safe.status === "inactive" || safe.status === "blocked" ? safe.status : "active";
   return {
     id: String(safe.id || ""),
-    name: String(safe.name || ""),
+    name: titleCaseCustomerName(String(safe.name || "")),
     phone: String(safe.phone || ""),
     whatsapp: typeof safe.whatsapp === "string" ? safe.whatsapp : undefined,
     alternate_phone: typeof safe.alternate_phone === "string" ? safe.alternate_phone : undefined,

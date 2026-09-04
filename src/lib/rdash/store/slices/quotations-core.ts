@@ -36,6 +36,7 @@ import type { QuotationsState } from "../types";
 import type { StoreContext } from "../context";
 import { assertRole, genId, nowIso, today, userForRole, addDays } from "../helpers";
 import { assertQuotationRelations, assertWorkOrderRelations } from "../../business-rules";
+import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
 import { coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
 import {
@@ -174,6 +175,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             }
                             : work)
                         : s.db.workRequired,
+                    // Site stage: a sent quotation moves the Site past planning (customer-level quotes have no Site).
+                    sites: advanceSitesStage(s.db.sites, before.site_id, nextQuotationStatus === "sent" ? "quoted" : undefined, changedAt),
                 },
             }));
             const changes: string[] = [];
@@ -932,6 +935,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             updated_at: acceptedAt,
                         }
                         : work),
+                    // Site stage: acceptance awards the Site.
+                    sites: advanceSitesStage(state.db.sites, quotation.site_id, "awarded", acceptedAt),
                 },
             }));
             const warningText = warnings.length
@@ -1056,6 +1061,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             }
                             : work)
                         : s.db.workRequired,
+                    // Site stage: a completed Work Order completes the Site.
+                    sites: advanceSitesStage(s.db.sites, before.site_id, nextWorkOrderStatus === "completed" ? "completed" : undefined, now),
                 },
             }));
             const workOrder = get().db.workOrders.find((row: any) => row.id === id);

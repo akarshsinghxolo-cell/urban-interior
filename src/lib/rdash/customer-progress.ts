@@ -18,7 +18,9 @@ function progressForWorkRequired(workRequired: WorkRequired | undefined): Custom
     const status: WorkRequiredStatus | undefined = workRequired?.status;
     switch (status) {
         case "new":
-            return { key: "new", label: "Contacted", summary: `${title} · qualify workRequired and plan a visit`, percent: 16 };
+            return { key: "new", label: "New enquiry", summary: `${title} · qualify workRequired and plan a visit`, percent: 8 };
+        case "contacted":
+            return { key: "contacted", label: "Contacted", summary: `${title} · plan a site visit`, percent: 16 };
         case "visit_scheduled":
             return { key: "visit", label: "Site visit planned", summary: `${title} · measurement or site visit is scheduled`, percent: 24 };
         case "measurement_done":

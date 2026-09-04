@@ -100,10 +100,21 @@ export async function openCustomerDrawer(page: Page, customerName = "Mr. Das"): 
  */
 export async function clickDrawerTab(page: Page, tabName: RegExp | string): Promise<void> {
   const drawer = recordDrawer(page);
+  // The customer portfolio tab strip now exposes the correct ARIA contract
+  // (role="tab" inside role="tablist" — audit fix #10). Other drawers may
+  // still render plain buttons, so try role=tab first and fall back.
+  const pick = (
+    role: "tab" | "button",
+    opts: { name: RegExp | string; exact?: boolean }
+  ) => drawer.getByRole(role, opts)[typeof tabName === "string" ? "last" : "first"]();
   const tab =
     typeof tabName === "string"
-      ? drawer.getByRole("button", { name: tabName, exact: true }).last()
-      : drawer.getByRole("button", { name: tabName }).first();
+      ? (await pick("tab", { name: tabName, exact: true }).count())
+        ? pick("tab", { name: tabName, exact: true })
+        : pick("button", { name: tabName, exact: true })
+      : (await pick("tab", { name: tabName }).count())
+        ? pick("tab", { name: tabName })
+        : pick("button", { name: tabName });
   await tab.click();
   await expect(drawer).toBeVisible();
 }

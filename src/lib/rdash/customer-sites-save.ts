@@ -1,4 +1,5 @@
 import type { Area, Customer, EntityFileAttachment, Master, RDashDatabase, Site, WorkRequired } from "./types";
+import { titleCaseCustomerName } from "./customer-record";
 import { assertUniqueCustomerIdentity } from "./customer-identity";
 import { resolveWorkTypes } from "./work-types";
 
@@ -131,6 +132,7 @@ const workRequiredMutableFields: Array<keyof WorkRequired> = [
   "area_ids",
   "description",
   "priority",
+  "budget",
 ];
 
 function defaultId(prefix: "cust" | "site" | "area" | "workRequired"): string {
@@ -166,7 +168,7 @@ function customerRecord(
   const whatsapp = suppliedValue(input, "whatsapp", existing?.whatsapp);
   return {
     id: customerId,
-    name: String(suppliedValue(input, "name", existing?.name ?? "") ?? "").trim() || "New customer",
+    name: titleCaseCustomerName(String(suppliedValue(input, "name", existing?.name ?? "") ?? "")) || "New customer",
     phone,
     whatsapp: String(whatsapp ?? phone).trim() || undefined,
     alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
@@ -340,7 +342,7 @@ function workRequiredRecord(
     status: existing?.status ?? input.status ?? "new",
     source: existing?.source ?? input.source,
     priority: suppliedValue(input, "priority", existing?.priority ?? "medium") ?? "medium",
-    budget: existing?.budget ?? input.budget,
+    budget: suppliedValue(input, "budget", existing?.budget),
     created_at: existing?.created_at ?? now,
     updated_at: existing?.updated_at ?? now,
   };
