@@ -11,7 +11,7 @@ import {
   type WorkspaceOperation,
 } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
-import { introducedIntegrityIssues } from "./integrity-delta";
+import { introducedFkIntegrityIssues, introducedIntegrityIssues } from "./integrity-delta";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import { prepareTargetedCommit } from "./targeted-commit";
 import { prepareSimpleTargetedCommit } from "./simple-targeted-commit";
@@ -302,7 +302,8 @@ export async function commitAuthorizedPostgresOperations(
     authorizeAndValidateMs = prepared.authorizeAndValidateMs;
   } else {
     const loadStartedAt = Date.now();
-    const current = await getWorkspaceSubset(validationReadPlan(user, commitOperations));
+    const plan = validationReadPlan(user, commitOperations);
+    const current = await getWorkspaceSubset(plan);
     const loadedAt = Date.now();
     queryCount = current.queryCount;
     if (current.revision !== revision) throw new Error("CONFLICT");
@@ -311,12 +312,20 @@ export async function commitAuthorizedPostgresOperations(
     commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
     commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);
     const baseline = normalizeWorkspace(current.data);
-    const candidate = normalizeWorkspace(applyWorkspaceOperations(current.data, commitOperations));
+    const rawCandidate = applyWorkspaceOperations(current.data, commitOperations);
+    const candidate = normalizeWorkspace(rawCandidate);
     const issues = introducedIntegrityIssues(
       validateBusinessData(baseline),
       validateBusinessData(candidate),
     );
     if (issues.length) throw new Error(`INVALID:${issues[0]}`);
+    // FK backstop: reject dangling references INTRODUCED by this commit per
+    // the FK registry (jsonb storage cannot carry real constraints). Run on
+    // the raw shapes and restricted to rules whose child AND parent
+    // collections the plan loaded full — anything narrower cannot tell a
+    // true orphan from an unloaded row.
+    const fkIssues = introducedFkIntegrityIssues(current.data, rawCandidate, plan.fullCollections || []);
+    if (fkIssues.length) throw new Error(`INVALID:${fkIssues[0]}`);
     const validatedAt = Date.now();
 
     loadMs = loadedAt - loadStartedAt;

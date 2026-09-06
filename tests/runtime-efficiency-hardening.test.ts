@@ -220,7 +220,11 @@ describe("runtime efficiency hardening", () => {
     const simple = await read("src/lib/rdash/server/simple-targeted-commit.ts");
 
     expect(authorized).toContain("validationReadPlan");
-    expect(authorized).toContain("getWorkspaceSubset(validationReadPlan");
+    // The validation plan is built once and feeds the subset read; the FK
+    // delta reuses the same plan's full-collections set (no second read).
+    expect(authorized).toContain("const plan = validationReadPlan(user, commitOperations)");
+    expect(authorized).toContain("getWorkspaceSubset(plan)");
+    expect(authorized).toContain("introducedFkIntegrityIssues(current.data, rawCandidate, plan.fullCollections");
     expectTokens(authorized, ['CommitMode = "row-targeted" | "domain-targeted"']);
     expect(authorized).toContain("assertCanonicalThreadOperations");
     expect(authorized).not.toContain("getWorkspace(");
