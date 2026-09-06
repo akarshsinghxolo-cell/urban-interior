@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
+import { clientIp, rateLimit } from "@/lib/rdash/server/ratelimit";
 import { getWorkspace } from "@/lib/rdash/server/workspace";
 import { checkWorkspaceIntegrity } from "@/lib/rdash/integrity/checker";
 import { validateBusinessData } from "@/lib/rdash/business-rules";
@@ -9,11 +10,22 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 /**
- * Daily QA and maintenance job.
+ * Daily QA and maintenance job (scheduled by vercel.json).
  *
  * The expensive full integrity scan runs here as scheduled validation instead
  * of on every dashboard health request. Expired route bundles are also removed
  * once per day.
+ *
+ * Auth contract matches how the job is actually invoked:
+ *  - CRON_SECRET configured → Vercel Cron sends `Authorization: Bearer` and
+ *    the full diagnostic payload is returned (timing-safe compare).
+ *  - No secret configured → the bearer gate made the scheduler 503 forever,
+ *    silently disabling daily QA. Vercel Cron invocations carry the
+ *    platform-set `x-vercel-cron` header, so those are let through as a
+ *    fallback: per-IP rate limited and the response is trimmed to summary
+ *    counts (no record counts, no business-rule messages, no revision) so a
+ *    spoofed header cannot farm diagnostics. Configure CRON_SECRET for the
+ *    strict mode.
  */
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
@@ -22,17 +34,18 @@ export async function GET(request: NextRequest) {
     || process.env.CRON_BEARER_TOKEN
     || ""
   ).trim();
-  // Fail closed: with no secret configured this route would be a public,
-  // unauthenticated full-workspace integrity scan. The scheduler sees 503
-  // (cron not configured) instead of leaking workspace data.
-  if (!expectedToken) {
+  const vercelCronFallback = !expectedToken;
+  // Fail closed for everything that is neither bearer-authenticated nor a
+  // Vercel Cron invocation: a public, unauthenticated full-workspace
+  // integrity scan must stay impossible.
+  if (!expectedToken && request.headers.get("x-vercel-cron") !== "1") {
     return NextResponse.json(
       { ok: false, error: "Cron endpoint disabled: CRON_SECRET is not configured." },
       { status: 503 },
     );
   }
-  const authHeader = request.headers.get("authorization") || "";
-  {
+  if (!vercelCronFallback) {
+    const authHeader = request.headers.get("authorization") || "";
     const suppliedToken = authHeader
       .toLowerCase()
       .startsWith("bearer ")
@@ -49,6 +62,23 @@ export async function GET(request: NextRequest) {
         { status: 401 },
       );
     }
+  } else {
+    // Unauthenticated fallback: the header is spoofable, so cap how often any
+    // one caller can trigger the expensive scan (real cron fires once/day).
+    const gate = rateLimit(`qa-cron:${clientIp(request)}`, 6, 60 * 60);
+    if (!gate.ok) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "Too many unauthenticated cron checks; set CRON_SECRET for bearer auth.",
+          retryAfterSec: gate.retryAfterSec,
+        },
+        { status: 429 },
+      );
+    }
+    console.warn(
+      "[qa/cron] running via the unauthenticated x-vercel-cron fallback — set CRON_SECRET to require bearer auth and return full diagnostics.",
+    );
   }
 
   try {
@@ -113,30 +143,50 @@ export async function GET(request: NextRequest) {
     const ok =
       integrityBySeverity.critical === 0
       && businessRuleIssues.length === 0;
+    const integritySummary = {
+      critical: integrityBySeverity.critical,
+      warning: integrityBySeverity.warning,
+      info: integrityBySeverity.info,
+      total: integrity.issues?.length || 0,
+    };
+    const maintenance = { expiredRouteBundlesDeleted };
+    const base = {
+      ok,
+      timestamp: new Date().toISOString(),
+      durationMs,
+    };
 
+    // Bearer mode (CRON_SECRET set): full diagnostics.
+    if (!vercelCronFallback) {
+      return NextResponse.json(
+        {
+          ...base,
+          workspace: {
+            revision: workspace.revision,
+            counts,
+          },
+          integrity: {
+            ...integritySummary,
+            healthScore: integrity.healthScore ?? 100,
+          },
+          businessRules: {
+            total: businessRuleIssues.length,
+            firstError: businessRuleIssues[0] || null,
+          },
+          maintenance,
+        },
+        { status: ok ? 200 : 500 },
+      );
+    }
+
+    // Fallback mode: summary only — no record counts, no revision, and no
+    // business-rule messages (firstError can embed real workspace data).
     return NextResponse.json(
       {
-        ok,
-        timestamp: new Date().toISOString(),
-        durationMs,
-        workspace: {
-          revision: workspace.revision,
-          counts,
-        },
-        integrity: {
-          critical: integrityBySeverity.critical,
-          warning: integrityBySeverity.warning,
-          info: integrityBySeverity.info,
-          total: integrity.issues?.length || 0,
-          healthScore: integrity.healthScore ?? 100,
-        },
-        businessRules: {
-          total: businessRuleIssues.length,
-          firstError: businessRuleIssues[0] || null,
-        },
-        maintenance: {
-          expiredRouteBundlesDeleted,
-        },
+        ...base,
+        mode: "vercel-cron-fallback",
+        integrity: integritySummary,
+        maintenance,
       },
       { status: ok ? 200 : 500 },
     );
