@@ -38,7 +38,7 @@ export function normalizePhone(value?: string | null) {
     }
     return withoutInternationalPrefix;
 }
-function normalizeEmail(value?: string | null) {
+export function normalizeEmail(value?: string | null) {
     return String(value || "").trim().toLowerCase();
 }
 export function normalizeCustomerName(value?: string | null) {

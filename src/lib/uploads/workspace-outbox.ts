@@ -4,6 +4,10 @@ import { applyWorkspaceOperations, diffWorkspaceOperations } from "@/lib/rdash/w
 import type { RDashDatabase } from "@/lib/rdash/types";
 import { uploadIndexedDb } from "./upload-indexed-db";
 import { recoverQueuedCustomerConversationRecord } from "./workspace-outbox-canonical-recovery";
+import {
+  readSpilledWorkspaceCommits,
+  replaceSpilledWorkspaceCommits,
+} from "./workspace-outbox-spill";
 import type {
   WorkspaceCommitOutboxRecord,
   WorkspaceCommitPayload,
@@ -252,6 +256,30 @@ async function rebaseRemainingItems(base: RDashDatabase, revision: number): Prom
   await refresh();
 }
 
+/**
+ * Promote commits that were spilled to localStorage after a failed IndexedDB
+ * capture back into the real outbox queue, oldest first — mirroring what the
+ * capture would have done live, where a newer commit subsumes older pending
+ * ones. Entries that still cannot be captured (no scope yet, storage still
+ * broken) stay spilled for the next hydrate.
+ */
+async function promoteSpilledCommits(): Promise<void> {
+  const spilled = readSpilledWorkspaceCommits();
+  if (!spilled.length) return;
+  const remaining: WorkspaceCommitPayload[] = [];
+  for (const payload of spilled) {
+    try {
+      const captured = await captureWorkspaceCommit(JSON.stringify(payload));
+      if (!captured.operationId) remaining.push(payload);
+    } catch (error) {
+      console.error("[WorkspaceOutbox] Spilled commit still not capturable; keeping it for the next hydrate.", error);
+      remaining.push(payload);
+    }
+  }
+  replaceSpilledWorkspaceCommits(remaining);
+  if (remaining.length < spilled.length) await refresh();
+}
+
 export const workspaceOutboxStore = {
   getSnapshot(): WorkspaceOutboxSnapshot {
     return snapshot;
@@ -263,6 +291,11 @@ export const workspaceOutboxStore = {
   async hydrate(): Promise<void> {
     if (hydratePromise) return hydratePromise;
     hydratePromise = (async () => {
+      try {
+        await promoteSpilledCommits();
+      } catch (error) {
+        console.error("[WorkspaceOutbox] Could not promote spilled commits yet.", error);
+      }
       try {
         await refresh();
       } catch (error) {

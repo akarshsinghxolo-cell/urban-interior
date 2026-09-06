@@ -8,6 +8,7 @@ import {
   rememberWorkspaceResponse,
 } from "@/lib/uploads/workspace-outbox";
 import { workspaceReadState } from "@/lib/rdash/workspace-read-state";
+import { spillWorkspaceCommit } from "@/lib/uploads/workspace-outbox-spill";
 
 /** Client-side session token manager for Urban Castle. */
 const TOKEN_KEY = "uc_session_token";
@@ -362,6 +363,9 @@ export function initAuthFetch(): void {
         if (captured.defer && operationId) deferredResponse = deferredWorkspaceCommitResponse(operationId);
       } catch (error) {
         console.error("[WorkspaceOutbox] Could not durably capture this commit; continuing with the online save.", error);
+        // Secondary durability: spill the raw payload so a tab closed before
+        // the response can still replay the change on the next load.
+        spillWorkspaceCommit(body);
       }
     }
     if (deferredResponse) return deferredResponse;
