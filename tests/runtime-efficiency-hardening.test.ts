@@ -102,9 +102,9 @@ describe("runtime efficiency hardening", () => {
     expect(client).not.toContain("SESSION_RENEW_INTERVAL_MS");
   });
 
-  test("functions execute beside the Tokyo database", async () => {
+  test("functions execute beside the Mumbai database", async () => {
     const config = JSON.parse(await read("vercel.json")) as { regions?: string[] };
-    expect(config.regions).toEqual(["hnd1"]);
+    expect(config.regions).toEqual(["bom1"]);
   });
 
   test("database migration prepares route bundles before removing point telemetry", async () => {

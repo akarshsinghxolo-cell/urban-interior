@@ -5,7 +5,9 @@ These scripts document the one-time upgrade performed on the reset Supabase proj
 ## Status
 
 - Applied successfully on 2026-07-28.
-- Target project at application time: `yqlyzmeylbyoldfulwsk`.
+- Target project at application time: the legacy production Supabase project
+  (project ref intentionally removed after the 2026-09-06 production migration
+  to the Mumbai-region Supabase project).
 - The project was verified empty before execution: no business rows, Auth users, sessions, identities, or Storage objects.
 - The final atomic workspace commit and revision journal were verified with an isolated smoke workspace and all smoke rows were removed.
 
