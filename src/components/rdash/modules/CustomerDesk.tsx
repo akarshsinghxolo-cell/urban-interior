@@ -202,7 +202,7 @@ export function CustomerDesk({ view }: {
 
       <SectionHeader title="Customers" count={filtered.length} action={customerListControls}/>
 
-      <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
         {filtered.map((p) => {
             const progress = customerProgress(db, p.id);
             const customerSites = db.sites.filter((site) => site.customer_id === p.id);
@@ -309,7 +309,7 @@ function CustomerDuplicateMergeControl() {
             <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
               {duplicatePairs.map((pair) => <p key={`${pair.first.id}-${pair.second.id}`} className="mb-1 last:mb-0"><strong>{pair.first.name}</strong> ↔ <strong>{pair.second.name}</strong> · matching {pair.fields.join(", ")}</p>)}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="grid gap-1 text-xs font-medium">Keep this customer
                 <select value={survivorId} onChange={(event) => setSurvivorId(event.target.value)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
                   {customersInDuplicates.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone || customer.email || customer.id}</option>)}
@@ -566,7 +566,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
             </div>
             <div className="rounded-lg border border-border bg-background p-3">
               <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer scope</p>
-              <div className="mt-2 grid gap-2">
+              <div className="mt-2 grid grid-cols-1 gap-2">
                 {(sites.length ? sites : [undefined]).map((site) => {
                     const scopedAreas = customerAreas.filter((area) => area.site_id === (site?.id || "") || (Boolean(singleSite) && !area.site_id));
                     const scopedWork = customerWorkRequired.filter((work) => work.site_id === (site?.id || "") || (Boolean(singleSite) && !work.site_id));
@@ -639,7 +639,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                 ) : null;
             })()}
             <SectionHeader title="Pending actions" count={pendingCount}/>
-            {pendingCount === 0 ? (<EmptyState title="No pending actions" description="This customer is fully actioned."/>) : (<div className="grid gap-2 sm:grid-cols-2">
+            {pendingCount === 0 ? (<EmptyState title="No pending actions" description="This customer is fully actioned."/>) : (<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {lifecycleGaps.map((gap) => (<ContextRow key={gap.key} onSelect={() => gapAction(gap)} className="rounded-lg border border-border bg-background px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-sm font-medium">{gap.label}</p>
@@ -664,7 +664,7 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
               </Button>
             </div>
 
-            {sites.length === 0 ? (<EmptyState title="No sites" description="Add a site to start tracking per-property work." icon={<Building className="h-7 w-7"/>}/>) : (<div className="grid gap-3">
+            {sites.length === 0 ? (<EmptyState title="No sites" description="Add a site to start tracking per-property work." icon={<Building className="h-7 w-7"/>}/>) : (<div className="grid grid-cols-1 gap-3">
                 {sites.map((site) => {
                     const fin = siteFinancials(db, site.id);
                     const siteAreas = customerAreas.filter((area) => area.site_id === site.id || (Boolean(singleSite) && !area.site_id));
@@ -726,8 +726,8 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                                   const workAreaNames = (work.area_ids || []).map((areaId) => siteAreas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
                                   return (<div key={work.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
                                   <div className="min-w-0">
-                                    <p className="truncate text-xs font-semibold">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</p>
-                                    <p className="truncate text-[10px] text-muted-foreground">{work.structured_items?.length || 0} structured line(s) · {workRequiredStatusStyle(work.status).label}{workAreaNames ? ` with ${workAreaNames}` : ""}</p>
+                                    <p className="break-words text-xs font-semibold">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</p>
+                                    <p className="break-words text-[10px] text-muted-foreground">{work.structured_items?.length || 0} structured line(s) · {workRequiredStatusStyle(work.status).label}{workAreaNames ? ` with ${workAreaNames}` : ""}</p>
                                   </div>
                                   <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]" onClick={() => setCaptureWorkRequiredId(work.id)}>
                                     <ListChecks className="mr-1 h-3.5 w-3.5"/> Capture detailed area
