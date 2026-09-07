@@ -1648,7 +1648,10 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         return {
             ...group,
             open: true,
-            lines: [...group.lines, {
+            // The draft leads the group's lines so the form opens exactly where
+            // the saved row was — edit is the capture form itself (same fields,
+            // same save path), never a second form.
+            lines: [{
                 key: `edit-${item.id}`,
                 category_id: item.category_id,
                 subcategory_id: item.subcategory_id,
@@ -1662,7 +1665,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 notes: item.description,
                 target_work_required_id: item.work_required_id,
                 editOfItemId: item.id,
-            }],
+            }, ...group.lines],
         };
     }));
     // Screenshot 1: ticking an extra work type duplicates the line instead of
@@ -1898,7 +1901,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
               <p className="break-words text-[10px] text-muted-foreground">{item.quantity}{item.unit_name ? ` ${item.unit_name}` : ""}{item.amount > 0 ? ` · ${formatINR(item.amount)}` : ""}</p>
             </div>
             <div className="flex shrink-0 gap-1">
-              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => startEditExisting(group.key, item)} title="Edit this captured work item">Edit</Button>
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { startEditExisting(group.key, item); setTimeout(() => document.getElementById(`edit-draft-${item.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} title="Edit this captured work item — the same capture form loaded with its saved values">Edit</Button>
               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => toggleExistingRemoval(group.key, item.id)}>Remove</Button>
             </div>
           </div>))}
@@ -1939,7 +1942,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             ].filter((id): id is string => Boolean(id)));
             const lineError = lineIssue(line, group);
             const { rate, estimated } = lineEstimate(line, group);
-            return (<div key={line.key} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : line.editOfItemId ? "border-primary/50 bg-primary/[0.04]" : "border-border bg-background")}>
+            return (<div key={line.key} id={line.editOfItemId ? `edit-draft-${line.editOfItemId}` : undefined} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : line.editOfItemId ? "border-primary/50 bg-primary/[0.04]" : "border-border bg-background")}>
             <div className="mb-2 flex items-center justify-between"><span className={cn("text-[10px] font-semibold uppercase", line.editOfItemId ? "text-primary" : "text-muted-foreground")}>{line.editOfItemId ? "Editing saved work" : line.seeded ? "Planned work" : "New work item"}</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={line.editOfItemId ? "Cancel editing — keep the saved item unchanged" : line.seeded ? "Remove this planned work from this area" : "Remove this work item"} title={line.editOfItemId ? "Cancel edit — the saved item stays as it is" : undefined}><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <div>
