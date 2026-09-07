@@ -740,10 +740,13 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             const state = get();
             const removedItemIds = new Set(options?.removedItemIds || []);
             const removedSelections = options?.removedSelections || [];
+            const areaDims = options?.areaDims || [];
             const workRequired = state.db.workRequired.find((row: any) => row.id === workRequiredId);
             if (!workRequired)
                 throw new Error("Work Required not found.");
-            if (!lines.length && removedItemIds.size === 0 && removedSelections.length === 0)
+            // Dimensions-only captures are valid (user report): typed area
+            // dimensions must save even when every work line is incomplete.
+            if (!lines.length && removedItemIds.size === 0 && removedSelections.length === 0 && areaDims.length === 0)
                 throw new Error("Capture at least one structured work line.");
             const context = "Structured Work Required";
             assertWorkRequiredMatchesContext(state.db, workRequired.id, workRequired.customer_id, workRequired.site_id, context);
@@ -803,6 +806,10 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 return categoryMatches.find((row: any) => (row.work_subcategory_ids || []).includes(line.subcategory_id))
                     || categoryMatches[0]
                     || (line.category_id ? skeletonFor(line.category_id) : workRequired);
+            };
+            const num = (value: unknown) => {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
             };
             const resolvedItems: LineItem[] = lines.map((line: any, index: any) => {
                 if (line.site_id !== workRequired.site_id) {
@@ -878,6 +885,13 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                             area_type: line.area_type || "other",
                             stage: "unmeasured",
                             unit: "ft",
+                            // Dimensions typed in the capture view land on the
+                            // Area record immediately — reopening the capture
+                            // (or the measurement sheet) shows them (annotation B).
+                            length: num(line.length_ft),
+                            width: num(line.breadth_ft),
+                            height: num(line.height_ft),
+                            floor_area: num(line.floor_area),
                             notes: "Created during structured work capture.",
                             created_at: now,
                             updated_at: now,
@@ -897,10 +911,6 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 const contractorAverage = contractorWorkTypeAverages(state.db.master.contractorRates, subcategory.id, primaryRate.id);
                 const rate = mapping?.reference_rate || article?.base_rate || contractorAverage.total_rate || 0;
                 const title = `${area.name} · ${article?.name || subcategory.name}${workType && workType.name !== "Standard" ? ` · ${workType.name}` : ""}`;
-                const num = (value: unknown) => {
-                    const parsed = Number(value);
-                    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-                };
                 return {
                     id: genId("req-line"),
                     title,
@@ -929,6 +939,29 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     status: "active",
                 };
             });
+            // Annotation B: dimensions typed in the capture view persist on the
+            // Area record — the shared source the next capture or measurement
+            // reopens with. Brand-new Areas are only ever created by captured
+            // lines (their dims were written at creation above), so a
+            // dims-only entry can update existing Areas but never dangles a
+            // work-less Area into the site.
+            const dimPatchById = new Map<string, Pick<Area, "length" | "width" | "height" | "floor_area">>();
+            for (const dims of areaDims) {
+                if (!(dims.length_ft || dims.breadth_ft || dims.height_ft)) continue;
+                const target = dims.area_id
+                    ? knownAreas.find((row: any) => row.id === dims.area_id)
+                    : dims.create_area && dims.area_name
+                        ? knownAreas.find((row: any) => row.site_id === workRequired.site_id && !row.is_archived && normaliseAreaName(row.name) === normaliseAreaName(dims.area_name!))
+                        : undefined;
+                if (!target) continue;
+                const patch: Pick<Area, "length" | "width" | "height" | "floor_area"> = {};
+                if (dims.length_ft && dims.length_ft > 0) patch.length = dims.length_ft;
+                if (dims.breadth_ft && dims.breadth_ft > 0) patch.width = dims.breadth_ft;
+                if (dims.height_ft && dims.height_ft > 0) patch.height = dims.height_ft;
+                if (patch.length && patch.width) patch.floor_area = Math.round(patch.length * patch.width * 100) / 100;
+                if (createdAreas.includes(target)) Object.assign(target, patch);
+                else dimPatchById.set(target.id, { ...dimPatchById.get(target.id), ...patch });
+            }
             // Bidirectional sync with the Add/Edit customer form: EVERY touched
             // Work Required of the site re-derives its ticked subcategories /
             // work types / areas from the effective per-area work set (kept +
@@ -1006,11 +1039,17 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         const areaName = state.db.areas.find((r: any) => r.id === row.area_id)?.name;
                         return `Removed planned work ${areaName ? `${areaName} · ` : ""}${subcategory?.name || row.subcategory_id}${tier ? ` · ${tier}` : ""}`;
                     }),
+                ...(dimPatchById.size ? [`Updated saved dimensions on ${dimPatchById.size} area(s)`] : []),
             ].join("\n");
             commitState((snapshot: any) => ({
                 db: {
                     ...snapshot.db,
-                    areas: [...createdAreas, ...snapshot.db.areas],
+                    areas: [
+                        ...createdAreas,
+                        ...snapshot.db.areas.map((area: any) => dimPatchById.has(area.id)
+                            ? { ...area, ...dimPatchById.get(area.id), updated_at: now }
+                            : area),
+                    ],
                     workRequired: [
                         ...Array.from(createdWorks.values()).map((row) => ({
                             ...row,

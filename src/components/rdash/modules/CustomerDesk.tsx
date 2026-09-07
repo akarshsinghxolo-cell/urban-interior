@@ -921,11 +921,12 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
       {captureWorkRequiredId && (() => {
             const work = db.workRequired.find((row) => row.id === captureWorkRequiredId);
             const site = work ? sites.find((row) => row.id === work.site_id) : undefined;
-            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={({ lines, removedItemIds, removedSelections }) => {
+            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={({ lines, removedItemIds, removedSelections, areaDims }) => {
                     try {
-                        captureStructuredWorkRequired(work.id, lines, { removedItemIds, removedSelections });
+                        captureStructuredWorkRequired(work.id, lines, { removedItemIds, removedSelections, areaDims });
                         const parts: string[] = [];
                         if (lines.length) parts.push(`Captured ${lines.length} detailed area work item(s) in ${site.name}`);
+                        if (areaDims?.length) parts.push(`saved dimensions for ${areaDims.length} area(s)`);
                         if (removedItemIds.length) parts.push(`removed ${removedItemIds.length} existing item(s)`);
                         if (removedSelections.length) parts.push(`removed ${removedSelections.length} planned work selection(s)`);
                         toast.success(parts.join(" · ") || "Nothing to save");
@@ -1342,6 +1343,48 @@ function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, 
         </div>) }
     </div>);
 }
+// Multi-select work types (screenshot 1): the first pick fills the line, each
+// further pick adds its own work item on the same measurement, so a quotation
+// can put "Round Pipe 304 vs GT 202 vs Square Pipe" side by side — the tier
+// rate shown next to every option is the price difference the customer asked
+// to see. The panel stays open so several types can be ticked in one go.
+function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, onSelect, ariaLabel, }: {
+    value?: string;
+    groups: Array<{ key: string; items: Array<{ id: string; name: string }> }>;
+    ticked: Set<string>;
+    rateLabelFor: (workTypeId: string) => string | undefined;
+    disabled?: boolean;
+    onSelect: (workTypeId: string) => void;
+    ariaLabel: string;
+}) {
+    const [open, setOpen] = React.useState(false);
+    const rootRef = React.useRef<HTMLDivElement>(null);
+    useDismissOnOutside(open, () => setOpen(false), rootRef);
+    const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
+    return (<div ref={rootRef} className="relative" onKeyDown={(event) => { if (open && event.key === "Escape") {
+        event.stopPropagation(); // close only the panel, not the host dialog
+        setOpen(false); } }}>
+      <button type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
+        <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || "— select work type —"}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
+      </button>
+      {open && (<div role="listbox" aria-label={ariaLabel} className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg rd-scroll">
+          {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
+              {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
+              {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
+            const isTicked = ticked.has(item.id) || item.id === value;
+            const rateLabel = rateLabelFor(item.id);
+            return (<button key={item.id} type="button" role="option" aria-selected={item.id === value} title={isTicked ? "Already a work item here — tick another type to compare it" : "Tick to add as a separate work item and compare its rate"} onClick={() => onSelect(item.id)} className={cn("flex min-h-9 w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent", item.id === value && "bg-primary/10 font-medium")}>
+                  <span aria-hidden="true" className={cn("mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border", isTicked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{isTicked && <Check className="mt-0.5 h-2.5 w-2.5"/>}</span>
+                  <span className="min-w-0 flex-1 whitespace-normal break-words">{item.name}</span>
+                  {rateLabel && <span className="ml-1 shrink-0 pt-0.5 font-mono text-[10px] text-muted-foreground">{rateLabel}</span>}
+                </button>);
+        })}
+            </React.Fragment>))}
+          <p className="border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">Tick more work types — each is captured as its own item so the rates can be compared.</p>
+        </div>) }
+    </div>);
+}
 // Rounds to 2 decimals and returns a string for the number inputs.
 const areaStr = (value: number) => String(Math.round(value * 100) / 100);
 const MEASURE_OPTIONS = ["wall", "floor_ceiling", "wall_ceiling", "length"] as const;
@@ -1360,6 +1403,13 @@ type DetailedDraftLine = {
     // lines let the store resolve (or create) their target by category.
     target_work_required_id?: string;
     seeded?: boolean;
+    // Single source of truth (annotation F): while true the quantity follows
+    // the shared area dimensions; the moment a quantity is typed by hand it
+    // flips to manual and the dimensions never overwrite the adjusted value.
+    autoQuantity?: boolean;
+    // Set when the line edits an already-captured item (annotation A) — on
+    // save the saved item is replaced by this line (removed, then captured).
+    editOfItemId?: string;
 };
 
 type DetailedAreaGroup = {
@@ -1405,6 +1455,16 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         }>;
         removedItemIds: string[];
         removedSelections: RemovedSelection[];
+        // Typed area dimensions — persisted on the Area records on save.
+        areaDims: Array<{
+            area_id?: string;
+            create_area?: boolean;
+            area_name?: string;
+            area_type?: import("@/lib/rdash/types").AreaType;
+            length_ft?: number;
+            breadth_ft?: number;
+            height_ft?: number;
+        }>;
     }) => boolean;
 }) {
     const db = useRDashStore((state) => state.db);
@@ -1452,6 +1512,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             measure,
             walls: 1,
             wall_area: quantity > 0 ? areaStr(quantity) : "",
+            autoQuantity: quantity > 0,
         };
     };
     const initialGroups = (): DetailedAreaGroup[] => {
@@ -1472,6 +1533,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 measure: seed.measure,
                 walls: seed.walls,
                 wall_area: quantity > 0 ? areaStr(quantity) : "",
+                autoQuantity: quantity > 0,
                 target_work_required_id: seed.work_required_id,
                 seeded: true,
             };
@@ -1531,11 +1593,14 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     const updateGroup = (groupKey: string, patch: Partial<DetailedAreaGroup>) => setGroups((current) => current.map((group) => {
         if (group.key !== groupKey) return group;
         const next = { ...group, ...patch };
-        // Shared dimensions feed every line's quantity — recompute the auto ones.
+        // Shared dimensions are the source of truth for lines that still follow
+        // them (autoQuantity). A manually typed quantity — area adjusted for
+        // doors, openings or real-world variables — is never overwritten.
         const dims = groupDims(next);
         next.lines = next.lines.map((line) => {
+            if (line.autoQuantity === false) return line;
             const { quantity } = measuredQuantity(line.measure, dims, line.walls);
-            return quantity > 0 ? { ...line, wall_area: areaStr(quantity) } : line;
+            return { ...line, wall_area: quantity > 0 ? areaStr(quantity) : "" };
         });
         return next;
     }));
@@ -1547,7 +1612,21 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             lines: group.lines.map((line) => {
                 if (line.key !== lineKey) return line;
                 const next = { ...line, ...patch };
+                if (patch.wall_area !== undefined) {
+                    // A typed quantity wins (annotation F); clearing the field
+                    // hands control back to the shared dimensions.
+                    const manual = Number(next.wall_area) > 0;
+                    next.autoQuantity = !manual;
+                    if (!manual && next.wall_area.trim() === "") {
+                        const { quantity } = measuredQuantity(next.measure, dims, next.walls);
+                        next.wall_area = quantity > 0 ? areaStr(quantity) : "";
+                    }
+                    return next;
+                }
                 if (patch.measure !== undefined || patch.walls !== undefined) {
+                    // Manual quantities survive a basis switch too — the number
+                    // was deliberate; only auto lines re-derive.
+                    if (next.autoQuantity === false && Number(next.wall_area) > 0) return next;
                     const { quantity } = measuredQuantity(next.measure, dims, next.walls);
                     next.wall_area = quantity > 0 ? areaStr(quantity) : "";
                 }
@@ -1558,6 +1637,55 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     const addLine = (groupKey: string) => setGroups((current) => current.map((group) => group.key === groupKey
         ? { ...group, open: true, lines: [...group.lines, freshLine(group)] }
         : group));
+    // Annotation A: saved items were remove-only — Edit now loads the captured
+    // row into an editable draft; saving replaces it (removed, then captured)
+    // so every captured scope keeps exactly one live line item.
+    const startEditExisting = (groupKey: string, item: import("@/lib/rdash/types").LineItem) => setGroups((current) => current.map((group) => {
+        if (group.key !== groupKey || group.lines.some((line) => line.editOfItemId === item.id)) return group;
+        const measure: MeasureBasis = item.unit_id === "rft" ? "length" : "wall";
+        const walls: 1 | 2 = measure === "length" && Number(group.breadth) > 0 ? 2 : 1;
+        return {
+            ...group,
+            open: true,
+            lines: [...group.lines, {
+                key: `edit-${item.id}`,
+                category_id: item.category_id,
+                subcategory_id: item.subcategory_id,
+                work_type_id: item.work_type_id,
+                measure,
+                walls,
+                // The saved quantity was deliberate (maybe hand-adjusted) — it
+                // leads; dimensions only matter when it is missing.
+                wall_area: item.quantity > 0 ? areaStr(item.quantity) : "",
+                autoQuantity: false,
+                notes: item.description,
+                target_work_required_id: item.work_required_id,
+                editOfItemId: item.id,
+            }],
+        };
+    }));
+    // Screenshot 1: ticking an extra work type duplicates the line instead of
+    // replacing it — every ticked type becomes its own item (and its own rate)
+    // so the customer can compare the options side by side.
+    const cloneLineForWorkType = (groupKey: string, line: DetailedDraftLine, workTypeId: string) => setGroups((current) => current.map((group) => {
+        if (group.key !== groupKey) return group;
+        const dims = groupDims(group);
+        const manual = line.autoQuantity === false && Number(line.wall_area) > 0;
+        const { quantity } = measuredQuantity(line.measure, dims, line.walls);
+        return {
+            ...group,
+            open: true,
+            lines: [...group.lines, {
+                ...line,
+                key: `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+                work_type_id: workTypeId,
+                wall_area: manual ? line.wall_area : quantity > 0 ? areaStr(quantity) : "",
+                autoQuantity: !manual,
+                seeded: false,
+                editOfItemId: undefined,
+            }],
+        };
+    }));
     const removeLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => {
         if (group.key !== groupKey) return group;
         const dropped = group.lines.find((line) => line.key === lineKey);
@@ -1639,7 +1767,9 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         db.workRequired
             .filter((row: any) => row.site_id === site.id)
             .forEach((row: any) => (row.structured_items || [])
-                .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id)))
+                // An item loaded into an edit line is represented by that draft
+                // — keeping its key here would flag the very edit as duplicate.
+                .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id) || group.lines.some((line) => line.editOfItemId === item.id)))
                 .forEach((item) => keys.add([item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::"))));
         return keys;
     }, [db.workRequired, groups, site.id]);
@@ -1676,26 +1806,45 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     }, [existingScopeKeys, groups]);
     const validGroups = groups.filter((group) => !groupIssues(group));
     const validLines = validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)));
-    const groupEstimate = (group: DetailedAreaGroup) =>
+    // Dimensions typed for an area persist on the Area record even when their
+    // work lines are still incomplete (annotation B) — every group's L/W/H
+    // travels with the capture; brand-new areas still need a captured line
+    // (dimensions alone never create Area records).
+    const dimsPayloads = validGroups.flatMap((group) => {
+        const l = Number(group.length) || 0;
+        const b = Number(group.breadth) || 0;
+        const h = Number(group.height) || 0;
+        if (l <= 0 && b <= 0 && h <= 0) return [];
+        if (group.create_area && !group.area_name?.trim()) return [];
+        if (!group.area_id && !group.create_area) return [];
+        if (group.create_area && !group.lines.some((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key))) return [];
+        return [{ area_id: group.area_id, create_area: group.create_area, area_name: group.area_name?.trim(), area_type: group.area_type, length_ft: l > 0 ? l : undefined, breadth_ft: b > 0 ? b : undefined, height_ft: h > 0 ? h : undefined }];
+    });
+    // Saved items still part of this capture — excluding ones dropped for
+    // removal and ones currently loaded into an edit line (the draft line
+    // represents them while editing).
+    const activeSavedItems = (group: DetailedAreaGroup) =>
         (existingItemsByArea.get(group.area_id || "") || [])
-            .filter((item) => !group.removedExistingIds.includes(item.id))
-            .reduce((sum, item) => sum + (item.amount > 0 ? item.amount : 0), 0)
+            .filter((item) => !group.removedExistingIds.includes(item.id) && !group.lines.some((line) => line.editOfItemId === item.id));
+    const groupEstimate = (group: DetailedAreaGroup) =>
+        activeSavedItems(group).reduce((sum, item) => sum + (item.amount > 0 ? item.amount : 0), 0)
         + group.lines.reduce((sum, line) => sum + lineEstimate(line, group).estimated, 0);
     const estimateTotal = groups.reduce((sum, group) => sum + groupEstimate(group), 0);
     const totalRemoved = groups.reduce((sum, group) => sum + group.removedExistingIds.length, 0);
     const totalRemovedSeeds = groups.reduce((sum, group) => sum + group.removedSeeds.length, 0);
     const totalDraftLines = groups.reduce((sum, group) => sum + group.lines.length, 0);
-    const canSave = validLines.length === totalDraftLines
-        && groups.every((group) => !groupIssues(group))
-        && (validLines.length > 0 || totalRemoved > 0 || totalRemovedSeeds > 0)
-        && duplicateKeys.size === 0;
+    // Partial captures are a feature (user report): incomplete or duplicate
+    // lines are skipped at save while everything available — valid lines,
+    // removals, edits and the typed dimensions — still gets saved.
+    const skippedLines = totalDraftLines - validLines.length;
+    const canSave = groups.every((group) => !groupIssues(group))
+        && (validLines.length > 0 || totalRemoved > 0 || totalRemovedSeeds > 0 || dimsPayloads.length > 0);
     // Everything the capture planned is already saved — a valid idle state, not
     // an error; the footer must say so instead of the red completion hint.
     const idle = !canSave && totalDraftLines === 0 && totalRemoved === 0 && totalRemovedSeeds === 0
-        && duplicateKeys.size === 0 && groups.every((group) => !groupIssues(group));
+        && dimsPayloads.length === 0 && groups.every((group) => !groupIssues(group));
     const renderGroup = (group: DetailedAreaGroup) => {
-        const savedItems = (existingItemsByArea.get(group.area_id || "") || [])
-            .filter((item) => !group.removedExistingIds.includes(item.id));
+        const savedItems = activeSavedItems(group);
         const removedCount = group.removedExistingIds.length;
         const issue = groupIssues(group);
         const totalQuantity = savedItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
@@ -1709,8 +1858,8 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         <button type="button" aria-expanded={group.open} onClick={() => updateGroup(group.key, { open: !group.open })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left">
           <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", !group.open && "-rotate-90")}/>
           <span className="min-w-0">
-            <span className="block truncate text-sm font-bold">{groupLabel}</span>
-            <span className="block truncate text-[10px] text-muted-foreground">
+            <span className="block break-words text-sm font-bold">{groupLabel}</span>
+            <span className="block break-words text-[10px] text-muted-foreground">
               {savedItems.length + group.lines.length} work item(s) · {areaStr(totalQuantity)} total
               {totalEstimate > 0 ? ` · ≈ ${formatINR(totalEstimate)}` : ""}
               {removedCount > 0 ? ` · ${removedCount} removed on save` : ""}
@@ -1742,12 +1891,15 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
           </div>
         </div>
         {savedItems.length > 0 && (<div className="mb-3 space-y-1.5">
-          {savedItems.map((item) => (<div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
+          {savedItems.map((item) => (<div key={item.id} className="flex items-start justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
             <div className="min-w-0">
-              <p className="truncate text-[11px] font-semibold">{item.title}</p>
-              <p className="truncate text-[10px] text-muted-foreground">{item.quantity}{item.unit_name ? ` ${item.unit_name}` : ""}{item.amount > 0 ? ` · ${formatINR(item.amount)}` : ""}</p>
+              <p className="break-words text-[11px] font-semibold">{item.title}</p>
+              <p className="break-words text-[10px] text-muted-foreground">{item.quantity}{item.unit_name ? ` ${item.unit_name}` : ""}{item.amount > 0 ? ` · ${formatINR(item.amount)}` : ""}</p>
             </div>
-            <Button size="sm" variant="outline" className="h-6 shrink-0 text-[10px] text-destructive hover:text-destructive" onClick={() => toggleExistingRemoval(group.key, item.id)}>Remove</Button>
+            <div className="flex shrink-0 gap-1">
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => startEditExisting(group.key, item)} title="Edit this captured work item">Edit</Button>
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => toggleExistingRemoval(group.key, item.id)}>Remove</Button>
+            </div>
           </div>))}
         </div>)}
         {group.lines.length === 0 && savedItems.length === 0 && (<p className="mb-2 rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No work captured in this area yet. Use “Add work” to add the first item.</p>)}
@@ -1786,8 +1938,8 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             ].filter((id): id is string => Boolean(id)));
             const lineError = lineIssue(line, group);
             const { rate, estimated } = lineEstimate(line, group);
-            return (<div key={line.key} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : "border-border bg-background")}>
-            <div className="mb-2 flex items-center justify-between"><span className="text-[10px] font-semibold uppercase text-muted-foreground">{line.seeded ? "Planned work" : "New work item"}</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={line.seeded ? "Remove this planned work from this area" : "Remove this work item"}><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
+            return (<div key={line.key} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : line.editOfItemId ? "border-primary/50 bg-primary/[0.04]" : "border-border bg-background")}>
+            <div className="mb-2 flex items-center justify-between"><span className={cn("text-[10px] font-semibold uppercase", line.editOfItemId ? "text-primary" : "text-muted-foreground")}>{line.editOfItemId ? "Editing saved work" : line.seeded ? "Planned work" : "New work item"}</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={line.editOfItemId ? "Cancel editing — keep the saved item unchanged" : line.seeded ? "Remove this planned work from this area" : "Remove this work item"} title={line.editOfItemId ? "Cancel edit — the saved item stays as it is" : undefined}><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               <div>
                 <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
@@ -1802,9 +1954,17 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
               </div>
               <div>
                 <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work type</label>
-                <TickDropdown value={line.work_type_id} ariaLabel="Work type" placeholder="— select work type —" disabled={!line.subcategory_id} onChange={(workTypeId) => updateLine(group.key, line.key, { work_type_id: workTypeId || undefined })} ticked={workTypeTicks} groups={workTypeOptions.length ? [
-                    { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id)) },
-                    { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id)) },
+                {/* Multi-select (screenshot 1): the first pick fills this line;
+                    every further pick adds its own item so tier rates compare. */}
+                <WorkTypeMultiDropdown value={line.work_type_id} ariaLabel="Work type" disabled={!line.subcategory_id} ticked={workTypeTicks} rateLabelFor={(workTypeId) => {
+                    const tierRate = rateFor(line.subcategory_id, workTypeId);
+                    return tierRate ? `≈ ${formatINR(tierRate)}/${line.measure === "length" ? "rft" : "sqft"}` : undefined;
+                }} onSelect={(workTypeId) => {
+                    if (!line.work_type_id || workTypeId === line.work_type_id) updateLine(group.key, line.key, { work_type_id: workTypeId || undefined });
+                    else cloneLineForWorkType(group.key, line, workTypeId);
+                }} groups={workTypeOptions.length ? [
+                    { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id) || option.id === line.work_type_id) },
+                    { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id) && option.id !== line.work_type_id) },
                 ].filter((group2) => group2.items.length) : []}/>
               </div>
               <div>
@@ -1842,7 +2002,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
       <div role="dialog" aria-modal="true" aria-label="Capture detailed area" className="relative max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
         <div className="flex min-w-0 items-center justify-between border-b border-border px-5 py-3"><div className="min-w-0"><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 shrink-0 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · every area with all of its work required</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
         <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Each area is one collapsible group pre-filled with the work its Work Required rows plan there — each item is measured by its own basis: tiles use the floor plan, paint uses walls + ceiling, a modular kitchen or railing uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Add or remove work here and the Add/Edit customer form follows.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"><span className={cn("min-w-0 text-[11px]", canSave || idle ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${estimateTotal > 0 ? ` · ≈ ${formatINR(estimateTotal)} ready for quotation` : ""}${totalRemoved || totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}` : idle ? "All planned work in this capture is already saved." : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"><span className={cn("min-w-0 text-[11px]", canSave || idle ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${estimateTotal > 0 ? ` · ≈ ${formatINR(estimateTotal)} ready for quotation` : ""}${totalRemoved + totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}${dimsPayloads.length ? ` · dimensions saved for ${dimsPayloads.length} area(s)` : ""}${skippedLines ? ` · ${skippedLines} incomplete item(s) left unsaved` : ""}` : idle ? "All planned work in this capture is already saved." : skippedLines > 0 ? "Nothing complete enough to save yet — finish an item or type its quantity; incomplete items stay untouched." : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
             const { quantity: autoQuantity, unit } = measuredQuantity(line.measure, groupDims(group), line.walls);
             const l = Number(group.length) || 0;
             const b = Number(group.breadth) || 0;
@@ -1865,7 +2025,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 unit_id: unit,
                 notes: line.notes?.trim() || undefined,
             };
-        })), removedItemIds: groups.flatMap((group) => group.removedExistingIds), removedSelections: groups.flatMap((group) => group.removedSeeds) }; const saved = onSave(payload); if (saved) commitBatches(); }}>{validLines.length > 0 ? `Capture ${validLines.length} work item(s)` : "Apply removals"}<CheckCircle2 className="ml-1.5 inline h-3.5 w-3.5"/></Button></div></div>
+        })), removedItemIds: [...groups.flatMap((group) => group.removedExistingIds), ...validLines.filter((line) => line.editOfItemId).map((line) => line.editOfItemId!)], removedSelections: groups.flatMap((group) => group.removedSeeds), areaDims: dimsPayloads }; const saved = onSave(payload); if (saved) commitBatches(); }}>{validLines.length > 0 ? `Capture ${validLines.length} work item(s)` : dimsPayloads.length > 0 ? "Save area dimensions" : "Apply removals"}<CheckCircle2 className="ml-1.5 inline h-3.5 w-3.5"/></Button></div></div>
       </div>
     </div>);
 }

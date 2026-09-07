@@ -226,6 +226,13 @@ export interface CrmState {
   }>, options?: {
     removedItemIds?: string[];
     removedSelections?: Array<import("../work-types").RemovedSelection>;
+    // Area dimensions typed in the capture view, persisted on the Area record
+    // so the next capture/measurement reopens with them (annotation B).
+    areaDims?: Array<{
+      area_id?: string; area_name?: string; create_area?: boolean;
+      area_type?: import("../types").AreaType;
+      length_ft?: number; breadth_ft?: number; height_ft?: number;
+    }>;
   }) => void;
 }
 
