@@ -61,7 +61,7 @@ export function CustomerDesk({ view }: {
     const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
     const openDetail = useRDashStore((s) => s.openDetail);
     const [q, setQ] = React.useState("");
-    const [sort, setSort] = React.useState("default");
+    const [sort, setSort] = React.useState("newest");
     const [filter, setFilter] = React.useState("all");
     const customerDispatch = React.useMemo(() => ({ setActiveModule, openActionDialog, openCreateDialog }), [setActiveModule, openActionDialog, openCreateDialog]);
     const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
@@ -75,14 +75,13 @@ export function CustomerDesk({ view }: {
             filter === "without-site" ? !db.sites.some((site) => site.customer_id === p.id) : p.status === filter))
         .sort((a, b) => sort === "name-asc" ? a.name.localeCompare(b.name) :
         sort === "name-desc" ? b.name.localeCompare(a.name) :
-            sort === "newest" ? b.created_at.localeCompare(a.created_at) :
-                sort === "oldest" ? a.created_at.localeCompare(b.created_at) : 0);
+            sort === "newest" ? (b.created_at || "").localeCompare(a.created_at || "") :
+                sort === "oldest" ? (a.created_at || "").localeCompare(b.created_at || "") : 0);
     const customerListControls = (<div className="flex items-center gap-2">
       <select aria-label="Sort customers" value={sort} onChange={(event) => setSort(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground">
-        <option value="default">Sort: Default</option>
+        <option value="newest">Sort: Newest first</option>
         <option value="name-asc">Name: A–Z</option>
         <option value="name-desc">Name: Z–A</option>
-        <option value="newest">Newest first</option>
         <option value="oldest">Oldest first</option>
       </select>
       <select aria-label="Filter customers" value={filter} onChange={(event) => setFilter(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground">

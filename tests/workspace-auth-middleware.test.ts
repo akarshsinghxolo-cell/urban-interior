@@ -42,13 +42,13 @@ describe("workspace auth middleware", () => {
     expect(cookie).toContain("Max-Age=0");
   });
 
-  test("sends an authenticated root request to routed Workdesk", () => {
+  test("sends an authenticated root request to routed Customer Desk", () => {
     const request = new NextRequest(`${origin}/`, {
       headers: { cookie: "uc_session=session-token" },
     });
     const response = middleware(request);
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(`${origin}/workspace`);
+    expect(response.headers.get("location")).toBe(`${origin}/workspace/customers`);
   });
 
   test("ignores an external cookie value and uses the safe default entry", () => {
@@ -59,7 +59,7 @@ describe("workspace auth middleware", () => {
     });
     const response = middleware(request);
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe(`${origin}/workspace`);
+    expect(response.headers.get("location")).toBe(`${origin}/workspace/customers`);
     const cookie = response.headers.get("set-cookie") || "";
     expect(cookie).toContain("Max-Age=0");
   });
