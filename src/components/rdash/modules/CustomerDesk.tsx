@@ -1512,7 +1512,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             measure,
             walls: 1,
             wall_area: quantity > 0 ? areaStr(quantity) : "",
-            autoQuantity: quantity > 0,
+            autoQuantity: true,
         };
     };
     const initialGroups = (): DetailedAreaGroup[] => {
@@ -1533,7 +1533,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 measure: seed.measure,
                 walls: seed.walls,
                 wall_area: quantity > 0 ? areaStr(quantity) : "",
-                autoQuantity: quantity > 0,
+                autoQuantity: true,
                 target_work_required_id: seed.work_required_id,
                 seeded: true,
             };
@@ -1593,14 +1593,15 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
     const updateGroup = (groupKey: string, patch: Partial<DetailedAreaGroup>) => setGroups((current) => current.map((group) => {
         if (group.key !== groupKey) return group;
         const next = { ...group, ...patch };
-        // Shared dimensions are the source of truth for lines that still follow
-        // them (autoQuantity). A manually typed quantity — area adjusted for
-        // doors, openings or real-world variables — is never overwritten.
+        // Shared dimensions are the source of truth (annotation F): a line with
+        // an empty/blank quantity always re-derives from them, and only a
+        // hand-typed quantity — area adjusted for doors, openings or real-world
+        // variables — is locked against overwrites.
         const dims = groupDims(next);
         next.lines = next.lines.map((line) => {
-            if (line.autoQuantity === false) return line;
+            if (line.autoQuantity === false && Number(line.wall_area) > 0) return line;
             const { quantity } = measuredQuantity(line.measure, dims, line.walls);
-            return { ...line, wall_area: quantity > 0 ? areaStr(quantity) : "" };
+            return quantity > 0 ? { ...line, wall_area: areaStr(quantity), autoQuantity: true } : line;
         });
         return next;
     }));
