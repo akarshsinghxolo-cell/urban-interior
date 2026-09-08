@@ -14,7 +14,7 @@ import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
-import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, workByCustomerFallback, } from "@/lib/rdash/format";
+import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, indiaBusinessDate, workByCustomerFallback, } from "@/lib/rdash/format";
 import { workByCustomer } from "@/lib/rdash/seed";
 import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS, workRequiredDisplayTitle, seedDetailedAreaLines, type RemovedSelection } from "@/lib/rdash/work-types";
 import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
@@ -541,7 +541,6 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {currentJob ? (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openDetail("workOrder", currentJob.id)}><Building className="mr-1 h-3.5 w-3.5"/> Open workOrder</Button>) : currentQuote ? (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openDetail("quotation", currentQuote.id)}><FileText className="mr-1 h-3.5 w-3.5"/> {currentQuote.status === "draft" ? "Edit quotation" : "Open quotation"}</Button>) : (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5"/> Create quotation</Button>)}
         {!currentJob && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "visit", customerId })}><MapPin className="mr-1 h-3.5 w-3.5"/> Schedule visit</Button>}
-        {currentJob && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "visit", customerId })}><MapPin className="mr-1 h-3.5 w-3.5"/> Schedule visit</Button>}
         <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => customerDispatch.openActionDialog("record-payment", customerId)}><Wallet className="mr-1 h-3.5 w-3.5"/> Add collection milestone</Button>
         {whatsappHref && <Button asChild size="sm" variant="outline" className="h-7 text-xs"><a href={whatsappHref} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5"/> WhatsApp</a></Button>}
         {mapHref && <Button asChild size="sm" variant="outline" className="h-7 text-xs"><a href={mapHref} target="_blank" rel="noreferrer"><Navigation className="mr-1 h-3.5 w-3.5"/> Maps</a></Button>}
@@ -595,8 +594,16 @@ function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, b
                 const customerWorkOrders = db.workOrders.filter((wo: any) => wo.customer_id === customerId);
                 const acceptedScopes = db.acceptedScopes.filter((s: any) => s.customer_id === customerId);
                 const totalAccepted = acceptedScopes.reduce((n: number, s: any) => n + (s.accepted_value || 0), 0);
-                const totalReceived = relatedReceipts.reduce((n: number, r: any) => n + (r.amount || 0), 0)
-                    + payments.filter((p: any) => p.status === "received").reduce((n: number, p: any) => n + (p.received_amount || p.amount || 0), 0);
+                // Single money source (finance.recordCustomerReceipt mirrors every
+                // milestone-linked receipt into payment.received_amount) — counting
+                // both inflated the headline ~2×, while partial milestones were
+                // undercounted. Truth = unlinked receipts + every payment mirror.
+                const totalReceived = relatedReceipts
+                    .filter((r: any) => !r.payment_id)
+                    .reduce((n: number, r: any) => n + (r.amount || 0), 0)
+                    + payments.reduce((n: number, p: any) => n + (p.status === "received"
+                        ? (p.received_amount > 0 ? p.received_amount : (p.amount || 0))
+                        : (p.received_amount || 0)), 0);
                 const totalInvoiced = db.invoices.filter((i: any) => i.customer_id === customerId).reduce((n: number, i: any) => n + (i.total_amount || 0), 0);
                 const totalOutstanding = Math.max(0, totalAccepted - totalReceived);
                 const woValue = customerWorkOrders.reduce((n: number, wo: any) => n + (wo.value || 0), 0);
@@ -1201,7 +1208,9 @@ function CustomerTimelineView({ customerId, name, tasks, quotations, payments, v
     const grouped = React.useMemo(() => {
         const map = new Map<string, TimelineEntry[]>();
         for (const entry of entries) {
-            const day = new Date(entry.ts).toISOString().slice(0, 10);
+            // IST calendar day — toISOString() bucketed 00:00–05:30 IST events
+            // under the previous day and disagreed with relativeDay().
+            const day = indiaBusinessDate(entry.ts);
             if (!map.has(day))
                 map.set(day, []);
             map.get(day)!.push(entry);
@@ -1283,8 +1292,10 @@ function CustomerTimelineView({ customerId, name, tasks, quotations, payments, v
                 {dayEntries.map((entry) => {
                     const meta = kindMeta[entry.kind];
                     const Icon = meta.icon;
-                    return (<li key={entry.id} className="mb-2 ml-4 last:mb-0">
-                      <button type="button" onClick={() => openEntry(entry)} className="group flex w-full items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left transition-all hover:border-primary/30 hover:bg-accent/20 hover:shadow-sm">
+                    // Only records with a detail view are clickable — the other
+                    // kinds rendered a button that did nothing on click.
+                    const navigable = entry.kind === "quotation" || entry.kind === "task" || entry.kind === "payment" || entry.kind === "visit" || entry.kind === "workOrder" || entry.kind === "po" || entry.kind === "grn" || entry.kind === "vendorBill" || entry.kind === "boq";
+                    const row = (<>
                         <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md", meta.tone)}>
                           <Icon className="h-3.5 w-3.5"/>
                         </span>
@@ -1296,7 +1307,13 @@ function CustomerTimelineView({ customerId, name, tasks, quotations, payments, v
                           {entry.amount !== undefined && (<span className="font-mono text-[11px] font-bold text-foreground/80">{formatINR(entry.amount)}</span>)}
                           {entry.status && (<span className="text-[10px] uppercase tracking-wider text-muted-foreground">{entry.status.replace(/_/g, " ")}</span>)}
                         </div>
-                      </button>
+                      </>);
+                    return (<li key={entry.id} className="mb-2 ml-4 last:mb-0">
+                      {navigable ? (<button type="button" onClick={() => openEntry(entry)} className="group flex w-full items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left transition-all hover:border-primary/30 hover:bg-accent/20 hover:shadow-sm">
+                        {row}
+                      </button>) : (<div className="flex w-full cursor-default items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left">
+                        {row}
+                      </div>)}
                     </li>);
                 })}
               </ol>
@@ -1319,17 +1336,31 @@ function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, 
     ariaLabel: string;
 }) {
     const [open, setOpen] = React.useState(false);
+    const [dropUp, setDropUp] = React.useState(false);
     const rootRef = React.useRef<HTMLDivElement>(null);
+    const triggerRef = React.useRef<HTMLButtonElement>(null);
     useDismissOnOutside(open, () => setOpen(false), rootRef);
+    const toggleOpen = () => {
+        // Flip the panel above the field when the scrollable dialog would clip it
+        // below — a field near the dialog bottom otherwise loses its last options.
+        if (!open && triggerRef.current) {
+            const scroller = triggerRef.current.closest(".rd-scroll, .overflow-y-auto");
+            const rect = triggerRef.current.getBoundingClientRect();
+            const below = (scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight) - rect.bottom;
+            const above = rect.top - (scroller ? scroller.getBoundingClientRect().top : 0);
+            setDropUp(below < 280 && above > below);
+        }
+        setOpen((current) => !current);
+    };
     const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
     return (<div ref={rootRef} className="relative" onKeyDown={(event) => { if (open && event.key === "Escape") {
         event.stopPropagation(); // close only the panel, not the host dialog
         setOpen(false); } }}>
-      <button type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
+      <button ref={triggerRef} type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={toggleOpen} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
         <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || placeholder}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
       </button>
-      {open && (<div role="listbox" aria-label={ariaLabel} className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg rd-scroll">
+      {open && (<div role="listbox" aria-label={ariaLabel} className={cn("absolute z-40 max-h-64 w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 shadow-lg rd-scroll", dropUp ? "bottom-full mb-1" : "mt-1")}>
           {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
               {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
               {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
@@ -1358,17 +1389,31 @@ function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, 
     ariaLabel: string;
 }) {
     const [open, setOpen] = React.useState(false);
+    const [dropUp, setDropUp] = React.useState(false);
     const rootRef = React.useRef<HTMLDivElement>(null);
+    const triggerRef = React.useRef<HTMLButtonElement>(null);
     useDismissOnOutside(open, () => setOpen(false), rootRef);
+    const toggleOpen = () => {
+        // Same bottom-clip flip as TickDropdown — the rate-comparison panel is
+        // even taller with rates, so clipping near the dialog bottom bites sooner.
+        if (!open && triggerRef.current) {
+            const scroller = triggerRef.current.closest(".rd-scroll, .overflow-y-auto");
+            const rect = triggerRef.current.getBoundingClientRect();
+            const below = (scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight) - rect.bottom;
+            const above = rect.top - (scroller ? scroller.getBoundingClientRect().top : 0);
+            setDropUp(below < 280 && above > below);
+        }
+        setOpen((current) => !current);
+    };
     const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
     return (<div ref={rootRef} className="relative" onKeyDown={(event) => { if (open && event.key === "Escape") {
         event.stopPropagation(); // close only the panel, not the host dialog
         setOpen(false); } }}>
-      <button type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
+      <button ref={triggerRef} type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={toggleOpen} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
         <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || "— select work type —"}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
       </button>
-      {open && (<div role="listbox" aria-label={ariaLabel} className="absolute z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-card py-1 shadow-lg rd-scroll">
+      {open && (<div role="listbox" aria-label={ariaLabel} className={cn("absolute z-40 max-h-64 w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 shadow-lg rd-scroll", dropUp ? "bottom-full mb-1" : "mt-1")}>
           {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
               {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
               {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
@@ -1668,6 +1713,16 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             }, ...group.lines],
         };
     }));
+    // The draft row is committed by React a frame after the click — a fixed
+    // 50ms timeout raced the render and silently skipped the scroll on slow
+    // devices, so the edit form seemed to "not open where I clicked".
+    const scrollEditDraftIntoView = (itemId: string, tries = 6) => requestAnimationFrame(() => {
+        const node = document.getElementById(`edit-draft-${itemId}`);
+        if (node)
+            node.scrollIntoView({ behavior: "smooth", block: "center" });
+        else if (tries > 0)
+            requestAnimationFrame(() => scrollEditDraftIntoView(itemId, tries - 1));
+    });
     // Screenshot 1: ticking an extra work type duplicates the line instead of
     // replacing it — every ticked type becomes its own item (and its own rate)
     // so the customer can compare the options side by side.
@@ -2003,7 +2058,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
               <p className="break-words text-[10px] text-muted-foreground">{item.quantity}{item.unit_name ? ` ${item.unit_name}` : ""}{item.amount > 0 ? ` · ${formatINR(item.amount)}` : ""}</p>
             </div>
             <div className="flex shrink-0 gap-1">
-              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { startEditExisting(group.key, item); setTimeout(() => document.getElementById(`edit-draft-${item.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} title="Edit this captured work item — the same capture form loaded with its saved values">Edit</Button>
+              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { startEditExisting(group.key, item); scrollEditDraftIntoView(item.id); }} title="Edit this captured work item — the same capture form loaded with its saved values">Edit</Button>
               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => toggleExistingRemoval(group.key, item.id)}>Remove</Button>
             </div>
           </div>);

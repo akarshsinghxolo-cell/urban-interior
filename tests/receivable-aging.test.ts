@@ -1,14 +1,19 @@
 import { describe, expect, test } from "vitest";
 import { receivableAgingBuckets } from "../src/components/rdash/modules/FinanceOverviewModule";
 
+// One fixed clock for BOTH the fixture dates and the bucket "now" — basing the
+// fixtures on the real clock while pinning now made the test fail once the
+// real date crossed the pinned instant (time-bomb).
+const NOW = new Date("2026-08-29T10:00:00");
+
 function daysFromNow(days: number) {
-    const date = new Date();
+    const date = new Date(NOW);
     date.setDate(date.getDate() + days);
     return date.toISOString();
 }
 
 describe("receivable aging buckets", () => {
-    const now = new Date("2026-08-29T10:00:00");
+    const now = NOW;
 
     test("buckets open invoices by days past due and skips cancelled/paid rows", () => {
         const aging = receivableAgingBuckets([
