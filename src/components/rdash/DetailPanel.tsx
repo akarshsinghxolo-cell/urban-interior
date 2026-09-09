@@ -10,7 +10,7 @@ import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
 import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
-import { workRequiredDisplayTitle } from "@/lib/rdash/work-types";
+import { workRequiredDisplayTitle, areaChipQuantity } from "@/lib/rdash/work-types";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
 import { X, MessageCircle, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
@@ -1169,10 +1169,35 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         </div>) : (items.map((it) => (<div key={it.id} className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.6fr_0.3fr]">
             <input type="text" defaultValue={it.title} aria-label="Item title" onBlur={(e) => { if (e.target.value !== it.title)
             updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1"/>
-            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card">
+            {(() => {
+                // Annotation B/C: the areas this decision covers, each one a
+                // removable chip. The title carries no area names anymore; the
+                // quantity is the SUM of the chips and re-derives on removal.
+                const chips = it.area_chips || [];
+                if (!chips.length) return null;
+                const removeChip = (index: number) => {
+                    const rest = chips.filter((_, i) => i !== index);
+                    if (!rest.length) {
+                        removeQuotationItem(quotationId, it.id);
+                        toast.success("Line removed — its last area was taken off");
+                        return;
+                    }
+                    updateQuotationItem(quotationId, it.id, { area_chips: rest, quantity: areaChipQuantity(rest) });
+                    toast.success(`Removed ${chips[index].area_name} — quantity now ${areaChipQuantity(rest)}`);
+                };
+                return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-1 sm:row-start-2">
+                  {chips.map((chip, index) => (<span key={`${chip.area_id || chip.area_name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/40 py-0.5 pl-1.5 pr-0.5 text-[10px] text-muted-foreground">
+                    <span className="truncate">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>
+                    <button type="button" onClick={() => removeChip(index)} aria-label={`Remove area ${chip.area_name} from ${it.title}`} title={`Remove ${chip.area_name} — quantity drops to ${areaChipQuantity(chips.filter((_, i) => i !== index)) || 0}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
+                      <X className="h-2.5 w-2.5"/>
+                    </button>
+                  </span>))}
+                </div>);
+            })()}
+            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
               <span aria-hidden className="text-[10px] font-semibold text-muted-foreground">×</span>
-              <input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
-            updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+              {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips)} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-right outline-none"/>) : (<input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
+            updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>)}
             </div>
             <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground">
               <span aria-hidden className="text-[10px] font-semibold">₹</span>

@@ -39,6 +39,7 @@ import { assertQuotationRelations, assertWorkOrderRelations } from "../../busine
 import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
 import { coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
+import { groupedQuotationScopeLines } from "../../work-types";
 import {
     assertWorkOrderStatusTransition,
     workRequiredStatusAfterQuotationAcceptance,
@@ -250,15 +251,20 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 .filter((row): row is NonNullable<typeof row> => Boolean(row));
             const starterItems: QuotationItem[] = q.scope_lines?.length
                 ? q.scope_lines
-                : coveredWork.flatMap((work: any) => (work.structured_items || []).map((item: any) => ({
+                // One line per covered Work Required decision (annotation F
+                // shape): joined any-one-of title without area names, an area
+                // chip per measured area, quantity = Σ chips. Alternatives
+                // price once per area via the decision's primary item.
+                : groupedQuotationScopeLines({
+                    workSubcategories: state.db.master.workSubcategories,
+                    areas: state.db.areas,
+                    coveredWork,
+                    newId: () => genId("qi"),
+                }).map((item) => ({
                     ...item,
-                    id: genId("qi"),
-                    work_required_id: work.id,
                     site_id: siteId,
-                    area_id: item.area_id || work.area_ids[0],
                     source_kind: "quotation" as const,
-                    source_item_id: item.id,
-                })));
+                }));
             const subtotal = q.subtotal != null
                 ? q.subtotal
                 : starterItems.reduce((sum: any, item: any) => sum + item.amount, 0);

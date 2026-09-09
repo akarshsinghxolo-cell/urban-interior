@@ -26,6 +26,10 @@ export function buildQuotationShareText(
             const qty = item.quantity === 1 ? "" : ` ${item.quantity}${item.unit_name ? ` ${item.unit_name}` : ""} ×`;
             const parts = [`${index + 1}.`, `${item.title.trim() || "Item"}${qty ? ` —${qty}` : ""}`];
             lines.push(parts.join(" ").replace(/\s+/g, " "));
+            const chips = item.area_chips || [];
+            if (chips.length > 1) {
+                lines.push(`   Areas: ${chips.map((chip) => `${chip.area_name}${chip.quantity ? ` ${chip.quantity}` : ""}`).join(", ")}`);
+            }
             lines.push(`   ${formatINR(item.amount)}`);
         });
     }

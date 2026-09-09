@@ -191,6 +191,11 @@ export interface LineItem {
     // Pair 0 is the primary and mirrors subcategory_id + work_type_id; the
     // item's quantity/rate/amount are counted once, never once per option.
     option_pairs?: Array<{ subcategory_id: ID; work_type_id?: ID }>;
+    // Quotation scope lines: the measured AREAS this decision covers. The
+    // title carries no area names; each chip is one area's measurement and the
+    // line's quantity is the sum of the chips — removing a chip (×) re-derives
+    // the quantity automatically.
+    area_chips?: Array<{ area_id?: ID; area_name: string; quantity: number }>;
     length_ft?: number;
     breadth_ft?: number;
     height_ft?: number;

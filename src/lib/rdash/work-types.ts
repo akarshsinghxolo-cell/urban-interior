@@ -1,4 +1,4 @@
-import type { ID, LineItem, MeasurementRevision, QuotationCoverage, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
+import type { Area, ID, LineItem, MeasurementRevision, QuotationCoverage, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
 
 const DEFAULT_WORK_TYPE_NAME = "Standard";
 
@@ -340,6 +340,72 @@ export function mergeExplodedOptionItems(input: {
     if (areaName) host.title = `${areaName} · ${capturedPairsTitle(input.workSubcategories, pairs)}`;
   }
   return merged;
+}
+
+/** Sum of an item's area chips — the quotation line's quantity master, shared
+ *  by the derivation, the editor (chip × removes one chip and re-derives) and
+ *  the tests. */
+export function areaChipQuantity(chips: LineItem["area_chips"]): number {
+  return Math.round((chips || []).reduce((sum, chip) => sum + (chip.quantity || 0), 0) * 100) / 100;
+}
+
+/** One quotation line per covered Work Required decision — the annotation F
+ *  shape the user asked for: the joined any-one-of title with NO area names,
+ *  an area chip per measured area (removable in the editor), quantity = Σ
+ *  chips. Per area the decision's PRIMARY captured item (the merged
+ *  alternatives row when one exists, else the first) prices that area ONCE —
+ *  exploded alternatives (Carpet 101 / Ceramic 105 / Vitrified 109 measured
+ *  separately) never double-count the same floor. Reuses the primary item as
+ *  the line base so unit/tax/category/dimensions survive; `newId` lets the
+ *  caller keep stable ids (healer) or mint fresh ones (new quotations). */
+export function groupedQuotationScopeLines(input: {
+  workSubcategories: WorkSubcategory[];
+  areas: Array<Pick<Area, "id" | "name">>;
+  coveredWork: Array<Pick<WorkRequired, "id" | "title" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "structured_items">>;
+  newId: (work: Pick<WorkRequired, "id">) => ID;
+}): LineItem[] {
+  const lines: LineItem[] = [];
+  for (const work of input.coveredWork) {
+    const items = (work.structured_items || []).filter((item) => Number.isFinite(item.quantity));
+    if (!items.length) continue;
+    const byArea = new Map<string, LineItem[]>();
+    for (const item of items) {
+      const key = item.area_id || "";
+      if (!byArea.has(key)) byArea.set(key, []);
+      byArea.get(key)!.push(item);
+    }
+    // Chips follow the Work Required's own area order, then any stragglers.
+    const orderedAreaIds = [...(work.area_ids || []).filter((id) => byArea.has(id)), ...Array.from(byArea.keys()).filter((id) => !(work.area_ids || []).includes(id))];
+    const chips: NonNullable<LineItem["area_chips"]> = [];
+    let primary: LineItem | undefined;
+    for (const areaId of orderedAreaIds) {
+      const group = byArea.get(areaId)!;
+      const areaPrimary = group.find((item) => item.option_pairs?.length) || group[0];
+      primary = primary || areaPrimary;
+      const name = input.areas.find((area) => area.id === areaId)?.name || areaPrimary.area_name || "Area";
+      chips.push({ area_id: areaId || undefined, area_name: name, quantity: areaPrimary.quantity || 0 });
+    }
+    if (!primary) continue;
+    const amount = Math.round(chips.reduce((sum, chip) => {
+      const group = byArea.get(chip.area_id || "")!;
+      const areaPrimary = group.find((item) => item.option_pairs?.length) || group[0];
+      return sum + (areaPrimary.amount || 0);
+    }, 0) * 100) / 100;
+    const quantity = areaChipQuantity(chips);
+    const title = workRequiredDisplayTitle(input.workSubcategories, work) || primary.title.replace(/^[^·]+ · /, "");
+    lines.push({
+      ...primary,
+      id: input.newId(work),
+      work_required_id: work.id,
+      source_item_id: primary.id,
+      title,
+      area_chips: chips,
+      quantity,
+      rate: quantity ? Math.round((amount / quantity) * 100) / 100 : primary.rate || 0,
+      amount,
+    });
+  }
+  return lines;
 }
 
 /**

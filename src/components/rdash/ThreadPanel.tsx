@@ -550,11 +550,13 @@ export function LineItemTable({ items, highlightSource, }: {
               {it.held && <span className="ml-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold text-warning">HELD</span>}
             </p>
             {it.unit_name && <p className="text-[10px] text-muted-foreground">{it.unit_name}</p>}
-            {(it.site_name || it.area_name) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
+            {it.area_chips?.length ? (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
+                {it.area_chips.map((chip, chipIndex) => (<span key={`${chip.area_id || chip.area_name}-${chipIndex}`} className="rounded bg-muted px-1 py-0.5 text-muted-foreground">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>))}
+              </p>) : ((it.site_name || it.area_name) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
                 {it.site_name && <span className="rounded bg-primary/10 px-1 py-0.5 text-primary">{it.site_name}</span>}
                 {it.area_name && <span className="rounded bg-muted px-1 py-0.5 text-muted-foreground">{it.area_name}</span>}
                 {it.drawing_no && <span className="rounded bg-success/10 px-1 py-0.5 text-success">📐 {it.drawing_no}</span>}
-              </p>)}
+              </p>))}
           </div>
           <span className="text-right font-mono">{it.quantity}</span>
           <span className="text-right font-mono text-muted-foreground">{formatINR(it.rate)}</span>
