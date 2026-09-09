@@ -190,7 +190,9 @@ export interface LineItem {
     // them ("Toughened Glass · Standard / SS · Standard / WPC · Standard").
     // Pair 0 is the primary and mirrors subcategory_id + work_type_id; the
     // item's quantity/rate/amount are counted once, never once per option.
-    option_pairs?: Array<{ subcategory_id: ID; work_type_id?: ID }>;
+    // `rate` on a pair is a hand-set override; without it the box falls back
+    // to the work type's total contractor rate (material + labour average).
+    option_pairs?: Array<{ subcategory_id: ID; work_type_id?: ID; rate?: number }>;
     // Quotation scope lines: the measured AREAS this decision covers. The
     // title carries no area names; each chip is one area's measurement and the
     // line's quantity is the sum of the chips — removing a chip (×) re-derives

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { areaChipQuantity, groupedQuotationScopeLines } from "@/lib/rdash/work-types";
+import { areaChipQuantity, groupedQuotationScopeLines, linePairBoxes, removeOptionPair } from "@/lib/rdash/work-types";
 import { buildQuotationShareText } from "@/lib/rdash/quotation-share";
 
 /**
@@ -147,5 +147,85 @@ describe("quotation share text with area chips", () => {
     expect(text).not.toContain("Areas: Rooftop 10");
     expect(text).toContain("2. UPVC Sliding Windows · Standard — 626 ×");
     expect(text).toContain("Areas: Rooftop 600, Guest room 26");
+  });
+});
+
+describe("quotation pair boxes (one box per work type: item / rate / amount)", () => {
+  const workSubcategories = [
+    {
+      id: "ws-cabinets",
+      category_id: "wc-1",
+      name: "Kitchen Cabinets (Modular)",
+      work_types: [
+        { id: "wt-premium", name: "premium" },
+        { id: "wt-luxury", name: "luxury" },
+      ],
+    },
+    { id: "ws-wardrobe", category_id: "wc-1", name: "Wardrobe (Sliding/Swing)", work_types: [{ id: "wt-wardrobe-std", name: "Standard" }] },
+  ] as any;
+  // Contractor rates: premium 100+50, luxury 180+70 (different contractors),
+  // wardrobe has NO rates at all.
+  const contractorRates = [
+    { contractor_id: "c1", work_subcategory_id: "ws-cabinets", work_type_id: "wt-premium", material_rate: 100, labour_rate: 50 },
+    { contractor_id: "c2", work_subcategory_id: "ws-cabinets", work_type_id: "wt-premium", material_rate: 120, labour_rate: 30 },
+    { contractor_id: "c1", work_subcategory_id: "ws-cabinets", work_type_id: "wt-luxury", material_rate: 180, labour_rate: 70 },
+  ] as any;
+  const line = {
+    title: "Kitchen Cabinets (Modular) · premium / Kitchen Cabinets (Modular) · luxury / Wardrobe (Sliding/Swing) · Standard",
+    quantity: 32,
+    rate: 150,
+    amount: 4800,
+    subcategory_id: "ws-cabinets",
+    work_type_id: "wt-premium",
+    option_pairs: [
+      { subcategory_id: "ws-cabinets", work_type_id: "wt-premium" },
+      { subcategory_id: "ws-cabinets", work_type_id: "wt-luxury" },
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" },
+    ],
+  };
+
+  test("one box per pair: label, total rate (material + labour), primary prices the line", () => {
+    const boxes = linePairBoxes(line as any, workSubcategories, contractorRates);
+    expect(boxes.map((box) => box.label)).toEqual([
+      "Kitchen Cabinets (Modular) · premium",
+      "Kitchen Cabinets (Modular) · luxury",
+      "Wardrobe (Sliding/Swing) · Standard",
+    ]);
+    // Primary keeps the quoted line rate; alternatives resolve from the
+    // contractor averages (material and labour averaged separately, then summed).
+    expect(boxes[0]).toMatchObject({ primary: true, rate: 150, amount: 4800 });
+    expect(boxes[1]).toMatchObject({ primary: false, rate: 250, amount: 8000 });
+    // No contractor rate for wardrobe → "—" (undefined), never a fake ₹0.
+    expect(boxes[2].rate).toBeUndefined();
+    expect(boxes[2].amount).toBeUndefined();
+  });
+
+  test("a hand-set pair rate override wins over the master average", () => {
+    const withOverride = { ...line, option_pairs: [{ ...line.option_pairs[1], rate: 210 }, ...line.option_pairs.slice(2)] , subcategory_id: "ws-cabinets", work_type_id: "wt-luxury" };
+    const boxes = linePairBoxes(withOverride as any, workSubcategories, contractorRates);
+    expect(boxes[0].rate).toBe(210);
+    expect(boxes[0].amount).toBe(32 * 210);
+  });
+
+  test("removeOptionPair: removing the primary promotes the next pair (mirrors ids, re-derives title and rate)", () => {
+    const patch = removeOptionPair(line as any, 0, workSubcategories, contractorRates)!;
+    expect(patch.option_pairs).toHaveLength(2);
+    expect(patch.subcategory_id).toBe("ws-cabinets");
+    expect(patch.work_type_id).toBe("wt-luxury");
+    expect(patch.title).toBe("Kitchen Cabinets (Modular) · luxury / Wardrobe (Sliding/Swing) · Standard");
+    expect(patch.rate).toBe(250); // promoted primary falls back to the master average (180 + 70)
+  });
+
+  test("removeOptionPair: removing a non-primary keeps the primary untouched", () => {
+    const patch = removeOptionPair(line as any, 2, workSubcategories, contractorRates)!;
+    expect(patch.subcategory_id).toBe("ws-cabinets");
+    expect(patch.work_type_id).toBe("wt-premium");
+    expect(patch.title).toBe("Kitchen Cabinets (Modular) · premium / Kitchen Cabinets (Modular) · luxury");
+    expect(patch.rate).toBe(150);
+  });
+
+  test("removeOptionPair: the last box removes the whole line", () => {
+    const single = { ...line, option_pairs: [line.option_pairs[0]] };
+    expect(removeOptionPair(single as any, 0, workSubcategories, contractorRates)).toBeNull();
   });
 });

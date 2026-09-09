@@ -1,4 +1,4 @@
-import type { Area, ID, LineItem, MeasurementRevision, QuotationCoverage, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
+import type { Area, ContractorRate, ID, LineItem, MeasurementRevision, QuotationCoverage, WorkRequired, WorkSubcategory, WorkTypeRate } from "./types";
 
 const DEFAULT_WORK_TYPE_NAME = "Standard";
 
@@ -272,7 +272,7 @@ const scopeKeyOf = (areaId: string | undefined, subcategoryId: string | undefine
 /** Every (subcategory, work type) pair an item covers: its option list when it
  *  holds alternatives (any-one-of), else the single primary pair. Pair 0 of a
  *  non-empty option_pairs always mirrors subcategory_id + work_type_id. */
-export function itemOptionPairs(item: Pick<LineItem, "subcategory_id" | "work_type_id" | "option_pairs">): Array<{ subcategory_id?: ID; work_type_id?: ID }> {
+export function itemOptionPairs(item: Pick<LineItem, "subcategory_id" | "work_type_id" | "option_pairs">): Array<{ subcategory_id?: ID; work_type_id?: ID; rate?: number }> {
   if (item.option_pairs?.length) return item.option_pairs;
   return [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }];
 }
@@ -295,6 +295,96 @@ export function capturedPairsTitle(workSubcategories: WorkSubcategory[], pairs: 
     return `${subcategory.name}${workType ? ` · ${workType.name}` : ""}`;
   };
   return pairs.map(label).filter(Boolean).join(" / ");
+}
+
+// ── Quotation pair boxes ─────────────────────────────────────────────────────
+// A merged alternatives line renders ONE box per (subcategory · work type):
+// the box stack in ITEM, one total-rate box in RATE and one amount box in
+// AMOUNT. The PRIMARY (first) pair is what the line counts once — removing a
+// box promotes the next pair, exactly like the capture dialog's chips.
+
+type RateRow = Pick<ContractorRate, "contractor_id" | "work_subcategory_id" | "work_type_id" | "material_rate" | "labour_rate">;
+
+/** Work type's total rate (material + labour) averaged across contractors —
+ *  the same source capture uses (crm.ts → contractorWorkTypeAverages):
+ *  material averaged across contractors, labour averaged across contractors,
+ *  then summed. Pure twin so work-types stays import-cycle free. */
+export function averageWorkTypeTotalRate(rates: RateRow[], subcategoryId: ID | undefined, workTypeId: ID | undefined): number | undefined {
+  if (!subcategoryId) return undefined;
+  const rows = rates.filter((row) => row.work_subcategory_id === subcategoryId && row.work_type_id === workTypeId);
+  const average = (key: "material_rate" | "labour_rate") => {
+    const values = rows.map((row) => row[key]).filter((value): value is number => Number.isFinite(value));
+    return values.length ? values.reduce((total, value) => total + value, 0) / values.length : undefined;
+  };
+  const materialRate = average("material_rate");
+  const labourRate = average("labour_rate");
+  return materialRate === undefined && labourRate === undefined ? undefined : (materialRate || 0) + (labourRate || 0);
+}
+
+export type QuotationPairBox = {
+  pair: { subcategory_id: ID; work_type_id?: ID; rate?: number };
+  label: string;
+  rate?: number;
+  primary: boolean;
+  amount?: number;
+  rateFromMaster: boolean;
+};
+
+/** One box per option pair: label ("Subcategory · Work type"), the box's
+ *  total rate (pair override → master average → line rate for the primary)
+ *  and amount (line quantity × rate). Undefined rate means nobody ever quoted
+ *  that work type — the UI shows "—" instead of a fake ₹0. */
+export function linePairBoxes(
+  line: Pick<LineItem, "option_pairs" | "subcategory_id" | "work_type_id" | "rate" | "quantity" | "title">,
+  workSubcategories: WorkSubcategory[],
+  contractorRates: RateRow[],
+): QuotationPairBox[] {
+  return itemOptionPairs(line).map((pair, index) => {
+    const subcategory = workSubcategories.find((row) => row.id === pair.subcategory_id);
+    const workType = pair.work_type_id && subcategory ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id) : undefined;
+    const label = `${subcategory?.name || ""}${workType ? ` · ${workType.name}` : ""}` || (index === 0 ? line.title : "");
+    const primary = index === 0;
+    const masterRate = averageWorkTypeTotalRate(contractorRates, pair.subcategory_id, pair.work_type_id);
+    const rate = pair.rate ?? (primary ? line.rate : undefined) ?? masterRate;
+    return {
+      pair: pair as QuotationPairBox["pair"],
+      label,
+      rate,
+      primary,
+      amount: rate === undefined ? undefined : Math.round((line.quantity || 0) * rate * 100) / 100,
+      rateFromMaster: pair.rate === undefined,
+    };
+  });
+}
+
+/** Patch for removing one option box from a merged line: the remaining pairs
+ *  stay, pair 0 re-mirrors subcategory_id + work_type_id, the title re-joins,
+ *  and the rate re-derives from the promoted primary (its override → master
+ *  average → the line's existing rate). `null` = the last box was removed —
+ *  the caller deletes the whole line. The store recomputes amount from the
+ *  patched rate (quantity unchanged). */
+export function removeOptionPair(
+  line: Pick<LineItem, "option_pairs" | "subcategory_id" | "work_type_id" | "rate" | "quantity" | "title">,
+  index: number,
+  workSubcategories: WorkSubcategory[],
+  contractorRates: RateRow[],
+): { option_pairs: NonNullable<LineItem["option_pairs"]>; title: string; subcategory_id: ID; work_type_id?: ID; rate: number } | null {
+  const pairs = itemOptionPairs(line).filter((_, i) => i !== index) as NonNullable<LineItem["option_pairs"]>;
+  if (!pairs.length || !pairs[0].subcategory_id) return null;
+  // The promoted pair prices the line now: its own override → its work type's
+  // total contractor rate (material + labour) → the line's existing rate. The
+  // old line.rate belongs to the REMOVED work type, so the master average
+  // takes precedence over it.
+  const promotedRate = pairs[0].rate
+    ?? averageWorkTypeTotalRate(contractorRates, pairs[0].subcategory_id, pairs[0].work_type_id)
+    ?? line.rate ?? 0;
+  return {
+    option_pairs: pairs,
+    title: capturedPairsTitle(workSubcategories, pairs) || line.title,
+    subcategory_id: pairs[0].subcategory_id,
+    work_type_id: pairs[0].work_type_id,
+    rate: promotedRate,
+  };
 }
 
 /** One-time healer for rows captured before alternatives lived on one item:

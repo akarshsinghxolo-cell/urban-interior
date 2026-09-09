@@ -10,7 +10,7 @@ import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
 import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
-import { workRequiredDisplayTitle, areaChipQuantity } from "@/lib/rdash/work-types";
+import { workRequiredDisplayTitle, areaChipQuantity, linePairBoxes, removeOptionPair } from "@/lib/rdash/work-types";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
 import { X, MessageCircle, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
@@ -1076,6 +1076,8 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     const removeQuotationItem = useRDashStore((s) => s.removeQuotationItem);
     const units = useRDashStore((s) => s.db.master.units);
     const categories = useRDashStore((s) => s.db.master.workCategories);
+    const workSubcategories = useRDashStore((s) => s.db.master.workSubcategories);
+    const contractorRates = useRDashStore((s) => s.db.master.contractorRates);
     const [adding, setAdding] = React.useState(false);
     const [newTitle, setNewTitle] = React.useState("");
     const [newQty, setNewQty] = React.useState("1");
@@ -1156,20 +1158,49 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     };
     return (<div className="overflow-hidden rounded-lg border border-border">
 
-      <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.6fr_0.5fr_1.1fr_0.6fr_0.6fr_0.3fr]">
+      <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
         <span>Item</span>
+        <span className="text-right">Rate</span>
         <span className="text-right">Qty</span>
         <span>Areas</span>
-        <span className="text-right">Rate</span>
         <span className="text-right">Amount</span>
         <span></span>
       </div>
 
       {items.length === 0 ? (<div className="px-3 py-6 text-center text-xs text-muted-foreground">
           No line items yet. Click "Add item" to build the quotation.
-        </div>) : (items.map((it) => (<div key={it.id} className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.5fr_1.1fr_0.6fr_0.6fr_0.3fr]">
-            <input type="text" defaultValue={it.title} aria-label="Item title" onBlur={(e) => { if (e.target.value !== it.title)
-            updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1 sm:col-start-1 sm:row-start-1"/>
+        </div>) : (items.map((it) => (<div key={it.id} className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
+            {(() => {
+                // Annotation A: merged alternatives render ONE removable box per
+                // (subcategory · work type), stacked. Pair 0 (highlighted)
+                // prices the line — removing a box promotes the next pair; the
+                // last one removes the line. Free-form lines keep the input.
+                if (!it.option_pairs?.length) return null;
+                const boxes = linePairBoxes(it, workSubcategories, contractorRates);
+                const removePairBox = (index: number) => {
+                    const patch = removeOptionPair(it, index, workSubcategories, contractorRates);
+                    if (!patch) {
+                        removeQuotationItem(quotationId, it.id);
+                        toast.success("Line removed — its last work type was taken off");
+                        return;
+                    }
+                    updateQuotationItem(quotationId, it.id, patch);
+                    toast.success(`Removed — ${patch.option_pairs.length} option${patch.option_pairs.length === 1 ? "" : "s"} left on this line`);
+                };
+                return (<div className="col-span-4 flex min-w-0 flex-col items-start gap-1 sm:col-span-1 sm:col-start-1 sm:row-start-1">
+                  {boxes.map((box, index) => (<span key={`${box.pair.subcategory_id}-${box.pair.work_type_id || ""}-${index}`} className={cn("inline-flex max-w-full items-center gap-1 rounded border py-0.5 pl-1.5 pr-0.5 text-[10px]", box.primary ? "border-primary/30 bg-primary/5 font-medium text-foreground" : "border-border bg-muted/40 text-muted-foreground")}>
+                    <span className="truncate" title={box.label}>{box.label}</span>
+                    <button type="button" onClick={() => removePairBox(index)} aria-label={`Remove work type ${box.label} from this line`} title={`Remove ${box.label}${box.primary ? " — the next option takes over this line's rate" : ""}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
+                      <X className="h-2.5 w-2.5"/>
+                    </button>
+                  </span>))}
+                </div>);
+            })()}
+            {(() => {
+                if (it.option_pairs?.length) return null;
+                return (<input type="text" defaultValue={it.title} aria-label="Item title" onBlur={(e) => { if (e.target.value !== it.title)
+                updateQuotationItem(quotationId, it.id, { title: e.target.value }); }} className="col-span-4 min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 font-medium text-foreground hover:border-border focus:border-primary focus:bg-card focus:outline-none sm:col-span-1 sm:col-start-1 sm:row-start-1"/>);
+            })()}
             {(() => {
                 // Annotation B/C: the areas this decision covers, each one a
                 // removable chip. The title carries no area names anymore; the
@@ -1186,7 +1217,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                     updateQuotationItem(quotationId, it.id, { area_chips: rest, quantity: areaChipQuantity(rest) });
                     toast.success(`Removed ${chips[index].area_name} — quantity now ${areaChipQuantity(rest)}`);
                 };
-                return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-3 sm:row-start-1">
+                return (<div className="col-span-4 flex min-w-0 flex-wrap items-center gap-1 sm:col-span-1 sm:col-start-4 sm:row-start-1">
                   {chips.map((chip, index) => (<span key={`${chip.area_id || chip.area_name}-${index}`} className="inline-flex max-w-full items-center gap-1 rounded border border-border bg-muted/40 py-0.5 pl-1.5 pr-0.5 text-[10px] text-muted-foreground">
                     <span className="truncate">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>
                     <button type="button" onClick={() => removeChip(index)} aria-label={`Remove area ${chip.area_name} from ${it.title}`} title={`Remove ${chip.area_name} — quantity drops to ${areaChipQuantity(chips.filter((_, i) => i !== index)) || 0}`} className="shrink-0 rounded-full p-0.5 text-muted-foreground/70 hover:bg-destructive/10 hover:text-destructive">
@@ -1195,17 +1226,39 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                   </span>))}
                 </div>);
             })()}
-            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-2 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
+            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono hover:border-border focus-within:border-primary focus-within:bg-card sm:col-start-3 sm:row-start-1" title={it.area_chips?.length ? "Sum of the area boxes — remove an area box to reduce it" : undefined}>
               <span aria-hidden className="text-[10px] font-semibold text-muted-foreground">×</span>
               {it.area_chips?.length ? (<input type="number" value={areaChipQuantity(it.area_chips)} aria-label="Quantity (sum of areas)" readOnly className="min-w-0 w-full cursor-default bg-transparent text-right outline-none"/>) : (<input type="number" defaultValue={it.quantity} aria-label="Quantity" min="0" step="0.01" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.quantity)
             updateQuotationItem(quotationId, it.id, { quantity: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>)}
             </div>
-            <div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-4 sm:row-start-1">
-              <span aria-hidden className="text-[10px] font-semibold">₹</span>
-              <input type="number" defaultValue={it.rate} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
-            updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
-            </div>
-            <span className="py-0.5 text-right font-mono font-semibold text-foreground sm:col-start-5 sm:row-start-1">{formatINR(it.amount)}</span>
+            {(() => {
+                // Annotation B: one rate box per work type — the total rate
+                // (material + labour); the highlighted primary drives the line.
+                const pairBoxes = it.option_pairs?.length ? linePairBoxes(it, workSubcategories, contractorRates) : null;
+                if (!pairBoxes) return null;
+                return (<div className="flex min-w-0 flex-col items-stretch gap-0.5 rounded px-1 py-0.5 font-mono sm:col-span-1 sm:col-start-2 sm:row-start-1">
+                  {pairBoxes.map((box, index) => (<div key={index} className={cn("flex items-center gap-1 rounded border border-transparent hover:border-border focus-within:border-primary focus-within:bg-card", box.primary ? "text-foreground" : "text-muted-foreground")}>
+                    <span aria-hidden className="text-[10px] font-semibold">₹</span>
+                    <input type="number" defaultValue={box.rate ?? ""} placeholder="—" min="0" step="1" aria-label={`Rate for ${box.label}${box.primary ? " (drives this line)" : ""}`} onBlur={(e) => { const v = parseFloat(e.target.value); if (isNaN(v) || v === box.rate)
+                    return; const nextPairs = (it.option_pairs || []).map((p, pi) => pi === index ? { ...p, rate: v } : p); updateQuotationItem(quotationId, it.id, box.primary ? { option_pairs: nextPairs, rate: v } : { option_pairs: nextPairs }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+                  </div>))}
+                </div>);
+            })()}
+            {(() => {
+                if (it.option_pairs?.length) return null;
+                return (<div className="flex items-center gap-1 rounded border border-transparent bg-transparent px-1 py-0.5 font-mono text-muted-foreground hover:border-border focus-within:border-primary focus-within:bg-card focus-within:text-foreground sm:col-start-2 sm:row-start-1">
+                  <span aria-hidden className="text-[10px] font-semibold">₹</span>
+                  <input type="number" defaultValue={it.rate} aria-label="Rate" min="0" step="1" onBlur={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v !== it.rate)
+                updateQuotationItem(quotationId, it.id, { rate: v }); }} className="min-w-0 w-full bg-transparent text-right outline-none"/>
+                </div>);
+            })()}
+            {(() => {
+                const pairBoxes = it.option_pairs?.length ? linePairBoxes(it, workSubcategories, contractorRates) : null;
+                if (!pairBoxes) return (<span className="py-0.5 text-right font-mono font-semibold text-foreground sm:col-start-5 sm:row-start-1">{formatINR(it.amount)}</span>);
+                return (<div className="flex min-w-0 flex-col items-end gap-0.5 py-0.5 font-mono sm:col-span-1 sm:col-start-5 sm:row-start-1">
+                  {pairBoxes.map((box, index) => (<span key={index} className={cn("text-right", box.primary ? "font-semibold text-foreground" : "text-muted-foreground")} title={box.primary ? "Prices this line" : `If this option is chosen: ${box.label}`}>{box.rate === undefined ? "—" : formatINR(box.amount ?? 0)}</span>))}
+                </div>);
+            })()}
             <div className="flex items-center justify-center gap-0.5 sm:col-start-6 sm:row-start-1">
               <button type="button" onClick={() => setItemFilesId(it.id)} className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Files for ${it.title}`} title="Line-item files"><Paperclip className="h-3 w-3"/></button>
               <button type="button" onClick={() => { removeQuotationItem(quotationId, it.id); toast.success("Item removed"); }} className="flex items-center justify-center rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${it.title}`}>
@@ -1214,7 +1267,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
             </div>
           </div>)))}
 
-      <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[1.6fr_0.5fr_1.1fr_0.6fr_0.6fr_0.3fr] sm:gap-2">
+      <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr] sm:gap-2">
         <span>Subtotal</span>
         <span className="hidden sm:block" />
         <span className="hidden sm:block" />
@@ -1223,8 +1276,8 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         <span className="hidden sm:block" />
       </div>
 
-      {adding ? (<div className="grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs sm:grid-cols-[1.6fr_0.5fr_1.1fr_0.6fr_0.6fr_0.3fr]">
-          <div ref={titleWrapRef} className="relative col-span-4 min-w-0 sm:col-span-1">
+      {adding ? (<div className="grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
+          <div ref={titleWrapRef} className="relative col-span-4 min-w-0 sm:col-span-1 sm:col-start-1">
             <input type="text" value={newTitle} onChange={(e) => { setNewTitle(e.target.value); setShowSuggest(true); setSuggestIdx(-1); }} onKeyDown={(e) => {
                 if (e.key === "Enter") {
                     if (suggestIdx >= 0 && suggestions[suggestIdx]) {
@@ -1265,21 +1318,21 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                   </button>))}
               </div>)}
           </div>
-          <div className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 font-mono outline-none focus-within:border-primary">
+          <div className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 font-mono outline-none focus-within:border-primary sm:col-start-3">
             <span aria-hidden className="text-[10px] font-semibold text-muted-foreground sm:hidden">×</span>
             <input type="number" value={newQty} aria-label="Quantity" placeholder="Qty" onChange={(e) => setNewQty(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
             handleAdd(); if (e.key === "Escape")
             setAdding(false); }} min="0" step="0.01" className="min-w-0 w-full bg-transparent text-right outline-none"/>
           </div>
-          <span className="hidden sm:block" aria-hidden />
-          <div className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 font-mono text-muted-foreground outline-none focus-within:border-primary focus-within:text-foreground">
+          <span className="hidden sm:col-start-4 sm:block" aria-hidden />
+          <div className="flex items-center gap-1 rounded border border-border bg-card px-1.5 py-1 font-mono text-muted-foreground outline-none focus-within:border-primary focus-within:text-foreground sm:col-start-2">
             <span aria-hidden className="text-[10px] font-semibold sm:hidden">₹</span>
             <input type="number" value={newRate} aria-label="Rate" onChange={(e) => setNewRate(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter")
             handleAdd(); if (e.key === "Escape")
             setAdding(false); }} min="0" step="1" placeholder="auto" className="min-w-0 w-full bg-transparent text-right outline-none"/>
           </div>
-          <span className="hidden py-1 text-right font-mono text-muted-foreground sm:block">—</span>
-          <div className="flex items-center justify-center gap-0.5">
+          <span className="hidden py-1 text-right font-mono text-muted-foreground sm:col-start-5 sm:block">—</span>
+          <div className="flex items-center justify-center gap-0.5 sm:col-start-6">
             <button type="button" onClick={handleAdd} className="rounded p-1 text-primary hover:bg-primary/10" aria-label="Confirm add"><Plus className="h-3.5 w-3.5"/></button>
             <button type="button" onClick={() => setAdding(false)} className="rounded p-1 text-muted-foreground hover:bg-accent" aria-label="Cancel add"><X className="h-3.5 w-3.5"/></button>
           </div>
