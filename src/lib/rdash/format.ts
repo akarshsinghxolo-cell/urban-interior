@@ -410,6 +410,31 @@ export function workByCustomerFallback(sites: Array<{
     const site = sites[0];
     return [site.name, site.locality, site.city].filter(Boolean).join(" · ");
 }
+/**
+ * Join location parts into a label without duplicated fragments.
+ * Site rows often carry an already-composed `address` ("Whitefield, Bengaluru")
+ * alongside separate `locality`/`city` fields; naive joins then render
+ * "Whitefield, Whitefield, Bengaluru, Bengaluru". Split on commas, dedupe
+ * case-insensitively, rejoin.
+ */
+export function formatLocationLabel(...parts: Array<string | null | undefined>): string {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const part of parts) {
+        if (!part)
+            continue;
+        for (const piece of String(part).split(/\s*,\s*/)) {
+            if (!piece)
+                continue;
+            const key = piece.toLowerCase();
+            if (seen.has(key))
+                continue;
+            seen.add(key);
+            out.push(piece);
+        }
+    }
+    return out.join(", ");
+}
 
 export function formatBytes(bytes: number): string {
     if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

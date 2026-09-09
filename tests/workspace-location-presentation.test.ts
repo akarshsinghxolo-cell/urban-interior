@@ -113,3 +113,21 @@ describe("workspace location presentation", () => {
     expect(workspaceRecordTitle(db, "area", area.id)).toBe(`${site.name} · ${area.name}`);
   });
 });
+
+import { formatLocationLabel } from "../src/lib/rdash/format";
+
+describe("formatLocationLabel", () => {
+  test("dedupes fragments already composed into the address field", () => {
+    // Seed rows store address as "locality, city" while the card joins
+    // locality + address + city — must not render the duplication twice.
+    expect(formatLocationLabel("Whitefield", "Whitefield, Bengaluru", "Bengaluru")).toBe("Whitefield, Bengaluru");
+  });
+
+  test("keeps distinct parts, tolerates blanks and empty input", () => {
+    expect(formatLocationLabel("Taramandal", "Legio Apartment, Taramandal, Gorakhpur", "Gorakhpur")).toBe(
+      "Taramandal, Legio Apartment, Gorakhpur",
+    );
+    expect(formatLocationLabel(undefined, null, "", "Gorakhpur")).toBe("Gorakhpur");
+    expect(formatLocationLabel()).toBe("");
+  });
+});

@@ -14,7 +14,7 @@ import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
-import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, indiaBusinessDate, workByCustomerFallback, } from "@/lib/rdash/format";
+import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, indiaBusinessDate, workByCustomerFallback, formatLocationLabel, } from "@/lib/rdash/format";
 import { workByCustomer } from "@/lib/rdash/seed";
 import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS, workRequiredDisplayTitle, seedDetailedAreaLines, itemOptionPairs, type RemovedSelection } from "@/lib/rdash/work-types";
 import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
@@ -207,7 +207,7 @@ export function CustomerDesk({ view }: {
             const progress = customerProgress(db, p.id);
             const customerSites = db.sites.filter((site) => site.customer_id === p.id);
             const primarySite = customerSites[0];
-            const locationLabel = customerSites.length > 1 ? `${customerSites.length} Sites` : [primarySite?.locality, primarySite?.address, primarySite?.city].filter(Boolean).join(", ") || "Site pending";
+            const locationLabel = customerSites.length > 1 ? `${customerSites.length} Sites` : formatLocationLabel(primarySite?.locality, primarySite?.address, primarySite?.city) || "Site pending";
             const work = progress.summary || workByCustomer[p.id] || workByCustomerFallback(customerSites);
             const active = p.id === selected?.id;
             return (<ContextRow key={p.id} actions={buildCustomerActions(p.id, customerDispatch, { onOpen: () => selectAndOpenCustomer(p.id), onEdit: () => setEditCustomerId(p.id) })} onSelect={() => selectAndOpenCustomer(p.id)} className={cn("min-h-[148px] rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card transition-all hover:border-primary/30 hover:shadow-soft", active && "ring-2 ring-ring/40")}>

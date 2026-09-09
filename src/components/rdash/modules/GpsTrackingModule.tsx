@@ -20,7 +20,7 @@ import {
 import { useLocationTrackingState } from "@/lib/rdash/location-tracking-status";
 import { MapView, type MapPoint, type MapRouteSegment } from "../MapView";
 import { EmptyState, MetricCard, StatusBadge } from "../primitives";
-import { formatDateTime, indiaBusinessDate, titleCase } from "@/lib/rdash/format";
+import { formatDateTime, indiaBusinessDate, titleCase, formatLocationLabel } from "@/lib/rdash/format";
 import { toast } from "sonner";
 
 type LayerKey = "staff" | "route" | "stops" | "sites" | "vendors" | "visits";
@@ -182,7 +182,7 @@ export function GpsTrackingModule({ moduleId }: { moduleId: string; viewFilter?:
         const customer = db.customers.find((row) => row.id === site.customer_id);
         result.push({
           id: `site-${site.id}`, label: site.name, latitude: site.latitude, longitude: site.longitude,
-          address: [site.address, site.locality, site.city].filter(Boolean).join(", "), status: "site",
+          address: formatLocationLabel(site.address, site.locality, site.city), status: "site",
           meta: `${customer?.name || "Customer"} · ${titleCase(site.stage)} · Site`,
           onClick: () => openDetail("site" as never, site.id),
         });
@@ -196,7 +196,7 @@ export function GpsTrackingModule({ moduleId }: { moduleId: string; viewFilter?:
         };
         result.push({
           id: `vendor-${row.id}`, label: row.name, latitude: row.latitude, longitude: row.longitude,
-          address: [row.address, row.locality, row.city].filter(Boolean).join(", "), status: "vendor",
+          address: formatLocationLabel(row.address, row.locality, row.city), status: "vendor",
           meta: `${row.category || "Vendor"}${row.phone ? ` · ${row.phone}` : ""}`,
           onClick: () => openDetail("vendor" as never, row.id),
         });
