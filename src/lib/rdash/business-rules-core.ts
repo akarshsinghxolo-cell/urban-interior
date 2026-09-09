@@ -1,5 +1,6 @@
 import { resolveCustomerIdFromLinks, type CustomerLinkInput } from "./customer-relations";
 import { findCustomerIdentityMatches } from "./customer-identity";
+import { workTypesForSubcategory } from "./work-types";
 import type { FinanceContextLink, ID, LineItem, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
 export class BusinessRuleError extends Error {
     constructor(message: string) {
@@ -127,6 +128,22 @@ export function assertWorkSubcategoryId(db: RDashDatabase, subcategoryId: ID | u
 }
 export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem, context: string) {
     const category = assertWorkCategoryId(db, item.category_id, context);
+    // Any-one-of alternatives: every option pair must exist in the catalog —
+    // its subcategory under the line's category, its work type under that
+    // subcategory. A pair shares the line's measurement; it never brings one.
+    for (const pair of item.option_pairs || []) {
+        const pairSubcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
+        if (!pairSubcategory) {
+            fail(context, `Line "${item.title}" references a missing option Work Subcategory.`);
+            continue;
+        }
+        if (category && pairSubcategory.category_id !== category.id) {
+            fail(context, `Line "${item.title}" option "${pairSubcategory.name}" conflicts with its Work Category.`);
+        }
+        if (pair.work_type_id && !workTypesForSubcategory(pairSubcategory).some((row) => row.id === pair.work_type_id)) {
+            fail(context, `Line "${item.title}" option work type does not belong to ${pairSubcategory.name}.`);
+        }
+    }
     // Work Required Article (scoped material) link is only mandatory when the line is tied to a Work Required scope or a variant.
     // Free-form catalog lines (article picked from the master, no scope) are allowed for flexibility — they are linked loosely via article_id only.
     if (item.work_required_article_id) {

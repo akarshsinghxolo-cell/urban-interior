@@ -186,6 +186,11 @@ export interface LineItem {
     // when height is empty, e.g. roof railings); editable for doors/openings.
     subcategory_id?: ID;
     work_type_id?: ID;
+    // Alternatives measured by this ONE item — the customer takes any one of
+    // them ("Toughened Glass · Standard / SS · Standard / WPC · Standard").
+    // Pair 0 is the primary and mirrors subcategory_id + work_type_id; the
+    // item's quantity/rate/amount are counted once, never once per option.
+    option_pairs?: Array<{ subcategory_id: ID; work_type_id?: ID }>;
     length_ft?: number;
     breadth_ft?: number;
     height_ft?: number;

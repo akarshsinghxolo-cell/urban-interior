@@ -1,7 +1,7 @@
 import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
-import { reconcileWorkRequiredSelection, seedDetailedAreaLines, workRequiredDisplayTitle } from "../src/lib/rdash/work-types";
+import { itemOptionPairs, itemScopeKeys, mergeExplodedOptionItems, reconcileWorkRequiredSelection, seedDetailedAreaLines, workRequiredDisplayTitle } from "../src/lib/rdash/work-types";
 
 const source = async (path: string) => testFile(path).text();
 
@@ -151,25 +151,50 @@ describe("Detailed-area seed derivation + selection reconciliation (annotation A
     structured_items: [],
   } as any;
 
-  test("seeds cover every (area × work type) of every site Work Required", () => {
+  test("one seed per (Work Required × area) carrying the row's alternatives as option_pairs", () => {
     const seeds = seedDetailedAreaLines({ siteWorks: [railingWork, upvcWork], workSubcategories });
-    // Rooftop opens with the railing work (both tier-qualified types) AND the
-    // UPVC work — annotation C's "2 works" instead of an empty group.
+    // ONE rooftop row for the railing decision — "Toughened Glass Railing ·
+    // Standard / SS Railing · Standard" as any-one-of alternatives measured
+    // once — plus the UPVC work per area (annotation A/B).
     expect(seeds.map((seed) => [seed.area_id, seed.subcategory_id, seed.work_type_id])).toEqual([
       ["area-rooftop", "sub-tgr", "wt-sub-tgr-std"],
+      ["area-rooftop", "sub-upvc", "wt-sub-upvc-std"],
+      ["area-kitchen", "sub-upvc", "wt-sub-upvc-std"],
+    ]);
+    // The railing seed holds BOTH alternatives; single-option seeds carry none.
+    expect(seeds[0].option_pairs).toEqual([
+      { subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+      { subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" },
+    ]);
+    expect(seeds[1].option_pairs).toBeUndefined();
+    // Railing plans running feet; UPVC plans the wall area.
+    expect(seeds[0].measure).toBe("length");
+    expect(seeds[1].measure).toBe("wall");
+  });
+
+  test("already captured scopes drop out of a seed's options, not the whole seed", () => {
+    const captured: any = { ...railingWork, structured_items: [{ id: "li-1", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }] };
+    const seeds = seedDetailedAreaLines({ siteWorks: [captured, upvcWork], workSubcategories });
+    // The captured Glass pair no longer seeds; the SS alternative survives
+    // inside the same grouped seed; fully-captured UPVC kitchen does not seed.
+    expect(seeds.map((seed) => [seed.area_id, seed.subcategory_id, seed.work_type_id])).toEqual([
       ["area-rooftop", "sub-ssr", "wt-sub-ssr-std"],
       ["area-rooftop", "sub-upvc", "wt-sub-upvc-std"],
       ["area-kitchen", "sub-upvc", "wt-sub-upvc-std"],
     ]);
-    // Railing plans running feet; UPVC plans the wall area.
-    expect(seeds[0].measure).toBe("length");
-    expect(seeds[2].measure).toBe("wall");
+    expect(seeds[0].option_pairs).toBeUndefined();
   });
 
-  test("already captured scopes are not seeded again", () => {
+  test("fully captured scopes seed nothing at all", () => {
     const captured: any = { ...upvcWork, structured_items: [{ id: "li-1", area_id: "area-kitchen", subcategory_id: "sub-upvc", work_type_id: "wt-sub-upvc-std" }] };
     const seeds = seedDetailedAreaLines({ siteWorks: [railingWork, captured], workSubcategories });
-    expect(seeds.map((seed) => seed.area_id)).toEqual(["area-rooftop", "area-rooftop", "area-rooftop"]);
+    expect(seeds.map((seed) => seed.area_id)).toEqual(["area-rooftop", "area-rooftop"]);
+  });
+
+  test("captured items that already carry option_pairs suppress every option's scope", () => {
+    const captured: any = { ...railingWork, structured_items: [{ id: "li-1", area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std", option_pairs: [{ subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }, { subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" }] }] };
+    const seeds = seedDetailedAreaLines({ siteWorks: [captured], workSubcategories });
+    expect(seeds).toEqual([]);
   });
 
   test("deleting a planned seed un-ticks its type and subcategory, clamped at the last tick", () => {
@@ -239,6 +264,64 @@ describe("Detailed-area seed derivation + selection reconciliation (annotation A
       .toBe("UPVC Sliding Windows · Standard");
     expect(workRequiredDisplayTitle(workSubcategories, { title: "Legacy row", work_subcategory_ids: [], work_type_ids: [] }))
       .toBe("Legacy row");
+  });
+
+  test("merged alternatives: exploded rows heal into one item, priced once, with the joined title", () => {
+    // The exact Kunal Ji Rooftop shape before the alternatives model: one
+    // capture call exploded the decision into one item per railing type.
+    const exploded = [
+      { id: "li-tgr", title: "Rooftop · Toughened Glass Railing", area_id: "area-rooftop", area_name: "Rooftop", category_id: "cat-railing", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std", quantity: 10, unit_id: "rft", rate: 0, amount: 0 },
+      { id: "li-ssr", title: "Rooftop · SS Railing", area_id: "area-rooftop", area_name: "Rooftop", category_id: "cat-railing", subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std", quantity: 10, unit_id: "rft", rate: 0, amount: 0 },
+    ] as any;
+    const healed = mergeExplodedOptionItems({ workSubcategories, items: exploded });
+    expect(healed).toHaveLength(1);
+    expect(healed[0].id).toBe("li-tgr");
+    expect(healed[0].option_pairs).toEqual([
+      { subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+      { subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" },
+    ]);
+    expect(healed[0].title).toBe("Rooftop · Toughened Glass Railing · Standard / SS Railing · Standard");
+    // Idempotent: a second pass changes nothing.
+    expect(mergeExplodedOptionItems({ workSubcategories, items: healed })).toEqual(healed);
+    // Different measurement or category → never merged (distinct decisions).
+    const distinct = mergeExplodedOptionItems({ workSubcategories, items: [
+      { ...exploded[0], id: "li-a" },
+      { ...exploded[1], id: "li-b", quantity: 12 },
+      { ...exploded[1], id: "li-c", category_id: "cat-windows" },
+    ] as any });
+    expect(distinct).toHaveLength(3);
+  });
+
+  test("itemOptionPairs / itemScopeKeys expose every pair an item covers", () => {
+    const single = { subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" } as any;
+    expect(itemOptionPairs(single)).toEqual([{ subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" }]);
+    const merged = { subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std", option_pairs: [
+      { subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+      { subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" },
+    ] } as any;
+    expect(itemOptionPairs(merged)).toHaveLength(2);
+    expect(itemScopeKeys({ ...merged, area_id: "area-rooftop" })).toEqual([
+      "area-rooftop::sub-tgr::wt-sub-tgr-std",
+      "area-rooftop::sub-ssr::wt-sub-ssr-std",
+    ]);
+  });
+
+  test("reconcile keeps a merged item's options ticked and captures quote-safe ticks", () => {
+    // A merged item owns every option's scope: the reconcile must not re-seed
+    // the alternatives it already covers.
+    const rec = reconcileWorkRequiredSelection({
+      workSubcategories,
+      work: railingWork,
+      keptItems: [],
+      freshItems: [{ area_id: "area-rooftop", subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std", option_pairs: [
+        { subcategory_id: "sub-tgr", work_type_id: "wt-sub-tgr-std" },
+        { subcategory_id: "sub-ssr", work_type_id: "wt-sub-ssr-std" },
+      ] } as any],
+      droppedSelections: [],
+    });
+    expect(rec.work_type_ids).toEqual(["wt-sub-tgr-std", "wt-sub-ssr-std"]);
+    expect(rec.work_subcategory_ids).toEqual(["sub-tgr", "sub-ssr"]);
+    expect(rec.area_ids).toEqual(["area-rooftop"]);
   });
 
   test("a linked Measurement Revision pins its area — removing the last captured item there cannot un-tick it", () => {

@@ -241,13 +241,16 @@ export function measuredQuantity(
 // ── Capture-view selection sync ──────────────────────────────────────────────
 
 /** One planned work line the capture view derives from a Work Required's
- *  ticked selection (not yet measured or captured). */
+ *  ticked selection (not yet measured or captured). One seed per (Work
+ *  Required × area): option_pairs carries the row's alternative (subcategory
+ *  · work type) pairs — the customer takes any ONE of them, measured once. */
 export type DetailedSeedLine = {
   work_required_id: string;
   area_id: string;
   category_id?: string;
   subcategory_id: string;
   work_type_id?: string;
+  option_pairs?: Array<{ subcategory_id: string; work_type_id?: string }>;
   measure: WorkMeasureBasis;
   walls: 1 | 2;
 };
@@ -266,13 +269,87 @@ type SeedSourceWork = Pick<WorkRequired, "id" | "work_category_id" | "work_subca
 const scopeKeyOf = (areaId: string | undefined, subcategoryId: string | undefined, workTypeId: string | undefined) =>
   [areaId || "", subcategoryId || "", workTypeId || ""].join("::");
 
+/** Every (subcategory, work type) pair an item covers: its option list when it
+ *  holds alternatives (any-one-of), else the single primary pair. Pair 0 of a
+ *  non-empty option_pairs always mirrors subcategory_id + work_type_id. */
+export function itemOptionPairs(item: Pick<LineItem, "subcategory_id" | "work_type_id" | "option_pairs">): Array<{ subcategory_id?: ID; work_type_id?: ID }> {
+  if (item.option_pairs?.length) return item.option_pairs;
+  return [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }];
+}
+
+/** Scope keys of every pair an item covers — the single dedup master shared
+ *  by the store, the capture dialog and the reconciliation, so a merged
+ *  alternatives item suppresses seeding each of its options exactly like the
+ *  old one-item-per-type rows did. */
+export function itemScopeKeys(item: Pick<LineItem, "area_id" | "subcategory_id" | "work_type_id" | "option_pairs">): string[] {
+  return itemOptionPairs(item).map((pair) => scopeKeyOf(item.area_id, pair.subcategory_id, pair.work_type_id));
+}
+
+/** "Subcategory · Work type" labels joined with " / " — the same shape the
+ *  Work Required rows display, reused for merged captured items' titles. */
+export function capturedPairsTitle(workSubcategories: WorkSubcategory[], pairs: Array<{ subcategory_id?: ID; work_type_id?: ID }>): string {
+  const label = (pair: { subcategory_id?: ID; work_type_id?: ID }) => {
+    const subcategory = workSubcategories.find((row) => row.id === pair.subcategory_id);
+    if (!subcategory) return "";
+    const workType = pair.work_type_id ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id) : undefined;
+    return `${subcategory.name}${workType ? ` · ${workType.name}` : ""}`;
+  };
+  return pairs.map(label).filter(Boolean).join(" / ");
+}
+
+/** One-time healer for rows captured before alternatives lived on one item:
+ *  a capture used to explode an any-one-of decision into one item per
+ *  (subcategory · work type), all sharing the same measurement. Such twins
+ *  (same area + category + unit + quantity + dimensions inside ONE row)
+ *  merge into the first item — its option list grows, the duplicates vanish,
+ *  and the quotation stops counting the same running foot once per option. */
+export function mergeExplodedOptionItems(input: {
+  workSubcategories: WorkSubcategory[];
+  items: LineItem[];
+}): LineItem[] {
+  const keyOf = (item: LineItem) =>
+    [item.area_id || "", item.category_id || "", item.unit_id || "", item.quantity ?? "", item.length_ft ?? "", item.breadth_ft ?? "", item.height_ft ?? ""].join("::");
+  const merged: LineItem[] = [];
+  const hostIndexByKey = new Map<string, number>();
+  const pendingPairsByHost = new Map<number, Map<string, { subcategory_id: ID; work_type_id?: ID }>>();
+  for (const item of input.items) {
+    const key = item.option_pairs?.length ? `self-${merged.length}` : keyOf(item);
+    const hostIndex = item.option_pairs?.length ? undefined : hostIndexByKey.get(key);
+    if (hostIndex === undefined) {
+      hostIndexByKey.set(key, merged.length);
+      merged.push({ ...item });
+      continue;
+    }
+    let pending = pendingPairsByHost.get(hostIndex);
+    if (!pending) {
+      pending = new Map(itemOptionPairs(merged[hostIndex]).map((own) => [`${own.subcategory_id}::${own.work_type_id || ""}`, own as { subcategory_id: ID; work_type_id?: ID }]));
+      pendingPairsByHost.set(hostIndex, pending);
+    }
+    for (const pair of itemOptionPairs(item)) {
+      if (!pair.subcategory_id) continue;
+      const pairKey = `${pair.subcategory_id}::${pair.work_type_id || ""}`;
+      if (!pending.has(pairKey)) pending.set(pairKey, pair as { subcategory_id: ID; work_type_id?: ID });
+    }
+  }
+  for (const [hostIndex, pending] of pendingPairsByHost) {
+    const pairs = Array.from(pending.values());
+    if (pairs.length <= 1) continue;
+    const host = merged[hostIndex];
+    host.option_pairs = pairs;
+    const areaName = host.area_name || "";
+    if (areaName) host.title = `${areaName} · ${capturedPairsTitle(input.workSubcategories, pairs)}`;
+  }
+  return merged;
+}
+
 /**
  * Derive the capture view's planned lines from every site Work Required's
- * ticked selection: one line per (area × work type) that has no captured line
- * item yet, across ALL of the site's Work Required rows. This is what makes an
- * area group open with "Toughened Glass Railing · Standard / SS Railing ·
- * Standard / …" ready to measure instead of an empty state — the capture view
- * is the per-area mirror of the Add/Edit form.
+ * ticked selection: ONE line per (Work Required × area) whose option_pairs
+ * carry all not-yet-captured (subcategory · work type) alternatives, across
+ * ALL of the site's Work Required rows. This is what makes an area group open
+ * with "Toughened Glass Railing · Standard / SS Railing · Standard / …"
+ * ready to measure once instead of an empty state — the capture view is the
+ * per-area mirror of the Add/Edit form.
  */
 export function seedDetailedAreaLines(input: {
   siteWorks: SeedSourceWork[];
@@ -282,7 +359,7 @@ export function seedDetailedAreaLines(input: {
   for (const work of input.siteWorks) {
     for (const item of work.structured_items || []) {
       if (!item.area_id) continue;
-      captured.add(scopeKeyOf(item.area_id, item.subcategory_id, item.work_type_id));
+      for (const key of itemScopeKeys(item)) captured.add(key);
     }
   }
   const declared = new Set(input.workSubcategories.map((row) => row.id));
@@ -307,21 +384,30 @@ export function seedDetailedAreaLines(input: {
       }
     }
     for (const areaId of work.area_ids || []) {
-      for (const { subcategory, workTypeId } of planned) {
-        const seedTypeId = workTypeId || primaryWorkType(subcategory).id;
-        const key = scopeKeyOf(areaId, subcategory.id, seedTypeId);
-        if (captured.has(key) || seen.has(key)) continue;
-        seen.add(key);
-        seeds.push({
-          work_required_id: work.id,
-          area_id: areaId,
-          category_id: work.work_category_id || subcategory.category_id,
-          subcategory_id: subcategory.id,
-          work_type_id: seedTypeId,
-          measure: defaultMeasureBasisFor(subcategory.name),
-          walls: 1,
+      // ONE seed per (Work Required × area): the row's planned pairs become
+      // the seed's alternatives — "Toughened Glass · Standard / SS · Standard
+      // / WPC · Standard" — measured ONCE, because the customer takes any one
+      // of them. Already-captured pairs drop out of the option list.
+      const options = planned
+        .map(({ subcategory, workTypeId }) => ({ subcategory_id: subcategory.id, work_type_id: workTypeId || primaryWorkType(subcategory).id }))
+        .filter((pair) => {
+          const key = scopeKeyOf(areaId, pair.subcategory_id, pair.work_type_id);
+          if (captured.has(key) || seen.has(key)) return false;
+          seen.add(key);
+          return true;
         });
-      }
+      if (!options.length) continue;
+      const primarySubcategory = input.workSubcategories.find((row) => row.id === options[0].subcategory_id)!;
+      seeds.push({
+        work_required_id: work.id,
+        area_id: areaId,
+        category_id: work.work_category_id || primarySubcategory.category_id,
+        subcategory_id: options[0].subcategory_id,
+        work_type_id: options[0].work_type_id,
+        option_pairs: options.length > 1 ? options : undefined,
+        measure: defaultMeasureBasisFor(primarySubcategory.name),
+        walls: 1,
+      });
     }
   }
   return seeds;
@@ -352,22 +438,39 @@ export function reconcileWorkRequiredSelection(input: {
   const { work, keptItems, freshItems, droppedSelections } = input;
   const keptAsItems = keptItems as LineItem[];
   const items = [...keptItems, ...freshItems];
-  const itemScopes = new Set(items.map((item) => scopeKeyOf(item.area_id, item.subcategory_id, item.work_type_id)));
+  // Alternatives-aware scope master: a merged item owns a scope per option.
+  const itemScopes = new Set<string>();
+  const itemSubcategoryIds = new Set<string>();
+  const itemWorkTypeIds = new Set<string>();
+  const itemAreaIds = new Set<string>();
+  for (const item of items) {
+    for (const key of itemScopeKeys(item)) itemScopes.add(key);
+    for (const pair of itemOptionPairs(item)) {
+      if (pair.subcategory_id) itemSubcategoryIds.add(pair.subcategory_id);
+      if (pair.work_type_id) itemWorkTypeIds.add(pair.work_type_id);
+    }
+    if (item.area_id) itemAreaIds.add(item.area_id);
+  }
   const droppedScopes = new Set(droppedSelections.map((row) => scopeKeyOf(row.area_id, row.subcategory_id, row.work_type_id)));
   // Surviving seeds: the declared selection re-derived against the KEPT items
   // only (a removed item's scope must not suppress its seed), minus the
-  // scopes the fresh captures now own, minus the seeds the user deleted.
+  // scopes the fresh captures now own, minus the seeds the user deleted —
+  // resolved PER OPTION, so a grouped seed keeps its not-yet-captured
+  // alternatives and dies only when its last option is captured or dropped.
   const survivingSeeds = seedDetailedAreaLines({
     siteWorks: [{ ...work, structured_items: keptAsItems }],
     workSubcategories: input.workSubcategories,
-  }).filter((seed) => !itemScopes.has(scopeKeyOf(seed.area_id, seed.subcategory_id, seed.work_type_id))
-    && !droppedScopes.has(scopeKeyOf(seed.area_id, seed.subcategory_id, seed.work_type_id)));
-  const seedSubcategoryIds = new Set(survivingSeeds.map((seed) => seed.subcategory_id));
-  const seedWorkTypeIds = new Set(survivingSeeds.map((seed) => seed.work_type_id).filter((id): id is string => Boolean(id)));
+  }).flatMap((seed) => {
+    const remaining = itemOptionPairs(seed)
+      .filter((pair): pair is { subcategory_id: ID; work_type_id?: ID } => Boolean(pair.subcategory_id)
+        && !itemScopes.has(scopeKeyOf(seed.area_id, pair.subcategory_id, pair.work_type_id))
+        && !droppedScopes.has(scopeKeyOf(seed.area_id, pair.subcategory_id, pair.work_type_id)));
+    if (!remaining.length) return [];
+    return [{ ...seed, subcategory_id: remaining[0].subcategory_id, work_type_id: remaining[0].work_type_id, option_pairs: remaining.length > 1 ? remaining : undefined }];
+  });
+  const seedSubcategoryIds = new Set(survivingSeeds.flatMap((seed) => itemOptionPairs(seed).map((pair) => pair.subcategory_id).filter((id): id is string => Boolean(id))));
+  const seedWorkTypeIds = new Set(survivingSeeds.flatMap((seed) => itemOptionPairs(seed).map((pair) => pair.work_type_id).filter((id): id is string => Boolean(id))));
   const seedAreaIds = new Set(survivingSeeds.map((seed) => seed.area_id));
-  const itemSubcategoryIds = new Set(items.map((item) => item.subcategory_id).filter((id): id is string => Boolean(id)));
-  const itemWorkTypeIds = new Set(items.map((item) => item.work_type_id).filter((id): id is string => Boolean(id)));
-  const itemAreaIds = new Set(items.map((item) => item.area_id).filter((id): id is string => Boolean(id)));
   // Areas pinned by downstream records: removing the last captured item in a
   // measured (or quotation-covered) area must keep the area ticked, otherwise
   // the commit fails validation server-side and the capture reverts.

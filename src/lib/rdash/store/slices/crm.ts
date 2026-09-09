@@ -20,11 +20,11 @@
  * `../../customer-identity`. The shared `genId` / `nowIso` / `businessDate`
  * helpers were already in `../helpers`.
  */
-import type { Customer, Site, Area, LineItem } from "../../types";
+import type { Customer, ID, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
-import { primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
+import { itemOptionPairs, primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
 import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
@@ -758,7 +758,12 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 .filter((area: any) => area.site_id === workRequired.site_id)
                 .map((area: any) => [normaliseAreaName(area.name), area.id]));
             const lineKeys = new Set<string>();
-            const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "work_type_id" | "variant_id" | "unit_id">) => [item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::");
+            const scopeKey = (item: Pick<LineItem, "area_id" | "category_id" | "work_required_article_id" | "subcategory_id" | "work_type_id" | "variant_id" | "unit_id" | "option_pairs">, pair?: { subcategory_id?: ID; work_type_id?: ID }) => {
+                // Alternatives-aware: a merged item registers a scope per option
+                // pair, exactly like the old one-item-per-type rows did.
+                const pairs = pair ? [pair] : itemOptionPairs(item);
+                return pairs.map((row) => [item.area_id || "", item.category_id || "", item.work_required_article_id || row.subcategory_id || "", row.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::"));
+            };
             // Detailed-area capture is the per-area master for the whole Site:
             // lines may target ANY Work Required of the site (seeded lines carry
             // their source row; fresh lines resolve by category or create one),
@@ -769,7 +774,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             for (const row of siteWorks) {
                 const kept = (row.structured_items || []).filter((item: any) => !removedItemIds.has(item.id));
                 keptItemsByWork.set(row.id, kept);
-                kept.forEach((item: any) => existingKeys.add(scopeKey(item)));
+                kept.forEach((item: any) => scopeKey(item).forEach((key) => existingKeys.add(key)));
             }
             // A line without an explicit target joins the site row that already
             // declares its category (preferring one with the subcategory ticked);
@@ -833,6 +838,27 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 if (line.work_type_id && !workType) {
                     throw new Error(`${context}: line ${index + 1} work type does not belong to the selected Subcategory.`);
                 }
+                // Any-one-of alternatives (annotation A/B): every extra
+                // (subcategory · work type) pair must stay inside the line's
+                // category, and each work type inside its own subcategory.
+                const primaryPair = { subcategory_id: subcategory.id, work_type_id: workType?.id } as { subcategory_id: ID; work_type_id?: ID };
+                const optionPairsRaw = (line.option_pairs || []).filter((pair: any) => pair && pair.subcategory_id);
+                const optionPairs: Array<{ subcategory_id: ID; work_type_id?: ID }> = [];
+                for (const pair of optionPairsRaw) {
+                    const pairSubcategory = assertWorkSubcategoryId(state.db, pair.subcategory_id, context)!;
+                    if (pairSubcategory.category_id !== category.id) {
+                        throw new Error(`${context}: line ${index + 1} has an option outside its selected Category.`);
+                    }
+                    const pairWorkType = pair.work_type_id
+                        ? workTypesForSubcategory(pairSubcategory).find((row) => row.id === pair.work_type_id)
+                        : undefined;
+                    if (pair.work_type_id && !pairWorkType) {
+                        throw new Error(`${context}: line ${index + 1} option work type does not belong to its Subcategory.`);
+                    }
+                    const resolved = { subcategory_id: pairSubcategory.id, work_type_id: pairWorkType?.id };
+                    if (resolved.subcategory_id !== primaryPair.subcategory_id || (resolved.work_type_id || "") !== (primaryPair.work_type_id || "")) optionPairs.push(resolved);
+                }
+                const allPairs = [primaryPair, ...optionPairs];
                 const target = targetForLine(line);
                 // Detailed-area capture: Article/Variant are optional (dimensions replaced
                 // catalog picks). Unit is derived from the dimensions: wall height present
@@ -902,15 +928,32 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         areaId = area.id;
                     }
                 }
-                const duplicateKey = [areaId, category.id, mapping?.id || subcategory.id, workType?.id || "", variant?.id || "", unit?.id || ""].join("::");
-                if (lineKeys.has(duplicateKey) || existingKeys.has(duplicateKey)) {
+                const duplicatePrimaryScope = [areaId, category.id, mapping?.id || subcategory.id, workType?.id || "", variant?.id || "", unit?.id || ""].join("::");
+                // Duplicate detection is per option pair: an alternatives line
+                // collides when ANY of its pairs already exists as a scope.
+                const pairScopeIds = allPairs.map((pair) => {
+                    const isPrimary = pair.subcategory_id === primaryPair.subcategory_id && (pair.work_type_id || "") === (primaryPair.work_type_id || "");
+                    return [areaId, category.id, isPrimary ? (mapping?.id || subcategory.id) : pair.subcategory_id, pair.work_type_id || "", variant?.id || "", unit?.id || ""].join("::");
+                });
+                if (lineKeys.has(duplicatePrimaryScope) || pairScopeIds.some((key) => lineKeys.has(key) || existingKeys.has(key))) {
                     throw new Error(`${context}: line ${index + 1} duplicates an existing detailed area line. Edit the existing line instead.`);
                 }
-                lineKeys.add(duplicateKey);
+                lineKeys.add(duplicatePrimaryScope);
+                pairScopeIds.forEach((key) => lineKeys.add(key));
                 const primaryRate = workType || primaryWorkType(subcategory);
                 const contractorAverage = contractorWorkTypeAverages(state.db.master.contractorRates, subcategory.id, primaryRate.id);
                 const rate = mapping?.reference_rate || article?.base_rate || contractorAverage.total_rate || 0;
-                const title = `${area.name} · ${article?.name || subcategory.name}${workType && workType.name !== "Standard" ? ` · ${workType.name}` : ""}`;
+                // Merged alternatives share the joined tier-qualified title (the
+                // Work Required row's own display shape); single-pair lines keep
+                // the legacy title ("Standard" omitted) so nothing else churns.
+                const pairLabel = (pair: { subcategory_id: ID; work_type_id?: ID }) => {
+                    const pairSubcategory = state.db.master.workSubcategories.find((row: any) => row.id === pair.subcategory_id);
+                    const pairWorkType = pair.work_type_id && pairSubcategory ? workTypesForSubcategory(pairSubcategory).find((row) => row.id === pair.work_type_id) : undefined;
+                    return `${pairSubcategory?.name || ""}${pairWorkType ? ` · ${pairWorkType.name}` : ""}`;
+                };
+                const title = allPairs.length > 1
+                    ? `${area.name} · ${allPairs.map(pairLabel).join(" / ")}`
+                    : `${area.name} · ${article?.name || subcategory.name}${workType && workType.name !== "Standard" ? ` · ${workType.name}` : ""}`;
                 return {
                     id: genId("req-line"),
                     title,
@@ -919,6 +962,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     category_id: category.id,
                     subcategory_id: subcategory.id,
                     work_type_id: workType?.id,
+                    option_pairs: allPairs.length > 1 ? allPairs : undefined,
                     work_required_id: target.id,
                     work_required_article_id: mapping?.id,
                     variant_id: variant?.id,

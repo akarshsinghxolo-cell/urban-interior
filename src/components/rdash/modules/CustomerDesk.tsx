@@ -16,7 +16,7 @@ import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { RecordPaymentDialog } from "../ActionDialogs";
 import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, indiaBusinessDate, workByCustomerFallback, } from "@/lib/rdash/format";
 import { workByCustomer } from "@/lib/rdash/seed";
-import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS, workRequiredDisplayTitle, seedDetailedAreaLines, type RemovedSelection } from "@/lib/rdash/work-types";
+import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS, workRequiredDisplayTitle, seedDetailedAreaLines, itemOptionPairs, type RemovedSelection } from "@/lib/rdash/work-types";
 import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
@@ -1374,12 +1374,11 @@ function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, 
         </div>) }
     </div>);
 }
-// Multi-select work types (screenshot 1): the first pick fills the line, each
-// further pick adds its own work item on the same measurement, so a quotation
-// can put "Round Pipe 304 vs GT 202 vs Square Pipe" side by side — the tier
-// rate shown next to every option is the price difference the customer asked
-// to see. The panel stays open so several types can be ticked in one go.
-function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, onSelect, ariaLabel, }: {
+// Multi-select (annotation C): the first pick fills the line; every further
+// pick joins the SAME measured item as an any-one-of alternative — one row,
+// one measurement, rates compared inside the panel. The panel stays open so
+// several options can be ticked in one go.
+function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, onSelect, ariaLabel, placeholder, }: {
     value?: string;
     groups: Array<{ key: string; items: Array<{ id: string; name: string }> }>;
     ticked: Set<string>;
@@ -1387,6 +1386,7 @@ function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, 
     disabled?: boolean;
     onSelect: (workTypeId: string) => void;
     ariaLabel: string;
+    placeholder?: string;
 }) {
     const [open, setOpen] = React.useState(false);
     const [dropUp, setDropUp] = React.useState(false);
@@ -1410,7 +1410,7 @@ function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, 
         event.stopPropagation(); // close only the panel, not the host dialog
         setOpen(false); } }}>
       <button ref={triggerRef} type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={toggleOpen} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
-        <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || "— select work type —"}</span>
+        <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || placeholder || "— select work type —"}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
       </button>
       {open && (<div role="listbox" aria-label={ariaLabel} className={cn("absolute z-40 max-h-64 w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 shadow-lg rd-scroll", dropUp ? "bottom-full mb-1" : "mt-1")}>
@@ -1419,14 +1419,14 @@ function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, 
               {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
             const isTicked = ticked.has(item.id) || item.id === value;
             const rateLabel = rateLabelFor(item.id);
-            return (<button key={item.id} type="button" role="option" aria-selected={item.id === value} title={isTicked ? "Already a work item here — tick another type to compare it" : "Tick to add as a separate work item and compare its rate"} onClick={() => onSelect(item.id)} className={cn("flex min-h-9 w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent", item.id === value && "bg-primary/10 font-medium")}>
+            return (<button key={item.id} type="button" role="option" aria-selected={item.id === value} title={isTicked ? "Already an option on this item — tick another to add it" : "Tick to add this as an alternative on the same measured item"} onClick={() => onSelect(item.id)} className={cn("flex min-h-9 w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent", item.id === value && "bg-primary/10 font-medium")}>
                   <span aria-hidden="true" className={cn("mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border", isTicked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{isTicked && <Check className="mt-0.5 h-2.5 w-2.5"/>}</span>
                   <span className="min-w-0 flex-1 whitespace-normal break-words">{item.name}</span>
                   {rateLabel && <span className="ml-1 shrink-0 pt-0.5 font-mono text-[10px] text-muted-foreground">{rateLabel}</span>}
                 </button>);
         })}
             </React.Fragment>))}
-          <p className="border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">Tick more work types — each is captured as its own item so the rates can be compared.</p>
+          <p className="border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">Tick more work types — each joins this item as an alternative (any one of them); the measurement is shared and never re-entered.</p>
         </div>) }
     </div>);
 }
@@ -1440,6 +1440,10 @@ type DetailedDraftLine = {
     category_id?: string;
     subcategory_id?: string;
     work_type_id?: string;
+    // Any-one-of alternatives on this ONE measured item (annotation A/B):
+    // pair 0 mirrors subcategory_id + work_type_id. Editing options never
+    // touches the shared measurement (annotation C).
+    option_pairs?: Array<{ subcategory_id: string; work_type_id?: string }>;
     measure: MeasureBasis;
     walls: 1 | 2;
     wall_area: string;
@@ -1575,6 +1579,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 category_id: seed.category_id,
                 subcategory_id: seed.subcategory_id,
                 work_type_id: seed.work_type_id,
+                option_pairs: seed.option_pairs,
                 measure: seed.measure,
                 walls: seed.walls,
                 wall_area: quantity > 0 ? areaStr(quantity) : "",
@@ -1701,6 +1706,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 category_id: item.category_id,
                 subcategory_id: item.subcategory_id,
                 work_type_id: item.work_type_id,
+                option_pairs: item.option_pairs,
                 measure,
                 walls,
                 // The saved quantity was deliberate (maybe hand-adjusted) — it
@@ -1723,41 +1729,60 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
         else if (tries > 0)
             requestAnimationFrame(() => scrollEditDraftIntoView(itemId, tries - 1));
     });
-    // Screenshot 1: ticking an extra work type duplicates the line instead of
-    // replacing it — every ticked type becomes its own item (and its own rate)
-    // so the customer can compare the options side by side.
-    const cloneLineForWorkType = (groupKey: string, line: DetailedDraftLine, workTypeId: string) => setGroups((current) => current.map((group) => {
+    // Screenshot 1 reworked into any-one-of alternatives (annotations B/C):
+    // ticking another (subcategory ·) work type adds an OPTION on this same
+    // measured item — never a second row and never a second form. The customer
+    // compares tier rates inside the picker; the item is priced once.
+    const linePairs = (line: DetailedDraftLine): Array<{ subcategory_id: string; work_type_id?: string }> => {
+        if (line.option_pairs?.length) return line.option_pairs;
+        return line.subcategory_id ? [{ subcategory_id: line.subcategory_id, work_type_id: line.work_type_id }] : [];
+    };
+    const addLineOption = (groupKey: string, lineKey: string, subcategoryId: string | undefined, workTypeId: string | undefined) => setGroups((current) => current.map((group) => {
         if (group.key !== groupKey) return group;
-        const dims = groupDims(group);
-        const manual = line.autoQuantity === false && Number(line.wall_area) > 0;
-        const { quantity } = measuredQuantity(line.measure, dims, line.walls);
-        return {
-            ...group,
-            open: true,
-            lines: [...group.lines, {
+        return { ...group, lines: group.lines.map((line) => {
+            if (line.key !== lineKey || !line.subcategory_id) return line;
+            const pair = { subcategory_id: subcategoryId || line.subcategory_id, work_type_id: workTypeId };
+            const pairs = [...linePairs(line), pair];
+            const unique = new Map(pairs.map((row) => [`${row.subcategory_id}::${row.work_type_id || ""}`, row]));
+            const mergedPairs = Array.from(unique.values());
+            return { ...line, option_pairs: mergedPairs.length > 1 ? mergedPairs : undefined };
+        }) };
+    }));
+    const removeLineOption = (groupKey: string, lineKey: string, index: number) => setGroups((current) => current.map((group) => {
+        if (group.key !== groupKey) return group;
+        return { ...group, lines: group.lines.map((line) => {
+            if (line.key !== lineKey) return line;
+            const pairs = linePairs(line).filter((_, pairIndex) => pairIndex !== index);
+            if (!pairs.length || !pairs[0].subcategory_id) return line;
+            const [primary, ...rest] = pairs;
+            return {
                 ...line,
-                key: `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-                work_type_id: workTypeId,
-                wall_area: manual ? line.wall_area : quantity > 0 ? areaStr(quantity) : "",
-                autoQuantity: !manual,
-                seeded: false,
-                editOfItemId: undefined,
-            }],
-        };
+                subcategory_id: primary.subcategory_id,
+                work_type_id: primary.work_type_id,
+                measure: measureHintFor(primary.subcategory_id),
+                option_pairs: rest.length ? pairs as Array<{ subcategory_id: string; work_type_id?: string }> : undefined,
+            };
+        }) };
     }));
     const removeLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => {
         if (group.key !== groupKey) return group;
         const dropped = group.lines.find((line) => line.key === lineKey);
         // Deleting a planned (seeded) line is a scope decision: the Add/Edit form
-        // must un-tick it on save, so remember it as a removed selection.
-        const removedSeeds = dropped?.seeded && dropped.subcategory_id && group.area_id
-            ? [...group.removedSeeds.filter((row) => !(row.subcategory_id === dropped.subcategory_id && row.work_type_id === dropped.work_type_id)), {
-                work_required_id: dropped.target_work_required_id || group.key,
-                area_id: group.area_id,
-                subcategory_id: dropped.subcategory_id,
-                work_type_id: dropped.work_type_id,
-            }]
-            : group.removedSeeds;
+        // must un-tick it on save, so remember it as a removed selection — one
+        // per option pair for grouped seeds (the whole any-one-of row goes).
+        let removedSeeds = group.removedSeeds;
+        if (dropped?.seeded && dropped.subcategory_id && group.area_id) {
+            const areaId: string = group.area_id;
+            removedSeeds = [
+                ...removedSeeds.filter((row) => !(row.subcategory_id === dropped.subcategory_id && row.work_type_id === dropped.work_type_id)),
+                ...linePairs(dropped).map((pair) => ({
+                    work_required_id: dropped.target_work_required_id || group.key,
+                    area_id: areaId,
+                    subcategory_id: pair.subcategory_id!,
+                    work_type_id: pair.work_type_id,
+                })),
+            ];
+        }
         return { ...group, removedSeeds, lines: group.lines.filter((line) => line.key !== lineKey) };
     }));
     const addGroup = () => setGroups((current) => [...current.map((group) => ({ ...group, open: false })), {
@@ -1784,12 +1809,12 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             .flatMap((row: any) => (row.structured_items || []).filter((item: any) => item.area_id === group.area_id).map((item: any) => item.id));
         const droppedSeeds = group.lines
             .filter((line) => line.seeded && line.subcategory_id)
-            .map((line) => ({
+            .flatMap((line) => linePairs(line).map((pair) => ({
                 work_required_id: line.target_work_required_id || groupKey,
                 area_id: group.area_id!,
-                subcategory_id: line.subcategory_id!,
-                work_type_id: line.work_type_id,
-            }));
+                subcategory_id: pair.subcategory_id!,
+                work_type_id: pair.work_type_id,
+            })));
         return [{ ...group, lines: [], removedSeeds: droppedSeeds, removedExistingIds: Array.from(new Set([
             ...group.removedExistingIds,
             ...siteItems,
@@ -1829,7 +1854,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 // An item loaded into an edit line is represented by that draft
                 // — keeping its key here would flag the very edit as duplicate.
                 .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id) || group.lines.some((line) => line.editOfItemId === item.id)))
-                .forEach((item) => keys.add([item.area_id || "", item.category_id || "", item.work_required_article_id || item.subcategory_id || "", item.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::"))));
+                .forEach((item) => itemOptionPairs(item).forEach((pair) => keys.add([item.area_id || "", item.category_id || "", item.work_required_article_id || pair.subcategory_id || "", pair.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::")))));
         return keys;
     }, [db.workRequired, groups, site.id]);
     const groupIssues = (group: DetailedAreaGroup): string | undefined => {
@@ -1856,9 +1881,11 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
             group.lines.forEach((line) => {
                 const { unit } = measuredQuantity(line.measure, dims, line.walls);
                 const areaPart = group.area_id || (group.create_area && group.area_name ? `new:${normalizeAreaName(group.area_name)}` : "");
-                const key = [areaPart, line.category_id || "", line.subcategory_id || "", line.work_type_id || "", "", unit].join("::");
-                if (areaPart && (seen.has(key) || existingScopeKeys.has(key))) duplicates.add(line.key);
-                if (areaPart) seen.add(key);
+                // Alternatives-aware: every (subcategory · work type) option on
+                // the line registers its own duplicate scope.
+                const keysForLine = linePairs(line).map((pair) => [areaPart, line.category_id || "", pair.subcategory_id || "", pair.work_type_id || "", "", unit].join("::"));
+                if (areaPart && (keysForLine.some((key) => seen.has(key) || existingScopeKeys.has(key)))) duplicates.add(line.key);
+                keysForLine.forEach((key) => areaPart && seen.add(key));
             });
         });
         return duplicates;
@@ -1960,14 +1987,14 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
               </div>
               <div>
                 <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work type</label>
-                {/* Multi-select (screenshot 1): the first pick fills this line;
-                    every further pick adds its own item so tier rates compare. */}
+                {/* First pick fills the line; further picks become any-one-of
+                    options on the same measured item (annotation C). */}
                 <WorkTypeMultiDropdown value={line.work_type_id} ariaLabel="Work type" disabled={!line.subcategory_id} ticked={workTypeTicks} rateLabelFor={(workTypeId) => {
                     const tierRate = rateFor(line.subcategory_id, workTypeId);
                     return tierRate ? `≈ ${formatINR(tierRate)}/${line.measure === "length" ? "rft" : "sqft"}` : undefined;
                 }} onSelect={(workTypeId) => {
                     if (!line.work_type_id || workTypeId === line.work_type_id) updateLine(group.key, line.key, { work_type_id: workTypeId || undefined });
-                    else cloneLineForWorkType(group.key, line, workTypeId);
+                    else addLineOption(group.key, line.key, line.subcategory_id, workTypeId);
                 }} groups={workTypeOptions.length ? [
                     { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id) || option.id === line.work_type_id) },
                     { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id) && option.id !== line.work_type_id) },
@@ -1992,6 +2019,41 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
               </div>
               <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} placeholder="Customer preference, finish, doors/openings or scope note" className="h-8 text-xs"/></div>
             </div>
+            {(() => {
+                // Annotation C: the item's any-one-of alternatives, editable
+                // right here — add a subcategory or a work type without ever
+                // re-entering the shared measurement (sqft / rft / area).
+                const pairs = linePairs(line);
+                if (!pairs.length) return null;
+                const primarySubcategory = db.master.workSubcategories.find((row) => row.id === pairs[0].subcategory_id);
+                const categoryId = line.category_id || primarySubcategory?.category_id;
+                const categorySubcategories = db.master.workSubcategories.filter((row) => row.category_id === categoryId);
+                const tickedPairs = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
+                const pairLabel = (pair: { subcategory_id?: string; work_type_id?: string }) => {
+                    const pairSubcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
+                    const pairWorkType = pair.work_type_id && pairSubcategory ? workTypesForSubcategory(pairSubcategory).find((row) => row.id === pair.work_type_id) : undefined;
+                    return `${pairSubcategory?.name || "?"}${pairWorkType ? ` · ${pairWorkType.name}` : ""}`;
+                };
+                return (<div className="mt-2 rounded-md border border-border bg-muted/20 px-2 py-2">
+                  <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Options on this item — customer takes any one</p>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {pairs.map((pair, pairIndex) => (<span key={`${pair.subcategory_id}::${pair.work_type_id || ""}`} className={cn("inline-flex min-w-0 max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]", pairIndex === 0 ? "border-primary/40 bg-primary/[0.06] font-medium" : "border-border bg-background")}>
+                      <span className="truncate">{pairLabel(pair)}</span>
+                      {pairs.length > 1 && (<button type="button" aria-label={`Remove option ${pairLabel(pair)}`} title={pairIndex === 0 ? "Remove — the next option becomes the primary" : "Remove this option"} onClick={() => removeLineOption(group.key, line.key, pairIndex)} className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"><Plus className="h-2.5 w-2.5 rotate-45"/></button>)}
+                    </span>))}
+                  </div>
+                  <WorkTypeMultiDropdown placeholder="＋ Add subcategory / work type option" ariaLabel="Add option" disabled={!categoryId} value={undefined} ticked={tickedPairs} rateLabelFor={(compositeId) => {
+                    const [subId, workTypeId] = compositeId.split("::");
+                    const tierRate = rateFor(subId, workTypeId);
+                    const basis = measureHintFor(subId);
+                    return tierRate ? `≈ ${formatINR(tierRate)}/${basis === "length" ? "rft" : "sqft"}` : undefined;
+                  }} onSelect={(compositeId) => {
+                    const [subId, workTypeId] = compositeId.split("::");
+                    addLineOption(group.key, line.key, subId, workTypeId || undefined);
+                  }} groups={categorySubcategories.map((subcategory) => ({ key: subcategory.id, items: workTypesForSubcategory(subcategory).map((workType) => ({ id: `${subcategory.id}::${workType.id}`, name: `${subcategory.name} · ${workType.name}` })) }))}/>
+                  <p className="mt-1 text-[10px] text-muted-foreground">Alternatives share this item's measurement — the quotation prices it once, with the chosen option's tier rate.</p>
+                </div>);
+            })()}
             <p className="mt-1.5 text-[10px] text-muted-foreground">
               {rate ? `Rate ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"} · Est. ${formatINR(estimated)}` : "Rate comes from the work-type tier (Standard / Premium / Economy / Luxury) at capture."}
             </p>
@@ -2090,6 +2152,7 @@ function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSa
                 category_id: line.category_id!,
                 subcategory_id: line.subcategory_id!,
                 work_type_id: line.work_type_id,
+                option_pairs: line.option_pairs,
                 target_work_required_id: line.target_work_required_id,
                 length_ft: l > 0 ? l : undefined,
                 breadth_ft: b > 0 ? b : undefined,
