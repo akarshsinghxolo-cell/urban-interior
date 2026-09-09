@@ -535,40 +535,47 @@ export function LineItemTable({ items, highlightSource, }: {
       </div>);
     }
     const total = items.reduce((n, i) => n + i.amount, 0);
+    // Scope lines carry their covered areas as chips; PO/estimate lines do not.
+    // The Areas column (after Qty, before Rate) only appears when chips exist.
+    const anyChips = items.some((i) => i.area_chips?.length);
+    const gridCls = anyChips ? "grid grid-cols-[1.6fr_0.5fr_1fr_0.5fr_0.7fr_0.8fr]" : "grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr]";
     return (<div className="rd-scroll overflow-x-auto rounded-lg border border-border">
-      <div className="grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+      <div className={`${gridCls} gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground`}>
         <span>Item</span>
         <span className="text-right">Qty</span>
+        {anyChips && <span>Areas</span>}
         <span className="text-right">Rate</span>
         <span className="text-right">Amount</span>
         <span className="text-center">Trace</span>
       </div>
-      {items.map((it) => (<div key={it.id} className={cn("grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 border-b border-border px-3 py-2 text-xs last:border-0", highlightSource && it.source_item_id === highlightSource && "bg-accent/40", it.held && "bg-warning/[0.06]")}>
+      {items.map((it) => (<div key={it.id} className={cn(gridCls, "gap-2 border-b border-border px-3 py-2 text-xs last:border-0", highlightSource && it.source_item_id === highlightSource && "bg-accent/40", it.held && "bg-warning/[0.06]")}>
           <div className="min-w-0">
             <p className={cn("truncate font-medium text-foreground", it.held && "line-through text-muted-foreground")}>
               {it.title}
               {it.held && <span className="ml-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-bold text-warning">HELD</span>}
             </p>
             {it.unit_name && <p className="text-[10px] text-muted-foreground">{it.unit_name}</p>}
-            {it.area_chips?.length ? (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
-                {it.area_chips.map((chip, chipIndex) => (<span key={`${chip.area_id || chip.area_name}-${chipIndex}`} className="rounded bg-muted px-1 py-0.5 text-muted-foreground">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>))}
-              </p>) : ((it.site_name || it.area_name) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
+            {!it.area_chips?.length && (it.site_name || it.area_name || it.drawing_no) && (<p className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
                 {it.site_name && <span className="rounded bg-primary/10 px-1 py-0.5 text-primary">{it.site_name}</span>}
                 {it.area_name && <span className="rounded bg-muted px-1 py-0.5 text-muted-foreground">{it.area_name}</span>}
                 {it.drawing_no && <span className="rounded bg-success/10 px-1 py-0.5 text-success">📐 {it.drawing_no}</span>}
-              </p>))}
+              </p>)}
           </div>
           <span className="text-right font-mono">{it.quantity}</span>
+          {anyChips && (<div className="flex min-w-0 flex-wrap items-center gap-1" title="Areas covered by this line">
+            {it.area_chips?.length ? it.area_chips.map((chip, chipIndex) => (<span key={`${chip.area_id || chip.area_name}-${chipIndex}`} className="max-w-full truncate rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">{chip.area_name}{chip.quantity ? ` · ${chip.quantity}` : ""}</span>)) : <span className="text-[10px] text-muted-foreground/50">—</span>}
+          </div>)}
           <span className="text-right font-mono text-muted-foreground">{formatINR(it.rate)}</span>
           <span className="text-right font-mono font-semibold">{formatINR(it.amount)}</span>
           <span className="text-center text-[10px] text-muted-foreground">
             {it.source_kind ? titleCase(it.source_kind) : "—"}
           </span>
         </div>))}
-      <div className="grid grid-cols-[1.6fr_0.5fr_0.5fr_0.7fr_0.8fr] gap-2 bg-muted/30 px-3 py-2 text-xs font-bold">
+      <div className={`${gridCls} gap-2 bg-muted/30 px-3 py-2 text-xs font-bold`}>
         <span>Total</span>
         <span />
         <span />
+        {anyChips && <span />}
         <span className="text-right font-mono">{formatINR(total)}</span>
         <span />
       </div>
