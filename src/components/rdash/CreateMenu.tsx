@@ -132,7 +132,16 @@ function CustomerQuotationDialog({ request, onClose }: {
             }
 
             const quotationTitle = title.trim() || `${customer.name}${site ? ` · ${site.name}` : ""}`;
-            const coverage = selectedWorkRequired.map((work, index) => ({
+            // Coverage is Site-scoped by the relationship rules ("A Site is
+            // required before quotation coverage can be linked to Work
+            // Required") — building it for a customer-level draft made
+            // addQuotation route to the Site-scoped core path and reject the
+            // whole submission ("requires a Customer, Site, and at least one
+            // covered Work Required"). Customer-level drafts carry NO
+            // coverage; the ticked customer-level Work Required becomes
+            // unlinked starter scope lines (price now, links attach when a
+            // Site is added later).
+            const coverage = site ? selectedWorkRequired.map((work, index) => ({
                     id: `coverage-${Date.now().toString(36)}-${index}`,
                     work_required_id: work.id,
                     area_ids: work.area_ids,
@@ -141,12 +150,35 @@ function CustomerQuotationDialog({ request, onClose }: {
                         .map((revision) => revision.id),
                     coverage_label: work.title,
                     status: "proposed" as const,
-                }));
+                })) : [];
+            const scopeLines = site ? undefined : selectedWorkRequired.flatMap((work, index) => {
+                const items = (work.structured_items || []).filter((item) => Number.isFinite(item.quantity));
+                if (!items.length) return [];
+                const primary = items.find((item) => item.option_pairs?.length) || items[0];
+                const amount = Math.round(items.reduce((sum, item) => sum + (item.amount || 0), 0) * 100) / 100;
+                const quantity = Math.round(items.reduce((sum, item) => sum + (item.quantity || 0), 0) * 100) / 100;
+                return [{
+                    id: `qi-${Date.now().toString(36)}-${index}`,
+                    title: workRequiredLabel(work) || work.title,
+                    category_id: primary.category_id,
+                    article_id: primary.article_id,
+                    work_required_article_id: primary.work_required_article_id,
+                    option_pairs: primary.option_pairs,
+                    quantity: quantity || 1,
+                    unit_id: primary.unit_id,
+                    unit_name: primary.unit_name,
+                    rate: quantity ? Math.round((amount / quantity) * 100) / 100 : primary.rate || 0,
+                    amount,
+                    tax_rate: primary.tax_rate,
+                    source_kind: "quotation" as const,
+                }];
+            });
 
             const id = addQuotation({
                 customer_id: customerId,
                 site_id: site?.id || "",
                 coverage,
+                ...(scopeLines ? { scope_lines: scopeLines } : {}),
                 title: quotationTitle,
                 valid_until: validUntil,
                 status: "draft",

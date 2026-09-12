@@ -66,7 +66,10 @@ const customerDomainFks: ForeignKeyRule[] = [
 const quotationDomainFks: ForeignKeyRule[] = [
     // Quotations: cannot delete a customer/site that has quotes (restrict)
     { collection: "quotations", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Quotation → Customer" },
-    { collection: "quotations", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Quotation → Site" },
+    // site_id is nullable: quotations may start as customer-level commercial
+    // drafts before a Site exists (assertQuotationRelations + the quotation
+    // create dialog both allow site_id:""). Non-empty values still restrict.
+    { collection: "quotations", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: true, label: "Quotation → Site" },
     // AcceptedScope: customer/site/work_required/quotation all required
     { collection: "acceptedScopes", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Accepted Scope → Customer" },
     { collection: "acceptedScopes", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Accepted Scope → Site" },
