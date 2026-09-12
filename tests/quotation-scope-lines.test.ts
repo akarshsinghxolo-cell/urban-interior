@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { areaChipQuantity, groupedQuotationScopeLines, linePairBoxes, removeOptionPair } from "@/lib/rdash/work-types";
+import { areaChipQuantity, groupedQuotationScopeLines, linePairBoxes, removeOptionPair, customerOptedPairs, omittedOptedPairs } from "@/lib/rdash/work-types";
 import { buildQuotationShareText } from "@/lib/rdash/quotation-share";
 
 /**
@@ -227,5 +227,111 @@ describe("quotation pair boxes (one box per work type: item / rate / amount)", (
   test("removeOptionPair: the last box removes the whole line", () => {
     const single = { ...line, option_pairs: [line.option_pairs[0]] };
     expect(removeOptionPair(single as any, 0, workSubcategories, contractorRates)).toBeNull();
+  });
+});
+
+describe("omittedOptedPairs (editor's bottom 'opted but not priced' list)", () => {
+  const workSubcategories = [
+    {
+      id: "ws-wardrobe",
+      category_id: "wc-1",
+      name: "Wardrobe (Sliding/Swing)",
+      work_types: [
+        { id: "wt-wardrobe-std", name: "Standard" },
+        { id: "wt-wardrobe-premium", name: "Premium" },
+      ],
+    },
+    { id: "ws-tv", category_id: "wc-1", name: "TV Unit", work_types: [{ id: "wt-tv-std", name: "Standard" }] },
+    { id: "ws-gone", category_id: "wc-1", name: "Removed Subcategory", work_types: [{ id: "wt-gone-std", name: "Standard" }] },
+  ] as any;
+  const works = [
+    // Explicit ticks: wardrobe Standard + Premium, TV Unit Standard.
+    {
+      id: "wr-1",
+      customer_id: "cust-a",
+      work_subcategory_ids: ["ws-wardrobe", "ws-tv"],
+      work_type_ids: ["wt-wardrobe-std", "wt-wardrobe-premium", "wt-tv-std"],
+    },
+    // Same wardrobe Premium ticked again on another row — deduped.
+    {
+      id: "wr-2",
+      customer_id: "cust-a",
+      work_subcategory_ids: ["ws-wardrobe"],
+      work_type_ids: ["wt-wardrobe-premium"],
+    },
+    // A different customer — never leaks into cust-a's list.
+    {
+      id: "wr-3",
+      customer_id: "cust-b",
+      work_subcategory_ids: ["ws-tv"],
+      work_type_ids: ["wt-tv-std"],
+    },
+    // Legacy row: subcategories declared, no explicit work types → primaries.
+    {
+      id: "wr-4",
+      customer_id: "cust-a",
+      work_subcategory_ids: ["ws-tv"],
+      work_type_ids: undefined,
+    },
+    // A work type whose subcategory is no longer declared by its row → not opted.
+    {
+      id: "wr-5",
+      customer_id: "cust-a",
+      work_subcategory_ids: ["ws-wardrobe"],
+      work_type_ids: ["wt-gone-std"],
+    },
+  ] as any;
+
+  test("customerOptedPairs: ticked selections deduped across rows, other customers excluded, primaries for legacy rows", () => {
+    const opted = customerOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories });
+    expect(opted).toEqual([
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" },
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-premium" },
+      { subcategory_id: "ws-tv", work_type_id: "wt-tv-std" },
+    ]);
+  });
+
+  test("every opted pair not covered by a line shows as omitted", () => {
+    const items = [
+      // Covers wardrobe Standard only (single-pair fallback shape).
+      { title: "Wardrobe (Sliding/Swing) · Standard", subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std", quantity: 10, rate: 100, amount: 1000 },
+      // Covers TV Unit Standard via an explicit option pair.
+      { title: "TV Unit · Standard", subcategory_id: "ws-tv", work_type_id: "wt-tv-std", quantity: 1, rate: 50, amount: 50, option_pairs: [{ subcategory_id: "ws-tv", work_type_id: "wt-tv-std" }] },
+    ] as any;
+    expect(omittedOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories, items })).toEqual([
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-premium" },
+    ]);
+  });
+
+  test("removing a box from a merged line re-lists that work type as omitted", () => {
+    // The user's flow: the quotation prices both wardrobe types on one line,
+    // the editor's × removes Premium, and the pair must come back at the bottom.
+    const before = [
+      { title: "Wardrobe", subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std", quantity: 10, rate: 100, amount: 1000, option_pairs: [{ subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" }, { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-premium" }] },
+    ] as any;
+    expect(omittedOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories, items: before })).toEqual([
+      { subcategory_id: "ws-tv", work_type_id: "wt-tv-std" },
+    ]);
+    const after = [
+      { ...before[0], option_pairs: [{ subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" }] },
+    ];
+    expect(omittedOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories, items: after })).toEqual([
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-premium" },
+      { subcategory_id: "ws-tv", work_type_id: "wt-tv-std" },
+    ]);
+  });
+
+  test("a legacy untyped line pair covers every opted type of its subcategory", () => {
+    const items = [
+      { title: "TV Unit", subcategory_id: "ws-tv", quantity: 5, rate: 10, amount: 50 },
+    ] as any;
+    expect(omittedOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories, items })).toEqual([
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" },
+      { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-premium" },
+    ]);
+  });
+
+  test("an empty quotation omits everything the customer opted for", () => {
+    expect(omittedOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories, items: [] })).toHaveLength(3);
   });
 });

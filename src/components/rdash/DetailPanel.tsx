@@ -10,7 +10,7 @@ import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
 import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
-import { workRequiredDisplayTitle, areaChipQuantity, linePairBoxes, removeOptionPair } from "@/lib/rdash/work-types";
+import { workRequiredDisplayTitle, areaChipQuantity, linePairBoxes, removeOptionPair, capturedPairsTitle, omittedOptedPairs, workTypesForSubcategory, averageWorkTypeTotalRate } from "@/lib/rdash/work-types";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
 import { X, MessageCircle, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
@@ -1078,6 +1078,40 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
     const categories = useRDashStore((s) => s.db.master.workCategories);
     const workSubcategories = useRDashStore((s) => s.db.master.workSubcategories);
     const contractorRates = useRDashStore((s) => s.db.master.contractorRates);
+    const quotation = useRDashStore((s) => s.db.quotations.find((row) => row.id === quotationId));
+    const workRequired = useRDashStore((s) => s.db.workRequired);
+    // The customer's opted (subcategory · work type) pairs that no line prices
+    // yet — shown at the bottom so a dropped work type can be added back (it
+    // survives edits and revisions because it re-derives from the live lines).
+    const omittedPairs = React.useMemo(() => {
+        if (!quotation) return [];
+        return omittedOptedPairs({ workRequired, customerId: quotation.customer_id, workSubcategories, items });
+    }, [quotation, workRequired, workSubcategories, items]);
+    const addOptedPair = (pair: { subcategory_id: string; work_type_id?: string }) => {
+        const subcategory = workSubcategories.find((row) => row.id === pair.subcategory_id);
+        if (!subcategory) return;
+        const workType = pair.work_type_id ? workTypesForSubcategory(subcategory).find((row) => row.id === pair.work_type_id) : undefined;
+        const label = capturedPairsTitle(workSubcategories, [pair]) || subcategory.name;
+        const rate = averageWorkTypeTotalRate(contractorRates, pair.subcategory_id, pair.work_type_id) ?? 0;
+        const unitId = workType?.unit_id || subcategory.unit_id;
+        const unit = unitId ? units.find((row) => row.id === unitId) : undefined;
+        try {
+            addQuotationItem(quotationId, {
+                title: label,
+                category_id: subcategory.category_id,
+                subcategory_id: subcategory.id,
+                work_type_id: workType?.id,
+                quantity: 1,
+                rate,
+                unit_id: unitId,
+                unit_name: unit?.symbol,
+            });
+            toast.success(`Added "${label}" — set the rate if the master price needs a change`);
+        }
+        catch (err) {
+            toast.error(err instanceof Error ? err.message : "Could not add the work type.");
+        }
+    };
     const [adding, setAdding] = React.useState(false);
     const [newTitle, setNewTitle] = React.useState("");
     const [newQty, setNewQty] = React.useState("1");
@@ -1275,6 +1309,29 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
         <span className="text-right font-mono text-primary">{formatINR(total)}</span>
         <span className="hidden sm:block" />
       </div>
+
+      {omittedPairs.length > 0 && (<div className="border-t border-border px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Opted work types not in this quotation</p>
+            <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">{omittedPairs.length} missing</span>
+          </div>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">Work types {quotation?.customer_name || "the customer"} opted for but no line prices yet — removed ones stay here (through edits and revisions) until added back.</p>
+          <div className="mt-1.5 flex flex-col gap-1">
+            {omittedPairs.map((pair) => {
+                const label = capturedPairsTitle(workSubcategories, [pair]) || "Work type";
+                const masterRate = averageWorkTypeTotalRate(contractorRates, pair.subcategory_id, pair.work_type_id);
+                return (<div key={`${pair.subcategory_id}-${pair.work_type_id || ""}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2 py-1.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-medium text-foreground">{label}</p>
+                    <p className="text-[10px] text-muted-foreground">{masterRate === undefined ? "No master rate yet — set the rate after adding" : `Master rate ${formatINR(masterRate)}`}</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => addOptedPair(pair)} aria-label={`Add ${label} to this quotation`}>
+                    <Plus className="mr-1 h-3 w-3"/> Add
+                  </Button>
+                </div>);
+            })}
+          </div>
+        </div>)}
 
       {adding ? (<div className="grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-t border-border bg-primary/[0.03] px-3 py-2 text-xs sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
           <div ref={titleWrapRef} className="relative col-span-4 min-w-0 sm:col-span-1 sm:col-start-1">

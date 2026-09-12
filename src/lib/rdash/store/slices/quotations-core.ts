@@ -398,6 +398,12 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 description: item.description,
                 article_id: item.article_id,
                 category_id: item.category_id,
+                // Catalog pair passthrough: the editor's "opted work types not
+                // in this quotation" rows add back a (subcategory · work type)
+                // line — itemOptionPairs falls back to these fields, so the
+                // pair renders/prices like any captured single-pair line.
+                subcategory_id: item.subcategory_id,
+                work_type_id: item.work_type_id,
                 work_required_id: item.work_required_id,
                 site_id: item.site_id || quotation.site_id,
                 area_id: item.area_id,
