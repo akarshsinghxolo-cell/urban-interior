@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { areaDependencySummary } from "@/lib/rdash/business-rules";
 import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
+import { confirmDialog } from "./ConfirmDialog";
 import { MapView, type MapPoint } from "./MapView";
 import { visitToMapPoints } from "./visitMap";
 import { promptDialog } from "./PromptDialog";
@@ -884,6 +885,8 @@ function QuotationOverview({ q }: {
     const reviseQuotationWithHolds = useRDashStore((s) => s.reviseQuotationWithHolds);
     const renegotiateQuotation = useRDashStore((s) => s.renegotiateQuotation);
     const openDetail = useRDashStore((s) => s.openDetail);
+    const deleteQuotation = useRDashStore((s) => s.deleteQuotation);
+    const closeDetail = useRDashStore((s) => s.closeDetail);
     const db = useRDashStore((s) => s.db);
     const st = quotationStatusStyle(q.status);
     const isEditable = q.status === "draft";
@@ -927,6 +930,23 @@ function QuotationOverview({ q }: {
             setRenegotiateOpen(false);
             setRenegotiateReason("");
             setRenegotiateHeldIds(new Set());
+        }
+    };
+    const handleDeleteQuotation = async () => {
+        const ok = await confirmDialog({
+            title: `Delete ${q.quotation_no}?`,
+            description: "This permanently removes the quotation, its accepted scopes and its conversation thread. This cannot be undone.",
+            confirmLabel: "Delete",
+            danger: true,
+        });
+        if (!ok) return;
+        try {
+            deleteQuotation(q.id);
+            toast.success(`Quotation ${q.quotation_no} deleted`);
+            closeDetail();
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Could not delete quotation");
         }
     };
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
@@ -978,6 +998,9 @@ function QuotationOverview({ q }: {
           </Button>)}
         {q.work_order_ids.length > 0 && (<Button size="sm" variant="outline" onClick={() => openDetail("workOrder", q.work_order_ids[0])}>
             <ArrowRight className="mr-1.5 h-3.5 w-3.5"/> Go to WorkOrder
+          </Button>)}
+        {q.status !== "accepted" && q.work_order_ids.length === 0 && (<Button size="sm" variant="destructive" className="no-print" onClick={() => { void handleDeleteQuotation(); }}>
+            <Trash2 className="mr-1.5 h-3.5 w-3.5"/> Delete
           </Button>)}
         {q.status !== "draft" && q.status !== "cancelled" && q.work_order_ids.length === 0 && (<Button size="sm" variant="outline" onClick={() => setReviseOpen((v) => !v)}>
             <FileText className="mr-1.5 h-3.5 w-3.5"/> Create editable revision

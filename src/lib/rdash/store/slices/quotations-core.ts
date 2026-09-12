@@ -217,6 +217,49 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 });
             }
         },
+        deleteQuotation: (id, reason) => {
+            assertRole(get().currentUser().role, ["Owner", "Operations Manager"], "delete quotations");
+            const actor = get().currentUser();
+            const before = get().db.quotations.find((quotation: any) => quotation.id === id);
+            if (!before)
+                throw new Error("Quotation not found.");
+            if (before.work_order_ids.length)
+                throw new Error("A quotation linked to a Work Order cannot be deleted. Create a controlled variation instead.");
+            if (before.status === "accepted")
+                throw new Error("An accepted quotation cannot be deleted. Reject it or create a revision instead.");
+            const linkedScopes = get().db.acceptedScopes.filter((scope: any) => scope.quotation_id === id && scope.status !== "cancelled");
+            if (linkedScopes.some((scope: any) => scope.work_order_id))
+                throw new Error("A quotation scope already belongs to a Work Order and cannot be deleted.");
+            const changedAt = nowIso();
+            commitState((s: any) => {
+                const db = {
+                    ...s.db,
+                    quotations: s.db.quotations.filter((quotation: any) => quotation.id !== id),
+                    acceptedScopes: s.db.acceptedScopes.filter((scope: any) => scope.quotation_id !== id),
+                };
+                return {
+                    db: {
+                        ...db,
+                        workRequired: s.db.workRequired.map((work: any) => before.coverage.some((coverage: any) => coverage.work_required_id === work.id)
+                            ? { ...work, status: workRequiredStatusAfterQuotationChange(db, work, id, "cancelled"), updated_at: changedAt }
+                            : work),
+                        threads: before.thread_id
+                            ? s.db.threads.filter((thread: any) => thread.id !== before.thread_id)
+                            : s.db.threads,
+                    },
+                };
+            });
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Deleted quotation ${before.quotation_no}`,
+                entity_type: "quotation",
+                entity_id: id,
+                entity_label: before.quotation_no,
+                kind: "delete",
+                reason,
+            });
+        },
         addQuotation: (q) => {
             const state = get();
             const designer = userForRole(state.db, "Designer");
