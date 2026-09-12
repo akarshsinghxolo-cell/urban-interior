@@ -278,6 +278,11 @@ export interface VisitsState {
 export interface QuotationsState {
   addQuotation: (q: Partial<Quotation>) => string;
   updateQuotation: (id: string, patch: Partial<Quotation>) => void;
+  /** Permanently delete a quotation that has no Work Order downstream and is
+   *  not accepted. Removes the quotation, its accepted scopes and its
+   *  conversation thread, and recomputes covered work-required lifecycle
+   *  statuses. Owner / Operations Manager only. */
+  deleteQuotation: (id: string, reason?: string) => void;
   addQuotationItem: (quotationId: string, item: Partial<QuotationItem>) => void;
   updateQuotationItem: (quotationId: string, itemId: string, patch: Partial<QuotationItem>) => void;
   removeQuotationItem: (quotationId: string, itemId: string) => void;

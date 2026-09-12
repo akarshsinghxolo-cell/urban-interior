@@ -1,11 +1,12 @@
 "use client";
 import * as React from "react";
 import { useRDashStore, type CreateDialogRequest } from "@/lib/rdash/store";
-import { MoreHorizontal, Pencil, CheckCircle2, XCircle, CalendarClock, Phone, MessageSquare, FileText, Ban, ArrowRightCircle, AlertTriangle, Wallet, MapPin, Send, } from "lucide-react";
+import { MoreHorizontal, Pencil, CheckCircle2, XCircle, CalendarClock, Phone, MessageSquare, FileText, Ban, ArrowRightCircle, AlertTriangle, Wallet, MapPin, Send, Trash2, } from "lucide-react";
 import type { ContextAction } from "./ContextMenuHost";
 import { toast } from "sonner";
 import { formatINR } from "@/lib/rdash/format";
 import { promptDialog } from "./PromptDialog";
+import { confirmDialog } from "./ConfirmDialog";
 export function buildTaskActions(taskId: string, _dispatch: {
     updateTask: (id: string, patch: Record<string, unknown>) => void;
 }, opts?: {
@@ -239,6 +240,46 @@ export function buildVisitActions(visitId: string, _dispatch: unknown, opts?: {
             } },
     ];
 }
+async function createEditableRevisionFromList(quoteId: string) {
+    const quote = useRDashStore.getState().db.quotations.find((row) => row.id === quoteId);
+    if (!quote) return;
+    const ok = await confirmDialog({
+        title: `Create editable revision of ${quote.quotation_no}?`,
+        description: `A new draft revision (R${quote.revision_no + 1}) carries every line over and this version is retained as history. To hold specific lines while revising, open the quotation and use "Create editable revision" there.`,
+        confirmLabel: "Create revision",
+    });
+    if (!ok) return;
+    try {
+        const newId = useRDashStore.getState().reviseQuotationWithHolds(quoteId, [], undefined);
+        toast.success(`Revision ${quote.quotation_no}-R${quote.revision_no + 1} created — now editable`);
+        useRDashStore.getState().openDetail("quotation", newId);
+    }
+    catch (error) {
+        toast.error(error instanceof Error ? error.message : "Revision could not be created");
+    }
+}
+
+function isQuotationDeletable(quote: { status: string; work_order_ids: string[] }) {
+    return quote.status !== "accepted" && quote.work_order_ids.length === 0;
+}
+
+async function deleteQuotationWithConfirm(quotationId: string, quotationNo: string) {
+    const ok = await confirmDialog({
+        title: `Delete ${quotationNo}?`,
+        description: "This permanently removes the quotation, its accepted scopes and its conversation thread. This cannot be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+    });
+    if (!ok) return;
+    try {
+        useRDashStore.getState().deleteQuotation(quotationId);
+        toast.success(`Quotation ${quotationNo} deleted`);
+    }
+    catch (error) {
+        toast.error(error instanceof Error ? error.message : "Could not delete quotation");
+    }
+}
+
 export function buildQuotationActions(quoteId: string, dispatch: {
     updateQuotation: (id: string, patch: Record<string, unknown>) => void;
 }, opts?: {
@@ -251,6 +292,7 @@ export function buildQuotationActions(quoteId: string, dispatch: {
         { label: "Print / Export", icon: <FileText className="h-4 w-4"/>, onClick: () => { useRDashStore.getState().openDetail("quotation", quoteId); setTimeout(() => window.print(), 300); } },
     ];
     if (quote?.status === "draft") {
+        actions.push({ label: "Edit quotation", icon: <Pencil className="h-4 w-4"/>, onClick: open });
         actions.push({ label: "Mark sent", icon: <Send className="h-4 w-4"/>, onClick: () => { dispatch.updateQuotation(quoteId, { status: "sent" }); toast.success("Quotation marked as sent"); } });
     }
     if (quote && ["draft", "sent", "rejected", "expired", "accepted"].includes(quote.status) && quote.work_order_ids.length === 0) {
@@ -264,9 +306,11 @@ export function buildQuotationActions(quoteId: string, dispatch: {
     if (quote?.work_order_ids.length)
         actions.push({ label: "Open workOrder", icon: <ArrowRightCircle className="h-4 w-4"/>, onClick: () => useRDashStore.getState().openDetail("workOrder", quote.work_order_ids[0]) });
     if (quote && ["sent", "accepted", "rejected", "expired"].includes(quote.status) && quote.work_order_ids.length === 0)
-        actions.push({ label: "Create editable revision", icon: <Pencil className="h-4 w-4"/>, onClick: () => useRDashStore.getState().openDetail("quotation", quoteId) });
+        actions.push({ label: "Create editable revision", icon: <Pencil className="h-4 w-4"/>, separatorBefore: true, onClick: () => { void createEditableRevisionFromList(quoteId); } });
     if (quote && quote.work_order_ids.length === 0 && quote.status !== "accepted")
         actions.push({ label: "Reject", icon: <XCircle className="h-4 w-4"/>, danger: true, separatorBefore: true, onClick: () => { dispatch.updateQuotation(quoteId, { status: "rejected" }); toast.warning("Quotation rejected"); } });
+    if (quote && isQuotationDeletable(quote))
+        actions.push({ label: "Delete quotation", icon: <Trash2 className="h-4 w-4"/>, danger: true, separatorBefore: true, onClick: () => { void deleteQuotationWithConfirm(quote.id, quote.quotation_no); } });
     return actions;
 }
 export function buildPaymentActions(paymentId: string, _dispatch: unknown, opts?: {
