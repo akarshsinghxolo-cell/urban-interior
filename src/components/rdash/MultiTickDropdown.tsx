@@ -5,7 +5,14 @@ import { ChevronDown } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
-export type MultiTickGroup = { key: string; items: Array<{ id: string; name: string }> };
+export type MultiTickGroup = {
+    key: string;
+    items: Array<{ id: string; name: string }>;
+    // Optional per-group action row (e.g. "+ Add work type" scoped to this
+    // group's subcategory — the shared `footer` cannot express a target when
+    // several groups render in one panel).
+    footer?: (close: () => void) => React.ReactNode;
+};
 
 // Shared multi-tick dropdown (the subcategory/work-type picker format):
 // trigger shows the first selection plus "+N", the panel keeps native
@@ -66,6 +73,7 @@ export function MultiTickDropdown({
                                     </label>
                                 );
                             })}
+                            {group.footer ? <div className="mt-0.5 px-1 pb-0.5">{group.footer(close)}</div> : null}
                         </React.Fragment>
                     ))}
                     {footer?.(close)}

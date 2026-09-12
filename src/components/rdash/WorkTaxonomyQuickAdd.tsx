@@ -8,8 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useRDashStore } from "@/lib/rdash/store";
 import { normalizeCatalogName } from "@/lib/rdash/work-category-master";
-import type { WorkCategory, WorkSubcategory } from "@/lib/rdash/types";
-import { defaultWorkTypeId } from "@/lib/rdash/work-types";
+import type { WorkCategory, WorkSubcategory, WorkTypeRate } from "@/lib/rdash/types";
+import { createWorkTypeId, defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { cn } from "@/lib/utils";
 
 const newCatalogId = (prefix: string) =>
@@ -168,6 +168,86 @@ export function AddWorkSubcategoryAction({
       <div className="flex justify-end gap-1.5">
         <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { reset(); onCancelled?.(); }}>Cancel</Button>
         <Button type="button" size="sm" className="h-7 text-xs" onClick={save}><Check className="h-3 w-3" /> Save subcategory</Button>
+      </div>
+    </div>
+  );
+}
+
+// Third sibling of the category/subcategory quick-adds: creates a graded work
+// type inside an existing subcategory (same master-write path as the master
+// module's addWorkType, minus the "New work type N" placeholder naming).
+export function AddWorkTypeAction({
+  subcategoryId,
+  onCreated,
+  onCancelled,
+  initiallyAdding = false,
+}: {
+  subcategoryId: string;
+  onCreated?: (workTypeId: string, workTypeName: string) => void;
+  onCancelled?: () => void;
+  initiallyAdding?: boolean;
+}) {
+  const master = useRDashStore((state) => state.db.master);
+  const mutateMaster = useRDashStore((state) => state.mutateMaster);
+  const [adding, setAdding] = React.useState(initiallyAdding);
+  const [name, setName] = React.useState("");
+
+  function reset() {
+    setAdding(false);
+    setName("");
+  }
+
+  function save() {
+    const subcategory = master.workSubcategories.find((row) => row.id === subcategoryId);
+    if (!subcategory) return toast.error("Select the subcategory first.");
+    const clean = name.trim();
+    if (!clean) return toast.error("Work type name is required.");
+    if (workTypesForSubcategory(subcategory).some((row) => normalizeCatalogName(row.name) === normalizeCatalogName(clean))) {
+      return toast.error("This sub category already has that work type.");
+    }
+    const now = new Date().toISOString();
+    const workType: WorkTypeRate = {
+      id: createWorkTypeId(subcategoryId, clean),
+      name: clean,
+      unit_id: workTypesForSubcategory(subcategory)[0]?.unit_id || subcategory.unit_id || "pcs",
+      created_at: now,
+      updated_at: now,
+    };
+    mutateMaster((current) => ({
+      ...current,
+      workSubcategories: current.workSubcategories.map((row) => row.id === subcategoryId
+        ? { ...normalizeWorkSubcategoryWorkTypes(row), work_types: [...workTypesForSubcategory(row), workType], updated_at: now }
+        : row),
+    }));
+    reset();
+    onCreated?.(workType.id, workType.name);
+    toast.success("Work type added. Contractor quotes will supply its average rates.");
+  }
+
+  if (!adding) {
+    return (
+      <button type="button" onClick={() => setAdding(true)} className="flex w-full items-center justify-center gap-1 rounded border border-dashed px-2 py-1.5 text-[10px] font-medium text-muted-foreground hover:border-primary/50 hover:text-primary">
+        <Plus className="h-3 w-3" /> Add work type
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-1 space-y-1.5 rounded-md border border-dashed bg-muted/20 p-2">
+      <Input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") { event.preventDefault(); save(); }
+          if (event.key === "Escape") { reset(); onCancelled?.(); }
+        }}
+        placeholder="Work type name (e.g. Premium)"
+        className="h-8 text-xs"
+        autoFocus
+      />
+      <div className="flex justify-end gap-1.5">
+        <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { reset(); onCancelled?.(); }}>Cancel</Button>
+        <Button type="button" size="sm" className="h-7 text-xs" onClick={save}><Check className="h-3 w-3" /> Save work type</Button>
       </div>
     </div>
   );
