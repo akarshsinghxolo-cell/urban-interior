@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
 import { pruneWorkTypeIds, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { useRDashStore } from "@/lib/rdash/store";
 import { AREA_TYPES } from "./customer-sites-form-model";
-import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
+import { AddWorkCategoryAction, AddWorkSubcategoryAction, AddWorkTypeAction } from "./WorkTaxonomyQuickAdd";
 import { MultiTickDropdown } from "./MultiTickDropdown";
 
 const ADD_CATEGORY_VALUE = "__add_work_category__";
@@ -68,6 +69,7 @@ export function WorkRequiredFields({
   const categorySelectId = `${fieldId}-category`;
   const [addCategoryOpen, setAddCategoryOpen] = React.useState(false);
   const [addSubcategoryOpen, setAddSubcategoryOpen] = React.useState(false);
+  const [addWorkTypeSubcategoryId, setAddWorkTypeSubcategoryId] = React.useState<string | null>(null);
   const [newAreaOpen, setNewAreaOpen] = React.useState(false);
   const [newAreaTypes, setNewAreaTypes] = React.useState<Area["area_type"][]>([]);
   const [customAreaTypes, setCustomAreaTypes] = React.useState<Array<{ value: string; label: string }>>([]);
@@ -87,6 +89,21 @@ export function WorkRequiredFields({
         id: workType.id,
         name: `${subcategory.name} · ${workType.name}`,
       })),
+      // Per-group add row: with several subcategories ticked the target of
+      // "+ Add work type" is the group it sits in — no ambiguity.
+      footer: (close: () => void) => (
+        <button
+          type="button"
+          className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
+          aria-label={`Add work type to ${subcategory.name}`}
+          onClick={() => {
+            close();
+            setAddWorkTypeSubcategoryId(subcategory.id);
+          }}
+        >
+          + Add work type
+        </button>
+      ),
     }];
   });
   const toggleWorkType = (workType: { id: string }) => {
@@ -258,9 +275,13 @@ export function WorkRequiredFields({
               onCancelled={() => setAddSubcategoryOpen(false)}
               onCreated={(subcategoryId) => {
                 setAddSubcategoryOpen(false);
+                // The db prop is one render behind the master store here
+                // (AddWorkSubcategoryAction just mutated it) — derive from
+                // the fresh store state so the new subcategory is included.
+                const master = useRDashStore.getState().db.master;
                 const subcategoryIds = [...new Set([...value.subcategoryIds, subcategoryId])];
-                const workTypeIds = withPrimaryWorkTypeIds(db.master.workSubcategories, subcategoryIds, pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds));
-                const title = workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds);
+                const workTypeIds = withPrimaryWorkTypeIds(master.workSubcategories, subcategoryIds, pruneWorkTypeIds(master.workSubcategories, subcategoryIds, value.workTypeIds));
+                const title = workRequiredTitleFromSelection(master.workSubcategories, subcategoryIds, workTypeIds);
                 onChange({ subcategoryIds, workTypeIds, title });
               }}
             />
@@ -272,10 +293,10 @@ export function WorkRequiredFields({
         <div>
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Types</span>
           <p className="mt-0.5 text-[11px] text-muted-foreground">Grade within each selected subcategory, e.g. Kitchen Cabinets (Modular) · Premium.</p>
-          {/* ponytail: same tick-dropdown format as subcategories; no "+ Add
-              work type" row here — creation stays in the master module and
-              AddWorkTypeMenu (contractor rates), since with several
-              subcategories selected the target would be ambiguous. */}
+          {/* ponytail: same tick-dropdown format as subcategories; each group
+              carries its own "+ Add work type" row (scoped to that
+              subcategory), writing master via AddWorkTypeAction and
+              auto-ticking the created grade. */}
           <div className="mt-1">
             <MultiTickDropdown
               ariaLabel="Work types"
@@ -285,6 +306,27 @@ export function WorkRequiredFields({
               onToggle={(workTypeId) => toggleWorkType({ id: workTypeId })}
             />
           </div>
+          {addWorkTypeSubcategoryId && value.subcategoryIds.includes(addWorkTypeSubcategoryId) ? (
+            <AddWorkTypeAction
+              key={`work-required-add-work-type-${addWorkTypeSubcategoryId}`}
+              subcategoryId={addWorkTypeSubcategoryId}
+              initiallyAdding
+              onCancelled={() => setAddWorkTypeSubcategoryId(null)}
+              onCreated={(workTypeId) => {
+                setAddWorkTypeSubcategoryId(null);
+                const workTypeIds = [...new Set([...value.workTypeIds, workTypeId])];
+                // The title IS the selection: re-derive so the new grade
+                // appears in the quotation line label immediately. Read the
+                // fresh master from the store — the db prop is one render
+                // behind AddWorkTypeAction's mutation within this tick.
+                const master = useRDashStore.getState().db.master;
+                onChange({
+                  workTypeIds,
+                  title: workRequiredTitleFromSelection(master.workSubcategories, value.subcategoryIds, workTypeIds),
+                });
+              }}
+            />
+          ) : null}
         </div>
       ) : null}
 
