@@ -25,6 +25,9 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+      - name: Patch consolidation editor
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/remove-legacy-duplicate-paths' && hashFiles('scripts/patch-runtime-contract-consolidation.py') != ''
+        run: python scripts/patch-runtime-contract-consolidation.py
       - name: Apply runtime contract consolidation
         if: github.event_name == 'pull_request' && github.head_ref == 'agent/remove-legacy-duplicate-paths' && hashFiles('scripts/apply-runtime-contract-consolidation.py') != ''
         run: python scripts/apply-runtime-contract-consolidation.py
