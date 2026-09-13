@@ -1,51 +1,84 @@
 /**
  * Canonical Customer workspace read model.
  *
- * Customer Desk and Customer Timeline intentionally share this one collection
- * contract. Finance/procurement collections do not belong to the Customer CRM
- * surface; those modules own payments, invoices, receipts, vendor/contractor
- * liabilities, purchase orders, GRNs, rates and approvals.
+ * Customer list, Customer detail and Customer Timeline all derive from these
+ * constants. Finance/procurement collections do not belong to the Customer CRM
+ * surface; their own modules own payments, invoices, receipts, AP, procurement,
+ * contractor liabilities and commercial accounting.
  */
-export const CUSTOMER_CRM_COLLECTIONS = Object.freeze([
-  "customers",
+export const CUSTOMER_CRM_DIRECT_RELATIONS = Object.freeze([
   "sites",
-  "areas",
   "workRequired",
-  "measurementRevisions",
   "quotations",
   "acceptedScopes",
   "workOrders",
+  "visits",
   "tasks",
   "followups",
-  "visits",
-  "risks",
   "blocked",
+  "risks",
   "commSends",
+] as const);
+
+/** Rows reached through a Customer's Site / Work Order graph. */
+export const CUSTOMER_CRM_DOWNSTREAM_RELATIONS = Object.freeze([
+  "areas",
+  "measurementRevisions",
   "boqs",
   "drawings",
   "executionLogs",
   "variationRequests",
+] as const);
+
+/** Supporting CRM history / files that are safe under Customers permission. */
+export const CUSTOMER_CRM_SUPPORT_COLLECTIONS = Object.freeze([
   "entityFileAttachments",
   "auditLog",
   "master.fileAssets",
   "master.sourcePartners",
 ] as const);
 
-/** Explicit deny-list used by tests so finance cannot silently drift back in. */
+export const CUSTOMER_CRM_COLLECTIONS = Object.freeze([
+  "customers",
+  ...CUSTOMER_CRM_DIRECT_RELATIONS,
+  ...CUSTOMER_CRM_DOWNSTREAM_RELATIONS,
+  ...CUSTOMER_CRM_SUPPORT_COLLECTIONS,
+] as const);
+
+/**
+ * Scope fallback adds only conversations. Taxonomy masters are loaded through
+ * the workspace foundation, so they do not need to be duplicated here.
+ */
+export const CUSTOMER_SCOPE_COLLECTIONS = Object.freeze([
+  ...CUSTOMER_CRM_COLLECTIONS,
+  "threads",
+] as const);
+
+/** Explicit deny-list used by tests so restricted data cannot silently drift back in. */
 export const CUSTOMER_CRM_FORBIDDEN_COLLECTIONS = Object.freeze([
   "payments",
   "invoices",
   "customerReceipts",
   "purchaseOrders",
   "grns",
+  "dispatches",
+  "vendorRfqs",
+  "vendorBids",
   "vendorBills",
   "vendorPayments",
   "contractorBills",
   "contractorPayments",
+  "contractorBids",
   "contractorSettlements",
   "workOrderCostLines",
   "commissions",
+  "stockMovements",
+  "attendance",
   "actions",
+  "commercialTerms",
+  "paymentTermTemplates",
+  "taxConfigs",
+  "validityConfigs",
   "master.vendors",
   "master.vendorRates",
   "master.vendorRateHistories",
