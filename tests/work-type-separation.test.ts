@@ -82,7 +82,7 @@ describe("work-type master", () => {
   });
 });
 
-describe("work types in the customer add/edit form and shared creation paths", () => {
+describe("work types in the canonical customer/site creation paths", () => {
   test("WorkRequiredFields exposes the work-type picker and prunes on subcategory change", () => {
     const source = read("../src/components/rdash/WorkRequiredFields.tsx");
     expect(source).toContain("Work Types");
@@ -96,11 +96,13 @@ describe("work types in the customer add/edit form and shared creation paths", (
     expect(source).toContain("work_type_ids: draft.workTypeIds");
   });
 
-  test("the detailed-area capture editor selects a work type per line", () => {
-    const source = read("../src/components/rdash/modules/CustomerDesk.tsx");
-    expect(source).toContain('ariaLabel="Work type"');
-    expect(source).toContain("workTypeTicks");
-    expect(source).toContain("work_type_id: line.work_type_id");
+  test("Customer Desk routes scope work to Site Execution instead of carrying a second work-type editor", () => {
+    const desk = read("../src/components/rdash/modules/CustomerDesk.tsx");
+    const siteExecution = read("../src/components/rdash/modules/SiteExecutionModule.tsx");
+    expect(desk).not.toContain('ariaLabel="Work type"');
+    expect(desk).not.toContain("workTypeTicks");
+    expect(desk).toContain('setActiveModule("siteExecution")');
+    expect(siteExecution).toContain("WorkRequiredCreateDialog");
   });
 });
 
