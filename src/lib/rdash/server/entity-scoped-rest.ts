@@ -6,6 +6,20 @@ import type { WorkspaceSubset } from "./workspace";
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
 const SAFE_JSON_FIELD = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+const CUSTOMER_GRAPH_COLLECTIONS = new Set([
+  "sites", "workRequired", "quotations", "acceptedScopes", "workOrders", "visits",
+  "tasks", "followups", "actions", "risks", "blocked", "payments", "invoices",
+  "customerReceipts", "contractorBills", "commissions", "variationRequests", "commSends",
+  "entityReferenceAssignments",
+]);
+
+const SITE_GRAPH_COLLECTIONS = new Set([
+  "areas", "workRequired", "quotations", "acceptedScopes", "workOrders", "visits",
+  "tasks", "followups", "actions", "risks", "blocked", "payments", "invoices",
+  "customerReceipts", "contractorBills", "commissions", "variationRequests", "commSends",
+  "entityReferenceAssignments",
+]);
+
 export type EntityScopedReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
@@ -34,6 +48,17 @@ function tableFor(collection: string): string {
   const table = COLLECTION_TO_TABLE[collection];
   if (!table) throw new Error(`INVALID:Unknown workspace collection ${collection}.`);
   return table;
+}
+
+function selectorColumn(collection: string, field: string): { column: string; json: boolean } {
+  if (field === "id") return { column: "id", json: false };
+  if (field === "customer_id" && CUSTOMER_GRAPH_COLLECTIONS.has(collection)) {
+    return { column: "customer_id_gen", json: false };
+  }
+  if (field === "site_id" && SITE_GRAPH_COLLECTIONS.has(collection)) {
+    return { column: "site_id_gen", json: false };
+  }
+  return { column: `data->>${field}`, json: true };
 }
 
 function emptyWorkspaceData(): RDashDatabase {
@@ -117,9 +142,10 @@ function inExpression(column: string, values: string[]): string {
 }
 
 /**
- * Reads entity rows by primary ID or top-level JSONB relationship fields.
- * All selectors for one table are combined into a single PostgREST OR filter,
- * so adding dependency fields does not multiply requests to the same collection.
+ * Reads entity rows by primary ID or indexed relationship columns. Relationship
+ * selectors fall back to JSONB only for fields that do not have a canonical
+ * generated column yet. All selectors for one table are still combined into
+ * one PostgREST OR filter, so dependency expansion does not multiply requests.
  */
 export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): Promise<WorkspaceSubset> {
   const admin = getSupabaseAdminClient();
@@ -137,7 +163,8 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
       const filters: string[] = [];
       if (spec.ids.length) filters.push(inExpression("id", spec.ids));
       for (const [field, values] of Object.entries(spec.jsonFields)) {
-        filters.push(inExpression(`data->>${field}`, values));
+        const selector = selectorColumn(spec.collection, field);
+        filters.push(inExpression(selector.column, values));
       }
       query = query.or(filters.join(","));
     }
