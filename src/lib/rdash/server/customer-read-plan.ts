@@ -3,8 +3,8 @@
  *
  * The Customer CRM graph is the always-safe base. Rich Customer Desk features
  * are restored through permission-aware extensions below: Finance,
- * Procurement, Media and Contractor Rates are never granted merely because a
- * role can open Customers.
+ * Procurement, Media, Vendor and Contractor data are never granted merely
+ * because a role can open Customers.
  */
 export const CUSTOMER_CRM_DIRECT_RELATIONS = Object.freeze([
   "sites",
@@ -76,12 +76,18 @@ export const CUSTOMER_PROCUREMENT_COLLECTIONS = Object.freeze([
   "vendorBids",
 ] as const);
 
+/** Vendor directory used by the Customer referrer picker when Vendors is allowed. */
+export const CUSTOMER_VENDOR_COLLECTIONS = Object.freeze([
+  "master.vendors",
+] as const);
+
 /**
- * Detailed-area capture used contractor work-type averages as its estimate
- * source. Raw rate rows are therefore an explicit Contractors permission
- * extension, never part of Customers permission by itself.
+ * Contractor directory + work-type rates support both the restored referrer
+ * picker and the detailed-area live estimate. They are never part of the
+ * Customers-only graph.
  */
-export const CUSTOMER_CONTRACTOR_RATE_COLLECTIONS = Object.freeze([
+export const CUSTOMER_CONTRACTOR_COLLECTIONS = Object.freeze([
+  "master.contractors",
   "master.contractorRates",
 ] as const);
 
