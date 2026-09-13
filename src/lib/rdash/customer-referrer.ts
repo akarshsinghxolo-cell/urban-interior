@@ -22,37 +22,15 @@ export function isCustomerReferrerType(value: unknown): value is CustomerReferre
   return typeof value === "string" && REFERRER_TYPES.has(value as CustomerReferrerType);
 }
 
-/**
- * Reads the canonical referrer fields. The source_partner fallback is only a
- * compatibility bridge for snapshots created before the referrer migration;
- * new writes should always carry referrer_* fields.
- */
+/** Reads only the canonical referrer_* fields. Legacy source_partner_* inference was removed after the data cutover. */
 export function customerReferrer(customer: Customer | CustomerRecord): CustomerReferrerFields {
   const raw = customer as CustomerRecord;
-  if (isCustomerReferrerType(raw.referrer_type)) {
-    return {
-      referrer_type: raw.referrer_type,
-      referrer_id: raw.referrer_id || undefined,
-      referrer_name: raw.referrer_name?.trim() || undefined,
-    };
-  }
-
-  if (customer.source_partner_id) {
-    return {
-      referrer_type: "source_partner",
-      referrer_id: customer.source_partner_id,
-      referrer_name: customer.source_partner_name?.trim() || undefined,
-    };
-  }
-
-  if (customer.source_partner_name?.trim()) {
-    return {
-      referrer_type: "external",
-      referrer_name: customer.source_partner_name.trim(),
-    };
-  }
-
-  return {};
+  if (!isCustomerReferrerType(raw.referrer_type)) return {};
+  return {
+    referrer_type: raw.referrer_type,
+    referrer_id: raw.referrer_id || undefined,
+    referrer_name: raw.referrer_name?.trim() || undefined,
+  };
 }
 
 export function customerReferrerSelection(
@@ -88,8 +66,8 @@ export function referrerExists(db: RDashDatabase, referrer: CustomerReferrerFiel
 }
 
 /**
- * source_partner_* remains a commission-specific compatibility projection.
- * It is populated only when the generic referrer is actually a Source Partner.
+ * source_partner_* remains a commission projection. It is populated only when
+ * the generic Customer referrer is actually a Source Partner.
  */
 export function sourcePartnerProjection(referrer: CustomerReferrerFields): Pick<Customer, "source_partner_id" | "source_partner_name"> {
   return referrer.referrer_type === "source_partner"
