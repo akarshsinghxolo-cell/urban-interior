@@ -30,7 +30,7 @@ const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Ob
     "master.fileAssets", "master.catalogues", "master.referenceMedia", "master.units",
     "master.workCategories", "master.workSubcategories", "master.workOptionGroups",
     "master.workOptionValues", "master.articles", "master.articleVariants",
-    "master.subcategoryArticleMap", "master.contractors", "master.vendors",
+    "master.subcategoryArticleMap", "master.contractors", "master.contractorRates", "master.vendors",
     "master.sourcePartners",
   ]),
   tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments", "quotations", "workRequired", "commSends"]),
