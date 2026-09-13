@@ -2,10 +2,11 @@
  * Canonical Customer workspace read model.
  *
  * Customer list, detail, timeline, Customer-family modules, and the generic
- * customer-scope fallback all derive from these constants. Finance/procurement
- * collections do not belong to the Customer CRM surface; their own modules own
- * payments, invoices, receipts, AP, procurement, contractor liabilities and
- * commercial accounting. Site Execution owns contractor-rate-backed capture.
+ * customer-scope fallback all derive from these constants. Customer Desk and
+ * Site Execution may both edit Site / Area / Work Required through the same
+ * canonical records and mutations. Finance/procurement collections and
+ * contractor/vendor rate masters do not belong to the Customer CRM surface;
+ * their owning modules keep those commercial details permission-scoped.
  */
 export const CUSTOMER_CRM_DIRECT_RELATIONS = Object.freeze([
   "sites",
