@@ -38,12 +38,15 @@ export function detailKindToFileEntityType(kind?: string | null): FileAttachment
         workRequired: "workRequired",
         boq: "boq",
         vendorBill: "vendor_bill",
+        vendorPayment: "vendor_payment",
         commission: "commission",
         blocked: "blocked",
         inventory: "inventory",
         vendor: "vendor",
         vendorRate: "vendor_rate",
         contractor: "contractor",
+        contractorBill: "contractor_bill",
+        contractorPayment: "contractor_payment",
     };
     return kind ? map[kind] || null : null;
 }
