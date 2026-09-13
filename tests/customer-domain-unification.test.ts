@@ -148,6 +148,22 @@ describe("customer domain unification", () => {
     expect(rules).toContain("WorkRequiredValidationContext");
   });
 
+  test("Customer-facing sales, import, and export callers use canonical referrer fields", async () => {
+    const exportSource = await read("src/components/rdash/modules/DataExportModule.tsx");
+    const importSource = await read("src/components/rdash/modules/DataImportModule.tsx");
+    const mastersSales = await read("src/components/rdash/modules/MastersSalesOpsModule.tsx");
+    const salesExtra = await read("src/components/rdash/modules/SalesExtraModules.tsx");
+
+    expect(exportSource).toContain("p.referrer_name");
+    expect(exportSource).not.toContain("p.source_partner_name");
+    expect(importSource).toContain('referrer_type: row.data.source ? "external" : undefined');
+    expect(importSource).not.toContain("source_partner_name: row.data.source");
+    expect(mastersSales).toContain('p.referrer_type === "source_partner"');
+    expect(mastersSales).not.toContain("p.source_partner_id");
+    expect(salesExtra).toContain('p.referrer_type === "source_partner"');
+    expect(salesExtra).not.toContain("p.source_partner_id");
+  });
+
   test("removed quotation and customer-form compatibility shims do not return", async () => {
     const businessRules = await read("src/lib/rdash/business-rules.ts");
     const formModel = await read("src/components/rdash/customer-sites-form-model.ts");
