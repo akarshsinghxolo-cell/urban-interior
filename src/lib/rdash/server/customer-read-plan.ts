@@ -1,10 +1,11 @@
 /**
  * Canonical Customer workspace read model.
  *
- * Customer list, Customer detail and Customer Timeline all derive from these
- * constants. Finance/procurement collections do not belong to the Customer CRM
- * surface; their own modules own payments, invoices, receipts, AP, procurement,
- * contractor liabilities and commercial accounting.
+ * Customer list, detail, timeline, Customer-family modules, and the generic
+ * customer-scope fallback all derive from these constants. Finance/procurement
+ * collections do not belong to the Customer CRM surface; their own modules own
+ * payments, invoices, receipts, AP, procurement, contractor liabilities and
+ * commercial accounting.
  */
 export const CUSTOMER_CRM_DIRECT_RELATIONS = Object.freeze([
   "sites",
