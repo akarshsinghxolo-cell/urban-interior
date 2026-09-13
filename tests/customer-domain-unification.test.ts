@@ -53,6 +53,25 @@ describe("customer domain unification", () => {
     }
   });
 
+  test("rejects partial or invalid canonical referrer shapes", () => {
+    const db = structuredClone(buildSeedDatabase());
+    const customer = db.customers[0];
+
+    expect(() => assertCustomerRecord(db, {
+      ...customer,
+      referrer_type: undefined,
+      referrer_id: "someone",
+      referrer_name: "Someone",
+    }, "Customer")).toThrow(/valid referrer type is required/i);
+
+    expect(() => assertCustomerRecord(db, {
+      ...customer,
+      referrer_type: "external",
+      referrer_id: "should-not-exist",
+      referrer_name: "Walk-in",
+    }, "Customer")).toThrow(/does not exist/i);
+  });
+
   test("Customer is the one canonical TypeScript model", async () => {
     const types = await read("src/lib/rdash/types.ts");
     const start = types.indexOf("export interface Customer {");
