@@ -1,0 +1,39 @@
+name: Customer Desk Diagnostics
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/customer-desk-diagnostics.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  vitest-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Run Vitest and capture output
+        shell: bash
+        run: |
+          set +e
+          npm run test 2>&1 | tee vitest-diagnostics.txt
+          status=${PIPESTATUS[0]}
+          echo "$status" > vitest-exit-code.txt
+          exit 0
+      - name: Upload diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-desk-vitest-diagnostics
+          path: |
+            vitest-diagnostics.txt
+            vitest-exit-code.txt
+          retention-days: 1
