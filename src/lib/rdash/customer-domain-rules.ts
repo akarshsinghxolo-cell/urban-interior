@@ -79,7 +79,7 @@ export function assertWorkRequiredDefinition(
   }
   if (!hasCategory) {
     if (workTypeIds.length) {
-      throw new Error(`${context}: a general scope cannot contain Work Types without a category/subcategory.`);
+      throw new Error(`${context}: a general scope cannot contain work types without a category/subcategory.`);
     }
   } else {
     const category = db.master.workCategories.find((row) => row.id === categoryId);
@@ -95,7 +95,7 @@ export function assertWorkRequiredDefinition(
     const allowedWorkTypeIds = new Set(resolveWorkTypes(subcategories, workTypeIds).map((row) => row.id));
     const invalidWorkTypeId = workTypeIds.find((id) => !allowedWorkTypeIds.has(id));
     if (invalidWorkTypeId) {
-      throw new Error(`${context}: Work Type "${invalidWorkTypeId}" does not belong to the selected Work Subcategories.`);
+      throw new Error(`${context}: work type "${invalidWorkTypeId}" does not belong to the selected Work Subcategories.`);
     }
   }
 
