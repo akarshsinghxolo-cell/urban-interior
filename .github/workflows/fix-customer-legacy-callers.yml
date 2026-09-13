@@ -1,0 +1,68 @@
+name: Fix customer legacy callers
+
+on:
+  push:
+    branches:
+      - agent/customer-contract-hardening
+    paths:
+      - .github/workflows/fix-customer-legacy-callers.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/customer-contract-hardening
+          fetch-depth: 0
+      - name: Replace legacy Customer referral reads and writes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+            'src/components/rdash/modules/CustomerDesk.tsx': [
+              ('phone={customer.phone}', 'phone={customer.phone || ""}'),
+            ],
+            'src/components/rdash/modules/DataExportModule.tsx': [
+              ('p.source_partner_name || ""', 'p.referrer_name || ""'),
+            ],
+            'src/components/rdash/modules/DataImportModule.tsx': [
+              ('                            source_partner_name: row.data.source || undefined,\n',
+               '                            referrer_type: row.data.source ? "external" : undefined,\n                            referrer_name: row.data.source || undefined,\n'),
+            ],
+            'src/components/rdash/modules/MastersSalesOpsModule.tsx': [
+              ('db.customers.filter((p) => p.source_partner_id).length',
+               'db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id).length'),
+              ('db.customers.filter((p) => p.source_partner_id === sp.id)',
+               'db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id === sp.id)'),
+            ],
+            'src/components/rdash/modules/SalesExtraModules.tsx': [
+              ('db.customers.filter((p) => p.source_partner_id === sp.id)',
+               'db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id === sp.id)'),
+            ],
+          }
+
+          for rel, pairs in replacements.items():
+            p = Path(rel)
+            text = p.read_text()
+            for old, new in pairs:
+              count = text.count(old)
+              if count != 1:
+                raise SystemExit(f'{rel}: expected one match for {old!r}, found {count}')
+              text = text.replace(old, new, 1)
+            p.write_text(text)
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/fix-customer-legacy-callers.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Migrate remaining Customer referral callers to canonical fields'
+          git push origin HEAD:agent/customer-contract-hardening
