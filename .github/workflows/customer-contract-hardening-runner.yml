@@ -23,6 +23,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Tighten one-shot source guard
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply-customer-contract-hardening.py')
+          text = p.read_text()
+          text = text.replace(
+              'source_files = list((ROOT / "src").rglob("*.ts")) + list((ROOT / "src").rglob("*.tsx")) + list((ROOT / "tests").rglob("*.ts"))',
+              'source_files = list((ROOT / "src").rglob("*.ts")) + list((ROOT / "src").rglob("*.tsx"))',
+          )
+          p.write_text(text)
+          PY
       - name: Apply cleanup
         run: python scripts/apply-customer-contract-hardening.py
       - name: Remove one-shot runner
