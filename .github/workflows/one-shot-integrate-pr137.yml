@@ -1,0 +1,144 @@
+name: One-shot reconcile PR 137
+
+on:
+  push:
+    branches:
+      - integration/pr137-current-main
+
+permissions:
+  contents: write
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: integration/pr137-current-main
+      - name: Reconcile GPS centralization onto current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin agent/centralize-gps-acquisition
+          git diff --binary 82394f3708a6c127d34e1a471b34a773edc7b071 origin/agent/centralize-gps-acquisition -- \
+            src/components/rdash/AutoGeofenceMonitor.tsx \
+            src/components/rdash/ContractorFormDialog.tsx \
+            src/components/rdash/CustomerSiteDraftCard.tsx \
+            src/components/rdash/SiteFormDialog.tsx \
+            src/components/rdash/StaffLocationTracker.tsx \
+            src/components/rdash/UnifiedPartnerFormDialog.tsx \
+            src/components/rdash/modules/AttendancePayrollModule.tsx \
+            src/components/rdash/modules/FieldModeModule.tsx \
+            src/lib/rdash/device-gps.ts > /tmp/pr137.patch
+          git apply --3way --index /tmp/pr137.patch
+
+          cat > tests/device-gps.test.ts <<'EOF'
+          import { afterEach, describe, expect, it, vi } from "vitest";
+          import {
+            captureDeviceGps,
+            captureDevicePosition,
+            DEVICE_GPS_OPTIONS,
+            deviceGpsErrorMessage,
+            MASTER_LOCATION_MAX_ACCURACY_M,
+            watchDevicePosition,
+          } from "../src/lib/rdash/device-gps";
+
+          const originalNavigator = globalThis.navigator;
+
+          function position(accuracy = 12, timestamp = 1_700_000_000_000): GeolocationPosition {
+            return {
+              coords: {
+                latitude: 26.7606,
+                longitude: 83.3732,
+                accuracy,
+                altitude: null,
+                altitudeAccuracy: null,
+                heading: null,
+                speed: null,
+              },
+              timestamp,
+            };
+          }
+
+          function installGeolocation(geolocation: Partial<Geolocation>) {
+            Object.defineProperty(globalThis, "navigator", {
+              configurable: true,
+              value: { geolocation },
+            });
+          }
+
+          afterEach(() => {
+            vi.restoreAllMocks();
+            Object.defineProperty(globalThis, "navigator", {
+              configurable: true,
+              value: originalNavigator,
+            });
+          });
+
+          describe("device GPS policy", () => {
+            it("requires a fresh, accurate master-location capture", async () => {
+              const getCurrentPosition = vi.fn((success: PositionCallback) => success(position(120)));
+              installGeolocation({ getCurrentPosition } as Partial<Geolocation>);
+
+              await expect(captureDevicePosition({ mode: "master-location" })).rejects.toThrow(
+                `within ${MASTER_LOCATION_MAX_ACCURACY_M} m accuracy`,
+              );
+              expect(getCurrentPosition).toHaveBeenCalledWith(
+                expect.any(Function),
+                expect.any(Function),
+                DEVICE_GPS_OPTIONS["master-location"],
+              );
+              expect(DEVICE_GPS_OPTIONS["master-location"].maximumAge).toBe(0);
+            });
+
+            it("keeps transaction capture fresh while leaving final accuracy enforcement to business rules", async () => {
+              const getCurrentPosition = vi.fn((success: PositionCallback) => success(position(160)));
+              installGeolocation({ getCurrentPosition } as Partial<Geolocation>);
+
+              const captured = await captureDeviceGps({ mode: "transaction", actionSource: "manual" });
+              expect(captured).toMatchObject({
+                latitude: 26.7606,
+                longitude: 83.3732,
+                accuracy_m: 160,
+                action_source: "manual",
+              });
+              expect(captured.captured_at).toBe(new Date(1_700_000_000_000).toISOString());
+              expect(DEVICE_GPS_OPTIONS.transaction.maximumAge).toBe(0);
+            });
+
+            it("uses one tracking preset and returns a deterministic cleanup callback", () => {
+              const clearWatch = vi.fn();
+              const watchPosition = vi.fn(() => 42);
+              installGeolocation({ watchPosition, clearWatch } as Partial<Geolocation>);
+
+              const stop = watchDevicePosition(() => undefined, () => undefined);
+              expect(watchPosition).toHaveBeenCalledWith(
+                expect.any(Function),
+                expect.any(Function),
+                DEVICE_GPS_OPTIONS.tracking,
+              );
+              stop();
+              expect(clearWatch).toHaveBeenCalledWith(42);
+            });
+
+            it("normalizes browser permission errors for consistent UI messaging", () => {
+              const error = {
+                code: 1,
+                message: "denied",
+                PERMISSION_DENIED: 1,
+                POSITION_UNAVAILABLE: 2,
+                TIMEOUT: 3,
+              } as GeolocationPositionError;
+              expect(deviceGpsErrorMessage(error)).toContain("Location permission is blocked");
+            });
+          });
+          EOF
+
+          git add tests/device-gps.test.ts
+          git rm .github/workflows/one-shot-integrate-pr137.yml
+          git diff --cached --check
+          git commit -m "refactor: reconcile centralized GPS acquisition with current main"
+          git push origin HEAD:integration/pr137-current-main
