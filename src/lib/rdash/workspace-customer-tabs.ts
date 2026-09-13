@@ -5,10 +5,6 @@ const CUSTOMER_TABS = new Set<ContextCustomerTab>([
   "sites",
   "tasks",
   "quotations",
-  "payments",
-  "invoices",
-  "advances",
-  "liabilities",
   "visits",
   "activity",
 ]);
