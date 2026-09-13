@@ -37,6 +37,7 @@ Goal: remove old/new Customer domain conflicts so Customer, Site, Area and Work 
 - [x] Make phone optional without fabricating data; every supplied phone must be valid and identity uniqueness is enforced across primary phone, WhatsApp, alternate phone and email.
 - [x] Remove active `referralLegacyName` compatibility state after the data migration.
 - [x] Convert the seed Customer `Walk-in` referrer to the canonical explicit external-referrer shape.
+- [x] Remove runtime fallback inference from legacy `source_partner_*` Customer referral fields; runtime reads only canonical `referrer_*` fields.
 
 ## P2 — read path cleanup
 
@@ -44,7 +45,7 @@ Goal: remove old/new Customer domain conflicts so Customer, Site, Area and Work 
 - [x] Serve all collections actually read by Customer Desk, including contractor-rate estimates.
 - [x] Use generated indexed `customer_id_gen` / `site_id_gen` columns for entity-scoped Customer/Site relationship reads, with JSON selectors only for relationships that do not yet have generated columns.
 - [x] Keep entity detail routes on the row-graph planner and maintenance-only operations on full-workspace reads.
-- [ ] Remove the remaining stale Thread Inbox comment that calls canonical `customer-conversation:<customer_id>` terminology legacy.
+- [x] Remove stale Thread Inbox terminology: `customer-conversation:<customer_id>` is described as canonical, not legacy.
 
 ## Verification
 
@@ -53,5 +54,5 @@ Goal: remove old/new Customer domain conflicts so Customer, Site, Area and Work 
 - [x] Re-run Supabase security and performance advisors.
 - [x] Verify all generated foreign-key constraints are validated and current sampled Customer/Site orphan counts are zero.
 - [x] Verify current invalid Customer rows, invalid Work Required rows and duplicate contact identities are zero.
-- [ ] Complete the repository CI gate: full Vitest, TypeScript, ESLint, Next build and Playwright smoke. The latest human-authored branch commit triggers this final run.
+- [ ] Complete the repository CI gate: full Vitest, TypeScript, ESLint, Next build and Playwright smoke. This commit triggers the final human-authored run.
 - [ ] Re-evaluate branch/PR diffs for old referral state, duplicate Work Required/Area validation, stale thread wording and the removed quotation regex shim after CI is green.
