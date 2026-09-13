@@ -18,6 +18,7 @@ import {
   staffRouteLastSyncKey,
   staffRouteQueueKey,
 } from "@/lib/rdash/staff-route-client";
+import { captureDevicePosition, deviceGpsErrorMessage, watchDevicePosition } from "@/lib/rdash/device-gps";
 
 const HOURLY_SYNC_MS = 60 * 60_000;
 const SYNC_CHECK_MS = 60_000;
@@ -31,12 +32,6 @@ const MAX_REASONABLE_SPEED_KMH = 220;
 const MAX_QUEUE_POINTS = 6_000;
 const MAX_CAPTURE_AGE_MS = 14 * 24 * 60 * 60 * 1_000;
 const POST_TIMEOUT_MS = 15_000;
-
-const POSITION_OPTIONS: PositionOptions = {
-  enableHighAccuracy: true,
-  maximumAge: 15_000,
-  timeout: 20_000,
-};
 
 type QueuedRoutePoint = Omit<StaffLocationPing, "id" | "staff_id"> & {
   client_point_id: string;
@@ -216,19 +211,6 @@ function shouldCapture(
   }
   return elapsed >= MOVING_CAPTURE_INTERVAL_MS
     && (moved >= MINIMUM_MOVEMENT_METERS || elapsed >= MOVING_CAPTURE_INTERVAL_MS);
-}
-
-function geolocationMessage(error: GeolocationPositionError) {
-  if (error.code === error.PERMISSION_DENIED) {
-    return "Location permission is blocked. Allow precise location in browser settings.";
-  }
-  if (error.code === error.POSITION_UNAVAILABLE) {
-    return "This device cannot determine a reliable GPS position.";
-  }
-  if (error.code === error.TIMEOUT) {
-    return "Location timed out. Frontend route capture will retry.";
-  }
-  return error.message || "Location capture failed.";
 }
 
 export function StaffLocationTracker() {
@@ -480,31 +462,23 @@ export function StaffLocationTracker() {
       syncIfDue();
     };
 
-    const onError = (error: GeolocationPositionError) => {
-      const denied = error.code === error.PERMISSION_DENIED;
+    const onError = (error: unknown) => {
+      const denied = (error as GeolocationPositionError | undefined)?.code === 1;
       publishLocationTrackingState({
         status: denied ? "permission_denied" : "error",
         permission: denied
           ? "denied"
           : readLocationTrackingState().permission,
-        message: geolocationMessage(error),
+        message: deviceGpsErrorMessage(error),
       });
     };
 
     const requestCurrentPosition = () => {
       if (disposed || document.visibilityState !== "visible") return;
-      navigator.geolocation.getCurrentPosition(
-        capture,
-        onError,
-        POSITION_OPTIONS,
-      );
+      void captureDevicePosition({ mode: "tracking" }).then(capture).catch(onError);
     };
 
-    const watchId = navigator.geolocation.watchPosition(
-      capture,
-      onError,
-      POSITION_OPTIONS,
-    );
+    const stopWatching = watchDevicePosition(capture, onError);
     requestCurrentPosition();
 
     const syncTimer = window.setInterval(syncIfDue, SYNC_CHECK_MS);
@@ -535,7 +509,7 @@ export function StaffLocationTracker() {
 
     return () => {
       disposed = true;
-      navigator.geolocation.clearWatch(watchId);
+      stopWatching();
       window.clearInterval(syncTimer);
       window.clearInterval(positionHeartbeat);
       window.removeEventListener(STAFF_ROUTE_SYNC_EVENT, onManualSync);

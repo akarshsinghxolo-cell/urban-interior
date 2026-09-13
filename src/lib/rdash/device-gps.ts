@@ -1,9 +1,9 @@
 import type { GeoActionSource } from "./types";
 import type { GpsCapture } from "./gps";
 
-type DeviceGpsMode = "transaction" | "master-location" | "tracking";
+export type DeviceGpsMode = "transaction" | "master-location" | "tracking";
 
-const MASTER_LOCATION_MAX_ACCURACY_M = 75;
+export const MASTER_LOCATION_MAX_ACCURACY_M = 75;
 
 // Two-stage capture: try the precise GPS fix first, then fall back to a
 // balanced (Wi-Fi/network) fix. High-accuracy-only captures routinely time
@@ -25,7 +25,7 @@ const DEVICE_GPS_STAGES: Record<DeviceGpsMode, PositionOptions[]> = {
   ],
 };
 
-type CaptureDevicePositionOptions = {
+export type CaptureDevicePositionOptions = {
   mode?: DeviceGpsMode;
   maxAccuracyM?: number;
 };
@@ -90,7 +90,7 @@ function requestPosition(api: Geolocation, options: PositionOptions): Promise<Ge
   });
 }
 
-async function captureDevicePosition(
+export async function captureDevicePosition(
   options: CaptureDevicePositionOptions = {},
 ): Promise<GeolocationPosition> {
   const mode = options.mode || "transaction";
@@ -111,6 +111,21 @@ async function captureDevicePosition(
     }
   }
   throw lastPositionError;
+}
+
+export const DEVICE_GPS_WATCH_OPTIONS: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 20_000,
+  maximumAge: 15_000,
+};
+
+export function watchDevicePosition(
+  onPosition: PositionCallback,
+  onError?: PositionErrorCallback,
+): () => void {
+  const api = geolocation();
+  const watchId = api.watchPosition(onPosition, onError, DEVICE_GPS_WATCH_OPTIONS);
+  return () => api.clearWatch(watchId);
 }
 
 export async function captureDeviceGps(
