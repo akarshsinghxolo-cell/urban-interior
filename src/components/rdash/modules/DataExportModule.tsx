@@ -28,7 +28,7 @@ export function DataExportModule() {
                 icon: Users,
                 count: db.customers.length,
                 headers: ["ID", "Name", "Phone", "Email", "Sites", "Status", "Source", "Created"],
-                rows: db.customers.map((p) => [p.id, p.name, p.phone || "", p.email || "", db.sites.filter((site) => site.customer_id === p.id).map((site) => site.name).join(" · "), p.status, p.source_partner_name || "", p.created_at]),
+                rows: db.customers.map((p) => [p.id, p.name, p.phone || "", p.email || "", db.sites.filter((site) => site.customer_id === p.id).map((site) => site.name).join(" · "), p.status, p.referrer_name || "", p.created_at]),
             },
             {
                 id: "quotations",

@@ -12,7 +12,7 @@ export function SourceReferralModule() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const partners = React.useMemo(() => {
         return db.master.sourcePartners.map((sp) => {
-            const customers = db.customers.filter((p) => p.source_partner_id === sp.id);
+            const customers = db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id === sp.id);
             const commissions = db.commissions.filter((c) => c.source_partner_id === sp.id);
             const totalCommission = commissions.reduce((n, c) => n + c.amount, 0);
             const paidCommission = commissions.filter((c) => c.status === "paid").reduce((n, c) => n + c.amount, 0);

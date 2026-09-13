@@ -1019,7 +1019,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: {
     const quotations = db.quotations.filter((quotation) => quotation.customer_id === customerId);
     const payments = db.payments.filter((payment) => payment.customer_id === customerId);
     const visits = db.visits.filter((visit) => visit.customer_id === customerId);
-    return (<CustomerPortfolioContext customerId={customer.id} name={customer.name} phone={customer.phone} email={customer.email} reqStatus={workRequired ? workRequiredStatusStyle(workRequired.status) : undefined} budget={workRequired?.budget} tasks={tasks} quotations={quotations} payments={payments} visits={visits} sites={sites} areas={areas} taskDispatch={{ updateTask }} quoteDispatch={{ updateQuotation }} customerDispatch={{ setActiveModule, openActionDialog, openCreateDialog }}/>);
+    return (<CustomerPortfolioContext customerId={customer.id} name={customer.name} phone={customer.phone || ""} email={customer.email} reqStatus={workRequired ? workRequiredStatusStyle(workRequired.status) : undefined} budget={workRequired?.budget} tasks={tasks} quotations={quotations} payments={payments} visits={visits} sites={sites} areas={areas} taskDispatch={{ updateTask }} quoteDispatch={{ updateQuotation }} customerDispatch={{ setActiveModule, openActionDialog, openCreateDialog }}/>);
 }
 type TimelineEntry = {
     id: string;
