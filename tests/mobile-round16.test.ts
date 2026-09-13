@@ -42,35 +42,35 @@ describe("Mobile round 16 — drawer / dialog overflow fixes", () => {
   });
 });
 
-describe("Mobile round 16 — lean Customer Desk", () => {
-  test("customer cards and drawer identity blocks can shrink", async () => {
+describe("Mobile round 16 — restored Customer Desk", () => {
+  test("safe customer cards can shrink without reintroducing the first-customer fallback", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
     expectTokens(desk, ['<div className="min-w-0 flex-1">']);
     expectTokens(desk, ['<p className="min-w-0 flex-1 truncate text-sm font-bold">']);
-    expectTokens(desk, ['<div className="flex min-w-0 flex-1 items-start gap-3">']);
+    expect(desk).not.toContain("|| db.customers[0]");
   });
 
-  test("customer tabs scroll inside their own horizontal strip", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ["overflow-x-auto border-b border-border"]);
-    expectTokens(desk, ["rd-scroll rd-scroll-fade"]);
+  test("restored customer tabs scroll inside the historical portfolio drawer", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expectTokens(portfolio, ["overflow-x-auto border-b border-border"]);
+    expectTokens(portfolio, ["rd-scroll rd-scroll-fade"]);
+    expect(portfolio).toContain('key: "payments"');
+    expect(portfolio).toContain('key: "liabilities"');
   });
 
-  test("Customer Timeline panes use minmax tracks and shrinkable content", async () => {
+  test("Customer Timeline selector keeps minmax tracks and shrinkable content", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
     expectTokens(desk, ["grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"]);
     expectTokens(desk, ['<div className="flex min-w-0 flex-col gap-3">']);
     expectTokens(desk, ['<div className="min-w-0">']);
   });
 
-  test("finance sheets stay retired while detailed work capture is isolated in its own responsive dialog", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
-    for (const retired of ["advances", "liabilities", "RecordPaymentDialog"]) {
-      expect(desk).not.toContain(retired);
-    }
-    expect(desk).toContain("CustomerWorkCaptureDialog");
-    expect(capture).toContain('className="max-h-[94vh] overflow-hidden p-0 sm:max-w-4xl"');
-    expect(capture).toContain('className="rd-scroll max-h-[68vh] space-y-2 overflow-y-auto px-5 py-4"');
+  test("advanced Customer capture preserves the requested phone bottom-sheet layout", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expect(portfolio).toContain("Mobile: a full-width bottom sheet");
+    expect(portfolio).toContain("flex items-end justify-center");
+    expect(portfolio).toContain("max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl");
+    expect(portfolio).toContain("max-h-[60vh] overflow-y-auto overflow-x-hidden");
+    expect(portfolio).toContain("Capture detailed area");
   });
 });
