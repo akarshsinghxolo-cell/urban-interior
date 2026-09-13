@@ -1,0 +1,70 @@
+name: Customer domain one-shot cleanup
+
+on:
+  push:
+    branches:
+      - cleanup/customer-domain-unification
+
+permissions:
+  contents: write
+
+jobs:
+  patch-final-large-files:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: cleanup/customer-domain-unification
+          fetch-depth: 0
+      - name: Apply exact cleanup replacements
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          seed = Path('src/lib/rdash/seed.ts')
+          text = seed.read_text()
+          import_anchor = 'import type { '
+          if 'from "./customer-referrer";' not in text:
+              first_import_end = text.find('\n', text.find('from "./types";'))
+              if first_import_end < 0:
+                  raise SystemExit('types import anchor not found')
+              text = text[:first_import_end + 1] + 'import type { CustomerReferrerFields } from "./customer-referrer";\n' + text[first_import_end + 1:]
+          old_decl = 'const customers: Customer[] = ['
+          new_decl = 'const customers: Array<Customer & CustomerReferrerFields> = ['
+          if old_decl not in text and new_decl not in text:
+              raise SystemExit('customer seed declaration anchor not found')
+          text = text.replace(old_decl, new_decl, 1)
+          old_referrer = 'source_partner_name: "Walk-in"'
+          new_referrer = 'referrer_type: "external", referrer_name: "Walk-in"'
+          if old_referrer not in text and new_referrer not in text:
+              raise SystemExit('Walk-in referrer anchor not found')
+          text = text.replace(old_referrer, new_referrer, 1)
+          seed.write_text(text)
+
+          crm = Path('src/lib/rdash/store/slices/crm.ts')
+          text = crm.read_text()
+          old_customer = 'customer_id: work.customer_id,'
+          new_customer = 'customer_id: work.customer_id || "",'
+          if old_customer not in text and new_customer not in text:
+              raise SystemExit('CRM customer_id anchor not found')
+          text = text.replace(old_customer, new_customer, 1)
+          crm.write_text(text)
+
+          inbox = Path('src/components/rdash/modules/UnifiedThreadInboxModule.tsx')
+          text = inbox.read_text()
+          text = text.replace(
+              'Customer conversations are stored as generic threads under the legacy "customer-conversation:" record format.',
+              'Customer conversations are stored as generic threads under the canonical "customer-conversation:" record format.',
+          )
+          inbox.write_text(text)
+          PY
+      - name: Commit final cleanup and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/customer-domain-one-shot.yml
+          git add src/lib/rdash/seed.ts src/lib/rdash/store/slices/crm.ts src/components/rdash/modules/UnifiedThreadInboxModule.tsx
+          git diff --cached --check
+          git commit -m "cleanup: remove final customer compatibility seed"
+          git push origin HEAD:cleanup/customer-domain-unification
