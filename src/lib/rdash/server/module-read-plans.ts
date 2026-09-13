@@ -1,5 +1,6 @@
 import type { WorkspaceReadTarget } from "../workspace-read-scope";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
+import { CUSTOMER_CRM_COLLECTIONS } from "./customer-read-plan";
 import {
   boundedPageLimits,
   completeCollectionsForTarget,
@@ -20,19 +21,7 @@ const SCOPE_HISTORY_LIMITS = Object.freeze({
 } as const);
 
 const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  customerDesk: Object.freeze([
-    "customers", "sites", "areas", "workRequired", "measurementRevisions",
-    "quotations", "acceptedScopes", "workOrders", "tasks", "followups", "visits",
-    "risks", "blocked", "actions", "payments", "invoices", "customerReceipts",
-    "boqs", "drawings", "executionLogs", "variationRequests", "purchaseOrders", "grns",
-    "vendorBills", "workOrderCostLines", "contractorBills", "commSends",
-    "entityReferenceAssignments", "entityFileAttachments", "auditLog",
-    "master.fileAssets", "master.catalogues", "master.referenceMedia", "master.units",
-    "master.workCategories", "master.workSubcategories", "master.workOptionGroups",
-    "master.workOptionValues", "master.articles", "master.articleVariants",
-    "master.subcategoryArticleMap", "master.contractors", "master.contractorRates", "master.vendors",
-    "master.sourcePartners",
-  ]),
+  customerDesk: CUSTOMER_CRM_COLLECTIONS,
   tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments", "quotations", "workRequired", "commSends"]),
   blockedRisks: Object.freeze(["customers", "sites", "workOrders", "tasks", "blocked", "risks", "threads", "entityFileAttachments"]),
   approvals: Object.freeze(["customers", "sites", "quotations", "workOrders", "purchaseOrders", "vendorBills", "contractorPayments", "actions", "approvalPolicies", "threads", "entityFileAttachments", "risks", "invoices"]),
