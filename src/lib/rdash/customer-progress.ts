@@ -1,11 +1,12 @@
 import type { WorkRequired, WorkRequiredStatus, RDashDatabase } from "./types";
-import { indiaDate } from "./date";
+
 export type CustomerProgress = {
     key: "new" | "contacted" | "visit" | "measurement" | "quote" | "decision" | "negotiation" | "accepted" | "execution" | "on_hold" | "lost" | "completed";
     label: string;
     summary: string;
     percent: number;
 };
+
 function latestWorkRequired(workRequired: WorkRequired[]) {
     return [...workRequired].sort((a, b) => {
         const aDate = a.updated_at || a.created_at;
@@ -13,6 +14,7 @@ function latestWorkRequired(workRequired: WorkRequired[]) {
         return bDate.localeCompare(aDate);
     })[0];
 }
+
 function progressForWorkRequired(workRequired: WorkRequired | undefined): CustomerProgress {
     const title = workRequired?.title || "Add work required to begin";
     const status: WorkRequiredStatus | undefined = workRequired?.status;
@@ -51,82 +53,42 @@ function progressForWorkRequired(workRequired: WorkRequired | undefined): Custom
 }
 
 /**
- * J: Compute a payment-recovery penalty for this customer.
- *
- * Reads:
- *  - `db.invoices` for this customer (issued + outstanding balance)
- *  - `db.payments` for this customer (scheduled + received)
- *  - `db.customerReceipts` for actual cash received against invoices
- *
- * Returns a number between 0 and 25 (the max penalty applied to progress).
- *  - 0 penalty when the customer has no invoices, or every issued invoice is
- *    fully paid.
- *  - Penalty scales with the overdue ratio: if 50% of the issued invoice
- *    value is overdue (past due_date + unpaid), the penalty is 12.5 (half
- *    of the 25 max).
- *
- * Pure function — no store access.
+ * Customer progress is strictly CRM / execution progress.
+ * Collection health belongs to Finance and must not affect this score or force
+ * Customer Desk to read invoices, payments or receipts.
  */
-function customerCollectionPenalty(db: RDashDatabase, customerId: string): number {
-    const invoices = db.invoices.filter((inv) => inv.customer_id === customerId);
-    if (!invoices.length)
-        return 0;
-    const today = indiaDate();  // STAGE-3-FIX: IST date (was UTC)
-    const issuedValue = invoices.reduce((sum, inv) => sum + inv.total_amount, 0);
-    if (issuedValue <= 0)
-        return 0;
-    const overdueValue = invoices
-        .filter((inv) => inv.balance_amount > 0 && inv.due_date < today && inv.status !== "cancelled")
-        .reduce((sum, inv) => sum + inv.balance_amount, 0);
-    if (overdueValue <= 0)
-        return 0;
-    const overdueRatio = Math.min(1, overdueValue / issuedValue);
-    // 25-point max penalty, scaled linearly by overdue ratio.
-    return Math.round(overdueRatio * 25 * 10) / 10;
-}
-
 export function customerProgress(db: RDashDatabase, customerId: string): CustomerProgress {
-    const customer = db.customers.find((row) => row.id === customerId);
     const workRequiredList = db.workRequired.filter((row) => row.customer_id === customerId);
     const activeWorkRequireds = workRequiredList.filter((row) => row.status !== "lost" && row.status !== "completed");
     const activeWorkRequired = latestWorkRequired(activeWorkRequireds) || latestWorkRequired(workRequiredList);
     const workOrders = db.workOrders.filter((row) => row.customer_id === customerId);
     const activeJob = workOrders.find((row) => row.status === "in_progress" || row.status === "scheduled" || row.status === "on_hold");
     const completedJob = workOrders.find((row) => row.status === "completed");
-    // J: Apply payment-recovery penalty on top of the base progress. The
-    //    penalty is capped at 25 points and never reduces below 0%.
-    const penalty = customerCollectionPenalty(db, customerId);
+
     if (activeJob) {
-        const basePercent = Math.max(72, Math.min(95, activeJob.progress || 72));
         return {
             key: activeJob.status === "on_hold" ? "on_hold" : "execution",
             label: activeJob.status === "on_hold" ? "Execution on hold" : "Execution in progress",
-            summary: `${activeJob.title} · ${activeJob.progress}% progress${penalty > 0 ? ` · ⚠ collection risk (-${penalty}%)` : ""}`,
-            percent: Math.max(0, Math.round((basePercent - penalty) * 10) / 10),
+            summary: `${activeJob.title} · ${activeJob.progress}% progress`,
+            percent: Math.max(72, Math.min(95, activeJob.progress || 72)),
         };
     }
     if (completedJob) {
-        const basePercent = 100;
         return {
             key: "completed",
-            label: penalty > 0 ? "Work completed · dues pending" : "Work completed",
-            summary: `${completedJob.title} is complete${penalty > 0 ? ` · ⚠ ${penalty}% collection-risk penalty applied` : ""}`,
-            percent: Math.max(0, Math.round((basePercent - penalty) * 10) / 10),
+            label: "Work completed",
+            summary: `${completedJob.title} is complete`,
+            percent: 100,
         };
     }
-    const base = progressForWorkRequired(activeWorkRequired);
-    if (penalty <= 0 || base.percent <= 0)
-        return base;
-    return {
-        ...base,
-        summary: `${base.summary} · ⚠ collection risk (-${penalty}%)`,
-        percent: Math.max(0, Math.round((base.percent - penalty) * 10) / 10),
-    };
+    return progressForWorkRequired(activeWorkRequired);
 }
+
 export function customerMapHref(address?: string, latitude?: number, longitude?: number) {
     const query = latitude != null && longitude != null ? `${latitude},${longitude}` : address || "";
     return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : undefined;
 }
+
 export function customerWhatsappHref(phone?: string) {
     const digits = (phone || "").replace(/\D/g, "");
     if (!digits)
