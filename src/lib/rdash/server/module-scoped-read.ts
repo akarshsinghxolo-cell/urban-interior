@@ -9,10 +9,11 @@ import type {
 } from "../workspace-read-scope";
 import type { AuthenticatedUser } from "./auth";
 import {
-  CUSTOMER_CONTRACTOR_RATE_COLLECTIONS,
+  CUSTOMER_CONTRACTOR_COLLECTIONS,
   CUSTOMER_FINANCE_COLLECTIONS,
   CUSTOMER_MEDIA_COLLECTIONS,
   CUSTOMER_PROCUREMENT_COLLECTIONS,
+  CUSTOMER_VENDOR_COLLECTIONS,
 } from "./customer-read-plan";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
@@ -153,9 +154,9 @@ async function authorizeModuleTarget(
 /**
  * Customer Desk is an integrated cockpit, but permission ownership stays with
  * the source domains. A role that can only view Customers receives only the
- * CRM graph. Finance/Procurement/Media/Contractor-rate extensions are added
- * independently from the same projected permission snapshot already used to
- * authorize the route.
+ * CRM graph. Rich commercial, media and referral-directory extensions are
+ * added independently from the same projected permission snapshot already
+ * used to authorize the route.
  */
 export function permissionAwareModuleCollections(
   user: Pick<AuthenticatedUser, "role">,
@@ -184,8 +185,11 @@ export function permissionAwareModuleCollections(
   ) {
     add(CUSTOMER_PROCUREMENT_COLLECTIONS);
   }
+  if (canRole(permissions, user.role, "vendors", "view")) {
+    add(CUSTOMER_VENDOR_COLLECTIONS);
+  }
   if (canRole(permissions, user.role, "contractors", "view")) {
-    add(CUSTOMER_CONTRACTOR_RATE_COLLECTIONS);
+    add(CUSTOMER_CONTRACTOR_COLLECTIONS);
   }
   return [...collections];
 }
