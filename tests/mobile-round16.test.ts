@@ -63,10 +63,14 @@ describe("Mobile round 16 — lean Customer Desk", () => {
     expectTokens(desk, ['<div className="min-w-0">']);
   });
 
-  test("finance/capture sheets are no longer mounted inside Customer Desk", async () => {
+  test("finance sheets stay retired while detailed work capture is isolated in its own responsive dialog", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    for (const retired of ["advances", "liabilities", "StructuredWorkRequiredDialog", "RecordPaymentDialog"]) {
+    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
+    for (const retired of ["advances", "liabilities", "RecordPaymentDialog"]) {
       expect(desk).not.toContain(retired);
     }
+    expect(desk).toContain("CustomerWorkCaptureDialog");
+    expect(capture).toContain('className="max-h-[94vh] overflow-hidden p-0 sm:max-w-4xl"');
+    expect(capture).toContain('className="rd-scroll max-h-[68vh] space-y-2 overflow-y-auto px-5 py-4"');
   });
 });
