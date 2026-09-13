@@ -4,7 +4,7 @@
 
 Supabase Performance Advisor reported 207 unused indexes. The audit deliberately did not translate “zero scans” into “safe to drop”.
 
-Live PostgreSQL statistics showed 292 zero-scan indexes in total: 85 back a primary key, unique constraint, or other constraint and are therefore protected; 207 are non-constraint advisor candidates. Of the zero-scan set, 168 sit on currently empty tables and 124 sit on non-empty tables. The complete zero-scan set occupies about 3.4 MiB.
+Live PostgreSQL statistics showed 292 zero-scan indexes in total: 85 back a primary key, unique constraint, or other constraint and are therefore protected; 207 are non-constraint advisor candidates. Of the zero-scan set, 168 sit on currently empty tables and 124 sit on non-empty tables. The complete zero-scan set occupies about 3.4 MiB. `pg_stat_database.stats_reset` did not expose an explicit reset timestamp during the audit, so scan counts are treated as observations rather than proof of lifetime non-use.
 
 Two structural redundancy checks were then run against the live catalog:
 
