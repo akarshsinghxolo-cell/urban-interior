@@ -149,11 +149,11 @@ describe("workspace history URLs", () => {
       "?source=notification",
     )).toBe("/workspace/customers/cust-1?source=notification&tab=activity");
     expect(workspaceHistoryUrl(
-      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "payments"),
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "visits"),
       "/workspace/customers/cust-1",
       true,
       "?tab=sites",
-    )).toBe("/workspace/customers/cust-1?tab=payments");
+    )).toBe("/workspace/customers/cust-1?tab=visits");
   });
 
   test("keeps overview clean for both detail and customer workspaces", () => {
