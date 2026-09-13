@@ -2,17 +2,18 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { GitPullRequest, History, RotateCcw } from "lucide-react";
+import { FileText, GitPullRequest, History, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { DetailPanel } from "./DetailPanel";
+import { EntityFiles, detailKindToFileEntityType } from "./EntityFiles";
 import { EntityHistoryPanel, type EntityHistoryKind } from "./EntityHistoryPanel";
 import { PerformanceReconciliationAgent } from "./PerformanceReconciliationAgent";
 import { promptDialog } from "./PromptDialog";
 import { WorkOrderVariationsPanel } from "./WorkOrderVariationsPanel";
 
-type ExtraTab = "history" | "variations";
+type ExtraTab = "files" | "history" | "variations";
 
 function useDetailPanelHosts(enabled: boolean, recordId?: string | null) {
   const [tabHost, setTabHost] = React.useState<HTMLElement | null>(null);
@@ -71,7 +72,9 @@ function useDetailPanelHosts(enabled: boolean, recordId?: string | null) {
 
 function DetailExtraTabsExtension() {
   const detail = useRDashStore((state) => state.detailPanel);
-  const supported = detail.kind === "visit" || detail.kind === "workOrder";
+  const fileEntityType = detailKindToFileEntityType(detail.kind);
+  const hasHistoryExtension = detail.kind === "visit" || detail.kind === "workOrder";
+  const supported = Boolean(fileEntityType) || hasHistoryExtension;
   const detailKey = `${detail.kind || "none"}:${detail.recordId || "none"}`;
   const [selection, setSelection] = React.useState<{
     detailKey: string;
@@ -105,6 +108,15 @@ function DetailExtraTabsExtension() {
     label: string;
     icon: React.ReactNode;
   }> = [
+    ...(fileEntityType
+      ? [
+          {
+            id: "files" as const,
+            label: "Files",
+            icon: <FileText className="h-3.5 w-3.5" />,
+          },
+        ]
+      : []),
     ...(detail.kind === "workOrder"
       ? [
           {
@@ -114,11 +126,15 @@ function DetailExtraTabsExtension() {
           },
         ]
       : []),
-    {
-      id: "history",
-      label: "History",
-      icon: <History className="h-3.5 w-3.5" />,
-    },
+    ...(hasHistoryExtension
+      ? [
+          {
+            id: "history" as const,
+            label: "History",
+            icon: <History className="h-3.5 w-3.5" />,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -147,7 +163,13 @@ function DetailExtraTabsExtension() {
       {active
         ? createPortal(
             <div className="absolute inset-0 z-20 overflow-y-auto bg-card rd-scroll">
-              {active === "variations" && detail.kind === "workOrder" ? (
+              {active === "files" && fileEntityType ? (
+                <EntityFiles
+                  entityType={fileEntityType}
+                  entityId={detail.recordId}
+                  entityLabel={detail.kind || undefined}
+                />
+              ) : active === "variations" && detail.kind === "workOrder" ? (
                 <WorkOrderVariationsPanel workOrderId={detail.recordId} />
               ) : (
                 <EntityHistoryPanel
