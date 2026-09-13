@@ -31,7 +31,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             const now = nowIso();
             const row: import("../../types").WorkRequired = {
                 id,
-                customer_id: work.customer_id,
+                customer_id: work.customer_id || "",
                 site_id: work.site_id || "",
                 title: work.title || "New work required",
                 work_category_id: work.work_category_id,
