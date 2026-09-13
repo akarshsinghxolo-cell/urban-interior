@@ -1,6 +1,7 @@
 import { sanitizeIndianMobile } from "./phone-validation";
 import {
   customerReferrer,
+  isCustomerReferrerType,
   referrerExists,
   type CustomerReferrerLookup,
 } from "./customer-referrer";
@@ -34,13 +35,14 @@ export function assertCustomerReferrer(
   customer: Customer,
   context = "Customer",
 ): void {
-  const referrer = customerReferrer(customer);
-  if (!referrer.referrer_type) {
-    if (referrer.referrer_id || referrer.referrer_name) {
-      throw new Error(`${context}: referrer type is required when referrer details are supplied.`);
+  if (!isCustomerReferrerType(customer.referrer_type)) {
+    if (present(customer.referrer_type) || present(customer.referrer_id) || present(customer.referrer_name)) {
+      throw new Error(`${context}: a valid referrer type is required when referrer details are supplied.`);
     }
     return;
   }
+
+  const referrer = customerReferrer(customer);
   if (!referrer.referrer_name?.trim()) {
     throw new Error(`${context}: referrer name is required.`);
   }
