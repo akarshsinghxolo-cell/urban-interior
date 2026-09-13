@@ -8,13 +8,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { Customer, RDashDatabase } from "@/lib/rdash/types";
 import type { CustomerIdentityMatch } from "@/lib/rdash/customer-identity";
+import type { CustomerReferrerType } from "@/lib/rdash/customer-referrer";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import {
   validCustomerEmail,
   validIndianPhone,
   type CustomerDraft,
+  type CustomerReferrerSelectionDraft,
 } from "./customer-sites-form-model";
+
+type ReferralOption = CustomerReferrerSelectionDraft & {
+  key: string;
+  label: string;
+};
 
 export function CustomerDetailsFields({
   db,
@@ -40,24 +47,45 @@ export function CustomerDetailsFields({
   openExistingCustomer: (customerId: string) => void;
 }) {
   const [showReferralDropdown, setShowReferralDropdown] = React.useState(false);
-  // Closes on any outside pointerdown — the old blur+120ms hack kept the list
-  // open on mobile taps of non-focusable areas.
   const referralRootRef = React.useRef<HTMLDivElement>(null);
   useDismissOnOutside(showReferralDropdown, () => setShowReferralDropdown(false), referralRootRef);
   const [activeReferralIndex, setActiveReferralIndex] = React.useState(0);
-  const referralOptions = React.useMemo(() => {
-    const query = customer.referralQuery.trim().toLowerCase();
-    if (!query) return [];
-    return [
-      ...db.customers.filter((row) => row.id !== customerId).map((row) => ({ key: `customer:${row.id}`, name: row.name, type: "Customer" })),
-      ...db.master.contractors.map((row) => ({ key: `contractor:${row.id}`, name: row.name, type: "Contractor" })),
-      ...db.master.vendors.map((row) => ({ key: `vendor:${row.id}`, name: row.name, type: "Vendor" })),
-      ...db.master.sourcePartners.map((row) => ({ key: `source:${row.id}`, id: row.id, name: row.name, type: row.type || "Source partner" })),
-    ].filter((row) => row.name.toLowerCase().includes(query)).slice(0, 10);
+
+  const referralOptions = React.useMemo<ReferralOption[]>(() => {
+    const query = customer.referralQuery.trim();
+    const normalizedQuery = query.toLowerCase();
+    if (!normalizedQuery) return [];
+
+    const entityOptions: ReferralOption[] = [
+      ...db.customers
+        .filter((row) => row.id !== customerId)
+        .map((row) => ({ key: `customer:${row.id}`, id: row.id, name: row.name, type: "customer" as const, label: "Customer" })),
+      ...db.master.contractors
+        .map((row) => ({ key: `contractor:${row.id}`, id: row.id, name: row.name, type: "contractor" as const, label: "Contractor" })),
+      ...db.master.vendors
+        .map((row) => ({ key: `vendor:${row.id}`, id: row.id, name: row.name, type: "vendor" as const, label: "Vendor" })),
+      ...db.master.sourcePartners
+        .map((row) => ({ key: `source:${row.id}`, id: row.id, name: row.name, type: "source_partner" as const, label: row.type || "Source partner" })),
+    ].filter((row) => row.name.toLowerCase().includes(normalizedQuery)).slice(0, 9);
+
+    const exactEntity = entityOptions.some((row) => row.name.trim().toLowerCase() === normalizedQuery);
+    if (!exactEntity) {
+      entityOptions.push({
+        key: `external:${normalizedQuery}`,
+        name: query,
+        type: "external",
+        label: "External referrer",
+      });
+    }
+    return entityOptions;
   }, [customer.referralQuery, customerId, db.customers, db.master.contractors, db.master.sourcePartners, db.master.vendors]);
 
-  const selectReferral = (option: { id?: string; name: string }) => {
-    setCustomer((current) => ({ ...current, referralQuery: option.name, referralSelected: { id: option.id, name: option.name } }));
+  const selectReferral = (option: { id?: string; name: string; type: CustomerReferrerType }) => {
+    setCustomer((current) => ({
+      ...current,
+      referralQuery: option.name,
+      referralSelected: { id: option.id, name: option.name, type: option.type },
+    }));
     setShowReferralDropdown(false);
   };
 
@@ -87,19 +115,20 @@ export function CustomerDetailsFields({
             setSameNameAcknowledged(false);
           }} placeholder="e.g. Mr. Das" autoFocus={!isEdit} />
         </Field>
-        <Field label="Contact number" htmlFor="customer-phone">
+        <Field label="Contact number (optional)" htmlFor="customer-phone">
           <PhoneInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({ ...current, phone }))} placeholder="9876543210" />
         </Field>
-        <Field label="WhatsApp number" htmlFor="customer-whatsapp">
+        <Field label="WhatsApp number (optional)" htmlFor="customer-whatsapp">
           <PhoneInput id="customer-whatsapp" value={customer.whatsapp} onChange={(whatsapp) => setCustomer((current) => ({ ...current, whatsapp }))} placeholder="9876543210" />
         </Field>
-        <Field label="Alternate phone" htmlFor="customer-alternate-phone">
+        <Field label="Alternate phone (optional)" htmlFor="customer-alternate-phone">
           <PhoneInput id="customer-alternate-phone" value={customer.alternatePhone} onChange={(alternatePhone) => setCustomer((current) => ({ ...current, alternatePhone }))} placeholder="9876543210" />
         </Field>
-        <Field label="Email" htmlFor="customer-email">
+        <Field label="Email (optional)" htmlFor="customer-email">
           <EmailInput id="customer-email" value={customer.email} onChange={(email) => setCustomer((current) => ({ ...current, email }))} placeholder="name@example.com" />
         </Field>
       </div>
+
       {duplicateMatches.length > 0 && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
           <p className="font-semibold">This contact identity already belongs to:</p>
@@ -151,9 +180,8 @@ export function CustomerDetailsFields({
                 setShowReferralDropdown(true);
               }}
               onFocus={() => setShowReferralDropdown(true)}
-              onBlur={() => setShowReferralDropdown(false)}
               onKeyDown={handleReferralKeyDown}
-              placeholder="Search customers, contractors, vendors, or source partners"
+              placeholder="Search customers, contractors, vendors, source partners, or enter an external referrer"
             />
           </div>
         </Field>
@@ -170,19 +198,15 @@ export function CustomerDetailsFields({
                 onClick={() => selectReferral(option)}
                 className={cn("flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-accent/40", index === activeReferralIndex && "bg-accent/40")}
               >
-                <span>{option.name}</span><span className="text-muted-foreground">{option.type}</span>
+                <span>{option.name}</span><span className="text-muted-foreground">{option.label}</span>
               </button>
             ))}
           </div>
         )}
         {customer.referralSelected ? (
-          <p className="mt-1 text-[10px] text-success">Selected referrer: {customer.referralSelected.name}</p>
+          <p className="mt-1 text-[10px] text-success">Selected referrer: {customer.referralSelected.name} · {customer.referralSelected.type.replace("_", " ")}</p>
         ) : customer.referralQuery.trim() ? (
-          customer.referralQuery.trim() === customer.referralLegacyName ? (
-            <p className="mt-1 text-[10px] text-muted-foreground">Saved referrer preserved. Select a result to replace it.</p>
-          ) : (
-            <p className="mt-1 text-[10px] text-warning">Select a referrer from the list; free text is not saved.</p>
-          )
+          <p className="mt-1 text-[10px] text-warning">Choose the matching entity or the explicit external-referrer option.</p>
         ) : null}
       </div>
 
@@ -197,14 +221,12 @@ export function CustomerDetailsFields({
 
 function PhoneInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   const invalid = Boolean(value && !validIndianPhone(value));
-  return <div><Input id={id} value={value} onChange={(event) => onChange(sanitizeIndianMobile(event.target.value))} placeholder={placeholder} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter 10 digits starting with 6, 7, 8, or 9</p>}</div>;
+  return <div><Input id={id} value={value} onChange={(event) => onChange(sanitizeIndianMobile(event.target.value))} placeholder={placeholder} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter 10 digits starting with 6, 7, 8, or 9, or leave it empty</p>}</div>;
 }
-
 function EmailInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   const invalid = !validCustomerEmail(value);
   return <div><Input id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type="email" inputMode="email" autoComplete="email" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter an email address containing @, or leave it empty</p>}</div>;
 }
-
 function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
   return <div className="space-y-1"><label htmlFor={htmlFor} className="block text-[10px] font-semibold uppercase text-muted-foreground">{label}</label>{children}</div>;
 }

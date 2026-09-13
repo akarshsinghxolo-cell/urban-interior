@@ -1,6 +1,8 @@
 import { assertCustomerExists } from "../business-rules";
+import { assertCustomerRecord } from "../customer-domain-rules";
 import { assertUniqueCustomerIdentity } from "../customer-identity";
-import type { Customer, RDashDatabase } from "../types";
+import type { CustomerRecord } from "../customer-referrer";
+import type { RDashDatabase } from "../types";
 import {
   applyWorkspaceOperations,
   diffWorkspaceOperations,
@@ -51,6 +53,15 @@ export function canUseSimpleTargetedCommit(operations: WorkspaceOperation[]): bo
   return hasBusinessMutation && rowCount > 0 && rowCount <= MAX_SIMPLE_TARGETED_ROWS;
 }
 
+function addCustomerReferrerDependency(rows: Record<string, Set<string>>, row: Record<string, unknown>) {
+  const referrerType = String(row.referrer_type || "");
+  const referrerId = row.referrer_id;
+  if (referrerType === "customer") addId(rows, "customers", referrerId);
+  else if (referrerType === "contractor") addId(rows, "master.contractors", referrerId);
+  else if (referrerType === "vendor") addId(rows, "master.vendors", referrerId);
+  else if (referrerType === "source_partner") addId(rows, "master.sourcePartners", referrerId);
+}
+
 function buildReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]): WorkspaceReadPlan {
   const rows: Record<string, Set<string>> = {};
   const fullCollections = new Set<string>();
@@ -60,19 +71,17 @@ function buildReadPlan(user: AuthenticatedUser, operations: WorkspaceOperation[]
 
   for (const operation of operations) {
     if (operation.collection === "customers") {
-      // Identity uniqueness is workspace-wide. Reading the Customer table is
-      // still far cheaper than reconstructing unrelated ERP domains.
+      // Contact identity uniqueness is workspace-wide.
       fullCollections.add("customers");
     }
 
     for (const row of operation.upsert || []) {
       addId(rows, operation.collection, row.id);
-      if (operation.collection === "sites") {
+      if (operation.collection === "customers") {
+        addCustomerReferrerDependency(rows, row);
+      } else if (operation.collection === "sites") {
         addId(rows, "customers", row.customer_id);
       } else if (operation.collection === "attendance") {
-        // The mutation policy uses the signed-in Staff row to block inactive
-        // field users. Target Staff rows are intentionally not made a stronger
-        // requirement than the authoritative domain validator.
         if (user.staffId) addId(rows, "master.staff", user.staffId);
       }
     }
@@ -96,7 +105,8 @@ function validateCandidate(database: RDashDatabase, operations: WorkspaceOperati
         if (!row) throw new Error(`${operation.collection} "${id}" was not present after applying the operation.`);
 
         if (operation.collection === "customers") {
-          const customer = row as unknown as Customer;
+          const customer = row as unknown as CustomerRecord;
+          assertCustomerRecord(database, customer);
           assertUniqueCustomerIdentity(database.customers, customer, { excludeCustomerId: customer.id });
         } else if (operation.collection === "sites") {
           assertCustomerExists(database, String(row.customer_id || ""), "Site");
@@ -127,8 +137,6 @@ export async function prepareSimpleTargetedCommit(
   if (current.revision !== expectedRevision) throw new Error("CONFLICT");
   const loadedAt = Date.now();
 
-  // This may bind a Field Staff record to the session's staff identity, exactly
-  // as the authoritative domain commit path does.
   assertWorkspaceMutationAllowed(user, operations, current.data);
   const candidate = applyWorkspaceOperations(current.data, operations);
   const preparedOperations = diffWorkspaceOperations(current.data, candidate);

@@ -1,57 +1,32 @@
-import type { Area, Customer, EntityFileAttachment, Master, RDashDatabase, Site, WorkRequired } from "./types";
+import type { Area, Customer, EntityFileAttachment, RDashDatabase, Site, WorkRequired } from "./types";
 import { titleCaseCustomerName } from "./customer-record";
 import { assertUniqueCustomerIdentity } from "./customer-identity";
-import { resolveWorkTypes } from "./work-types";
+import {
+  customerReferrer,
+  isCustomerReferrerType,
+  sourcePartnerProjection,
+  type CustomerRecord,
+  type CustomerReferrerFields,
+} from "./customer-referrer";
+import { assertCustomerRecord, assertWorkRequiredDefinition } from "./customer-domain-rules";
 
-export type CustomerSiteSaveDraft = Partial<Site> & {
-  id?: string;
-};
-
-export type CustomerAreaSaveDraft = Partial<Area> & {
-  id?: string;
-};
-
-export type CustomerWorkRequiredSaveDraft = Partial<WorkRequired> & {
-  id?: string;
-};
-
+export type CustomerSiteSaveDraft = Partial<Site> & { id?: string };
+export type CustomerAreaSaveDraft = Partial<Area> & { id?: string };
+export type CustomerWorkRequiredSaveDraft = Partial<WorkRequired> & { id?: string };
 export type SaveCustomerWithSitesInput = {
   customerId?: string;
-  customer: Partial<Customer>;
+  customer: Partial<Customer> & CustomerReferrerFields;
   sites?: CustomerSiteSaveDraft[];
   areas?: CustomerAreaSaveDraft[];
   workRequired?: CustomerWorkRequiredSaveDraft[];
   detachAttachmentIds?: string[];
 };
 
-type CustomerFieldChange = {
-  field: keyof Customer;
-  before: unknown;
-  after: unknown;
-};
-
-type SiteSaveChange = {
-  siteId: string;
-  kind: "create" | "update";
-  archived?: boolean;
-  before?: Site;
-  after: Site;
-};
-
-type AreaSaveChange = {
-  areaId: string;
-  kind: "create" | "update";
-  before?: Area;
-  after: Area;
-};
-
-type WorkRequiredSaveChange = {
-  workRequiredId: string;
-  kind: "create" | "update";
-  before?: WorkRequired;
-  after: WorkRequired;
-};
-
+type CustomerField = keyof Customer | keyof CustomerReferrerFields;
+type CustomerFieldChange = { field: CustomerField; before: unknown; after: unknown };
+type SiteSaveChange = { siteId: string; kind: "create" | "update"; archived?: boolean; before?: Site; after: Site };
+type AreaSaveChange = { areaId: string; kind: "create" | "update"; before?: Area; after: Area };
+type WorkRequiredSaveChange = { workRequiredId: string; kind: "create" | "update"; before?: WorkRequired; after: WorkRequired };
 type SaveCustomerWithSitesResult = {
   db: RDashDatabase;
   customerId: string;
@@ -66,158 +41,106 @@ type SaveCustomerWithSitesResult = {
   workRequiredChanges: WorkRequiredSaveChange[];
   detachedAttachmentIds: string[];
 };
+type SaveOptions = { now?: string; createId?: (prefix: "cust" | "site" | "area" | "workRequired") => string };
 
-type SaveOptions = {
-  now?: string;
-  createId?: (prefix: "cust" | "site" | "area" | "workRequired") => string;
-};
-
-const customerMutableFields: Array<keyof Customer> = [
-  "name",
-  "phone",
-  "whatsapp",
-  "alternate_phone",
-  "email",
-  "status",
-  "source_partner_id",
-  "source_partner_name",
-  "notes",
+const customerMutableFields: CustomerField[] = [
+  "name", "phone", "whatsapp", "alternate_phone", "email", "status",
+  "referrer_type", "referrer_id", "referrer_name",
+  "source_partner_id", "source_partner_name", "notes",
 ];
-
 const siteMutableFields: Array<keyof Site> = [
-  "name",
-  "building_name",
-  "site_type",
-  "stage",
-  "address",
-  "city",
-  "locality",
-  "latitude",
-  "longitude",
-  "map_url",
-  "photo_attachment_ids",
-  "source_partner_id",
-  "source_partner_name",
-  "notes",
-  "is_archived",
-  "archived_at",
-  "archived_by",
-  "archive_reason",
+  "name", "building_name", "site_type", "stage", "address", "city", "locality", "latitude", "longitude", "map_url",
+  "photo_attachment_ids", "source_partner_id", "source_partner_name", "notes", "is_archived", "archived_at", "archived_by", "archive_reason",
 ];
-
 const areaMutableFields: Array<keyof Area> = [
-  "site_id",
-  "name",
-  "area_type",
-  "stage",
-  "length",
-  "width",
-  "height",
-  "unit",
-  "floor_area",
-  "perimeter",
-  "notes",
-  "is_archived",
-  "archived_at",
-  "archived_by",
-  "archive_reason",
+  "site_id", "name", "area_type", "stage", "length", "width", "height", "unit", "floor_area", "perimeter", "notes",
+  "is_archived", "archived_at", "archived_by", "archive_reason",
 ];
-
 const workRequiredMutableFields: Array<keyof WorkRequired> = [
-  "site_id",
-  "title",
-  "work_category_id",
-  "work_subcategory_ids",
-  "work_type_ids",
-  "area_ids",
-  "description",
-  "priority",
-  "budget",
+  "site_id", "title", "work_category_id", "work_subcategory_ids", "work_type_ids", "area_ids", "description", "priority", "budget",
 ];
 
 function defaultId(prefix: "cust" | "site" | "area" | "workRequired"): string {
   return `${prefix}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
-
 function sameValue(left: unknown, right: unknown): boolean {
-  if (Array.isArray(left) || Array.isArray(right)) {
-    return JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
-  }
+  if (Array.isArray(left) || Array.isArray(right)) return JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
   return left === right;
 }
-
 function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
-
-function suppliedValue<T extends object, K extends keyof T>(
-  input: T,
-  key: K,
-  fallback: T[K],
-): T[K] {
+function suppliedValue<T extends object, K extends keyof T>(input: T, key: K, fallback: T[K]): T[K] {
   return Object.prototype.hasOwnProperty.call(input, key) ? input[key] : fallback;
 }
+function valueAt(row: Customer | CustomerRecord | undefined, field: CustomerField): unknown {
+  return row ? (row as unknown as Record<string, unknown>)[field] : undefined;
+}
 
-function customerRecord(
-  existing: Customer | undefined,
-  input: Partial<Customer>,
-  customerId: string,
-  now: string,
-): Customer {
+function referrerFromInput(existing: Customer | undefined, input: SaveCustomerWithSitesInput["customer"]): CustomerReferrerFields {
+  const raw = input as CustomerReferrerFields;
+  const referrerKeysSupplied = ["referrer_type", "referrer_id", "referrer_name", "source_partner_id", "source_partner_name"]
+    .some((key) => Object.prototype.hasOwnProperty.call(input, key));
+  if (isCustomerReferrerType(raw.referrer_type)) {
+    return {
+      referrer_type: raw.referrer_type,
+      referrer_id: raw.referrer_id?.trim() || undefined,
+      referrer_name: raw.referrer_name?.trim() || undefined,
+    };
+  }
+  if (input.source_partner_id?.trim()) {
+    return {
+      referrer_type: "source_partner",
+      referrer_id: input.source_partner_id.trim(),
+      referrer_name: input.source_partner_name?.trim() || undefined,
+    };
+  }
+  if (input.source_partner_name?.trim()) {
+    return { referrer_type: "external", referrer_name: input.source_partner_name.trim() };
+  }
+  return referrerKeysSupplied ? {} : customerReferrer(existing || ({} as Customer));
+}
+
+function customerRecord(existing: Customer | undefined, input: SaveCustomerWithSitesInput["customer"], customerId: string, now: string): CustomerRecord {
   const phone = String(suppliedValue(input, "phone", existing?.phone ?? "") ?? "").trim();
   const whatsapp = suppliedValue(input, "whatsapp", existing?.whatsapp);
+  const name = titleCaseCustomerName(String(suppliedValue(input, "name", existing?.name ?? "") ?? ""));
+  if (!name) throw new Error("Customer name is required.");
+  const referrer = referrerFromInput(existing, input);
+  const sourcePartner = sourcePartnerProjection(referrer);
   return {
     id: customerId,
-    name: titleCaseCustomerName(String(suppliedValue(input, "name", existing?.name ?? "") ?? "")) || "New customer",
+    name,
     phone,
     whatsapp: String(whatsapp ?? phone).trim() || undefined,
     alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
     email: suppliedValue(input, "email", existing?.email),
     status: suppliedValue(input, "status", existing?.status ?? "active") ?? "active",
-    source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id),
-    source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name),
+    ...sourcePartner,
+    ...referrer,
     notes: suppliedValue(input, "notes", existing?.notes),
     created_at: existing?.created_at ?? now,
     updated_at: existing?.updated_at ?? now,
   };
 }
-
-function customerDiff(before: Customer | undefined, after: Customer): CustomerFieldChange[] {
-  if (!before) {
-    return customerMutableFields.map((field) => ({ field, before: undefined, after: after[field] }));
-  }
+function customerDiff(before: Customer | undefined, after: CustomerRecord): CustomerFieldChange[] {
+  if (!before) return customerMutableFields.map((field) => ({ field, before: undefined, after: valueAt(after, field) }));
   return customerMutableFields
-    .filter((field) => !sameValue(before[field], after[field]))
-    .map((field) => ({ field, before: before[field], after: after[field] }));
+    .filter((field) => !sameValue(valueAt(before, field), valueAt(after, field)))
+    .map((field) => ({ field, before: valueAt(before, field), after: valueAt(after, field) }));
 }
 
-function siteRecord(
-  existing: Site | undefined,
-  input: CustomerSiteSaveDraft,
-  customer: Customer,
-  siteId: string,
-  now: string,
-  detachedAttachmentIds: Set<string>,
-): Site {
+function siteRecord(existing: Site | undefined, input: CustomerSiteSaveDraft, customer: CustomerRecord, siteId: string, now: string, detachedAttachmentIds: Set<string>): Site {
   const name = String(input.name ?? existing?.name ?? "").trim();
   if (!name) throw new Error("Site name is required.");
   if (existing?.is_archived) throw new Error(`Archived Site "${existing.name}" cannot be edited.`);
-  if (existing && existing.customer_id !== customer.id) {
-    throw new Error("A Site cannot be moved to another Customer.");
-  }
-  if (input.customer_id && input.customer_id !== customer.id) {
-    throw new Error("Every Site in a customer bundle must belong to that Customer.");
-  }
-
+  if (existing && existing.customer_id !== customer.id) throw new Error("A Site cannot be moved to another Customer.");
+  if (input.customer_id && input.customer_id !== customer.id) throw new Error("Every Site in a customer bundle must belong to that Customer.");
   const isArchiving = Boolean(input.is_archived) && !existing?.is_archived;
   const archiveReason = String(input.archive_reason ?? "").trim();
   if (isArchiving && !existing) throw new Error("A new Site cannot be archived before it is created.");
   if (isArchiving && !archiveReason) throw new Error(`An archive reason is required for Site "${name}".`);
-
-  const attachmentIds = uniqueStrings([
-    ...(input.photo_attachment_ids ?? existing?.photo_attachment_ids ?? []),
-  ]).filter((id) => !detachedAttachmentIds.has(id));
-
+  const attachmentIds = uniqueStrings([...(input.photo_attachment_ids ?? existing?.photo_attachment_ids ?? [])]).filter((id) => !detachedAttachmentIds.has(id));
   return {
     id: siteId,
     customer_id: customer.id,
@@ -243,30 +166,16 @@ function siteRecord(
     updated_at: existing?.updated_at ?? now,
   };
 }
+function siteChanged(before: Site | undefined, after: Site): boolean { return !before || siteMutableFields.some((field) => !sameValue(before[field], after[field])); }
 
-function siteChanged(before: Site | undefined, after: Site): boolean {
-  if (!before) return true;
-  return siteMutableFields.some((field) => !sameValue(before[field], after[field]));
-}
-
-function areaRecord(
-  existing: Area | undefined,
-  input: CustomerAreaSaveDraft,
-  areaId: string,
-  site: Site | undefined,
-  now: string,
-): Area {
+function areaRecord(existing: Area | undefined, input: CustomerAreaSaveDraft, areaId: string, site: Site | undefined, now: string): Area {
   if (site?.is_archived) throw new Error(`Areas cannot be added to archived Site "${site.name}".`);
   const isArchiving = Boolean(input.is_archived) && !existing?.is_archived;
   if (existing?.is_archived) throw new Error(`Archived Area "${existing.name}" cannot be edited.`);
   if (isArchiving && !existing) throw new Error("A new Area cannot be archived before it is created.");
-  if (existing?.site_id && existing.site_id !== site?.id) {
-    throw new Error("An Area cannot be moved to another Site.");
-  }
-
+  if (existing?.site_id && existing.site_id !== site?.id) throw new Error("An Area cannot be moved to another Site.");
   const name = String(input.name ?? existing?.name ?? "").trim();
   if (!name) throw new Error("Area name is required.");
-
   const length = suppliedValue(input, "length", existing?.length);
   const width = suppliedValue(input, "width", existing?.width);
   return {
@@ -291,52 +200,20 @@ function areaRecord(
     updated_at: existing?.updated_at ?? now,
   };
 }
+function areaChanged(before: Area | undefined, after: Area): boolean { return !before || areaMutableFields.some((field) => !sameValue(before[field], after[field])); }
 
-function areaChanged(before: Area | undefined, after: Area): boolean {
-  if (!before) return true;
-  return areaMutableFields.some((field) => !sameValue(before[field], after[field]));
-}
-
-function workRequiredRecord(
-  existing: WorkRequired | undefined,
-  input: CustomerWorkRequiredSaveDraft,
-  workRequiredId: string,
-  customer: Customer,
-  site: Site | undefined,
-  areas: Area[],
-  master: Master,
-  now: string,
-): WorkRequired {
-  if (existing && existing.customer_id !== customer.id) {
-    throw new Error("Work Required cannot be moved to another Customer.");
-  }
-  if (existing?.site_id && existing.site_id !== (site?.id || "")) {
-    throw new Error("Work Required cannot be moved to another Site.");
-  }
-  const title = String(input.title ?? existing?.title ?? "").trim();
-  if (!title) throw new Error("Work Required title is required.");
-  const workCategoryId = input.work_category_id ?? existing?.work_category_id;
-  const workSubcategoryIds = uniqueStrings(input.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []);
-  if (!workCategoryId || !workSubcategoryIds.length) throw new Error(`Select a category and at least one subcategory for Work Required "${title}".`);
-  const workTypeIds = uniqueStrings(input.work_type_ids ?? existing?.work_type_ids ?? []);
-  const selectedSubcategories = master.workSubcategories.filter((row) => workSubcategoryIds.includes(row.id));
-  if (workTypeIds.some((workTypeId) => !resolveWorkTypes(selectedSubcategories, workTypeIds).some((row) => row.id === workTypeId))) {
-    throw new Error(`Every work type for Work Required "${title}" must belong to one of its selected subcategories.`);
-  }
-  const areaIds = uniqueStrings(input.area_ids ?? existing?.area_ids ?? []);
-  const siteAreaIds = new Set(areas.filter((area) => area.site_id === (site?.id || "") && !area.is_archived).map((area) => area.id));
-  if (areaIds.some((areaId) => !siteAreaIds.has(areaId))) {
-    throw new Error(`Every covered Area for Work Required "${title}" must belong to ${site?.name || "the Customer"}.`);
-  }
+function workRequiredRecord(existing: WorkRequired | undefined, input: CustomerWorkRequiredSaveDraft, workRequiredId: string, customer: CustomerRecord, site: Site | undefined, now: string): WorkRequired {
+  if (existing && existing.customer_id !== customer.id) throw new Error("Work Required cannot be moved to another Customer.");
+  if (existing?.site_id && existing.site_id !== (site?.id || "")) throw new Error("Work Required cannot be moved to another Site.");
   return {
     id: workRequiredId,
     customer_id: customer.id,
     site_id: site?.id || "",
-    title,
-    work_category_id: workCategoryId,
-    work_subcategory_ids: workSubcategoryIds,
-    work_type_ids: workTypeIds,
-    area_ids: areaIds,
+    title: String(input.title ?? existing?.title ?? "").trim(),
+    work_category_id: suppliedValue(input, "work_category_id", existing?.work_category_id),
+    work_subcategory_ids: uniqueStrings(input.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []),
+    work_type_ids: uniqueStrings(input.work_type_ids ?? existing?.work_type_ids ?? []),
+    area_ids: uniqueStrings(input.area_ids ?? existing?.area_ids ?? []),
     description: suppliedValue(input, "description", existing?.description),
     structured_items: existing?.structured_items ?? input.structured_items ?? [],
     status: existing?.status ?? input.status ?? "new",
@@ -347,31 +224,19 @@ function workRequiredRecord(
     updated_at: existing?.updated_at ?? now,
   };
 }
+function workRequiredChanged(before: WorkRequired | undefined, after: WorkRequired): boolean { return !before || workRequiredMutableFields.some((field) => !sameValue(before[field], after[field])); }
 
-function workRequiredChanged(before: WorkRequired | undefined, after: WorkRequired): boolean {
-  if (!before) return true;
-  return workRequiredMutableFields.some((field) => !sameValue(before[field], after[field]));
-}
-
-export function applyCustomerWithSitesSave(
-  database: RDashDatabase,
-  input: SaveCustomerWithSitesInput,
-  options: SaveOptions = {},
-): SaveCustomerWithSitesResult {
+export function applyCustomerWithSitesSave(database: RDashDatabase, input: SaveCustomerWithSitesInput, options: SaveOptions = {}): SaveCustomerWithSitesResult {
   const now = options.now ?? new Date().toISOString();
   const createId = options.createId ?? defaultId;
-  const existingCustomer = input.customerId
-    ? database.customers.find((customer) => customer.id === input.customerId)
-    : undefined;
+  const existingCustomer = input.customerId ? database.customers.find((customer) => customer.id === input.customerId) : undefined;
   if (input.customerId && !existingCustomer) throw new Error("Customer not found.");
 
   const customerId = existingCustomer?.id ?? input.customer.id ?? createId("cust");
   const nextCustomer = customerRecord(existingCustomer, input.customer, customerId, now);
-  assertUniqueCustomerIdentity(
-    database.customers,
-    nextCustomer,
-    existingCustomer ? { excludeCustomerId: existingCustomer.id } : undefined,
-  );
+  const customerValidationDb = { ...database, customers: existingCustomer ? database.customers.map((row) => row.id === customerId ? nextCustomer : row) : [nextCustomer, ...database.customers] };
+  assertCustomerRecord(customerValidationDb, nextCustomer);
+  assertUniqueCustomerIdentity(database.customers, nextCustomer, existingCustomer ? { excludeCustomerId: existingCustomer.id } : undefined);
   const customerChanges = customerDiff(existingCustomer, nextCustomer);
   if (customerChanges.length) nextCustomer.updated_at = now;
 
@@ -381,7 +246,6 @@ export function applyCustomerWithSitesSave(
   const siteIds: string[] = [];
   const siteById = new Map(database.sites.map((site) => [site.id, site]));
   const resultingSites = [...database.sites];
-
   for (const draft of input.sites ?? []) {
     const siteId = draft.id ?? createId("site");
     if (siteIds.includes(siteId)) throw new Error(`Site "${siteId}" was supplied more than once.`);
@@ -394,8 +258,7 @@ export function applyCustomerWithSitesSave(
     const kind: SiteSaveChange["kind"] = existing ? "update" : "create";
     siteChanges.push({ siteId, kind, archived, before: existing, after: next });
     const index = resultingSites.findIndex((site) => site.id === siteId);
-    if (index >= 0) resultingSites[index] = next;
-    else resultingSites.unshift(next);
+    if (index >= 0) resultingSites[index] = next; else resultingSites.unshift(next);
   }
 
   const areaChanges: AreaSaveChange[] = [];
@@ -408,18 +271,10 @@ export function applyCustomerWithSitesSave(
   const suppliedAreas = input.areas ?? [];
   const suppliedAreaIds = new Set(suppliedAreas.map((area) => area.id).filter(Boolean));
   const customerLevelAreaIds = new Set([
-    ...database.workRequired
-      .filter((work) => work.customer_id === nextCustomer.id && !work.site_id)
-      .flatMap((work) => work.area_ids || []),
+    ...database.workRequired.filter((work) => work.customer_id === nextCustomer.id && !work.site_id).flatMap((work) => work.area_ids || []),
     ...(input.workRequired ?? []).flatMap((work) => work.area_ids || []),
   ]);
-  const areasToSave = soleSite
-    ? [
-        ...suppliedAreas,
-        ...database.areas.filter((area) => !area.site_id && customerLevelAreaIds.has(area.id) && !suppliedAreaIds.has(area.id)),
-      ]
-    : suppliedAreas;
-
+  const areasToSave = soleSite ? [...suppliedAreas, ...database.areas.filter((area) => !area.site_id && customerLevelAreaIds.has(area.id) && !suppliedAreaIds.has(area.id))] : suppliedAreas;
   for (const draft of areasToSave) {
     const areaId = draft.id ?? createId("area");
     if (areaIds.includes(areaId)) throw new Error(`Area "${areaId}" was supplied more than once.`);
@@ -427,20 +282,15 @@ export function applyCustomerWithSitesSave(
     const existing = areaById.get(areaId);
     const requestedSiteId = String(draft.site_id ?? existing?.site_id ?? "");
     const site = requestedSiteId ? resultingSiteById.get(requestedSiteId) : soleSite;
-    if (site && site.customer_id !== nextCustomer.id) {
-      throw new Error("Every Area in a customer bundle must belong to one of that Customer's Sites.");
-    }
-    if (!site && existing && !customerLevelAreaIds.has(existing.id)) {
-      throw new Error("Customer-level Area is not linked to this Customer's Work Required.");
-    }
+    if (site && site.customer_id !== nextCustomer.id) throw new Error("Every Area in a customer bundle must belong to one of that Customer's Sites.");
+    if (!site && existing && !customerLevelAreaIds.has(existing.id)) throw new Error("Customer-level Area is not linked to this Customer's Work Required.");
     const next = areaRecord(existing, draft, areaId, site, now);
     if (!areaChanged(existing, next)) continue;
     next.updated_at = now;
     const kind: AreaSaveChange["kind"] = existing ? "update" : "create";
     areaChanges.push({ areaId, kind, before: existing, after: next });
     const index = resultingAreas.findIndex((area) => area.id === areaId);
-    if (index >= 0) resultingAreas[index] = next;
-    else resultingAreas.unshift(next);
+    if (index >= 0) resultingAreas[index] = next; else resultingAreas.unshift(next);
   }
 
   const workRequiredChanges: WorkRequiredSaveChange[] = [];
@@ -449,12 +299,7 @@ export function applyCustomerWithSitesSave(
   const workRequiredById = new Map(database.workRequired.map((work) => [work.id, work]));
   const suppliedWorkRequired = input.workRequired ?? [];
   const suppliedWorkRequiredIds = new Set(suppliedWorkRequired.map((work) => work.id).filter(Boolean));
-  const workRequiredToSave = soleSite
-    ? [
-        ...suppliedWorkRequired,
-        ...database.workRequired.filter((work) => work.customer_id === nextCustomer.id && !work.site_id && !suppliedWorkRequiredIds.has(work.id)),
-      ]
-    : suppliedWorkRequired;
+  const workRequiredToSave = soleSite ? [...suppliedWorkRequired, ...database.workRequired.filter((work) => work.customer_id === nextCustomer.id && !work.site_id && !suppliedWorkRequiredIds.has(work.id))] : suppliedWorkRequired;
   for (const draft of workRequiredToSave) {
     const workRequiredId = draft.id ?? createId("workRequired");
     if (workRequiredIds.includes(workRequiredId)) throw new Error(`Work Required "${workRequiredId}" was supplied more than once.`);
@@ -462,45 +307,29 @@ export function applyCustomerWithSitesSave(
     const existing = workRequiredById.get(workRequiredId);
     const requestedSiteId = String(draft.site_id ?? existing?.site_id ?? "");
     const site = requestedSiteId ? resultingSiteById.get(requestedSiteId) : soleSite;
-    if (requestedSiteId && (!site || site.customer_id !== nextCustomer.id || site.is_archived)) {
-      throw new Error("Site-linked Work Required must belong to one active Site for that Customer.");
-    }
-    const categoryId = draft.work_category_id ?? existing?.work_category_id;
-    const subcategoryIds = uniqueStrings(draft.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []);
-    const category = database.master.workCategories.find((row) => row.id === categoryId);
-    const subcategories = subcategoryIds.map((id) => database.master.workSubcategories.find((row) => row.id === id));
-    if (!category || !subcategoryIds.length || subcategories.some((subcategory) => !subcategory || subcategory.category_id !== category.id)) {
-      throw new Error("Every Work Required must use a valid category and its subcategories.");
-    }
-    const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, resultingAreas, database.master, now);
+    if (requestedSiteId && (!site || site.customer_id !== nextCustomer.id || site.is_archived)) throw new Error("Site-linked Work Required must belong to one active Site for that Customer.");
+    const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, now);
+    const validationDb: RDashDatabase = { ...database, customers: customerValidationDb.customers, sites: resultingSites, areas: resultingAreas, workRequired: resultingWorkRequired };
+    assertWorkRequiredDefinition(validationDb, next, `Work Required "${next.title || workRequiredId}"`, resultingAreas);
     if (!workRequiredChanged(existing, next)) continue;
     next.updated_at = now;
     const kind: WorkRequiredSaveChange["kind"] = existing ? "update" : "create";
     workRequiredChanges.push({ workRequiredId, kind, before: existing, after: next });
     const index = resultingWorkRequired.findIndex((work) => work.id === workRequiredId);
-    if (index >= 0) resultingWorkRequired[index] = next;
-    else resultingWorkRequired.unshift(next);
+    if (index >= 0) resultingWorkRequired[index] = next; else resultingWorkRequired.unshift(next);
   }
 
   const suppliedSiteIds = new Set(siteIds);
   for (const attachmentId of detachedSet) {
     const attachment = (database.entityFileAttachments || []).find((row) => row.id === attachmentId);
-    if (!attachment || (attachment.entity_type !== "site" && attachment.entity_type !== "customer")) {
-      throw new Error(`Customer/Site attachment "${attachmentId}" does not exist.`);
-    }
+    if (!attachment || (attachment.entity_type !== "site" && attachment.entity_type !== "customer")) throw new Error(`Customer/Site attachment "${attachmentId}" does not exist.`);
     if (attachment.entity_type === "customer") {
-      if (attachment.entity_id !== customerId) {
-        throw new Error("A Customer file cannot be detached from another Customer.");
-      }
+      if (attachment.entity_id !== customerId) throw new Error("A Customer file cannot be detached from another Customer.");
       continue;
     }
     const attachmentSite = siteById.get(attachment.entity_id);
-    if (!attachmentSite || attachmentSite.customer_id !== customerId) {
-      throw new Error("A Site file cannot be detached from another Customer.");
-    }
-    if (!suppliedSiteIds.has(attachmentSite.id)) {
-      throw new Error(`Include Site "${attachmentSite.name}" in the save before detaching its file.`);
-    }
+    if (!attachmentSite || attachmentSite.customer_id !== customerId) throw new Error("A Site file cannot be detached from another Customer.");
+    if (!suppliedSiteIds.has(attachmentSite.id)) throw new Error(`Include Site "${attachmentSite.name}" in the save before detaching its file.`);
   }
 
   let attachmentChanged = false;
@@ -514,45 +343,12 @@ export function applyCustomerWithSitesSave(
 
   const changed = !existingCustomer || customerChanges.length > 0 || siteChanges.length > 0 || areaChanges.length > 0 || workRequiredChanges.length > 0 || attachmentChanged;
   if (!changed) {
-    return {
-      db: database,
-      customerId,
-      siteIds,
-      areaIds,
-      workRequiredIds,
-      changed: false,
-      customerCreated: false,
-      customerChanges: [],
-      siteChanges: [],
-      areaChanges: [],
-      workRequiredChanges: [],
-      detachedAttachmentIds: [],
-    };
+    return { db: database, customerId, siteIds, areaIds, workRequiredIds, changed: false, customerCreated: false, customerChanges: [], siteChanges: [], areaChanges: [], workRequiredChanges: [], detachedAttachmentIds: [] };
   }
-
-  const customers = existingCustomer
-    ? database.customers.map((customer) => customer.id === customerId ? nextCustomer : customer)
-    : [nextCustomer, ...database.customers];
-
+  const customers = existingCustomer ? database.customers.map((customer) => customer.id === customerId ? nextCustomer : customer) : [nextCustomer, ...database.customers];
   return {
-    db: {
-      ...database,
-      customers,
-      sites: resultingSites,
-      areas: resultingAreas,
-      workRequired: resultingWorkRequired,
-      entityFileAttachments: resultingAttachments,
-    },
-    customerId,
-    siteIds,
-    areaIds,
-    workRequiredIds,
-    changed: true,
-    customerCreated: !existingCustomer,
-    customerChanges,
-    siteChanges,
-    areaChanges,
-    workRequiredChanges,
+    db: { ...database, customers, sites: resultingSites, areas: resultingAreas, workRequired: resultingWorkRequired, entityFileAttachments: resultingAttachments },
+    customerId, siteIds, areaIds, workRequiredIds, changed: true, customerCreated: !existingCustomer, customerChanges, siteChanges, areaChanges, workRequiredChanges,
     detachedAttachmentIds: attachmentChanged ? detachedAttachmentIds : [],
   };
 }
