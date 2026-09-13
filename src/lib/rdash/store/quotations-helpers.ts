@@ -15,6 +15,23 @@ import type {
 import { today, addDays } from "./helpers";
 
 /**
+ * Permanent deletion is intentionally limited to disposable first-version
+ * drafts. Once a quotation has been sent, accepted, rejected, expired,
+ * cancelled, revised, or linked downstream, it is commercial history and
+ * must be retained.
+ */
+export function canPermanentlyDeleteQuotation(quotation: Pick<Quotation,
+    "status" | "revision_no" | "parent_quotation_id" | "superseded_by_quotation_id" | "accepted_at" | "work_order_ids"
+>): boolean {
+    return quotation.status === "draft" &&
+        quotation.revision_no === 0 &&
+        !quotation.parent_quotation_id &&
+        !quotation.superseded_by_quotation_id &&
+        !quotation.accepted_at &&
+        quotation.work_order_ids.length === 0;
+}
+
+/**
  * Compute the accepted monetary value of a single coverage on a quotation.
  * Sums the amount of every quotation scope line whose work_required_id matches
  * the coverage and whose area_id is either empty (covers all areas) or listed
