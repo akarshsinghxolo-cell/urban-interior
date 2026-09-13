@@ -22,37 +22,20 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - name: Check out Vendor cleanup branch head
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
-        uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+      - name: Apply runtime contract consolidation
+        if: github.event_name == 'pull_request' && github.head_ref == 'agent/remove-legacy-duplicate-paths' && hashFiles('scripts/apply-runtime-contract-consolidation.py') != ''
+        run: python scripts/apply-runtime-contract-consolidation.py
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
           cache: npm
-      - name: Apply Vendor cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy' && hashFiles('scripts/apply-vendor-module-cleanup.py') != ''
-        run: |
-          python scripts/apply-vendor-module-cleanup.py
-          python scripts/finalize-vendor-module-cleanup.py
-          rm scripts/apply-vendor-module-cleanup.py
-          rm scripts/finalize-vendor-module-cleanup.py
-          rm scripts/.vendor-cleanup-trigger
-          rm .github/workflows/vendor-module-cleanup-runner.yml
       - name: Install dependencies
         run: npm ci
-      - name: Test Vendor module cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
-        run: npm run test:vendor-module
-      # Full unit suite: tests/**/*.test.ts (86 files). This single step
-      # covers every previously hand-listed targeted run plus the 40+
-      # files that had no merge protection. Playwright e2e specs are
-      # excluded by vitest.config.mts and run separately below.
       - name: Test (full vitest suite)
         run: npm run test
-      # TypeScript errors are blocking: this gate must stay green before lint/build.
       - name: Typecheck application
         run: npx tsc --noEmit
       - name: Lint application
@@ -75,15 +58,15 @@ jobs:
             playwright-report/
           retention-days: 7
           if-no-files-found: ignore
-      - name: Commit verified Vendor cleanup
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/vendor-module-cleanup-no-legacy'
+      - name: Commit verified runtime consolidation
+        if: success() && github.event_name == 'pull_request' && github.head_ref == 'agent/remove-legacy-duplicate-paths'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then
-            echo "No application changes to commit."
+            echo "No consolidation changes to commit."
             exit 0
           fi
-          git commit -m "Complete Vendor module cleanup and remove legacy compatibility"
-          git push origin HEAD:feature/vendor-module-cleanup-no-legacy
+          git commit -m "Remove legacy runtime contracts and duplicate paths"
+          git push origin HEAD:agent/remove-legacy-duplicate-paths
