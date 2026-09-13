@@ -34,8 +34,9 @@ export function assertCustomerReferrer(
   customer: Customer,
   context = "Customer",
 ): void {
-  if (!isCustomerReferrerType(customer.referrer_type)) {
-    if (present(customer.referrer_type) || present(customer.referrer_id) || present(customer.referrer_name)) {
+  const referrerType = customer.referrer_type;
+  if (!isCustomerReferrerType(referrerType)) {
+    if (present(referrerType) || present(customer.referrer_id) || present(customer.referrer_name)) {
       throw new Error(`${context}: a valid referrer type is required when referrer details are supplied.`);
     }
     return;
@@ -46,7 +47,7 @@ export function assertCustomerReferrer(
     throw new Error(`${context}: referrer name is required when a referrer is selected.`);
   }
   if (!referrerExists(db, referrer)) {
-    throw new Error(`${context}: selected ${referrer.referrer_type.replace("_", " ")} referrer does not exist.`);
+    throw new Error(`${context}: selected ${referrerType.replace("_", " ")} referrer does not exist.`);
   }
 }
 
