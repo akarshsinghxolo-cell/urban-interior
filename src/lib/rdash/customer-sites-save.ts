@@ -310,8 +310,15 @@ export function applyCustomerWithSitesSave(database: RDashDatabase, input: SaveC
     const site = requestedSiteId ? resultingSiteById.get(requestedSiteId) : soleSite;
     if (requestedSiteId && (!site || site.customer_id !== nextCustomer.id || site.is_archived)) throw new Error("Site-linked Work Required must belong to one active Site for that Customer.");
     const next = workRequiredRecord(existing, draft, workRequiredId, nextCustomer, site, now);
-    const validationDb: RDashDatabase = { ...database, customers: customerValidationDb.customers, sites: resultingSites, areas: resultingAreas, workRequired: resultingWorkRequired };
-    assertWorkRequiredDefinition(validationDb, next, `Work Required "${next.title || workRequiredId}"`, resultingAreas);
+    const workRequiredValidationContext = {
+    sites: resultingSites,
+    areas: resultingAreas,
+    master: {
+      workCategories: database.master.workCategories,
+      workSubcategories: database.master.workSubcategories,
+    },
+  };
+  assertWorkRequiredDefinition(workRequiredValidationContext, next, `Work Required "${next.title || workRequiredId}"`, resultingAreas);
     if (!workRequiredChanged(existing, next)) continue;
     next.updated_at = now;
     const kind: WorkRequiredSaveChange["kind"] = existing ? "update" : "create";
