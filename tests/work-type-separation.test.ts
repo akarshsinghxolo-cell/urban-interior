@@ -96,16 +96,17 @@ describe("work types in the canonical customer/site creation paths", () => {
     expect(source).toContain("work_type_ids: draft.workTypeIds");
   });
 
-  test("Customer Desk restores work-type capture while sharing canonical primitives with Site Execution", () => {
-    const desk = read("../src/components/rdash/modules/CustomerDesk.tsx");
-    const capture = read("../src/components/rdash/CustomerWorkCaptureDialog.tsx");
+  test("Customer portfolio restores the requested multi-work-type capture while sharing canonical primitives", () => {
+    const portfolio = read("../src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     const siteExecution = read("../src/components/rdash/modules/SiteExecutionModule.tsx");
 
-    expect(desk).toContain("CustomerWorkCaptureDialog");
-    expect(desk).toContain("WorkRequiredCreateDialog");
-    expect(capture).toContain("workTypesForSubcategory");
-    expect(capture).toContain("captureStructuredWorkRequired");
-    expect(capture).not.toContain("contractorWorkTypeAverages");
+    expect(portfolio).toContain("WorkRequiredCreateDialog");
+    expect(portfolio).toContain("StructuredWorkRequiredDialog");
+    expect(portfolio).toContain("WorkTypeMultiDropdown");
+    expect(portfolio).toContain("workTypeTicks");
+    expect(portfolio).toContain("workTypesForSubcategory");
+    expect(portfolio).toContain("captureStructuredWorkRequired");
+    expect(portfolio).toContain("contractorWorkTypeAverages");
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
   });
 });
