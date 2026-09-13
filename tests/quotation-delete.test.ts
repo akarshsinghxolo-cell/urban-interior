@@ -87,37 +87,25 @@ function seedQuotation(state: any, overrides: Record<string, unknown> = {}) {
 }
 
 describe("deleteQuotation", () => {
-    test("deletes a draft quotation, its accepted scopes and thread, and recomputes covered work status", () => {
+    test("deletes only an original draft through the central cascade and recomputes work status", () => {
         const state = quotationHarness();
         seedQuotation(state);
-        state.db.acceptedScopes.push({
-            id: "scope1",
-            quotation_id: "q1",
-            customer_id: "customer-only",
-            site_id: "",
-            work_required_id: "w1",
-            area_ids: [],
-            measurement_revision_ids: [],
-            label: "Scope",
-            accepted_value: 1000,
-            status: "accepted",
-        } as any);
 
-        state.deleteQuotation("q1");
+        state.deleteQuotation("q1", "Duplicate draft");
 
         expect(state.db.quotations.some((q: any) => q.id === "q1")).toBe(false);
-        expect(state.db.acceptedScopes.some((s: any) => s.quotation_id === "q1")).toBe(false);
         expect(state.db.threads.some((t: any) => t.id === "thread-q1")).toBe(false);
-        const work = state.db.workRequired.find((w: any) => w.id === "w1");
-        expect(work.status).toBe("on_hold");
+        expect(state.db.workRequired.find((w: any) => w.id === "w1")?.status).toBe("on_hold");
         expect(state.logAudit).toHaveBeenCalledWith(expect.objectContaining({
+            action: "Deleted draft quotation Q-2026-001",
             kind: "delete",
             entity_type: "quotation",
             entity_id: "q1",
+            reason: "Duplicate draft",
         }));
     });
 
-    test("keeps workflow-owned work status untouched on delete", () => {
+    test("keeps workflow-owned work status untouched on draft delete", () => {
         const state = quotationHarness();
         seedQuotation(state);
         state.db.workRequired[0].status = "awarded";
@@ -127,19 +115,39 @@ describe("deleteQuotation", () => {
         expect(state.db.workRequired[0].status).toBe("awarded");
     });
 
-    test("blocks deleting an accepted quotation", () => {
-        const state = quotationHarness();
-        seedQuotation(state, { status: "accepted" });
+    test.each(["sent", "accepted", "rejected", "expired", "cancelled"])(
+        "retains %s quotations as commercial history",
+        (status) => {
+            const state = quotationHarness();
+            seedQuotation(state, { status });
 
-        expect(() => state.deleteQuotation("q1")).toThrow(/accepted quotation cannot be deleted/i);
+            expect(() => state.deleteQuotation("q1")).toThrow(/original Draft quotation/i);
+            expect(state.db.quotations.some((q: any) => q.id === "q1")).toBe(true);
+        },
+    );
+
+    test("blocks deleting a revision draft", () => {
+        const state = quotationHarness();
+        seedQuotation(state, { revision_no: 1, parent_quotation_id: "q0" });
+
+        expect(() => state.deleteQuotation("q1")).toThrow(/original Draft quotation/i);
         expect(state.db.quotations.some((q: any) => q.id === "q1")).toBe(true);
     });
 
-    test("blocks deleting a quotation linked to a work order", () => {
+    test("blocks a draft that already has accepted-scope history", () => {
+        const state = quotationHarness();
+        seedQuotation(state);
+        state.db.acceptedScopes.push({ id: "scope1", quotation_id: "q1" } as any);
+
+        expect(() => state.deleteQuotation("q1")).toThrow(/accepted scope history/i);
+        expect(state.db.acceptedScopes).toHaveLength(1);
+    });
+
+    test("blocks a draft linked to a work order", () => {
         const state = quotationHarness();
         seedQuotation(state, { work_order_ids: ["wo1"] });
 
-        expect(() => state.deleteQuotation("q1")).toThrow(/work order/i);
+        expect(() => state.deleteQuotation("q1")).toThrow(/original Draft quotation/i);
         expect(state.db.quotations.some((q: any) => q.id === "q1")).toBe(true);
     });
 

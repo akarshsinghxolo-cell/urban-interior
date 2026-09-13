@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { areaDependencySummary } from "@/lib/rdash/business-rules";
 import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
+import { canPermanentlyDeleteQuotation } from "@/lib/rdash/store/quotations-helpers";
 import { confirmDialog } from "./ConfirmDialog";
 import { MapView, type MapPoint } from "./MapView";
 import { visitToMapPoints } from "./visitMap";
@@ -935,7 +936,7 @@ function QuotationOverview({ q }: {
     const handleDeleteQuotation = async () => {
         const ok = await confirmDialog({
             title: `Delete ${q.quotation_no}?`,
-            description: "This permanently removes the quotation, its accepted scopes and its conversation thread. This cannot be undone.",
+            description: "This permanently removes this original draft and its dependent thread/file links. Commercial history cannot be deleted. This cannot be undone.",
             confirmLabel: "Delete",
             danger: true,
         });
@@ -999,7 +1000,7 @@ function QuotationOverview({ q }: {
         {q.work_order_ids.length > 0 && (<Button size="sm" variant="outline" onClick={() => openDetail("workOrder", q.work_order_ids[0])}>
             <ArrowRight className="mr-1.5 h-3.5 w-3.5"/> Go to WorkOrder
           </Button>)}
-        {q.status !== "accepted" && q.work_order_ids.length === 0 && (<Button size="sm" variant="destructive" className="no-print" onClick={() => { void handleDeleteQuotation(); }}>
+        {canPermanentlyDeleteQuotation(q) && (<Button size="sm" variant="destructive" className="no-print" onClick={() => { void handleDeleteQuotation(); }}>
             <Trash2 className="mr-1.5 h-3.5 w-3.5"/> Delete
           </Button>)}
         {q.status !== "draft" && q.status !== "cancelled" && q.work_order_ids.length === 0 && (<Button size="sm" variant="outline" onClick={() => setReviseOpen((v) => !v)}>

@@ -5,6 +5,7 @@ import { MoreHorizontal, Pencil, CheckCircle2, XCircle, CalendarClock, Phone, Me
 import type { ContextAction } from "./ContextMenuHost";
 import { toast } from "sonner";
 import { formatINR } from "@/lib/rdash/format";
+import { canPermanentlyDeleteQuotation } from "@/lib/rdash/store/quotations-helpers";
 import { promptDialog } from "./PromptDialog";
 import { confirmDialog } from "./ConfirmDialog";
 export function buildTaskActions(taskId: string, _dispatch: {
@@ -259,14 +260,11 @@ async function createEditableRevisionFromList(quoteId: string) {
     }
 }
 
-function isQuotationDeletable(quote: { status: string; work_order_ids: string[] }) {
-    return quote.status !== "accepted" && quote.work_order_ids.length === 0;
-}
 
 async function deleteQuotationWithConfirm(quotationId: string, quotationNo: string) {
     const ok = await confirmDialog({
         title: `Delete ${quotationNo}?`,
-        description: "This permanently removes the quotation, its accepted scopes and its conversation thread. This cannot be undone.",
+        description: "This permanently removes this original draft and its dependent thread/file links. Commercial history cannot be deleted. This cannot be undone.",
         confirmLabel: "Delete",
         danger: true,
     });
@@ -309,7 +307,7 @@ export function buildQuotationActions(quoteId: string, dispatch: {
         actions.push({ label: "Create editable revision", icon: <Pencil className="h-4 w-4"/>, separatorBefore: true, onClick: () => { void createEditableRevisionFromList(quoteId); } });
     if (quote && quote.work_order_ids.length === 0 && quote.status !== "accepted")
         actions.push({ label: "Reject", icon: <XCircle className="h-4 w-4"/>, danger: true, separatorBefore: true, onClick: () => { dispatch.updateQuotation(quoteId, { status: "rejected" }); toast.warning("Quotation rejected"); } });
-    if (quote && isQuotationDeletable(quote))
+    if (quote && canPermanentlyDeleteQuotation(quote))
         actions.push({ label: "Delete quotation", icon: <Trash2 className="h-4 w-4"/>, danger: true, separatorBefore: true, onClick: () => { void deleteQuotationWithConfirm(quote.id, quote.quotation_no); } });
     return actions;
 }

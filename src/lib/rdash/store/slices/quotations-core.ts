@@ -36,9 +36,10 @@ import type { QuotationsState } from "../types";
 import type { StoreContext } from "../context";
 import { assertRole, genId, nowIso, today, userForRole, addDays } from "../helpers";
 import { assertQuotationRelations, assertWorkOrderRelations } from "../../business-rules";
+import { cascadeDelete } from "../../integrity/cascade";
 import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
-import { coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
+import { canPermanentlyDeleteQuotation, coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
 import { groupedQuotationScopeLines } from "../../work-types";
 import {
     assertWorkOrderStatusTransition,
@@ -219,40 +220,34 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
         },
         deleteQuotation: (id, reason) => {
             assertRole(get().currentUser().role, ["Owner", "Operations Manager"], "delete quotations");
-            const actor = get().currentUser();
-            const before = get().db.quotations.find((quotation: any) => quotation.id === id);
+            const state = get();
+            const actor = state.currentUser();
+            const before = state.db.quotations.find((quotation: any) => quotation.id === id);
             if (!before)
                 throw new Error("Quotation not found.");
-            if (before.work_order_ids.length)
-                throw new Error("A quotation linked to a Work Order cannot be deleted. Create a controlled variation instead.");
-            if (before.status === "accepted")
-                throw new Error("An accepted quotation cannot be deleted. Reject it or create a revision instead.");
-            const linkedScopes = get().db.acceptedScopes.filter((scope: any) => scope.quotation_id === id && scope.status !== "cancelled");
-            if (linkedScopes.some((scope: any) => scope.work_order_id))
-                throw new Error("A quotation scope already belongs to a Work Order and cannot be deleted.");
+            if (!canPermanentlyDeleteQuotation(before))
+                throw new Error("Only an original Draft quotation can be permanently deleted. Commercial history and revisions must be retained.");
+            if (state.db.quotations.some((quotation: any) => quotation.parent_quotation_id === id))
+                throw new Error("A quotation with a revision history cannot be permanently deleted.");
+            if (state.db.acceptedScopes.some((scope: any) => scope.quotation_id === id))
+                throw new Error("A quotation with accepted scope history cannot be permanently deleted.");
+
+            const deleted = cascadeDelete(state.db, "quotations", id);
+            if (!deleted.result.success)
+                throw new Error(deleted.result.blocked[0]?.reason || "Quotation could not be deleted safely.");
+
             const changedAt = nowIso();
-            commitState((s: any) => {
-                const db = {
-                    ...s.db,
-                    quotations: s.db.quotations.filter((quotation: any) => quotation.id !== id),
-                    acceptedScopes: s.db.acceptedScopes.filter((scope: any) => scope.quotation_id !== id),
-                };
-                return {
-                    db: {
-                        ...db,
-                        workRequired: s.db.workRequired.map((work: any) => before.coverage.some((coverage: any) => coverage.work_required_id === work.id)
-                            ? { ...work, status: workRequiredStatusAfterQuotationChange(db, work, id, "cancelled"), updated_at: changedAt }
-                            : work),
-                        threads: before.thread_id
-                            ? s.db.threads.filter((thread: any) => thread.id !== before.thread_id)
-                            : s.db.threads,
-                    },
-                };
-            });
+            const nextDb = {
+                ...deleted.db,
+                workRequired: deleted.db.workRequired.map((work: any) => before.coverage.some((coverage: any) => coverage.work_required_id === work.id)
+                    ? { ...work, status: workRequiredStatusAfterQuotationChange(deleted.db, work, id, "cancelled"), updated_at: changedAt }
+                    : work),
+            };
+            commitState(() => ({ db: nextDb }));
             get().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
-                action: `Deleted quotation ${before.quotation_no}`,
+                action: `Deleted draft quotation ${before.quotation_no}`,
                 entity_type: "quotation",
                 entity_id: id,
                 entity_label: before.quotation_no,
