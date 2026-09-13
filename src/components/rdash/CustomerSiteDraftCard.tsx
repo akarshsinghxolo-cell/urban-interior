@@ -98,7 +98,7 @@ export function CustomerSiteDraftCard({
     };
     const searchBeforeCapture = locationSearch;
     try {
-      const capture = await captureDeviceGps({ mode: "transaction" });
+      const capture = await captureDeviceGps({ mode: "master-location" });
       if (sequence !== gpsSequenceRef.current) return;
       applyCoordinates(capture.latitude, capture.longitude);
       toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
