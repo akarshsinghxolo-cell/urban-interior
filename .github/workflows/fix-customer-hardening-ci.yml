@@ -1,0 +1,54 @@
+name: Fix customer hardening CI
+
+on:
+  push:
+    branches:
+      - agent/customer-contract-hardening
+    paths:
+      - .github/workflows/fix-customer-hardening-ci.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/customer-contract-hardening
+          fetch-depth: 0
+      - name: Patch narrow Work Required validation context
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('src/lib/rdash/customer-sites-save.ts')
+          text = p.read_text()
+          old = '''    const validationDb: RDashDatabase = { ...database, customers: customerValidationDb.customers, sites: resultingSites, areas: resultingAreas, workRequired: resultingWorkRequired };
+              assertWorkRequiredDefinition(validationDb, next, `Work Required "${next.title || workRequiredId}"`, resultingAreas);'''
+          # tolerate exact source indentation from the TypeScript file
+          old = old.replace('              assert', '    assert')
+          new = '''    const workRequiredValidationContext = {
+              sites: resultingSites,
+              areas: resultingAreas,
+              master: {
+                workCategories: database.master.workCategories,
+                workSubcategories: database.master.workSubcategories,
+              },
+            };
+            assertWorkRequiredDefinition(workRequiredValidationContext, next, `Work Required "${next.title || workRequiredId}"`, resultingAreas);'''
+          new = new.replace('              sites', '      sites').replace('              areas', '      areas').replace('              master', '      master').replace('                workCategories', '        workCategories').replace('                workSubcategories', '        workSubcategories').replace('              },', '      },').replace('            };', '    };').replace('            assert', '    assert')
+          if old not in text:
+              raise SystemExit('expected validationDb block not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/fix-customer-hardening-ci.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'Use narrow Work Required validation context in customer saves'
+          git push origin HEAD:agent/customer-contract-hardening
