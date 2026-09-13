@@ -100,10 +100,11 @@ function IconForKind({ kind }: {
     return <ImageIcon className="h-6 w-6 text-primary"/>;
 }
 
-function FileViewer({ file, open, onOpenChange }: {
+function FileViewer({ file, open, onOpenChange, controls }: {
     file: FilePreviewSource;
     open: boolean;
     onOpenChange: (value: boolean) => void;
+    controls: boolean;
 }) {
     const kind = fileKind(file);
     const previewUrl = managedPreviewUrl(file);
@@ -111,10 +112,10 @@ function FileViewer({ file, open, onOpenChange }: {
     const downloadUrl = managedDownloadUrl(file);
     const publicDrivePreview = Boolean(file.googleFileId);
     return (<Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100vh-2rem)] max-w-6xl overflow-hidden p-0 sm:max-w-6xl">
+      <DialogContent className="h-dvh w-screen max-w-none overflow-hidden rounded-none border-0 p-0 sm:h-auto sm:max-h-[calc(100vh-2rem)] sm:max-w-6xl sm:rounded-lg sm:border">
         <DialogHeader className="border-b border-border px-5 py-4 pr-12">
           <DialogTitle className="truncate text-base">{file.fileName}</DialogTitle>
-          <DialogDescription className="sr-only">Full preview loaded directly from Google Drive or the selected local file.</DialogDescription>
+          <DialogDescription className="sr-only">Full preview of the selected file.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[calc(100vh-9rem)] min-h-72 overflow-auto bg-muted/30 p-3">
           {publicDrivePreview && !file.proxyUrl && previewUrl ? <iframe title={`Preview ${file.fileName}`} src={previewUrl} allow="autoplay; fullscreen" className="h-[calc(100vh-12rem)] min-h-[32rem] w-full rounded-md border border-border bg-white"/> : null}
@@ -127,15 +128,15 @@ function FileViewer({ file, open, onOpenChange }: {
           {!publicDrivePreview && kind === "pdf" && previewUrl ? <iframe title={`Preview ${file.fileName}`} src={previewUrl} className="h-[calc(100vh-12rem)] min-h-[32rem] w-full rounded-md border border-border bg-white"/> : null}
           {!publicDrivePreview && kind === "document" ? <div className="flex min-h-72 flex-col items-center justify-center gap-3 text-center"><IconForKind kind={kind}/><p className="max-w-sm text-sm text-muted-foreground">This file does not have an inline preview. Open the file to view it.</p></div> : null}
         </div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
+        {controls ? <div className="flex flex-wrap justify-end gap-2 border-t border-border px-4 py-3">
           {downloadUrl ? <a href={downloadUrl} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-primary hover:bg-accent/40"><Download className="h-3.5 w-3.5"/>Download</a> : null}
           {driveUrl ? <a href={driveUrl} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-primary hover:bg-accent/40"><ExternalLink className="h-3.5 w-3.5"/>Open in Google Drive</a> : null}
-        </div>
+        </div> : null}
       </DialogContent>
     </Dialog>);
 }
 
-export function FilePreview({ file, className, compact = false, controls: _controls = true, onOpen, interactive = true }: FilePreviewProps) {
+export function FilePreview({ file, className, compact = false, controls = true, onOpen, interactive = true }: FilePreviewProps) {
     const kind = fileKind(file);
     const sourceKey = `${file.googleFileId || ""}|${file.thumbnailUrl || ""}|${file.url || ""}|${file.mimeType || ""}|${file.fileName}`;
     const [thumbnailFailed, setThumbnailFailed] = React.useState(false);
@@ -160,9 +161,9 @@ export function FilePreview({ file, className, compact = false, controls: _contr
     };
     const mediaThumbnail = thumbnailUrl && !thumbnailFailed ? (<img src={thumbnailUrl} alt="" loading="lazy" onError={() => { if (file.proxyUrl && !proxyFailed) { setProxyFailed(true); return; } setThumbnailFailed(true); }} className={cn("h-full w-full object-cover", kind === "pdf" ? "object-contain bg-white p-1" : "")}/>) : thumbnailFailed && !openUrl && !file.googleFileId ? (<div className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-destructive/5 px-2 text-center"><Unlink className="h-6 w-6 text-destructive/70"/><span className="line-clamp-1 text-[10px] font-semibold text-destructive/80">File unavailable</span><span className="line-clamp-2 text-[10px] text-muted-foreground">{file.fileName}</span></div>) : thumbnailFailed ? (<div className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-muted/30 px-2 text-center"><IconForKind kind={kind}/><span className="line-clamp-1 text-[10px] font-semibold text-muted-foreground">Preview unavailable</span><span className="line-clamp-2 text-[10px] text-muted-foreground">{file.fileName}</span></div>) : (<div className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-muted/30 px-2 text-center"><IconForKind kind={kind}/><span className="line-clamp-2 text-[10px] font-medium text-muted-foreground">{file.fileName}</span></div>);
     const kindOverlay = kind === "video" ? <span className="absolute left-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-white"><Play className="ml-0.5 h-3.5 w-3.5 fill-current"/></span> : kind === "pdf" ? <span className="absolute left-1.5 top-1.5 rounded bg-destructive/85 px-1.5 py-0.5 text-[10px] font-bold text-white">PDF</span> : null;
-    const actionOverlay = interactive ? <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-white opacity-0 transition-opacity group-hover:opacity-100"><ZoomIn className="h-3.5 w-3.5"/></span> : null;
-    const content = <>{mediaThumbnail}{kindOverlay}{actionOverlay}<span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100">{file.fileName}</span></>;
+    const actionOverlay = interactive ? <span className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/65 text-white opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"><ZoomIn className="h-3.5 w-3.5"/></span> : null;
+    const content = <>{mediaThumbnail}{kindOverlay}{actionOverlay}<span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-black/60 px-1.5 py-1 text-[10px] text-white opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">{file.fileName}</span></>;
     const classes = cn("group relative block w-full overflow-hidden rounded-md border border-border bg-muted/20 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", height, className);
     const card = interactive ? <button type="button" onClick={open} className={classes} title={`Preview ${file.fileName}`}>{content}</button> : <div className={classes}>{content}</div>;
-    return <>{card}{interactive && !onOpen && hasInlinePreview ? <FileViewer file={file} open={viewerOpen} onOpenChange={setViewerOpen}/> : null}</>;
+    return <>{card}{interactive && !onOpen && hasInlinePreview ? <FileViewer file={file} open={viewerOpen} onOpenChange={setViewerOpen} controls={controls}/> : null}</>;
 }
