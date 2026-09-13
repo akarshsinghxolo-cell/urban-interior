@@ -30,6 +30,7 @@ import {
   taskStatusStyle,
   workRequiredStatusStyle,
 } from "@/lib/rdash/format";
+import { workRequiredDisplayTitle } from "@/lib/rdash/work-types";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
@@ -42,6 +43,8 @@ import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds } from "@/lib/
 import { Avatar, CopyValueButton, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { ContextRow } from "../ContextMenuHost";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
+import { CustomerWorkCaptureDialog } from "../CustomerWorkCaptureDialog";
+import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
 import { EntityFilesCard } from "../EntityFilesCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -421,6 +424,8 @@ function CustomerPortfolioContext({ customerId }: { customerId: string }) {
   const [editCustomerOpen, setEditCustomerOpen] = React.useState(false);
   const [addSiteOpen, setAddSiteOpen] = React.useState(false);
   const [editSiteId, setEditSiteId] = React.useState<string>();
+  const [createWorkRequiredSiteId, setCreateWorkRequiredSiteId] = React.useState<string>();
+  const [captureWorkRequiredId, setCaptureWorkRequiredId] = React.useState<string>();
 
   const customer = db.customers.find((row) => row.id === customerId);
   const sites = db.sites.filter((row) => row.customer_id === customerId && !row.is_archived);
@@ -464,6 +469,12 @@ function CustomerPortfolioContext({ customerId }: { customerId: string }) {
     else if (gap.key === "site") setAddSiteOpen(true);
     else if (gap.key === "measurement") selectTab("sites");
   };
+
+  const createWorkSite = sites.find((row) => row.id === createWorkRequiredSiteId);
+  const captureWorkRequired = db.workRequired.find((row) => row.id === captureWorkRequiredId && row.customer_id === customerId);
+  const captureSite = captureWorkRequired?.site_id
+    ? sites.find((row) => row.id === captureWorkRequired.site_id)
+    : singleSite;
 
   return (
     <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
@@ -526,7 +537,7 @@ function CustomerPortfolioContext({ customerId }: { customerId: string }) {
           <div className="rounded-lg border border-border bg-background p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer scope</p>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setActiveModule("siteExecution")}>Open Sites &amp; Execution</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setActiveModule("siteExecution")}>Open full Site Execution</Button>
             </div>
             {sites.length ? <div className="mt-2 space-y-2">{sites.map((site) => {
               const siteWork = workRequired.filter((row) => row.site_id === site.id || (sites.length === 1 && !row.site_id));
@@ -550,7 +561,7 @@ function CustomerPortfolioContext({ customerId }: { customerId: string }) {
         {tab === "sites" && <div className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAddSiteOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button>
-            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setActiveModule("siteExecution")}><Building className="mr-1 h-3.5 w-3.5" />Open Sites &amp; Execution</Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setActiveModule("siteExecution")}><Building className="mr-1 h-3.5 w-3.5" />Open full Site Execution</Button>
           </div>
           {!sites.length ? <EmptyState title="No sites" description="Add a site to start tracking property-specific work." icon={<Building className="h-7 w-7" />} /> : sites.map((site) => {
             const siteAreas = db.areas.filter((row) => row.site_id === site.id && !row.is_archived);
@@ -563,10 +574,26 @@ function CustomerPortfolioContext({ customerId }: { customerId: string }) {
                 <div className="flex shrink-0 gap-1">{href && <Button asChild size="icon" variant="ghost" className="h-7 w-7"><a href={href} target="_blank" rel="noreferrer" aria-label={`Open ${site.name} in Maps`}><Navigation className="h-3.5 w-3.5" /></a></Button>}<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditSiteId(site.id)} aria-label={`Edit ${site.name}`}><Pencil className="h-3.5 w-3.5" /></Button></div>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2"><MetricCard label="Areas" value={siteAreas.length} /><MetricCard label="Work required" value={siteWork.length} tone="primary" /><MetricCard label="Live work orders" value={siteJobs.length} tone="success" /></div>
-              <div className="mt-3 space-y-1.5">{siteWork.length ? siteWork.map((work) => {
-                const style = workRequiredStatusStyle(work.status);
-                return <button key={work.id} type="button" onClick={() => openDetail("workRequired", work.id)} className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-2.5 py-2 text-left"><span className="min-w-0 truncate text-xs font-medium">{work.title}</span><StatusBadge label={style.label} className={style.className} /></button>;
-              }) : <p className="rounded-md border border-dashed border-border px-2 py-2 text-[11px] text-muted-foreground">No work required recorded for this site.</p>}</div>
+              <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0"><p className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required</p><p className="text-[11px] text-muted-foreground">Add scope here, then capture measurements area by area without leaving the customer.</p></div>
+                  <Button size="sm" variant="outline" className="h-7 shrink-0 text-xs" onClick={() => setCreateWorkRequiredSiteId(site.id)}><Plus className="mr-1 h-3.5 w-3.5" />Add work required</Button>
+                </div>
+                <div className="mt-2 space-y-1.5">{siteWork.length ? siteWork.map((work) => {
+                  const style = workRequiredStatusStyle(work.status);
+                  const title = workRequiredDisplayTitle(db.master.workSubcategories, work);
+                  return <div key={work.id} className="flex flex-col gap-2 rounded-md border border-border bg-background px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between">
+                    <button type="button" onClick={() => openDetail("workRequired", work.id)} className="min-w-0 flex-1 text-left">
+                      <span className="block truncate text-xs font-semibold">{title}</span>
+                      <span className="mt-0.5 block text-[10px] text-muted-foreground">{work.structured_items?.length || 0} captured item{(work.structured_items?.length || 0) === 1 ? "" : "s"}</span>
+                    </button>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <StatusBadge label={style.label} className={style.className} />
+                      <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setCaptureWorkRequiredId(work.id)}><ListChecks className="mr-1 h-3.5 w-3.5" />Capture detailed area</Button>
+                    </div>
+                  </div>;
+                }) : <p className="rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No Work Required exists for this Site. Add one to start the simple area-by-area capture flow.</p>}</div>
+              </div>
             </div>;
           })}
         </div>}
@@ -607,6 +634,23 @@ function CustomerPortfolioContext({ customerId }: { customerId: string }) {
         setAddSiteOpen(false);
         setEditSiteId(undefined);
       }} />
+      {createWorkSite && <WorkRequiredCreateDialog
+        open={Boolean(createWorkRequiredSiteId)}
+        customerId={customerId}
+        site={createWorkSite}
+        onOpenChange={(open) => { if (!open) setCreateWorkRequiredSiteId(undefined); }}
+        onCreated={(id) => {
+          setCreateWorkRequiredSiteId(undefined);
+          setCaptureWorkRequiredId(id);
+        }}
+      />}
+      {captureWorkRequired && captureSite && <CustomerWorkCaptureDialog
+        key={captureWorkRequired.id}
+        workRequired={captureWorkRequired}
+        site={captureSite}
+        areas={db.areas.filter((row) => row.site_id === captureSite.id && !row.is_archived)}
+        onClose={() => setCaptureWorkRequiredId(undefined)}
+      />}
     </div>
   );
 }

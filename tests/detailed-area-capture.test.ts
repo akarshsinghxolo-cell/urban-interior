@@ -7,16 +7,25 @@ import {
 
 const source = async (path: string) => testFile(path).text();
 
-describe("site work ownership", () => {
-  test("Customer Desk no longer embeds a second detailed-area capture editor", async () => {
+describe("canonical site work capture", () => {
+  test("Customer Desk restores detailed-area capture as a thin frontend over the canonical mutation", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expect(desk).not.toContain("StructuredWorkRequiredDialog");
-    expect(desk).not.toContain("Capture detailed area");
-    expect(desk).not.toContain("contractorWorkTypeAverages");
-    expect(desk).not.toContain("captureStructuredWorkRequired");
+    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
+
+    expect(desk).toContain("CustomerWorkCaptureDialog");
+    expect(desk).toContain("WorkRequiredCreateDialog");
+    expect(desk).toContain("Capture detailed area");
+    expect(capture).toContain("captureStructuredWorkRequired");
+    expect(capture).toContain("seedDetailedAreaLines");
+    expect(capture).toContain("measuredQuantity");
+    expect(capture).not.toContain("contractorWorkTypeAverages");
+    expect(capture).not.toContain("db.payments");
+    expect(capture).not.toContain("db.invoices");
+    expect(capture).not.toContain("db.vendorBills");
+    expect(capture).not.toContain("db.contractorBills");
   });
 
-  test("site-level scope creation lives in Sites & Execution", async () => {
+  test("Sites & Execution remains the full alternate site-work surface", async () => {
     const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
     expect(siteExecution).toContain('label: "Areas & Scope"');
     expect(siteExecution).toContain('label: "Scope Register"');
