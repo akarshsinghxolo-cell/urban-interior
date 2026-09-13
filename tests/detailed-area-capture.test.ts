@@ -8,21 +8,29 @@ import {
 const source = async (path: string) => testFile(path).text();
 
 describe("canonical site work capture", () => {
-  test("Customer Desk restores detailed-area capture as a thin frontend over the canonical mutation", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
+  test("Customer portfolio restores the full historical detailed-area editor over the canonical mutation", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
 
-    expect(desk).toContain("CustomerWorkCaptureDialog");
-    expect(desk).toContain("WorkRequiredCreateDialog");
-    expect(desk).toContain("Capture detailed area");
-    expect(capture).toContain("captureStructuredWorkRequired");
-    expect(capture).toContain("seedDetailedAreaLines");
-    expect(capture).toContain("measuredQuantity");
-    expect(capture).not.toContain("contractorWorkTypeAverages");
-    expect(capture).not.toContain("db.payments");
-    expect(capture).not.toContain("db.invoices");
-    expect(capture).not.toContain("db.vendorBills");
-    expect(capture).not.toContain("db.contractorBills");
+    expect(portfolio).toContain("StructuredWorkRequiredDialog");
+    expect(portfolio).toContain("WorkRequiredCreateDialog");
+    expect(portfolio).toContain("Capture detailed area");
+    expect(portfolio).toContain("captureStructuredWorkRequired");
+    expect(portfolio).toContain("seedDetailedAreaLines");
+    expect(portfolio).toContain("measuredQuantity");
+    expect(portfolio).toContain("contractorWorkTypeAverages");
+    expect(portfolio).toContain("removedSelections");
+    expect(portfolio).toContain("areaDims");
+    expect(portfolio).toContain("editOfItemId");
+    expect(portfolio).toContain("scrollEditDraftIntoView");
+    expect(portfolio).toContain("option_pairs");
+  });
+
+  test("restored capture keeps one measured decision when work types are alternatives", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expect(portfolio).toContain("WorkTypeMultiDropdown");
+    expect(portfolio).toContain("workTypeTicks");
+    expect(portfolio).toContain("effectiveOptionPairs");
+    expect(portfolio).toContain("duplicateScopeRows");
   });
 
   test("Sites & Execution remains the full alternate site-work surface", async () => {
