@@ -1,4 +1,9 @@
 import type { Customer } from "./types";
+import {
+  isCustomerReferrerType,
+  type CustomerRecord,
+  type CustomerReferrerFields,
+} from "./customer-referrer";
 
 const CUSTOMER_RECORD_FIELDS = [
   "id",
@@ -10,11 +15,13 @@ const CUSTOMER_RECORD_FIELDS = [
   "status",
   "source_partner_id",
   "source_partner_name",
+  "referrer_type",
+  "referrer_id",
+  "referrer_name",
   "notes",
   "created_at",
   "updated_at",
-] as const satisfies readonly (keyof Customer)[];
-
+] as const;
 
 /**
  * Canonical display casing for customer names: trim + collapse whitespace,
@@ -42,11 +49,19 @@ export function canonicalizeCustomerRow(row: Record<string, unknown>): Record<st
   return safe;
 }
 
-export function normalizeCustomerRow(row: unknown): Customer {
+export function normalizeCustomerRow(row: unknown): CustomerRecord {
   const source = row && typeof row === "object" ? row as Record<string, unknown> : {};
   const safe = canonicalizeCustomerRow(source);
   const status = safe.status === "inactive" || safe.status === "blocked" ? safe.status : "active";
-  return {
+  const referrer: CustomerReferrerFields = isCustomerReferrerType(safe.referrer_type)
+    ? {
+        referrer_type: safe.referrer_type,
+        referrer_id: typeof safe.referrer_id === "string" ? safe.referrer_id : undefined,
+        referrer_name: typeof safe.referrer_name === "string" ? safe.referrer_name : undefined,
+      }
+    : {};
+
+  const customer: Customer = {
     id: String(safe.id || ""),
     name: titleCaseCustomerName(String(safe.name || "")),
     phone: String(safe.phone || ""),
@@ -60,4 +75,6 @@ export function normalizeCustomerRow(row: unknown): Customer {
     created_at: String(safe.created_at || ""),
     updated_at: String(safe.updated_at || ""),
   };
+
+  return { ...customer, ...referrer };
 }
