@@ -40,6 +40,30 @@ describe("Customer Desk single-truth contracts", () => {
     }
   });
 
+  test("restored work capture shares the canonical mutation without reopening restricted data", async () => {
+    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
+    expect(capture).toContain("captureStructuredWorkRequired");
+    expect(capture).toContain("seedDetailedAreaLines");
+    expect(capture).toContain("measuredQuantity");
+    for (const token of [
+      "contractorWorkTypeAverages",
+      "db.payments",
+      "db.invoices",
+      "db.customerReceipts",
+      "db.purchaseOrders",
+      "db.grns",
+      "db.vendorBills",
+      "db.vendorPayments",
+      "db.contractorBills",
+      "db.contractorPayments",
+      "db.workOrderCostLines",
+      "db.master.contractorRates",
+      "db.master.vendorRates",
+    ]) {
+      expect(capture).not.toContain(token);
+    }
+  });
+
   test("timeline has one timestamp truth: audited event timestamp", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
     const start = desk.indexOf("function CustomerTimelineView");
