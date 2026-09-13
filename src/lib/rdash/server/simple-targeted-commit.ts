@@ -1,8 +1,7 @@
 import { assertCustomerExists } from "../business-rules";
 import { assertCustomerRecord } from "../customer-domain-rules";
 import { assertUniqueCustomerIdentity } from "../customer-identity";
-import type { CustomerRecord } from "../customer-referrer";
-import type { RDashDatabase } from "../types";
+import type { Customer, RDashDatabase } from "../types";
 import {
   applyWorkspaceOperations,
   diffWorkspaceOperations,
@@ -105,7 +104,7 @@ function validateCandidate(database: RDashDatabase, operations: WorkspaceOperati
         if (!row) throw new Error(`${operation.collection} "${id}" was not present after applying the operation.`);
 
         if (operation.collection === "customers") {
-          const customer = row as unknown as CustomerRecord;
+          const customer = row as unknown as Customer;
           assertCustomerRecord(database, customer);
           assertUniqueCustomerIdentity(database.customers, customer, { excludeCustomerId: customer.id });
         } else if (operation.collection === "sites") {

@@ -289,12 +289,12 @@ export function MastersModule({ submodule }: {
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <MetricCard label="Partners" value={db.master.sourcePartners.length} tone="primary" icon={<HandCoins className="h-4 w-4"/>}/>
-          <MetricCard label="Total referred" value={db.customers.filter((p) => p.source_partner_id).length} tone="default" icon={<Users className="h-4 w-4"/>}/>
+          <MetricCard label="Total referred" value={db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id).length} tone="default" icon={<Users className="h-4 w-4"/>}/>
           <MetricCard label="Commission rules" value={db.master.commissionRules.length} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           {db.master.sourcePartners.map((sp) => {
-                const customers = db.customers.filter((p) => p.source_partner_id === sp.id);
+                const customers = db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id === sp.id);
                 return (<div key={sp.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5"><Avatar name={sp.name} size={36}/><div><p className="text-sm font-bold">{sp.name}</p><p className="text-[11px] text-muted-foreground">{titleCase(sp.type || "Partner")}</p></div></div>

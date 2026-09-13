@@ -1,7 +1,22 @@
 import { sanitizeIndianMobile } from "./phone-validation";
-import { customerReferrer, referrerExists, type CustomerRecord } from "./customer-referrer";
+import {
+  customerReferrer,
+  isCustomerReferrerType,
+  referrerExists,
+  type CustomerReferrerLookup,
+} from "./customer-referrer";
 import { resolveWorkTypes } from "./work-types";
-import type { Area, Customer, RDashDatabase, WorkRequired } from "./types";
+import type { Area, Customer, Master, Site, WorkRequired } from "./types";
+
+export type WorkRequiredValidationContext = {
+  sites: Site[];
+  areas: Area[];
+  master: Pick<Master, "workCategories" | "workSubcategories">;
+};
+
+function present(value: unknown): boolean {
+  return typeof value === "string" ? Boolean(value.trim()) : value != null;
+}
 
 export function validCustomerPhone(value: unknown): boolean {
   const raw = String(value || "").trim();
@@ -14,9 +29,31 @@ export function validCustomerEmailValue(value: unknown): boolean {
   return !raw || raw.includes("@");
 }
 
+export function assertCustomerReferrer(
+  db: CustomerReferrerLookup,
+  customer: Customer,
+  context = "Customer",
+): void {
+  const referrerType = customer.referrer_type;
+  if (!isCustomerReferrerType(referrerType)) {
+    if (present(referrerType) || present(customer.referrer_id) || present(customer.referrer_name)) {
+      throw new Error(`${context}: a valid referrer type is required when referrer details are supplied.`);
+    }
+    return;
+  }
+
+  const referrer = customerReferrer(customer);
+  if (!referrer.referrer_name?.trim()) {
+    throw new Error(`${context}: referrer name is required when a referrer is selected.`);
+  }
+  if (!referrerExists(db, referrer)) {
+    throw new Error(`${context}: selected ${referrerType.replace("_", " ")} referrer does not exist.`);
+  }
+}
+
 export function assertCustomerRecord(
-  db: RDashDatabase,
-  customer: Customer | CustomerRecord,
+  db: CustomerReferrerLookup,
+  customer: Customer,
   context = "Customer",
 ): void {
   if (!customer.id?.trim()) throw new Error(`${context}: ID is required.`);
@@ -36,15 +73,7 @@ export function assertCustomerRecord(
   if (!validCustomerEmailValue(customer.email)) {
     throw new Error(`${context}: email must contain @ or be empty.`);
   }
-
-  const referrer = customerReferrer(customer);
-  if (!referrer.referrer_type) return;
-  if (!referrer.referrer_name?.trim()) {
-    throw new Error(`${context}: referrer name is required when a referrer is selected.`);
-  }
-  if (!referrerExists(db, referrer)) {
-    throw new Error(`${context}: selected ${referrer.referrer_type.replace("_", " ")} referrer does not exist.`);
-  }
+  assertCustomerReferrer(db, customer, context);
 }
 
 export function workRequiredHasTaxonomy(work: Pick<WorkRequired, "work_category_id" | "work_subcategory_ids">): boolean {
@@ -58,7 +87,7 @@ export function workRequiredHasTaxonomy(work: Pick<WorkRequired, "work_category_
  *   belonging to one of those selected subcategories.
  */
 export function assertWorkRequiredDefinition(
-  db: RDashDatabase,
+  db: WorkRequiredValidationContext,
   work: Pick<WorkRequired,
     "title" | "work_category_id" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "customer_id" | "site_id"
   >,
