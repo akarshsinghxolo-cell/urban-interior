@@ -1,23 +1,24 @@
-import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
 const source = async (path: string) => testFile(path).text();
 
-describe("Customer scope area filter (per-area work visibility)", () => {
-  test("area chips are toggle filters with counts, not static labels", async () => {
+describe("Customer scope ownership", () => {
+  test("Customer Desk no longer owns an independent area/work capture state machine", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expect(desk).toContain("scopeAreaId");
-    expect(desk).toContain("aria-pressed={active}");
-    expectTokens(desk, ["setScopeAreaId(active ? null : area.id)"]);
-    // Each chip shows how many works were captured in that area.
-    expect(desk).toContain("areaWorkCount");
+    expect(desk).not.toContain("scopeAreaId");
+    expect(desk).not.toContain("StructuredWorkRequiredDialog");
+    expect(desk).not.toContain("Capture detailed area");
   });
 
-  test("work list filters by the selected area's area_ids", async () => {
+  test("Customer Desk routes site-level work to the canonical Site Execution surface", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ["work.area_ids || []).includes(scopeAreaId)"]);
-    // Empty filtered state tells the user how to get back to the full list.
-    expectTokens(desk, ["No Work Required in the selected area"]);
+    const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
+
+    expect(desk).toContain('setActiveModule("siteExecution")');
+    expect(desk).toContain('openDetail("site", site.id)');
+    expect(siteExecution).toContain('label: "Areas & Scope"');
+    expect(siteExecution).toContain('label: "Scope Register"');
+    expect(siteExecution).toContain("WorkRequiredCreateDialog");
   });
 });
