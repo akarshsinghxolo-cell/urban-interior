@@ -96,12 +96,16 @@ describe("work types in the canonical customer/site creation paths", () => {
     expect(source).toContain("work_type_ids: draft.workTypeIds");
   });
 
-  test("Customer Desk routes scope work to Site Execution instead of carrying a second work-type editor", () => {
+  test("Customer Desk restores work-type capture while sharing canonical primitives with Site Execution", () => {
     const desk = read("../src/components/rdash/modules/CustomerDesk.tsx");
+    const capture = read("../src/components/rdash/CustomerWorkCaptureDialog.tsx");
     const siteExecution = read("../src/components/rdash/modules/SiteExecutionModule.tsx");
-    expect(desk).not.toContain('ariaLabel="Work type"');
-    expect(desk).not.toContain("workTypeTicks");
-    expect(desk).toContain('setActiveModule("siteExecution")');
+
+    expect(desk).toContain("CustomerWorkCaptureDialog");
+    expect(desk).toContain("WorkRequiredCreateDialog");
+    expect(capture).toContain("workTypesForSubcategory");
+    expect(capture).toContain("captureStructuredWorkRequired");
+    expect(capture).not.toContain("contractorWorkTypeAverages");
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
   });
 });
