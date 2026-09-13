@@ -23,24 +23,62 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin agent/centralize-gps-acquisition
+
+          # Only carry forward the old draft hunks that still apply cleanly to
+          # today's architecture. Removed/replaced forms are intentionally not resurrected.
           git diff --binary 82394f3708a6c127d34e1a471b34a773edc7b071 origin/agent/centralize-gps-acquisition -- \
             src/components/rdash/AutoGeofenceMonitor.tsx \
-            src/components/rdash/ContractorFormDialog.tsx \
-            src/components/rdash/CustomerSiteDraftCard.tsx \
-            src/components/rdash/SiteFormDialog.tsx \
             src/components/rdash/StaffLocationTracker.tsx \
-            src/components/rdash/UnifiedPartnerFormDialog.tsx \
-            src/components/rdash/modules/AttendancePayrollModule.tsx \
-            src/components/rdash/modules/FieldModeModule.tsx \
-            src/lib/rdash/device-gps.ts > /tmp/pr137.patch
-          git apply --3way --index /tmp/pr137.patch
+            src/components/rdash/modules/FieldModeModule.tsx > /tmp/pr137-clean.patch
+          git apply --3way --index /tmp/pr137-clean.patch
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected text not found in {path}: {old[:100]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          gps = Path("src/lib/rdash/device-gps.ts")
+          text = gps.read_text()
+          text = text.replace('type DeviceGpsMode = "transaction" | "master-location" | "tracking";', 'export type DeviceGpsMode = "transaction" | "master-location" | "tracking";', 1)
+          text = text.replace('const MASTER_LOCATION_MAX_ACCURACY_M = 75;', 'export const MASTER_LOCATION_MAX_ACCURACY_M = 75;', 1)
+          text = text.replace('type CaptureDevicePositionOptions = {', 'export type CaptureDevicePositionOptions = {', 1)
+          text = text.replace('async function captureDevicePosition(\n', 'export async function captureDevicePosition(\n', 1)
+          marker = '\nexport async function captureDeviceGps(\n'
+          watch = '''\nexport const DEVICE_GPS_WATCH_OPTIONS: PositionOptions = {\n  enableHighAccuracy: true,\n  timeout: 20_000,\n  maximumAge: 15_000,\n};\n\nexport function watchDevicePosition(\n  onPosition: PositionCallback,\n  onError?: PositionErrorCallback,\n): () => void {\n  const api = geolocation();\n  const watchId = api.watchPosition(onPosition, onError, DEVICE_GPS_WATCH_OPTIONS);\n  return () => api.clearWatch(watchId);\n}\n'''
+          if 'export function watchDevicePosition(' not in text:
+              text = text.replace(marker, watch + marker, 1)
+          gps.write_text(text)
+
+          # Saved Site and Contractor coordinates are master data, so use the
+          # stricter <=75m master-location policy while retaining current stale-result guards.
+          for path in [
+              "src/components/rdash/CustomerSiteDraftCard.tsx",
+              "src/components/rdash/ContractorFormDialog.tsx",
+          ]:
+              replace_once(path, 'captureDeviceGps({ mode: "transaction" })', 'captureDeviceGps({ mode: "master-location" })')
+
+          attendance = "src/components/rdash/modules/AttendancePayrollModule.tsx"
+          replace_once(
+              attendance,
+              'import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";\n',
+              'import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";\nimport { captureDevicePosition, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";\n',
+          )
+          old = '''    const capturePosition = (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {\n        if (!navigator.geolocation) {\n            toast.error("Device GPS is required for this attendance action.");\n            return;\n        }\n        setCapturing(action);\n        navigator.geolocation.getCurrentPosition((position) => {\n        if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard\n            try {\n                callback(position);\n            }\n            catch (error) {\n                toast.error(error instanceof Error ? error.message : "Attendance could not be verified.");\n            }\n            finally {\n                setCapturing(null);\n            }\n        }, (error) => {\n            setCapturing(null);\n            toast.error(`Device GPS is required: ${error.message}`);\n        }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });\n    };'''
+          new = '''    const capturePosition = async (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {\n        setCapturing(action);\n        try {\n            const position = await captureDevicePosition({\n                mode: action === "office" ? "master-location" : "transaction",\n            });\n            if (disposedRef.current) return;  // STAGE-4-FIX: unmount guard\n            callback(position);\n        }\n        catch (error) {\n            if (!disposedRef.current)\n                toast.error(`Device GPS is required: ${deviceGpsErrorMessage(error)}`);\n        }\n        finally {\n            if (!disposedRef.current) setCapturing(null);\n        }\n    };'''
+          replace_once(attendance, old, new)
+          PY
 
           cat > tests/device-gps.test.ts <<'EOF'
           import { afterEach, describe, expect, it, vi } from "vitest";
           import {
             captureDeviceGps,
             captureDevicePosition,
-            DEVICE_GPS_OPTIONS,
+            DEVICE_GPS_WATCH_OPTIONS,
             deviceGpsErrorMessage,
             MASTER_LOCATION_MAX_ACCURACY_M,
             watchDevicePosition,
@@ -49,96 +87,64 @@ jobs:
           const originalNavigator = globalThis.navigator;
 
           function position(accuracy = 12, timestamp = 1_700_000_000_000): GeolocationPosition {
-            return {
-              coords: {
-                latitude: 26.7606,
-                longitude: 83.3732,
-                accuracy,
-                altitude: null,
-                altitudeAccuracy: null,
-                heading: null,
-                speed: null,
-              },
-              timestamp,
-            };
+            return { coords: { latitude: 26.7606, longitude: 83.3732, accuracy, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp } as GeolocationPosition;
+          }
+
+          function geoError(code: number): GeolocationPositionError {
+            return { code, message: "gps error", PERMISSION_DENIED: 1, POSITION_UNAVAILABLE: 2, TIMEOUT: 3 } as GeolocationPositionError;
           }
 
           function installGeolocation(geolocation: Partial<Geolocation>) {
-            Object.defineProperty(globalThis, "navigator", {
-              configurable: true,
-              value: { geolocation },
-            });
+            Object.defineProperty(globalThis, "navigator", { configurable: true, value: { geolocation } });
           }
 
           afterEach(() => {
             vi.restoreAllMocks();
-            Object.defineProperty(globalThis, "navigator", {
-              configurable: true,
-              value: originalNavigator,
-            });
+            Object.defineProperty(globalThis, "navigator", { configurable: true, value: originalNavigator });
           });
 
           describe("device GPS policy", () => {
-            it("requires a fresh, accurate master-location capture", async () => {
+            it("rejects inaccurate master-location captures instead of saving weak coordinates", async () => {
               const getCurrentPosition = vi.fn((success: PositionCallback) => success(position(120)));
               installGeolocation({ getCurrentPosition } as Partial<Geolocation>);
-
-              await expect(captureDevicePosition({ mode: "master-location" })).rejects.toThrow(
-                `within ${MASTER_LOCATION_MAX_ACCURACY_M} m accuracy`,
-              );
-              expect(getCurrentPosition).toHaveBeenCalledWith(
-                expect.any(Function),
-                expect.any(Function),
-                DEVICE_GPS_OPTIONS["master-location"],
-              );
-              expect(DEVICE_GPS_OPTIONS["master-location"].maximumAge).toBe(0);
+              await expect(captureDevicePosition({ mode: "master-location" })).rejects.toThrow(`within ${MASTER_LOCATION_MAX_ACCURACY_M} m accuracy`);
+              expect(getCurrentPosition).toHaveBeenCalledTimes(1);
             });
 
-            it("keeps transaction capture fresh while leaving final accuracy enforcement to business rules", async () => {
-              const getCurrentPosition = vi.fn((success: PositionCallback) => success(position(160)));
-              installGeolocation({ getCurrentPosition } as Partial<Geolocation>);
-
-              const captured = await captureDeviceGps({ mode: "transaction", actionSource: "manual" });
-              expect(captured).toMatchObject({
-                latitude: 26.7606,
-                longitude: 83.3732,
-                accuracy_m: 160,
-                action_source: "manual",
+            it("falls back from a timed-out precise transaction fix to a balanced fix", async () => {
+              const getCurrentPosition = vi.fn((success: PositionCallback, error?: PositionErrorCallback | null) => {
+                if (getCurrentPosition.mock.calls.length === 1) error?.(geoError(3));
+                else success(position(55));
               });
+              installGeolocation({ getCurrentPosition } as Partial<Geolocation>);
+              const captured = await captureDeviceGps({ mode: "transaction" });
+              expect(captured.accuracy_m).toBe(55);
               expect(captured.captured_at).toBe(new Date(1_700_000_000_000).toISOString());
-              expect(DEVICE_GPS_OPTIONS.transaction.maximumAge).toBe(0);
+              expect(getCurrentPosition).toHaveBeenCalledTimes(2);
             });
 
-            it("uses one tracking preset and returns a deterministic cleanup callback", () => {
+            it("does not retry when location permission is denied", async () => {
+              const getCurrentPosition = vi.fn((_success: PositionCallback, error?: PositionErrorCallback | null) => error?.(geoError(1)));
+              installGeolocation({ getCurrentPosition } as Partial<Geolocation>);
+              await expect(captureDevicePosition({ mode: "transaction" })).rejects.toMatchObject({ code: 1 });
+              expect(getCurrentPosition).toHaveBeenCalledTimes(1);
+              expect(deviceGpsErrorMessage(geoError(1))).toContain("Location permission is blocked");
+            });
+
+            it("centralizes tracking watch options and cleanup", () => {
               const clearWatch = vi.fn();
               const watchPosition = vi.fn(() => 42);
               installGeolocation({ watchPosition, clearWatch } as Partial<Geolocation>);
-
               const stop = watchDevicePosition(() => undefined, () => undefined);
-              expect(watchPosition).toHaveBeenCalledWith(
-                expect.any(Function),
-                expect.any(Function),
-                DEVICE_GPS_OPTIONS.tracking,
-              );
+              expect(watchPosition).toHaveBeenCalledWith(expect.any(Function), expect.any(Function), DEVICE_GPS_WATCH_OPTIONS);
               stop();
               expect(clearWatch).toHaveBeenCalledWith(42);
-            });
-
-            it("normalizes browser permission errors for consistent UI messaging", () => {
-              const error = {
-                code: 1,
-                message: "denied",
-                PERMISSION_DENIED: 1,
-                POSITION_UNAVAILABLE: 2,
-                TIMEOUT: 3,
-              } as GeolocationPositionError;
-              expect(deviceGpsErrorMessage(error)).toContain("Location permission is blocked");
             });
           });
           EOF
 
-          git add tests/device-gps.test.ts
+          git add src tests/device-gps.test.ts
           git rm .github/workflows/one-shot-integrate-pr137.yml
           git diff --cached --check
-          git commit -m "refactor: reconcile centralized GPS acquisition with current main"
+          git commit -m "refactor: centralize current GPS acquisition paths"
           git push origin HEAD:integration/pr137-current-main
