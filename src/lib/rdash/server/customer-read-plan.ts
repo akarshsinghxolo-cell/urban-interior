@@ -5,7 +5,7 @@
  * customer-scope fallback all derive from these constants. Finance/procurement
  * collections do not belong to the Customer CRM surface; their own modules own
  * payments, invoices, receipts, AP, procurement, contractor liabilities and
- * commercial accounting.
+ * commercial accounting. Site Execution owns contractor-rate-backed capture.
  */
 export const CUSTOMER_CRM_DIRECT_RELATIONS = Object.freeze([
   "sites",
