@@ -1,13 +1,19 @@
 import { describe, expect, test } from "vitest";
 import {
+  CUSTOMER_CONTRACTOR_COLLECTIONS,
   CUSTOMER_CRM_COLLECTIONS,
   CUSTOMER_CRM_DIRECT_RELATIONS,
   CUSTOMER_CRM_FORBIDDEN_COLLECTIONS,
+  CUSTOMER_FINANCE_COLLECTIONS,
+  CUSTOMER_MEDIA_COLLECTIONS,
+  CUSTOMER_PROCUREMENT_COLLECTIONS,
+  CUSTOMER_VENDOR_COLLECTIONS,
 } from "../src/lib/rdash/server/customer-read-plan";
 import { CUSTOMER_RELATION_COLLECTIONS } from "../src/lib/rdash/server/entity-scoped-read";
 import { workspaceModuleReadPlan } from "../src/lib/rdash/server/module-read-plans";
+import { permissionAwareModuleCollections } from "../src/lib/rdash/server/module-scoped-read";
+import { createDefaultStaffPermissions } from "../src/lib/rdash/staff-operations";
 import { workspaceReadTargetForModule } from "../src/lib/rdash/workspace-read-scope";
-import { testFile } from "./test-file";
 
 const CUSTOMER_MODULES = [
   "customerDesk",
@@ -17,8 +23,12 @@ const CUSTOMER_MODULES = [
   "lostClosedReview",
 ] as const;
 
+const authorization = {
+  data: { staffRolePermissions: createDefaultStaffPermissions() },
+} as never;
+
 describe("Customer CRM read plan", () => {
-  test("every Customer-family screen shares one canonical collection contract", () => {
+  test("every Customer-family screen starts from one canonical CRM contract", () => {
     for (const moduleId of CUSTOMER_MODULES) {
       const plan = workspaceModuleReadPlan(workspaceReadTargetForModule(moduleId));
       expect(plan.collections).toEqual(CUSTOMER_CRM_COLLECTIONS);
@@ -29,22 +39,56 @@ describe("Customer CRM read plan", () => {
     expect(CUSTOMER_RELATION_COLLECTIONS).toEqual(CUSTOMER_CRM_DIRECT_RELATIONS);
   });
 
-  test("finance and procurement collections cannot drift into the Customer CRM surface", () => {
+  test("restricted collections never drift into the Customers-only base graph", () => {
     for (const collection of CUSTOMER_CRM_FORBIDDEN_COLLECTIONS) {
       expect(CUSTOMER_CRM_COLLECTIONS).not.toContain(collection);
     }
   });
 
-  test("Customer entity downstream traversal cannot reach restricted finance/procurement rows", async () => {
-    const source = await testFile("src/lib/rdash/server/entity-scoped-read.ts").text();
-    const start = source.indexOf("function customerDownstreamPlan");
-    const end = source.indexOf("function siteDownstreamPlan");
-    expect(start).toBeGreaterThanOrEqual(0);
-    expect(end).toBeGreaterThan(start);
-    const customerTraversal = source.slice(start, end);
+  test("Sales/Telecaller gets CRM + media but not finance, procurement, vendor or contractor masters", () => {
+    const target = workspaceReadTargetForModule("customerDesk") as never;
+    const collections = permissionAwareModuleCollections(
+      { role: "SALES_TELECALLER" },
+      target,
+      authorization,
+      CUSTOMER_CRM_COLLECTIONS,
+    );
 
-    for (const collection of CUSTOMER_CRM_FORBIDDEN_COLLECTIONS) {
-      expect(customerTraversal).not.toContain(`\"${collection}\"`);
+    for (const collection of CUSTOMER_MEDIA_COLLECTIONS) expect(collections).toContain(collection);
+    for (const collection of CUSTOMER_FINANCE_COLLECTIONS) expect(collections).not.toContain(collection);
+    for (const collection of CUSTOMER_PROCUREMENT_COLLECTIONS) expect(collections).not.toContain(collection);
+    for (const collection of CUSTOMER_VENDOR_COLLECTIONS) expect(collections).not.toContain(collection);
+    for (const collection of CUSTOMER_CONTRACTOR_COLLECTIONS) expect(collections).not.toContain(collection);
+  });
+
+  test("Operations Manager regains the full authorized Customer cockpit", () => {
+    const target = workspaceReadTargetForModule("customerDesk") as never;
+    const collections = permissionAwareModuleCollections(
+      { role: "OPERATIONS_MANAGER" },
+      target,
+      authorization,
+      CUSTOMER_CRM_COLLECTIONS,
+    );
+
+    for (const collection of [
+      ...CUSTOMER_MEDIA_COLLECTIONS,
+      ...CUSTOMER_FINANCE_COLLECTIONS,
+      ...CUSTOMER_PROCUREMENT_COLLECTIONS,
+      ...CUSTOMER_VENDOR_COLLECTIONS,
+      ...CUSTOMER_CONTRACTOR_COLLECTIONS,
+    ]) {
+      expect(collections).toContain(collection);
     }
+  });
+
+  test("permission-aware extensions do not affect non-Customer modules", () => {
+    const target = workspaceReadTargetForModule("siteExecution") as never;
+    const planned = ["sites", "areas"] as const;
+    expect(permissionAwareModuleCollections(
+      { role: "OPERATIONS_MANAGER" },
+      target,
+      authorization,
+      planned,
+    )).toEqual(planned);
   });
 });
