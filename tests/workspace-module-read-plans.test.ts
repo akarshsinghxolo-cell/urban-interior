@@ -15,6 +15,7 @@ import {
 import { workspaceReadTargetForModule } from "@/lib/rdash/workspace-read-scope";
 
 const EXACT_MODULES = [
+  "customerDesk",
   "tasks",
   "blockedRisks",
   "approvals",
@@ -70,7 +71,6 @@ describe("exact module workspace read plans", () => {
   test("keeps aggregate dashboards on complete scope plans", () => {
     for (const moduleId of [
       "workdesk",
-      "customerDesk",
       "siteExecution",
       "quotationDesk",
       "fieldOperations",

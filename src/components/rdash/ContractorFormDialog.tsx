@@ -528,7 +528,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       locality: !draft.locality.trim(),
     };
     try {
-      const capture = await captureDeviceGps({ mode: "transaction" });
+      const capture = await captureDeviceGps({ mode: "master-location" });
       if (sequence !== gpsSequenceRef.current || disposedRef.current) return;
       const next = { latitude: capture.latitude, longitude: capture.longitude };
       setLatitude(next.latitude);

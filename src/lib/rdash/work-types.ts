@@ -439,6 +439,76 @@ export function areaChipQuantity(chips: LineItem["area_chips"]): number {
   return Math.round((chips || []).reduce((sum, chip) => sum + (chip.quantity || 0), 0) * 100) / 100;
 }
 
+// ── Opted-but-missing quotation pairs ────────────────────────────────────────
+// The customer's ticked Work Required selection is the master list of work
+// types they asked to be quoted. A quotation that drops one (box removed
+// while editing, a revision, an unseeded draft) still owes that work type —
+// the editor lists the missing ones at the bottom so they can be added back.
+
+export type OptedPair = { subcategory_id: ID; work_type_id?: ID };
+
+/** The (subcategory · work type) pairs the customer opted for — every Work
+ *  Required row's ticked selection, deduped across rows, following the same
+ *  derivation the capture view seeds from (seedDetailedAreaLines): explicit
+ *  work-type ticks resolve to their own subcategory (only under a declared
+ *  one); legacy rows without ticks fall back to each declared subcategory's
+ *  primary work type. Pairs whose subcategory left the master drop out. */
+export function customerOptedPairs(input: {
+  workRequired: Array<Pick<WorkRequired, "customer_id" | "work_subcategory_ids" | "work_type_ids">>;
+  customerId: ID;
+  workSubcategories: WorkSubcategory[];
+}): OptedPair[] {
+  const opted = new Map<string, OptedPair>();
+  const declaredIds = (ids: Array<ID | undefined> | undefined) =>
+    (ids || []).filter((id): id is ID => Boolean(id) && input.workSubcategories.some((row) => row.id === id));
+  for (const work of input.workRequired) {
+    if (work.customer_id !== input.customerId) continue;
+    const subcategoryIds = declaredIds(work.work_subcategory_ids);
+    if (!subcategoryIds.length) continue;
+    const tickedIds = (work.work_type_ids || []).map(String);
+    if (tickedIds.length) {
+      for (const workTypeId of tickedIds) {
+        const subcategory = input.workSubcategories.find((row) => workTypesForSubcategory(row).some((wt) => wt.id === workTypeId));
+        // Only pairs under a subcategory the row declares count as opted.
+        if (!subcategory || !subcategoryIds.includes(subcategory.id)) continue;
+        opted.set(`${subcategory.id}::${workTypeId}`, { subcategory_id: subcategory.id, work_type_id: workTypeId });
+      }
+    }
+    else {
+      for (const subcategoryId of subcategoryIds) {
+        const subcategory = input.workSubcategories.find((row) => row.id === subcategoryId)!;
+        const primary = primaryWorkType(subcategory);
+        opted.set(`${subcategoryId}::${primary.id}`, { subcategory_id: subcategoryId, work_type_id: primary.id });
+      }
+    }
+  }
+  return Array.from(opted.values());
+}
+
+/** The opted pairs this quotation does NOT price yet — the editor's bottom
+ *  "add them back" list. A line pair covers its own exact key; a legacy line
+ *  pair WITHOUT a work type covers every opted type of its subcategory (the
+ *  line quotes that work generically, so its types are not "missing"). */
+export function omittedOptedPairs(input: {
+  workRequired: Array<Pick<WorkRequired, "customer_id" | "work_subcategory_ids" | "work_type_ids">>;
+  customerId: ID;
+  workSubcategories: WorkSubcategory[];
+  items: Array<Pick<LineItem, "subcategory_id" | "work_type_id" | "option_pairs">>;
+}): OptedPair[] {
+  const coveredKeys = new Set<string>();
+  const coveredAnyType = new Set<string>();
+  for (const item of input.items) {
+    for (const pair of itemOptionPairs(item)) {
+      if (!pair.subcategory_id) continue;
+      if (pair.work_type_id) coveredKeys.add(`${pair.subcategory_id}::${pair.work_type_id}`);
+      else coveredAnyType.add(String(pair.subcategory_id));
+    }
+  }
+  return customerOptedPairs(input).filter((pair) =>
+    !coveredAnyType.has(String(pair.subcategory_id))
+    && !coveredKeys.has(`${pair.subcategory_id}::${pair.work_type_id || ""}`));
+}
+
 /** One quotation line per covered Work Required decision — the annotation F
  *  shape the user asked for: the joined any-one-of title with NO area names,
  *  an area chip per measured area (removable in the editor), quantity = Σ

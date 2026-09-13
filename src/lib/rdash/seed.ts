@@ -1,4 +1,5 @@
 import type { AcceptedScope, Area, ContractorBill, ContractorBid, ContractorPayment, CustomerInvoice, CustomerReceipt, GRN, InventoryItem, LineItem, Master, MeasurementRevision, Payment, Customer, PurchaseOrder, Quotation, RDashDatabase, Site, VendorBid, VendorBill, VendorRFQ, WorkOrder, WorkOrderBOQ, WorkOrderCostLine, VendorPayment, WorkRequired, Drawing, DailyExecutionLog, SiteDispatch, RiskItem, BlockedItem, ApprovalAction, Followup, Commission, PinterestBoard, StorageAccount, SourcePartner, } from "./types";
+import type { CustomerReferrerFields } from "./customer-referrer";
 import { buildWorkCategoryCatalog, prepareWorkspaceData } from "./work-category-master";
 import { createSeedStaffRecords, createSeedAttendanceRecords, createSeedTasks, createSeedVisits } from "./staff-operations";
 import { repairOperationalWorkspace } from "./operational-repair";
@@ -29,8 +30,8 @@ const line = (id: string, title: string, quantity: number, rate: number, extra: 
     consumed_qty: 0,
     ...extra,
 });
-const customers: Customer[] = [
-    { id: "cust-das", name: "Mr. Das", phone: "+91 9876501933", whatsapp: "+91 9876501933", alternate_phone: "+91 9876501934", email: "mr.das@example.demo", status: "active", source_partner_name: "Walk-in", notes: "Customer identity only. Apartment and office details live on separate Sites.", created_at: at(-28), updated_at: now() },
+const customers: Array<Customer & CustomerReferrerFields> = [
+    { id: "cust-das", name: "Mr. Das", phone: "+91 9876501933", whatsapp: "+91 9876501933", alternate_phone: "+91 9876501934", email: "mr.das@example.demo", status: "active", referrer_type: "external", referrer_name: "Walk-in", notes: "Customer identity only. Apartment and office details live on separate Sites.", created_at: at(-28), updated_at: now() },
     { id: "cust-aarav", name: "Aarav Mehta", phone: "+91 9876520110", whatsapp: "+91 9876520110", email: "aarav.mehta@example.demo", status: "active", created_at: at(-20), updated_at: now() },
     { id: "cust-nisha", name: "Nisha Rao", phone: "+91 9876592010", whatsapp: "+91 9876592010", email: "nisha.rao@example.demo", status: "active", created_at: at(-14), updated_at: now() },
 ];
