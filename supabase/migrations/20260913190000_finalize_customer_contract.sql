@@ -2,10 +2,6 @@
 -- Customer stores only canonical referrer_type/referrer_id/referrer_name fields.
 -- source_partner_* remains a projection on Site/commission records, never Customer.
 
-update public.entity_customers
-set data = data - 'source_partner_id' - 'source_partner_name'
-where data ? 'source_partner_id' or data ? 'source_partner_name';
-
 create or replace function private.uc_canonicalize_customer_row()
 returns trigger
 language plpgsql
@@ -104,6 +100,13 @@ begin
   return new;
 end;
 $$;
+
+-- Run the cleanup under the strict trigger. Installing the trigger function
+-- first prevents the transitional implementation from reconstructing the
+-- projection while this UPDATE removes it.
+update public.entity_customers
+set data = data - 'source_partner_id' - 'source_partner_name'
+where data ? 'source_partner_id' or data ? 'source_partner_name';
 
 alter function private.uc_sync_customer_contact_identities() set search_path = '';
 
