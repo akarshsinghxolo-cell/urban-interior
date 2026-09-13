@@ -349,8 +349,8 @@ describe("workspace module read registry", () => {
     }
   });
 
-  test("customer scope still carries contractor rates for the capture estimates (Task 24 pin)", () => {
-    expect(CUSTOMER_SCOPE_COLLECTIONS).toContain("master.contractorRates");
+  test("customer scope excludes contractor rates now that Site Execution owns capture estimates", () => {
+    expect(CUSTOMER_SCOPE_COLLECTIONS).not.toContain("master.contractorRates");
   });
 
   test("every collection read by a module UI is served by at least one scope", async () => {

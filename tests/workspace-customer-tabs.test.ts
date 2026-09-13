@@ -6,20 +6,15 @@ import {
 } from "../src/lib/rdash/workspace-customer-tabs";
 
 describe("workspace customer-tab query state", () => {
-  test("covers every existing customer workspace tab", () => {
-    expect(WORKSPACE_CUSTOMER_TABS).toEqual(expect.arrayContaining([
+  test("covers only the canonical CRM customer tabs", () => {
+    expect(WORKSPACE_CUSTOMER_TABS).toEqual([
       "overview",
       "sites",
       "tasks",
       "quotations",
-      "payments",
-      "invoices",
-      "advances",
-      "liabilities",
       "visits",
       "activity",
-    ]));
-    expect(WORKSPACE_CUSTOMER_TABS).toHaveLength(10);
+    ]);
   });
 
   test("uses overview when no customer tab is requested", () => {
@@ -40,7 +35,14 @@ describe("workspace customer-tab query state", () => {
     }
   });
 
-  test("rejects record-detail, unknown and repeated tab values", () => {
+  test("rejects retired finance tabs, record-detail, unknown and repeated values", () => {
+    for (const retired of ["payments", "invoices", "advances", "liabilities"]) {
+      expect(workspaceCustomerTabRequest(`tab=${retired}`)).toEqual({
+        tab: "overview",
+        explicit: true,
+        invalid: true,
+      });
+    }
     expect(workspaceCustomerTabRequest("tab=thread")).toEqual({
       tab: "overview",
       explicit: true,
@@ -67,7 +69,7 @@ describe("workspace customer-tab query state", () => {
     expect(workspaceUrlWithCustomerTab(
       "/workspace/customers/cust-1",
       "tab=sites&source=search",
-      "payments",
-    )).toBe("/workspace/customers/cust-1?source=search&tab=payments");
+      "visits",
+    )).toBe("/workspace/customers/cust-1?source=search&tab=visits");
   });
 });

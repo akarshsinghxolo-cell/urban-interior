@@ -1,3 +1,5 @@
+import { CUSTOMER_SCOPE_COLLECTIONS as CANONICAL_CUSTOMER_SCOPE_COLLECTIONS } from "./customer-read-plan";
+
 import type { ModuleWorkspaceReadScope } from "../workspace-read-scope";
 
 export const WORKSPACE_BOOTSTRAP_COLLECTIONS = Object.freeze([
@@ -5,64 +7,7 @@ export const WORKSPACE_BOOTSTRAP_COLLECTIONS = Object.freeze([
   "master.staff",
 ] as const);
 
-export const CUSTOMER_SCOPE_COLLECTIONS = Object.freeze([
-  "customers",
-  "sites",
-  "areas",
-  "workRequired",
-  "measurementRevisions",
-  "quotations",
-  "acceptedScopes",
-  "workOrders",
-  "boqs",
-  "purchaseOrders",
-  "grns",
-  "dispatches",
-  "vendorBills",
-  "vendorPayments",
-  "contractorBills",
-  "contractorPayments",
-  "contractorBids",
-  "contractorSettlements",
-  "workOrderCostLines",
-  "drawings",
-  "executionLogs",
-  "variationRequests",
-  "visits",
-  "tasks",
-  "followups",
-  "actions",
-  "payments",
-  "invoices",
-  "customerReceipts",
-  "blocked",
-  "risks",
-  "threads",
-  "commSends",
-  "entityFileAttachments",
-  "entityReferenceAssignments",
-  "commercialTerms",
-  "paymentTermTemplates",
-  "taxConfigs",
-  "validityConfigs",
-  "auditLog",
-  "master.units",
-  "master.workCategories",
-  "master.workSubcategories",
-  "master.articles",
-  "master.articleVariants",
-  "master.vendors",
-  "master.contractors",
-  // The capture detailed-area dialog prices its live estimates from
-  // contractor work-type averages, so the customer scope must carry the rates.
-  "master.contractorRates",
-  "master.sourcePartners",
-  "master.fileAssets",
-  // Customer attachment previews resolve catalogue/reference-media drive
-  // assets through entityReferenceAssignments (relatedActivityFiles).
-  "master.catalogues",
-  "master.referenceMedia",
-] as const);
+export const CUSTOMER_SCOPE_COLLECTIONS = CANONICAL_CUSTOMER_SCOPE_COLLECTIONS;
 
 export const SITE_SCOPE_COLLECTIONS = Object.freeze([
   "customers",

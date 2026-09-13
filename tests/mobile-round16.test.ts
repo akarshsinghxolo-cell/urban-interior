@@ -5,14 +5,7 @@ import { testFile } from "./test-file";
 const source = async (path: string) => testFile(path).text();
 
 /**
- * Task 26/27 re-land: mobile horizontal overflow fixes at 390px.
- *
- * Root causes pinned here (all verified in-browser at 390px in the original
- * round): grid/flex items with `min-width:auto` refusing to shrink, scroll
- * hosts only clamping overflow-y so wide atoms scrolled the whole panel, a
- * fixed `min-w-40` select inside a non-wrapping flex row, a nowrap header
- * button feeding min-content into a dialog grid track, and the Customer
- * Timeline two-pane grid items growing past their 374px track.
+ * Mobile horizontal-overflow contracts at 390px.
  */
 describe("Mobile round 16 — drawer / dialog overflow fixes", () => {
   test("DetailPanel drawer body clamps horizontal overflow and header actions keep their size", async () => {
@@ -49,47 +42,31 @@ describe("Mobile round 16 — drawer / dialog overflow fixes", () => {
   });
 });
 
-describe("Mobile round 16 — Customer Desk scope / advances / capture sheet", () => {
-  test("scope site header shrinks: min-w-0 card + header, truncating title, shrink-0 counters", async () => {
+describe("Mobile round 16 — lean Customer Desk", () => {
+  test("customer cards and drawer identity blocks can shrink", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ['className="min-w-0 rounded-md border border-border bg-muted/20 p-2.5"']);
-    expectTokens(desk, ['className="flex min-w-0 items-start justify-between gap-2"']);
-    expectTokens(desk, ['className="break-words text-xs font-semibold truncate"']);
-    expectTokens(desk, ['className="shrink-0 text-[10px] text-muted-foreground">{scopedAreas.length}']);
+    expectTokens(desk, ['<div className="min-w-0 flex-1">']);
+    expectTokens(desk, ['<p className="min-w-0 flex-1 truncate text-sm font-bold">']);
+    expectTokens(desk, ['<div className="flex min-w-0 flex-1 items-start gap-3">']);
   });
 
-  test("scope work rows stack in a column instead of forcing wide grid tracks", async () => {
+  test("customer tabs scroll inside their own horizontal strip", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ['<div className="mt-2 flex flex-col gap-1">']);
+    expectTokens(desk, ["overflow-x-auto border-b border-border"]);
+    expectTokens(desk, ["rd-scroll rd-scroll-fade"]);
   });
 
-  test("Work Required block header keeps its trailing button from forcing width", async () => {
+  test("Customer Timeline panes use minmax tracks and shrinkable content", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ['className="flex min-w-0 items-center justify-between gap-2"']);
-    expectTokens(desk, ['className="h-7 shrink-0 text-xs"']);
-  });
-
-  test("advances grid and rows can shrink (min-w-0 items)", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ['className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3"']);
-    expectTokens(desk, ['className="min-w-0 rounded-lg border border-border bg-background px-3 py-2"']);
-    expectTokens(desk, ['className="flex min-w-0 items-center justify-between gap-2"']);
-    expectTokens(desk, ['className="min-w-0"> <p className="text-sm font-medium">']);
-  });
-
-  test("capture detailed area sheet: header min-w-0, body overflow-x-hidden, footer wraps", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ['className="flex min-w-0 items-center justify-between border-b border-border px-5 py-3"']);
-    expectTokens(desk, ['className="max-h-[60vh] overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll"']);
-    expectTokens(desk, ['className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3']);
-    expectTokens(desk, ['cn("min-w-0 text-[11px]", canSave || idle ?']);
-  });
-
-  test("Customer Timeline two-pane grid panes can shrink below their min-content", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    // Do NOT "fix" the minmax( class: it is byte-valid grid-cols-[minmax(...)].
     expectTokens(desk, ["grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"]);
-    // BOTH panes (list + timeline detail) must be shrinkable grid items.
-    expect((desk.match(/className="flex min-w-0 flex-col gap-3"/g) || []).length).toBeGreaterThanOrEqual(2);
+    expectTokens(desk, ['<div className="flex min-w-0 flex-col gap-3">']);
+    expectTokens(desk, ['<div className="min-w-0">']);
+  });
+
+  test("finance/capture sheets are no longer mounted inside Customer Desk", async () => {
+    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
+    for (const retired of ["advances", "liabilities", "StructuredWorkRequiredDialog", "RecordPaymentDialog"]) {
+      expect(desk).not.toContain(retired);
+    }
   });
 });

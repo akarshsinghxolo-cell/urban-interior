@@ -1,4 +1,5 @@
 import type { WorkspaceReadTarget } from "../workspace-read-scope";
+import { CUSTOMER_CRM_COLLECTIONS } from "./customer-read-plan";
 
 /**
  * Exact screen plans reduce unrelated collection reads. A plan being exact does
@@ -7,28 +8,12 @@ import type { WorkspaceReadTarget } from "../workspace-read-scope";
  * server supplies row-ID projections / aggregate counts for those screens.
  */
 const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  customerTimeline: Object.freeze([
-    "customers", "sites", "areas", "workRequired", "quotations", "workOrders",
-    "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
-    "drawings", "executionLogs", "boqs", "purchaseOrders", "grns", "vendorBills",
-    "blocked", "commSends", "auditLog", "entityFileAttachments", "master.fileAssets",
-    "master.sourcePartners", "master.contractors", "master.vendors",
-  ]),
-  customerRequests: Object.freeze([
-    "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
-    "workOrders", "visits", "tasks", "followups", "threads", "entityFileAttachments",
-    "master.fileAssets", "master.workCategories", "master.workSubcategories",
-    "master.sourcePartners", "master.contractors", "master.vendors",
-  ]),
-  salesPipeline: Object.freeze([
-    "customers", "sites", "workRequired", "measurementRevisions", "quotations",
-    "acceptedScopes", "workOrders", "visits", "invoices", "followups", "tasks",
-    "commSends", "threads", "entityFileAttachments", "master.fileAssets",
-  ]),
-  lostClosedReview: Object.freeze([
-    "customers", "sites", "workRequired", "quotations", "workOrders", "followups", "tasks",
-    "threads", "auditLog",
-  ]),
+  // Every Customer-family screen uses the same CRM boundary. The UI may use a
+  // subset, but none of these routes can silently pull Finance/Procurement data.
+  customerTimeline: CUSTOMER_CRM_COLLECTIONS,
+  customerRequests: CUSTOMER_CRM_COLLECTIONS,
+  salesPipeline: CUSTOMER_CRM_COLLECTIONS,
+  lostClosedReview: CUSTOMER_CRM_COLLECTIONS,
   drawings: Object.freeze([
     "customers", "sites", "areas", "workOrders", "drawings", "entityFileAttachments", "master.fileAssets",
   ]),

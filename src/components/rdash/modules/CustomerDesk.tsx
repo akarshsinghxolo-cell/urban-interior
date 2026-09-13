@@ -1,83 +1,176 @@
 "use client";
+
 import * as React from "react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  Building,
+  FileText,
+  ListChecks,
+  Mail,
+  MapPin,
+  MessageCircle,
+  Navigation,
+  Pencil,
+  Phone,
+  Plus,
+  Search,
+  UserPlus,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Search, UserPlus, FilePlus2, Phone, MapPin, Mail, MessageCircle, Navigation, CalendarClock, Wallet, FileText, ListChecks, Activity, Building, Plus, CheckCircle2, AlertTriangle, Pencil, Package, Truck, Receipt, Send, Check, ChevronDown, ArrowRight, } from "lucide-react";
-import { useRDashStore, siteFinancials, type ContextCustomerTab } from "@/lib/rdash/store";
-import { Avatar, CopyValueButton, StatusBadge, MetricCard, SectionHeader, EmptyState } from "../primitives";
-import { ContextRow, type ContextAction } from "../ContextMenuHost";
-import { buildCustomerActions, buildTaskActions, buildQuotationActions, buildPaymentActions, buildVisitActions } from "../recordActions";
-import { CustomerSitesDialog } from "../CustomerSitesDialog";
-import { FilePreview, type FilePreviewSource } from "../FilePreview";
-import { assetPreview } from "@/lib/rdash/file-attachments";
-import { EntityFilesCard } from "../EntityFilesCard";
-import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
-import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
-import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
-import { RecordPaymentDialog } from "../ActionDialogs";
-import { entityStatusStyle, workRequiredStatusStyle, taskStatusStyle, paymentStatusStyle, invoiceStatusStyle, quotationStatusStyle, formatINR, formatINRShort, formatDate, relativeDay, indiaBusinessDate, workByCustomerFallback, formatLocationLabel, } from "@/lib/rdash/format";
-import { workByCustomer } from "@/lib/rdash/seed";
-import { workTypesForSubcategory, primaryWorkType, defaultMeasureBasisFor, measuredQuantity, WORK_MEASURE_LABELS, workRequiredDisplayTitle, seedDetailedAreaLines, itemOptionPairs, type RemovedSelection } from "@/lib/rdash/work-types";
-import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
+import { useRDashStore, type ContextCustomerTab } from "@/lib/rdash/store";
+import type { AuditLogEntry, RDashDatabase } from "@/lib/rdash/types";
+import {
+  formatDate,
+  formatLocationLabel,
+  indiaBusinessDate,
+  quotationStatusStyle,
+  relativeDay,
+  taskStatusStyle,
+  workRequiredStatusStyle,
+} from "@/lib/rdash/format";
 import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { findCustomerIdentityMatches } from "@/lib/rdash/customer-identity";
-import { customerLifecycleGaps, customerMatchesQuery, type CustomerPendingAction } from "@/lib/rdash/customer-desk-queries";
-import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds, latestQuotationRevisions } from "@/lib/rdash/metrics";
-import { toast } from "sonner";
+import {
+  customerLifecycleGaps,
+  customerMatchesQuery,
+  type CustomerPendingAction,
+} from "@/lib/rdash/customer-desk-queries";
+import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds } from "@/lib/rdash/metrics";
+import { Avatar, CopyValueButton, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
+import { ContextRow } from "../ContextMenuHost";
+import { CustomerSitesDialog } from "../CustomerSitesDialog";
+import { EntityFilesCard } from "../EntityFilesCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-const COMMON_ROOM_NAMES = [
-    "Kitchen",
-    "Bedroom",
-    "Master Bedroom",
-    "Kids Bedroom",
-    "Hall",
-    "Living Area",
-    "Dining",
-    "Balcony",
-    "Bathroom",
-    "Toilet",
-    "Reception",
-    "Terrace",
-    "Office",
-    "Store Area",
-    "Utility",
-    "Pooja Area",
-    "Lobby",
-    "Passage",
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
+
+const LIVE_WORK_ORDER_STATUSES = new Set(["scheduled", "in_progress", "on_hold"]);
+const CUSTOMER_TABS: ReadonlyArray<{
+  key: ContextCustomerTab;
+  label: string;
+  icon: React.ElementType;
+}> = [
+  { key: "overview", label: "Overview", icon: Activity },
+  { key: "sites", label: "Sites", icon: Building },
+  { key: "tasks", label: "Tasks", icon: ListChecks },
+  { key: "quotations", label: "Quotations", icon: FileText },
+  { key: "visits", label: "Visits", icon: MapPin },
+  { key: "activity", label: "Activity", icon: Activity },
 ];
-const normalizeAreaName = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
-const titleCaseAreaName = (value: string) => value.trim().replace(/\s+/g, " ").replace(/\b\w/g, (match) => match.toUpperCase());
-export function CustomerDesk({ view }: {
-    view?: "default" | "timeline";
-} = {}) {
-    const db = useRDashStore((s) => s.db);
-    const selectedCustomerId = useRDashStore((s) => s.selectedCustomerId);
-    const selectCustomer = useRDashStore((s) => s.selectCustomer);
-    const setActiveModule = useRDashStore((s) => s.setActiveModule);
-    const openActionDialog = useRDashStore((s) => s.openActionDialog);
-    const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
-    const openDetail = useRDashStore((s) => s.openDetail);
-    const [q, setQ] = React.useState("");
-    const [sort, setSort] = React.useState("newest");
-    const [filter, setFilter] = React.useState("all");
-    const customerDispatch = React.useMemo(() => ({ setActiveModule, openActionDialog, openCreateDialog }), [setActiveModule, openActionDialog, openCreateDialog]);
-    const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
-    // B-19: Local state for the unified Customer and Sites edit dialog.
-    // The Edit context-menu action on a customer row uses this to open the form directly,
-    // instead of just opening the detail panel and forcing the user to click Edit again.
-    const [editCustomerId, setEditCustomerId] = React.useState<string | undefined>(undefined);
-    const filtered = db.customers.filter((p) => customerMatchesQuery(db, p, q))
-        .filter((p) => filter === "all" ||
-        (filter === "with-site" ? db.sites.some((site) => site.customer_id === p.id) :
-            filter === "without-site" ? !db.sites.some((site) => site.customer_id === p.id) : p.status === filter))
-        .sort((a, b) => sort === "name-asc" ? a.name.localeCompare(b.name) :
-        sort === "name-desc" ? b.name.localeCompare(a.name) :
-            sort === "newest" ? (b.created_at || "").localeCompare(a.created_at || "") :
-                sort === "oldest" ? (a.created_at || "").localeCompare(b.created_at || "") : 0);
-    const customerListControls = (<div className="flex items-center gap-2">
+
+function customerRelatedIds(db: RDashDatabase, customerId: string): Set<string> {
+  const ids = new Set<string>([customerId]);
+  const direct = <T extends { id: string; customer_id?: string }>(rows: T[]) => {
+    rows.forEach((row) => {
+      if (row.customer_id === customerId) ids.add(row.id);
+    });
+  };
+
+  direct(db.sites);
+  direct(db.workRequired);
+  direct(db.quotations);
+  direct(db.workOrders);
+  direct(db.visits);
+  direct(db.followups);
+  direct(db.blocked);
+  direct(db.commSends);
+  direct(db.variationRequests);
+
+  db.tasks.forEach((row) => {
+    if (isCustomerLinked(db, row, customerId)) ids.add(row.id);
+  });
+  db.risks.forEach((row) => {
+    if (isCustomerLinked(db, row, customerId)) ids.add(row.id);
+  });
+
+  const siteIds = new Set(db.sites.filter((site) => site.customer_id === customerId).map((site) => site.id));
+  db.areas.forEach((area) => {
+    if (siteIds.has(area.site_id)) ids.add(area.id);
+  });
+
+  const workOrderIds = new Set(db.workOrders.filter((row) => row.customer_id === customerId).map((row) => row.id));
+  db.boqs.forEach((row) => {
+    if (workOrderIds.has(row.work_order_id)) ids.add(row.id);
+  });
+  db.drawings.forEach((row) => {
+    if (row.work_order_id && workOrderIds.has(row.work_order_id)) ids.add(row.id);
+  });
+  db.executionLogs.forEach((row) => {
+    if (row.work_order_id && workOrderIds.has(row.work_order_id)) ids.add(row.id);
+  });
+
+  return ids;
+}
+
+function customerAuditEvents(db: RDashDatabase, customerId: string): AuditLogEntry[] {
+  const relatedIds = customerRelatedIds(db, customerId);
+  return db.auditLog
+    .filter((entry) =>
+      (entry.entity_type === "customer" && entry.entity_id === customerId)
+      || Boolean(entry.entity_id && relatedIds.has(entry.entity_id)),
+    )
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
+  const db = useRDashStore((state) => state.db);
+  const selectedCustomerId = useRDashStore((state) => state.selectedCustomerId);
+  const selectCustomer = useRDashStore((state) => state.selectCustomer);
+  const openDetail = useRDashStore((state) => state.openDetail);
+  const [query, setQuery] = React.useState("");
+  const [sort, setSort] = React.useState("newest");
+  const [filter, setFilter] = React.useState("all");
+  const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
+  const [editCustomerId, setEditCustomerId] = React.useState<string>();
+
+  const filtered = React.useMemo(() => db.customers
+    .filter((customer) => customerMatchesQuery(db, customer, query))
+    .filter((customer) => filter === "all"
+      || (filter === "with-site"
+        ? db.sites.some((site) => site.customer_id === customer.id)
+        : filter === "without-site"
+          ? !db.sites.some((site) => site.customer_id === customer.id)
+          : customer.status === filter))
+    .sort((a, b) => sort === "name-asc"
+      ? a.name.localeCompare(b.name)
+      : sort === "name-desc"
+        ? b.name.localeCompare(a.name)
+        : sort === "oldest"
+          ? a.created_at.localeCompare(b.created_at)
+          : b.created_at.localeCompare(a.created_at)), [db, filter, query, sort]);
+
+  // Selection is explicit. An absent/stale selection never silently becomes the
+  // first customer in the database.
+  const selected = selectedCustomerId
+    ? db.customers.find((customer) => customer.id === selectedCustomerId)
+    : undefined;
+
+  const wonWorkRequiredIds = React.useMemo(
+    () => collectWonWorkRequiredIds(db.quotations, db.workOrders),
+    [db.quotations, db.workOrders],
+  );
+  const openRequiredCount = React.useMemo(
+    () => calculateSalesPipelineMetrics(db.workRequired, { wonWorkRequiredIds }).openCount,
+    [db.workRequired, wonWorkRequiredIds],
+  );
+  const liveWorkOrders = React.useMemo(
+    () => db.workOrders.filter((row) => LIVE_WORK_ORDER_STATUSES.has(row.status)).length,
+    [db.workOrders],
+  );
+
+  const listControls = (
+    <div className="flex items-center gap-2">
       <select aria-label="Sort customers" value={sort} onChange={(event) => setSort(event.target.value)} className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground">
         <option value="newest">Sort: Newest first</option>
         <option value="name-asc">Name: A–Z</option>
@@ -92,2077 +185,476 @@ export function CustomerDesk({ view }: {
         <option value="with-site">With site</option>
         <option value="without-site">Site pending</option>
       </select>
-    </div>);
-    const selected = db.customers.find((p) => p.id === selectedCustomerId) || db.customers[0];
-    const selectedTasks = (db.tasks || []).filter((t) => selected ? isCustomerLinked(db, t, selected.id) : false);
-    const selectedQuotes = (db.quotations || []).filter((qu) => qu.customer_id === selected?.id);
-    const selectedPayments = (db.payments || []).filter((pa) => pa.customer_id === selected?.id);
-    const selectedVisits = (db.visits || []).filter((v) => v.customer_id === selected?.id);
-    const selectedSites = (db.sites || []).filter((s) => s.customer_id === selected?.id);
-    const selectedAreas = (db.areas || []).filter((r) => selectedSites.some((s) => s.id === r.site_id));
-    const wonWorkRequiredIds = React.useMemo(() => collectWonWorkRequiredIds(db.quotations || [], db.workOrders || []), [db.quotations, db.workOrders]);
-    const openReqCount = React.useMemo(() => calculateSalesPipelineMetrics(db.workRequired || [], { wonWorkRequiredIds }).openCount, [db.workRequired, wonWorkRequiredIds]);
-    // B-9: Build a comprehensive Set of entity IDs that belong to this customer so the timeline
-    // audit-log filter can match entries by ID (instead of the previous fragile substring match
-    // on entity_label). Covers quotations, payments, tasks, visits, sites, workRequired, workOrders,
-    // invoices, followups, blocked, commSends, and the customer record itself.
-    const selectedRelatedIds = React.useMemo(() => {
-        const ids = new Set<string>();
-        if (!selected)
-            return ids;
-        ids.add(selected.id);
-        const pushWhereCustomer = <T extends { customer_id?: string; id: string }>(rows: T[]) => rows.forEach((r) => { if (r.customer_id === selected.id) ids.add(r.id); });
-        pushWhereCustomer(db.quotations);
-        pushWhereCustomer(db.payments);
-        pushWhereCustomer(db.visits);
-        pushWhereCustomer(db.sites);
-        pushWhereCustomer(db.workRequired || []);
-        pushWhereCustomer(db.workOrders);
-        pushWhereCustomer(db.invoices);
-        pushWhereCustomer(db.followups);
-        pushWhereCustomer(db.blocked);
-        pushWhereCustomer(db.commSends);
-        // Tasks may carry customer_id directly or resolve via parent links (site/quotation/visit/etc).
-        (db.tasks || []).forEach((t) => { if (isCustomerLinked(db, t, selected.id)) ids.add(t.id); });
-        // Areas belong to sites that belong to this customer.
-        (db.areas || []).forEach((a) => { if (selectedSites.some((s) => s.id === a.site_id)) ids.add(a.id); });
-        return ids;
-    }, [db, selected, selectedSites]);
-    const selectAndOpenCustomer = (customerId: string) => {
-        selectCustomer(customerId);
-        openDetail("customer", customerId, "customerDesk");
-    };
-    if (view === "timeline") {
-        return (<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+    </div>
+  );
+
+  if (view === "timeline") {
+    return (
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="flex min-w-0 flex-col gap-3">
-          <div className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer" aria-label="Search customers" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"/>
-              </div>
-              <Button size="sm" variant="default" className="gap-1.5" onClick={() => setAddCustomerOpen(true)}>
-                <UserPlus className="h-4 w-4"/> <span className="hidden sm:inline">Add</span>
-              </Button>
-            </div>
-          </div>
-
-          <SectionHeader title="Customers" count={filtered.length} action={customerListControls}/>
-
+          <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setAddCustomerOpen(true)} />
+          <SectionHeader title="Customers" count={filtered.length} action={listControls} />
           <div className="rd-scroll flex max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto pr-1">
-            {filtered.map((p) => {
-                const progress = customerProgress(db, p.id);
-                const active = p.id === selected?.id;
-                return (<button key={p.id} type="button" onClick={() => selectCustomer(p.id)} className={cn("rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft", active && "ring-2 ring-ring/40")}>
+            {filtered.map((customer) => {
+              const progress = customerProgress(db, customer.id);
+              const active = customer.id === selected?.id;
+              return (
+                <button key={customer.id} type="button" onClick={() => selectCustomer(customer.id)} className={cn("rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft", active && "ring-2 ring-ring/40")}>
                   <div className="flex items-start gap-3">
-                    <Avatar name={p.name} size={38}/>
+                    <Avatar name={customer.name} size={38} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="truncate text-sm font-bold text-foreground">{p.name}</p>
-                        <StatusBadge label={progress.label} className="bg-primary/10 text-primary border-primary/20"/>
+                        <p className="truncate text-sm font-bold">{customer.name}</p>
+                        <StatusBadge label={progress.label} className="border-primary/20 bg-primary/10 text-primary" />
                       </div>
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Phone className="h-3 w-3"/> {p.phone}
+                        <Phone className="h-3 w-3" /> {customer.phone || "No phone"}
                       </p>
                     </div>
-                                      </div>
-                </button>);
+                  </div>
+                </button>
+              );
             })}
+            {!filtered.length && <EmptyState title="No customers found" description="Adjust the search or add a new customer." />}
           </div>
         </div>
-
-        <div className="flex min-w-0 flex-col gap-3">
-          {selected ? (<CustomerTimelineView customerId={selected.id} name={selected.name} tasks={selectedTasks} quotations={selectedQuotes} payments={selectedPayments} visits={selectedVisits} sites={selectedSites} auditLog={db.auditLog.filter((a) => (a.entity_type === "customer" && a.entity_id === selected.id) || (a.entity_id && selectedRelatedIds.has(a.entity_id)))} drawings={(db.drawings || []).filter((d) => d.work_order_id && db.workOrders.some((w) => w.id === d.work_order_id && w.customer_id === selected.id))} executionLogs={(db.executionLogs || []).filter((el) => el.work_order_id && db.workOrders.some((w) => w.id === el.work_order_id && w.customer_id === selected.id))} boqs={(db.boqs || []).filter((b) => b.work_order_id && db.workOrders.some((w) => w.id === b.work_order_id && w.customer_id === selected.id))} purchaseOrders={(db.purchaseOrders || []).filter((p) => p.work_order_id && db.workOrders.some((w) => w.id === p.work_order_id && w.customer_id === selected.id))} grns={(db.grns || []).filter((g) => g.work_order_id && db.workOrders.some((w) => w.id === g.work_order_id && w.customer_id === selected.id))} vendorBills={(db.vendorBills || []).filter((vb) => vb.work_order_id && db.workOrders.some((w) => w.id === vb.work_order_id && w.customer_id === selected.id))} workOrders={(db.workOrders || []).filter((w) => w.customer_id === selected.id)} commSends={(db.commSends || []).filter((c) => c.customer_id === selected.id)} />) : (<EmptyState title="No customer selected" description="Pick a customer from the list to view their timeline."/>)}
+        <div className="min-w-0">
+          {selected
+            ? <CustomerTimelineView name={selected.name} entries={customerAuditEvents(db, selected.id)} />
+            : <EmptyState title="No customer selected" description="Pick a customer to view their event history." icon={<Activity className="h-7 w-7" />} />}
         </div>
-
-        <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => { selectCustomer(id); }}/>
-        {/* B-19: Unified Customer and Sites editor — opened by the context-menu Edit action. */}
-        <CustomerSitesDialog editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => { setEditCustomerId(undefined); selectCustomer(id); }}/>
-      </div>);
-    }
-    return (<div className="flex flex-col gap-3">
-      <div className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"/>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer" aria-label="Search customers" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2"/>
-          </div>
-          <Button size="sm" variant="default" className="gap-1.5" onClick={() => setAddCustomerOpen(true)}>
-            <UserPlus className="h-4 w-4"/> <span className="hidden sm:inline">Add</span>
-          </Button>
-          <CustomerDuplicateMergeControl />
-        </div>
+        <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => selectCustomer(id)} />
       </div>
+    );
+  }
 
+  return (
+    <div className="flex flex-col gap-3">
+      <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setAddCustomerOpen(true)} duplicateControl={<CustomerDuplicateMergeControl />} />
       <div className="rd-metric-grid">
-        <MetricCard label="Customers" value={db.customers.length} hint="visible now"/>
-        <MetricCard label="Open work required" value={openReqCount} tone="primary"/>
-        <MetricCard label="Live work orders" value={db.workOrders.length} tone="success"/>
+        <MetricCard label="Customers" value={filtered.length} hint={query || filter !== "all" ? "matching filters" : "visible now"} />
+        <MetricCard label="Open work required" value={openRequiredCount} tone="primary" />
+        <MetricCard label="Live work orders" value={liveWorkOrders} tone="success" />
       </div>
-
-      <SectionHeader title="Customers" count={filtered.length} action={customerListControls}/>
-
+      <SectionHeader title="Customers" count={filtered.length} action={listControls} />
       <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
-        {filtered.map((p) => {
-            const progress = customerProgress(db, p.id);
-            const customerSites = db.sites.filter((site) => site.customer_id === p.id);
-            const primarySite = customerSites[0];
-            const locationLabel = customerSites.length > 1 ? `${customerSites.length} Sites` : formatLocationLabel(primarySite?.locality, primarySite?.address, primarySite?.city) || "Site pending";
-            const work = progress.summary || workByCustomer[p.id] || workByCustomerFallback(customerSites);
-            const active = p.id === selected?.id;
-            return (<ContextRow key={p.id} actions={buildCustomerActions(p.id, customerDispatch, { onOpen: () => selectAndOpenCustomer(p.id), onEdit: () => setEditCustomerId(p.id) })} onSelect={() => selectAndOpenCustomer(p.id)} className={cn("min-h-[148px] rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card transition-all hover:border-primary/30 hover:shadow-soft", active && "ring-2 ring-ring/40")}>
+        {filtered.map((customer) => {
+          const progress = customerProgress(db, customer.id);
+          const sites = db.sites.filter((site) => site.customer_id === customer.id);
+          const primarySite = sites[0];
+          const locationLabel = sites.length > 1
+            ? `${sites.length} Sites`
+            : formatLocationLabel(primarySite?.locality, primarySite?.address, primarySite?.city) || "Site pending";
+          const active = customer.id === selected?.id;
+          return (
+            <ContextRow
+              key={customer.id}
+              onSelect={() => {
+                selectCustomer(customer.id);
+                openDetail("customer", customer.id, "customerDesk");
+              }}
+              className={cn("min-h-[140px] rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card transition-all hover:border-primary/30 hover:shadow-soft", active && "ring-2 ring-ring/40")}
+            >
               <div className="flex items-start gap-3">
-                <Avatar name={p.name} size={40}/>
+                <Avatar name={customer.name} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2 pr-9">
-                    <p className="min-w-0 flex-1 truncate text-sm font-bold text-foreground">{p.name}</p>
-                    <StatusBadge label={progress.label} className="max-w-[52%] bg-primary/10 text-primary border-primary/20"/>
+                    <p className="min-w-0 flex-1 truncate text-sm font-bold">{customer.name}</p>
+                    <StatusBadge label={progress.label} className="max-w-[52%] border-primary/20 bg-primary/10 text-primary" />
                   </div>
-                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3"/> {p.phone || "—"}</p>
-                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin className="h-3 w-3"/> {locationLabel}</p>
-                  <p className="mt-2 line-clamp-2 text-xs text-foreground/70">{work}</p>
-                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}><div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }}/></div>
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> {customer.phone || "No phone"}</p>
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground"><MapPin className="h-3 w-3" /> {locationLabel}</p>
+                  <p className="mt-2 line-clamp-2 text-xs text-foreground/70">{progress.summary}</p>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}>
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
+                  </div>
                 </div>
               </div>
-            </ContextRow>);
+            </ContextRow>
+          );
         })}
       </div>
-
-      {filtered.length === 0 && <EmptyState title="No customers found" description="Adjust the search or add a new customer."/>}
-
+      {!filtered.length && <EmptyState title="No customers found" description="Adjust the search or add a new customer." />}
       <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => {
-            selectCustomer(id);
-            openDetail("customer", id, "customerDesk");
-        }}/>
-        {/* B-19: Unified Customer and Sites editor — opened by the context-menu Edit action. */}
-        <CustomerSitesDialog editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => { setEditCustomerId(undefined); selectCustomer(id); }}/>
-    </div>);
+        selectCustomer(id);
+        openDetail("customer", id, "customerDesk");
+      }} />
+      <CustomerSitesDialog editId={editCustomerId} open={Boolean(editCustomerId)} onClose={() => setEditCustomerId(undefined)} onSaved={(id) => {
+        setEditCustomerId(undefined);
+        selectCustomer(id);
+      }} />
+    </div>
+  );
 }
+
+function CustomerSearchBar({ query, setQuery, onAdd, duplicateControl }: {
+  query: string;
+  setQuery: (value: string) => void;
+  onAdd: () => void;
+  duplicateControl?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer" aria-label="Search customers" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2" />
+        </div>
+        <Button size="sm" onClick={onAdd} className="gap-1.5"><UserPlus className="h-4 w-4" /><span className="hidden sm:inline">Add</span></Button>
+        {duplicateControl}
+      </div>
+    </div>
+  );
+}
+
 function CustomerDuplicateMergeControl() {
-    const db = useRDashStore((state) => state.db);
-    const mergeCustomers = useRDashStore((state) => state.mergeCustomers);
-    const selectCustomer = useRDashStore((state) => state.selectCustomer);
-    const [open, setOpen] = React.useState(false);
-    const [survivorId, setSurvivorId] = React.useState("");
-    const [duplicateId, setDuplicateId] = React.useState("");
-    const [confirmation, setConfirmation] = React.useState("");
-    const duplicatePairs = React.useMemo(() => {
-        const pairs: Array<{
-            first: typeof db.customers[number];
-            second: typeof db.customers[number];
-            fields: string[];
-        }> = [];
-        const seen = new Set<string>();
-        for (const customer of db.customers) {
-            for (const match of findCustomerIdentityMatches(db.customers, customer, { excludeCustomerId: customer.id })) {
-                const key = [customer.id, match.customer.id].sort().join("::");
-                if (seen.has(key))
-                    continue;
-                seen.add(key);
-                pairs.push({ first: customer, second: match.customer, fields: match.fields });
-            }
-        }
-        return pairs;
-    }, [db.customers]);
-    const customersInDuplicates = React.useMemo(() => {
-        const byId = new Map<string, typeof db.customers[number]>();
-        duplicatePairs.forEach((pair) => { byId.set(pair.first.id, pair.first); byId.set(pair.second.id, pair.second); });
-        return [...byId.values()];
-    }, [duplicatePairs]);
-    const openReview = () => {
-        const firstPair = duplicatePairs[0];
-        if (!firstPair)
-            return;
-        setSurvivorId(firstPair.first.id);
-        setDuplicateId(firstPair.second.id);
-        setConfirmation("");
-        setOpen(true);
-    };
-    const merge = () => {
-        if (confirmation !== "MERGE") {
-            toast.error('Type MERGE to confirm the customer merge.');
-            return;
-        }
-        try {
-            mergeCustomers(survivorId, duplicateId);
-            selectCustomer(survivorId);
-            setOpen(false);
-            toast.success("Duplicate customer merged. All linked history now belongs to the surviving customer.");
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Customer merge could not be completed.");
-        }
-    };
-    if (duplicatePairs.length === 0)
-        return null;
-    return (<>
+  const db = useRDashStore((state) => state.db);
+  const mergeCustomers = useRDashStore((state) => state.mergeCustomers);
+  const selectCustomer = useRDashStore((state) => state.selectCustomer);
+  const [open, setOpen] = React.useState(false);
+  const [pairKey, setPairKey] = React.useState("");
+  const [survivorId, setSurvivorId] = React.useState("");
+  const [confirmation, setConfirmation] = React.useState("");
+
+  const duplicatePairs = React.useMemo(() => {
+    const pairs: Array<{ key: string; first: typeof db.customers[number]; second: typeof db.customers[number]; fields: string[] }> = [];
+    const seen = new Set<string>();
+    for (const customer of db.customers) {
+      for (const match of findCustomerIdentityMatches(db.customers, customer, { excludeCustomerId: customer.id })) {
+        const key = [customer.id, match.customer.id].sort().join("::");
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pairs.push({ key, first: customer, second: match.customer, fields: match.fields });
+      }
+    }
+    return pairs;
+  }, [db.customers]);
+
+  const selectedPair = duplicatePairs.find((pair) => pair.key === pairKey) || duplicatePairs[0];
+  const openReview = () => {
+    const first = duplicatePairs[0];
+    if (!first) return;
+    setPairKey(first.key);
+    setSurvivorId(first.first.id);
+    setConfirmation("");
+    setOpen(true);
+  };
+  const choosePair = (key: string) => {
+    const pair = duplicatePairs.find((candidate) => candidate.key === key);
+    if (!pair) return;
+    setPairKey(key);
+    setSurvivorId(pair.first.id);
+    setConfirmation("");
+  };
+  const merge = () => {
+    if (!selectedPair || confirmation !== "MERGE") return;
+    if (survivorId !== selectedPair.first.id && survivorId !== selectedPair.second.id) {
+      toast.error("Choose the surviving customer from the detected duplicate pair.");
+      return;
+    }
+    const duplicateId = survivorId === selectedPair.first.id ? selectedPair.second.id : selectedPair.first.id;
+    try {
+      mergeCustomers(survivorId, duplicateId);
+      selectCustomer(survivorId);
+      setOpen(false);
+      toast.success("Duplicate customer merged into the selected surviving record.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Customer merge could not be completed.");
+    }
+  };
+
+  if (!duplicatePairs.length) return null;
+  return (
+    <>
       <Button size="sm" variant="outline" className="gap-1.5 border-warning/40 text-warning" onClick={openReview}>
-        <AlertTriangle className="h-3.5 w-3.5"/> <span className="hidden lg:inline">Resolve duplicates</span><span className="rounded-full bg-warning/15 px-1.5 text-[10px]">{duplicatePairs.length}</span>
+        <AlertTriangle className="h-3.5 w-3.5" /><span className="hidden lg:inline">Resolve duplicates</span><span className="rounded-full bg-warning/15 px-1.5 text-[10px]">{duplicatePairs.length}</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Resolve duplicate customers</DialogTitle>
-            <DialogDescription>Keep one customer record. The duplicate record will be removed after every Site, work, finance, task, communication, file, and activity link is moved to the surviving customer.</DialogDescription>
+            <DialogDescription>Only a detected identity-matching pair can be merged. Choose which record survives.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
-              {duplicatePairs.map((pair) => <p key={`${pair.first.id}-${pair.second.id}`} className="mb-1 last:mb-0"><strong>{pair.first.name}</strong> ↔ <strong>{pair.second.name}</strong> · matching {pair.fields.join(", ")}</p>)}
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="grid gap-1 text-xs font-medium">Keep this customer
-                <select value={survivorId} onChange={(event) => setSurvivorId(event.target.value)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
-                  {customersInDuplicates.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone || customer.email || customer.id}</option>)}
-                </select>
-              </label>
-              <label className="grid gap-1 text-xs font-medium">Merge and remove this duplicate
-                <select value={duplicateId} onChange={(event) => setDuplicateId(event.target.value)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
-                  {customersInDuplicates.filter((customer) => customer.id !== survivorId).map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.phone || customer.email || customer.id}</option>)}
-                </select>
-              </label>
+          {selectedPair && <div className="space-y-3">
+            <label className="grid gap-1 text-xs font-medium">Detected duplicate pair
+              <select value={selectedPair.key} onChange={(event) => choosePair(event.target.value)} className="h-9 rounded-md border border-input bg-card px-2 text-sm">
+                {duplicatePairs.map((pair) => <option key={pair.key} value={pair.key}>{pair.first.name} ↔ {pair.second.name} · {pair.fields.join(", ")}</option>)}
+              </select>
+            </label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[selectedPair.first, selectedPair.second].map((customer) => (
+                <button key={customer.id} type="button" onClick={() => setSurvivorId(customer.id)} className={cn("rounded-lg border p-3 text-left", survivorId === customer.id ? "border-primary bg-primary/5" : "border-border bg-background")}>
+                  <p className="text-xs font-semibold">{survivorId === customer.id ? "Keep" : "Merge into other"}</p>
+                  <p className="mt-1 text-sm font-bold">{customer.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{customer.phone || customer.email || customer.id}</p>
+                </button>
+              ))}
             </div>
             <label className="grid gap-1 text-xs font-medium">Type MERGE to confirm
-              <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="MERGE" className="h-9"/>
+              <Input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="MERGE" className="h-9" />
             </label>
-          </div>
-          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button variant="destructive" disabled={!survivorId || !duplicateId || survivorId === duplicateId || confirmation !== "MERGE"} onClick={merge}>Merge records</Button></DialogFooter>
+          </div>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="destructive" disabled={!selectedPair || !survivorId || confirmation !== "MERGE"} onClick={merge}>Merge records</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>);
+    </>
+  );
 }
-function CustomerPortfolioContext({ customerId, name, phone, email, reqStatus, budget, tasks, quotations, payments, visits, sites, areas, taskDispatch, quoteDispatch, customerDispatch, }: {
-    customerId: string;
-    name: string;
-    phone: string;
-    email?: string;
-    reqStatus?: {
-        label: string;
-        className: string;
-    };
-    budget?: number;
-    tasks: import("@/lib/rdash/types").Task[];
-    quotations: import("@/lib/rdash/types").Quotation[];
-    payments: import("@/lib/rdash/types").Payment[];
-    visits: import("@/lib/rdash/types").Visit[];
-    sites: import("@/lib/rdash/types").Site[];
-    areas: import("@/lib/rdash/types").Area[];
-    taskDispatch: {
-        updateTask: (id: string, patch: Record<string, unknown>) => void;
-    };
-    quoteDispatch: {
-        updateQuotation: (id: string, patch: Record<string, unknown>) => void;
-    };
-    customerDispatch: {
-        setActiveModule: (id: string, label?: string, icon?: string) => void;
-        openActionDialog: (type: "record-payment" | "send-catalogue" | "send-reference" | "send-pinterest" | "send-material", customerId?: string) => void;
-        openCreateDialog: (request: import("@/lib/rdash/store").CreateDialogRequest) => void;
-    };
-}) {
-    const db = useRDashStore((s) => s.db);
-    const relatedTasks = React.useMemo(() => db.tasks.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedFollowups = React.useMemo(() => db.followups.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedCommunications = React.useMemo(() => db.commSends.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedRisks = React.useMemo(() => db.risks.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedObstacles = React.useMemo(() => db.blocked.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedReceipts = React.useMemo(() => db.customerReceipts.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedVariations = React.useMemo(() => db.variationRequests.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    const relatedReferenceAssignments = React.useMemo(() => db.entityReferenceAssignments.filter((row) => isCustomerLinked(db, row, customerId)), [db, customerId]);
-    // B-8: relatedAttachments now aggregates ALL file attachments belonging to this customer —
-    // direct customer attachments AND attachments on related records (visits, tasks, sites,
-    // quotations, payments, workOrders, workRequired, invoices, followups, blocked, commSends,
-    // areas) whose entity belongs to this customer. Previously this only used isCustomerLinked,
-    // which silently excluded entities (e.g. visits) that have customer_id set but no parent
-    // site/workOrder/workRequired — those threw inside resolveEntityContext and returned false.
-    // We now ALSO match by direct customer_id lookup on the entity, so the gallery shows
-    // measurement photos, task completion proofs, site photos, etc. The `seen` Set in
-    // relatedActivityFiles prevents double-counting when an attachment matches both paths.
-    const relatedAttachments = React.useMemo(() => {
-        const customerSiteIds = new Set(db.sites.filter((s) => s.customer_id === customerId).map((s) => s.id));
-        const relatedEntityIds = new Set<string>([customerId]);
-        const push = (rows: Array<{ id: string; customer_id?: string }>) => rows.forEach((r) => { if (r.customer_id === customerId) relatedEntityIds.add(r.id); });
-        push(db.visits);
-        push(db.tasks);
-        push(db.sites);
-        push(db.quotations);
-        push(db.payments);
-        push(db.workOrders);
-        push(db.workRequired || []);
-        push(db.invoices);
-        push(db.followups);
-        push(db.blocked);
-        push(db.commSends);
-        db.areas.forEach((a) => { if (customerSiteIds.has(a.site_id)) relatedEntityIds.add(a.id); });
-        return db.entityFileAttachments.filter((row) => {
-            if (row.entity_type === "customer" && row.entity_id === customerId) return true;
-            if (relatedEntityIds.has(row.entity_id)) return true;
-            // Fallback for attachments whose entity resolves through a parent link
-            // (e.g. a task whose site_id belongs to this customer, even though task.customer_id is empty).
-            return isCustomerLinked(db, row, customerId);
-        });
-    }, [db, customerId]);
-    const relatedActivityFiles = React.useMemo(() => {
-        const filesById = new Map((db.master.fileAssets || []).map((file: any) => [file.id, file]));
-        const results: Array<{
-            id: string;
-            preview: FilePreviewSource;
-            label: string;
-        }> = [];
-        const seen = new Set<string>();
-        const add = (driveFileId?: string, label?: string) => {
-            const file = driveFileId ? filesById.get(driveFileId) : undefined;
-            if (!file || seen.has(file.id))
-                return;
-            seen.add(file.id);
-            results.push({ id: file.id, preview: assetPreview(file as any), label: label || file.kind?.replaceAll("_", " ") || "File" });
-        };
-        relatedAttachments.forEach((attachment) => add(attachment.file_asset_id, `${attachment.entity_type.replace(/_/g, " ")} · ${attachment.role}`));
-        relatedReferenceAssignments.forEach((assignment: any) => {
-            if (assignment.resource_type === "catalogue")
-                add((db.master.catalogues || []).find((item: any) => item.id === assignment.resource_id)?.drive_asset_id, "Catalogue");
-            if (assignment.resource_type === "reference_media")
-                add((db.master.referenceMedia || []).find((item: any) => item.id === assignment.resource_id)?.drive_asset_id, "Reference media");
-        });
-        return results;
-    }, [db.master.catalogues, db.master.fileAssets, db.master.referenceMedia, relatedAttachments, relatedReferenceAssignments]);
-    const detailPanel = useRDashStore((s) => s.detailPanel);
-    const contextHistory = useRDashStore((s) => s.contextHistory);
-    const contextHistoryIndex = useRDashStore((s) => s.contextHistoryIndex);
-    const setContextCustomerTab = useRDashStore((s) => s.setContextCustomerTab);
-    const openDetail = useRDashStore((s) => s.openDetail);
-    const captureStructuredWorkRequired = useRDashStore((s) => s.captureStructuredWorkRequired);
-    const [tab, setTab] = React.useState<ContextCustomerTab>("overview");
-    const currentContextEntry = contextHistory[contextHistoryIndex];
-    const isContextCustomer = detailPanel.fromModule === "context" && detailPanel.kind === "customer" && detailPanel.recordId === customerId && currentContextEntry?.recordId === customerId;
-    React.useEffect(() => {
-        setTab(isContextCustomer ? currentContextEntry?.customerTab || "overview" : "overview");
-    }, [customerId, isContextCustomer, currentContextEntry?.customerTab]);
-    const selectCustomerTab = React.useCallback((next: ContextCustomerTab) => {
-        setTab(next);
-        if (isContextCustomer)
-            setContextCustomerTab(next);
-    }, [isContextCustomer, setContextCustomerTab]);
-    const [addSiteOpen, setAddSiteOpen] = React.useState(false);
-    const [editSiteId, setEditSiteId] = React.useState<string | undefined>();
-    const [editCustomerOpen, setEditCustomerOpen] = React.useState(false);
-    const [captureWorkRequiredId, setCaptureWorkRequiredId] = React.useState<string | null>(null);
-    const [createWorkRequiredSiteId, setCreateWorkRequiredSiteId] = React.useState<string | null>(null);
-    // B-5: Local dialog instance for "Add advance" — opens RecordPaymentDialog with the
-    // Advance payment toggle pre-checked, so the new milestone lands in this customer's
-    // Advances tab without the user having to remember to flip the toggle.
-    const [advanceDialogOpen, setAdvanceDialogOpen] = React.useState(false);
-    // Overview scope filter: clicking an area chip shows only the work captured in that area.
-    const [scopeAreaId, setScopeAreaId] = React.useState<string | null>(null);
-    const openTasks = relatedTasks.filter((t) => t.status !== "completed" && t.status !== "cancelled");
-    // Pending actions = open tasks + sales-lifecycle gaps (visit/measurement/quotation/budget/site).
-    // Derived from the same data as the progress hint above, so this section can never again
-    // claim "fully actioned" while the hint says "plan a visit" (audit problem #2/#7).
-    const lifecycleGaps = React.useMemo(() => customerLifecycleGaps(db, customerId), [db, customerId]);
-    const pendingCount = openTasks.length + lifecycleGaps.length;
-    const gapAction = React.useCallback((gap: CustomerPendingAction) => {
-        if (gap.key === "visit")
-            customerDispatch.openCreateDialog({ kind: "visit", customerId });
-        else if (gap.key === "quotation")
-            customerDispatch.openCreateDialog({ kind: "quotation", customerId });
-        else if (gap.key === "site")
-            setAddSiteOpen(true);
-        else if (gap.key === "measurement")
-            selectCustomerTab("sites");
-        else if (gap.key === "budget")
-            setEditCustomerOpen(true);
-    }, [customerDispatch, customerId, selectCustomerTab]);
-    const customerInvoices = db.invoices.filter((invoice) => invoice.customer_id === customerId);
-    const customerAdvances = payments.filter((p) => p.is_advance);
-    const customerAdvanceIds = new Set(customerAdvances.map((payment) => payment.id));
-    const receivedAdvanceAmount = db.customerReceipts.filter((receipt) => receipt.payment_id && customerAdvanceIds.has(receipt.payment_id)).reduce((sum, receipt) => sum + receipt.amount, 0);
-    const customerJobs = db.workOrders.filter((j) => j.customer_id === customerId);
-    const customerJobIds = new Set(customerJobs.map((j) => j.id));
-    const customerVendorBills = db.vendorBills.filter((b) => {
-        if (b.status === "paid")
-            return false;
-        const po = b.po_id ? db.purchaseOrders.find((p) => p.id === b.po_id) : undefined;
-        return po?.work_order_id && customerJobIds.has(po.work_order_id);
-    });
-    const customerContractorCosts = db.workOrderCostLines.filter((c) => customerJobIds.has(c.work_order_id) && c.type === "contractor");
-    const customerContractorApprovals = db.actions.filter((a) => a.status === "pending" && a.linked_record_type === "contractor_payment" && customerJobs.some((j) => j.id === a.linked_record_id));
-    const progress = customerProgress(db, customerId);
-    const singleSite = sites.length === 1 ? sites[0] : undefined;
-    const customerWorkRequired = db.workRequired.filter((work) => work.customer_id === customerId);
-    const customerLevelAreaIds = new Set(customerWorkRequired.filter((work) => !work.site_id).flatMap((work) => work.area_ids || []));
-    const customerAreas = db.areas.filter((area) => sites.some((site) => site.id === area.site_id) || customerLevelAreaIds.has(area.id));
-    const mapHref = singleSite ? customerMapHref(singleSite.address, singleSite.latitude, singleSite.longitude) : undefined;
-    const whatsappHref = customerWhatsappHref(phone);
-    const currentQuote = latestQuotationRevisions(quotations)
-        .filter((quote) => quote.status === "sent" || quote.status === "draft" || quote.status === "accepted")
-        .sort((a, b) => (b.updated_at || b.created_at || "").localeCompare(a.updated_at || a.created_at || ""))[0];
-    const currentJob = customerJobs.find((workOrder) => workOrder.status === "scheduled" || workOrder.status === "in_progress" || workOrder.status === "on_hold");
-    const tabs = [
-        { key: "overview" as const, label: "Overview", icon: <Activity className="h-3.5 w-3.5"/> },
-        { key: "sites" as const, label: `Sites (${sites.length})`, icon: <Building className="h-3.5 w-3.5"/> },
-        { key: "tasks" as const, label: `Tasks (${relatedTasks.length})`, icon: <ListChecks className="h-3.5 w-3.5"/> },
-        { key: "quotations" as const, label: `Quotations (${quotations.length})`, icon: <FileText className="h-3.5 w-3.5"/> },
-        { key: "payments" as const, label: `Payments (${payments.length})`, icon: <Wallet className="h-3.5 w-3.5"/> },
-        { key: "invoices" as const, label: `Invoices (${customerInvoices.length})`, icon: <FileText className="h-3.5 w-3.5"/> },
-        { key: "advances" as const, label: `Advances (${customerAdvances.length})`, icon: <Wallet className="h-3.5 w-3.5"/> },
-        { key: "liabilities" as const, label: `Liabilities (${customerVendorBills.length + customerContractorApprovals.length})`, icon: <AlertTriangle className="h-3.5 w-3.5"/> },
-        { key: "visits" as const, label: `Visits (${visits.length})`, icon: <MapPin className="h-3.5 w-3.5"/> },
-        { key: "activity" as const, label: `Activity (${relatedFollowups.length + relatedCommunications.length + relatedRisks.length + relatedObstacles.length + relatedVariations.length + relatedAttachments.length})`, icon: <Activity className="h-3.5 w-3.5"/> },
-    ];
-    return (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
+
+export function CustomerPortfolioDrawerContent({ customerId }: { customerId: string }) {
+  return <CustomerPortfolioContext customerId={customerId} />;
+}
+
+function CustomerPortfolioContext({ customerId }: { customerId: string }) {
+  const db = useRDashStore((state) => state.db);
+  const setActiveModule = useRDashStore((state) => state.setActiveModule);
+  const openCreateDialog = useRDashStore((state) => state.openCreateDialog);
+  const openDetail = useRDashStore((state) => state.openDetail);
+  const detailPanel = useRDashStore((state) => state.detailPanel);
+  const contextHistory = useRDashStore((state) => state.contextHistory);
+  const contextHistoryIndex = useRDashStore((state) => state.contextHistoryIndex);
+  const setContextCustomerTab = useRDashStore((state) => state.setContextCustomerTab);
+  const [tab, setTab] = React.useState<ContextCustomerTab>("overview");
+  const [editCustomerOpen, setEditCustomerOpen] = React.useState(false);
+  const [addSiteOpen, setAddSiteOpen] = React.useState(false);
+  const [editSiteId, setEditSiteId] = React.useState<string>();
+
+  const customer = db.customers.find((row) => row.id === customerId);
+  const sites = db.sites.filter((row) => row.customer_id === customerId && !row.is_archived);
+  const workRequired = db.workRequired.filter((row) => row.customer_id === customerId);
+  const relatedTasks = db.tasks.filter((row) => isCustomerLinked(db, row, customerId));
+  const relatedFollowups = db.followups.filter((row) => isCustomerLinked(db, row, customerId));
+  const quotations = db.quotations.filter((row) => row.customer_id === customerId);
+  const visits = db.visits.filter((row) => row.customer_id === customerId);
+  const communications = db.commSends.filter((row) => isCustomerLinked(db, row, customerId));
+  const risks = db.risks.filter((row) => isCustomerLinked(db, row, customerId));
+  const obstacles = db.blocked.filter((row) => isCustomerLinked(db, row, customerId));
+  const variations = db.variationRequests.filter((row) => isCustomerLinked(db, row, customerId));
+  const openTasks = relatedTasks.filter((row) => row.status !== "completed" && row.status !== "cancelled");
+  const lifecycleGaps = React.useMemo(
+    () => customerLifecycleGaps(db, customerId).filter((gap) => gap.key !== "budget"),
+    [db, customerId],
+  );
+  const progress = customerProgress(db, customerId);
+  const singleSite = sites.length === 1 ? sites[0] : undefined;
+  const mapHref = singleSite ? customerMapHref(singleSite.address, singleSite.latitude, singleSite.longitude) : undefined;
+  const whatsappHref = customerWhatsappHref(customer?.phone);
+
+  const currentContextEntry = contextHistory[contextHistoryIndex];
+  const isContextCustomer = detailPanel.fromModule === "context"
+    && detailPanel.kind === "customer"
+    && detailPanel.recordId === customerId
+    && currentContextEntry?.recordId === customerId;
+  React.useEffect(() => {
+    setTab(isContextCustomer ? currentContextEntry?.customerTab || "overview" : "overview");
+  }, [customerId, currentContextEntry?.customerTab, isContextCustomer]);
+  const selectTab = React.useCallback((next: ContextCustomerTab) => {
+    setTab(next);
+    if (isContextCustomer) setContextCustomerTab(next);
+  }, [isContextCustomer, setContextCustomerTab]);
+
+  if (!customer) return <EmptyState title="Customer not found" description="This customer record is no longer available." />;
+
+  const gapAction = (gap: CustomerPendingAction) => {
+    if (gap.key === "visit") openCreateDialog({ kind: "visit", customerId });
+    else if (gap.key === "quotation") openCreateDialog({ kind: "quotation", customerId });
+    else if (gap.key === "site") setAddSiteOpen(true);
+    else if (gap.key === "measurement") selectTab("sites");
+  };
+
+  return (
+    <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Avatar name={name} size={48}/>
+          <Avatar name={customer.name} size={48} />
           <div className="min-w-0">
-            <h2 className="break-words text-lg font-bold leading-snug tracking-tight">{name}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-              {phone ? <span className="inline-flex items-center gap-0.5"><a href={`tel:${phone}`} className="flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3"/>{phone}</a><CopyValueButton value={phone} label="Mobile number"/></span> : <span className="flex items-center gap-1"><Phone className="h-3 w-3"/>—</span>}
-              {email && <a href={`mailto:${email}`} className="flex items-center gap-1 hover:text-primary"><Mail className="h-3 w-3"/>{email}</a>}
-              {singleSite?.address && (mapHref ? <a href={mapHref} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-primary"><MapPin className="h-3 w-3"/>{singleSite.address}</a> : <span className="flex items-center gap-1"><MapPin className="h-3 w-3"/>{singleSite.address}</span>)}
-              {sites.length > 1 && <span className="flex items-center gap-1"><Building className="h-3 w-3"/>{sites.length} Sites</span>}
+            <h2 className="break-words text-lg font-bold leading-snug tracking-tight">{customer.name}</h2>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              {customer.phone
+                ? <span className="inline-flex items-center gap-0.5"><a href={`tel:${customer.phone}`} className="flex items-center gap-1 hover:text-primary"><Phone className="h-3 w-3" />{customer.phone}</a><CopyValueButton value={customer.phone} label="Mobile number" /></span>
+                : <span className="flex items-center gap-1"><Phone className="h-3 w-3" />No phone</span>}
+              {customer.email && <a href={`mailto:${customer.email}`} className="flex items-center gap-1 hover:text-primary"><Mail className="h-3 w-3" />{customer.email}</a>}
+              {sites.length > 1 && <span className="flex items-center gap-1"><Building className="h-3 w-3" />{sites.length} Sites</span>}
+              {singleSite?.address && <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{singleSite.address}</span>}
             </div>
-            <p className="mt-1 text-xs font-medium text-foreground/80">{sites.length ? `${sites.length} site${sites.length === 1 ? "" : "s"}` : "No site added"}</p>
-            <div className="mt-1.5 sm:hidden"><StatusBadge label={progress.label} className="bg-primary/10 text-primary border-primary/20"/></div>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <StatusBadge label={progress.label} className="hidden bg-primary/10 text-primary border-primary/20 sm:inline-flex"/>
-          <Button size="sm" variant="outline" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={() => setEditCustomerOpen(true)}>
-            <Pencil className="h-3.5 w-3.5"/><span className="hidden sm:inline">Edit</span>
-          </Button>
-        </div>
+        <Button size="sm" variant="outline" className="h-7 shrink-0 gap-1 px-2 text-xs" onClick={() => setEditCustomerOpen(true)}><Pencil className="h-3.5 w-3.5" /><span className="hidden sm:inline">Edit</span></Button>
       </div>
+
       <div className="mt-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
-        <div className="flex items-center justify-between gap-3"><span className="text-xs font-medium">{progress.summary}</span>
-          <span className="flex shrink-0 items-center gap-2"><span className="text-[10px] font-mono text-muted-foreground">{progress.percent}%</span>
-            {lifecycleGaps.some((gap) => gap.key === "visit") && <Button size="sm" variant="outline" className="h-6 gap-1 px-2 text-[11px]" onClick={() => customerDispatch.openCreateDialog({ kind: "visit", customerId })}><MapPin className="h-3 w-3"/> Plan visit</Button>}
-          </span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium">{progress.summary}</span>
+          <span className="shrink-0 text-[10px] font-mono text-muted-foreground">{progress.percent}%</span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}><div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }}/></div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={`${progress.label}: ${progress.percent}%`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.percent)}>
+          <div className="h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
+        </div>
       </div>
+
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
-        {currentJob ? (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openDetail("workOrder", currentJob.id)}><Building className="mr-1 h-3.5 w-3.5"/> Open workOrder</Button>) : currentQuote ? (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => openDetail("quotation", currentQuote.id)}><FileText className="mr-1 h-3.5 w-3.5"/> {currentQuote.status === "draft" ? "Edit quotation" : "Open quotation"}</Button>) : (<Button size="sm" variant="default" className="h-7 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5"/> Create quotation</Button>)}
-        {!currentJob && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "visit", customerId })}><MapPin className="mr-1 h-3.5 w-3.5"/> Schedule visit</Button>}
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => customerDispatch.openActionDialog("record-payment", customerId)}><Wallet className="mr-1 h-3.5 w-3.5"/> Add collection milestone</Button>
-        {whatsappHref && <Button asChild size="sm" variant="outline" className="h-7 text-xs"><a href={whatsappHref} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5"/> WhatsApp</a></Button>}
-        {mapHref && <Button asChild size="sm" variant="outline" className="h-7 text-xs"><a href={mapHref} target="_blank" rel="noreferrer"><Navigation className="mr-1 h-3.5 w-3.5"/> Maps</a></Button>}
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { if (phone)
-        window.location.href = `tel:${phone}`;
-    else
-        toast.info("No phone number on file"); }}><Phone className="mr-1 h-3.5 w-3.5"/> Call</Button>
+        <Button size="sm" className="h-7 text-xs" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5" />Create quotation</Button>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openCreateDialog({ kind: "visit", customerId })}><MapPin className="mr-1 h-3.5 w-3.5" />Schedule visit</Button>
+        {whatsappHref && <Button asChild size="sm" variant="outline" className="h-7 text-xs"><a href={whatsappHref} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</a></Button>}
+        {mapHref && <Button asChild size="sm" variant="outline" className="h-7 text-xs"><a href={mapHref} target="_blank" rel="noreferrer"><Navigation className="mr-1 h-3.5 w-3.5" />Maps</a></Button>}
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => customer.phone ? window.location.href = `tel:${customer.phone}` : toast.info("No phone number on file")}><Phone className="mr-1 h-3.5 w-3.5" />Call</Button>
       </div>
+
       <div className="mt-4 flex items-center gap-1 overflow-x-auto border-b border-border pb-px rd-scroll rd-scroll-fade" role="tablist" aria-label="Customer record sections">
-        {tabs.map((t) => (<button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => selectCustomerTab(t.key)} className={cn("flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-xs font-medium transition-colors", tab === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {t.icon}
-            {t.label}
-          </button>))}
+        {CUSTOMER_TABS.map(({ key, label, icon: Icon }) => {
+          const count = key === "sites" ? sites.length
+            : key === "tasks" ? relatedTasks.length
+              : key === "quotations" ? quotations.length
+                : key === "visits" ? visits.length
+                  : key === "activity" ? relatedFollowups.length + communications.length + risks.length + obstacles.length + variations.length
+                    : undefined;
+          return <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => selectTab(key)} className={cn("flex shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-3 py-1.5 text-xs font-medium transition-colors", tab === key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}><Icon className="h-3.5 w-3.5" />{label}{count !== undefined ? ` (${count})` : ""}</button>;
+        })}
       </div>
+
       <div className="mt-3">
-        {tab === "overview" && (<div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <MetricCard label="Sites" value={sites.length} tone="primary"/>
-              <MetricCard label="Open tasks" value={openTasks.length} tone="warning"/>
-              <MetricCard label="Quotations" value={quotations.length}/>
-              <MetricCard label="Budget" value={budget ? formatINR(budget) : "—"} tone="success"/>
-            </div>
-            <div className="rounded-lg border border-border bg-background p-3">
-              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer scope</p>
-              <div className="mt-2 grid grid-cols-1 gap-2">
-                {(sites.length ? sites : [undefined]).map((site) => {
-                    const scopedAreas = customerAreas.filter((area) => area.site_id === (site?.id || "") || (Boolean(singleSite) && !area.site_id));
-                    const scopedWork = customerWorkRequired.filter((work) => work.site_id === (site?.id || "") || (Boolean(singleSite) && !work.site_id));
-                    const visibleWork = scopeAreaId ? scopedWork.filter((work) => (work.area_ids || []).includes(scopeAreaId)) : scopedWork;
-                    return <div key={site?.id || "customer-level"} className="min-w-0 rounded-md border border-border bg-muted/20 p-2.5">
-                      <div className="flex min-w-0 items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="break-words text-xs font-semibold truncate">{site?.name || name}</p>
-                          <p className="text-[10px] text-muted-foreground">{site ? site.address || `${site.site_type} · ${site.stage}` : "Customer-level work"}</p>
-                        </div>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{scopedAreas.length} Area{scopedAreas.length === 1 ? "" : "s"} · {scopedWork.length} Work Required</span>
-                      </div>
-                      {scopedAreas.length ? <div className="mt-2 flex flex-wrap gap-1">{scopedAreas.map((area) => {
-                        const active = scopeAreaId === area.id;
-                        const areaWorkCount = scopedWork.filter((work) => (work.area_ids || []).includes(area.id)).length;
-                        return <button key={area.id} type="button" aria-pressed={active} onClick={() => setScopeAreaId(active ? null : area.id)} title={`Show only work required in ${area.name}`} className={cn("rounded border px-1.5 py-0.5 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", active ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-muted")}>{area.name}<span className={cn("ml-1 font-mono", active ? "text-primary-foreground/80" : "text-muted-foreground/70")}>{areaWorkCount}</span></button>;
-                      })}</div> : null}
-                      {scopedWork.length ? (visibleWork.length ? <div className="mt-2 flex flex-col gap-1">{visibleWork.map((work) => <div key={work.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card px-2 py-1 text-[11px]"><span className="truncate font-medium">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</span><span className="shrink-0 text-[10px] text-muted-foreground">{workRequiredStatusStyle(work.status).label}</span></div>)}</div> : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required in the selected area — tap the area again to see all.</p>) : <p className="mt-2 text-[11px] text-muted-foreground">No Work Required recorded.</p>}
-                    </div>;
-                })}
-              </div>
-            </div>
-            <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" />
-            {/* Customer Financial Summary — 360-degree financial view */}
-            {(() => {
-                const customerWorkOrders = db.workOrders.filter((wo: any) => wo.customer_id === customerId);
-                const acceptedScopes = db.acceptedScopes.filter((s: any) => s.customer_id === customerId);
-                const totalAccepted = acceptedScopes.reduce((n: number, s: any) => n + (s.accepted_value || 0), 0);
-                // Single money source (finance.recordCustomerReceipt mirrors every
-                // milestone-linked receipt into payment.received_amount) — counting
-                // both inflated the headline ~2×, while partial milestones were
-                // undercounted. Truth = unlinked receipts + every payment mirror.
-                const totalReceived = relatedReceipts
-                    .filter((r: any) => !r.payment_id)
-                    .reduce((n: number, r: any) => n + (r.amount || 0), 0)
-                    + payments.reduce((n: number, p: any) => n + (p.status === "received"
-                        ? (p.received_amount > 0 ? p.received_amount : (p.amount || 0))
-                        : (p.received_amount || 0)), 0);
-                const totalInvoiced = db.invoices.filter((i: any) => i.customer_id === customerId).reduce((n: number, i: any) => n + (i.total_amount || 0), 0);
-                const totalOutstanding = Math.max(0, totalAccepted - totalReceived);
-                const woValue = customerWorkOrders.reduce((n: number, wo: any) => n + (wo.value || 0), 0);
-                const poValue = db.purchaseOrders.filter((po: any) => customerWorkOrders.some((wo: any) => wo.id === po.work_order_id)).reduce((n: number, po: any) => n + (po.total_amount || 0), 0);
-                const vendorBills = db.vendorBills.filter((b: any) => customerWorkOrders.some((wo: any) => wo.id === b.work_order_id)).reduce((n: number, b: any) => n + (b.total_amount || b.amount || 0), 0);
-                const contractorBills = db.contractorBills.filter((b: any) => customerWorkOrders.some((wo: any) => wo.id === b.work_order_id)).reduce((n: number, b: any) => n + (b.amount || 0), 0);
-                const totalSpent = vendorBills + contractorBills;
-                const margin = totalAccepted - totalSpent;
-                const marginPct = totalAccepted > 0 ? Math.round((margin / totalAccepted) * 10000) / 100 : 0;
-                const marginTone = marginPct > 20 ? "success" : marginPct > 5 ? "warning" : "destructive";
-                return totalAccepted > 0 || totalReceived > 0 ? (
-                  <div className="rounded-lg border border-border bg-gradient-to-br from-card to-muted/20 p-3 shadow-sm">
-                    <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Financial Summary</p>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <div className="rounded-md border border-success/20 bg-success/[0.04] p-2">
-                        <p className="text-[10px] font-semibold uppercase text-success/80">Received</p>
-                        <p className="mt-0.5 font-mono text-sm font-bold text-success">{formatINR(totalReceived)}</p>
-                      </div>
-                      <div className="rounded-md border border-warning/20 bg-warning/[0.04] p-2">
-                        <p className="text-[10px] font-semibold uppercase text-warning/80">Outstanding</p>
-                        <p className="mt-0.5 font-mono text-sm font-bold text-warning">{formatINR(totalOutstanding)}</p>
-                      </div>
-                      <div className="rounded-md border border-destructive/20 bg-destructive/[0.04] p-2">
-                        <p className="text-[10px] font-semibold uppercase text-destructive/80">Spent</p>
-                        <p className="mt-0.5 font-mono text-sm font-bold text-destructive">{formatINR(totalSpent)}</p>
-                      </div>
-                      <div className={cn("rounded-md border p-2", marginTone === "success" ? "border-success/20 bg-success/[0.04]" : marginTone === "warning" ? "border-warning/20 bg-warning/[0.04]" : "border-destructive/20 bg-destructive/[0.04]")}>
-                        <p className={cn("text-[10px] font-semibold uppercase", marginTone === "success" ? "text-success/80" : marginTone === "warning" ? "text-warning/80" : "text-destructive/80")}>Margin ({marginPct}%)</p>
-                        <p className={cn("mt-0.5 font-mono text-sm font-bold", marginTone === "success" ? "text-success" : marginTone === "warning" ? "text-warning" : "text-destructive")}>{formatINR(margin)}</p>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
-                      <span>Accepted value: <strong className="text-foreground">{formatINR(totalAccepted)}</strong></span>
-                      <span>Invoiced: <strong className="text-foreground">{formatINR(totalInvoiced)}</strong></span>
-                      <span>WO value: <strong className="text-foreground">{formatINR(woValue)}</strong></span>
-                      <span>POs: <strong className="text-foreground">{formatINR(poValue)}</strong></span>
-                      <span>Work orders: <strong className="text-foreground">{customerWorkOrders.length}</strong></span>
-                    </div>
-                  </div>
-                ) : null;
-            })()}
-            <SectionHeader title="Pending actions" count={pendingCount}/>
-            {pendingCount === 0 ? (<EmptyState title="No pending actions" description="This customer is fully actioned."/>) : (<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {lifecycleGaps.map((gap) => (<ContextRow key={gap.key} onSelect={() => gapAction(gap)} className="rounded-lg border border-border bg-background px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium">{gap.label}</p>
-                      <span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-primary">Resolve<ArrowRight className="h-3 w-3"/></span>
-                    </div>
-                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{gap.hint}</p>
-                  </ContextRow>))}
-                {openTasks.slice(0, 4).map((t) => (<ContextRow key={t.id} actions={buildTaskActions(t.id, taskDispatch, { onOpen: () => openDetail("task", t.id), readOnly: true })} onSelect={() => openDetail("task", t.id)} className="rounded-lg border border-border bg-background px-3 py-2">
-                    <p className="truncate text-sm font-medium">{t.title}</p>
-                    <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <StatusBadge label={taskStatusStyle(t.status).label} className={taskStatusStyle(t.status).className}/>
-                      <span className="flex items-center gap-1"><CalendarClock className="h-3 w-3"/>{relativeDay(t.due_date)}</span>
-                    </div>
-                  </ContextRow>))}
-              </div>)}
-          </div>)}
-
-        {tab === "sites" && (<div className="flex flex-col gap-3">
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAddSiteOpen(true)}>
-                <Plus className="mr-1 h-3.5 w-3.5"/> Add site
-              </Button>
-            </div>
-
-            {sites.length === 0 ? (<EmptyState title="No sites" description="Add a site to start tracking per-property work." icon={<Building className="h-7 w-7"/>}/>) : (<div className="grid grid-cols-1 gap-3">
-                {sites.map((site) => {
-                    const fin = siteFinancials(db, site.id);
-                    const siteAreas = customerAreas.filter((area) => area.site_id === site.id || (Boolean(singleSite) && !area.site_id));
-                    return (<div key={site.id} className="rounded-lg border border-border bg-background p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Building className="h-4 w-4 shrink-0 text-primary"/>
-                            <p className="truncate text-sm font-bold">{site.name}</p>
-                            {site.source_partner_name && (<StatusBadge label={`Referred by ${site.source_partner_name}`} className="bg-primary/10 text-primary border-primary/20"/>)}
-                          </div>
-                          <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-                            <MapPin className="h-3 w-3"/> {site.address || "—"}
-                          </p>
-                          {site.latitude != null && site.longitude != null && (<p className="mt-0.5 font-mono text-[10px] text-muted-foreground">{site.latitude.toFixed(6)}, {site.longitude.toFixed(6)}</p>)}
-                          {site.notes && <p className="mt-1 text-[11px] text-foreground/70">{site.notes}</p>}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1">
-                          {customerMapHref(site.address, site.latitude, site.longitude) && <Button asChild size="icon" variant="ghost" className="h-7 w-7" title="Open Site map"><a href={customerMapHref(site.address, site.latitude, site.longitude)} target="_blank" rel="noreferrer"><Navigation className="h-3.5 w-3.5"/></a></Button>}
-                          <Button size="icon" variant="ghost" className="h-7 w-7" title="Edit Site" onClick={() => setEditSiteId(site.id)}><Pencil className="h-3.5 w-3.5"/></Button>
-                        </div>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                        <div className="rounded-md bg-muted/40 p-2">
-                          <p className="text-[10px] uppercase text-muted-foreground">Quoted</p>
-                          <p className="font-mono text-xs font-semibold">{formatINRShort(fin.quoted)}</p>
-                        </div>
-                        <div className="rounded-md bg-muted/40 p-2">
-                          <p className="text-[10px] uppercase text-muted-foreground">Contracted</p>
-                          <p className="font-mono text-xs font-semibold">{formatINRShort(fin.contracted)}</p>
-                        </div>
-                        <div className="rounded-md bg-success/10 p-2">
-                          <p className="text-[10px] uppercase text-success">Collected</p>
-                          <p className="font-mono text-xs font-semibold text-success">{formatINRShort(fin.collected)}</p>
-                        </div>
-                        <div className="rounded-md bg-primary/10 p-2">
-                          <p className="text-[10px] uppercase text-primary">Invoiced</p>
-                          <p className="font-mono text-xs font-semibold text-primary">{formatINRShort(fin.invoiced)}</p>
-                        </div>
-                        <div className="rounded-md bg-warning/10 p-2">
-                          <p className="text-[10px] uppercase text-warning">Receivable</p>
-                          <p className="font-mono text-xs font-semibold text-warning">{formatINRShort(fin.receivable)}</p>
-                        </div>
-                      </div>
-                      <div className="mt-3 rounded-md border border-border bg-muted/20 p-2.5">
-                        <div className="flex min-w-0 items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required</p>
-                            <p className="text-[11px] text-muted-foreground">Capture measures work area by area across every work required at this Site.</p>
-                          </div>
-                          <Button size="sm" variant="outline" className="h-7 shrink-0 text-xs" onClick={() => setCreateWorkRequiredSiteId(site.id)}>
-                            <Plus className="mr-1 h-3.5 w-3.5"/> Add work required
-                          </Button>
-                        </div>
-                        {(() => {
-                            const siteWorkRequired = customerWorkRequired.filter((work) => work.site_id === site.id || (Boolean(singleSite) && !work.site_id));
-                            return siteWorkRequired.length ? (<div className="mt-2 flex flex-col gap-1.5">
-                              {siteWorkRequired.map((work) => {
-                                  const workAreaNames = (work.area_ids || []).map((areaId) => siteAreas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
-                                  return (<div key={work.id} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
-                                  <div className="min-w-0">
-                                    <p className="break-words text-xs font-semibold">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</p>
-                                    <p className="break-words text-[10px] text-muted-foreground">{work.structured_items?.length || 0} structured line(s) · {workRequiredStatusStyle(work.status).label}{workAreaNames ? ` with ${workAreaNames}` : ""}</p>
-                                  </div>
-                                  <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]" onClick={() => setCaptureWorkRequiredId(work.id)}>
-                                    <ListChecks className="mr-1 h-3.5 w-3.5"/> Capture detailed area
-                                  </Button>
-                                </div>);
-                              })}
-                            </div>) : (<p className="mt-2 rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No Work Required exists for this Site. Add one before capturing a detailed area.</p>);
-                        })()}
-                      </div>
-                      {fin.workOrders.length > 0 && (<div className="mt-3">
-                          <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Work Orders at this site ({fin.workOrders.length})</p>
-                          <div className="flex flex-col gap-1">
-                            {fin.workOrders.slice(0, 4).map((j) => (<button key={j.id} type="button" onClick={() => openDetail("workOrder", j.id)} className="flex items-center justify-between rounded-md border border-border bg-muted/30 px-2 py-1 text-left text-[11px] transition-colors hover:border-primary/30 hover:bg-accent/40">
-                                <span className="truncate">{j.work_order_no} · {j.title}</span>
-                                <span className="ml-2 shrink-0 font-mono text-muted-foreground">{formatINRShort(j.value)}</span>
-                              </button>))}
-                          </div>
-                        </div>)}
-                    </div>);
-                })}
-              </div>)}
-          </div>)}
-
-        {tab === "tasks" && (<div className="flex flex-col gap-2">
-            <div className="flex justify-end">
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "task", customerId })}>
-                <Plus className="h-3.5 w-3.5"/> Add task
-              </Button>
-            </div>
-            {relatedTasks.length === 0 ? <EmptyState title="No tasks" description="Click 'Add task' to create the first task for this customer." icon={<ListChecks className="h-7 w-7"/>}/> : relatedTasks.map((t) => (<ContextRow key={t.id} actions={buildTaskActions(t.id, taskDispatch, { onOpen: () => openDetail("task", t.id), readOnly: true })} onSelect={() => openDetail("task", t.id)} className="rounded-lg border border-border bg-background px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm font-medium">{t.title}</p>
-                  <StatusBadge label={taskStatusStyle(t.status).label} className={taskStatusStyle(t.status).className}/>
-                </div>
-                <p className="mt-1 text-[11px] text-muted-foreground">Due {relativeDay(t.due_date)} · {t.assignee_name}</p>
-              </ContextRow>))}
-          </div>)}
-
-        {tab === "quotations" && (<div className="flex flex-col gap-2">
-            <div className="flex justify-end">
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "quotation", customerId })}>
-                <Plus className="h-3.5 w-3.5"/> Add quotation
-              </Button>
-            </div>
-            {quotations.length === 0 ? <EmptyState title="No quotations" description="Click 'Add quotation' to draft the first quotation for this customer." icon={<FileText className="h-7 w-7"/>}/> : quotations.map((qu) => (<ContextRow key={qu.id} actions={buildQuotationActions(qu.id, quoteDispatch, { onOpen: () => openDetail("quotation", qu.id) })} onSelect={() => openDetail("quotation", qu.id)} className="rounded-lg border border-border bg-background px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{qu.quotation_no} · {qu.title}</p>
-                    <p className="text-[11px] text-muted-foreground">{formatINR(qu.total_amount)} · valid till {relativeDay(qu.valid_until)}</p>
-                  </div>
-                  <StatusBadge label={quotationStatusStyle(qu.status).label} className={quotationStatusStyle(qu.status).className}/>
-                </div>
-              </ContextRow>))}
-          </div>)}
-
-        {tab === "payments" && (<div className="flex flex-col gap-2">
-            <div className="flex justify-end">
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => customerDispatch.openActionDialog("record-payment", customerId)}>
-                <Plus className="h-3.5 w-3.5"/> Add collection milestone
-              </Button>
-            </div>
-            {payments.length === 0 ? <EmptyState title="No payments" description="Click 'Add collection milestone' to record the first payment milestone for this customer." icon={<Wallet className="h-7 w-7"/>}/> : payments.map((pa) => (<ContextRow key={pa.id} actions={buildPaymentActions(pa.id, null, { onOpen: () => openDetail("payment", pa.id) })} onSelect={() => openDetail("payment", pa.id)} className="rounded-lg border border-border bg-background px-3 py-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">{formatINR(pa.amount)}</p>
-                    <p className="text-[11px] text-muted-foreground">Due {relativeDay(pa.due_date)} · {pa.mode}</p>
-                  </div>
-                  <StatusBadge label={paymentStatusStyle(pa.status).label} className={paymentStatusStyle(pa.status).className}/>
-                </div>
-              </ContextRow>))}
-          </div>)}
-
-        {tab === "invoices" && (<div className="flex flex-col gap-2">
-            {customerInvoices.length === 0 ? <EmptyState title="No invoices" description="Issue an invoice from the collection milestone before recording customer receipts." icon={<FileText className="h-7 w-7"/>}/> : customerInvoices.map((invoice) => {
-                const status = invoiceStatusStyle(invoice.status);
-                return (<button key={invoice.id} type="button" onClick={() => openDetail("invoice", invoice.id)} className="rounded-lg border border-border bg-background px-3 py-2 text-left hover:bg-accent/20">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{invoice.invoice_no} - {invoice.title}</p>
-                      <p className="text-[11px] text-muted-foreground">Due {relativeDay(invoice.due_date)} - balance {formatINR(invoice.balance_amount)}</p>
-                    </div>
-                    <StatusBadge label={status.label} className={status.className}/>
-                  </div>
-                </button>);
-            })}
-          </div>)}
-
-        {tab === "visits" && (<div className="flex flex-col gap-2">
-            <div className="flex justify-end">
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => customerDispatch.openCreateDialog({ kind: "visit", customerId })}>
-                <Plus className="h-3.5 w-3.5"/> Schedule visit
-              </Button>
-            </div>
-            {visits.length === 0 ? <EmptyState title="No visits" description="Click 'Schedule visit' to plan the first visit for this customer." icon={<MapPin className="h-7 w-7"/>}/> : visits.map((v) => (<ContextRow key={v.id} actions={buildVisitActions(v.id, null, { onOpen: () => openDetail("visit", v.id) })} onSelect={() => openDetail("visit", v.id)} className="rounded-lg border border-border bg-background px-3 py-2">
-                <p className="text-sm font-medium capitalize">{v.visit_type.replace(/_/g, " ")} · {v.location_name}</p>
-                <p className="text-[11px] text-muted-foreground">{relativeDay(v.scheduled_at)} · {v.staff_name}</p>
-              </ContextRow>))}
-          </div>)}
-        {tab === "activity" && (<div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <MetricCard label="Follow-ups" value={relatedFollowups.length} tone="primary"/>
-              <MetricCard label="Communications" value={relatedCommunications.length}/>
-              <MetricCard label="Open risks" value={relatedRisks.length} tone="warning"/>
-              <MetricCard label="Open obstacles" value={relatedObstacles.filter((row) => !row.resolved).length} tone="destructive"/>
-            </div>
-            <CustomerActivitySection title={`Follow-ups (${relatedFollowups.length})`} empty="No follow-ups linked to this customer." rows={relatedFollowups.slice(0, 10).map((row) => ({ id: row.id, title: row.title, detail: `${row.followup_type || "general"} · due ${relativeDay(row.due_date)} · ${row.status}` }))}/>
-            <CustomerActivitySection title={`Communications (${relatedCommunications.length})`} empty="No logged customer communications." rows={relatedCommunications.slice(0, 10).map((row) => ({ id: row.id, title: row.subject, detail: `${row.channel} · ${row.status} · ${formatDate(row.sent_at)}` }))}/>
-            <CustomerActivitySection title={`Risks (${relatedRisks.length})`} empty="No customer risks." rows={relatedRisks.slice(0, 10).map((row) => ({ id: row.id, title: row.title, detail: `${row.type} · ${row.severity} · ${row.reason}` }))}/>
-            <CustomerActivitySection title={`Obstacles (${relatedObstacles.length})`} empty="No customer obstacles." rows={relatedObstacles.slice(0, 10).map((row) => ({ id: row.id, title: row.title, detail: `${row.resolved ? "Resolved" : "Open"} · ${row.reason}` }))}/>
-            <CustomerActivitySection title={`Variation requests (${relatedVariations.length})`} empty="No variation requests." rows={relatedVariations.slice(0, 10).map((row) => ({ id: row.id, title: `${row.variation_no} · ${row.title}`, detail: `${row.status.replace(/_/g, " ")} · ${formatINR(row.requested_amount)}` }))}/>
-            <CustomerActivitySection title={`Receipts (${relatedReceipts.length})`} empty="No customer receipts." rows={relatedReceipts.slice(0, 10).map((row) => ({ id: row.id, title: `${row.receipt_no} · ${formatINR(row.amount)}`, detail: `${row.mode} · ${formatDate(row.received_at)}` }))}/>
-            <CustomerActivitySection title={`Reference media & catalogues (${relatedReferenceAssignments.length})`} empty="No linked references." rows={relatedReferenceAssignments.slice(0, 10).map((row) => ({ id: row.id, title: row.entity_label || row.resource_type.replace(/_/g, " "), detail: `${row.resource_type.replace(/_/g, " ")} · ${row.purpose.replace(/_/g, " ")} · ${row.status}` }))}/>
-            <CustomerFileGallery title={`Files & proofs (${relatedActivityFiles.length})`} empty="No customer-linked files, proofs, catalogues, or communication attachments." files={relatedActivityFiles}/>
-          </div>)}
-
-        {tab === "advances" && (<div className="flex flex-col gap-3">
+        {tab === "overview" && <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <MetricCard label="Sites" value={sites.length} tone="primary" />
+            <MetricCard label="Open tasks" value={openTasks.length} tone="warning" />
+            <MetricCard label="Quotations" value={quotations.length} />
+            <MetricCard label="Visits" value={visits.length} />
+          </div>
+          <div className="rounded-lg border border-border bg-background p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
-                <MetricCard label="Total advances" value={formatINRShort(customerAdvances.reduce((n, p) => n + p.amount, 0))} tone="primary"/>
-                <MetricCard label="Received advances" value={formatINRShort(receivedAdvanceAmount)} tone="success"/>
-                <MetricCard label="Advance balance" value={formatINRShort(customerAdvances.reduce((sum, payment) => sum + Math.max(0, payment.amount - (payment.received_amount || 0)), 0))} tone="warning"/>
-              </div>
-              <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setAdvanceDialogOpen(true)}>
-                <Plus className="h-3.5 w-3.5"/> Add advance
-              </Button>
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Customer scope</p>
+              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setActiveModule("siteExecution")}>Open Sites &amp; Execution</Button>
             </div>
-            {customerAdvances.length === 0 ? (<EmptyState title="No advances" description="Customer advance payments (marked is_advance) will appear here. Use 'Add advance' to record one." icon={<Wallet className="h-7 w-7"/>}/>) : (<div className="flex flex-col gap-2">
-                {customerAdvances.map((p) => (<div key={p.id} className="min-w-0 rounded-lg border border-border bg-background px-3 py-2">
-                    <div className="flex min-w-0 items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{formatINR(p.amount)} · {p.milestone_label || "Advance"}</p>
-                        <p className="text-[11px] text-muted-foreground">Received {formatINR(p.received_amount || 0)} · Balance {formatINR(Math.max(0, p.amount - (p.received_amount || 0)))} · Due {relativeDay(p.due_date)}</p>
-                        {p.site_id && <p className="text-[10px] text-primary">→ {db.sites.find((s) => s.id === p.site_id)?.name || p.site_id}</p>}
-                      </div>
-                      <StatusBadge label={paymentStatusStyle(p.status).label} className={paymentStatusStyle(p.status).className}/>
-                    </div>
-                  </div>))}
-              </div>)}
-          </div>)}
-        {tab === "liabilities" && (<div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <MetricCard label="Vendor bills unpaid" value={formatINRShort(customerVendorBills.reduce((n, b) => n + b.total_amount, 0))} tone="destructive"/>
-              <MetricCard label="Contractor cost (incurred)" value={formatINRShort(customerContractorCosts.reduce((n, c) => n + c.amount, 0))} tone="warning"/>
-              <MetricCard label="Pending contractor approvals" value={customerContractorApprovals.length} tone="primary"/>
-            </div>
-            <div>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Vendor bills unpaid ({customerVendorBills.length})</p>
-              {customerVendorBills.length === 0 ? (<p className="rounded-md border border-dashed border-border bg-muted/20 py-3 text-center text-xs text-muted-foreground">No unpaid vendor bills.</p>) : (<div className="flex flex-col gap-1.5">
-                  {customerVendorBills.map((b) => (<div key={b.id} className="rounded-md border border-border bg-background px-2.5 py-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold">{b.bill_no} · {b.vendor_name}</p>
-                          <p className="text-[10px] text-muted-foreground">{b.po_no} / {b.grn_no} · due {relativeDay(b.due_date)}{b.matched === false ? " · disputed" : ""}</p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <span className="font-mono text-xs font-semibold">{formatINR(b.total_amount)}</span>
-                          <StatusBadge label={b.status} className={b.status === "disputed" ? "bg-destructive/10 text-destructive border-destructive/20" : b.status === "draft" ? "bg-muted text-muted-foreground border-border" : "bg-warning/10 text-warning border-warning/20"}/>
-                        </div>
-                      </div>
-                    </div>))}
-                </div>)}
-            </div>
-            <div>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Pending contractor payment approvals ({customerContractorApprovals.length})</p>
-              {customerContractorApprovals.length === 0 ? (<p className="rounded-md border border-dashed border-border bg-muted/20 py-3 text-center text-xs text-muted-foreground">No pending contractor payment approvals.</p>) : (<div className="flex flex-col gap-1.5">
-                  {customerContractorApprovals.map((a) => (<div key={a.id} className="rounded-md border border-warning/30 bg-warning/[0.05] px-2.5 py-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold">{a.title}</p>
-                          <p className="text-[10px] text-muted-foreground">Requested by {a.requested_by} · due {a.due_date ? relativeDay(a.due_date) : "—"}</p>
-                        </div>
-                        <span className="font-mono text-xs font-bold text-warning">{formatINR(a.amount || 0)}</span>
-                      </div>
-                    </div>))}
-                </div>)}
-            </div>
-            <div>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Contractor cost incurred ({customerContractorCosts.length})</p>
-              {customerContractorCosts.length === 0 ? (<p className="rounded-md border border-dashed border-border bg-muted/20 py-3 text-center text-xs text-muted-foreground">No contractor cost lines yet.</p>) : (<div className="flex flex-col gap-1">
-                  {customerContractorCosts.slice(0, 8).map((c) => (<div key={c.id} className="flex items-center justify-between rounded-md border border-border bg-background px-2.5 py-1 text-[11px]">
-                      <div className="min-w-0">
-                        <p className="truncate">{c.description}</p>
-                        <p className="text-[10px] text-muted-foreground">{c.vendor_name || "—"} · {formatDate(c.date)}</p>
-                      </div>
-                      <span className="ml-2 shrink-0 font-mono font-semibold">{formatINR(c.amount)}</span>
-                    </div>))}
-                </div>)}
-            </div>
-          </div>)}
-      </div>
-      {captureWorkRequiredId && (() => {
-            const work = db.workRequired.find((row) => row.id === captureWorkRequiredId);
-            const site = work ? sites.find((row) => row.id === work.site_id) : undefined;
-            return work && site ? (<StructuredWorkRequiredDialog workRequired={work} site={site} areas={areas.filter((area) => area.site_id === site.id)} onClose={() => setCaptureWorkRequiredId(null)} onSave={({ lines, removedItemIds, removedSelections, areaDims }) => {
-                    try {
-                        captureStructuredWorkRequired(work.id, lines, { removedItemIds, removedSelections, areaDims });
-                        const parts: string[] = [];
-                        if (lines.length) parts.push(`Captured ${lines.length} detailed area work item(s) in ${site.name}`);
-                        if (areaDims?.length) parts.push(`saved dimensions for ${areaDims.length} area(s)`);
-                        if (removedItemIds.length) parts.push(`removed ${removedItemIds.length} existing item(s)`);
-                        if (removedSelections.length) parts.push(`removed ${removedSelections.length} planned work selection(s)`);
-                        toast.success(parts.join(" · ") || "Nothing to save");
-                        setCaptureWorkRequiredId(null);
-                        return true;
-                    }
-                    catch (error) {
-                        toast.error(error instanceof Error ? error.message : "Structured work could not be captured.");
-                        return false;
-                    }
-                }}/>) : null;
-        })()}
-      {createWorkRequiredSiteId && (() => {
-            const site = sites.find((row) => row.id === createWorkRequiredSiteId);
-            return site ? (<WorkRequiredCreateDialog open customerId={customerId} site={site} initialAreaIds={areas.filter((area) => area.site_id === site.id && !area.is_archived).map((area) => area.id)} onOpenChange={(next) => { if (!next)
-                setCreateWorkRequiredSiteId(null); }} onCreated={(id) => { setCaptureWorkRequiredId(id); }}/>) : null;
-        })()}
-      {/* ponytail single master: Add site / Edit site / Edit customer all open the
-          same CustomerSitesDialog; only the entry intent differs. */}
-      <CustomerSitesDialog
-        editId={customerId}
-        open={editCustomerOpen || addSiteOpen || Boolean(editSiteId)}
-        autoAddSite={addSiteOpen}
-        expandSiteId={editSiteId}
-        onClose={() => { setEditCustomerOpen(false); setAddSiteOpen(false); setEditSiteId(undefined); }}
-      />
-      {/* B-5: Local RecordPaymentDialog pre-configured for advance creation (opened from "Add advance"). */}
-      <RecordPaymentDialog open={advanceDialogOpen} onOpenChange={(v) => !v && setAdvanceDialogOpen(false)} customerId={customerId} defaultIsAdvance/>
-    </div>);
-}
-function CustomerFileGallery({ title, empty, files }: {
-    title: string;
-    empty: string;
-    files: Array<{
-        id: string;
-        preview: FilePreviewSource;
-        label: string;
-    }>;
-}) {
-    return (<section className="rounded-lg border border-border bg-background p-3">
-      <div className="mb-2 flex items-center justify-between gap-2"><p className="text-xs font-semibold">{title}</p><span className="text-[10px] text-muted-foreground">Click a thumbnail to fetch the file</span></div>
-      {files.length ? <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-5">{files.map((file) => <div key={file.id} className="min-w-0"><FilePreview file={file.preview} compact controls/><p className="mt-1 truncate text-[10px] text-muted-foreground" title={file.label}>{file.label}</p></div>)}</div> : <p className="rounded-md border border-dashed border-border py-3 text-center text-xs text-muted-foreground">{empty}</p>}
-    </section>);
-}
-function CustomerActivitySection({ title, empty, rows }: {
-    title: string;
-    empty: string;
-    rows: Array<{
-        id: string;
-        title: string;
-        detail: string;
-    }>;
-}) {
-    return (<div>
-      <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{title}</p>
-      {rows.length === 0 ? (<p className="rounded-md border border-dashed border-border bg-muted/20 py-3 text-center text-xs text-muted-foreground">{empty}</p>) : (<div className="flex flex-col gap-1.5">
-          {rows.map((row) => (<div key={row.id} className="rounded-md border border-border bg-background px-2.5 py-1.5">
-              <p className="truncate text-xs font-semibold">{row.title}</p>
-              <p className="truncate text-[10px] text-muted-foreground">{row.detail}</p>
-            </div>))}
-        </div>)}
-    </div>);
-}
-export function CustomerPortfolioDrawerContent({ customerId }: {
-    customerId: string;
-}) {
-    const db = useRDashStore((s) => s.db);
-    const setActiveModule = useRDashStore((s) => s.setActiveModule);
-    const openActionDialog = useRDashStore((s) => s.openActionDialog);
-    const openCreateDialog = useRDashStore((s) => s.openCreateDialog);
-    const updateTask = useRDashStore((s) => s.updateTask);
-    const updateQuotation = useRDashStore((s) => s.updateQuotation);
-    const customer = db.customers.find((customer) => customer.id === customerId);
-    if (!customer) {
-        return <EmptyState title="Customer not found" description="This customer record is no longer available."/>;
-    }
-    const sites = db.sites.filter((site) => site.customer_id === customerId);
-    const workRequiredRows = db.workRequired.filter((work) => work.customer_id === customerId);
-    const customerLevelAreaIds = new Set(workRequiredRows.filter((work) => !work.site_id).flatMap((work) => work.area_ids || []));
-    const areas = db.areas.filter((area) => sites.some((site) => site.id === area.site_id) || customerLevelAreaIds.has(area.id));
-    const workRequired = workRequiredRows[0];
-    const tasks = db.tasks.filter((task) => isCustomerLinked(db, task, customerId));
-    const quotations = db.quotations.filter((quotation) => quotation.customer_id === customerId);
-    const payments = db.payments.filter((payment) => payment.customer_id === customerId);
-    const visits = db.visits.filter((visit) => visit.customer_id === customerId);
-    return (<CustomerPortfolioContext customerId={customer.id} name={customer.name} phone={customer.phone || ""} email={customer.email} reqStatus={workRequired ? workRequiredStatusStyle(workRequired.status) : undefined} budget={workRequired?.budget} tasks={tasks} quotations={quotations} payments={payments} visits={visits} sites={sites} areas={areas} taskDispatch={{ updateTask }} quoteDispatch={{ updateQuotation }} customerDispatch={{ setActiveModule, openActionDialog, openCreateDialog }}/>);
-}
-type TimelineEntry = {
-    id: string;
-    ts: string;
-    kind: "visit" | "payment" | "quotation" | "task" | "audit" | "site" | "drawing" | "executionLog" | "boq" | "po" | "grn" | "vendorBill" | "workOrder" | "communication";
-    title: string;
-    subtitle: string;
-    amount?: number;
-    status?: string;
-};
-function CustomerTimelineView({ customerId, name, tasks, quotations, payments, visits, sites, auditLog, drawings, executionLogs, boqs, purchaseOrders, grns, vendorBills, workOrders, commSends, }: {
-    customerId: string;
-    name: string;
-    tasks: import("@/lib/rdash/types").Task[];
-    quotations: import("@/lib/rdash/types").Quotation[];
-    payments: import("@/lib/rdash/types").Payment[];
-    visits: import("@/lib/rdash/types").Visit[];
-    sites: import("@/lib/rdash/types").Site[];
-    auditLog: import("@/lib/rdash/types").AuditLogEntry[];
-    drawings: import("@/lib/rdash/types").Drawing[];
-    executionLogs: import("@/lib/rdash/types").DailyExecutionLog[];
-    boqs: import("@/lib/rdash/types").WorkOrderBOQ[];
-    purchaseOrders: import("@/lib/rdash/types").PurchaseOrder[];
-    grns: import("@/lib/rdash/types").GRN[];
-    vendorBills: import("@/lib/rdash/types").VendorBill[];
-    workOrders: import("@/lib/rdash/types").WorkOrder[];
-    commSends: import("@/lib/rdash/types").CommSend[];
-}) {
-    const openDetail = useRDashStore((s) => s.openDetail);
-    const entries: TimelineEntry[] = React.useMemo(() => {
-        const e: TimelineEntry[] = [];
-        for (const v of visits) {
-            e.push({
-                id: v.id,
-                ts: v.scheduled_at,
-                kind: "visit",
-                title: `${v.visit_type.replace(/_/g, " ")} · ${v.location_name || "site"}`,
-                subtitle: `Visit · ${v.staff_name}${v.status === "completed" ? " · completed" : v.status === "scheduled" ? " · scheduled" : ""}`,
-                status: v.status,
-            });
-        }
-        for (const p of payments) {
-            e.push({
-                id: p.id,
-                ts: p.due_date || p.created_at,
-                kind: "payment",
-                title: `${p.is_advance ? "Advance" : "Payment"} · ${p.milestone_label || p.mode || ""}`.trim(),
-                subtitle: `Payment · ${p.mode || "—"}${p.status ? ` · ${p.status}` : ""}`,
-                amount: p.amount,
-                status: p.status,
-            });
-        }
-        for (const q of quotations) {
-            e.push({
-                id: q.id,
-                ts: q.created_at,
-                kind: "quotation",
-                title: `${q.quotation_no} · ${q.title}`,
-                subtitle: `Quotation · ${q.status}${q.total_amount ? ` · ${formatINR(q.total_amount)}` : ""}`,
-                amount: q.total_amount,
-                status: q.status,
-            });
-        }
-        for (const t of tasks) {
-            e.push({
-                id: t.id,
-                ts: t.due_date || t.created_at,
-                kind: "task",
-                title: t.title,
-                subtitle: `Task · ${t.assignee_name || "—"} · ${t.status}`,
-                status: t.status,
-            });
-        }
-        for (const s of sites) {
-            e.push({
-                id: s.id,
-                ts: s.created_at || new Date().toISOString(),
-                kind: "site",
-                title: `Site added · ${s.name}`,
-                subtitle: `Site · ${s.address || "—"}`,
-            });
-        }
-        for (const a of auditLog) {
-            if (a.kind === "create" || a.kind === "update" || a.kind === "send" || a.kind === "receive" || a.kind === "approve" || a.kind === "decision" || a.kind === "comment") {
-                e.push({
-                    id: a.id,
-                    ts: a.timestamp,
-                    kind: "audit",
-                    title: a.action,
-                    subtitle: `Audit · ${a.actor}${a.actor_role ? ` (${a.actor_role})` : ""}`,
-                });
-            }
-        }
-        // Drawings — concept designs, floor plans, electrical, 3D renders, revisions
-        for (const d of drawings) {
-            e.push({
-                id: d.id,
-                ts: d.uploaded_at || d.created_at,
-                kind: "drawing",
-                title: `${d.drawing_no} · ${d.title}`,
-                subtitle: `Drawing · ${d.uploaded_by || "—"}${d.status ? ` · ${d.status}` : ""}`,
-                status: d.status,
-            });
-        }
-        // Execution logs — daily progress, photos, quality inspections, completion
-        for (const el of executionLogs) {
-            e.push({
-                id: el.id,
-                ts: el.date || el.created_at,
-                kind: "executionLog",
-                title: `${el.log_no} · ${el.date ? new Date(el.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—"}`,
-                subtitle: `Execution · ${el.filed_by || "—"}${el.progress_pct != null ? ` · ${el.progress_pct}%` : ""}`,
-                status: el.progress_pct != null ? `${el.progress_pct}%` : undefined,
-            });
-        }
-        // BOQs — bill of quantities
-        for (const b of boqs) {
-            e.push({
-                id: b.id,
-                ts: b.created_at,
-                kind: "boq",
-                title: `BOQ · ${b.title || b.work_order_no || "Site"}`,
-                subtitle: `BOQ · ${b.status || "draft"}`,
-                status: b.status,
-            });
-        }
-        // Work orders — execution tracking
-        for (const w of workOrders) {
-            e.push({
-                id: w.id,
-                ts: w.created_at,
-                kind: "workOrder",
-                title: `${w.work_order_no} · ${w.title}`,
-                subtitle: `Work Order · ${w.status}`,
-                status: w.status,
-            });
-        }
-        // Purchase orders — procurement
-        for (const po of purchaseOrders) {
-            e.push({
-                id: po.id,
-                ts: po.created_at,
-                kind: "po",
-                title: `${po.po_no} · ${po.vendor_name || "Vendor"}`,
-                subtitle: `PO · ${po.status}`,
-                amount: po.total_amount,
-                status: po.status,
-            });
-        }
-        // GRNs — goods received
-        for (const g of grns) {
-            e.push({
-                id: g.id,
-                ts: g.created_at,
-                kind: "grn",
-                title: `${g.grn_no} · ${g.vendor_name || "Vendor"}`,
-                subtitle: `GRN · received`,
-                status: "received",
-            });
-        }
-        // Vendor bills — accounts payable
-        for (const vb of vendorBills) {
-            e.push({
-                id: vb.id,
-                ts: vb.created_at,
-                kind: "vendorBill",
-                title: `${vb.bill_no} · ${vb.vendor_name || "Vendor"}`,
-                subtitle: `Vendor Bill · ${vb.status}`,
-                amount: vb.amount,
-                status: vb.status,
-            });
-        }
-        // Communications — WhatsApp, Email, Phone
-        for (const c of commSends) {
-            e.push({
-                id: c.id,
-                ts: c.sent_at,
-                kind: "communication",
-                title: `${c.channel === "whatsapp" ? "WhatsApp" : c.channel === "email" ? "Email" : c.channel === "pinterest" ? "Pinterest" : c.channel === "catalogue" ? "Catalogue" : c.channel === "material" ? "Material" : c.channel === "reference" ? "Reference" : c.channel} · ${c.subject}`,
-                subtitle: `Communication · ${c.staff_name || "—"}`,
-                status: c.status,
-            });
-        }
-        return e.sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
-    }, [tasks, quotations, payments, visits, sites, auditLog, drawings, executionLogs, boqs, purchaseOrders, grns, vendorBills, workOrders, commSends]);
-    const grouped = React.useMemo(() => {
-        const map = new Map<string, TimelineEntry[]>();
-        for (const entry of entries) {
-            // IST calendar day — toISOString() bucketed 00:00–05:30 IST events
-            // under the previous day and disagreed with relativeDay().
-            const day = indiaBusinessDate(entry.ts);
-            if (!map.has(day))
-                map.set(day, []);
-            map.get(day)!.push(entry);
-        }
-        return Array.from(map.entries());
-    }, [entries]);
-    const kindMeta: Record<TimelineEntry["kind"], {
-        icon: React.ElementType;
-        tone: string;
-        label: string;
-    }> = {
-        visit: { icon: MapPin, tone: "bg-primary/10 text-primary", label: "Visit" },
-        payment: { icon: Wallet, tone: "bg-success/10 text-success", label: "Payment" },
-        quotation: { icon: FileText, tone: "bg-warning/10 text-warning", label: "Quotation" },
-        task: { icon: ListChecks, tone: "bg-muted text-foreground/70", label: "Task" },
-        audit: { icon: Activity, tone: "bg-muted/60 text-muted-foreground", label: "Activity" },
-        site: { icon: Building, tone: "bg-primary/10 text-primary", label: "Site" },
-        drawing: { icon: FileText, tone: "bg-warning/10 text-warning", label: "Drawing" },
-        executionLog: { icon: Activity, tone: "bg-primary/10 text-primary", label: "Execution" },
-        boq: { icon: FileText, tone: "bg-muted text-foreground/70", label: "BOQ" },
-        workOrder: { icon: Building, tone: "bg-primary/10 text-primary", label: "Work Order" },
-        po: { icon: Package, tone: "bg-primary/10 text-primary", label: "PO" },
-        grn: { icon: Truck, tone: "bg-success/10 text-success", label: "GRN" },
-        vendorBill: { icon: Receipt, tone: "bg-destructive/10 text-destructive", label: "Vendor Bill" },
-        communication: { icon: Send, tone: "bg-primary/10 text-primary", label: "Comm" },
-    };
-    const openEntry = (entry: TimelineEntry) => {
-        if (entry.kind === "quotation")
-            openDetail("quotation", entry.id);
-        else if (entry.kind === "task")
-            openDetail("task", entry.id);
-        else if (entry.kind === "payment")
-            openDetail("payment", entry.id);
-        else if (entry.kind === "visit")
-            openDetail("visit", entry.id);
-        else if (entry.kind === "workOrder")
-            openDetail("workOrder", entry.id);
-        else if (entry.kind === "po")
-            openDetail("po", entry.id);
-        else if (entry.kind === "grn")
-            openDetail("grn", entry.id);
-        else if (entry.kind === "vendorBill")
-            openDetail("vendorBill", entry.id);
-        else if (entry.kind === "boq")
-            openDetail("boq", entry.id);
-    };
-    return (<div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Avatar name={name} size={48}/>
-          <div className="min-w-0">
-            <h2 className="break-words text-lg font-bold leading-snug tracking-tight">{name}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Timeline · {entries.length} activities</p>
+            {sites.length ? <div className="mt-2 space-y-2">{sites.map((site) => {
+              const siteWork = workRequired.filter((row) => row.site_id === site.id || (sites.length === 1 && !row.site_id));
+              const siteAreas = db.areas.filter((row) => row.site_id === site.id && !row.is_archived);
+              return <button key={site.id} type="button" onClick={() => openDetail("site", site.id)} className="flex w-full items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2 text-left hover:bg-accent/20">
+                <span className="min-w-0"><span className="block truncate text-xs font-semibold">{site.name}</span><span className="block truncate text-[10px] text-muted-foreground">{site.address || `${site.site_type} · ${site.stage}`}</span></span>
+                <span className="shrink-0 text-[10px] text-muted-foreground">{siteAreas.length} areas · {siteWork.length} work required</span>
+              </button>;
+            })}</div> : <p className="mt-2 text-xs text-muted-foreground">No site has been added yet.</p>}
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <StatusBadge label="TIMELINE" className="bg-primary/10 text-primary border-primary/20"/>
-        </div>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <MetricCard label="Visits" value={visits.length} tone="primary"/>
-        <MetricCard label="Quotations" value={quotations.length}/>
-        <MetricCard label="Payments" value={payments.length} tone="success"/>
-        <MetricCard label="Tasks" value={tasks.length} tone="warning"/>
-      </div>
+          <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" />
+          <SectionHeader title="Pending actions" count={lifecycleGaps.length + openTasks.length} />
+          {lifecycleGaps.length + openTasks.length === 0
+            ? <EmptyState title="No pending actions" description="There are no open CRM or execution actions for this customer." />
+            : <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {lifecycleGaps.map((gap) => <ContextRow key={gap.key} onSelect={() => gapAction(gap)} className="rounded-lg border border-border bg-background px-3 py-2"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{gap.label}</p><span className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-primary">Resolve<ArrowRight className="h-3 w-3" /></span></div><p className="mt-0.5 truncate text-[11px] text-muted-foreground">{gap.hint}</p></ContextRow>)}
+              {openTasks.slice(0, 4).map((task) => <button key={task.id} type="button" onClick={() => openDetail("task", task.id)} className="rounded-lg border border-border bg-background px-3 py-2 text-left"><p className="truncate text-sm font-medium">{task.title}</p><p className="mt-1 text-[11px] text-muted-foreground">Due {relativeDay(task.due_date)} · {task.assignee_name || "Unassigned"}</p></button>)}
+            </div>}
+        </div>}
 
-      <SectionHeader title="Activity feed" count={entries.length}/>
-
-      {entries.length === 0 ? (<EmptyState title="No activity yet" description={`Once ${name} has visits, payments, quotations, or tasks, they will appear here in chronological order.`} icon={<Activity className="h-7 w-7"/>}/>) : (<div className="flex flex-col gap-4">
-          {grouped.map(([day, dayEntries]) => (<div key={day} className="flex flex-col gap-2">
-              <div className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-card/95 px-1 py-1 backdrop-blur-sm">
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  {relativeDay(day)}
-                </span>
-                <span className="text-[10px] text-muted-foreground/70">· {new Date(day).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span>
-                <span className="ml-auto text-[10px] text-muted-foreground">{dayEntries.length} activit{dayEntries.length === 1 ? "y" : "ies"}</span>
-              </div>
-              <ol className="relative ml-3 border-l border-border">
-                {dayEntries.map((entry) => {
-                    const meta = kindMeta[entry.kind];
-                    const Icon = meta.icon;
-                    // Only records with a detail view are clickable — the other
-                    // kinds rendered a button that did nothing on click.
-                    const navigable = entry.kind === "quotation" || entry.kind === "task" || entry.kind === "payment" || entry.kind === "visit" || entry.kind === "workOrder" || entry.kind === "po" || entry.kind === "grn" || entry.kind === "vendorBill" || entry.kind === "boq";
-                    const row = (<>
-                        <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md", meta.tone)}>
-                          <Icon className="h-3.5 w-3.5"/>
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-semibold text-foreground">{entry.title}</p>
-                          <p className="truncate text-[10px] text-muted-foreground">{entry.subtitle}</p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-0.5">
-                          {entry.amount !== undefined && (<span className="font-mono text-[11px] font-bold text-foreground/80">{formatINR(entry.amount)}</span>)}
-                          {entry.status && (<span className="text-[10px] uppercase tracking-wider text-muted-foreground">{entry.status.replace(/_/g, " ")}</span>)}
-                        </div>
-                      </>);
-                    return (<li key={entry.id} className="mb-2 ml-4 last:mb-0">
-                      {navigable ? (<button type="button" onClick={() => openEntry(entry)} className="group flex w-full items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left transition-all hover:border-primary/30 hover:bg-accent/20 hover:shadow-sm">
-                        {row}
-                      </button>) : (<div className="flex w-full cursor-default items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left">
-                        {row}
-                      </div>)}
-                    </li>);
-                })}
-              </ol>
-            </div>))}
-        </div>)}
-    </div>);
-}
-// Compact select-with-tickboxes dropdown: each row shows a checkbox reflecting
-// what is required/already selected, ticked rows float to the top, and category
-// groups are separated by blank space. Single-select for the line value.
-// Closes on outside pointerdown via useDismissOnOutside (the old fixed-overlay
-// hack swallowed the first tap on other columns and broke under backdrop-blur).
-function TickDropdown({ value, groups, ticked, placeholder, disabled, onChange, ariaLabel, }: {
-    value?: string;
-    groups: Array<{ key: string; items: Array<{ id: string; name: string }> }>;
-    ticked: Set<string>;
-    placeholder: string;
-    disabled?: boolean;
-    onChange: (id: string) => void;
-    ariaLabel: string;
-}) {
-    const [open, setOpen] = React.useState(false);
-    const [dropUp, setDropUp] = React.useState(false);
-    const rootRef = React.useRef<HTMLDivElement>(null);
-    const triggerRef = React.useRef<HTMLButtonElement>(null);
-    useDismissOnOutside(open, () => setOpen(false), rootRef);
-    const toggleOpen = () => {
-        // Flip the panel above the field when the scrollable dialog would clip it
-        // below — a field near the dialog bottom otherwise loses its last options.
-        if (!open && triggerRef.current) {
-            const scroller = triggerRef.current.closest(".rd-scroll, .overflow-y-auto");
-            const rect = triggerRef.current.getBoundingClientRect();
-            const below = (scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight) - rect.bottom;
-            const above = rect.top - (scroller ? scroller.getBoundingClientRect().top : 0);
-            setDropUp(below < 280 && above > below);
-        }
-        setOpen((current) => !current);
-    };
-    const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
-    return (<div ref={rootRef} className="relative" onKeyDown={(event) => { if (open && event.key === "Escape") {
-        event.stopPropagation(); // close only the panel, not the host dialog
-        setOpen(false); } }}>
-      <button ref={triggerRef} type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={toggleOpen} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
-        <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || placeholder}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
-      </button>
-      {open && (<div role="listbox" aria-label={ariaLabel} className={cn("absolute z-40 max-h-64 w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 shadow-lg rd-scroll", dropUp ? "bottom-full mb-1" : "mt-1")}>
-          {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
-              {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
-              {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
-            const isTicked = ticked.has(item.id);
-            return (<button key={item.id} type="button" role="option" aria-selected={value === item.id} title={isTicked ? "Required in this work or already selected" : undefined} onClick={() => { onChange(item.id); setOpen(false); }} className={cn("flex min-h-9 w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent", value === item.id && "bg-primary/10 font-medium")}>
-                  <span aria-hidden="true" className={cn("flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border", isTicked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{isTicked && <Check className="h-2.5 w-2.5"/>}</span>
-                  <span className="truncate">{item.name}</span>
-                </button>);
-        })}
-            </React.Fragment>))}
-        </div>) }
-    </div>);
-}
-// Multi-select (annotation C): the first pick fills the line; every further
-// pick joins the SAME measured item as an any-one-of alternative — one row,
-// one measurement, rates compared inside the panel. The panel stays open so
-// several options can be ticked in one go.
-function WorkTypeMultiDropdown({ value, groups, ticked, rateLabelFor, disabled, onSelect, ariaLabel, placeholder, }: {
-    value?: string;
-    groups: Array<{ key: string; items: Array<{ id: string; name: string }> }>;
-    ticked: Set<string>;
-    rateLabelFor: (workTypeId: string) => string | undefined;
-    disabled?: boolean;
-    onSelect: (workTypeId: string) => void;
-    ariaLabel: string;
-    placeholder?: string;
-}) {
-    const [open, setOpen] = React.useState(false);
-    const [dropUp, setDropUp] = React.useState(false);
-    const rootRef = React.useRef<HTMLDivElement>(null);
-    const triggerRef = React.useRef<HTMLButtonElement>(null);
-    useDismissOnOutside(open, () => setOpen(false), rootRef);
-    const toggleOpen = () => {
-        // Same bottom-clip flip as TickDropdown — the rate-comparison panel is
-        // even taller with rates, so clipping near the dialog bottom bites sooner.
-        if (!open && triggerRef.current) {
-            const scroller = triggerRef.current.closest(".rd-scroll, .overflow-y-auto");
-            const rect = triggerRef.current.getBoundingClientRect();
-            const below = (scroller ? scroller.getBoundingClientRect().bottom : window.innerHeight) - rect.bottom;
-            const above = rect.top - (scroller ? scroller.getBoundingClientRect().top : 0);
-            setDropUp(below < 280 && above > below);
-        }
-        setOpen((current) => !current);
-    };
-    const selectedName = groups.flatMap((group) => group.items).find((item) => item.id === value)?.name;
-    return (<div ref={rootRef} className="relative" onKeyDown={(event) => { if (open && event.key === "Escape") {
-        event.stopPropagation(); // close only the panel, not the host dialog
-        setOpen(false); } }}>
-      <button ref={triggerRef} type="button" disabled={disabled} aria-label={ariaLabel} aria-expanded={open} onClick={toggleOpen} className="flex h-8 w-full items-center justify-between gap-1 rounded-md border border-input bg-card px-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-60">
-        <span className={cn("truncate", !selectedName && "font-normal text-muted-foreground")}>{selectedName || placeholder || "— select work type —"}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground"/>
-      </button>
-      {open && (<div role="listbox" aria-label={ariaLabel} className={cn("absolute z-40 max-h-64 w-full overflow-y-auto overscroll-contain rounded-md border border-border bg-card py-1 shadow-lg rd-scroll", dropUp ? "bottom-full mb-1" : "mt-1")}>
-          {groups.map((group, groupIndex) => (<React.Fragment key={group.key}>
-              {groupIndex > 0 && <div className="h-3" aria-hidden="true"/>}
-              {[...group.items].sort((a, b) => Number(ticked.has(b.id)) - Number(ticked.has(a.id))).map((item) => {
-            const isTicked = ticked.has(item.id) || item.id === value;
-            const rateLabel = rateLabelFor(item.id);
-            return (<button key={item.id} type="button" role="option" aria-selected={item.id === value} title={isTicked ? "Already an option on this item — tick another to add it" : "Tick to add this as an alternative on the same measured item"} onClick={() => onSelect(item.id)} className={cn("flex min-h-9 w-full items-start gap-2 px-2.5 py-1.5 text-left text-xs hover:bg-accent", item.id === value && "bg-primary/10 font-medium")}>
-                  <span aria-hidden="true" className={cn("mt-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border", isTicked ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card")}>{isTicked && <Check className="mt-0.5 h-2.5 w-2.5"/>}</span>
-                  <span className="min-w-0 flex-1 whitespace-normal break-words">{item.name}</span>
-                  {rateLabel && <span className="ml-1 shrink-0 pt-0.5 font-mono text-[10px] text-muted-foreground">{rateLabel}</span>}
-                </button>);
-        })}
-            </React.Fragment>))}
-          <p className="border-t border-border px-2.5 py-1.5 text-[10px] text-muted-foreground">Tick more work types — each joins this item as an alternative (any one of them); the measurement is shared and never re-entered.</p>
-        </div>) }
-    </div>);
-}
-// Rounds to 2 decimals and returns a string for the number inputs.
-const areaStr = (value: number) => String(Math.round(value * 100) / 100);
-const MEASURE_OPTIONS = ["wall", "floor_ceiling", "wall_ceiling", "length"] as const;
-type MeasureBasis = (typeof MEASURE_OPTIONS)[number];
-
-type DetailedDraftLine = {
-    key: string;
-    category_id?: string;
-    subcategory_id?: string;
-    work_type_id?: string;
-    // Any-one-of alternatives on this ONE measured item (annotation A/B):
-    // pair 0 mirrors subcategory_id + work_type_id. Editing options never
-    // touches the shared measurement (annotation C).
-    option_pairs?: Array<{ subcategory_id: string; work_type_id?: string }>;
-    measure: MeasureBasis;
-    walls: 1 | 2;
-    wall_area: string;
-    notes?: string;
-    // Seeded lines carry the Work Required row they were derived from; fresh
-    // lines let the store resolve (or create) their target by category.
-    target_work_required_id?: string;
-    seeded?: boolean;
-    // Single source of truth (annotation F): while true the quantity follows
-    // the shared area dimensions; the moment a quantity is typed by hand it
-    // flips to manual and the dimensions never overwrite the adjusted value.
-    autoQuantity?: boolean;
-    // Set when the line edits an already-captured item (annotation A) — on
-    // save the saved item is replaced by this line (removed, then captured).
-    editOfItemId?: string;
-};
-
-type DetailedAreaGroup = {
-    key: string;
-    area_id?: string;
-    area_name?: string;
-    create_area?: boolean;
-    area_type?: import("@/lib/rdash/types").AreaType;
-    open: boolean;
-    length: string;
-    breadth: string;
-    height: string;
-    lines: DetailedDraftLine[];
-    removedExistingIds: string[];
-    // Planned seeds the user deleted in this area — the Add/Edit form un-ticks
-    // them on save (bidirectional sync).
-    removedSeeds: RemovedSelection[];
-};
-
-function StructuredWorkRequiredDialog({ workRequired, site, areas, onClose, onSave, }: {
-    workRequired: import("@/lib/rdash/types").WorkRequired;
-    site: import("@/lib/rdash/types").Site;
-    areas: import("@/lib/rdash/types").Area[];
-    onClose: () => void;
-    onSave: (payload: {
-        lines: Array<{
-            site_id: string;
-            area_id?: string;
-            area_name?: string;
-            create_area?: boolean;
-            area_type?: import("@/lib/rdash/types").AreaType;
-            category_id: string;
-            subcategory_id: string;
-            work_type_id?: string;
-            target_work_required_id?: string;
-            length_ft?: number;
-            breadth_ft?: number;
-            height_ft?: number;
-            floor_area?: number;
-            quantity: number;
-            unit_id?: string;
-            notes?: string;
-        }>;
-        removedItemIds: string[];
-        removedSelections: RemovedSelection[];
-        // Typed area dimensions — persisted on the Area records on save.
-        areaDims: Array<{
-            area_id?: string;
-            create_area?: boolean;
-            area_name?: string;
-            area_type?: import("@/lib/rdash/types").AreaType;
-            length_ft?: number;
-            breadth_ft?: number;
-            height_ft?: number;
-        }>;
-    }) => boolean;
-}) {
-    const db = useRDashStore((state) => state.db);
-    const { registerBatch, commitBatches } = useUploadDraft(true);
-    const workTypesFor = (subcategoryId: string | undefined) => {
-        const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
-        return subcategory ? workTypesForSubcategory(subcategory) : [];
-    };
-    const measureHintFor = (subcategoryId: string | undefined): MeasureBasis => {
-        const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
-        return defaultMeasureBasisFor(subcategory?.name);
-    };
-    const rateFor = (subcategoryId: string | undefined, workTypeId: string | undefined) => {
-        const subcategory = subcategoryId ? db.master.workSubcategories.find((row) => row.id === subcategoryId) : undefined;
-        if (!subcategory) return undefined;
-        const workType = workTypeId ? workTypesFor(subcategoryId).find((row) => row.id === workTypeId) : undefined;
-        const tier = workType || primaryWorkType(subcategory);
-        return contractorWorkTypeAverages(db.master.contractorRates, subcategory.id, tier.id).total_rate;
-    };
-    const groupDims = (group: DetailedAreaGroup) => ({
-        length: Number(group.length) || 0,
-        breadth: Number(group.breadth) || 0,
-        height: Number(group.height) || 0,
-    });
-    const lineQuantity = (line: DetailedDraftLine, group: DetailedAreaGroup) =>
-        measuredQuantity(line.measure, groupDims(group), line.walls);
-    // One money source for the per-line, per-area and footer totals: captured
-    // rows use their saved amount, drafts use quantity × the work-type tier
-    // rate (contractor average). No rate → no estimate for that line.
-    const lineEstimate = (line: DetailedDraftLine, group: DetailedAreaGroup) => {
-        const rate = rateFor(line.subcategory_id, line.work_type_id);
-        const estimated = rate ? Math.round((Number(line.wall_area) || 0) * rate * 100) / 100 : 0;
-        return { rate, estimated };
-    };
-    const freshLine = (group: DetailedAreaGroup): DetailedDraftLine => {
-        const subcategoryIds = (workRequired.work_subcategory_ids || []).filter((id) => !workRequired.work_category_id || db.master.workSubcategories.find((row) => row.id === id)?.category_id === workRequired.work_category_id);
-        const subcategoryId = subcategoryIds[0];
-        const measure = measureHintFor(subcategoryId);
-        const { quantity } = measuredQuantity(measure, groupDims(group), 1);
-        return {
-            key: `draft-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-            category_id: workRequired.work_category_id,
-            subcategory_id: subcategoryId,
-            work_type_id: subcategoryId ? workTypesFor(subcategoryId)[0]?.id : undefined,
-            measure,
-            walls: 1,
-            wall_area: quantity > 0 ? areaStr(quantity) : "",
-            autoQuantity: true,
-        };
-    };
-    const initialGroups = (): DetailedAreaGroup[] => {
-        // The capture view is the per-area master for the whole Site: every
-        // non-archived area gets a collapsible group, and each group is
-        // pre-populated with the planned work derived from ALL of the site's
-        // Work Required selections (seedDetailedAreaLines) — expanding
-        // "Kitchen 1" shows every work required in that kitchen.
-        const siteWorks = db.workRequired.filter((row: any) => row.site_id === site.id);
-        const seeds = seedDetailedAreaLines({ siteWorks, workSubcategories: db.master.workSubcategories });
-        const draftOf = (group: DetailedAreaGroup, seed: import("@/lib/rdash/work-types").DetailedSeedLine): DetailedDraftLine => {
-            const { quantity } = measuredQuantity(seed.measure, groupDims(group), seed.walls);
-            return {
-                key: `seed-${seed.work_required_id}-${seed.area_id}-${seed.subcategory_id}-${seed.work_type_id || "primary"}`,
-                category_id: seed.category_id,
-                subcategory_id: seed.subcategory_id,
-                work_type_id: seed.work_type_id,
-                option_pairs: seed.option_pairs,
-                measure: seed.measure,
-                walls: seed.walls,
-                wall_area: quantity > 0 ? areaStr(quantity) : "",
-                autoQuantity: true,
-                target_work_required_id: seed.work_required_id,
-                seeded: true,
-            };
-        };
-        const groups: DetailedAreaGroup[] = [];
-        const ensure = (areaId: string | undefined, name: string | undefined): DetailedAreaGroup => {
-            const existing = groups.find((group) => (areaId ? group.area_id === areaId : false));
-            if (existing) return existing;
-            const area = areaId ? areas.find((row) => row.id === areaId) : undefined;
-            const group: DetailedAreaGroup = {
-                key: areaId || `new-group-${groups.length}-${Math.random().toString(36).slice(2, 7)}`,
-                area_id: areaId,
-                area_name: area?.name || name,
-                open: false,
-                length: area?.length ? String(area.length) : "",
-                breadth: area?.width ? String(area.width) : "",
-                height: area?.height ? String(area.height) : "",
-                lines: [],
-                removedExistingIds: [],
-                removedSeeds: [],
-            };
-            groups.push(group);
-            return group;
-        };
-        // ponytail: reuse the Area's own L/W/H as the shared dimension source, so the
-        // capture view and the saved area record tell the same story.
-        areas.filter((area) => !area.is_archived).forEach((area) => ensure(area.id, undefined));
-        siteWorks.forEach((work: any) => (work.area_ids || []).forEach((areaId: string) => ensure(areaId, undefined)));
-        (workRequired.structured_items || []).forEach((item) => ensure(item.area_id, item.area_name));
-        groups.forEach((group) => {
-            if (!group.area_id) return;
-            group.lines = seeds.filter((seed) => seed.area_id === group.area_id).map((seed) => draftOf(group, seed));
-        });
-        if (!groups.length) {
-            groups.push({
-                key: `new-group-0-${Math.random().toString(36).slice(2, 7)}`,
-                create_area: true,
-                area_name: "",
-                area_type: "other",
-                open: true,
-                length: "",
-                breadth: "",
-                height: "",
-                lines: [],
-                removedExistingIds: [],
-                removedSeeds: [],
-            });
-        }
-        // Open the first group that actually has work (planned or captured).
-        const firstWithWork = groups.find((group) => group.lines.length > 0
-            || ((workRequired.structured_items || []).some((item) => item.area_id === group.area_id))
-            || siteWorks.some((work: any) => (work.structured_items || []).some((item: any) => item.area_id && item.area_id === group.area_id)));
-        (firstWithWork || groups[0]).open = true;
-        return groups;
-    };
-    const [groups, setGroups] = React.useState<DetailedAreaGroup[]>(initialGroups);
-    const updateGroup = (groupKey: string, patch: Partial<DetailedAreaGroup>) => setGroups((current) => current.map((group) => {
-        if (group.key !== groupKey) return group;
-        const next = { ...group, ...patch };
-        // Shared dimensions are the source of truth (annotation F): a line with
-        // an empty/blank quantity always re-derives from them, and only a
-        // hand-typed quantity — area adjusted for doors, openings or real-world
-        // variables — is locked against overwrites.
-        const dims = groupDims(next);
-        next.lines = next.lines.map((line) => {
-            if (line.autoQuantity === false && Number(line.wall_area) > 0) return line;
-            const { quantity } = measuredQuantity(line.measure, dims, line.walls);
-            return quantity > 0 ? { ...line, wall_area: areaStr(quantity), autoQuantity: true } : line;
-        });
-        return next;
-    }));
-    const updateLine = (groupKey: string, lineKey: string, patch: Partial<DetailedDraftLine>) => setGroups((current) => current.map((group) => {
-        if (group.key !== groupKey) return group;
-        const dims = groupDims(group);
-        return {
-            ...group,
-            lines: group.lines.map((line) => {
-                if (line.key !== lineKey) return line;
-                const next = { ...line, ...patch };
-                if (patch.wall_area !== undefined) {
-                    // A typed quantity wins (annotation F); clearing the field
-                    // hands control back to the shared dimensions.
-                    const manual = Number(next.wall_area) > 0;
-                    next.autoQuantity = !manual;
-                    if (!manual && next.wall_area.trim() === "") {
-                        const { quantity } = measuredQuantity(next.measure, dims, next.walls);
-                        next.wall_area = quantity > 0 ? areaStr(quantity) : "";
-                    }
-                    return next;
-                }
-                if (patch.measure !== undefined || patch.walls !== undefined) {
-                    // Manual quantities survive a basis switch too — the number
-                    // was deliberate; only auto lines re-derive.
-                    if (next.autoQuantity === false && Number(next.wall_area) > 0) return next;
-                    const { quantity } = measuredQuantity(next.measure, dims, next.walls);
-                    next.wall_area = quantity > 0 ? areaStr(quantity) : "";
-                }
-                return next;
-            }),
-        };
-    }));
-    const addLine = (groupKey: string) => setGroups((current) => current.map((group) => group.key === groupKey
-        ? { ...group, open: true, lines: [...group.lines, freshLine(group)] }
-        : group));
-    // Annotation A: saved items were remove-only — Edit now loads the captured
-    // row into an editable draft; saving replaces it (removed, then captured)
-    // so every captured scope keeps exactly one live line item.
-    const startEditExisting = (groupKey: string, item: import("@/lib/rdash/types").LineItem) => setGroups((current) => current.map((group) => {
-        if (group.key !== groupKey || group.lines.some((line) => line.editOfItemId === item.id)) return group;
-        const measure: MeasureBasis = item.unit_id === "rft" ? "length" : "wall";
-        const walls: 1 | 2 = measure === "length" && Number(group.breadth) > 0 ? 2 : 1;
-        return {
-            ...group,
-            open: true,
-            // The draft leads the group's lines so the form opens exactly where
-            // the saved row was — edit is the capture form itself (same fields,
-            // same save path), never a second form.
-            lines: [{
-                key: `edit-${item.id}`,
-                category_id: item.category_id,
-                subcategory_id: item.subcategory_id,
-                work_type_id: item.work_type_id,
-                option_pairs: item.option_pairs,
-                measure,
-                walls,
-                // The saved quantity was deliberate (maybe hand-adjusted) — it
-                // leads; dimensions only matter when it is missing.
-                wall_area: item.quantity > 0 ? areaStr(item.quantity) : "",
-                autoQuantity: false,
-                notes: item.description,
-                target_work_required_id: item.work_required_id,
-                editOfItemId: item.id,
-            }, ...group.lines],
-        };
-    }));
-    // The draft row is committed by React a frame after the click — a fixed
-    // 50ms timeout raced the render and silently skipped the scroll on slow
-    // devices, so the edit form seemed to "not open where I clicked".
-    const scrollEditDraftIntoView = (itemId: string, tries = 6) => requestAnimationFrame(() => {
-        const node = document.getElementById(`edit-draft-${itemId}`);
-        if (node)
-            node.scrollIntoView({ behavior: "smooth", block: "center" });
-        else if (tries > 0)
-            requestAnimationFrame(() => scrollEditDraftIntoView(itemId, tries - 1));
-    });
-    // Screenshot 1 reworked into any-one-of alternatives (annotations B/C):
-    // ticking another (subcategory ·) work type adds an OPTION on this same
-    // measured item — never a second row and never a second form. The customer
-    // compares tier rates inside the picker; the item is priced once.
-    const linePairs = (line: DetailedDraftLine): Array<{ subcategory_id: string; work_type_id?: string }> => {
-        if (line.option_pairs?.length) return line.option_pairs;
-        return line.subcategory_id ? [{ subcategory_id: line.subcategory_id, work_type_id: line.work_type_id }] : [];
-    };
-    const addLineOption = (groupKey: string, lineKey: string, subcategoryId: string | undefined, workTypeId: string | undefined) => setGroups((current) => current.map((group) => {
-        if (group.key !== groupKey) return group;
-        return { ...group, lines: group.lines.map((line) => {
-            if (line.key !== lineKey || !line.subcategory_id) return line;
-            const pair = { subcategory_id: subcategoryId || line.subcategory_id, work_type_id: workTypeId };
-            const pairs = [...linePairs(line), pair];
-            const unique = new Map(pairs.map((row) => [`${row.subcategory_id}::${row.work_type_id || ""}`, row]));
-            const mergedPairs = Array.from(unique.values());
-            return { ...line, option_pairs: mergedPairs.length > 1 ? mergedPairs : undefined };
-        }) };
-    }));
-    const removeLineOption = (groupKey: string, lineKey: string, index: number) => setGroups((current) => current.map((group) => {
-        if (group.key !== groupKey) return group;
-        return { ...group, lines: group.lines.map((line) => {
-            if (line.key !== lineKey) return line;
-            const pairs = linePairs(line).filter((_, pairIndex) => pairIndex !== index);
-            if (!pairs.length || !pairs[0].subcategory_id) return line;
-            const [primary, ...rest] = pairs;
-            return {
-                ...line,
-                subcategory_id: primary.subcategory_id,
-                work_type_id: primary.work_type_id,
-                measure: measureHintFor(primary.subcategory_id),
-                option_pairs: rest.length ? pairs as Array<{ subcategory_id: string; work_type_id?: string }> : undefined,
-            };
-        }) };
-    }));
-    const removeLine = (groupKey: string, lineKey: string) => setGroups((current) => current.map((group) => {
-        if (group.key !== groupKey) return group;
-        const dropped = group.lines.find((line) => line.key === lineKey);
-        // Deleting a planned (seeded) line is a scope decision: the Add/Edit form
-        // must un-tick it on save, so remember it as a removed selection — one
-        // per option pair for grouped seeds (the whole any-one-of row goes).
-        let removedSeeds = group.removedSeeds;
-        if (dropped?.seeded && dropped.subcategory_id && group.area_id) {
-            const areaId: string = group.area_id;
-            removedSeeds = [
-                ...removedSeeds.filter((row) => !(row.subcategory_id === dropped.subcategory_id && row.work_type_id === dropped.work_type_id)),
-                ...linePairs(dropped).map((pair) => ({
-                    work_required_id: dropped.target_work_required_id || group.key,
-                    area_id: areaId,
-                    subcategory_id: pair.subcategory_id!,
-                    work_type_id: pair.work_type_id,
-                })),
-            ];
-        }
-        return { ...group, removedSeeds, lines: group.lines.filter((line) => line.key !== lineKey) };
-    }));
-    const addGroup = () => setGroups((current) => [...current.map((group) => ({ ...group, open: false })), {
-        key: `new-group-${current.length}-${Math.random().toString(36).slice(2, 7)}`,
-        create_area: true,
-        area_name: "",
-        area_type: "other" as const,
-        open: true,
-        length: "",
-        breadth: "",
-        height: "",
-        lines: [],
-        removedExistingIds: [],
-        removedSeeds: [],
-    }]);
-    const removeGroup = (groupKey: string) => setGroups((current) => current.flatMap((group) => {
-        if (group.key !== groupKey) return [group];
-        if (group.create_area) return [];
-        // An existing area keeps its saved rows until save: drop drafts now and mark
-        // every saved item (of ANY site Work Required) for removal plus every planned
-        // seed as a removed selection, so the store can sync the ticks back.
-        const siteItems = db.workRequired
-            .filter((row: any) => row.site_id === site.id)
-            .flatMap((row: any) => (row.structured_items || []).filter((item: any) => item.area_id === group.area_id).map((item: any) => item.id));
-        const droppedSeeds = group.lines
-            .filter((line) => line.seeded && line.subcategory_id)
-            .flatMap((line) => linePairs(line).map((pair) => ({
-                work_required_id: line.target_work_required_id || groupKey,
-                area_id: group.area_id!,
-                subcategory_id: pair.subcategory_id!,
-                work_type_id: pair.work_type_id,
-            })));
-        return [{ ...group, lines: [], removedSeeds: droppedSeeds, removedExistingIds: Array.from(new Set([
-            ...group.removedExistingIds,
-            ...siteItems,
-        ])) }];
-    }));
-    const toggleExistingRemoval = (groupKey: string, itemId: string) => setGroups((current) => current.map((group) => group.key === groupKey
-        ? {
-            ...group,
-            removedExistingIds: group.removedExistingIds.includes(itemId)
-                ? group.removedExistingIds.filter((id) => id !== itemId)
-                : [...group.removedExistingIds, itemId],
-        }
-        : group));
-    const areaTypes: Array<{ value: import("@/lib/rdash/types").AreaType; label: string; }> = [
-        { value: "bedroom", label: "Bedroom" }, { value: "guest_room", label: "Guest room" }, { value: "living_room", label: "Living room / Hall" }, { value: "kitchen", label: "Kitchen" }, { value: "bathroom", label: "Bathroom" }, { value: "balcony", label: "Balcony" }, { value: "office_cabin", label: "Office cabin" }, { value: "reception", label: "Reception" }, { value: "other", label: "Other" },
-    ];
-    const existingItemsByArea = React.useMemo(() => {
-        // Saved rows across ALL of the site's Work Required rows — the capture
-        // view is the per-area master, so an area group lists every captured
-        // item in that area with a Remove that unticks from its own row.
-        const map = new Map<string, import("@/lib/rdash/types").LineItem[]>();
-        db.workRequired
-            .filter((row: any) => row.site_id === site.id)
-            .forEach((row: any) => (row.structured_items || []).forEach((item) => {
-                const key = item.area_id || "";
-                map.set(key, [...(map.get(key) || []), item]);
-            }));
-        return map;
-    }, [db.workRequired, site.id]);
-    // Duplicate keys mirror the store's scopeKey so the dialog and the store can
-    // never disagree about what is already captured.
-    const existingScopeKeys = React.useMemo(() => {
-        const keys = new Set<string>();
-        db.workRequired
-            .filter((row: any) => row.site_id === site.id)
-            .forEach((row: any) => (row.structured_items || [])
-                // An item loaded into an edit line is represented by that draft
-                // — keeping its key here would flag the very edit as duplicate.
-                .filter((item) => !groups.some((group) => group.removedExistingIds.includes(item.id) || group.lines.some((line) => line.editOfItemId === item.id)))
-                .forEach((item) => itemOptionPairs(item).forEach((pair) => keys.add([item.area_id || "", item.category_id || "", item.work_required_article_id || pair.subcategory_id || "", pair.work_type_id || "", item.variant_id || "", item.unit_id || ""].join("::")))));
-        return keys;
-    }, [db.workRequired, groups, site.id]);
-    const groupIssues = (group: DetailedAreaGroup): string | undefined => {
-        if (group.create_area) {
-            const name = group.area_name?.trim() || "";
-            if (!name) return "Name this area to capture work in it.";
-            if (areas.some((area) => !area.is_archived && normalizeAreaName(area.name) === normalizeAreaName(name))) {
-                return `"${name.trim()}" already exists — add the work inside its own group instead.`;
-            }
-        }
-        return undefined;
-    };
-    const lineIssue = (line: DetailedDraftLine, group: DetailedAreaGroup): string | undefined => {
-        if (!line.category_id || !line.subcategory_id) return "Pick a category and subcategory.";
-        const { quantity } = lineQuantity(line, group);
-        if (!(quantity > 0) && !(Number(line.wall_area) > 0)) return "Enter dimensions or a direct quantity.";
-        return undefined;
-    };
-    const duplicateKeys = React.useMemo(() => {
-        const seen = new Set<string>();
-        const duplicates = new Set<string>();
-        groups.forEach((group) => {
-            const dims = groupDims(group);
-            group.lines.forEach((line) => {
-                const { unit } = measuredQuantity(line.measure, dims, line.walls);
-                const areaPart = group.area_id || (group.create_area && group.area_name ? `new:${normalizeAreaName(group.area_name)}` : "");
-                // Alternatives-aware: every (subcategory · work type) option on
-                // the line registers its own duplicate scope.
-                const keysForLine = linePairs(line).map((pair) => [areaPart, line.category_id || "", pair.subcategory_id || "", pair.work_type_id || "", "", unit].join("::"));
-                if (areaPart && (keysForLine.some((key) => seen.has(key) || existingScopeKeys.has(key)))) duplicates.add(line.key);
-                keysForLine.forEach((key) => areaPart && seen.add(key));
-            });
-        });
-        return duplicates;
-    }, [existingScopeKeys, groups]);
-    const validGroups = groups.filter((group) => !groupIssues(group));
-    const validLines = validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)));
-    // Dimensions typed for an area persist on the Area record even when their
-    // work lines are still incomplete (annotation B) — every group's L/W/H
-    // travels with the capture; brand-new areas still need a captured line
-    // (dimensions alone never create Area records).
-    const dimsPayloads = validGroups.flatMap((group) => {
-        const l = Number(group.length) || 0;
-        const b = Number(group.breadth) || 0;
-        const h = Number(group.height) || 0;
-        if (l <= 0 && b <= 0 && h <= 0) return [];
-        if (group.create_area && !group.area_name?.trim()) return [];
-        if (!group.area_id && !group.create_area) return [];
-        if (group.create_area && !group.lines.some((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key))) return [];
-        return [{ area_id: group.area_id, create_area: group.create_area, area_name: group.area_name?.trim(), area_type: group.area_type, length_ft: l > 0 ? l : undefined, breadth_ft: b > 0 ? b : undefined, height_ft: h > 0 ? h : undefined }];
-    });
-    // Saved items still part of this capture — excluding ones dropped for
-    // removal and ones currently loaded into an edit line (the draft line
-    // represents them while editing).
-    const activeSavedItems = (group: DetailedAreaGroup) =>
-        (existingItemsByArea.get(group.area_id || "") || [])
-            .filter((item) => !group.removedExistingIds.includes(item.id) && !group.lines.some((line) => line.editOfItemId === item.id));
-    // Rows render in saved order INCLUDING the one being edited — its draft
-    // line renders in the row's own slot (annotation B), never at the bottom.
-    const groupSavedRows = (group: DetailedAreaGroup) =>
-        (existingItemsByArea.get(group.area_id || "") || [])
-            .filter((item) => !group.removedExistingIds.includes(item.id));
-    const groupEstimate = (group: DetailedAreaGroup) =>
-        activeSavedItems(group).reduce((sum, item) => sum + (item.amount > 0 ? item.amount : 0), 0)
-        + group.lines.reduce((sum, line) => sum + lineEstimate(line, group).estimated, 0);
-    const estimateTotal = groups.reduce((sum, group) => sum + groupEstimate(group), 0);
-    const totalRemoved = groups.reduce((sum, group) => sum + group.removedExistingIds.length, 0);
-    const totalRemovedSeeds = groups.reduce((sum, group) => sum + group.removedSeeds.length, 0);
-    const totalDraftLines = groups.reduce((sum, group) => sum + group.lines.length, 0);
-    // Partial captures are a feature (user report): incomplete or duplicate
-    // lines are skipped at save while everything available — valid lines,
-    // removals, edits and the typed dimensions — still gets saved.
-    const skippedLines = totalDraftLines - validLines.length;
-    const canSave = groups.every((group) => !groupIssues(group))
-        && (validLines.length > 0 || totalRemoved > 0 || totalRemovedSeeds > 0 || dimsPayloads.length > 0);
-    // Everything the capture planned is already saved — a valid idle state, not
-    // an error; the footer must say so instead of the red completion hint.
-    const idle = !canSave && totalDraftLines === 0 && totalRemoved === 0 && totalRemovedSeeds === 0
-        && dimsPayloads.length === 0 && groups.every((group) => !groupIssues(group));
-    // ONE renderer for a work-item form card — the lines section uses it, and
-    // an edit renders it IN PLACE of the saved row being edited (annotation B).
-    const renderLineCard = (group: DetailedAreaGroup, line: DetailedDraftLine) => {
-        const subcategories = line.category_id ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id) : [];
-        const duplicate = duplicateKeys.has(line.key);
-        // Ticked categories: required by work captured in this line's Area, the work
-        // being captured, previous captures, and the other lines in this session.
-        const areaWorkCategories = group.area_id
-            ? db.workRequired
-                .filter((row) => row.site_id === site.id && (row.area_ids || []).includes(group.area_id!))
-                .map((row) => row.work_category_id)
-            : [];
-        const categoryTicks = new Set([workRequired.work_category_id,
-            ...(workRequired.structured_items || []).map((item) => item.category_id),
-            ...areaWorkCategories,
-            ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.category_id)),
-        ].filter((id): id is string => Boolean(id)));
-        // Ticked subcategories: every site Work Required's declared
-        // subcategories, previous captures and the other lines in this session.
-        const subTicks = new Set([
-            ...db.workRequired
-                .filter((row: any) => row.site_id === site.id)
-                .flatMap((row: any) => row.work_subcategory_ids || []),
-            ...(workRequired.structured_items || []).map((item) => item.subcategory_id),
-            ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.subcategory_id)),
-        ].filter((id): id is string => Boolean(id)));
-        const subOptions = subcategories.map((subcategory) => ({ id: subcategory.id, name: subcategory.name }));
-        const workTypeOptions = workTypesFor(line.subcategory_id).map((workType) => ({ id: workType.id, name: workType.name }));
-        const workTypeTicks = new Set([
-            ...db.workRequired
-                .filter((row: any) => row.site_id === site.id)
-                .flatMap((row: any) => row.work_type_ids || []),
-            ...(workRequired.structured_items || []).map((item) => item.work_type_id),
-            ...groups.flatMap((other) => other.lines.filter((otherLine) => otherLine.key !== line.key).map((otherLine) => otherLine.work_type_id)),
-        ].filter((id): id is string => Boolean(id)));
-        const lineError = lineIssue(line, group);
-        const { rate, estimated } = lineEstimate(line, group);
-        return (<div key={line.key} id={line.editOfItemId ? `edit-draft-${line.editOfItemId}` : undefined} className={cn("mb-2 rounded-md border p-2.5", duplicate || lineError ? "border-destructive/50 bg-destructive/[0.04]" : line.editOfItemId ? "border-primary/50 bg-primary/[0.04]" : "border-border bg-background")}>
-            <div className="mb-2 flex items-center justify-between"><span className={cn("text-[10px] font-semibold uppercase", line.editOfItemId ? "text-primary" : "text-muted-foreground")}>{line.editOfItemId ? "Editing saved work" : line.seeded ? "Planned work" : "New work item"}</span><button type="button" onClick={() => removeLine(group.key, line.key)} className="rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={line.editOfItemId ? "Cancel editing — keep the saved item unchanged" : line.seeded ? "Remove this planned work from this area" : "Remove this work item"} title={line.editOfItemId ? "Cancel edit — the saved item stays as it is" : undefined}><Plus className="h-3.5 w-3.5 rotate-45"/></button></div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Category *</label>
-                <TickDropdown value={line.category_id} ariaLabel="Category" placeholder="— select category —" onChange={(categoryId) => updateLine(group.key, line.key, { category_id: categoryId, subcategory_id: undefined, work_type_id: undefined })} ticked={categoryTicks} groups={[{ key: "all", items: db.master.workCategories.map((category) => ({ id: category.id, name: category.name })) }]}/>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subcategory *</label>
-                <TickDropdown value={line.subcategory_id} ariaLabel="Subcategory" placeholder="— select subcategory —" disabled={!line.category_id} onChange={(subcategoryId) => updateLine(group.key, line.key, { subcategory_id: subcategoryId, work_type_id: workTypesFor(subcategoryId)[0]?.id, measure: measureHintFor(subcategoryId) })} ticked={subTicks} groups={subOptions.length ? [
-                    { key: "ticked", items: subOptions.filter((option) => subTicks.has(option.id)) },
-                    { key: "others", items: subOptions.filter((option) => !subTicks.has(option.id)) },
-                ].filter((group2) => group2.items.length) : []}/>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Work type</label>
-                {/* First pick fills the line; further picks become any-one-of
-                    options on the same measured item (annotation C). */}
-                <WorkTypeMultiDropdown value={line.work_type_id} ariaLabel="Work type" disabled={!line.subcategory_id} ticked={workTypeTicks} rateLabelFor={(workTypeId) => {
-                    const tierRate = rateFor(line.subcategory_id, workTypeId);
-                    return tierRate ? `≈ ${formatINR(tierRate)}/${line.measure === "length" ? "rft" : "sqft"}` : undefined;
-                }} onSelect={(workTypeId) => {
-                    if (!line.work_type_id || workTypeId === line.work_type_id) updateLine(group.key, line.key, { work_type_id: workTypeId || undefined });
-                    else addLineOption(group.key, line.key, line.subcategory_id, workTypeId);
-                }} groups={workTypeOptions.length ? [
-                    { key: "ticked", items: workTypeOptions.filter((option) => workTypeTicks.has(option.id) || option.id === line.work_type_id) },
-                    { key: "others", items: workTypeOptions.filter((option) => !workTypeTicks.has(option.id) && option.id !== line.work_type_id) },
-                ].filter((group2) => group2.items.length) : []}/>
-              </div>
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Measure *</label>
-                <select value={line.measure} onChange={(event) => updateLine(group.key, line.key, { measure: event.target.value as MeasureBasis })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
-                  {MEASURE_OPTIONS.map((basis) => <option key={basis} value={basis}>{WORK_MEASURE_LABELS[basis]}</option>)}
-                </select>
-              </div>
-              {line.measure === "length" && (<div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">Walls</label>
-                <select value={line.walls} onChange={(event) => updateLine(group.key, line.key, { walls: Number(event.target.value) === 2 ? 2 : 1 })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
-                  <option value={1}>1 wall (L)</option>
-                  <option value={2}>2 walls (L+B)</option>
-                </select>
-              </div>)}
-              <div>
-                <label className="text-[10px] font-semibold uppercase text-muted-foreground">{WORK_MEASURE_LABELS[line.measure]} *</label>
-                <Input type="number" min="0" step="any" inputMode="decimal" value={line.wall_area} onChange={(event) => updateLine(group.key, line.key, { wall_area: event.target.value })} placeholder={line.measure === "length" ? "rft, or from L / L+B" : "sqft, or from L×B×H"} title="Auto from the area dimensions. Edit to deduct doors, openings or waste." className="h-8 text-xs"/>
-              </div>
-              <div className="col-span-2 sm:col-span-3"><label className="text-[10px] font-semibold uppercase text-muted-foreground">Notes</label><Input value={line.notes || ""} onChange={(event) => updateLine(group.key, line.key, { notes: event.target.value })} placeholder="Customer preference, finish, doors/openings or scope note" className="h-8 text-xs"/></div>
-            </div>
-            {(() => {
-                // Annotation C: the item's any-one-of alternatives, editable
-                // right here — add a subcategory or a work type without ever
-                // re-entering the shared measurement (sqft / rft / area).
-                const pairs = linePairs(line);
-                if (!pairs.length) return null;
-                const primarySubcategory = db.master.workSubcategories.find((row) => row.id === pairs[0].subcategory_id);
-                const categoryId = line.category_id || primarySubcategory?.category_id;
-                const categorySubcategories = db.master.workSubcategories.filter((row) => row.category_id === categoryId);
-                const tickedPairs = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
-                const pairLabel = (pair: { subcategory_id?: string; work_type_id?: string }) => {
-                    const pairSubcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
-                    const pairWorkType = pair.work_type_id && pairSubcategory ? workTypesForSubcategory(pairSubcategory).find((row) => row.id === pair.work_type_id) : undefined;
-                    return `${pairSubcategory?.name || "?"}${pairWorkType ? ` · ${pairWorkType.name}` : ""}`;
-                };
-                return (<div className="mt-2 rounded-md border border-border bg-muted/20 px-2 py-2">
-                  <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Options on this item — customer takes any one</p>
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {pairs.map((pair, pairIndex) => (<span key={`${pair.subcategory_id}::${pair.work_type_id || ""}`} className={cn("inline-flex min-w-0 max-w-full items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]", pairIndex === 0 ? "border-primary/40 bg-primary/[0.06] font-medium" : "border-border bg-background")}>
-                      <span className="truncate">{pairLabel(pair)}</span>
-                      {pairs.length > 1 && (<button type="button" aria-label={`Remove option ${pairLabel(pair)}`} title={pairIndex === 0 ? "Remove — the next option becomes the primary" : "Remove this option"} onClick={() => removeLineOption(group.key, line.key, pairIndex)} className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive"><Plus className="h-2.5 w-2.5 rotate-45"/></button>)}
-                    </span>))}
-                  </div>
-                  <WorkTypeMultiDropdown placeholder="＋ Add subcategory / work type option" ariaLabel="Add option" disabled={!categoryId} value={undefined} ticked={tickedPairs} rateLabelFor={(compositeId) => {
-                    const [subId, workTypeId] = compositeId.split("::");
-                    const tierRate = rateFor(subId, workTypeId);
-                    const basis = measureHintFor(subId);
-                    return tierRate ? `≈ ${formatINR(tierRate)}/${basis === "length" ? "rft" : "sqft"}` : undefined;
-                  }} onSelect={(compositeId) => {
-                    const [subId, workTypeId] = compositeId.split("::");
-                    addLineOption(group.key, line.key, subId, workTypeId || undefined);
-                  }} groups={categorySubcategories.map((subcategory) => ({ key: subcategory.id, items: workTypesForSubcategory(subcategory).map((workType) => ({ id: `${subcategory.id}::${workType.id}`, name: `${subcategory.name} · ${workType.name}` })) }))}/>
-                  <p className="mt-1 text-[10px] text-muted-foreground">Alternatives share this item's measurement — the quotation prices it once, with the chosen option's tier rate.</p>
-                </div>);
-            })()}
-            <p className="mt-1.5 text-[10px] text-muted-foreground">
-              {rate ? `Rate ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"} · Est. ${formatINR(estimated)}` : "Rate comes from the work-type tier (Standard / Premium / Economy / Luxury) at capture."}
-            </p>
-            {(lineError || duplicate) && <p className="mt-1 text-[11px] text-destructive">{duplicate ? "This work item duplicates an already captured scope. Edit the earlier item instead." : lineError}</p>}
-        </div>);
-    };
-    const renderGroup = (group: DetailedAreaGroup) => {
-        const savedItems = activeSavedItems(group);
-        const savedRows = groupSavedRows(group);
-        const removedCount = group.removedExistingIds.length;
-        const issue = groupIssues(group);
-        const totalQuantity = savedItems.reduce((sum, item) => sum + (item.quantity || 0), 0)
-            + group.lines.reduce((sum, line) => sum + (Number(line.wall_area) || 0), 0);
-        const totalEstimate = groupEstimate(group);
-        const groupLabel = group.create_area
-            ? (group.area_name?.trim() || "New area")
-            : group.area_name || areas.find((area) => area.id === group.area_id)?.name || "Area";
-        return (<div key={group.key} className={cn("overflow-hidden rounded-lg border", issue ? "border-destructive/50" : "border-border bg-muted/20")}>
-      <div className="flex items-center gap-1 px-2 py-2">
-        <button type="button" aria-expanded={group.open} onClick={() => updateGroup(group.key, { open: !group.open })} className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left">
-          <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", !group.open && "-rotate-90")}/>
-          <span className="min-w-0">
-            <span className="block break-words text-sm font-bold">{groupLabel}</span>
-            <span className="block break-words text-[10px] text-muted-foreground">
-              {savedItems.length + group.lines.length} work item(s) · {areaStr(totalQuantity)} total
-              {totalEstimate > 0 ? ` · ≈ ${formatINR(totalEstimate)}` : ""}
-              {removedCount > 0 ? ` · ${removedCount} removed on save` : ""}
-            </span>
-          </span>
-        </button>
-        <Button size="sm" variant="outline" className="h-7 shrink-0 text-[11px]" onClick={() => addLine(group.key)}><Plus className="mr-1 h-3 w-3"/> Add work</Button>
-        <button type="button" onClick={() => removeGroup(group.key)} className="shrink-0 rounded-md p-1 text-muted-foreground hover:text-destructive" aria-label={`Remove all work in ${groupLabel} from this capture`} title="Remove every work item of this area from this capture"><Plus className="h-3.5 w-3.5 rotate-45"/></button>
-      </div>
-      {group.open && (<div className="border-t border-border px-3 py-3">
-        {group.create_area && (<div className="mb-3 grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">New area name *</label>
-            <Input value={group.area_name || ""} onChange={(event) => updateGroup(group.key, { area_name: event.target.value })} placeholder="e.g. Kitchen 2" className="h-8 text-xs"/>
+        {tab === "sites" && <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setAddSiteOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setActiveModule("siteExecution")}><Building className="mr-1 h-3.5 w-3.5" />Open Sites &amp; Execution</Button>
           </div>
-          <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Area type *</label>
-            <select value={group.area_type || "other"} onChange={(event) => updateGroup(group.key, { area_type: event.target.value as import("@/lib/rdash/types").AreaType })} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
-              {areaTypes.map((areaType) => <option key={areaType.value} value={areaType.value}>{areaType.label}</option>)}
-            </select>
-          </div>
-        </div>)}
-        <div className="mb-3 rounded-md border border-dashed border-border bg-background px-2 py-2">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">Area dimensions (ft) — shared by the work below</p>
-          <div className="grid grid-cols-3 gap-2">
-            <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Length (ft)</label><Input type="number" min="0" step="any" inputMode="decimal" value={group.length} onChange={(event) => updateGroup(group.key, { length: event.target.value })} placeholder="—" className="h-8 text-xs"/></div>
-            <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Breadth (ft)</label><Input type="number" min="0" step="any" inputMode="decimal" value={group.breadth} onChange={(event) => updateGroup(group.key, { breadth: event.target.value })} placeholder="—" className="h-8 text-xs"/></div>
-            <div><label className="text-[10px] font-semibold uppercase text-muted-foreground">Height (ft)</label><Input type="number" min="0" step="any" inputMode="decimal" value={group.height} onChange={(event) => updateGroup(group.key, { height: event.target.value })} placeholder="empty = run ft" className="h-8 text-xs"/></div>
-          </div>
-        </div>
-        {savedRows.length > 0 && (<div className="mb-3 space-y-1.5">
-          {savedRows.map((item) => {
-            const editLine = group.lines.find((line) => line.editOfItemId === item.id);
-            // Annotation B: the edit form expands IN the row's own position —
-            // the rows below push down; it never moves to the group's bottom.
-            if (editLine) return (<React.Fragment key={item.id}>{renderLineCard(group, editLine)}</React.Fragment>);
-            return (<div key={item.id} className="flex items-start justify-between gap-2 rounded-md border border-border bg-background px-2 py-1.5">
-            <div className="min-w-0">
-              <p className="break-words text-[11px] font-semibold">{item.title}</p>
-              <p className="break-words text-[10px] text-muted-foreground">{item.quantity}{item.unit_name ? ` ${item.unit_name}` : ""}{item.amount > 0 ? ` · ${formatINR(item.amount)}` : ""}</p>
-            </div>
-            <div className="flex shrink-0 gap-1">
-              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => { startEditExisting(group.key, item); scrollEditDraftIntoView(item.id); }} title="Edit this captured work item — the same capture form loaded with its saved values">Edit</Button>
-              <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] text-destructive hover:text-destructive" onClick={() => toggleExistingRemoval(group.key, item.id)}>Remove</Button>
-            </div>
-          </div>);
+          {!sites.length ? <EmptyState title="No sites" description="Add a site to start tracking property-specific work." icon={<Building className="h-7 w-7" />} /> : sites.map((site) => {
+            const siteAreas = db.areas.filter((row) => row.site_id === site.id && !row.is_archived);
+            const siteWork = workRequired.filter((row) => row.site_id === site.id || (sites.length === 1 && !row.site_id));
+            const siteJobs = db.workOrders.filter((row) => row.site_id === site.id && LIVE_WORK_ORDER_STATUSES.has(row.status));
+            const href = customerMapHref(site.address, site.latitude, site.longitude);
+            return <div key={site.id} className="rounded-lg border border-border bg-background p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0"><p className="truncate text-sm font-bold">{site.name}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{site.address || `${site.site_type} · ${site.stage}`}</p></div>
+                <div className="flex shrink-0 gap-1">{href && <Button asChild size="icon" variant="ghost" className="h-7 w-7"><a href={href} target="_blank" rel="noreferrer" aria-label={`Open ${site.name} in Maps`}><Navigation className="h-3.5 w-3.5" /></a></Button>}<Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditSiteId(site.id)} aria-label={`Edit ${site.name}`}><Pencil className="h-3.5 w-3.5" /></Button></div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2"><MetricCard label="Areas" value={siteAreas.length} /><MetricCard label="Work required" value={siteWork.length} tone="primary" /><MetricCard label="Live work orders" value={siteJobs.length} tone="success" /></div>
+              <div className="mt-3 space-y-1.5">{siteWork.length ? siteWork.map((work) => {
+                const style = workRequiredStatusStyle(work.status);
+                return <button key={work.id} type="button" onClick={() => openDetail("workRequired", work.id)} className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-muted/20 px-2.5 py-2 text-left"><span className="min-w-0 truncate text-xs font-medium">{work.title}</span><StatusBadge label={style.label} className={style.className} /></button>;
+              }) : <p className="rounded-md border border-dashed border-border px-2 py-2 text-[11px] text-muted-foreground">No work required recorded for this site.</p>}</div>
+            </div>;
           })}
-        </div>)}
-        {group.lines.length === 0 && savedItems.length === 0 && (<p className="mb-2 rounded-md border border-dashed border-border bg-background px-2 py-2 text-[11px] text-muted-foreground">No work captured in this area yet. Use “Add work” to add the first item.</p>)}
-        {group.lines.filter((line) => !line.editOfItemId).map((line) => renderLineCard(group, line))}
-        {issue && <p className="mt-1 text-[11px] text-destructive">{issue}</p>}
-      </div>)}
-    </div>);
-    };
-    // Mobile: a full-width bottom sheet (field reps capture on phones, thumbs
-    // rest near the actions); desktop keeps the centered modal.
-    return (<div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/50 backdrop-blur-sm animate-fade-in sm:items-center sm:p-4">
-      <div role="dialog" aria-modal="true" aria-label="Capture detailed area" className="relative max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl border border-border bg-card shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
-        <div className="flex min-w-0 items-center justify-between border-b border-border px-5 py-3"><div className="min-w-0"><h3 className="flex items-center gap-2 text-base font-bold"><ListChecks className="h-4 w-4 shrink-0 text-primary"/> Capture detailed area</h3><p className="text-[11px] text-muted-foreground">{site.name} · every area with all of its work required</p></div><button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Close"><Plus className="h-4 w-4 rotate-45"/></button></div>
-        <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll"><p className="mb-3 text-xs text-muted-foreground">Each area is one collapsible group pre-filled with the work its Work Required rows plan there — each item is measured by its own basis: tiles use the floor plan, paint uses walls + ceiling, a modular kitchen or railing uses the run of 1–2 walls — and any quantity can be typed directly (sqft / rft). Quotation cost = quantity × the work-type rate (Standard / Premium / Economy / Luxury). Add or remove work here and the Add/Edit customer form follows.</p><EntityFilesCard entityType="workRequired" entityId={workRequired.id} title="Requirement files" manage allowDetach={false} registerBatch={registerBatch} /><div className="mt-3 space-y-2">{groups.map(renderGroup)}</div><Button size="sm" variant="outline" className="mt-3 h-7 text-xs" onClick={addGroup}><Plus className="mr-1 h-3.5 w-3.5"/> Add area</Button></div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:pb-3"><span className={cn("min-w-0 text-[11px]", canSave || idle ? "text-muted-foreground" : "text-destructive")}>{canSave ? `${validLines.length} new work item(s)${estimateTotal > 0 ? ` · ≈ ${formatINR(estimateTotal)} ready for quotation` : ""}${totalRemoved + totalRemovedSeeds ? ` · ${totalRemoved + totalRemovedSeeds} removed` : ""}${dimsPayloads.length ? ` · dimensions saved for ${dimsPayloads.length} area(s)` : ""}${skippedLines ? ` · ${skippedLines} incomplete item(s) left unsaved` : ""}` : idle ? "All planned work in this capture is already saved." : skippedLines > 0 ? "Nothing complete enough to save yet — finish an item or type its quantity; incomplete items stay untouched." : "Complete every work item and remove duplicates to capture."}</span><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onClose}>Cancel</Button><Button size="sm" disabled={!canSave} onClick={() => { const payload = { lines: validGroups.flatMap((group) => group.lines.filter((line) => !lineIssue(line, group) && !duplicateKeys.has(line.key)).map((line) => {
-            const { quantity: autoQuantity, unit } = measuredQuantity(line.measure, groupDims(group), line.walls);
-            const l = Number(group.length) || 0;
-            const b = Number(group.breadth) || 0;
-            const h = Number(group.height) || 0;
-            return {
-                site_id: site.id,
-                area_id: group.area_id,
-                area_name: group.area_name?.trim(),
-                create_area: group.create_area,
-                area_type: group.area_type,
-                category_id: line.category_id!,
-                subcategory_id: line.subcategory_id!,
-                work_type_id: line.work_type_id,
-                option_pairs: line.option_pairs,
-                target_work_required_id: line.target_work_required_id,
-                length_ft: l > 0 ? l : undefined,
-                breadth_ft: b > 0 ? b : undefined,
-                height_ft: line.measure === "length" ? undefined : h > 0 ? h : undefined,
-                floor_area: l > 0 && b > 0 ? Math.round(l * b * 100) / 100 : undefined,
-                quantity: Number(line.wall_area) > 0 ? Number(line.wall_area) : autoQuantity,
-                unit_id: unit,
-                notes: line.notes?.trim() || undefined,
-            };
-        })), removedItemIds: [...groups.flatMap((group) => group.removedExistingIds), ...validLines.filter((line) => line.editOfItemId).map((line) => line.editOfItemId!)], removedSelections: groups.flatMap((group) => group.removedSeeds), areaDims: dimsPayloads }; const saved = onSave(payload); if (saved) commitBatches(); }}>{validLines.length > 0 ? `Capture ${validLines.length} work item(s)` : dimsPayloads.length > 0 ? "Save area dimensions" : "Apply removals"}<CheckCircle2 className="ml-1.5 inline h-3.5 w-3.5"/></Button></div></div>
+        </div>}
+
+        {tab === "tasks" && <div className="flex flex-col gap-2">
+          <div className="flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openCreateDialog({ kind: "task", customerId })}><Plus className="mr-1 h-3.5 w-3.5" />Add task</Button></div>
+          {!relatedTasks.length ? <EmptyState title="No tasks" description="Add a task for this customer." icon={<ListChecks className="h-7 w-7" />} /> : relatedTasks.map((task) => {
+            const style = taskStatusStyle(task.status);
+            return <button key={task.id} type="button" onClick={() => openDetail("task", task.id)} className="rounded-lg border border-border bg-background px-3 py-2 text-left"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-medium">{task.title}</p><StatusBadge label={style.label} className={style.className} /></div><p className="mt-1 text-[11px] text-muted-foreground">Due {relativeDay(task.due_date)} · {task.assignee_name || "Unassigned"}</p></button>;
+          })}
+        </div>}
+
+        {tab === "quotations" && <div className="flex flex-col gap-2">
+          <div className="flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><Plus className="mr-1 h-3.5 w-3.5" />Add quotation</Button></div>
+          {!quotations.length ? <EmptyState title="No quotations" description="Create the first quotation for this customer." icon={<FileText className="h-7 w-7" />} /> : quotations.map((quotation) => {
+            const style = quotationStatusStyle(quotation.status);
+            return <button key={quotation.id} type="button" onClick={() => openDetail("quotation", quotation.id)} className="rounded-lg border border-border bg-background px-3 py-2 text-left"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-medium">{quotation.quotation_no} · {quotation.title}</p><p className="text-[11px] text-muted-foreground">Valid till {relativeDay(quotation.valid_until)}</p></div><StatusBadge label={style.label} className={style.className} /></div></button>;
+          })}
+        </div>}
+
+        {tab === "visits" && <div className="flex flex-col gap-2">
+          <div className="flex justify-end"><Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openCreateDialog({ kind: "visit", customerId })}><Plus className="mr-1 h-3.5 w-3.5" />Schedule visit</Button></div>
+          {!visits.length ? <EmptyState title="No visits" description="Schedule the first visit for this customer." icon={<MapPin className="h-7 w-7" />} /> : visits.map((visit) => <button key={visit.id} type="button" onClick={() => openDetail("visit", visit.id)} className="rounded-lg border border-border bg-background px-3 py-2 text-left"><p className="text-sm font-medium capitalize">{visit.visit_type.replace(/_/g, " ")} · {visit.location_name || "Site"}</p><p className="mt-1 text-[11px] text-muted-foreground">Scheduled {relativeDay(visit.scheduled_at)} · {visit.staff_name || "Unassigned"} · {visit.status.replace(/_/g, " ")}</p></button>)}
+        </div>}
+
+        {tab === "activity" && <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><MetricCard label="Follow-ups" value={relatedFollowups.length} tone="primary" /><MetricCard label="Communications" value={communications.length} /><MetricCard label="Open risks" value={risks.length} tone="warning" /><MetricCard label="Open obstacles" value={obstacles.filter((row) => !row.resolved).length} tone="destructive" /></div>
+          <ActivitySection title={`Follow-ups (${relatedFollowups.length})`} empty="No follow-ups linked to this customer." rows={relatedFollowups.slice(0, 10).map((row) => ({ id: row.id, title: row.title, detail: `${row.followup_type || "general"} · due ${relativeDay(row.due_date)} · ${row.status}` }))} />
+          <ActivitySection title={`Communications (${communications.length})`} empty="No logged customer communications." rows={communications.slice(0, 10).map((row) => ({ id: row.id, title: row.subject, detail: `${row.channel} · ${row.status} · ${formatDate(row.sent_at)}` }))} />
+          <ActivitySection title={`Risks (${risks.length})`} empty="No customer risks." rows={risks.slice(0, 10).map((row) => ({ id: row.id, title: row.title, detail: `${row.type} · ${row.severity} · ${row.reason}` }))} />
+          <ActivitySection title={`Obstacles (${obstacles.length})`} empty="No customer obstacles." rows={obstacles.slice(0, 10).map((row) => ({ id: row.id, title: row.title, detail: `${row.resolved ? "Resolved" : "Open"} · ${row.reason}` }))} />
+          <ActivitySection title={`Variation requests (${variations.length})`} empty="No variation requests." rows={variations.slice(0, 10).map((row) => ({ id: row.id, title: `${row.variation_no} · ${row.title}`, detail: row.status.replace(/_/g, " ") }))} />
+        </div>}
       </div>
-    </div>);
+
+      <CustomerSitesDialog editId={customerId} open={editCustomerOpen || addSiteOpen || Boolean(editSiteId)} autoAddSite={addSiteOpen} expandSiteId={editSiteId} onClose={() => {
+        setEditCustomerOpen(false);
+        setAddSiteOpen(false);
+        setEditSiteId(undefined);
+      }} />
+    </div>
+  );
+}
+
+function ActivitySection({ title, empty, rows }: { title: string; empty: string; rows: Array<{ id: string; title: string; detail: string }> }) {
+  return <section><p className="mb-1.5 text-[10px] font-semibold uppercase text-muted-foreground">{title}</p>{rows.length ? <div className="flex flex-col gap-1.5">{rows.map((row) => <div key={row.id} className="rounded-md border border-border bg-background px-2.5 py-1.5"><p className="truncate text-xs font-semibold">{row.title}</p><p className="truncate text-[10px] text-muted-foreground">{row.detail}</p></div>)}</div> : <p className="rounded-md border border-dashed border-border bg-muted/20 py-3 text-center text-xs text-muted-foreground">{empty}</p>}</section>;
+}
+
+function auditEntryNavigable(entry: AuditLogEntry) {
+  return ["customer", "site", "workRequired", "work_required", "quotation", "workOrder", "work_order", "task", "followup", "visit", "blocked", "boq"].includes(entry.entity_type);
+}
+
+function CustomerTimelineView({ name, entries }: { name: string; entries: AuditLogEntry[] }) {
+  const openDetail = useRDashStore((state) => state.openDetail);
+  const grouped = React.useMemo(() => {
+    const map = new Map<string, AuditLogEntry[]>();
+    for (const entry of entries) {
+      const day = indiaBusinessDate(entry.timestamp);
+      map.set(day, [...(map.get(day) || []), entry]);
+    }
+    return [...map.entries()];
+  }, [entries]);
+
+  const openEntry = (entry: AuditLogEntry) => {
+    const id = entry.entity_id;
+    if (!id) return;
+    switch (entry.entity_type) {
+      case "customer": openDetail("customer", id); break;
+      case "site": openDetail("site", id); break;
+      case "workRequired":
+      case "work_required": openDetail("workRequired", id); break;
+      case "quotation": openDetail("quotation", id); break;
+      case "workOrder":
+      case "work_order": openDetail("workOrder", id); break;
+      case "task": openDetail("task", id); break;
+      case "followup": openDetail("followup", id); break;
+      case "visit": openDetail("visit", id); break;
+      case "blocked": openDetail("blocked", id); break;
+      case "boq": openDetail("boq", id); break;
+    }
+  };
+
+  return <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
+    <div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Avatar name={name} size={48} /><div className="min-w-0"><h2 className="break-words text-lg font-bold leading-snug tracking-tight">{name}</h2><p className="mt-0.5 text-xs text-muted-foreground">Event history · {entries.length} audited events</p></div></div><StatusBadge label="EVENT LOG" className="border-primary/20 bg-primary/10 text-primary" /></div>
+    <SectionHeader title="Chronological event log" count={entries.length} />
+    {!entries.length ? <EmptyState title="No audited events yet" description="Customer activity will appear here when it is recorded in the audit log." icon={<Activity className="h-7 w-7" />} /> : <div className="flex flex-col gap-4">{grouped.map(([day, dayEntries]) => <div key={day} className="flex flex-col gap-2"><div className="sticky top-0 z-10 -mx-1 flex items-center gap-2 bg-card/95 px-1 py-1 backdrop-blur-sm"><span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{relativeDay(day)}</span><span className="text-[10px] text-muted-foreground/70">· {new Date(`${day}T00:00:00+05:30`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</span><span className="ml-auto text-[10px] text-muted-foreground">{dayEntries.length} event{dayEntries.length === 1 ? "" : "s"}</span></div><ol className="relative ml-3 border-l border-border">{dayEntries.map((entry) => {
+      const body = <><span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><Activity className="h-3.5 w-3.5" /></span><div className="min-w-0 flex-1"><p className="text-xs font-semibold text-foreground">{entry.action}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{entry.actor}{entry.actor_role ? ` (${entry.actor_role})` : ""} · {formatDate(entry.timestamp)} · {entry.entity_type.replace(/_/g, " ")}</p>{entry.reason && <p className="mt-1 text-[10px] text-muted-foreground">{entry.reason}</p>}</div><span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">{entry.kind}</span></>;
+      return <li key={entry.id} className="mb-2 ml-4 last:mb-0">{auditEntryNavigable(entry) ? <button type="button" onClick={() => openEntry(entry)} className="flex w-full items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2 text-left transition-all hover:border-primary/30 hover:bg-accent/20">{body}</button> : <div className="flex w-full items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2">{body}</div>}</li>;
+    })}</ol></div>)}</div>}
+  </div>;
 }
