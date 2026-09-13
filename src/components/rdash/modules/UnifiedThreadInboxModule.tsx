@@ -675,7 +675,7 @@ function threadKindLabel(kind: ThreadKind): string {
 function threadEntityLabel(thread: Thread, db: import("@/lib/rdash/types").RDashDatabase): string {
     if (thread.kind !== "generic") return threadKindLabel(thread.kind);
     const id = thread.record_id;
-    // Check customer-conversation: prefix (legacy format).
+    // Customer conversations use the canonical customer-conversation: prefix.
     if (id.startsWith("customer-conversation:")) return "Customer";
     // Check each collection to determine the entity type.
     if (db.customers.some((c) => c.id === id)) return "Customer";
