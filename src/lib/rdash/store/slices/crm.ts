@@ -1,24 +1,7 @@
 /**
- * CRM slice — customers, sites, areas, work required, measurements,
- * and structured work capture.
- *
- * Phase 3n moved the 14 CRM actions out of store.ts in 6 groups:
- *   Group 1: addWorkRequired, updateWorkRequired
- *   Group 2: saveCustomerWithSites, mergeCustomers
- *   Group 3: archiveSite
- *   Group 4: addArea, updateArea, archiveArea
- *   Group 5: addMeasurementRevision
- *   Group 6: captureStructuredWorkRequired
- *
- * No module-scope helpers were moved: all CRM action helpers
- * (`assertSiteExists`, `assertSiteBelongsToCustomer`,
- * `assertAreasBelongToSite`, `assertAreaBelongsToSite`,
- * `assertMeasurementRevisionRelations`, `assertWorkRequiredMatchesContext`,
- * `assertWorkCategoryId`, `assertWorkSubcategoryId`,
- * `areaDependencySummary`, `replaceAreaId`)
- * were already imported in store.ts from `../../business-rules` and
- * `../../customer-identity`. The shared `genId` / `nowIso` / `businessDate`
- * helpers were already in `../helpers`.
+ * CRM state mutations for Customer/Site/Area/Work Required and measurement
+ * workflows. Shared domain invariants live outside the store so bundle saves,
+ * standalone mutations, server validation, and database checks stay aligned.
  */
 import type { Customer, ID, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
@@ -28,12 +11,13 @@ import { itemOptionPairs, primaryWorkType, reconcileWorkRequiredSelection, withP
 import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
-    assertAreaBelongsToSite, assertAreasBelongToSite,
-    assertCustomerExists, assertSiteExists, assertSiteBelongsToCustomer,
+    assertAreaBelongsToSite,
+    assertSiteExists, assertSiteBelongsToCustomer,
     assertMeasurementRevisionRelations, assertWorkRequiredMatchesContext,
     assertWorkCategoryId, assertWorkSubcategoryId,
     areaDependencySummary, replaceAreaId,
 } from "../../business-rules";
+import { assertWorkRequiredDefinition } from "../../customer-domain-rules";
 import { applyCustomerWithSitesSave } from "../../customer-sites-save";
 import { siteArchiveBlockers } from "../../site-lifecycle";
 import { requestFileAssetCleanupAfterSync } from "./files";
@@ -43,12 +27,6 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
 
     return {
         addWorkRequired: (work) => {
-            if (!work.customer_id) throw new Error("Work Required requires a Customer.");
-            assertCustomerExists(get().db, work.customer_id, "Work Required");
-            if (work.site_id) {
-                assertSiteBelongsToCustomer(get().db, work.site_id, work.customer_id, "Work Required");
-                assertAreasBelongToSite(get().db, work.area_ids || [], work.site_id, "Work Required");
-            } else if (work.area_ids?.length) throw new Error("Customer-level Work Required cannot include Site Areas.");
             const id = work.id || genId("workRequired");
             const now = nowIso();
             const row: import("../../types").WorkRequired = {
@@ -69,6 +47,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 created_at: now,
                 updated_at: now,
             };
+            assertWorkRequiredDefinition(get().db, row, "Work Required");
             (row.structured_items || []).forEach((item: any) => {
                 if (item.area_id && row.site_id)
                     assertAreaBelongsToSite(get().db, item.area_id, row.site_id, "Work Required");
@@ -99,11 +78,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 throw new Error("Work Required status must be changed through transitionWorkRequiredStatus so lifecycle rules are enforced.");
             }
             const next = { ...before, ...patch };
-            assertCustomerExists(get().db, next.customer_id, "Work Required");
-            if (next.site_id) {
-                assertSiteBelongsToCustomer(get().db, next.site_id, next.customer_id, "Work Required");
-                assertAreasBelongToSite(get().db, next.area_ids, next.site_id, "Work Required");
-            } else if (next.area_ids.length) throw new Error("Customer-level Work Required cannot include Site Areas.");
+            assertWorkRequiredDefinition(get().db, next, "Work Required");
             (next.structured_items || []).forEach((item: any) => {
                 if (item.area_id)
                     assertAreaBelongsToSite(get().db, item.area_id, next.site_id, "Work Required");
@@ -394,12 +369,15 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
             if (!input.site_id)
                 throw new Error("Area requires a Site.");
             assertSiteExists(get().db, input.site_id, "Area");
+            const name = input.name?.trim();
+            if (!name)
+                throw new Error("Area name is required.");
             const id = input.id || genId("area");
             const now = nowIso();
             const area: Area = {
                 id,
                 site_id: input.site_id,
-                name: input.name || "New area",
+                name,
                 area_type: input.area_type || "other",
                 stage: input.stage || "unmeasured",
                 length: input.length,
@@ -447,6 +425,9 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 throw new Error("An Area cannot be moved to another Site. Use an explicit reassignment workflow.");
             }
             assertSiteExists(get().db, before.site_id, "Area");
+            const name = patch.name === undefined ? before.name : patch.name.trim();
+            if (!name)
+                throw new Error("Area name is required.");
             commitState((state: any) => ({
                 db: {
                     ...state.db,
@@ -454,6 +435,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         ? {
                             ...area,
                             ...patch,
+                            name,
                             site_id: before.site_id,
                             updated_at: nowIso(),
                         }
@@ -945,7 +927,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 const rate = mapping?.reference_rate || article?.base_rate || contractorAverage.total_rate || 0;
                 // Merged alternatives share the joined tier-qualified title (the
                 // Work Required row's own display shape); single-pair lines keep
-                // the legacy title ("Standard" omitted) so nothing else churns.
+                // the compact title ("Standard" omitted) to avoid display churn.
                 const pairLabel = (pair: { subcategory_id: ID; work_type_id?: ID }) => {
                     const pairSubcategory = state.db.master.workSubcategories.find((row: any) => row.id === pair.subcategory_id);
                     const pairWorkType = pair.work_type_id && pairSubcategory ? workTypesForSubcategory(pairSubcategory).find((row) => row.id === pair.work_type_id) : undefined;
