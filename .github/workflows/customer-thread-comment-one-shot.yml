@@ -1,0 +1,40 @@
+name: Customer thread terminology one-shot cleanup
+
+on:
+  push:
+    branches:
+      - cleanup/customer-domain-unification
+
+permissions:
+  contents: write
+
+jobs:
+  patch-thread-comment:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: cleanup/customer-domain-unification
+          fetch-depth: 0
+      - name: Replace stale thread wording
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/components/rdash/modules/UnifiedThreadInboxModule.tsx')
+          text = path.read_text()
+          old = '// Check customer-conversation: prefix (legacy format).'
+          new = '// Customer conversations use the canonical customer-conversation: prefix.'
+          if old not in text:
+              raise SystemExit('thread terminology anchor not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit cleanup and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/customer-thread-comment-one-shot.yml
+          git add src/components/rdash/modules/UnifiedThreadInboxModule.tsx
+          git diff --cached --check
+          git commit -m "cleanup: make customer thread terminology canonical"
+          git push origin HEAD:cleanup/customer-domain-unification
