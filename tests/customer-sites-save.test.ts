@@ -222,7 +222,6 @@ describe("customer identity payload", () => {
     email: "",
     notes: "",
     referralQuery: "",
-    referralLegacyName: "",
     referralSelected: null,
   };
 
@@ -737,7 +736,6 @@ describe("canonical customer and Sites save", () => {
     expect(result.db.sites[0].photo_attachment_ids).toEqual([]);
     expect(result.detachedAttachmentIds).toEqual(["attachment-1"]);
   });
-
 
   test("detaches a direct Customer file in the same save", () => {
     const db = database();
