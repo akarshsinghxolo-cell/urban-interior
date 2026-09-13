@@ -6,7 +6,8 @@ const source = async (path: string) => testFile(path).text();
 describe("Customer Desk single-truth contracts", () => {
   test("does not silently select the first customer", async () => {
     const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expect(desk).toContain("selectedCustomerId\n    ? db.customers.find");
+    expect(desk).toContain("const selected = selectedCustomerId");
+    expect(desk).toContain("customer.id === selectedCustomerId");
     expect(desk).not.toContain("|| db.customers[0]");
   });
 

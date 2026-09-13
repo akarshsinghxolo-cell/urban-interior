@@ -135,9 +135,11 @@ describe("customer domain unification", () => {
 
   test("Customer Desk has an explicit bounded module collection plan", async () => {
     const source = await read("src/lib/rdash/server/module-read-plans.ts");
-    expect(source).toContain("customerDesk: Object.freeze([");
-    expect(source).toContain('"customers", "sites", "areas", "workRequired", "measurementRevisions"');
-    expect(source).toContain('"entityReferenceAssignments", "entityFileAttachments", "auditLog"');
+    expect(source).toContain("customerDesk: CUSTOMER_CRM_COLLECTIONS");
+    const customerPlan = await read("src/lib/rdash/server/customer-read-plan.ts");
+    expect(customerPlan).toContain("CUSTOMER_CRM_COLLECTIONS");
+    expect(customerPlan).toContain('"entityFileAttachments"');
+    expect(customerPlan).toContain('"master.fileAssets"');
   });
 
   test("core Customer rules no longer require the giant RDashDatabase type", async () => {

@@ -79,7 +79,11 @@ describe("Phase 3 contextual files", () => {
 
   test("core customer, site, quotation and field scopes load file links and assets", async () => {
     const scopes = await read("src/lib/rdash/server/module-scoped-collections.ts");
-    for (const scope of ["CUSTOMER_SCOPE_COLLECTIONS", "SITE_SCOPE_COLLECTIONS", "QUOTATION_SCOPE_COLLECTIONS", "FIELD_SCOPE_COLLECTIONS"]) {
+    const customerPlan = await read("src/lib/rdash/server/customer-read-plan.ts");
+    expect(scopes).toContain("CUSTOMER_SCOPE_COLLECTIONS = CANONICAL_CUSTOMER_SCOPE_COLLECTIONS");
+    expect(customerPlan).toContain('"entityFileAttachments"');
+    expect(customerPlan).toContain('"master.fileAssets"');
+    for (const scope of ["SITE_SCOPE_COLLECTIONS", "QUOTATION_SCOPE_COLLECTIONS", "FIELD_SCOPE_COLLECTIONS"]) {
       const start = scopes.indexOf(`export const ${scope}`);
       expect(start).toBeGreaterThanOrEqual(0);
       const end = scopes.indexOf("] as const);", start);
@@ -103,7 +107,7 @@ describe("Phase 3 contextual files", () => {
 // Fresh Phase-3 audit: protect draft semantics, the broader contextual-file
 // rollout, scoped reads, and specialized attachment-reference cleanup.
 describe("Phase 3 re-audit", () => {
-  test("Save/Cancel dialogs stage direct-file changes instead of mutating immediately", async () => {
+  test("Save/Cancel editors stage direct-file changes while Customer Desk stays read-only for direct files", async () => {
     const card = await read("src/components/rdash/EntityFilesCard.tsx");
     const customerEditor = await read("src/components/rdash/CustomerSitesDialog.tsx");
     const customerDesk = await read("src/components/rdash/modules/CustomerDesk.tsx");
@@ -114,9 +118,9 @@ describe("Phase 3 re-audit", () => {
     expect(customerEditor).toContain("hiddenAttachmentIds={detachAttachmentIds}");
     expect(customerEditor).toContain("registerBatch={registerBatch}");
     expectTokens(customerEditor, ["onDetach={(attachmentId) => setDetachAttachmentIds"]);
-    expect(customerDesk).toContain("useUploadDraft(true)");
-    expectTokens(customerDesk, ["allowDetach={false} registerBatch={registerBatch}"]);
-    expectTokens(customerDesk, ["if (saved) commitBatches()"]);
+    expect(customerDesk).not.toContain("useUploadDraft(true)");
+    expect(customerDesk).not.toContain("registerBatch={registerBatch}");
+    expect(customerDesk).not.toContain("commitBatches()");
   });
 
   test("procurement, finance, contractor and operations records expose contextual files", async () => {
