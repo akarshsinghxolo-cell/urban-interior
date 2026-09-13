@@ -9,13 +9,20 @@ import { workspaceModuleReadPlan } from "../src/lib/rdash/server/module-read-pla
 import { workspaceReadTargetForModule } from "../src/lib/rdash/workspace-read-scope";
 import { testFile } from "./test-file";
 
-describe("Customer CRM read plan", () => {
-  test("Customer Desk and Customer Timeline share one canonical collection contract", () => {
-    const desk = workspaceModuleReadPlan(workspaceReadTargetForModule("customerDesk"));
-    const timeline = workspaceModuleReadPlan(workspaceReadTargetForModule("customerTimeline"));
+const CUSTOMER_MODULES = [
+  "customerDesk",
+  "customerTimeline",
+  "customerRequests",
+  "salesPipeline",
+  "lostClosedReview",
+] as const;
 
-    expect(desk.collections).toEqual(CUSTOMER_CRM_COLLECTIONS);
-    expect(timeline.collections).toEqual(CUSTOMER_CRM_COLLECTIONS);
+describe("Customer CRM read plan", () => {
+  test("every Customer-family screen shares one canonical collection contract", () => {
+    for (const moduleId of CUSTOMER_MODULES) {
+      const plan = workspaceModuleReadPlan(workspaceReadTargetForModule(moduleId));
+      expect(plan.collections).toEqual(CUSTOMER_CRM_COLLECTIONS);
+    }
   });
 
   test("Customer detail uses the same canonical direct relation graph", () => {
