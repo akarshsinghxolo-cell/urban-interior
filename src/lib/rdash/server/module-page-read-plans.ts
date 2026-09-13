@@ -1,4 +1,5 @@
 import type { WorkspaceReadTarget } from "../workspace-read-scope";
+import { CUSTOMER_CRM_COLLECTIONS } from "./customer-read-plan";
 
 /**
  * Exact screen plans reduce unrelated collection reads. A plan being exact does
@@ -7,13 +8,8 @@ import type { WorkspaceReadTarget } from "../workspace-read-scope";
  * server supplies row-ID projections / aggregate counts for those screens.
  */
 const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  customerTimeline: Object.freeze([
-    "customers", "sites", "areas", "workRequired", "quotations", "workOrders",
-    "tasks", "followups", "payments", "invoices", "customerReceipts", "visits",
-    "drawings", "executionLogs", "boqs", "purchaseOrders", "grns", "vendorBills",
-    "blocked", "commSends", "auditLog", "entityFileAttachments", "master.fileAssets",
-    "master.sourcePartners", "master.contractors", "master.vendors",
-  ]),
+  // Customer Desk and Timeline deliberately share one CRM read contract.
+  customerTimeline: CUSTOMER_CRM_COLLECTIONS,
   customerRequests: Object.freeze([
     "customers", "sites", "areas", "workRequired", "measurementRevisions", "quotations",
     "workOrders", "visits", "tasks", "followups", "threads", "entityFileAttachments",
