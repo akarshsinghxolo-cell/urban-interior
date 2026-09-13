@@ -1,14 +1,18 @@
-import type { Customer, ID, RDashDatabase } from "./types";
+import type { Customer, CustomerReferrerType, ID, Master } from "./types";
 
-export type CustomerReferrerType = "customer" | "contractor" | "vendor" | "source_partner" | "external";
+export type { CustomerReferrerType } from "./types";
 
-export type CustomerReferrerFields = {
-  referrer_type?: CustomerReferrerType;
-  referrer_id?: ID;
-  referrer_name?: string;
+export type CustomerReferrerFields = Pick<Customer, "referrer_type" | "referrer_id" | "referrer_name">;
+
+export type CustomerReferrerLookup = {
+  customers: Customer[];
+  master: Pick<Master, "contractors" | "vendors" | "sourcePartners">;
 };
 
-export type CustomerRecord = Customer & CustomerReferrerFields;
+export type SourcePartnerProjection = {
+  source_partner_id?: ID;
+  source_partner_name?: string;
+};
 
 const REFERRER_TYPES = new Set<CustomerReferrerType>([
   "customer",
@@ -22,14 +26,12 @@ export function isCustomerReferrerType(value: unknown): value is CustomerReferre
   return typeof value === "string" && REFERRER_TYPES.has(value as CustomerReferrerType);
 }
 
-/** Reads only the canonical referrer_* fields. Legacy source_partner_* inference was removed after the data cutover. */
-export function customerReferrer(customer: Customer | CustomerRecord): CustomerReferrerFields {
-  const raw = customer as CustomerRecord;
-  if (!isCustomerReferrerType(raw.referrer_type)) return {};
+export function customerReferrer(customer: Customer): CustomerReferrerFields {
+  if (!isCustomerReferrerType(customer.referrer_type)) return {};
   return {
-    referrer_type: raw.referrer_type,
-    referrer_id: raw.referrer_id || undefined,
-    referrer_name: raw.referrer_name?.trim() || undefined,
+    referrer_type: customer.referrer_type,
+    referrer_id: customer.referrer_id || undefined,
+    referrer_name: customer.referrer_name?.trim() || undefined,
   };
 }
 
@@ -51,7 +53,7 @@ export function customerReferrerSelection(
   };
 }
 
-export function referrerExists(db: RDashDatabase, referrer: CustomerReferrerFields): boolean {
+export function referrerExists(db: CustomerReferrerLookup, referrer: CustomerReferrerFields): boolean {
   const type = referrer.referrer_type;
   const id = referrer.referrer_id;
   if (!type) return true;
@@ -66,10 +68,10 @@ export function referrerExists(db: RDashDatabase, referrer: CustomerReferrerFiel
 }
 
 /**
- * source_partner_* remains a commission projection. It is populated only when
- * the generic Customer referrer is actually a Source Partner.
+ * Source-partner fields are a projection for Site/commission records only.
+ * Customer itself stores only referrer_type/referrer_id/referrer_name.
  */
-export function sourcePartnerProjection(referrer: CustomerReferrerFields): Pick<Customer, "source_partner_id" | "source_partner_name"> {
+export function sourcePartnerProjection(referrer: CustomerReferrerFields): SourcePartnerProjection {
   return referrer.referrer_type === "source_partner"
     ? {
         source_partner_id: referrer.referrer_id,

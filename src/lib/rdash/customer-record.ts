@@ -1,9 +1,5 @@
 import type { Customer } from "./types";
-import {
-  isCustomerReferrerType,
-  type CustomerRecord,
-  type CustomerReferrerFields,
-} from "./customer-referrer";
+import { isCustomerReferrerType } from "./customer-referrer";
 
 const CUSTOMER_RECORD_FIELDS = [
   "id",
@@ -13,8 +9,6 @@ const CUSTOMER_RECORD_FIELDS = [
   "alternate_phone",
   "email",
   "status",
-  "source_partner_id",
-  "source_partner_name",
   "referrer_type",
   "referrer_id",
   "referrer_name",
@@ -49,32 +43,33 @@ export function canonicalizeCustomerRow(row: Record<string, unknown>): Record<st
   return safe;
 }
 
-export function normalizeCustomerRow(row: unknown): CustomerRecord {
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+export function normalizeCustomerRow(row: unknown): Customer {
   const source = row && typeof row === "object" ? row as Record<string, unknown> : {};
   const safe = canonicalizeCustomerRow(source);
   const status = safe.status === "inactive" || safe.status === "blocked" ? safe.status : "active";
-  const referrer: CustomerReferrerFields = isCustomerReferrerType(safe.referrer_type)
-    ? {
-        referrer_type: safe.referrer_type,
-        referrer_id: typeof safe.referrer_id === "string" ? safe.referrer_id : undefined,
-        referrer_name: typeof safe.referrer_name === "string" ? safe.referrer_name : undefined,
-      }
-    : {};
 
   const customer: Customer = {
     id: String(safe.id || ""),
     name: titleCaseCustomerName(String(safe.name || "")),
-    phone: String(safe.phone || ""),
-    whatsapp: typeof safe.whatsapp === "string" ? safe.whatsapp : undefined,
-    alternate_phone: typeof safe.alternate_phone === "string" ? safe.alternate_phone : undefined,
-    email: typeof safe.email === "string" ? safe.email : undefined,
+    phone: optionalString(safe.phone),
+    whatsapp: optionalString(safe.whatsapp),
+    alternate_phone: optionalString(safe.alternate_phone),
+    email: optionalString(safe.email),
     status,
-    source_partner_id: typeof safe.source_partner_id === "string" ? safe.source_partner_id : undefined,
-    source_partner_name: typeof safe.source_partner_name === "string" ? safe.source_partner_name : undefined,
-    notes: typeof safe.notes === "string" ? safe.notes : undefined,
+    notes: optionalString(safe.notes),
     created_at: String(safe.created_at || ""),
     updated_at: String(safe.updated_at || ""),
   };
 
-  return { ...customer, ...referrer };
+  if (isCustomerReferrerType(safe.referrer_type)) {
+    customer.referrer_type = safe.referrer_type;
+    customer.referrer_id = optionalString(safe.referrer_id);
+    customer.referrer_name = optionalString(safe.referrer_name);
+  }
+
+  return customer;
 }

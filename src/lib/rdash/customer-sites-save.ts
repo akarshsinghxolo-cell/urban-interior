@@ -5,7 +5,6 @@ import {
   customerReferrer,
   isCustomerReferrerType,
   sourcePartnerProjection,
-  type CustomerRecord,
   type CustomerReferrerFields,
 } from "./customer-referrer";
 import { assertCustomerRecord, assertWorkRequiredDefinition } from "./customer-domain-rules";
@@ -15,14 +14,14 @@ export type CustomerAreaSaveDraft = Partial<Area> & { id?: string };
 export type CustomerWorkRequiredSaveDraft = Partial<WorkRequired> & { id?: string };
 export type SaveCustomerWithSitesInput = {
   customerId?: string;
-  customer: Partial<Customer> & CustomerReferrerFields;
+  customer: Partial<Customer>;
   sites?: CustomerSiteSaveDraft[];
   areas?: CustomerAreaSaveDraft[];
   workRequired?: CustomerWorkRequiredSaveDraft[];
   detachAttachmentIds?: string[];
 };
 
-type CustomerField = keyof Customer | keyof CustomerReferrerFields;
+type CustomerField = keyof Customer;
 type CustomerFieldChange = { field: CustomerField; before: unknown; after: unknown };
 type SiteSaveChange = { siteId: string; kind: "create" | "update"; archived?: boolean; before?: Site; after: Site };
 type AreaSaveChange = { areaId: string; kind: "create" | "update"; before?: Area; after: Area };
@@ -45,8 +44,7 @@ type SaveOptions = { now?: string; createId?: (prefix: "cust" | "site" | "area" 
 
 const customerMutableFields: CustomerField[] = [
   "name", "phone", "whatsapp", "alternate_phone", "email", "status",
-  "referrer_type", "referrer_id", "referrer_name",
-  "source_partner_id", "source_partner_name", "notes",
+  "referrer_type", "referrer_id", "referrer_name", "notes",
 ];
 const siteMutableFields: Array<keyof Site> = [
   "name", "building_name", "site_type", "stage", "address", "city", "locality", "latitude", "longitude", "map_url",
@@ -73,64 +71,61 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
 function suppliedValue<T extends object, K extends keyof T>(input: T, key: K, fallback: T[K]): T[K] {
   return Object.prototype.hasOwnProperty.call(input, key) ? input[key] : fallback;
 }
-function valueAt(row: Customer | CustomerRecord | undefined, field: CustomerField): unknown {
+function valueAt(row: Customer | undefined, field: CustomerField): unknown {
   return row ? (row as unknown as Record<string, unknown>)[field] : undefined;
 }
 
 function referrerFromInput(existing: Customer | undefined, input: SaveCustomerWithSitesInput["customer"]): CustomerReferrerFields {
-  const raw = input as CustomerReferrerFields;
-  const referrerKeysSupplied = ["referrer_type", "referrer_id", "referrer_name", "source_partner_id", "source_partner_name"]
+  const rawRecord = input as Record<string, unknown>;
+  if (
+    Object.prototype.hasOwnProperty.call(rawRecord, "source_partner_id")
+    || Object.prototype.hasOwnProperty.call(rawRecord, "source_partner_name")
+  ) {
+    throw new Error("Customer source_partner_* referral fields are retired; use referrer_type/referrer_id/referrer_name.");
+  }
+
+  const referrerKeysSupplied = ["referrer_type", "referrer_id", "referrer_name"]
     .some((key) => Object.prototype.hasOwnProperty.call(input, key));
-  if (isCustomerReferrerType(raw.referrer_type)) {
-    return {
-      referrer_type: raw.referrer_type,
-      referrer_id: raw.referrer_id?.trim() || undefined,
-      referrer_name: raw.referrer_name?.trim() || undefined,
-    };
+  if (!referrerKeysSupplied) return customerReferrer(existing || ({} as Customer));
+  if (!isCustomerReferrerType(input.referrer_type)) {
+    throw new Error("Customer referrer_type is required when referrer details are supplied.");
   }
-  if (input.source_partner_id?.trim()) {
-    return {
-      referrer_type: "source_partner",
-      referrer_id: input.source_partner_id.trim(),
-      referrer_name: input.source_partner_name?.trim() || undefined,
-    };
-  }
-  if (input.source_partner_name?.trim()) {
-    return { referrer_type: "external", referrer_name: input.source_partner_name.trim() };
-  }
-  return referrerKeysSupplied ? {} : customerReferrer(existing || ({} as Customer));
+  return {
+    referrer_type: input.referrer_type,
+    referrer_id: input.referrer_id?.trim() || undefined,
+    referrer_name: input.referrer_name?.trim() || undefined,
+  };
 }
 
-function customerRecord(existing: Customer | undefined, input: SaveCustomerWithSitesInput["customer"], customerId: string, now: string): CustomerRecord {
-  const phone = String(suppliedValue(input, "phone", existing?.phone ?? "") ?? "").trim();
+function customerRecord(existing: Customer | undefined, input: SaveCustomerWithSitesInput["customer"], customerId: string, now: string): Customer {
+  const phoneValue = suppliedValue(input, "phone", existing?.phone);
+  const phone = String(phoneValue ?? "").trim() || undefined;
   const whatsapp = suppliedValue(input, "whatsapp", existing?.whatsapp);
   const name = titleCaseCustomerName(String(suppliedValue(input, "name", existing?.name ?? "") ?? ""));
   if (!name) throw new Error("Customer name is required.");
   const referrer = referrerFromInput(existing, input);
-  const sourcePartner = sourcePartnerProjection(referrer);
   return {
     id: customerId,
     name,
     phone,
-    whatsapp: String(whatsapp ?? phone).trim() || undefined,
+    whatsapp: String(whatsapp ?? phone ?? "").trim() || undefined,
     alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
     email: suppliedValue(input, "email", existing?.email),
     status: suppliedValue(input, "status", existing?.status ?? "active") ?? "active",
-    ...sourcePartner,
     ...referrer,
     notes: suppliedValue(input, "notes", existing?.notes),
     created_at: existing?.created_at ?? now,
     updated_at: existing?.updated_at ?? now,
   };
 }
-function customerDiff(before: Customer | undefined, after: CustomerRecord): CustomerFieldChange[] {
+function customerDiff(before: Customer | undefined, after: Customer): CustomerFieldChange[] {
   if (!before) return customerMutableFields.map((field) => ({ field, before: undefined, after: valueAt(after, field) }));
   return customerMutableFields
     .filter((field) => !sameValue(valueAt(before, field), valueAt(after, field)))
     .map((field) => ({ field, before: valueAt(before, field), after: valueAt(after, field) }));
 }
 
-function siteRecord(existing: Site | undefined, input: CustomerSiteSaveDraft, customer: CustomerRecord, siteId: string, now: string, detachedAttachmentIds: Set<string>): Site {
+function siteRecord(existing: Site | undefined, input: CustomerSiteSaveDraft, customer: Customer, siteId: string, now: string, detachedAttachmentIds: Set<string>): Site {
   const name = String(input.name ?? existing?.name ?? "").trim();
   if (!name) throw new Error("Site name is required.");
   if (existing?.is_archived) throw new Error(`Archived Site "${existing.name}" cannot be edited.`);
@@ -141,6 +136,7 @@ function siteRecord(existing: Site | undefined, input: CustomerSiteSaveDraft, cu
   if (isArchiving && !existing) throw new Error("A new Site cannot be archived before it is created.");
   if (isArchiving && !archiveReason) throw new Error(`An archive reason is required for Site "${name}".`);
   const attachmentIds = uniqueStrings([...(input.photo_attachment_ids ?? existing?.photo_attachment_ids ?? [])]).filter((id) => !detachedAttachmentIds.has(id));
+  const sourcePartner = sourcePartnerProjection(customerReferrer(customer));
   return {
     id: siteId,
     customer_id: customer.id,
@@ -155,8 +151,8 @@ function siteRecord(existing: Site | undefined, input: CustomerSiteSaveDraft, cu
     longitude: suppliedValue(input, "longitude", existing?.longitude),
     map_url: suppliedValue(input, "map_url", existing?.map_url),
     photo_attachment_ids: attachmentIds,
-    source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id ?? customer.source_partner_id),
-    source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name ?? customer.source_partner_name),
+    source_partner_id: suppliedValue(input, "source_partner_id", existing?.source_partner_id ?? sourcePartner.source_partner_id),
+    source_partner_name: suppliedValue(input, "source_partner_name", existing?.source_partner_name ?? sourcePartner.source_partner_name),
     notes: suppliedValue(input, "notes", existing?.notes),
     is_archived: suppliedValue(input, "is_archived", existing?.is_archived),
     archived_at: isArchiving ? String(input.archived_at || now) : suppliedValue(input, "archived_at", existing?.archived_at),
@@ -202,7 +198,7 @@ function areaRecord(existing: Area | undefined, input: CustomerAreaSaveDraft, ar
 }
 function areaChanged(before: Area | undefined, after: Area): boolean { return !before || areaMutableFields.some((field) => !sameValue(before[field], after[field])); }
 
-function workRequiredRecord(existing: WorkRequired | undefined, input: CustomerWorkRequiredSaveDraft, workRequiredId: string, customer: CustomerRecord, site: Site | undefined, now: string): WorkRequired {
+function workRequiredRecord(existing: WorkRequired | undefined, input: CustomerWorkRequiredSaveDraft, workRequiredId: string, customer: Customer, site: Site | undefined, now: string): WorkRequired {
   if (existing && existing.customer_id !== customer.id) throw new Error("Work Required cannot be moved to another Customer.");
   if (existing?.site_id && existing.site_id !== (site?.id || "")) throw new Error("Work Required cannot be moved to another Site.");
   return {
@@ -234,8 +230,13 @@ export function applyCustomerWithSitesSave(database: RDashDatabase, input: SaveC
 
   const customerId = existingCustomer?.id ?? input.customer.id ?? createId("cust");
   const nextCustomer = customerRecord(existingCustomer, input.customer, customerId, now);
-  const customerValidationDb = { ...database, customers: existingCustomer ? database.customers.map((row) => row.id === customerId ? nextCustomer : row) : [nextCustomer, ...database.customers] };
-  assertCustomerRecord(customerValidationDb, nextCustomer);
+  const customerValidationContext = {
+    customers: existingCustomer
+      ? database.customers.map((row) => row.id === customerId ? nextCustomer : row)
+      : [nextCustomer, ...database.customers],
+    master: database.master,
+  };
+  assertCustomerRecord(customerValidationContext, nextCustomer);
   assertUniqueCustomerIdentity(database.customers, nextCustomer, existingCustomer ? { excludeCustomerId: existingCustomer.id } : undefined);
   const customerChanges = customerDiff(existingCustomer, nextCustomer);
   if (customerChanges.length) nextCustomer.updated_at = now;

@@ -31,16 +31,18 @@
 // --- 1. Primitives ---
 export type ID = string;
 export type EntityStatus = "active" | "inactive" | "blocked";
+export type CustomerReferrerType = "customer" | "contractor" | "vendor" | "source_partner" | "external";
 export interface Customer {
     id: ID;
     name: string;
-    phone: string;
+    phone?: string;
     whatsapp?: string;
     alternate_phone?: string;
     email?: string;
     status: EntityStatus;
-    source_partner_id?: ID;
-    source_partner_name?: string;
+    referrer_type?: CustomerReferrerType;
+    referrer_id?: ID;
+    referrer_name?: string;
     notes?: string;
     created_at: string;
     updated_at: string;

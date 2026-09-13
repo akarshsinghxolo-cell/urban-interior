@@ -8,8 +8,8 @@ import {
 import {
   customerReferrerSelection,
   sourcePartnerProjection,
-  type CustomerRecord,
 } from "../src/lib/rdash/customer-referrer";
+import type { Customer } from "../src/lib/rdash/types";
 import { testFile } from "./test-file";
 
 const read = (path: string) => testFile(path).text();
@@ -37,11 +37,11 @@ describe("customer domain unification", () => {
     }, "Work Required")).toThrow(/both a Work Category and at least one Work Subcategory/i);
   });
 
-  test("keeps external referrers typed and source-partner projection source-partner-only", () => {
+  test("keeps external referrers typed and source-partner projection outside Customer", () => {
     const db = structuredClone(buildSeedDatabase());
-    const customer = db.customers[0] as CustomerRecord;
+    const customer = db.customers[0];
     const external = customerReferrerSelection("external", undefined, "Walk-in");
-    const candidate: CustomerRecord = { ...customer, ...external, source_partner_id: undefined, source_partner_name: undefined };
+    const candidate: Customer = { ...customer, ...external };
 
     expect(() => assertCustomerRecord(db, candidate, "Customer")).not.toThrow();
     expect(sourcePartnerProjection(external)).toEqual({ source_partner_id: undefined, source_partner_name: undefined });
@@ -51,6 +51,39 @@ describe("customer domain unification", () => {
       const selected = customerReferrerSelection("source_partner", partner.id, partner.name);
       expect(sourcePartnerProjection(selected)).toEqual({ source_partner_id: partner.id, source_partner_name: partner.name });
     }
+  });
+
+  test("Customer is the one canonical TypeScript model", async () => {
+    const types = await read("src/lib/rdash/types.ts");
+    const start = types.indexOf("export interface Customer {");
+    const end = types.indexOf("type FileAttachmentReference", start);
+    const customer = types.slice(start, end);
+    const referrer = await read("src/lib/rdash/customer-referrer.ts");
+    const seed = await read("src/lib/rdash/seed.ts");
+
+    expect(customer).toContain("phone?: string;");
+    expect(customer).toContain("referrer_type?: CustomerReferrerType;");
+    expect(customer).toContain("referrer_id?: ID;");
+    expect(customer).toContain("referrer_name?: string;");
+    expect(customer).not.toContain("source_partner_id");
+    expect(customer).not.toContain("source_partner_name");
+    expect(referrer).not.toMatch(/\bCustomerRecord\b/);
+    expect(seed).toContain("const customers: Customer[]");
+    expect(seed).not.toContain("Customer & CustomerReferrerFields");
+  });
+
+  test("runtime and database boundaries reject retired Customer payloads", async () => {
+    const saver = await read("src/lib/rdash/customer-sites-save.ts");
+    const formModel = await read("src/components/rdash/customer-sites-form-model.ts");
+    const migration = await read("supabase/migrations/20260913190000_finalize_customer_contract.sql");
+
+    expect(saver).toContain("Customer source_partner_* referral fields are retired");
+    expect(saver).not.toContain("if (input.source_partner_id");
+    expect(formModel).not.toContain("sourcePartnerProjection(referrer)");
+    expect(migration).toContain("INVALID_CUSTOMER_LEGACY_REFERRER_FIELDS");
+    expect(migration).toContain("INVALID_CUSTOMER_REFERRER_PARTIAL");
+    expect(migration).toContain("revoke execute on function private.uc_canonicalize_customer_row()");
+    expect(migration).toContain("revoke execute on function private.uc_sync_customer_contact_identities()");
   });
 
   test("database migration is the authoritative customer cutover", async () => {
@@ -86,6 +119,14 @@ describe("customer domain unification", () => {
     expect(source).toContain("customerDesk: Object.freeze([");
     expect(source).toContain('"customers", "sites", "areas", "workRequired", "measurementRevisions"');
     expect(source).toContain('"entityReferenceAssignments", "entityFileAttachments", "auditLog"');
+  });
+
+  test("core Customer rules no longer require the giant RDashDatabase type", async () => {
+    const referrer = await read("src/lib/rdash/customer-referrer.ts");
+    const rules = await read("src/lib/rdash/customer-domain-rules.ts");
+    expect(referrer).not.toContain("RDashDatabase");
+    expect(rules).not.toContain("RDashDatabase");
+    expect(rules).toContain("WorkRequiredValidationContext");
   });
 
   test("removed quotation and customer-form compatibility shims do not return", async () => {

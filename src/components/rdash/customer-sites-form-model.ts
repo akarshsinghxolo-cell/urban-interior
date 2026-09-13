@@ -8,8 +8,6 @@ import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import {
   customerReferrer,
   customerReferrerSelection,
-  sourcePartnerProjection,
-  type CustomerReferrerFields,
   type CustomerReferrerType,
 } from "@/lib/rdash/customer-referrer";
 import { validCustomerEmailValue, validCustomerPhone } from "@/lib/rdash/customer-domain-rules";
@@ -50,9 +48,9 @@ export function validCustomerEmail(value: string): boolean { return validCustome
 export function workRequiredBudgetValue(value: string): number | undefined { const trimmed = value.trim(); if (!trimmed) return undefined; const parsed = Number(trimmed); return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined; }
 export function confirmedPhotoAttachmentIds(attachmentIds: string[], detachAttachmentIds: string[] = []): string[] { const detached = new Set(detachAttachmentIds); return [...new Set(attachmentIds)].filter((id) => !detached.has(id)); }
 
-export function customerPayload(draft: CustomerDraft): Partial<Customer> & CustomerReferrerFields {
+export function customerPayload(draft: CustomerDraft): Partial<Customer> {
   const referrer = draft.referralSelected ? customerReferrerSelection(draft.referralSelected.type, draft.referralSelected.id, draft.referralSelected.name) : {};
-  return { name: draft.name.trim(), phone: sanitizeIndianMobile(draft.phone), whatsapp: draft.whatsapp.trim() ? sanitizeIndianMobile(draft.whatsapp) : undefined, alternate_phone: draft.alternatePhone.trim() ? sanitizeIndianMobile(draft.alternatePhone) : undefined, email: draft.email.trim() || undefined, ...referrer, ...sourcePartnerProjection(referrer), notes: draft.notes.trim() || undefined };
+  return { name: draft.name.trim(), phone: draft.phone.trim() ? sanitizeIndianMobile(draft.phone) : undefined, whatsapp: draft.whatsapp.trim() ? sanitizeIndianMobile(draft.whatsapp) : undefined, alternate_phone: draft.alternatePhone.trim() ? sanitizeIndianMobile(draft.alternatePhone) : undefined, email: draft.email.trim() || undefined, ...referrer, notes: draft.notes.trim() || undefined };
 }
 export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSaveDraft { return { id: draft.id, name: draft.name.trim(), site_type: draft.siteType, ...(draft.archiveRequested && draft.archiveCancelled ? { stage: "cancelled" as const } : {}), address: draft.address.trim() || undefined, locality: draft.locality.trim() || undefined, city: draft.city.trim() || undefined, latitude: draft.latitude, longitude: draft.longitude, map_url: draft.mapUrl.trim() || undefined, notes: draft.notes.trim() || undefined, photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds), ...(draft.archiveRequested ? { is_archived: true, archived_at: new Date().toISOString(), archived_by: actorName, archive_reason: draft.archiveReason.trim() } : {}) }; }
 export function areaPayload(draft: AreaDraft, actorName: string): CustomerAreaSaveDraft { return { id: draft.id, site_id: draft.siteId, name: draft.name.trim(), area_type: draft.areaType, ...(draft.existing ? {} : { stage: "unmeasured" as const }), notes: draft.notes.trim() || undefined, ...(draft.archiveRequested ? { is_archived: true, archived_at: new Date().toISOString(), archived_by: actorName, archive_reason: "Removed from customer form" } : {}) }; }
