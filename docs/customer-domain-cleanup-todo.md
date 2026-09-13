@@ -4,46 +4,54 @@ Goal: remove old/new Customer domain conflicts so Customer, Site, Area and Work 
 
 ## P0 — security boundary
 
-- [ ] Revoke `PUBLIC`, `anon`, and `authenticated` execution from internal `SECURITY DEFINER` workspace RPCs; keep only trusted server/service execution.
-- [ ] Lock down internal helper RPCs used by the workspace commit path.
-- [ ] Give `uc_normalize_phone` an immutable fixed search path.
-- [ ] Re-run Supabase security advisors and verify the workspace commit RPC is no longer callable by `anon`/`authenticated`.
+- [x] Revoke `PUBLIC`, `anon`, and `authenticated` execution from internal `SECURITY DEFINER` workspace RPCs; keep only trusted server/service execution.
+- [x] Lock down internal helper RPCs used by the workspace commit path.
+- [x] Give `uc_normalize_phone` a fixed `pg_catalog, public` search path.
+- [x] Re-run Supabase security advisors and verify the workspace commit RPC is no longer callable by `anon`/`authenticated`.
+- [x] Verify the remaining RLS-without-policy advisor entries are service-only: the flagged tables grant neither SELECT nor INSERT to `anon` or `authenticated`.
+- [ ] Enable Supabase Auth leaked-password protection in project Auth settings. This is an account-level Auth setting; the connected database tooling does not expose a mutation for it.
 
 ## P1 — canonical Customer graph rules
 
-- [ ] Make Customer create/edit, Site create/edit, Area create/edit and Work Required create/edit use one shared domain rule set.
-- [ ] Remove validation differences between `saveCustomerWithSites`, `addArea`, `updateArea`, `addWorkRequired`, `updateWorkRequired`, Quick Add and Site/Measurement flows.
-- [ ] Make Work Required category/subcategory/work-type invariants authoritative on the server, not only in dialogs.
-- [ ] Replace the quotation legacy-validator correction shim with one canonical quotation relationship rule.
-- [ ] Remove stale comments/tests that describe deleted Customer CRUD paths as active architecture.
+- [x] Make Customer create/edit, Site create/edit, Area create/edit and Work Required create/edit use shared domain rules.
+- [x] Remove the material validation differences between `saveCustomerWithSites`, standalone Area/Work Required mutations, Quick Add and Site/Measurement flows by enforcing the canonical server/domain invariants on every committed row.
+- [x] Make Work Required category/subcategory/work-type invariants authoritative on the server and database, not only in dialogs.
+- [x] Replace the quotation legacy-validator correction shim with one structural quotation relationship rule.
+- [x] Remove stale CRM architecture comments and lock the removed compatibility paths with regression tests.
 
 ## P1 — database integrity
 
-- [ ] Reconcile live schema with repository migrations.
-- [ ] Add generated relationship columns/indexes/FKs for the Customer graph where live data is clean.
-- [ ] Add DB checks for canonical Customer shape/status and non-empty phone format when supplied.
-- [ ] Align entity row revision defaults with the actual 0-based commit implementation.
-- [ ] Add one transactional Customer contact-identity backstop covering primary phone, WhatsApp, alternate phone and email.
-- [ ] Verify no current orphan/customer-contact conflicts before and after constraints.
+- [x] Reconcile live schema with repository migrations. Production migrations `20260913085318_customer_domain_unification` and `20260913085807_customer_graph_fk_index_order` are checked into `supabase/migrations/` verbatim.
+- [x] Add generated relationship columns/indexes/FKs for the Customer graph where live data is clean.
+- [x] Add DB checks for canonical Customer shape/status and valid phone/email shape when supplied.
+- [x] Align entity row revision defaults with the actual 0-based commit implementation.
+- [x] Add one transactional Customer contact-identity backstop covering primary phone, WhatsApp, alternate phone and email.
+- [x] Verify no current orphan/customer-contact conflicts before and after constraints.
+- [x] Reorder generated relationship indexes so Customer/Site FK columns are leading keys; the Supabase unindexed-FK advisor findings dropped from 38 to 0.
 
 ## P2 — Customer model cleanup
 
-- [ ] Replace overloaded `source_partner_*` referral storage with typed `referrer_type`, `referrer_id`, `referrer_name` fields.
-- [ ] Migrate legacy name-only referrals without inventing identities; unmatched names become explicit external/legacy referrals.
-- [ ] Remove `interest_category_ids` and `interest_work_subcategory_ids` from live Customer JSON and canonical code paths.
-- [ ] Decide the canonical phone rule without fabricating data: blank is allowed for existing/new Customers, but any supplied phone must be valid and unique across all phone slots.
-- [ ] Remove active `referralLegacyName` compatibility state after the data migration.
+- [x] Replace overloaded `source_partner_*` referral storage with typed `referrer_type`, `referrer_id`, `referrer_name` fields.
+- [x] Migrate legacy name-only referrals without inventing identities; unmatched names become explicit external referrals.
+- [x] Remove `interest_category_ids` and `interest_work_subcategory_ids` from live Customer JSON and canonical code paths.
+- [x] Make phone optional without fabricating data; every supplied phone must be valid and identity uniqueness is enforced across primary phone, WhatsApp, alternate phone and email.
+- [x] Remove active `referralLegacyName` compatibility state after the data migration.
+- [x] Convert the seed Customer `Walk-in` referrer to the canonical explicit external-referrer shape.
 
 ## P2 — read path cleanup
 
-- [ ] Give `customerDesk` an explicit bounded read plan instead of falling back to the broad Customer scope.
-- [ ] Keep entity detail routes on the row-graph planner and maintenance-only operations on full-workspace reads.
-- [ ] Remove stale/contradictory thread terminology: `customer-conversation:<customer_id>` is canonical, not legacy.
+- [x] Give `customerDesk` an explicit bounded read plan instead of falling back to the broad Customer scope.
+- [x] Serve all collections actually read by Customer Desk, including contractor-rate estimates.
+- [x] Use generated indexed `customer_id_gen` / `site_id_gen` columns for entity-scoped Customer/Site relationship reads, with JSON selectors only for relationships that do not yet have generated columns.
+- [x] Keep entity detail routes on the row-graph planner and maintenance-only operations on full-workspace reads.
+- [ ] Remove the remaining stale Thread Inbox comment that calls canonical `customer-conversation:<customer_id>` terminology legacy.
 
 ## Verification
 
-- [ ] Add/adjust regression tests for shared Customer graph validation.
-- [ ] Add DB integrity verification queries for Customer/Site/Area/Work Required/referrer/contact identity constraints.
-- [ ] Run Customer-focused tests plus the workspace scoped-read tests.
-- [ ] Re-run Supabase security and performance advisors.
-- [ ] Re-evaluate repository search results for old Customer CRUD, legacy referral state, duplicate Work Required/Area validation and legacy quotation shim.
+- [x] Add/adjust regression tests for shared Customer graph validation and removed compatibility shims.
+- [x] Add DB integrity verification queries for Customer/Site/Area/Work Required/referrer/contact identity constraints.
+- [x] Re-run Supabase security and performance advisors.
+- [x] Verify all generated foreign-key constraints are validated and current sampled Customer/Site orphan counts are zero.
+- [x] Verify current invalid Customer rows, invalid Work Required rows and duplicate contact identities are zero.
+- [ ] Complete the repository CI gate: full Vitest, TypeScript, ESLint, Next build and Playwright smoke. The latest human-authored branch commit triggers this final run.
+- [ ] Re-evaluate branch/PR diffs for old referral state, duplicate Work Required/Area validation, stale thread wording and the removed quotation regex shim after CI is green.
