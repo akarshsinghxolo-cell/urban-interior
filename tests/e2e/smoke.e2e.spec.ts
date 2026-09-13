@@ -88,19 +88,17 @@ test.describe("workdesk navigation", () => {
 });
 
 test.describe("customer drawer", () => {
-  test("drawer opens from a customer card and every tab keeps it alive", async ({ page }) => {
+  test("drawer opens from a customer card and every CRM tab keeps it alive", async ({ page }) => {
     await openCustomersDeskModule(page);
     await openCustomerDrawer(page, "Mr. Das");
 
-    // Walk the portfolio tabs (labels carry live counts, e.g. "Sites (1)").
-    // At least Overview, Sites and Quotations are required; the extra tabs
-    // widen the regression net from the Task 26 drawer overflow fixes.
+    // Walk the canonical CRM tabs (labels carry live counts, e.g. "Sites (1)").
+    // Finance and procurement are intentionally not Customer Desk tabs.
     const tabs: Array<RegExp | string> = [
       "Overview",
       /^Sites \(\d+\)$/,
       /^Tasks \(\d+\)$/,
       /^Quotations \(\d+\)$/,
-      /^Payments \(\d+\)$/,
       /^Visits \(\d+\)$/,
       /^Activity \(\d+\)$/,
     ];
