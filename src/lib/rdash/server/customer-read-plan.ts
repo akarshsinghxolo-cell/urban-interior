@@ -92,6 +92,31 @@ export const CUSTOMER_CONTRACTOR_COLLECTIONS = Object.freeze([
 ] as const);
 
 /**
+ * Customer-family modules can render the richer cockpit, but every collection
+ * below remains conditional on its owning permission domain at runtime.
+ */
+export const CUSTOMER_PERMISSION_EXTENSION_MODULES = Object.freeze([
+  "customerDesk",
+  "customerTimeline",
+  "customerRequests",
+  "salesPipeline",
+  "lostClosedReview",
+] as const);
+
+/**
+ * Static superset used by source/plan guardrails. This is NOT a grant list:
+ * runtime reads must start from CUSTOMER_CRM_COLLECTIONS and add only the
+ * domain sets authorized for the current role.
+ */
+export const CUSTOMER_PERMISSION_AWARE_COLLECTIONS = Object.freeze([
+  ...CUSTOMER_MEDIA_COLLECTIONS,
+  ...CUSTOMER_FINANCE_COLLECTIONS,
+  ...CUSTOMER_PROCUREMENT_COLLECTIONS,
+  ...CUSTOMER_VENDOR_COLLECTIONS,
+  ...CUSTOMER_CONTRACTOR_COLLECTIONS,
+] as const);
+
+/**
  * Scope fallback adds only conversations. Taxonomy masters are loaded through
  * the workspace foundation, so they do not need to be duplicated here.
  */
