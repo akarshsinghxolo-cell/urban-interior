@@ -374,12 +374,12 @@ function CustomerTimelineView({ customerId, compact = false }: { customerId: str
     ...payments.map((row) => ({ id: `payment-${row.id}`, ts: row.updated_at || row.created_at, kind: "payment", title: row.milestone_label || "Payment", detail: formatINR(row.amount) })),
     ...visits.map((row) => ({ id: `visit-${row.id}`, ts: row.updated_at || row.created_at, kind: "visit", title: row.location_name, detail: row.status })),
     ...db.drawings.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `drawing-${row.id}`, ts: row.updated_at || row.created_at, kind: "drawing", title: row.title || "Drawing", detail: row.status })),
-    ...db.executionLogs.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `execution-${row.id}`, ts: row.created_at, kind: "executionLog", title: row.title || "Execution update", detail: row.notes })),
+    ...db.executionLogs.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `execution-${row.id}`, ts: row.created_at, kind: "executionLog", title: row.log_no || "Execution update", detail: row.work_order_no })),
     ...db.purchaseOrders.filter((row) => (row.site_id && siteIds.has(row.site_id)) || (row.work_order_id && workOrderIds.has(row.work_order_id))).map((row) => ({ id: `po-${row.id}`, ts: row.updated_at || row.created_at, kind: "po", title: row.po_no, detail: row.status })),
     ...db.grns.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `grn-${row.id}`, ts: row.updated_at || row.created_at, kind: "grn", title: row.grn_no, detail: row.status })),
     ...db.vendorBills.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `vendorBill-${row.id}`, ts: row.updated_at || row.created_at, kind: "vendorBill", title: row.bill_no, detail: row.status })),
-    ...db.commSends.filter((row) => row.customer_id === customerId).map((row) => ({ id: `communication-${row.id}`, ts: row.sent_at || row.created_at, kind: "communication", title: row.subject || row.channel, detail: row.status })),
-    ...db.auditLog.filter((row) => row.entity_id && relatedIds.has(row.entity_id)).map((row) => ({ id: `audit-${row.id}`, ts: row.created_at, kind: "audit", title: row.action, detail: row.entity_label })),
+    ...db.commSends.filter((row) => row.customer_id === customerId).map((row) => ({ id: `communication-${row.id}`, ts: row.sent_at, kind: "communication", title: row.subject || row.channel, detail: row.status })),
+    ...db.auditLog.filter((row) => row.entity_id && relatedIds.has(row.entity_id)).map((row) => ({ id: `audit-${row.id}`, ts: row.timestamp, kind: "audit", title: row.action, detail: row.entity_label })),
   ].filter((entry) => Boolean(entry.ts)).sort((a, b) => b.ts.localeCompare(a.ts));
 
   const visible = compact ? entries.slice(0, 12) : entries;

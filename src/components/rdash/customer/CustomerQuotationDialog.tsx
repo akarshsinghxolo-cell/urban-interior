@@ -116,7 +116,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
           priority: "medium",
         });
         const created = db.workRequired.find((row) => row.id === newId);
-        selectedWorkRequired = created ? [created] : [{
+        const now = new Date().toISOString();
+        const fallback: WorkRequired = {
           id: newId,
           customer_id: customerId,
           site_id: site.id,
@@ -125,7 +126,10 @@ export function CustomerQuotationDialog({ request, onClose }: {
           structured_items: [],
           status: "new",
           priority: "medium",
-        } as WorkRequired];
+          created_at: now,
+          updated_at: now,
+        };
+        selectedWorkRequired = [created || fallback];
       }
 
       // One active commercial path per Work Required. Site Execution used to
