@@ -20,7 +20,7 @@ describe("Customer Desk restored-feature contracts", () => {
     expect(shell).not.toContain('<MetricCard label="Live work orders" value={db.workOrders.length}');
   });
 
-  test("rich portfolio restores Customer commercial tabs and summary", async () => {
+  test("Customer portfolio keeps the restored commercial cockpit while launching shared workflows", async () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     for (const token of [
       'key: "payments"',
@@ -30,15 +30,17 @@ describe("Customer Desk restored-feature contracts", () => {
       "Financial Summary",
       "RecordPaymentDialog",
       "siteFinancials",
-    ]) {
-      expect(portfolio).toContain(token);
-    }
+      "CustomerWorkCaptureDialog",
+      'kind: "quotation"',
+    ]) expect(portfolio).toContain(token);
   });
 
-  test("restored advanced capture includes the requested two-week behavior", async () => {
+  test("rich advanced capture lives once under Customer ownership", async () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
+    const compatibility = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
+
     for (const token of [
-      "StructuredWorkRequiredDialog",
       "seedDetailedAreaLines",
       "contractorWorkTypeAverages",
       "removedSelections",
@@ -46,12 +48,32 @@ describe("Customer Desk restored-feature contracts", () => {
       "editOfItemId",
       "scrollEditDraftIntoView",
       "option_pairs",
-      "WorkTypeMultiDropdown",
-      "Partial captures are a feature",
-      "Mobile: a full-width bottom sheet",
-    ]) {
-      expect(portfolio).toContain(token);
-    }
+      "addAlternative",
+      "removeAlternative",
+      "incomplete/duplicate row(s) left untouched",
+      "flex items-end justify-center",
+    ]) expect(capture).toContain(token);
+
+    expect(portfolio).toContain('from "../customer/CustomerWorkCaptureDialog"');
+    expect(portfolio).not.toContain("StructuredWorkRequiredDialog");
+    expect(portfolio).not.toContain("seedDetailedAreaLines");
+    expect(portfolio).not.toContain("captureStructuredWorkRequired");
+    expect(compatibility).toContain("Compatibility export only");
+  });
+
+  test("Customer-owned quotation workflow is the only quotation creation/coverage builder", async () => {
+    const canonical = await source("src/components/rdash/customer/CustomerQuotationDialog.tsx");
+    const createHost = await source("src/components/rdash/CreateMenu.tsx");
+    const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
+
+    expect(canonical).toContain("verifiedMeasurementRevisionIds");
+    expect(canonical).toContain("activeQuotationForWork");
+    expect(canonical).toContain("const coverage = site");
+    expect(canonical).toContain("addQuotation({");
+    expect(createHost).toContain("CustomerQuotationDialog");
+    expect(siteExecution).toContain('kind: "quotation"');
+    expect(siteExecution).not.toContain("const addQuotation = useRDashStore");
+    expect(siteExecution).not.toContain("coverage: [{");
   });
 
   test("rich cross-domain reads are permission-aware rather than granted by Customers permission", async () => {
