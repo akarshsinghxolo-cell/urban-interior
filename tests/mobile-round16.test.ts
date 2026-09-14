@@ -50,10 +50,9 @@ describe("Mobile round 16 — restored Customer Desk", () => {
     expect(desk).not.toContain("|| db.customers[0]");
   });
 
-  test("restored customer tabs scroll inside the historical portfolio drawer", async () => {
+  test("restored Customer portfolio tabs scroll horizontally inside the drawer", async () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
-    expectTokens(portfolio, ["overflow-x-auto border-b border-border"]);
-    expectTokens(portfolio, ["rd-scroll rd-scroll-fade"]);
+    expectTokens(portfolio, ["rd-scroll mt-4 flex gap-1 overflow-x-auto border-b border-border"]);
     expect(portfolio).toContain('key: "payments"');
     expect(portfolio).toContain('key: "liabilities"');
   });
@@ -65,12 +64,17 @@ describe("Mobile round 16 — restored Customer Desk", () => {
     expectTokens(desk, ['<div className="min-w-0">']);
   });
 
-  test("advanced Customer capture preserves the requested phone bottom-sheet layout", async () => {
-    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
-    expect(portfolio).toContain("Mobile: a full-width bottom sheet");
-    expect(portfolio).toContain("flex items-end justify-center");
-    expect(portfolio).toContain("max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl");
-    expect(portfolio).toContain("max-h-[60vh] overflow-y-auto overflow-x-hidden");
-    expect(portfolio).toContain("Capture detailed area");
+  test("canonical Customer capture preserves the requested phone bottom-sheet layout", async () => {
+    const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
+    expect(capture).toContain("flex items-end justify-center");
+    expect(capture).toContain("max-h-[96vh] w-full max-w-4xl overflow-hidden rounded-t-2xl");
+    expect(capture).toContain("max-h-[60vh] space-y-2 overflow-y-auto overflow-x-hidden");
+    expect(capture).toContain("Capture detailed area");
+  });
+
+  test("Measurement uses the same Customer-owned mobile Area field semantics", async () => {
+    const measurement = await source("src/components/rdash/customer/CustomerMeasurementDialog.tsx");
+    expect(measurement).toContain("flex items-end justify-center");
+    expect(measurement).toContain("CustomerAreaDimensionsFields");
   });
 });
