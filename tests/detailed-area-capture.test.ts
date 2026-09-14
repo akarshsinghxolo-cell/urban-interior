@@ -7,41 +7,77 @@ import {
 
 const source = async (path: string) => testFile(path).text();
 
-describe("canonical site work capture", () => {
-  test("Customer portfolio restores the full historical detailed-area editor over the canonical mutation", async () => {
+describe("canonical Customer site / Area / Work Required workflow", () => {
+  test("Customer owns the one rich detailed-area implementation", async () => {
+    const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
+    const compatibility = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
 
-    expect(portfolio).toContain("StructuredWorkRequiredDialog");
-    expect(portfolio).toContain("WorkRequiredCreateDialog");
-    expect(portfolio).toContain("Capture detailed area");
-    expect(portfolio).toContain("captureStructuredWorkRequired");
-    expect(portfolio).toContain("seedDetailedAreaLines");
-    expect(portfolio).toContain("measuredQuantity");
-    expect(portfolio).toContain("contractorWorkTypeAverages");
-    expect(portfolio).toContain("removedSelections");
-    expect(portfolio).toContain("areaDims");
-    expect(portfolio).toContain("editOfItemId");
-    expect(portfolio).toContain("scrollEditDraftIntoView");
-    expect(portfolio).toContain("option_pairs");
+    for (const token of [
+      "seedDetailedAreaLines",
+      "captureStructuredWorkRequired",
+      "CustomerAreaDimensionsFields",
+      "contractorWorkTypeAverages",
+      "removedSelections",
+      "areaDims",
+      "editOfItemId",
+      "scrollEditDraftIntoView",
+      "option_pairs",
+      "addAlternative",
+      "removeAlternative",
+      "manualQuantity",
+      "incomplete/duplicate row(s) left untouched",
+    ]) expect(capture).toContain(token);
+
+    expect(compatibility).toContain('export { CustomerWorkCaptureDialog } from "./customer/CustomerWorkCaptureDialog"');
+    expect(portfolio).toContain('from "../customer/CustomerWorkCaptureDialog"');
+    expect(portfolio).not.toContain("StructuredWorkRequiredDialog");
+    expect(portfolio).not.toContain("captureStructuredWorkRequired");
+    expect(portfolio).not.toContain("seedDetailedAreaLines");
+    expect(portfolio).not.toContain("measuredQuantity");
   });
 
-  test("restored capture keeps one measured decision when work types are alternatives", async () => {
-    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
-    expect(portfolio).toContain("WorkTypeMultiDropdown");
-    expect(portfolio).toContain("workTypeTicks");
-    expect(portfolio).toContain("linePairs");
-    expect(portfolio).toContain("itemOptionPairs(item).forEach");
-    expect(portfolio).toContain("keysForLine");
-    expect(portfolio).toContain("addLineOption");
-    expect(portfolio).toContain("removeLineOption");
+  test("alternatives remain one measured decision in the canonical Customer capture", async () => {
+    const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
+    expect(capture).toContain("pairsForLine");
+    expect(capture).toContain("option_pairs");
+    expect(capture).toContain("Alternatives · customer takes any one · one shared measurement");
+    expect(capture).toContain("addAlternative");
+    expect(capture).toContain("removeAlternative");
+    expect(capture).toContain("itemScopeKeys");
   });
 
-  test("Sites & Execution remains the full alternate site-work surface", async () => {
+  test("Site Execution launches Customer workflows and cannot build a second Area or quotation path", async () => {
     const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
     expect(siteExecution).toContain('label: "Areas & Scope"');
     expect(siteExecution).toContain('label: "Scope Register"');
+    expect(siteExecution).toContain("CustomerWorkCaptureDialog");
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
-    expect(siteExecution).toContain("scheduleMeasurement");
+    expect(siteExecution).toContain('kind: "quotation"');
+    expect(siteExecution).toContain("customerId: selectedSite.customer_id");
+    expect(siteExecution).toContain("siteId: selectedSite.id");
+    expect(siteExecution).toContain("workRequiredId: work.id");
+    expect(siteExecution).not.toContain("const addArea = useRDashStore");
+    expect(siteExecution).not.toContain("const addQuotation = useRDashStore");
+    expect(siteExecution).not.toContain("coverage: [{");
+  });
+
+  test("Measurement uses the Customer-owned Area/measurement save implementation", async () => {
+    const measurement = await source("src/components/rdash/modules/SiteMeasurementModule.tsx");
+    const canonical = await source("src/components/rdash/customer/CustomerMeasurementDialog.tsx");
+    expect(measurement).toContain("CustomerMeasurementDialog");
+    for (const forbidden of [
+      "const addArea = useRDashStore",
+      "const updateArea = useRDashStore",
+      "const updateWorkRequired = useRDashStore",
+      "const addMeasurementRevision = useRDashStore",
+      "const fileVisitReport = useRDashStore",
+      "function MeasurementDialog",
+    ]) expect(measurement).not.toContain(forbidden);
+    expect(canonical).toContain("CustomerAreaDimensionsFields");
+    expect(canonical).toContain("addMeasurementRevision");
+    expect(canonical).toContain("updateWorkRequired");
+    expect(canonical).toContain("fileVisitReport");
   });
 
   test("the store retains one canonical structured-work mutation primitive", async () => {
