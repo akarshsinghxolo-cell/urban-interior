@@ -82,7 +82,7 @@ describe("work-type master", () => {
   });
 });
 
-describe("work types in the canonical customer/site creation paths", () => {
+describe("work types in the canonical Customer-owned site/work paths", () => {
   test("WorkRequiredFields exposes the work-type picker and prunes on subcategory change", () => {
     const source = read("../src/components/rdash/WorkRequiredFields.tsx");
     expect(source).toContain("Work Types");
@@ -91,26 +91,34 @@ describe("work types in the canonical customer/site creation paths", () => {
     expect(source).toContain("value.workTypeIds.includes(workType.id)");
   });
 
-  test("the shared WorkRequiredCreateDialog persists work_type_ids", () => {
-    const source = read("../src/components/rdash/WorkRequiredCreateDialog.tsx");
-    expect(source).toContain("work_type_ids: draft.workTypeIds");
+  test("CustomerWorkRequiredDialog is the one create implementation and persists work_type_ids", () => {
+    const canonical = read("../src/components/rdash/customer/CustomerWorkRequiredDialog.tsx");
+    const compatibility = read("../src/components/rdash/WorkRequiredCreateDialog.tsx");
+    expect(canonical).toContain("work_type_ids: draft.workTypeIds");
+    expect(canonical).toContain("WorkRequiredFields");
+    expect(canonical).toContain("addArea");
+    expect(canonical).toContain("addWorkRequired");
+    expect(compatibility).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
+    expect(compatibility).not.toContain("addWorkRequired({");
   });
 
-  test("Customer Desk restores work-type capture while sharing canonical primitives with Site Execution", () => {
-    const desk = read("../src/components/rdash/modules/CustomerDesk.tsx");
-    const capture = read("../src/components/rdash/CustomerWorkCaptureDialog.tsx");
+  test("Customer capture owns multi-work-type alternatives and contractor-rate estimates", () => {
+    const capture = read("../src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
     const siteExecution = read("../src/components/rdash/modules/SiteExecutionModule.tsx");
 
-    expect(desk).toContain("CustomerWorkCaptureDialog");
-    expect(desk).toContain("WorkRequiredCreateDialog");
     expect(capture).toContain("workTypesForSubcategory");
     expect(capture).toContain("captureStructuredWorkRequired");
-    expect(capture).not.toContain("contractorWorkTypeAverages");
+    expect(capture).toContain("contractorWorkTypeAverages");
+    expect(capture).toContain("option_pairs");
+    expect(capture).toContain("addAlternative");
+    expect(capture).toContain("removeAlternative");
+    expect(siteExecution).toContain("CustomerWorkCaptureDialog");
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
+    expect(siteExecution).not.toContain("captureStructuredWorkRequired");
   });
 });
 
-describe("customer-module single canonical create dialog", () => {
+describe("Customer-owned single canonical quotation create dialog", () => {
   test("CreateMenuCore no longer carries the duplicated quotation branch", () => {
     const source = read("../src/components/rdash/CreateMenuCore.tsx");
     expect(source).not.toContain("addQuotation");
@@ -118,10 +126,18 @@ describe("customer-module single canonical create dialog", () => {
     expect(source).not.toContain('kind === "quotation"');
   });
 
-  test("CreateMenu routes quotation dialogs to the single customer quotation dialog", () => {
+  test("CreateMenu routes quotation dialogs to the single Customer quotation dialog", () => {
     const source = read("../src/components/rdash/CreateMenu.tsx");
     expect(source).toContain('createDialog?.kind === "quotation"');
     expect(source).toContain("CustomerQuotationDialog");
+  });
+
+  test("Site Execution launches it with context instead of building quotation payloads", () => {
+    const source = read("../src/components/rdash/modules/SiteExecutionModule.tsx");
+    expect(source).toContain('kind: "quotation"');
+    expect(source).toContain("workRequiredId: work.id");
+    expect(source).not.toContain("const addQuotation = useRDashStore");
+    expect(source).not.toContain("coverage: [{");
   });
 });
 

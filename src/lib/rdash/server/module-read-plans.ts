@@ -1,6 +1,10 @@
 import type { WorkspaceReadTarget } from "../workspace-read-scope";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
-import { CUSTOMER_CRM_COLLECTIONS } from "./customer-read-plan";
+import {
+  CUSTOMER_CRM_COLLECTIONS,
+  CUSTOMER_PERMISSION_AWARE_COLLECTIONS,
+  CUSTOMER_PERMISSION_EXTENSION_MODULES,
+} from "./customer-read-plan";
 import {
   boundedPageLimits,
   completeCollectionsForTarget,
@@ -22,6 +26,10 @@ const SCOPE_HISTORY_LIMITS = Object.freeze({
 
 const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   customerDesk: CUSTOMER_CRM_COLLECTIONS,
+  customerTimeline: CUSTOMER_CRM_COLLECTIONS,
+  customerRequests: CUSTOMER_CRM_COLLECTIONS,
+  salesPipeline: CUSTOMER_CRM_COLLECTIONS,
+  lostClosedReview: CUSTOMER_CRM_COLLECTIONS,
   tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments", "quotations", "workRequired", "commSends"]),
   blockedRisks: Object.freeze(["customers", "sites", "workOrders", "tasks", "blocked", "risks", "threads", "entityFileAttachments"]),
   approvals: Object.freeze(["customers", "sites", "quotations", "workOrders", "purchaseOrders", "vendorBills", "contractorPayments", "actions", "approvalPolicies", "threads", "entityFileAttachments", "risks", "invoices"]),
@@ -105,12 +113,34 @@ function completeFileJoin(collections: readonly string[]): readonly string[] {
   return Object.freeze(joined);
 }
 
-export function collectionsForWorkspaceReadTarget(
+function runtimeCollectionsForWorkspaceReadTarget(
   target: WorkspaceReadTarget,
 ): readonly string[] {
   if (target.scope === "bootstrap" || target.scope === "full") return [];
   const exact = exactPlan(target);
   return exact ? completeFileJoin(exact.collections) : COLLECTIONS_BY_SCOPE[target.scope];
+}
+
+function isCustomerPermissionExtensionModule(moduleId: string): boolean {
+  return (CUSTOMER_PERMISSION_EXTENSION_MODULES as readonly string[]).includes(moduleId);
+}
+
+/**
+ * Static coverage contract for one module target. Customer-family screens can
+ * conditionally render richer domain data, so their coverage plan exposes the
+ * union of those possible reads. This function does not authorize runtime
+ * access; workspaceModuleReadPlan returns the safe base and the scoped reader
+ * adds only role-authorized extension sets.
+ */
+export function collectionsForWorkspaceReadTarget(
+  target: WorkspaceReadTarget,
+): readonly string[] {
+  const base = runtimeCollectionsForWorkspaceReadTarget(target);
+  if (!isCustomerPermissionExtensionModule(target.moduleId)) return base;
+  return Object.freeze([...new Set([
+    ...base,
+    ...CUSTOMER_PERMISSION_AWARE_COLLECTIONS,
+  ])]);
 }
 
 export function workspaceModuleReadPlan(
@@ -120,7 +150,7 @@ export function workspaceModuleReadPlan(
     throw new Error("INVALID:Bootstrap and full reads do not use module read plans.");
   }
   const exact = exactPlan(target);
-  const collections = exact ? completeFileJoin(exact.collections) : COLLECTIONS_BY_SCOPE[target.scope];
+  const collections = runtimeCollectionsForWorkspaceReadTarget(target);
   return Object.freeze({
     collections,
     // Every screen now resolves through one planner. Exact screens limit only
@@ -138,7 +168,7 @@ export function moduleReadPlanSavings(
     return { selected: 0, scope: 0 };
   }
   return {
-    selected: collectionsForWorkspaceReadTarget(target).length,
+    selected: runtimeCollectionsForWorkspaceReadTarget(target).length,
     scope: COLLECTIONS_BY_SCOPE[target.scope].length,
   };
 }
