@@ -6,22 +6,21 @@ import {
   CUSTOMER_CRM_FORBIDDEN_COLLECTIONS,
   CUSTOMER_FINANCE_COLLECTIONS,
   CUSTOMER_MEDIA_COLLECTIONS,
+  CUSTOMER_PERMISSION_AWARE_COLLECTIONS,
+  CUSTOMER_PERMISSION_EXTENSION_MODULES,
   CUSTOMER_PROCUREMENT_COLLECTIONS,
   CUSTOMER_VENDOR_COLLECTIONS,
 } from "../src/lib/rdash/server/customer-read-plan";
 import { CUSTOMER_RELATION_COLLECTIONS } from "../src/lib/rdash/server/entity-scoped-read";
-import { workspaceModuleReadPlan } from "../src/lib/rdash/server/module-read-plans";
+import {
+  collectionsForWorkspaceReadTarget,
+  workspaceModuleReadPlan,
+} from "../src/lib/rdash/server/module-read-plans";
 import { permissionAwareModuleCollections } from "../src/lib/rdash/server/module-scoped-read";
 import { createDefaultStaffPermissions } from "../src/lib/rdash/staff-operations";
 import { workspaceReadTargetForModule } from "../src/lib/rdash/workspace-read-scope";
 
-const CUSTOMER_MODULES = [
-  "customerDesk",
-  "customerTimeline",
-  "customerRequests",
-  "salesPipeline",
-  "lostClosedReview",
-] as const;
+const CUSTOMER_MODULES = CUSTOMER_PERMISSION_EXTENSION_MODULES;
 
 const authorization = {
   data: { staffRolePermissions: createDefaultStaffPermissions() },
@@ -32,6 +31,18 @@ describe("Customer CRM read plan", () => {
     for (const moduleId of CUSTOMER_MODULES) {
       const plan = workspaceModuleReadPlan(workspaceReadTargetForModule(moduleId));
       expect(plan.collections).toEqual(CUSTOMER_CRM_COLLECTIONS);
+    }
+  });
+
+  test("static coverage includes every permission-gated Customer cockpit collection without widening the runtime base", () => {
+    for (const moduleId of CUSTOMER_MODULES) {
+      const target = workspaceReadTargetForModule(moduleId);
+      const runtime = workspaceModuleReadPlan(target).collections;
+      const coverage = collectionsForWorkspaceReadTarget(target);
+      expect(runtime).toEqual(CUSTOMER_CRM_COLLECTIONS);
+      for (const collection of CUSTOMER_PERMISSION_AWARE_COLLECTIONS) {
+        expect(coverage, `${moduleId}: ${collection}`).toContain(collection);
+      }
     }
   });
 
@@ -70,13 +81,7 @@ describe("Customer CRM read plan", () => {
       CUSTOMER_CRM_COLLECTIONS,
     );
 
-    for (const collection of [
-      ...CUSTOMER_MEDIA_COLLECTIONS,
-      ...CUSTOMER_FINANCE_COLLECTIONS,
-      ...CUSTOMER_PROCUREMENT_COLLECTIONS,
-      ...CUSTOMER_VENDOR_COLLECTIONS,
-      ...CUSTOMER_CONTRACTOR_COLLECTIONS,
-    ]) {
+    for (const collection of CUSTOMER_PERMISSION_AWARE_COLLECTIONS) {
       expect(collections).toContain(collection);
     }
   });
