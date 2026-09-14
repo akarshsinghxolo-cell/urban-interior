@@ -12,12 +12,12 @@ import {
   CUSTOMER_CONTRACTOR_COLLECTIONS,
   CUSTOMER_FINANCE_COLLECTIONS,
   CUSTOMER_MEDIA_COLLECTIONS,
+  CUSTOMER_PERMISSION_EXTENSION_MODULES,
   CUSTOMER_PROCUREMENT_COLLECTIONS,
   CUSTOMER_VENDOR_COLLECTIONS,
 } from "./customer-read-plan";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
-  collectionsForWorkspaceReadTarget,
   moduleReadPlanSavings,
   workspaceModuleReadPlan,
 } from "./module-read-plans";
@@ -38,13 +38,7 @@ export * from "./projected-workspace-bootstrap";
 
 // Scoped reads are the runtime architecture, not an optional rollout mode.
 const FOUNDATION_COLLECTIONS = new Set<string>(WORKSPACE_FOUNDATION_COLLECTIONS);
-const CUSTOMER_EXTENSION_MODULES = new Set([
-  "customerDesk",
-  "customerTimeline",
-  "customerRequests",
-  "salesPipeline",
-  "lostClosedReview",
-]);
+const CUSTOMER_EXTENSION_MODULES = new Set<string>(CUSTOMER_PERMISSION_EXTENSION_MODULES);
 
 interface ModuleScopedWorkspace extends WorkspaceSubset {
   scope: ModuleWorkspaceReadScope;
@@ -207,7 +201,7 @@ async function readAuthorizedScope(
     user,
     target,
     authorization,
-    collectionsForWorkspaceReadTarget(target),
+    plan.collections,
   );
   const plannedFullStaff = plannedCollections.includes("master.staff");
   const fullStaffAllowed = plannedFullStaff && canReadFullStaffData(user.role);
@@ -289,7 +283,7 @@ async function readAuthorizedPage(
     user,
     target,
     authorization,
-    collectionsForWorkspaceReadTarget(target),
+    plan.collections,
   );
   const limitedCollections = Object.fromEntries(
     Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
