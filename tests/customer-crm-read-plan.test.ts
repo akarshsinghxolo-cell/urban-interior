@@ -59,7 +59,7 @@ describe("Customer CRM read plan", () => {
   test("Sales/Telecaller gets CRM + media but not finance, procurement, vendor or contractor masters", () => {
     const target = workspaceReadTargetForModule("customerDesk") as never;
     const collections = permissionAwareModuleCollections(
-      { role: "SALES_TELECALLER" },
+      { role: "Sales / Telecaller" },
       target,
       authorization,
       CUSTOMER_CRM_COLLECTIONS,
@@ -75,7 +75,7 @@ describe("Customer CRM read plan", () => {
   test("Operations Manager regains the full authorized Customer cockpit", () => {
     const target = workspaceReadTargetForModule("customerDesk") as never;
     const collections = permissionAwareModuleCollections(
-      { role: "OPERATIONS_MANAGER" },
+      { role: "Operations Manager" },
       target,
       authorization,
       CUSTOMER_CRM_COLLECTIONS,
@@ -90,7 +90,7 @@ describe("Customer CRM read plan", () => {
     const target = workspaceReadTargetForModule("siteExecution") as never;
     const planned = ["sites", "areas"] as const;
     expect(permissionAwareModuleCollections(
-      { role: "OPERATIONS_MANAGER" },
+      { role: "Operations Manager" },
       target,
       authorization,
       planned,
