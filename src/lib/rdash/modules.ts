@@ -272,27 +272,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           },
         ],
       },
-      {
-        id: "quotationDesk",
-        label: "Quotation Desk",
-        description: "Customer quotations, coverage, revisions and acceptance",
-        icon: "🧾",
-        renderer: "quotations",
-        activePredicate: (db) =>
-          db.quotations.some(
-            (quotation) =>
-              quotation.status === "draft" || quotation.status === "sent",
-          ),
-        dataSource: "quotations",
-        submodules: [
-          {
-            id: "quotationConfig",
-            label: "Terms & Settings",
-            renderer: "quotation-config",
-            dataSource: "none",
-          },
-        ],
-      },
     ],
   },
   {
@@ -453,6 +432,19 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           ),
         dataSource: "payments",
         submodules: [
+          {
+            id: "quotationDesk",
+            label: "Quotation Desk",
+            renderer: "quotations",
+            dataSource: "quotations",
+            hint: "Customer quotations, coverage, revisions and acceptance",
+          },
+          {
+            id: "quotationConfig",
+            label: "Terms & Settings",
+            renderer: "quotation-config",
+            dataSource: "none",
+          },
           {
             id: "payments",
             label: "Customer Collections",

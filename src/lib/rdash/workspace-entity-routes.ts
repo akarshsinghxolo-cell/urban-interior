@@ -70,7 +70,7 @@ const ENTITY_ROUTE_DEFINITIONS: readonly WorkspaceEntityRouteDefinition[] = [
     kind: "quotation",
     moduleId: "quotationDesk",
     collection: "quotations",
-    basePath: "/workspace/quotations",
+    basePath: "/workspace/finance/quotations",
     permissionModule: "quotations",
   },
   {
