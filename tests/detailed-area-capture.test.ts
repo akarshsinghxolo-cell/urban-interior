@@ -29,8 +29,11 @@ describe("canonical site work capture", () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     expect(portfolio).toContain("WorkTypeMultiDropdown");
     expect(portfolio).toContain("workTypeTicks");
-    expect(portfolio).toContain("effectiveOptionPairs");
-    expect(portfolio).toContain("duplicateScopeRows");
+    expect(portfolio).toContain("linePairs");
+    expect(portfolio).toContain("itemOptionPairs(item).forEach");
+    expect(portfolio).toContain("keysForLine");
+    expect(portfolio).toContain("addLineOption");
+    expect(portfolio).toContain("removeLineOption");
   });
 
   test("Sites & Execution remains the full alternate site-work surface", async () => {
