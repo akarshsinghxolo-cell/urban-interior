@@ -12,7 +12,7 @@ describe("workspace entity routes", () => {
     expect(workspaceEntityPath("contractor", "cont-123")).toBe("/workspace/contractors/cont-123");
     expect(workspaceEntityPath("vendor", "vendor-123")).toBe("/workspace/vendors/vendor-123");
     expect(workspaceEntityPath("workOrder", "wo-123")).toBe("/workspace/work-orders/wo-123");
-    expect(workspaceEntityPath("quotation", "quote-123")).toBe("/workspace/quotations/quote-123");
+    expect(workspaceEntityPath("quotation", "quote-123")).toBe("/workspace/finance/quotations/quote-123");
     expect(workspaceEntityPath("po", "po-123")).toBe("/workspace/purchase-orders/po-123");
     expect(workspaceEntityPath("visit", "visit-123")).toBe("/workspace/visits/visit-123");
     expect(workspaceEntityPath("task", "task-123")).toBe("/workspace/tasks/task-123");
@@ -55,7 +55,7 @@ describe("workspace entity routes", () => {
 
   test("maps entity URLs onto their existing parent modules", () => {
     expect(resolveWorkspaceLocation("/workspace/work-orders/wo-1")?.moduleId).toBe("woTimeline");
-    expect(resolveWorkspaceLocation("/workspace/quotations/q-1")?.moduleId).toBe("quotationDesk");
+    expect(resolveWorkspaceLocation("/workspace/finance/quotations/q-1")?.moduleId).toBe("quotationDesk");
     expect(resolveWorkspaceLocation("/workspace/purchase-orders/po-1")?.moduleId).toBe("procurementInventory");
     expect(resolveWorkspaceLocation("/workspace/visits/visit-1")?.moduleId).toBe("fieldOperations");
     expect(resolveWorkspaceLocation("/workspace/tasks/task-1")?.moduleId).toBe("tasks");

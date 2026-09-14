@@ -78,9 +78,9 @@ describe("workspace history URLs", () => {
     )).toBe("/workspace/work-orders/wo-1");
     expect(workspaceHistoryUrl(
       snapshot("quotationDesk", { kind: "quotation", recordId: "q-1" }),
-      "/workspace/quotations",
+      "/workspace/finance/quotations",
       true,
-    )).toBe("/workspace/quotations/q-1");
+    )).toBe("/workspace/finance/quotations/q-1");
     expect(workspaceHistoryUrl(
       snapshot("procurementInventory", { kind: "po", recordId: "po-1" }),
       "/workspace/procurement",
