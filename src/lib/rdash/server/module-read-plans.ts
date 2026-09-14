@@ -26,6 +26,10 @@ const SCOPE_HISTORY_LIMITS = Object.freeze({
 
 const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   customerDesk: CUSTOMER_CRM_COLLECTIONS,
+  customerTimeline: CUSTOMER_CRM_COLLECTIONS,
+  customerRequests: CUSTOMER_CRM_COLLECTIONS,
+  salesPipeline: CUSTOMER_CRM_COLLECTIONS,
+  lostClosedReview: CUSTOMER_CRM_COLLECTIONS,
   tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments", "quotations", "workRequired", "commSends"]),
   blockedRisks: Object.freeze(["customers", "sites", "workOrders", "tasks", "blocked", "risks", "threads", "entityFileAttachments"]),
   approvals: Object.freeze(["customers", "sites", "quotations", "workOrders", "purchaseOrders", "vendorBills", "contractorPayments", "actions", "approvalPolicies", "threads", "entityFileAttachments", "risks", "invoices"]),
