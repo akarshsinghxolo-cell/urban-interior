@@ -118,6 +118,8 @@ export function CustomerWorkCaptureDialog({
   type CaptureLine = Parameters<typeof captureStructuredWorkRequired>[1][number] & {
     option_pairs?: NonNullable<LineItem["option_pairs"]>;
   };
+  type CaptureOptions = NonNullable<Parameters<typeof captureStructuredWorkRequired>[2]>;
+  type AreaDimensionPatch = NonNullable<CaptureOptions["areaDims"]>[number];
 
   const siteWorks = React.useMemo(
     () => db.workRequired.filter((row) => row.site_id === site.id),
@@ -455,7 +457,7 @@ export function CustomerWorkCaptureDialog({
     .filter((line) => !lineIssue(group, line) && !duplicateLineKeys.has(line.key))
     .map((line) => ({ group, line })));
 
-  const areaDims = groups.flatMap((group) => {
+  const areaDims: AreaDimensionPatch[] = groups.flatMap((group): AreaDimensionPatch[] => {
     if (groupIssue(group)) return [];
     const next = normalizeAreaDimensions(group);
     if (!next.length && !next.breadth && !next.height) return [];
