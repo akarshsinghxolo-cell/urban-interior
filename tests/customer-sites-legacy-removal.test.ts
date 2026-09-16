@@ -10,6 +10,8 @@ const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDial
 const customerDetailsFields = readFileSync("src/components/rdash/CustomerDetailsFields.tsx", "utf8");
 const workRequiredFields = readFileSync("src/components/rdash/WorkRequiredFields.tsx", "utf8");
 const createMenu = readFileSync("src/components/rdash/CreateMenu.tsx", "utf8");
+const createMenuCore = readFileSync("src/components/rdash/CreateMenuCore.tsx", "utf8");
+const customerQuotationDialog = readFileSync("src/components/rdash/customer/CustomerQuotationDialog.tsx", "utf8");
 
 test("legacy customer write APIs are removed from active store and UI paths", () => {
   for (const token of ["addCustomer:", "createCustomerWithFirstSite:", "updateCustomer:", "addSite:", "updateSite:"]) {
@@ -42,7 +44,15 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   expectTokens(workRequiredFields, ["+ Add subcategory"]);
   expect(workRequiredFields.indexOf("Covered Areas")).toBeLessThan(workRequiredFields.indexOf("Primary Category"));
   expectTokens(workRequiredFields, ['site?.name || "this Customer"']);
-  expect(createMenu).toContain('type="checkbox"');
-  expect(createMenu).toContain('selectedWorkRequired.map');
-  expectTokens(createMenu, ['`${customer.name}${site ? ` · ${site.name}` : ""}`']);
+
+  // Quotation selection/serialization is intentionally Customer-owned. The
+  // global Create menu only routes quotation requests into the one canonical
+  // dialog; CreateMenuCore must not retain a second quotation implementation.
+  expect(createMenu).toContain("CustomerQuotationDialog");
+  expect(createMenu).toContain('createDialog?.kind === "quotation"');
+  expectNoTokens(createMenuCore, ["addQuotation", 'kind === "quotation"', "selectedWorkRequired.map"]);
+  expect(customerQuotationDialog).toContain('type="checkbox"');
+  expect(customerQuotationDialog).toContain("selectedWorkRequired.map");
+  expect(customerQuotationDialog).toContain("const id = addQuotation({");
+  expectTokens(customerQuotationDialog, ['`${customer.name}${site ? ` · ${site.name}` : ""}`']);
 });
