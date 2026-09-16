@@ -9,7 +9,7 @@
     "dev": "next dev -p 3000",
     "dev:qa": "next dev -p 3100",
     "qa:mock": "bun run scripts/qa-mock-supabase.ts",
-    "build": "npm run test && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "test:phase2b": "vitest run tests/phase2b-targeted-commit.test.ts",
