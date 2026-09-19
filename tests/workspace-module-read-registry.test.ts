@@ -59,6 +59,12 @@ const KNOWN_COLLECTIONS = new Set(Object.keys(COLLECTION_TO_TABLE));
  * deleting entries silently.
  */
 const READ_ATTRIBUTION_ALLOWLIST: Record<string, Record<string, string>> = {
+  vendors: {
+    "master.contractors": "PartnerWorkspaceModule.tsx union: contractor branch is not rendered by vendors",
+  },
+  contractorDetail: {
+    "master.vendors": "PartnerWorkspaceModule.tsx union: vendor branch is not rendered by contractorDetail",
+  },
   // CustomerDesk.tsx serves both customerDesk (default view) and
   // customerTimeline (view="timeline" early-returns before the desk tabs).
   // The timeline branch itself only reads collections the paged plan covers

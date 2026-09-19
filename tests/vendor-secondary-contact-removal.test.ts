@@ -43,11 +43,12 @@ describe("Vendor secondary-contact removal", () => {
     expect(partner360).not.toContain("partner.email");
     expect(partner360).toContain("whatsappHref(selected.phone)");
 
-    const workspace = await source("src/components/rdash/modules/VendorWorkspaceModule.tsx");
-    expect(workspace).not.toContain("selected.whatsapp");
-    expect(workspace).not.toContain("selected.alternate_phone");
-    expect(workspace).not.toContain("selected.email");
-    expect(workspace).toContain("whatsappHref(selected.phone)");
+    const workspace = await source("src/components/rdash/modules/PartnerDetailContent.tsx");
+    expect(workspace).not.toContain("partner.whatsapp");
+    expect(workspace).not.toContain("partner.alternate_phone");
+    expect(workspace).not.toContain("partner.email");
+    expect(workspace).toContain('(partner.phone || "").replace');
+    expect(workspace).toContain('https://wa.me/${phone}');
   });
 
   test("Vendor business dialog keeps identity, tax, banking and commercial terms", async () => {

@@ -30,7 +30,7 @@ function reliabilityLabel(score: number | undefined): string {
         return "Avg";
     return "Risky";
 }
-export function VendorBillsModule() {
+export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
     const db = useRDashStore((s) => s.db);
     const approveVendorBill = useRDashStore((s) => s.approveVendorBill);
     const rejectVendorBill = useRDashStore((s) => s.rejectVendorBill);
@@ -54,7 +54,7 @@ export function VendorBillsModule() {
     // D: Reject dialog state — captures the rejection reason.
     const [rejectBill, setRejectBill] = React.useState<VendorBill | null>(null);
     const [rejectReason, setRejectReason] = React.useState("");
-    const bills = db.vendorBills;
+    const bills = db.vendorBills.filter((bill) => !vendorId || bill.vendor_id === vendorId);
     const draft = bills.filter((b) => b.status === "draft");
     const pendingApproval = bills.filter((b) => b.status === "pending_approval");
     const pending = bills.filter((b) => b.status === "pending");
@@ -119,7 +119,7 @@ export function VendorBillsModule() {
             toast.error(error instanceof Error ? error.message : "Vendor payment could not be recorded");
         }
     };
-    const availableGrns = db.grns.filter((grn) => !grn.bill_id);
+    const availableGrns = db.grns.filter((grn) => !grn.bill_id && (!vendorId || grn.vendor_id === vendorId));
     const linesFromGrn = (grnId: string): VendorInvoiceLine[] => {
         const grn = db.grns.find((entry) => entry.id === grnId);
         return grn?.items.map((line) => ({
@@ -401,7 +401,7 @@ export function VendorBillsModule() {
     const approvedRows: RecordRow[] = showApprovedPaid ? approvedOrPaid.map(billRow) : [];
     const draftRows: RecordRow[] = showDraft ? draft.map(billRow) : [];
     const vendorRows: RecordRow[] = showVendors
-        ? db.master.vendors.map((v: Vendor) => {
+        ? db.master.vendors.filter((v) => !vendorId || v.id === vendorId).map((v: Vendor) => {
             const bal = vendorBalance(db, v.id);
             const firstUnpaidBill = db.vendorBills.find((b) => b.vendor_id === v.id && (b.status === "approved" || b.status === "partly_paid") && b.balance_amount > 0);
             const acts: ContextAction[] = firstUnpaidBill

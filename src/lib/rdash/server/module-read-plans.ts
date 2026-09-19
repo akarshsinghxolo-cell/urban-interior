@@ -21,6 +21,20 @@ const SCOPE_HISTORY_LIMITS = Object.freeze({
 } as const);
 
 const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  vendors: Object.freeze([
+    "customers", "sites", "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders", "grns",
+    "vendorBills", "vendorPayments", "tasks", "actions", "threads", "auditLog", "entityFileAttachments",
+    "taxConfigs", "master.vendors", "master.vendorRates", "master.vendorRateHistories", "master.sourcePartners",
+    "master.units", "master.workCategories", "master.workSubcategories", "master.articles", "master.articleVariants",
+    "master.subcategoryArticleMap", "master.fileAssets",
+  ]),
+  contractorDetail: Object.freeze([
+    "customers", "sites", "areas", "workRequired", "quotations", "acceptedScopes", "workOrders",
+    "contractorBids", "contractorBills", "contractorPayments", "contractorSettlements", "workOrderCostLines",
+    "executionLogs", "tasks", "actions", "threads", "auditLog", "entityFileAttachments",
+    "master.contractors", "master.contractorRates", "master.sourcePartners", "master.units",
+    "master.workCategories", "master.workSubcategories", "master.fileAssets",
+  ]),
   customerDesk: CUSTOMER_CRM_COLLECTIONS,
   tasks: Object.freeze(["customers", "sites", "tasks", "followups", "actions", "blocked", "risks", "threads", "recurringTasks", "entityFileAttachments", "quotations", "workRequired", "commSends"]),
   blockedRisks: Object.freeze(["customers", "sites", "workOrders", "tasks", "blocked", "risks", "threads", "entityFileAttachments"]),

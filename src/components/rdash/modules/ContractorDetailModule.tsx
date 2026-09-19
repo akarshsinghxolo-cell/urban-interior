@@ -379,11 +379,12 @@ export function ContractorDetailModule() {
 // estimated_days, with_material, and evaluation_notes on a submitted bid, and
 // also provides a "Withdraw bid" action that sets status="withdrawn"
 // (previously unreachable from any UI — see analysis F.5 + F.9).
-function EditContractorBidDialog({ bid, onClose, onSave, onWithdraw }: {
+export function EditContractorBidDialog({ bid, onClose, onSave, onWithdraw, saving = false }: {
     bid: any;
     onClose: () => void;
     onSave: (patch: Partial<any>) => void;
     onWithdraw: () => void;
+    saving?: boolean;
 }) {
     const [quoteAmount, setQuoteAmount] = React.useState<string>(bid.quote_amount != null ? String(bid.quote_amount) : "");
     const [estimatedDays, setEstimatedDays] = React.useState<string>(bid.estimated_days != null ? String(bid.estimated_days) : "");
@@ -413,7 +414,7 @@ function EditContractorBidDialog({ bid, onClose, onSave, onWithdraw }: {
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Quote amount (₹)</label>
             <Input type="number" min="0" step="0.01" value={quoteAmount} onChange={(e) => setQuoteAmount(e.target.value)} placeholder="e.g. 58000" className="h-9 text-sm" autoFocus/>
-            <p className="mt-1 text-[10px] text-muted-foreground">Required to be greater than 0 before this bid can be awarded (CV-1 / CV-14 guard in selectContractorBid).</p>
+            <p className="mt-1 text-[10px] text-muted-foreground">A positive quote is required before awarding the work.</p>
           </div>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Estimated days</label>
@@ -421,7 +422,7 @@ function EditContractorBidDialog({ bid, onClose, onSave, onWithdraw }: {
           </div>
           <label className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
             <input type="checkbox" checked={withMaterial} onChange={(e) => setWithMaterial(e.target.checked)} className="h-4 w-4 rounded border-border"/>
-            Contractor supplies material (with_material)
+            Contractor supplies materials
           </label>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Evaluation notes</label>
@@ -430,17 +431,17 @@ function EditContractorBidDialog({ bid, onClose, onSave, onWithdraw }: {
         </div>
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button variant="ghost" size="sm" onClick={onWithdraw} className="text-destructive hover:bg-destructive/10" title="Mark this bid as withdrawn — the contractor is no longer competing for this scope.">
+          <Button variant="ghost" size="sm" disabled={saving} onClick={onWithdraw} className="text-destructive hover:bg-destructive/10" title="Withdraw from bidding for this scope">
             Withdraw bid
           </Button>
-          <Button size="sm" onClick={handleSave}>
+          <Button size="sm" disabled={saving} onClick={handleSave}>
             <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> Save changes
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>);
 }
-function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUploadProof, onSubmit }: {
+export function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUploadProof, onSubmit, saving = false }: {
     contractor: any;
     workOrder: any;
     releaseGuard: {
@@ -450,6 +451,7 @@ function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUp
     onClose: () => void;
     onUploadProof: () => void;
     onSubmit: (amount: number, description: string, progressPct?: number) => void;
+    saving?: boolean;
 }) {
     const [amount, setAmount] = React.useState("");
     const [description, setDescription] = React.useState(`${contractor.name} — progress payment for ${workOrder.work_order_no}`);
@@ -473,7 +475,7 @@ function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUp
       <DialogContent className="max-w-md gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <DollarSign className="h-4 w-4 text-primary"/> Request contractor payment
+            <DollarSign className="h-4 w-4 text-primary"/> Create RA bill
           </DialogTitle>
           <DialogDescription className="text-xs">{contractor.name} · {workOrder.work_order_no} · {(workOrder.customer_name || "Customer")}</DialogDescription>
         </DialogHeader>
@@ -512,7 +514,7 @@ function CreateRABillDialog({ contractor, workOrder, releaseGuard, onClose, onUp
         </div>
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" onClick={() => onSubmit(parseFloat(amount) || 0, description, progressPct ? parseFloat(progressPct) : undefined)} disabled={!amount || !description}>
+          <Button size="sm" onClick={() => onSubmit(Number(amount), description.trim(), progressPct ? Number(progressPct) : undefined)} disabled={saving || !Number.isFinite(Number(amount)) || Number(amount) <= 0 || !description.trim() || (Boolean(progressPct) && (!Number.isFinite(Number(progressPct)) || Number(progressPct) < 0 || Number(progressPct) > 100))}>
             <DollarSign className="mr-1 h-3.5 w-3.5"/> Submit bill
           </Button>
         </DialogFooter>

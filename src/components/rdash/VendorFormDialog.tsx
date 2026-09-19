@@ -222,7 +222,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
-  const dirty = open && fingerprint(currentPayload) !== baselineKey;
+  const dirty = open && (isPending(businessCard) || isPending(shopPhoto) || fingerprint(currentPayload) !== baselineKey);
   const duplicateConflicts = vendorDuplicateConflicts(db, currentPayload, editId);
   const hardDuplicate = duplicateConflicts.find((row) => row.hard);
   const softDuplicate = duplicateConflicts.find((row) => !row.hard);

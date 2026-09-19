@@ -34,6 +34,7 @@ export interface RecordRow {
     };
     meta?: string;
     detailKind: DetailPanelKind;
+    detailId?: string;
     contextActions?: ContextAction[];
     badge?: React.ReactNode;
 }
@@ -145,13 +146,13 @@ function RecordRowItem({ row }: {
         {
             label: "Open",
             icon: "eye",
-            onSelect: () => openDetail(row.detailKind, row.id),
+            onSelect: () => openDetail(row.detailKind, row.detailId || row.id),
         },
     ];
     return (<ContextRow actions={actions} className="group flex items-start gap-3 rounded-lg border border-transparent px-3 py-2.5 transition-all hover:border-border hover:bg-accent/30">
-      <div role="button" tabIndex={0} onClick={() => openDetail(row.detailKind, row.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") {
+      <div role="button" tabIndex={0} onClick={() => openDetail(row.detailKind, row.detailId || row.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        openDetail(row.detailKind, row.id);
+        openDetail(row.detailKind, row.detailId || row.id);
     } }} className="flex flex-1 cursor-pointer items-start gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-md">
         {row.customerName && <Avatar name={row.customerName} size={34}/>}
         <div className="min-w-0 flex-1">

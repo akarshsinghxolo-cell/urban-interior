@@ -141,11 +141,13 @@ describe("Phase 3 re-audit", () => {
       'entityType="blocked" entityId={b.id}',
       'entityType="commission" entityId={c.id}',
       'entityType="inventory" entityId={inv.id}',
-      'entityType="vendor" entityId={vendor.id}',
-      'entityType="contractor" entityId={contractor.id}',
       'entityType="boq" entityId={b.id}',
     ];
     for (const snippet of expected) expect(detail).toContain(snippet);
+    const partner = await read("src/components/rdash/modules/PartnerDetailContent.tsx");
+    expect(partner).toContain("entityType={kind} entityId={id}");
+    expect(detail).toContain('kind="vendor" id={id}');
+    expect(detail).toContain('kind="contractor" id={id}');
   });
 
   test("remaining transaction owners have a natural contextual file surface", async () => {

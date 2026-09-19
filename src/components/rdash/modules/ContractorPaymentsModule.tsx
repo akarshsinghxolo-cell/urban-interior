@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { CheckCircle2, Clock3, HandCoins, IndianRupee, ShieldCheck, Check, AlertCircle, XCircle, FileText, ListFilter } from "lucide-react";
-import { useRDashStore, contractorOutstandingTotal } from "@/lib/rdash/store";
+import { useRDashStore, contractorOutstanding, contractorOutstandingTotal } from "@/lib/rdash/store";
 import { OperationsWorkspace, type FilterChip, type MetricSpec, type QueueSpec, type RecordRow } from "../OperationsWorkspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { formatINR, formatINRShort, formatDate, titleCase } from "@/lib/rdash/format";
 import { toast } from "sonner";
 import type { ContractorBill, ContractorPayment } from "@/lib/rdash/types";
-export function ContractorPaymentsModule() {
+export function ContractorPaymentsModule({ contractorId }: { contractorId?: string } = {}) {
     const db = useRDashStore((state) => state.db);
     const recordContractorPayment = useRDashStore((state) => state.recordContractorPayment);
     const requestContractorBillPayment = useRDashStore((state) => state.requestContractorBillPayment);
@@ -47,7 +47,8 @@ export function ContractorPaymentsModule() {
     // manager doesn't have to open each work order or contractor
     // individually. Toggled via a state switch above the queues.
     const [showSettlementsView, setShowSettlementsView] = React.useState(false);
-    const paymentRows = db.contractorPayments;
+    const paymentRows = db.contractorPayments.filter((payment) => !contractorId || payment.contractor_id === contractorId);
+    const bills = db.contractorBills.filter((bill) => !contractorId || bill.contractor_id === contractorId);
     const pending = paymentRows.filter((payment) => payment.status === "pending");
     const approved = paymentRows.filter((payment) => payment.status === "approved");
     const paid = paymentRows.filter((payment) => payment.status === "paid");
@@ -58,16 +59,16 @@ export function ContractorPaymentsModule() {
     // (total_billed − total_paid − total_settled) so all four modules agree.
     // `committedNotPaid` is still surfaced as a separate "Committed (pending)"
     // metric below for finance users who specifically need the uncommitted view.
-    const payableBills = db.contractorBills.filter((bill) => bill.status !== "held");
+    const payableBills = bills.filter((bill) => bill.status !== "held");
     void payableBills; // retained for any future per-bill drill-down
-    const committedNotPaid = db.contractorPayments
+    const committedNotPaid = paymentRows
         .filter((payment) => payment.status === "pending" || payment.status === "approved")
         .reduce((total, payment) => total + payment.amount, 0);
-    const outstanding = contractorOutstandingTotal(db);
-    const openBills = db.contractorBills.filter((bill) => bill.status === "verified" || bill.status === "approved" || bill.status === "partly_paid");
+    const outstanding = contractorId ? contractorOutstanding(db, contractorId) : contractorOutstandingTotal(db);
+    const openBills = bills.filter((bill) => bill.status === "verified" || bill.status === "approved" || bill.status === "partly_paid");
     // FIX-CONTRACTOR-BATCH2 / F.7: include disputed bills in the metrics so
     // finance can see how many bills are frozen pending dispute resolution.
-    const disputedBills = db.contractorBills.filter((bill) => bill.status === "disputed");
+    const disputedBills = bills.filter((bill) => bill.status === "disputed");
     const metrics: MetricSpec[] = [
         { label: "Awaiting approval", value: pending.length, tone: "warning", icon: <Clock3 className="h-4 w-4"/> },
         { label: "Ready to pay", value: formatINRShort(approved.reduce((total, payment) => total + payment.amount, 0)), tone: "primary", icon: <ShieldCheck className="h-4 w-4"/> },
@@ -206,7 +207,7 @@ export function ContractorPaymentsModule() {
     // "Settle & abandon" action live). Surfaced as a top-bar toggle so the
     // user can flip between the payments workflow and the settlements view
     // without leaving the module.
-    const allSettlements = db.contractorSettlements;
+    const allSettlements = db.contractorSettlements.filter((row) => !contractorId || row.contractor_id === contractorId);
     const allSettlementRows: RecordRow[] = allSettlements.map((s) => {
         const workOrder = db.workOrders.find((row) => row.id === s.work_order_id);
         const site = db.sites.find((row) => row.id === s.site_id);
@@ -219,6 +220,7 @@ export function ContractorPaymentsModule() {
             status: { label: titleCase(s.type || "abandonment").replaceAll("_", " "), className: "bg-destructive/10 text-destructive border-destructive/20" },
             meta: `${s.completed_pct}% complete · payable ${formatINRShort(s.payable_amount)} · ${s.reason.slice(0, 80)}${s.reason.length > 80 ? "…" : ""}`,
             detailKind: "workOrder",
+            detailId: s.work_order_id,
             contextActions: [{ label: "Open work order", icon: <FileText className="h-3.5 w-3.5"/>, onClick: () => openDetail("workOrder", s.work_order_id) }],
         };
     });
