@@ -542,18 +542,14 @@ function ContractorRateRecord({ rate }: { rate: Record<string, any> }) {
   const materialRate = rate.material_rate;
   const labourRate = rate.labour_rate;
   const totalRate = (materialRate || 0) + (labourRate || 0);
+  const workTypeName = String(rate.work_type_name || "Work type").trim();
+  const displayWorkTypeName = workTypeName ? workTypeName.charAt(0).toUpperCase() + workTypeName.slice(1) : "Work type";
+  const workName = rate.work_subcategory_name || rate.trade || "Contractor rate";
   return (
     <div className="rounded-xl border border-border bg-muted/10 p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold">
-            {(() => {
-              const workTypeName = String(rate.work_type_name || "Work type").trim();
-              const displayWorkTypeName = workTypeName ? workTypeName.charAt(0).toUpperCase() + workTypeName.slice(1) : "Work type";
-              const workName = rate.work_subcategory_name || rate.trade || "Contractor rate";
-              return `${displayWorkTypeName} - ${workName}`;
-            })()}
-          </p>
+          <p className="truncate text-sm font-bold">{`${displayWorkTypeName} - ${workName}`}</p>
         </div>
         <StatusBadge label={rate.unit_id || "No unit"} />
       </div>
