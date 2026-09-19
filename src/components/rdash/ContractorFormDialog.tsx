@@ -88,6 +88,7 @@ type Draft = {
   name: string;
   legalName: string;
   phone: string;
+  secondaryPhone: string;
   address: string;
   city: string;
   locality: string;
@@ -105,6 +106,7 @@ const EMPTY_DRAFT: Draft = {
   name: "",
   legalName: "",
   phone: "",
+  secondaryPhone: "",
   address: "",
   city: "",
   locality: "",
@@ -141,6 +143,7 @@ function draftFromRecord(record: ContractorProfileRecord): Draft {
     name: String(record.name || ""),
     legalName: String(record.legal_name || ""),
     phone: String(record.phone || ""),
+    secondaryPhone: String(record.alternate_phone || ""),
     address: String(record.address || ""),
     city: String(record.city || ""),
     locality: String(record.locality || ""),
@@ -291,6 +294,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
       name: draft.name,
       legal_name: draft.legalName,
       phone: draft.phone,
+      alternate_phone: draft.secondaryPhone,
       address: draft.address,
       city: draft.city,
       locality: draft.locality,
@@ -703,11 +707,12 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
           <div className="rd-scroll max-h-[72vh] space-y-4 overflow-y-auto px-5 py-4">
             <section className="space-y-2">
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Identity and lifecycle</p>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Input value={draft.name} onChange={(event) => { set("name", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Contractor / firm name" autoFocus={!isEdit} />
-                <Input value={draft.legalName} onChange={(event) => { set("legalName", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Legal / registered name" />
-                <Input value={draft.phone} onChange={(event) => { set("phone", sanitizeIndianMobile(event.target.value)); setDuplicateAcknowledged(false); }} placeholder="Primary mobile" inputMode="numeric" />
-                <select value={draft.status} onChange={(event) => set("status", event.target.value as ContractorLifecycleStatus)} className="h-10 rounded-md border border-input bg-card px-3 text-sm">
+              <div className="grid gap-2 sm:grid-cols-4">
+                <Input value={draft.name} onChange={(event) => { set("name", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Contractor / firm name" autoFocus={!isEdit} className="sm:col-span-2" />
+                <Input value={draft.legalName} onChange={(event) => { set("legalName", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Legal / registered name" className="sm:col-span-2" />
+                <Input value={draft.phone} onChange={(event) => { set("phone", sanitizeIndianMobile(event.target.value)); setDuplicateAcknowledged(false); }} placeholder="Primary number" aria-label="Primary number" inputMode="numeric" />
+                <Input value={draft.secondaryPhone} onChange={(event) => { set("secondaryPhone", sanitizeIndianMobile(event.target.value)); setDuplicateAcknowledged(false); }} placeholder="Secondary number" aria-label="Secondary number" inputMode="numeric" />
+                <select value={draft.status} onChange={(event) => set("status", event.target.value as ContractorLifecycleStatus)} className="h-10 rounded-md border border-input bg-card px-3 text-sm sm:col-span-2">
                   <option value="onboarding">Onboarding</option>
                   <option value="active">Active</option>
                   <option value="on_hold">On hold</option>

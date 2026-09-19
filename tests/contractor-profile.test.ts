@@ -45,10 +45,10 @@ const premiumRate = { work_type_id: "wt-premium", work_type_name: "Premium", uni
 describe("canonical contractor profile", () => {
   test("normalizes work-type labour rates and derives categories", () => {
     const normalized = normalizeContractorForWrite({
-      id: "con-1", name: "  Mr Das  ", phone: "+91 98765 43210", city: " Gorakhpur ", source_partner_id: "sp-1",
+      id: "con-1", name: "  Mr Das  ", phone: "+91 98765 43210", alternate_phone: "+91 91234 56789", city: " Gorakhpur ", source_partner_id: "sp-1",
       work_capabilities: [{ subcategory_id: "sub-paint", work_type_rates: [budgetRate, { ...budgetRate, labour_rate: 22 }, premiumRate] }],
     }, db(), { id: "con-1" });
-    expect(normalized).toMatchObject({ name: "Mr Das", phone: "9876543210", city: "Gorakhpur", status: "onboarding", source_partner_name: "Architect One", categories: ["Painting"] });
+    expect(normalized).toMatchObject({ name: "Mr Das", phone: "9876543210", alternate_phone: "9123456789", city: "Gorakhpur", status: "onboarding", source_partner_name: "Architect One", categories: ["Painting"] });
     expect(normalized.work_capabilities?.[0].work_type_rates).toEqual([{ ...budgetRate, labour_rate: 22 }, premiumRate]);
   });
 
@@ -102,6 +102,13 @@ describe("contractor validation and duplicate prevention", () => {
     expect(conflicts[0]).toMatchObject({ hard: true, reasons: ["same phone"] });
   });
 
+  test("secondary number also participates in hard duplicate detection", () => {
+    const state = db();
+    state.master.contractors = [{ id: "existing", name: "Das Enterprises", phone: "9876543210", alternate_phone: "9123456789", city: "Gorakhpur" }];
+    const conflicts = contractorDuplicateConflicts(state, { name: "Another Das", alternate_phone: "9123456789", city: "Lucknow" });
+    expect(conflicts[0]).toMatchObject({ hard: true, reasons: ["same phone"] });
+  });
+
   test("same normalized name and city remains a warning", () => {
     const state = db();
     state.master.contractors = [{ id: "existing", name: "Das Contractors Pvt Ltd", city: "Gorakhpur" }];
@@ -119,14 +126,13 @@ describe("contractor create persistence and governance projection", () => {
   test("create records preserve the complete normalized form payload", () => {
     const record = contractorMasterRecordForCreate({
       id: "reserved-id", name: "Complete Contractor", legal_name: "Complete Contractor Private Limited",
-      available_workers: 14, service_radius_km: 45,
+      phone: "9876543210", alternate_phone: "9123456789", available_workers: 14, service_radius_km: 45,
       notes: "Preferred for complex work", work_capabilities: [{ subcategory_id: "sub-paint", work_type_rates: [budgetRate] }],
       obsolete_payload_field: "discard-me", compliance_documents: [{ id: "doc-1", kind: "insurance", verified: false }],
     } as ContractorProfileRecord, "con-42");
-    expect(record).toMatchObject({ id: "con-42", legal_name: "Complete Contractor Private Limited", available_workers: 14, service_radius_km: 45, notes: "Preferred for complex work" });
+    expect(record).toMatchObject({ id: "con-42", legal_name: "Complete Contractor Private Limited", phone: "9876543210", alternate_phone: "9123456789", available_workers: 14, service_radius_km: 45, notes: "Preferred for complex work" });
     expect((record as Record<string, unknown>).obsolete_payload_field).toBeUndefined();
     expect((record as Record<string, unknown>).whatsapp).toBeUndefined();
-    expect((record as Record<string, unknown>).alternate_phone).toBeUndefined();
     expect((record as Record<string, unknown>).email).toBeUndefined();
     expect(record.compliance_documents).toHaveLength(1);
   });
@@ -147,6 +153,14 @@ describe("contractor create persistence and governance projection", () => {
       { id: "r2", contractor_id: "c2", trade: "Paint", rate: 90, work_subcategory_id: "sub-paint", work_type_id: "wt-budget", material_rate: 60, labour_rate: 30 },
     ], "sub-paint", "wt-budget");
     expect(average).toEqual({ material_rate: 50, labour_rate: 25, total_rate: 75, contractor_count: 2 });
+  });
+});
+
+describe("contractor contact fields", () => {
+  test("the edit form exposes primary and secondary number inputs", () => {
+    const source = readFileSync(new URL("../src/components/rdash/ContractorFormDialog.tsx", import.meta.url), "utf8");
+    expectTokens(source, ['placeholder="Primary number"', 'placeholder="Secondary number"']);
+    expect(source).toContain("alternate_phone: draft.secondaryPhone");
   });
 });
 
