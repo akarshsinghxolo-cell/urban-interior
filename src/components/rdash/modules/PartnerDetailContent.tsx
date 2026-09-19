@@ -21,8 +21,8 @@ const ProcurementModule = dynamic(() => import("./ProcurementModule").then((modu
 const VendorBillsModule = dynamic(() => import("./VendorBillsModule").then((module) => module.VendorBillsModule));
 const ContractorPaymentsModule = dynamic(() => import("./ContractorPaymentsModule").then((module) => module.ContractorPaymentsModule));
 const VendorPriceMasterModule = dynamic(() => import("./VendorPriceMasterModule").then((module) => module.VendorPriceMasterModule));
-const EditContractorBidDialog = dynamic(() => import("./ContractorDetailModule").then((module) => module.EditContractorBidDialog));
-const CreateRABillDialog = dynamic(() => import("./ContractorDetailModule").then((module) => module.CreateRABillDialog));
+const EditContractorBidDialog = dynamic(() => import("./ContractorWorkDialogs").then((module) => module.EditContractorBidDialog));
+const CreateRABillDialog = dynamic(() => import("./ContractorWorkDialogs").then((module) => module.CreateRABillDialog));
 
 const sections: Array<[PartnerSection, string]> = [["overview", "Overview"], ["profile", "Profile"], ["capabilities", "Capabilities & rates"], ["work", "Work & orders"], ["finance", "Bills & payments"], ["tasks", "Tasks"], ["files", "Files"], ["activity", "Activity"]];
 type Portfolio = ReturnType<typeof partnerPortfolio>;

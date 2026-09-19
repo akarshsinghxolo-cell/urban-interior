@@ -365,6 +365,7 @@ describe("Phase 3 re-audit", () => {
     expect(status).toContain("!item.deferred");
 
     const draftFiles = [
+      "src/components/rdash/use-partner-form.ts",
       "src/components/rdash/VendorFormDialog.tsx",
       "src/components/rdash/ContractorFormDialog.tsx",
       "src/components/rdash/CustomerSiteDraftCard.tsx",
@@ -390,6 +391,10 @@ describe("Phase 3 re-audit", () => {
     expect(contractor).toContain("confirmedAttachmentId(businessCard)");
     expect(vendor).toContain("confirmedAttachmentId(businessCard)");
     expect(vendor).toContain("confirmedAttachmentId(shopPhoto)");
+    for (const form of [contractor, vendor]) {
+      expectTokens(form, ["await awaitServerSync(); commitBatches();"]);
+      expect(form).toContain("saving || mediaLoading");
+    }
     expectTokens(store, ["The server rejected this change before it could be confirmed."]);
   });
 
@@ -405,7 +410,7 @@ describe("Phase 3 re-audit", () => {
       read("src/components/rdash/DetailPanel.tsx"),
       read("src/lib/rdash/detail-navigation.ts"),
       read("src/lib/rdash/store/ui-types.ts"),
-      read("src/components/rdash/modules/Partner360Module.tsx"),
+      read("src/components/rdash/modules/PartnerDetailContent.tsx"),
       read("src/lib/rdash/server/direct-upload-persistence.ts"),
     ]);
     expect(uiTypes).toContain('"vendorPayment"');
@@ -415,8 +420,8 @@ describe("Phase 3 re-audit", () => {
     expect(detail).toContain("attachmentOwnerPanelTarget");
     expectTokens(detail, ['case "measurement_revision"']);
     expectTokens(detail, ['case "thread_message"']);
-    expectNoTokens(partner, ['openDetail(mode === "vendor" ? "purchaseOrder"']);
-    expectTokens(partner, ['openDetail(mode === "vendor" ? "po" : "workOrder"']);
+    expectTokens(partner, ['openDetail(kind === "vendor" ? "vendorPayment" : "contractorPayment", row.id)']);
+    expect(partner).toContain('<ProcurementModule key={id} vendorId={id}');
     expectTokens(persistence, ['boq: "boqs"']);
     expectTokens(persistence, ['commission: "commissions"']);
   });

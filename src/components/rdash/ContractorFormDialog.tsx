@@ -18,24 +18,15 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { attachedPreview, confirmedAttachmentId } from "@/lib/rdash/file-attachments";
-import { reverseGeocodeWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
-import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
+import { confirmedAttachmentId } from "@/lib/rdash/file-attachments";
 import {
   coordinateInputError,
   formatCoordinatePair,
-  parseCoordinatePair,
 } from "@/lib/rdash/coordinates";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
-import {
-  cancelQueuedWorkflowFile,
-  classifyWorkflowFile,
-  enqueueWorkflowFiles,
-  withLocalPreview,
-  type QueuedWorkflowFile,
-} from "@/lib/uploads/workflow-upload";
-import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { cancelQueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { usePartnerLocation, usePartnerMedia, isPendingMedia as isPending, partnerMediaFile as mediaFile, removePartnerMedia as removeMedia, type PartnerMedia as MediaValue } from "./use-partner-form";
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import {
@@ -63,13 +54,6 @@ type ContractorFormDialogProps = {
   editId?: string;
 };
 
-type PendingMedia = QueuedWorkflowFile & {
-  url: string;
-  file_name: string;
-  mime_type: string;
-};
-type ExistingMedia = { attachment_id: string };
-type MediaValue = "" | PendingMedia | ExistingMedia;
 type CapabilityDraft = {
   subcategory_id: string;
   subcategory_name?: string;
@@ -120,20 +104,8 @@ const EMPTY_DRAFT: Draft = {
   notes: "",
 };
 
-const isPending = (value: MediaValue): value is PendingMedia =>
-  typeof value === "object" && "uploadItemId" in value;
-const isExisting = (value: MediaValue): value is ExistingMedia =>
-  typeof value === "object" && "attachment_id" in value;
 const optionalNumber = (value: string): number | undefined =>
   value.trim() ? Number(value) : undefined;
-
-function mediaFile(value: MediaValue, db: any) {
-  if (isExisting(value)) return attachedPreview(db, value.attachment_id);
-  if (isPending(value)) {
-    return { fileName: value.file_name, mimeType: value.mime_type, url: value.url };
-  }
-  return undefined;
-}
 
 function draftFromRecord(record: ContractorProfileRecord): Draft {
   const status = ["onboarding", "active", "on_hold", "blacklisted", "inactive"].includes(String(record.status))
@@ -239,13 +211,10 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const formId = `contractor-form:${editId || "new"}`;
   const [reservedId, setReservedId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
-  const { registerBatch, commitBatches } = useUploadDraft(open);
 
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
-  const [latitude, setLatitude] = React.useState<number>();
-  const [longitude, setLongitude] = React.useState<number>();
-  const [coordinates, setCoordinates] = React.useState("");
-  const [gpsLoading, setGpsLoading] = React.useState(false);
+  const { latitude, longitude, coordinates, gpsLoading, resetLocation, updateCoordinates, captureGps } = usePartnerLocation(open, editId, setDraft);
+  const { uploadMedia, commitBatches, mediaLoading } = usePartnerMedia(open, "contractor", reservedId, draft.name);
   const [referralQuery, setReferralQuery] = React.useState("");
   const [referralId, setReferralId] = React.useState<string>();
   const [referralOpen, setReferralOpen] = React.useState(false);
@@ -261,15 +230,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [baselineKey, setBaselineKey] = React.useState("");
   const baselineRef = React.useRef<ContractorProfileRecord>({});
   const baselineCoordinateRef = React.useRef("");
-  const disposedRef = React.useRef(false);
-  const gpsSequenceRef = React.useRef(0);
-
-  React.useEffect(() => {
-    disposedRef.current = false; // reset for StrictMode's dev mount/unmount/remount cycle
-    return () => {
-      disposedRef.current = true;
-    };
-  }, []);
 
   const allCategories = db.master.workCategories;
   const allSubcategories = db.master.workSubcategories;
@@ -383,9 +343,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     );
     const nextCoordinates = formatCoordinatePair(normalized as any);
     setDraft(draftFromRecord(normalized));
-    setLatitude(normalized.latitude as number | undefined);
-    setLongitude(normalized.longitude as number | undefined);
-    setCoordinates(nextCoordinates);
+    resetLocation(normalized, nextCoordinates);
     setCapabilities(capabilitiesToDraft(normalized.work_capabilities || [], allSubcategories));
     setActiveCapabilityCategoryId(null);
     setContractorPhoto(
@@ -421,7 +379,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     normalizationError = error instanceof Error ? error.message : "Contractor data is invalid.";
   }
 
-  const dirty = open && (isPending(contractorPhoto) || isPending(businessCard) || fingerprint(currentPayload, coordinates) !== baselineKey);
+  const dirty = open && (mediaLoading || isPending(contractorPhoto) || isPending(businessCard) || fingerprint(currentPayload, coordinates) !== baselineKey);
   const referralError = referralQuery.trim() && !referralId
     ? "Choose an existing Source Partner from the referral search results."
     : null;
@@ -450,9 +408,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     await Promise.all(pending.map((value) => cancelQueuedWorkflowFile(value)));
     const baseline = baselineRef.current;
     setDraft(draftFromRecord(baseline));
-    setLatitude(baseline.latitude as number | undefined);
-    setLongitude(baseline.longitude as number | undefined);
-    setCoordinates(baselineCoordinateRef.current);
+    resetLocation(baseline, baselineCoordinateRef.current);
     setCapabilities(capabilitiesToDraft(baseline.work_capabilities || [], allSubcategories));
     setReferralId(baseline.source_partner_id as string | undefined);
     setReferralQuery(String(baseline.source_partner_name || ""));
@@ -462,7 +418,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   }
 
   async function save(): Promise<boolean> {
-    if (saving) return false;
+    if (saving || mediaLoading) return false;
     if (validationError) {
       toast.error(validationError);
       return false;
@@ -503,104 +459,6 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
   function requestClose() {
     dirtyFormRegistry.requestNavigation(onClose, { reason: "close this contractor form" });
-  }
-
-  function updateCoordinates(value: string) {
-    setCoordinates(value);
-    if (!value.trim()) {
-      setLatitude(undefined);
-      setLongitude(undefined);
-      return;
-    }
-    const parsed = parseCoordinatePair(value);
-    if (parsed) {
-      setLatitude(parsed.latitude);
-      setLongitude(parsed.longitude);
-      setCoordinates(formatCoordinatePair(parsed));
-    }
-  }
-
-  // Coordinates first; then autofill only empty fields — a slow reverse
-  // lookup must never clobber or wipe text the user typed, and a newer
-  // capture discards stale lookup results (sequence guard).
-  async function captureGps() {
-    const sequence = ++gpsSequenceRef.current;
-    setGpsLoading(true);
-    const fillable = {
-      address: !draft.address.trim(),
-      city: !draft.city.trim(),
-      locality: !draft.locality.trim(),
-    };
-    try {
-      const capture = await captureDeviceGps({ mode: "master-location" });
-      if (sequence !== gpsSequenceRef.current || disposedRef.current) return;
-      const next = { latitude: capture.latitude, longitude: capture.longitude };
-      setLatitude(next.latitude);
-      setLongitude(next.longitude);
-      setCoordinates(formatCoordinatePair(next));
-      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
-      try {
-        const result = await reverseGeocodeWithNominatim(next.latitude, next.longitude);
-        if (sequence !== gpsSequenceRef.current || disposedRef.current || !result?.display_name) return;
-        if (fillable.address) set("address", result.display_name);
-        if (fillable.city) { const city = addressCity(result.address); if (city) set("city", city); }
-        if (fillable.locality) { const locality = addressLocality(result.address); if (locality) set("locality", locality); }
-      } catch (lookupError) {
-        if (sequence === gpsSequenceRef.current && !disposedRef.current) {
-          toast.error(lookupError instanceof Error && lookupError.message ? lookupError.message : "Address autofill failed. Coordinates were kept.");
-        }
-      }
-    } catch (gpsError) {
-      if (sequence === gpsSequenceRef.current && !disposedRef.current) {
-        toast.error(`GPS error: ${deviceGpsErrorMessage(gpsError)}`);
-      }
-    } finally {
-      if (sequence === gpsSequenceRef.current && !disposedRef.current) setGpsLoading(false);
-    }
-  }
-
-  async function uploadMedia(
-    event: React.ChangeEvent<HTMLInputElement>,
-    setter: (value: MediaValue) => void,
-    attachmentField: string,
-    caption: string,
-  ) {
-    const file = event.target.files?.[0];
-    event.currentTarget.value = "";
-    if (!file || !reservedId) return;
-    try {
-      const queued = await enqueueWorkflowFiles({
-        sourceFlow: "contractor_form",
-                deferProcessing: true,
-        sourceLabel: "contractor form",
-        targetEntityType: "contractor",
-        targetEntityId: reservedId,
-        targetLabel: draft.name.trim() || "New contractor",
-        purpose: "contractor_document",
-        files: [{
-          file,
-          ...classifyWorkflowFile(file),
-          caption,
-          attachmentField,
-          attachmentFieldMode: "set",
-        }],
-      });
-      registerBatch(queued.batchId);
-      const preview = withLocalPreview(queued.files[0], file);
-      setter({
-        ...preview,
-        url: preview.previewUrl,
-        file_name: file.name,
-        mime_type: file.type || "application/octet-stream",
-      });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not queue the file.");
-    }
-  }
-
-  async function removeMedia(value: MediaValue, setter: (value: MediaValue) => void) {
-    if (isPending(value)) await cancelQueuedWorkflowFile(value);
-    setter("");
   }
 
   const toggleCapability = (subcategoryId: string) => {
@@ -943,7 +801,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
           <DialogFooter className="border-t border-border px-5 py-3">
             <Button type="button" variant="outline" onClick={requestClose}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
-            <Button type="submit" disabled={saving || Boolean(validationError) || (isEdit && !dirty)} title={validationError || undefined}>
+            <Button type="submit" disabled={saving || mediaLoading || Boolean(validationError) || (isEdit && !dirty)} title={validationError || undefined}>
               {saving ? "Saving…" : isEdit ? <><Pencil className="mr-1 h-3.5 w-3.5" />Save contractor</> : <><Plus className="mr-1 h-3.5 w-3.5" />Create contractor</>}
             </Button>
           </DialogFooter>
