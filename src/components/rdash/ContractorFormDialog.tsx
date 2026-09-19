@@ -417,7 +417,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     normalizationError = error instanceof Error ? error.message : "Contractor data is invalid.";
   }
 
-  const dirty = open && fingerprint(currentPayload, coordinates) !== baselineKey;
+  const dirty = open && (isPending(contractorPhoto) || isPending(businessCard) || fingerprint(currentPayload, coordinates) !== baselineKey);
   const referralError = referralQuery.trim() && !referralId
     ? "Choose an existing Source Partner from the referral search results."
     : null;

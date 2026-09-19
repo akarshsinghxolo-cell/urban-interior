@@ -44,7 +44,7 @@ function newBuilderRow(): BuilderRow {
 function procurementArticleId(master: Master, line: Pick<LineItem, "article_id" | "work_required_article_id">) {
     return line.article_id || (line.work_required_article_id ? master.subcategoryArticleMap.find((row) => row.id === line.work_required_article_id)?.article_id : undefined);
 }
-export function ProcurementModule() {
+export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
     const db = useRDashStore((s) => s.db);
     const createPO = useRDashStore((s) => s.createPO);
     const createDirectAwardPO = useRDashStore((s) => s.createDirectAwardPO);
@@ -87,7 +87,9 @@ export function ProcurementModule() {
         award_reason: "",
         note: "",
     });
-    const pos = db.purchaseOrders;
+    const pos = db.purchaseOrders.filter((row) => !vendorId || row.vendor_id === vendorId);
+    const vendorRfqs = db.vendorRfqs.filter((row) => !vendorId || row.vendor_ids.includes(vendorId));
+    const vendors = db.master.vendors.filter((row) => !vendorId || row.id === vendorId);
     const pendingApproval = React.useMemo(() => pos.filter((p) => p.status === "pending_approval"), [pos]);
     const approvedOrSent = React.useMemo(() => pos.filter((p) => p.status === "approved" || p.status === "sent"), [pos]);
     const received = React.useMemo(() => pos.filter((p) => p.status === "partially_received" || p.status === "received"), [pos]);
@@ -161,7 +163,7 @@ export function ProcurementModule() {
         {
             id: "rfq_bids",
             label: "RFQs & Bids",
-            count: db.vendorRfqs.filter((r) => r.status !== "closed").length,
+            count: vendorRfqs.filter((r) => r.status !== "closed").length,
             active: filter === "rfq_bids",
         },
     ];
@@ -294,7 +296,7 @@ export function ProcurementModule() {
     // E: Vendor RFQ & Bid queue — surfaces open RFQs with the count of received
     // bids, lowest bid amount, and quick actions: Record Bid, Lowest bid → PO.
     if (filter === "all" || filter === "rfq_bids") {
-        const rfqRows: RecordRow[] = db.vendorRfqs
+        const rfqRows: RecordRow[] = vendorRfqs
             .filter((r) => r.status !== "closed")
             .map((rfq) => {
             const boq = db.boqs.find((b) => b.id === rfq.boq_id);
@@ -321,7 +323,7 @@ export function ProcurementModule() {
             // E-3: Lowest bid → PO quick action. Only enabled when at least one
             // bid is received. The store action selects the lowest bid and
             // creates a PO from it.
-            if (bids.length > 0) {
+            if (bids.length > 0 && !vendorId) {
                 acts.push({
                     label: allBidsIn ? "Lowest bid → PO" : `Lowest bid → PO (${receivedVendors}/${expectedVendors} bids)`,
                     icon: <Trophy className="h-3.5 w-3.5"/>,
@@ -343,7 +345,8 @@ export function ProcurementModule() {
                             : "bg-warning/10 text-warning border-warning/20",
                 },
                 meta: `${receivedVendors}/${expectedVendors} bids${lowestBid ? ` · lowest ${formatINRShort(lowestBid.quoted_amount)} (${lowestBid.vendor_name})` : " · no bids yet"}`,
-                detailKind: "po",
+                detailKind: "boq",
+                detailId: rfq.boq_id,
                 contextActions: acts,
                 badge: lowestBid ? (<span title={`Lowest bid: ${lowestBid.vendor_name} · ${formatINR(lowestBid.quoted_amount)}`} className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0 text-[10px] font-semibold text-success">
                         <Trophy className="h-2.5 w-2.5"/> Lowest: {formatINRShort(lowestBid.quoted_amount)}
@@ -366,7 +369,7 @@ export function ProcurementModule() {
             toast.error("Vendor RFQ not found.");
             return;
         }
-        const firstVendor = rfq.vendor_ids.find((id) => !db.vendorBids.some((b) => b.rfq_id === rfqId && b.vendor_id === id)) || rfq.vendor_ids[0] || "";
+        const firstVendor = vendorId || rfq.vendor_ids.find((id) => !db.vendorBids.some((b) => b.rfq_id === rfqId && b.vendor_id === id)) || rfq.vendor_ids[0] || "";
         const boq = db.boqs.find((b) => b.id === rfq.boq_id);
         // E-2: Pre-fill rates with the vendor's existing vendorRate for each
         // requested BOQ article (from master.vendorRates). Falls back to empty.
@@ -472,7 +475,7 @@ export function ProcurementModule() {
     };
     const openCreate = () => {
         setForm({
-            vendor_id: db.master.vendors[0]?.id || "",
+            vendor_id: vendorId || db.master.vendors[0]?.id || "",
             work_order_id: "",
             expected_delivery: todayStr(),
             rows: [newBuilderRow()],
@@ -481,7 +484,7 @@ export function ProcurementModule() {
     };
     const openDirectAward = () => {
         setDirectAwardForm({
-            vendor_id: db.master.vendors[0]?.id || "",
+            vendor_id: vendorId || db.master.vendors[0]?.id || "",
             work_order_id: "",
             expected_delivery: todayStr(),
             rows: [newBuilderRow()],
@@ -701,7 +704,7 @@ export function ProcurementModule() {
     return (<>
       <OperationsWorkspace title="Procurement / Purchase Orders" description="Vendor POs raised against BOQs — approval, dispatch, delivery tracking" icon={<ShoppingCart className="h-4 w-4"/>} workflow={["BOQ", "PO Raise", "Approve", "Send", "Delivery", "GRN"]} metrics={metrics} filterChips={filterChips} onFilterChange={(id) => setFilter(id as FilterId)} queues={queues} onCreate={openCreate} createLabel="+ Create PO" searchPlaceholder="Search POs…" secondaryActions={[{ label: "Direct Award", icon: <Zap className="mr-1 h-3.5 w-3.5"/>, onClick: openDirectAward, variant: "outline" }]}/>
 
-      <CreatePODialog open={dialogOpen} onOpenChange={setDialogOpen} form={form} setForm={setForm} resolvedRows={resolvedRows} previewItems={previewItems} totalAmount={totalAmount} hasMissingVendorRate={hasMissingVendorRate} hasVendorRateUpdates={resolvedRows.some((row) => row.willUpdateVendorRate && row.article)} onAddRow={addRow} onUpdateRow={updateRow} onRemoveRow={removeRow} onCreate={handleCreatePO} vendors={db.master.vendors} workOrders={db.workOrders} catalogOptions={db.master.subcategoryArticleMap.map((scope) => {
+      <CreatePODialog open={dialogOpen} onOpenChange={setDialogOpen} form={form} setForm={setForm} resolvedRows={resolvedRows} previewItems={previewItems} totalAmount={totalAmount} hasMissingVendorRate={hasMissingVendorRate} hasVendorRateUpdates={resolvedRows.some((row) => row.willUpdateVendorRate && row.article)} onAddRow={addRow} onUpdateRow={updateRow} onRemoveRow={removeRow} onCreate={handleCreatePO} vendors={vendors} workOrders={db.workOrders} catalogOptions={db.master.subcategoryArticleMap.map((scope) => {
             const article = db.master.articles.find((entry) => entry.id === scope.article_id);
             const work = db.master.workSubcategories.find((entry) => entry.id === scope.work_required_id);
             const category = work ? db.master.workCategories.find((entry) => entry.id === work.category_id) : undefined;
@@ -716,7 +719,7 @@ export function ProcurementModule() {
             };
         })}/>
 
-      <DirectAwardPODialog open={directAwardOpen} onOpenChange={setDirectAwardOpen} form={directAwardForm} setForm={setDirectAwardForm} vendors={db.master.vendors} workOrders={db.workOrders} catalogOptions={db.master.subcategoryArticleMap.map((scope) => {
+      <DirectAwardPODialog open={directAwardOpen} onOpenChange={setDirectAwardOpen} form={directAwardForm} setForm={setDirectAwardForm} vendors={vendors} workOrders={db.workOrders} catalogOptions={db.master.subcategoryArticleMap.map((scope) => {
             const article = db.master.articles.find((entry) => entry.id === scope.article_id);
             const work = db.master.workSubcategories.find((entry) => entry.id === scope.work_required_id);
             const category = work ? db.master.workCategories.find((entry) => entry.id === work.category_id) : undefined;
@@ -731,14 +734,14 @@ export function ProcurementModule() {
 
       {/* E: Vendor Bid dialog — pre-fills the bid rate with the vendor's
           existing vendorRate for each requested BOQ article. */}
-      <VendorBidDialog open={bidRfqId !== null} onOpenChange={(v) => { if (!v) setBidRfqId(null); }} rfqId={bidRfqId} vendorId={bidVendorId} onVendorChange={onBidVendorChange} rates={bidRates} onRatesChange={setBidRates} deliveryDays={bidDeliveryDays} onDeliveryDaysChange={setBidDeliveryDays} db={db} onSave={saveVendorBid}/>
+      <VendorBidDialog lockedVendorId={vendorId} open={bidRfqId !== null} onOpenChange={(v) => { if (!v) setBidRfqId(null); }} rfqId={bidRfqId} vendorId={bidVendorId} onVendorChange={onBidVendorChange} rates={bidRates} onRatesChange={setBidRates} deliveryDays={bidDeliveryDays} onDeliveryDaysChange={setBidDeliveryDays} db={db} onSave={saveVendorBid}/>
       <Dialog open={Boolean(rfqFilesId)} onOpenChange={(open) => { if (!open) setRfqFilesId(null); }}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader><DialogTitle>RFQ & vendor bid files</DialogTitle></DialogHeader>
           {rfqFilesId && (() => {
             const rfq = db.vendorRfqs.find((row) => row.id === rfqFilesId);
             if (!rfq) return <p className="text-xs text-muted-foreground">RFQ not found.</p>;
-            const bids = db.vendorBids.filter((row) => row.rfq_id === rfq.id);
+            const bids = db.vendorBids.filter((row) => row.rfq_id === rfq.id && (!vendorId || row.vendor_id === vendorId));
             return <div className="max-h-[65vh] space-y-3 overflow-y-auto rd-scroll">
               <EntityFilesCard entityType="vendor_rfq" entityId={rfq.id} title={`${rfq.rfq_no} files`} manage showEmpty />
               {bids.map((bid) => <div key={bid.id} className="rounded-lg border border-border bg-muted/10 p-3">
@@ -757,9 +760,10 @@ export function ProcurementModule() {
 // Pre-fills the bid rate field with the vendor's existing vendorRate for each
 // requested BOQ article (from master.vendorRates). Shows a "last rate" hint
 // beside each line so the user knows the vendor's prior negotiated rate.
-function VendorBidDialog({ open, onOpenChange, rfqId, vendorId, onVendorChange, rates, onRatesChange, deliveryDays, onDeliveryDaysChange, db, onSave }: {
+function VendorBidDialog({ lockedVendorId, open, onOpenChange, rfqId, vendorId, onVendorChange, rates, onRatesChange, deliveryDays, onDeliveryDaysChange, db, onSave }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
+    lockedVendorId?: string;
     rfqId: string | null;
     vendorId: string;
     onVendorChange: (vendorId: string) => void;
@@ -787,9 +791,9 @@ function VendorBidDialog({ open, onOpenChange, rfqId, vendorId, onVendorChange, 
         <div className="grid gap-3">
           <label className="grid gap-1 text-xs font-medium text-muted-foreground">
             <span>Vendor *</span>
-            <select value={vendorId} onChange={(e) => onVendorChange(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
+            <select disabled={Boolean(lockedVendorId)} value={vendorId} onChange={(e) => onVendorChange(e.target.value)} className="h-9 rounded-md border border-input bg-background px-3 text-sm">
               <option value="">Select vendor…</option>
-              {rfq.vendor_ids.map((id: string) => {
+              {rfq.vendor_ids.filter((id: string) => !lockedVendorId || id === lockedVendorId).map((id: string) => {
                     const v = db.master.vendors.find((vendor: any) => vendor.id === id);
                     const alreadyBid = db.vendorBids.some((b: any) => b.rfq_id === rfq.id && b.vendor_id === id);
                     return (<option key={id} value={id}>

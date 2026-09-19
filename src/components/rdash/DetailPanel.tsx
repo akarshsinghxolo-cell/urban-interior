@@ -6,7 +6,7 @@ import { useFavorites } from "./FavoritesBar";
 import { FilePreview } from "./FilePreview";
 import { EntityFilesCard } from "./EntityFilesCard";
 import { attachedFilesForIds, assetPreview } from "@/lib/rdash/file-attachments";
-import { computeJobPnL, vendorBalance } from "@/lib/rdash/store";
+import { computeJobPnL } from "@/lib/rdash/store";
 import { ThreadView, Field, StatusPill, LineItemTable } from "./ThreadPanel";
 import { Avatar, StatusBadge } from "./primitives";
 import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatusStyle, visitStatusStyle, poStatusStyle, grnStatusStyle, dispatchStatusStyle, vendorBillStatusStyle, commissionStatusStyle, followupStatusStyle, formatINR, formatINRShort, formatDate, titleCase, } from "@/lib/rdash/format";
@@ -26,6 +26,7 @@ import { MapView, type MapPoint } from "./MapView";
 import { visitToMapPoints } from "./visitMap";
 import { promptDialog } from "./PromptDialog";
 import { CustomerPortfolioDrawerContent } from "./modules/CustomerDesk";
+import { PartnerDetailContent } from "./modules/PartnerDetailContent";
 import { resolveRenderer } from "@/lib/rdash/modules";
 import { resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
 type Tab = "overview" | "thread";
@@ -367,11 +368,11 @@ function OverviewBody({ kind, id }: {
         case "inventory":
             return <InventoryOverview inv={rec as any}/>;
         case "vendor":
-            return <VendorEntityOverview vendor={rec as any}/>;
+            return <PartnerDetailContent key={`vendor:${id}`} kind="vendor" id={id}/>;
         case "vendorRate":
             return <VendorRateEntityOverview rate={rec as any}/>;
         case "contractor":
-            return <ContractorEntityOverview contractor={rec as any}/>;
+            return <PartnerDetailContent key={`contractor:${id}`} kind="contractor" id={id}/>;
         case "contractorBill":
             return <ContractorBillEntityOverview bill={rec as any}/>;
         case "contractorPayment":
@@ -607,38 +608,6 @@ function AuditChangeRows({ changes }: { changes: any[] }) {
       </div>;
     })}</div>;
 }
-function VendorEntityOverview({ vendor }: { vendor: any }) {
-    const db = useRDashStore((s) => s.db);
-    const openDetail = useRDashStore((s) => s.openDetail);
-    const setActiveModule = useRDashStore((s) => s.setActiveModule);
-    const updateVendor = useRDashStore((s) => s.updateVendor);
-    const [entityTab, setEntityTab] = React.useState("overview");
-    const rates = db.master.vendorRates.filter((rate: any) => rate.vendor_id === vendor.id);
-    const histories = db.master.vendorRateHistories.filter((history: any) => history.vendor_id === vendor.id);
-    const pos = db.purchaseOrders.filter((po: any) => po.vendor_id === vendor.id);
-    const grns = db.grns.filter((grn: any) => grn.vendor_id === vendor.id);
-    const bills = db.vendorBills.filter((bill: any) => bill.vendor_id === vendor.id);
-    const payments = db.vendorPayments.filter((payment: any) => payment.vendor_id === vendor.id);
-    const unpaidBills = bills.filter((bill: any) => bill.status !== "paid");
-    const categories = new Set(rates.map((rate: any) => {
-        const scope = db.master.subcategoryArticleMap.find((row: any) => row.id === rate.work_required_article_id);
-        const work = db.master.workSubcategories.find((row: any) => row.id === scope?.work_required_id);
-        return work ? db.master.workCategories.find((row: any) => row.id === work.category_id)?.name : undefined;
-    }).filter(Boolean));
-    return <div className="h-full overflow-y-auto p-4 rd-scroll">
-      <EntityTabs tabs={["overview", "rates", "po/grn", "bills", "files", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <>
-        <div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Rate coverage" value={rates.length}/><EntityStat label="Open POs" value={pos.filter((po: any) => po.status !== "cancelled" && po.status !== "received").length}/><EntityStat label="Unpaid bills" value={unpaidBills.length}/></div>
-        <div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{vendor.name}</p><p className="mt-1 text-muted-foreground">{vendor.phone || "No phone"} · {vendor.locality || "—"} · {vendor.city || "—"}</p><p className="mt-1 text-muted-foreground">Reliability {vendor.reliability_score || "—"}/100 · On-time {vendor.on_time_pct || "—"}% · Supplies {categories.size || "—"} categories</p>{vendor.address ? <p className="mt-2 text-muted-foreground">{vendor.address}</p> : null}</div>
-        <EntityFilesCard entityType="vendor" entityId={vendor.id} title="Vendor documents" />
-      </>}
-      {entityTab === "rates" && <><SectionTitle label="Current vendor rates" count={rates.length}/><div className="space-y-2">{rates.slice(0, 25).map((rate: any) => <LinkedRow key={rate.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={rate.article_name} value={`${formatINR(rate.rate)} · ${asUnitLabel(db, rate.unit_id)}`} onClick={() => { openDetail("vendorRate" as any, rate.id); }}/>)}{!rates.length ? <EmptyContext label="No vendor prices are linked to this vendor yet."/> : null}</div><SectionTitle label="Rate history" count={histories.length}/><div className="space-y-2">{histories.slice(0, 10).map((history: any) => <div key={history.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between gap-2"><span className="font-semibold">{history.article_name}</span><span className="font-mono">{formatINR(history.new_rate)}</span></div><p className="mt-1 text-[10px] text-muted-foreground">{history.source_type} · {history.source_no || history.source_id || "Manual"} · {formatDate(history.created_at)}</p></div>)}</div></>}
-      {entityTab === "po/grn" && <div className="space-y-2">{pos.map((po: any) => <LinkedRow key={po.id} icon={<Package className="h-3.5 w-3.5"/>} label={po.po_no} value={`${titleCase(po.status)} · ${formatINR(po.total_amount || 0)}`} onClick={() => { openDetail("po", po.id); }}/>)}{grns.map((grn: any) => <LinkedRow key={grn.id} icon={<Truck className="h-3.5 w-3.5"/>} label={grn.grn_no} value={`${titleCase(grn.status)} · ${formatDate(grn.received_at || grn.date || grn.created_at)}`} onClick={() => { openDetail("grn", grn.id); }}/>)}{!pos.length && !grns.length ? <EmptyContext label="No PO or GRN trail for this vendor yet."/> : null}</div>}
-      {entityTab === "bills" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no} value={`${titleCase(bill.status)} · ${formatINR(bill.total_amount || 0)}`} onClick={() => { openDetail("vendorBill", bill.id); }}/>)}{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Vendor payment"} value={`${titleCase(payment.status || "pending")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("vendorPayment", payment.id)}/>)}{!bills.length && !payments.length ? <EmptyContext label="No vendor bill/payment trail yet."/> : null}</div>}
-      {entityTab === "files" && <EntityFilesCard entityType="vendor" entityId={vendor.id} title="Vendor documents" manage showEmpty />}
-      {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("procurementInventory")}><Package className="mr-1.5 h-3.5 w-3.5"/>Create PO</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("vendorRates")}><Wallet className="mr-1.5 h-3.5 w-3.5"/>Update rate matrix</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("vendorBills")}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bills/payment</Button><Button size="sm" variant="outline" onClick={() => { updateVendor(vendor.id, { status: vendor.status === "blacklisted" ? "active" : "blacklisted" } as any); toast.success(vendor.status === "blacklisted" ? "Vendor restored" : "Vendor blacklisted/held"); }}><XCircle className="mr-1.5 h-3.5 w-3.5"/>{vendor.status === "blacklisted" ? "Restore vendor" : "Blacklist / hold"}</Button></div>}
-    </div>;
-}
 
 function VendorRateEntityOverview({ rate }: { rate: any }) {
     const db = useRDashStore((s) => s.db);
@@ -661,48 +630,6 @@ function VendorRateEntityOverview({ rate }: { rate: any }) {
     </div>;
 }
 
-function ContractorEntityOverview({ contractor }: { contractor: any }) {
-    const db = useRDashStore((s) => s.db);
-    const openDetail = useRDashStore((s) => s.openDetail);
-    const setActiveModule = useRDashStore((s) => s.setActiveModule);
-    // FIX-CONTRACTOR-BATCH2 / F.13: wire the previously-dead "Blacklist /
-    // hold" button to the new deactivateContractor / activateContractor
-    // store actions. Soft-delete (status="inactive") is safer than hard
-    // delete — preserves referential integrity with bids / bills / payments /
-    // settlements / work orders.
-    const deactivateContractor = useRDashStore((s) => s.deactivateContractor);
-    const activateContractor = useRDashStore((s) => s.activateContractor);
-    const [entityTab, setEntityTab] = React.useState("overview");
-    const workOrders = db.workOrders.filter((row: any) => row.contractor_id === contractor.id || row.abandoned_contractor_id === contractor.id);
-    const rates = db.master.contractorRates.filter((row: any) => row.contractor_id === contractor.id);
-    const bills = db.contractorBills.filter((row: any) => row.contractor_id === contractor.id);
-    const payments = db.contractorPayments.filter((row: any) => row.contractor_id === contractor.id);
-    const contractorStatus: string = contractor.status || "active";
-    const handleToggleStatus = () => {
-        try {
-            if (contractorStatus === "active") {
-                deactivateContractor(contractor.id, "Deactivated from contractor detail panel");
-                toast.success(`${contractor.name} deactivated — hidden from bid/direct-award dropdowns.`);
-            }
-            else {
-                activateContractor(contractor.id);
-                toast.success(`${contractor.name} re-activated.`);
-            }
-        }
-        catch (error) {
-            toast.error(error instanceof Error ? error.message : "Could not change contractor status");
-        }
-    };
-    return <div className="h-full overflow-y-auto p-4 rd-scroll">
-      <EntityTabs tabs={["overview", "work", "rates", "finance", "files", "actions"]} active={entityTab} onChange={setEntityTab}/>
-      {entityTab === "overview" && <><div className="grid gap-3 sm:grid-cols-3"><EntityStat label="Work orders" value={workOrders.length}/><EntityStat label="Bills" value={bills.length}/><EntityStat label="Outstanding" value={formatINRShort(contractor.outstanding || 0)}/></div><div className="mt-3 rounded-lg border border-border bg-background p-3 text-xs"><p className="text-sm font-bold">{contractor.name}{contractorStatus !== "active" ? <span className="ml-2 rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">{contractorStatus}</span> : null}</p><p className="mt-1 text-muted-foreground">{contractor.phone || "No phone"} · {contractor.trade || "Trade"} · {contractor.city || "—"}</p><p className="mt-1 text-muted-foreground">Rating {contractor.rating || "—"} · Reliability {contractor.reliability_score || "—"}/100 · Worker range {contractor.worker_count_range || "—"}</p></div><EntityFilesCard entityType="contractor" entityId={contractor.id} title="Contractor documents" /></>}
-      {entityTab === "work" && <div className="space-y-2">{workOrders.map((job: any) => <LinkedRow key={job.id} icon={<Building2 className="h-3.5 w-3.5"/>} label={job.work_order_no} value={`${titleCase(job.status)} · ${formatINR(job.value || 0)}`} onClick={() => openDetail("workOrder", job.id)}/>)}{!workOrders.length ? <EmptyContext label="No work order has been assigned to this contractor."/> : null}</div>}
-      {entityTab === "rates" && <div className="space-y-2">{rates.map((row: any) => <div key={row.id} className="rounded-md border border-border bg-muted/20 p-2 text-xs"><div className="flex justify-between"><span>{row.trade}</span><span className="font-mono">{formatINR(row.rate)}</span></div></div>)}{!rates.length ? <EmptyContext label="No contractor rates recorded."/> : null}</div>}
-      {entityTab === "finance" && <div className="space-y-2">{bills.map((bill: any) => <LinkedRow key={bill.id} icon={<Receipt className="h-3.5 w-3.5"/>} label={bill.bill_no || "Contractor bill"} value={`${titleCase(bill.status || "pending")} · ${formatINR(bill.total_amount || bill.amount || 0)}`} onClick={() => openDetail("contractorBill" as any, bill.id)}/>)}{payments.map((payment: any) => <LinkedRow key={payment.id} icon={<Wallet className="h-3.5 w-3.5"/>} label={payment.payment_no || "Contractor payment"} value={`${titleCase(payment.status || "pending")} · ${formatINR(payment.amount || 0)}`} onClick={() => openDetail("contractorPayment" as any, payment.id)}/>)}{!bills.length && !payments.length ? <EmptyContext label="No contractor bill/payment trail."/> : null}</div>}
-      {entityTab === "files" && <EntityFilesCard entityType="contractor" entityId={contractor.id} title="Contractor documents" manage showEmpty />}
-      {entityTab === "actions" && <div className="grid gap-2 sm:grid-cols-2"><Button size="sm" onClick={() => setActiveModule("siteExecution")}><HardHat className="mr-1.5 h-3.5 w-3.5"/>Assign / match contractor</Button><Button size="sm" variant="outline" onClick={() => setActiveModule("contractorPayments")}><Receipt className="mr-1.5 h-3.5 w-3.5"/>Open bills/payment</Button><Button size="sm" variant={contractorStatus === "active" ? "destructive" : "outline"} onClick={handleToggleStatus} title={contractorStatus === "active" ? "Deactivate this contractor — they will be hidden from bid/direct-award dropdowns but their historical records are preserved." : "Re-activate this contractor"}>{contractorStatus === "active" ? <><XCircle className="mr-1.5 h-3.5 w-3.5"/>Deactivate</> : <><CheckCircle2 className="mr-1.5 h-3.5 w-3.5"/>Activate</>}</Button></div>}
-    </div>;
-}
 
 function VendorPaymentEntityOverview({ payment }: { payment: import("@/lib/rdash/types").VendorPayment }) {
     const db = useRDashStore((s) => s.db);
