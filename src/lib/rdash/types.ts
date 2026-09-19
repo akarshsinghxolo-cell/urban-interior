@@ -1689,6 +1689,7 @@ export interface Contractor {
     name: string;
     legal_name?: string;
     phone?: string;
+    alternate_phone?: string;
     city?: string;
     locality?: string;
     address?: string;
