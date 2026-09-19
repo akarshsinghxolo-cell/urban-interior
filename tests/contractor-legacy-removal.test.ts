@@ -53,7 +53,7 @@ describe("Contractor legacy-path removal", () => {
 
   test("Contractor referrals and operations do not use the removed paths", async () => {
     const form = await source("src/components/rdash/ContractorFormDialog.tsx");
-    const detail = await source("src/components/rdash/modules/ContractorDetailModule.tsx");
+    const detail = await source("src/components/rdash/modules/PartnerDetailContent.tsx");
     expect(form).not.toContain("legacyReferral");
     expectNoTokens(form, ["Legacy free-text referrals"]);
     expect(form).not.toContain("business_gst");
@@ -61,7 +61,12 @@ describe("Contractor legacy-path removal", () => {
     expect(form).not.toContain("supervisor_name");
     expect(form).not.toContain("concurrent_site_limit");
     expectTokens(form, ["Add work type"]);
-    expectTokens(detail, ["contractorRateProjection(db, c)"]);
+    expectTokens(detail, ["model.contractorCapabilities.map"]);
+    expect(detail).toContain('import("./ContractorWorkDialogs")');
+    expect(await testFile("src/components/rdash/modules/ContractorDetailModule.tsx").exists()).toBe(false);
+    const dialogs = await source("src/components/rdash/modules/ContractorWorkDialogs.tsx");
+    expect(dialogs).toContain("export function EditContractorBidDialog");
+    expect(dialogs).toContain("export function CreateRABillDialog");
   });
 
   test("Contractor Rates are canonicalized (never trusted) at the server commit boundary", async () => {

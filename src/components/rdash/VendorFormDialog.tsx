@@ -11,14 +11,12 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
-import { attachedPreview, confirmedAttachmentId } from "@/lib/rdash/file-attachments";
-import { reverseGeocodeWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
-import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
+import { confirmedAttachmentId } from "@/lib/rdash/file-attachments";
+import { coordinateInputError } from "@/lib/rdash/coordinates";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
-import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
-import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
+import { cancelQueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
+import { usePartnerLocation, usePartnerMedia, isPendingMedia as isPending, partnerMediaFile as mediaFile, removePartnerMedia as removeMedia, type PartnerMedia as MediaValue } from "./use-partner-form";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
-import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import {
   canonicalVendorCapabilities,
   normalizeVendorForWrite,
@@ -43,9 +41,6 @@ type VendorFormDialogProps = {
   editId?: string;
 };
 
-type PendingMedia = QueuedWorkflowFile & { url: string; file_name: string; mime_type: string };
-type ExistingMedia = { attachment_id: string };
-type MediaValue = "" | PendingMedia | ExistingMedia;
 type CapabilityDraft = {
   article_id: string;
   variant_ids: string[];
@@ -77,18 +72,11 @@ const EMPTY_DRAFT: Draft = {
   vendorType: "dealer", status: "onboarding", address: "", city: "", locality: "",
   reliability: "average", delivery: "average", returnPolicy: "available", notes: "",
 };
-const isPending = (value: MediaValue): value is PendingMedia => typeof value === "object" && value != null && "uploadItemId" in value;
-const isExisting = (value: MediaValue): value is ExistingMedia => typeof value === "object" && value != null && "attachment_id" in value;
 const optionalNumber = (value: string) => value.trim() === "" ? undefined : Number(value);
 
 function fingerprint(value: VendorProfileRecord) {
   const { created_at: _createdAt, updated_at: _updatedAt, ...stable } = value;
   return JSON.stringify(stable);
-}
-function mediaFile(value: MediaValue, db: any) {
-  if (isExisting(value)) return attachedPreview(db, value.attachment_id);
-  if (isPending(value)) return { fileName: value.file_name, mimeType: value.mime_type, url: value.url };
-  return undefined;
 }
 function draftFromRecord(record: VendorProfileRecord): Draft {
   return {
@@ -132,10 +120,8 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const [reservedId, setReservedId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [draft, setDraft] = React.useState<Draft>(EMPTY_DRAFT);
-  const [latitude, setLatitude] = React.useState<number>();
-  const [longitude, setLongitude] = React.useState<number>();
-  const [coordinates, setCoordinates] = React.useState("");
-  const [gpsLoading, setGpsLoading] = React.useState(false);
+  const { latitude, longitude, coordinates, gpsLoading, resetLocation, updateCoordinates, captureGps } = usePartnerLocation(open, editId, setDraft);
+  const { uploadMedia, commitBatches, mediaLoading } = usePartnerMedia(open, "vendor", reservedId, draft.name);
   const [businessCard, setBusinessCard] = React.useState<MediaValue>("");
   const [shopPhoto, setShopPhoto] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
@@ -146,15 +132,8 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const baselineRef = React.useRef<VendorProfileRecord>({});
   const [baselineMetadata, setBaselineMetadata] = React.useState<Pick<VendorProfileRecord, "source_partner_id" | "source_partner_name" | "created_at">>({});
   const [baselineKey, setBaselineKey] = React.useState("");
-  const disposedRef = React.useRef(false);
-  const gpsSequenceRef = React.useRef(0);
   const formId = `vendor-form:${editId || "new"}`;
-  const { registerBatch, commitBatches } = useUploadDraft(open);
 
-  React.useEffect(() => {
-    disposedRef.current = false; // reset for StrictMode's dev mount/unmount/remount cycle
-    return () => { disposedRef.current = true; };
-  }, []);
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) => setDraft((current) => ({ ...current, [key]: value }));
 
   const currentPayload = React.useMemo((): VendorProfileRecord => normalizeVendorForWrite({
@@ -199,9 +178,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     const record = editId ? db.master.vendors.find((row) => row.id === editId) as VendorProfileRecord | undefined : undefined;
     const normalized = normalizeVendorForWrite(record || { id, name: "", vendor_type: "dealer", status: "onboarding", supply_capabilities: [] }, db, { id });
     setDraft(draftFromRecord(normalized));
-    setLatitude(normalized.latitude);
-    setLongitude(normalized.longitude);
-    setCoordinates(formatCoordinatePair(normalized as any));
+    resetLocation(normalized);
     setBusinessCard(normalized.business_card_attachment_id ? { attachment_id: String(normalized.business_card_attachment_id) } : "");
     setShopPhoto(normalized.shop_attachment_id ? { attachment_id: String(normalized.shop_attachment_id) } : "");
     const capabilityRows = canonicalVendorCapabilities(normalized, db);
@@ -222,7 +199,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
-  const dirty = open && (isPending(businessCard) || isPending(shopPhoto) || fingerprint(currentPayload) !== baselineKey);
+  const dirty = open && (mediaLoading || isPending(businessCard) || isPending(shopPhoto) || fingerprint(currentPayload) !== baselineKey);
   const duplicateConflicts = vendorDuplicateConflicts(db, currentPayload, editId);
   const hardDuplicate = duplicateConflicts.find((row) => row.hard);
   const softDuplicate = duplicateConflicts.find((row) => !row.hard);
@@ -235,9 +212,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     await Promise.all([businessCard, shopPhoto].filter(isPending).map((value) => cancelQueuedWorkflowFile(value)));
     const baseline = baselineRef.current;
     setDraft(draftFromRecord(baseline));
-    setLatitude(baseline.latitude);
-    setLongitude(baseline.longitude);
-    setCoordinates(formatCoordinatePair(baseline as any));
+    resetLocation(baseline);
     setBusinessCard(baseline.business_card_attachment_id ? { attachment_id: String(baseline.business_card_attachment_id) } : "");
     setShopPhoto(baseline.shop_attachment_id ? { attachment_id: String(baseline.shop_attachment_id) } : "");
     const capabilityRows = canonicalVendorCapabilities(baseline, db);
@@ -251,7 +226,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   }
 
   async function save(): Promise<boolean> {
-    if (saving) return false;
+    if (saving || mediaLoading) return false;
     if (validationError) { toast.error(validationError); return false; }
     if (editId && !dirty) return true;
     setSaving(true);
@@ -305,69 +280,6 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
 
   useDirtyFormRegistration({ id: formId, label: `${editId ? "Edit" : "Add"} Vendor`, dirty, save, discard });
   function requestClose() { dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Vendor form" }); }
-  function updateCoordinates(value: string) {
-    setCoordinates(value);
-    if (!value.trim()) { setLatitude(undefined); setLongitude(undefined); return; }
-    const parsed = parseCoordinatePair(value);
-    if (parsed) { setLatitude(parsed.latitude); setLongitude(parsed.longitude); setCoordinates(formatCoordinatePair(parsed)); }
-  }
-  // Coordinates first; then autofill only empty fields — a slow reverse
-  // lookup must never clobber or wipe text the user typed, and a newer
-  // capture discards stale lookup results (sequence guard).
-  async function captureGps() {
-    const sequence = ++gpsSequenceRef.current;
-    setGpsLoading(true);
-    const fillable = {
-      address: !draft.address.trim(),
-      city: !draft.city.trim(),
-      locality: !draft.locality.trim(),
-    };
-    try {
-      const capture = await captureDeviceGps({ mode: "master-location" });
-      if (sequence !== gpsSequenceRef.current || disposedRef.current) return;
-      const next = { latitude: capture.latitude, longitude: capture.longitude };
-      setLatitude(next.latitude); setLongitude(next.longitude); setCoordinates(formatCoordinatePair(next));
-      toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
-      try {
-        const result = await reverseGeocodeWithNominatim(next.latitude, next.longitude);
-        if (sequence !== gpsSequenceRef.current || disposedRef.current || !result?.display_name) return;
-        if (fillable.address) set("address", result.display_name);
-        if (fillable.city) { const city = addressCity(result.address); if (city) set("city", city); }
-        if (fillable.locality) { const locality = addressLocality(result.address); if (locality) set("locality", locality); }
-      } catch (lookupError) {
-        if (sequence === gpsSequenceRef.current && !disposedRef.current) {
-          toast.error(lookupError instanceof Error && lookupError.message ? lookupError.message : "Address autofill failed. Coordinates were kept.");
-        }
-      }
-    } catch (error) {
-      if (sequence === gpsSequenceRef.current && !disposedRef.current) toast.error(`GPS error: ${deviceGpsErrorMessage(error)}`);
-    }
-    finally { if (sequence === gpsSequenceRef.current && !disposedRef.current) setGpsLoading(false); }
-  }
-  async function uploadMedia(event: React.ChangeEvent<HTMLInputElement>, setter: (value: MediaValue) => void, attachmentField: string, caption: string) {
-    const file = event.target.files?.[0];
-    event.currentTarget.value = "";
-    if (!file || !reservedId) return;
-    try {
-      const queued = await enqueueWorkflowFiles({
-        sourceFlow: "vendor_form",
-                deferProcessing: true,
-        sourceLabel: "Vendor form",
-        targetEntityType: "vendor",
-        targetEntityId: reservedId,
-        targetLabel: draft.name.trim() || "New Vendor",
-        purpose: "vendor_document",
-        files: [{ file, ...classifyWorkflowFile(file), caption, attachmentField, attachmentFieldMode: "set" }],
-      });
-      registerBatch(queued.batchId);
-      const preview = withLocalPreview(queued.files[0], file);
-      setter({ ...preview, url: preview.previewUrl, file_name: file.name, mime_type: file.type || "application/octet-stream" });
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not queue the file."); }
-  }
-  async function removeMedia(value: MediaValue, setter: (value: MediaValue) => void) {
-    if (isPending(value)) await cancelQueuedWorkflowFile(value);
-    setter("");
-  }
   function addCapability(articleId: string) {
     if (capabilities.some((row) => row.article_id === articleId)) return;
     setCapabilities((current) => [...current, { article_id: articleId, variant_ids: [], brand: "", availability: "unknown", typical_lead_time_days: "", moq: "", preferred: false, notes: "" }]);
@@ -529,5 +441,5 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Profile media</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between"><p className="text-xs font-semibold">Business card</p>{businessCard && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(businessCard, setBusinessCard)}><X className="h-3.5 w-3.5" /></Button>}</div>{businessFile ? <div className="mt-2"><FilePreview file={businessFile} compact /></div> : <label className="mt-2 flex cursor-pointer justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(e) => void uploadMedia(e, setBusinessCard, "business_card_attachment_id", "Vendor business card")} />Upload business card</label>}</div><div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between"><p className="text-xs font-semibold">Shop / warehouse</p>{shopPhoto && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(shopPhoto, setShopPhoto)}><X className="h-3.5 w-3.5" /></Button>}</div>{shopFile ? <div className="mt-2"><FilePreview file={shopFile} compact /></div> : <label className="mt-2 flex cursor-pointer justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(e) => void uploadMedia(e, setShopPhoto, "shop_attachment_id", "Vendor shop or warehouse")} />Upload shop / warehouse photo</label>}</div></div></section>
 
     {duplicateConflicts.length > 0 && <section className={cn("rounded-xl border p-4", hardDuplicate ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><h3 className="text-sm font-bold">Duplicate check</h3><div className="mt-2 space-y-1 text-xs text-muted-foreground">{duplicateConflicts.slice(0, 3).map((conflict) => <p key={conflict.id}>• <strong>{conflict.name}</strong>: {conflict.reasons.join(", ")}</p>)}</div>{softDuplicate && !hardDuplicate && <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={softDuplicateAcknowledged} onChange={(e) => setSoftDuplicateAcknowledged(e.target.checked)} />I reviewed this possible duplicate and still want to save this Vendor.</label>}</section>}
-  </div><DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter></DialogContent></Dialog>;
+  </div><DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || mediaLoading || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter></DialogContent></Dialog>;
 }

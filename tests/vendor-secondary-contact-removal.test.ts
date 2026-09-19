@@ -34,15 +34,6 @@ describe("Vendor secondary-contact removal", () => {
   });
 
   test("Vendor 360 surfaces are free of secondary-contact cells and actions", async () => {
-    const partner360 = await source("src/components/rdash/modules/Partner360Module.tsx");
-    expectNoTokens(partner360, ['InfoCell label="WhatsApp"']);
-    expectNoTokens(partner360, ['InfoCell label="Alternate phone"']);
-    expectNoTokens(partner360, ['InfoCell label="Email"']);
-    expect(partner360).not.toContain("partner.whatsapp");
-    expect(partner360).not.toContain("partner.alternate_phone");
-    expect(partner360).not.toContain("partner.email");
-    expect(partner360).toContain("whatsappHref(selected.phone)");
-
     const workspace = await source("src/components/rdash/modules/PartnerDetailContent.tsx");
     expect(workspace).not.toContain("partner.whatsapp");
     expect(workspace).not.toContain("partner.alternate_phone");
@@ -51,14 +42,11 @@ describe("Vendor secondary-contact removal", () => {
     expect(workspace).toContain('https://wa.me/${phone}');
   });
 
-  test("Vendor business dialog keeps identity, tax, banking and commercial terms", async () => {
-    const partner360 = await source("src/components/rdash/modules/Partner360Module.tsx");
-    expectTokens(partner360, ["Vendor business details"]);
-    expect(partner360).toContain('placeholder="GSTIN"');
-    expect(partner360).toContain('placeholder="PAN"');
-    expectTokens(partner360, ['placeholder="Bank account number"']);
-    expect(partner360).toContain('placeholder="IFSC"');
-    expectTokens(partner360, ['placeholder="Payment terms"']);
+  test("the unused business dialog cannot reintroduce fields removed from the canonical form", async () => {
+    expect(await testFile("src/components/rdash/modules/Partner360Module.tsx").exists()).toBe(false);
+    const form = await source("src/components/rdash/VendorFormDialog.tsx");
+    expectTokens(form, ['Field label="GSTIN"']);
+    expectNoTokens(form, ['placeholder="PAN"', 'placeholder="Bank account number"', 'placeholder="IFSC"', 'placeholder="Payment terms"']);
   });
 
   test("partner governance duplicate detection matches on the canonical mobile only", async () => {
