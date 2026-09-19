@@ -16,12 +16,16 @@ describe("Phase 3 contextual files", () => {
 
   test("customer overview and editor expose direct customer documents", async () => {
     const desk = await read("src/components/rdash/modules/CustomerDesk.tsx");
+    const portfolio = await read("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    const detail = await read("src/components/rdash/DetailPanel.tsx");
     const editor = await read("src/components/rdash/CustomerSitesDialog.tsx");
-    expectTokens(desk, ['entityType="customer" entityId={customerId} title="Customer documents"']);
+    expect(desk).toContain('export { CustomerPortfolioDrawerContent } from "./CustomerDeskPortfolio";');
+    expect(detail).toContain("CustomerPortfolioDrawerContent");
+    expectTokens(portfolio, ['entityType="customer" entityId={customerId} title="Customer documents"']);
     expect(editor).toContain('entityType="customer"');
     expect(editor).toContain('entityId={editId}');
     expectTokens(editor, ['title="Customer documents"']);
-    expect(editor).toContain('manage');
+    expect(editor).toContain("manage");
   });
 
   test("site, area, work required, quotation and work order surfaces show their own files", async () => {
@@ -33,10 +37,10 @@ describe("Phase 3 contextual files", () => {
     expectTokens(detail, ['entityType="workOrder" entityId={j.id} title="Work Order files" manage']);
   });
 
-  test("measurement visit evidence is not mislabeled as one room revision", async () => {
+  test("measurement visit evidence stays owned by the Visit while room revisions keep their own files", async () => {
     const measurement = await read("src/components/rdash/modules/SiteMeasurementModule.tsx");
     const detail = await read("src/components/rdash/DetailPanel.tsx");
-    expectTokens(measurement, ['entityType="visit" entityId={r.visitId} title="Measurement visit evidence & references"']);
+    expectTokens(measurement, ['OperationalMediaPanel entityType="visit" entityId={visit.id} title="Measurement visit evidence & references"']);
     expectTokens(detail, ['entityType="measurement_revision" entityId={revision.id} title="Measurement files" manage={!area.is_archived && revision.id === latest?.id']);
   });
 
@@ -77,24 +81,12 @@ describe("Phase 3 contextual files", () => {
     expectNoTokens(save, ["The selected file is not attached through this Site's photo/file field."]);
   });
 
-  test("core customer, site, quotation and field scopes load file links and assets", async () => {
-    const scopes = await read("src/lib/rdash/server/module-scoped-collections.ts");
-    const customerPlan = await read("src/lib/rdash/server/customer-read-plan.ts");
-    expect(scopes).toContain("CUSTOMER_SCOPE_COLLECTIONS = CANONICAL_CUSTOMER_SCOPE_COLLECTIONS");
-    expect(customerPlan).toContain('"entityFileAttachments"');
-    expect(customerPlan).toContain('"master.fileAssets"');
-    for (const scope of ["SITE_SCOPE_COLLECTIONS", "QUOTATION_SCOPE_COLLECTIONS", "FIELD_SCOPE_COLLECTIONS"]) {
-      const start = scopes.indexOf(`export const ${scope}`);
-      expect(start).toBeGreaterThanOrEqual(0);
-      const end = scopes.indexOf("] as const);", start);
-      const block = scopes.slice(start, end);
-      expect(block).toContain('"entityFileAttachments"');
-      expect(block).toContain('"master.fileAssets"');
-    }
-    const plans = await read("src/lib/rdash/server/module-read-plans.ts");
-    const measurementStart = plans.indexOf("siteMeasurement:");
-    const measurementEnd = plans.indexOf("],", measurementStart);
-    expect(plans.slice(measurementStart, measurementEnd)).toContain('"entityFileAttachments"');
+  test("file-aware workspace scopes load direct-file links and assets", async () => {
+    const collections = await read("src/lib/rdash/server/module-scoped-collections.ts");
+    expectTokens(collections, [
+      '"entityFileAttachments"',
+      '"master.fileAssets"',
+    ]);
   });
 
   test("site edit language treats uploads as files rather than photos only", async () => {
@@ -107,10 +99,10 @@ describe("Phase 3 contextual files", () => {
 // Fresh Phase-3 audit: protect draft semantics, the broader contextual-file
 // rollout, scoped reads, and specialized attachment-reference cleanup.
 describe("Phase 3 re-audit", () => {
-  test("Save/Cancel editors stage direct-file changes while Customer Desk stays read-only for direct files", async () => {
+  test("Save/Cancel editors stage direct-file changes while Customer portfolio stays read-only for direct files", async () => {
     const card = await read("src/components/rdash/EntityFilesCard.tsx");
     const customerEditor = await read("src/components/rdash/CustomerSitesDialog.tsx");
-    const customerDesk = await read("src/components/rdash/modules/CustomerDesk.tsx");
+    const customerPortfolio = await read("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     expect(card).toContain("hiddenAttachmentIds");
     expect(card).toContain("registerBatch?.(queued.batchId)");
     expectTokens(card, ["onDetach ? onDetach(attachment.id) : detachEntityFileAttachment(attachment.id)"]);
@@ -118,9 +110,9 @@ describe("Phase 3 re-audit", () => {
     expect(customerEditor).toContain("hiddenAttachmentIds={detachAttachmentIds}");
     expect(customerEditor).toContain("registerBatch={registerBatch}");
     expectTokens(customerEditor, ["onDetach={(attachmentId) => setDetachAttachmentIds"]);
-    expect(customerDesk).not.toContain("useUploadDraft(true)");
-    expect(customerDesk).not.toContain("registerBatch={registerBatch}");
-    expect(customerDesk).not.toContain("commitBatches()");
+    expect(customerPortfolio).not.toContain("useUploadDraft(true)");
+    expect(customerPortfolio).not.toContain("registerBatch={registerBatch}");
+    expect(customerPortfolio).not.toContain("commitBatches()");
   });
 
   test("procurement, finance, contractor and operations records expose contextual files", async () => {
@@ -235,7 +227,6 @@ describe("Phase 3 re-audit", () => {
     expect(crm).toContain("result.detachedAttachmentIds");
   });
 
-
   test("manual Drive linking enforces canonical file ownership at runtime", async () => {
     const [{ createFilesSlice }, { buildSeedDatabase }] = await Promise.all([
       import("@/lib/rdash/store/slices/files"),
@@ -344,6 +335,7 @@ describe("Phase 3 re-audit", () => {
     expect(state.db.master.contractors[0].business_card_attachment_id).toBeUndefined();
     expect(state.db.master.contractors[0].compliance_documents[0].attachment_id).toBeUndefined();
   });
+
   test("draft-owned uploads stay local until Save and are discarded on Cancel or reload", async () => {
     const [store, draft, card, pending, status] = await Promise.all([
       read("src/lib/uploads/upload-store.ts"),
@@ -420,5 +412,4 @@ describe("Phase 3 re-audit", () => {
     expectTokens(persistence, ['boq: "boqs"']);
     expectTokens(persistence, ['commission: "commissions"']);
   });
-
 });

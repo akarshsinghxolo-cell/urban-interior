@@ -1,5 +1,6 @@
 import { canReadFullStaffData } from "../staff-directory";
 import { hydrateStaffReferenceLabels } from "../staff-reference-labels";
+import { canRole, normalizeStaffPermissions } from "../staff-operations";
 import type { RDashDatabase } from "../types";
 import { workspaceRouteAccessDecision } from "../workspace-route-access";
 import type {
@@ -7,9 +8,16 @@ import type {
   WorkspaceReadTarget,
 } from "../workspace-read-scope";
 import type { AuthenticatedUser } from "./auth";
+import {
+  CUSTOMER_CONTRACTOR_COLLECTIONS,
+  CUSTOMER_FINANCE_COLLECTIONS,
+  CUSTOMER_MEDIA_COLLECTIONS,
+  CUSTOMER_PERMISSION_EXTENSION_MODULES,
+  CUSTOMER_PROCUREMENT_COLLECTIONS,
+  CUSTOMER_VENDOR_COLLECTIONS,
+} from "./customer-read-plan";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
 import {
-  collectionsForWorkspaceReadTarget,
   moduleReadPlanSavings,
   workspaceModuleReadPlan,
 } from "./module-read-plans";
@@ -30,6 +38,7 @@ export * from "./projected-workspace-bootstrap";
 
 // Scoped reads are the runtime architecture, not an optional rollout mode.
 const FOUNDATION_COLLECTIONS = new Set<string>(WORKSPACE_FOUNDATION_COLLECTIONS);
+const CUSTOMER_EXTENSION_MODULES = new Set<string>(CUSTOMER_PERMISSION_EXTENSION_MODULES);
 
 interface ModuleScopedWorkspace extends WorkspaceSubset {
   scope: ModuleWorkspaceReadScope;
@@ -136,6 +145,49 @@ async function authorizeModuleTarget(
   return authorization;
 }
 
+/**
+ * Customer Desk is an integrated cockpit, but permission ownership stays with
+ * the source domains. A role that can only view Customers receives only the
+ * CRM graph. Rich commercial, media and referral-directory extensions are
+ * added independently from the same projected permission snapshot already
+ * used to authorize the route.
+ */
+export function permissionAwareModuleCollections(
+  user: Pick<AuthenticatedUser, "role">,
+  target: WorkspaceReadTarget & { scope: ModuleWorkspaceReadScope },
+  authorization: WorkspaceSubset,
+  plannedCollections: readonly string[],
+): string[] {
+  const collections = new Set(plannedCollections);
+  if (!CUSTOMER_EXTENSION_MODULES.has(target.moduleId)) return [...collections];
+
+  const permissions = normalizeStaffPermissions(
+    authorization.data.staffRolePermissions as unknown[],
+  );
+  const add = (rows: readonly string[]) => rows.forEach((collection) => collections.add(collection));
+
+  if (canRole(permissions, user.role, "media", "view")) {
+    add(CUSTOMER_MEDIA_COLLECTIONS);
+  }
+  if (canRole(permissions, user.role, "finance", "view")) {
+    add(CUSTOMER_FINANCE_COLLECTIONS);
+  }
+  if (
+    canRole(permissions, user.role, "procurement", "view")
+    || canRole(permissions, user.role, "purchaseOrders", "view")
+    || canRole(permissions, user.role, "grns", "view")
+  ) {
+    add(CUSTOMER_PROCUREMENT_COLLECTIONS);
+  }
+  if (canRole(permissions, user.role, "vendors", "view")) {
+    add(CUSTOMER_VENDOR_COLLECTIONS);
+  }
+  if (canRole(permissions, user.role, "contractors", "view")) {
+    add(CUSTOMER_CONTRACTOR_COLLECTIONS);
+  }
+  return [...collections];
+}
+
 async function readAuthorizedScope(
   user: AuthenticatedUser,
   target: WorkspaceReadTarget,
@@ -145,7 +197,12 @@ async function readAuthorizedScope(
   const startedAt = performance.now();
   const authorization = await authorizeModuleTarget(user, target);
   const plan = workspaceModuleReadPlan(target);
-  const plannedCollections = collectionsForWorkspaceReadTarget(target);
+  const plannedCollections = permissionAwareModuleCollections(
+    user,
+    target,
+    authorization,
+    plan.collections,
+  );
   const plannedFullStaff = plannedCollections.includes("master.staff");
   const fullStaffAllowed = plannedFullStaff && canReadFullStaffData(user.role);
   const transmittedCollections = plannedCollections.filter(
@@ -222,7 +279,12 @@ async function readAuthorizedPage(
   const startedAt = performance.now();
   const authorization = await authorizeModuleTarget(user, target);
   const plan = workspaceModuleReadPlan(target);
-  const plannedCollections = collectionsForWorkspaceReadTarget(target);
+  const plannedCollections = permissionAwareModuleCollections(
+    user,
+    target,
+    authorization,
+    plan.collections,
+  );
   const limitedCollections = Object.fromEntries(
     Object.entries(plan.limitsByCollection || {}).filter(([collection]) =>
       plannedCollections.includes(collection),
