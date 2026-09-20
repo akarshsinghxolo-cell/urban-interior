@@ -6,6 +6,7 @@ describe("Urban Castle WhatsApp integration", () => {
     const pkg = JSON.parse(await readFile("package.json", "utf8"));
     const lock = JSON.parse(await readFile("package-lock.json", "utf8"));
     expect(pkg.dependencies?.["@whiskeysockets/baileys"]).toBe("7.0.0-rc14");
+    expect(pkg.dependencies?.qrcode).toBe("1.5.4");
     expect(lock.packages?.[""]?.dependencies?.["@whiskeysockets/baileys"]).toBe("7.0.0-rc14");
   });
 
@@ -33,7 +34,9 @@ describe("Urban Castle WhatsApp integration", () => {
       expect(source).toContain("requireSession(request)");
     }
     expect(pair).toContain('user.role !== "Owner"');
-    expect(pair).toContain("after(async () =>");
+    expect(pair).toContain('QRCode.toDataURL(update.qr');
+    expect(pair).toContain('"Content-Type": "text/event-stream"');
+    expect(pair).not.toContain("requestPairingCode");
     expect(disconnect).toContain('user.role !== "Owner"');
     expect(stream).toContain('"Content-Type": "text/event-stream"');
     expect(stream).toContain("createUrbanCastleWhatsAppSocket");
@@ -62,6 +65,9 @@ describe("Urban Castle WhatsApp integration", () => {
 
     expect(centre).toContain('fetch("/api/whatsapp/messages?limit=12"');
     expect(centre).toContain('new EventSource("/api/whatsapp/stream")');
+    expect(centre).toContain('new EventSource("/api/whatsapp/pair")');
+    expect(centre).toContain("WhatsApp linked-device QR code");
+    expect(centre).not.toContain("Link with phone number");
     expect(bootstrap).not.toContain("uc_whatsapp_messages");
     expect(bootstrap).not.toContain("uc_whatsapp_auth_state");
   });
