@@ -377,9 +377,6 @@ export async function createUrbanCastleWhatsAppSocket(
 
   sock.ev.on("connection.update", async (update: any) => {
     try {
-      if (onConnectionUpdate) {
-        await onConnectionUpdate(update);
-      }
       if (update.connection === "open") {
         const now = new Date().toISOString();
         await patchAccount({
@@ -406,6 +403,9 @@ export async function createUrbanCastleWhatsAppSocket(
             last_error: update.lastDisconnect?.error?.message || "WhatsApp socket closed; it will reconnect on the next Urban Castle request.",
           }, workspaceId);
         }
+      }
+      if (onConnectionUpdate) {
+        await onConnectionUpdate(update);
       }
     } catch {
       // Provider callbacks must never crash the socket event loop.
