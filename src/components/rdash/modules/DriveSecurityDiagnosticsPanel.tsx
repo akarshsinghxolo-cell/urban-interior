@@ -245,7 +245,7 @@ export function DriveSecurityDiagnosticsPanel() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2"><h5 className="text-sm font-bold">{drive.label}</h5><span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{drive.status.replaceAll("_", " ")}</span></div>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">{drive.email || "Google email unavailable"}</p>
-                        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Storage account: {drive.storageAccountId}</p>
+                        <p className="mt-0.5 break-all font-mono text-[10px] text-muted-foreground">Storage account: {drive.storageAccountId}</p>
                       </div>
                     </div>
                     <StatusPill state={drive.accessToken.state} />
@@ -276,26 +276,59 @@ export function DriveSecurityDiagnosticsPanel() {
 
                   {drive.accessToken.error ? <p className="mt-3 rounded-md border border-destructive/20 bg-destructive/[0.05] px-3 py-2 text-[11px] text-destructive">{drive.accessToken.error}</p> : null}
 
-                  <div className="mt-4 overflow-hidden rounded-lg border border-border">
-                    <div className="flex items-center justify-between border-b border-border bg-muted/30 px-3 py-2"><div className="flex items-center gap-2"><UploadCloud className="h-3.5 w-3.5 text-primary" /><p className="text-xs font-bold">Resumable sessions</p></div><span className="text-[10px] text-muted-foreground">{drive.resumableSessions.length} session{drive.resumableSessions.length === 1 ? "" : "s"}</span></div>
+                  <div className="mt-4 min-w-0 overflow-hidden rounded-lg border border-border">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/30 px-3 py-2"><div className="flex min-w-0 items-center gap-2"><UploadCloud className="h-3.5 w-3.5 shrink-0 text-primary" /><p className="text-xs font-bold">Resumable sessions</p></div><span className="text-[10px] text-muted-foreground">{drive.resumableSessions.length} session{drive.resumableSessions.length === 1 ? "" : "s"}</span></div>
                     {drive.resumableSessions.length ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[900px] text-left text-[11px]">
-                          <thead className="bg-muted/20 text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2">File</th><th className="px-3 py-2">Session fingerprint</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Progress</th><th className="px-3 py-2">Expires</th><th className="px-3 py-2">Updated</th></tr></thead>
-                          <tbody className="divide-y divide-border">
-                            {drive.resumableSessions.map((session) => (
-                              <tr key={session.uploadItemId}>
-                                <td className="px-3 py-2"><p className="max-w-[240px] truncate font-semibold">{session.fileName}</p><p className="font-mono text-[9px] text-muted-foreground">{session.uploadItemId}</p></td>
-                                <td className="px-3 py-2"><SecretFingerprint value={session.sessionFingerprint} /><p className="mt-1 text-[9px] text-muted-foreground">{session.sessionHost || "Google upload endpoint"}</p></td>
-                                <td className="px-3 py-2"><span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[9px] font-bold uppercase">{session.status.replaceAll("_", " ")}</span><p className="mt-1 text-[9px] text-muted-foreground">Retries: {session.retryCount}</p></td>
-                                <td className="px-3 py-2"><p className="font-semibold">{Math.max(0, Math.min(100, Math.round(session.progress)))}%</p><p className="text-[9px] text-muted-foreground">{formatBytes(session.confirmedBytes)} / {formatBytes(session.sizeBytes)}</p></td>
-                                <td className="px-3 py-2"><span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3 text-muted-foreground" />{formatDate(session.sessionExpiresAt)}</span></td>
-                                <td className="px-3 py-2">{formatDate(session.updatedAt)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <>
+                        <div className="divide-y divide-border md:hidden" data-testid="resumable-sessions-mobile">
+                          {drive.resumableSessions.map((session) => (
+                            <div key={session.uploadItemId} className="grid min-w-0 gap-2 px-3 py-3 text-[11px]">
+                              <div className="min-w-0">
+                                <p className="break-words font-semibold">{session.fileName}</p>
+                                <p className="mt-0.5 break-all font-mono text-[9px] text-muted-foreground">{session.uploadItemId}</p>
+                              </div>
+                              <div className="min-w-0">
+                                <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Session fingerprint</p>
+                                <SecretFingerprint value={session.sessionFingerprint} />
+                                <p className="mt-1 break-all text-[9px] text-muted-foreground">{session.sessionHost || "Google upload endpoint"}</p>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Status</p>
+                                  <span className="mt-1 inline-flex max-w-full rounded-full border border-border bg-muted px-2 py-0.5 text-[9px] font-bold uppercase">{session.status.replaceAll("_", " ")}</span>
+                                  <p className="mt-1 text-[9px] text-muted-foreground">Retries: {session.retryCount}</p>
+                                </div>
+                                <div className="min-w-0 text-right">
+                                  <p className="text-[9px] font-bold uppercase tracking-wide text-muted-foreground">Progress</p>
+                                  <p className="mt-1 font-semibold">{Math.max(0, Math.min(100, Math.round(session.progress)))}%</p>
+                                  <p className="break-words text-[9px] text-muted-foreground">{formatBytes(session.confirmedBytes)} / {formatBytes(session.sizeBytes)}</p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-1 gap-1 border-t border-border/70 pt-2 text-[9px] text-muted-foreground sm:grid-cols-2">
+                                <span className="flex min-w-0 items-start gap-1"><Clock3 className="mt-0.5 h-3 w-3 shrink-0" /><span className="break-words">Expires {formatDate(session.sessionExpiresAt)}</span></span>
+                                <span className="break-words sm:text-right">Updated {formatDate(session.updatedAt)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="hidden overflow-x-auto md:block" data-testid="resumable-sessions-table">
+                          <table className="w-full min-w-[900px] text-left text-[11px]">
+                            <thead className="bg-muted/20 text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-3 py-2">File</th><th className="px-3 py-2">Session fingerprint</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Progress</th><th className="px-3 py-2">Expires</th><th className="px-3 py-2">Updated</th></tr></thead>
+                            <tbody className="divide-y divide-border">
+                              {drive.resumableSessions.map((session) => (
+                                <tr key={session.uploadItemId}>
+                                  <td className="px-3 py-2"><p className="max-w-[240px] truncate font-semibold">{session.fileName}</p><p className="font-mono text-[9px] text-muted-foreground">{session.uploadItemId}</p></td>
+                                  <td className="px-3 py-2"><SecretFingerprint value={session.sessionFingerprint} /><p className="mt-1 text-[9px] text-muted-foreground">{session.sessionHost || "Google upload endpoint"}</p></td>
+                                  <td className="px-3 py-2"><span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[9px] font-bold uppercase">{session.status.replaceAll("_", " ")}</span><p className="mt-1 text-[9px] text-muted-foreground">Retries: {session.retryCount}</p></td>
+                                  <td className="px-3 py-2"><p className="font-semibold">{Math.max(0, Math.min(100, Math.round(session.progress)))}%</p><p className="text-[9px] text-muted-foreground">{formatBytes(session.confirmedBytes)} / {formatBytes(session.sizeBytes)}</p></td>
+                                  <td className="px-3 py-2"><span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3 text-muted-foreground" />{formatDate(session.sessionExpiresAt)}</span></td>
+                                  <td className="px-3 py-2">{formatDate(session.updatedAt)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
                     ) : (
                       <p className="px-3 py-5 text-center text-[11px] text-muted-foreground">No resumable upload session currently holds a server-side URI for this Drive.</p>
                     )}

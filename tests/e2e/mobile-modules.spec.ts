@@ -65,6 +65,13 @@ for (const width of [320, 390]) {
       for (const { canonicalPath } of routes) {
         const panel = await openModule(page, canonicalPath);
         await expectContentFits(panel);
+        if (canonicalPath === "/workspace/media/drive") {
+          const mobileSessions = panel.getByTestId("resumable-sessions-mobile").first();
+          if (await mobileSessions.count()) {
+            await expect(mobileSessions).toBeVisible();
+            await expect(panel.getByTestId("resumable-sessions-table").first()).toBeHidden();
+          }
+        }
         for (const view of views[canonicalPath] || []) {
           await panel.getByRole("button", { name: view, exact: true }).click();
           await expectContentFits(panel);
