@@ -37,9 +37,13 @@ describe("Urban Castle WhatsApp integration", () => {
     expect(pair).toContain('QRCode.toDataURL(update.qr');
     expect(pair).toContain('"Content-Type": "text/event-stream"');
     expect(pair).not.toContain("requestPairingCode");
+    expect(pair).toContain("shouldReconnectWhatsApp(update)");
+    expect(pair).toContain("createUrbanCastleWhatsAppSocket(undefined, handleConnectionUpdate)");
     expect(disconnect).toContain('user.role !== "Owner"');
     expect(stream).toContain('"Content-Type": "text/event-stream"');
     expect(stream).toContain("createUrbanCastleWhatsAppSocket");
+    expect(stream).toContain("shouldReconnectWhatsApp(update)");
+    expect(stream).toContain('status: "reconnecting"');
   });
 
   test("sends through the provider before committing the canonical communication", async () => {
@@ -76,6 +80,8 @@ describe("Urban Castle WhatsApp integration", () => {
     const server = await readFile("src/lib/whatsapp/server.ts", "utf8");
 
     expect(server).toContain("loadSendableAttachments");
+    expect(server).toContain("DisconnectReason.restartRequired");
+    expect(server).toContain("shouldReconnectWhatsApp");
     expect(server).toContain('asset.sync_status !== "uploaded"');
     expect(server).toContain('message_type: extracted.messageType');
     expect(server).toContain('direction: "inbound"');
