@@ -1,33 +1,92 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import QRCode from "qrcode";
+import { NextRequest, NextResponse } from "next/server";
 
 import { requireSession } from "@/lib/rdash/server/auth";
-import { holdPairingSocket, requestWhatsAppPairingCode } from "@/lib/whatsapp/server";
+import { startWhatsAppQrPairing } from "@/lib/whatsapp/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
     const user = await requireSession(request);
     if (user.role !== "Owner") {
       return NextResponse.json({ error: "Only Owner can pair the Urban Castle WhatsApp account." }, { status: 403 });
     }
-    const body = await request.json().catch(() => ({})) as { phoneNumber?: unknown };
-    const phoneNumber = typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
-    if (!phoneNumber) {
-      return NextResponse.json({ error: "Enter the WhatsApp phone number to pair." }, { status: 400 });
-    }
-    const pairing = await requestWhatsAppPairingCode(phoneNumber);
-    after(async () => {
-      await holdPairingSocket(pairing.sock).catch(() => undefined);
+
+    const encoder = new TextEncoder();
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let closed = false;
+        let heartbeat: ReturnType<typeof setInterval> | undefined;
+        let lifetime: ReturnType<typeof setTimeout> | undefined;
+
+        const send = (event: string, payload: unknown) => {
+          if (closed) return;
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`));
+        };
+
+        const close = () => {
+          if (closed) return;
+          closed = true;
+          if (heartbeat) clearInterval(heartbeat);
+          if (lifetime) clearTimeout(lifetime);
+          try { controller.close(); } catch { /* stream already closed */ }
+        };
+
+        try {
+          await startWhatsAppQrPairing(async (update) => {
+            if (update?.qr) {
+              const image = await QRCode.toDataURL(update.qr, {
+                errorCorrectionLevel: "M",
+                margin: 2,
+                width: 320,
+              });
+              send("qr", {
+                image,
+                generatedAt: new Date().toISOString(),
+              });
+            }
+
+            if (update?.connection === "open") {
+              send("paired", { paired: true, at: new Date().toISOString() });
+              close();
+            } else if (update?.connection === "close") {
+              send("failed", {
+                error: update?.lastDisconnect?.error?.message || "WhatsApp closed the QR pairing session.",
+              });
+              close();
+            }
+          });
+
+          heartbeat = setInterval(() => send("heartbeat", { at: new Date().toISOString() }), 25_000);
+          lifetime = setTimeout(() => {
+            send("expired", { error: "QR pairing session expired. Generate a fresh QR code and scan it again." });
+            close();
+          }, 240_000);
+
+          request.signal.addEventListener("abort", close, { once: true });
+        } catch (error) {
+          send("failed", {
+            error: error instanceof Error ? error.message : "Could not start WhatsApp QR pairing.",
+          });
+          close();
+        }
+      },
     });
-    return NextResponse.json({
-      code: pairing.code,
-      phoneNumber: pairing.phoneNumber,
-      expiresInSeconds: pairing.expiresInSeconds,
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+      },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not start WhatsApp pairing.";
+    const message = error instanceof Error ? error.message : "Could not start WhatsApp QR pairing.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
