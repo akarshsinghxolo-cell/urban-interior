@@ -81,6 +81,11 @@ export function WhatsAppConnectionPanel({
     return () => window.clearInterval(timer);
   }, [account?.status, refresh]);
 
+  React.useEffect(() => () => {
+    pairingSourceRef.current?.close();
+    pairingSourceRef.current = null;
+  }, []);
+
   React.useEffect(() => {
     if (!account?.paired) return;
     const source = new EventSource("/api/whatsapp/stream");
