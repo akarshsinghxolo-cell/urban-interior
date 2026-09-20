@@ -482,7 +482,7 @@ function PayrollPeriodsSection({ db, isOwner, onGenerate, onApprove, onPay, onRe
         draft: "bg-muted text-muted-foreground border-border",
     };
     return (<div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary"/> Payroll periods</h3>
           <p className="text-[11px] text-muted-foreground">Generate, approve, and pay monthly payroll. Lines auto-created from computeStaffSalary.</p>

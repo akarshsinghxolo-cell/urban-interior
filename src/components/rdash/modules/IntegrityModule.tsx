@@ -827,7 +827,7 @@ export function IntegrityModule() {
                                 {FOREIGN_KEYS.length} rules
                             </Badge>
                         </CardTitle>
-                        <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                        <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
                             <span className="flex items-center gap-1"><Layers className="h-3 w-3" /> {parentCollections().length} parent collections</span>
                             <span className="flex items-center gap-1"><Link2 className="h-3 w-3" /> {childCollections().length} child collections</span>
                             <div className="relative">

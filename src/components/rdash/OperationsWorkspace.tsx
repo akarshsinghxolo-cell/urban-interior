@@ -153,11 +153,11 @@ function RecordRowItem({ row }: {
       <div role="button" tabIndex={0} onClick={() => openDetail(row.detailKind, row.detailId || row.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         openDetail(row.detailKind, row.detailId || row.id);
-    } }} className="flex flex-1 cursor-pointer items-start gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-md">
+    } }} className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-md">
         {row.customerName && <Avatar name={row.customerName} size={34}/>}
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-foreground">{row.title}</p>
+          <div className="flex flex-col items-start justify-between gap-2 sm:flex-row">
+            <p className="max-w-full truncate text-sm font-semibold text-foreground">{row.title}</p>
             <div className="flex shrink-0 items-center gap-1.5">
               {row.badge}
               {row.status && <StatusBadge label={row.status.label} className={row.status.className}/>}

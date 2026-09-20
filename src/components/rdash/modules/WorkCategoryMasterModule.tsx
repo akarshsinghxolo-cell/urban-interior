@@ -960,11 +960,11 @@ function VariantsView({ master, query, setQuery, variantsByArticle, setVariantAr
       </div>
       <span className="text-xs text-muted-foreground">{master.articleVariants.length} variants across {rows.filter((article) => (variantsByArticle.get(article.id) || []).length).length} articles</span>
     </div>
-    <div className="grid gap-3 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
       {rows.map((article) => {
             const variants = variantsByArticle.get(article.id) || [];
             return <section key={article.id} className="rounded-[var(--panel-radius)] border border-border bg-card p-3 shadow-card">
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <button type="button" onClick={() => setVariantArticleId(article.id)} className="min-w-0 text-left">
               <h3 className="truncate text-sm font-bold">{article.name}</h3>
               <p className="text-[11px] text-muted-foreground">Default unit: {unitLabel(master, article.default_unit_id)}</p>
@@ -975,7 +975,7 @@ function VariantsView({ master, query, setQuery, variantsByArticle, setVariantAr
             {variants.map((variant) => {
                         const attrs = [variant.brand, variant.grade, variant.pack_size, variant.thickness, variant.size, variant.finish, variant.color, variant.series].filter(Boolean).join(" / ");
                         return <button key={variant.id} type="button" onClick={() => setVariantArticleId(article.id)} className={cn("rounded-md border px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-accent", variant.enabled === false ? "border-border bg-muted text-muted-foreground line-through" : "border-primary/20 bg-primary/10 text-primary")}>
-                <span className="block font-semibold">{variant.name}{variant.sku ? ` - ${variant.sku}` : ""}</span>
+                <span className="block break-words font-semibold">{variant.name}{variant.sku ? ` - ${variant.sku}` : ""}</span>
                 {attrs ? <span className="mt-0.5 block text-[10px] text-muted-foreground">{attrs}</span> : null}
               </button>;
                     })}
