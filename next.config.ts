@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   // then ignores this repo's .env.local — the app silently boots on the
   // in-memory fallback instead of the configured Supabase/mock backend.
   turbopack: { root: repoRoot },
+  // Baileys probes optional media helpers (jimp/sharp) with dynamic imports.
+  // Keep it as a Node server dependency instead of asking Turbopack to resolve
+  // optional packages that are intentionally absent.
+  serverExternalPackages: ["@whiskeysockets/baileys"],
   // Local QA stack: the browser reaches the dev server through the sandbox
   // gateway host (LAN IP via Caddy :81 → localhost:3000). Without this,
   // Next.js dev blocks /_next resources for that origin and the app never
