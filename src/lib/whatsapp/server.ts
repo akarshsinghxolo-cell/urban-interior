@@ -291,7 +291,16 @@ function messageBody(message: any): { body?: string; messageType: string } {
   return { body: "[WhatsApp message]", messageType: "unknown" };
 }
 
-async function journalInboundMessage(msg: any, workspaceId: string): Promise<void> {
+async function resolveInboundPhoneJid(sock: any, remoteJid: string): Promise<string> {
+  if (!remoteJid.endsWith("@lid")) return remoteJid;
+  try {
+    return (await sock.signalRepository?.lidMapping?.getPNForLID(remoteJid)) || remoteJid;
+  } catch {
+    return remoteJid;
+  }
+}
+
+async function journalInboundMessage(msg: any, workspaceId: string, sock: any): Promise<void> {
   const remoteJid = msg?.key?.remoteJid;
   if (!remoteJid || msg?.key?.fromMe) return;
   const providerMessageId = msg?.key?.id || undefined;
@@ -306,7 +315,8 @@ async function journalInboundMessage(msg: any, workspaceId: string): Promise<voi
     if (existing) return;
   }
   const extracted = messageBody(msg?.message);
-  const customerId = await customerIdForRemoteJid(remoteJid, workspaceId);
+  const phoneJid = await resolveInboundPhoneJid(sock, remoteJid);
+  const customerId = await customerIdForRemoteJid(phoneJid, workspaceId);
   const receivedAt = new Date(
     Number(msg?.messageTimestamp || 0) > 0
       ? Number(msg.messageTimestamp) * 1000
@@ -324,7 +334,10 @@ async function journalInboundMessage(msg: any, workspaceId: string): Promise<voi
       message_type: extracted.messageType,
       status: "received",
       received_at: receivedAt,
-      metadata: { pushName: msg?.pushName || null },
+      metadata: {
+        pushName: msg?.pushName || null,
+        phoneJid: phoneJid !== remoteJid ? phoneJid : null,
+      },
       updated_at: new Date().toISOString(),
     });
   if (error) throw new Error(`Could not journal inbound WhatsApp message: ${error.message}`);
@@ -397,7 +410,7 @@ export async function createUrbanCastleWhatsAppSocket(workspaceId = whatsappWork
     if (upsert?.type !== "notify") return;
     for (const msg of upsert.messages || []) {
       try {
-        await journalInboundMessage(msg, workspaceId);
+        await journalInboundMessage(msg, workspaceId, sock);
         await patchAccount({ last_activity_at: new Date().toISOString() }, workspaceId);
       } catch {
         // A malformed inbound message should not kill the connection.
