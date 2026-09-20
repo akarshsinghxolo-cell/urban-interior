@@ -109,8 +109,9 @@ function formatDate(value: string | null) {
 function SecretFingerprint({ value, missingLabel = "Not configured" }: { value: string | null; missingLabel?: string }) {
   if (!value) return <span className="text-muted-foreground">{missingLabel}</span>;
   return (
-    <code className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-foreground">
-      <Fingerprint className="h-3 w-3 text-primary" /> sha256:{value}
+    <code className="flex max-w-full min-w-0 items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px] text-foreground">
+      <Fingerprint className="h-3 w-3 shrink-0 text-primary" />
+      <span className="min-w-0 break-all">sha256:{value}</span>
     </code>
   );
 }
@@ -167,14 +168,14 @@ export function DriveSecurityDiagnosticsPanel() {
   };
 
   return (
-    <section className="overflow-hidden rounded-xl border border-primary/25 bg-card shadow-sm">
+    <section className="min-w-0 overflow-hidden rounded-xl border border-primary/25 bg-card shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border bg-gradient-to-r from-primary/[0.07] to-transparent px-4 py-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 max-w-full items-start gap-3">
           <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <LockKeyhole className="h-4.5 w-4.5" />
           </span>
-          <div>
-            <h3 className="text-sm font-bold">Drive Credentials &amp; Sessions</h3>
+          <div className="min-w-0">
+            <h3 className="break-words text-sm font-bold">Drive Credentials &amp; Sessions</h3>
             <p className="mt-0.5 max-w-4xl text-[11px] leading-4 text-muted-foreground">
               Owner-only security diagnostics for the OAuth application, every connected Drive, token health and active resumable uploads.
             </p>
@@ -186,10 +187,10 @@ export function DriveSecurityDiagnosticsPanel() {
         </Button>
       </div>
 
-      <div className="grid gap-4 p-4">
-        <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2.5">
+      <div className="grid min-w-0 gap-4 p-4">
+        <div className="flex min-w-0 items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/[0.07] px-3 py-2.5">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-bold text-foreground">Raw credentials are intentionally server-only</p>
             <p className="mt-0.5 text-[11px] leading-4 text-muted-foreground">
               Client Secret, OAuth access tokens, Google refresh tokens and complete resumable-session URIs are not returned to the browser. Stable SHA-256 fingerprints let you identify and compare each value without granting access to anyone viewing the page.
@@ -208,7 +209,7 @@ export function DriveSecurityDiagnosticsPanel() {
         {data ? (
           <>
             <div className="grid gap-3 lg:grid-cols-3">
-              <article className="rounded-lg border border-border bg-background p-3">
+              <article className="min-w-0 rounded-lg border border-border bg-background p-3">
                 <div className="mb-2 flex items-center gap-2"><KeyRound className="h-4 w-4 text-primary" /><h4 className="text-xs font-bold">OAuth Client ID</h4></div>
                 <code className="block break-all rounded-md bg-muted/40 p-2 font-mono text-[11px]">{data.oauthApplication.clientId || "Not configured"}</code>
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground">
@@ -217,13 +218,13 @@ export function DriveSecurityDiagnosticsPanel() {
                 </div>
               </article>
 
-              <article className="rounded-lg border border-border bg-background p-3">
+              <article className="min-w-0 rounded-lg border border-border bg-background p-3">
                 <div className="mb-2 flex items-center gap-2"><ServerCog className="h-4 w-4 text-primary" /><h4 className="text-xs font-bold">Client Secret</h4></div>
                 <SecretFingerprint value={data.oauthApplication.clientSecret.fingerprint} />
                 <p className="mt-2 text-[10px] text-muted-foreground">{data.oauthApplication.clientSecret.configured ? "Configured" : "Missing"} · {data.oauthApplication.clientSecret.source} · {data.oauthApplication.clientSecret.storage}</p>
               </article>
 
-              <article className="rounded-lg border border-border bg-background p-3">
+              <article className="min-w-0 rounded-lg border border-border bg-background p-3">
                 <div className="mb-2 flex items-center gap-2"><LockKeyhole className="h-4 w-4 text-primary" /><h4 className="text-xs font-bold">OAuth Scope</h4></div>
                 <div className="space-y-1">{data.oauthApplication.scope.map((scope) => <code key={scope} className="block break-all rounded-md bg-muted/40 p-2 font-mono text-[10px]">{scope}</code>)}</div>
                 <p className="mt-2 text-[10px] text-muted-foreground">Updated: {formatDate(data.oauthApplication.updatedAt)}</p>
@@ -237,11 +238,11 @@ export function DriveSecurityDiagnosticsPanel() {
               </div>
 
               {data.drives.map((drive) => (
-                <article key={drive.storageAccountId} className="rounded-xl border border-border bg-background p-4">
+                <article key={drive.storageAccountId} className="min-w-0 rounded-xl border border-border bg-background p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5">
+                    <div className="flex min-w-0 items-start gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2"><h5 className="text-sm font-bold">{drive.label}</h5><span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{drive.status.replaceAll("_", " ")}</span></div>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">{drive.email || "Google email unavailable"}</p>
                         <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">Storage account: {drive.storageAccountId}</p>

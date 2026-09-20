@@ -5,7 +5,7 @@ import { GoogleDriveManagerModule as GoogleDriveManagerCoreModule } from "./Goog
 
 export function GoogleDriveManagerModule() {
   return (
-    <div className="grid gap-5">
+    <div className="grid min-w-0 gap-5">
       <DriveSecurityDiagnosticsPanel />
       <GoogleDriveManagerCoreModule />
     </div>

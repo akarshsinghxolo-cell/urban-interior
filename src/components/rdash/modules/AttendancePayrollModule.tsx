@@ -277,10 +277,10 @@ export function AttendancePayrollModule() {
             <p className="text-xs text-muted-foreground">Verified GPS attendance, hours, absence reconciliation and salary view</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="outline" onClick={() => setWeekOffset((week) => week - 1)}>← Prev week</Button>
-          <Button size="sm" variant="ghost" onClick={() => setWeekOffset(0)}>This week</Button>
-          <Button size="sm" variant="outline" onClick={() => setWeekOffset((week) => week + 1)}>Next week →</Button>
+        <div className="flex w-full items-center gap-1 sm:w-auto">
+          <Button size="sm" variant="outline" className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none sm:px-3 sm:text-xs" onClick={() => setWeekOffset((week) => week - 1)}>← Prev week</Button>
+          <Button size="sm" variant="ghost" className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none sm:px-3 sm:text-xs" onClick={() => setWeekOffset(0)}>This week</Button>
+          <Button size="sm" variant="outline" className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none sm:px-3 sm:text-xs" onClick={() => setWeekOffset((week) => week + 1)}>Next week →</Button>
         </div>
       </div>
 

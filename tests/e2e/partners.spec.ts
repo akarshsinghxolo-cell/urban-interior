@@ -112,6 +112,7 @@ test("vendor directory filters, correct profile, scoped tabs and deep-link reloa
   await page.getByRole("button", { name: "Open Ceiling Hub", exact: true }).click();
   const profile = page.getByTestId("partner-profile");
   await expect(profile.getByRole("heading", { name: "Ceiling Hub", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\/vendors\/ven-ceiling(?:[/?#]|$)/);
   await page.reload();
   await expect(profile.getByRole("heading", { name: "Ceiling Hub", exact: true })).toBeVisible();
   const sections = profile.getByRole("group", { name: "Partner sections" });
@@ -176,6 +177,7 @@ test("a contractor can be created without a photo and survives a reload", async 
   await page.getByRole("button", { name: "Create contractor", exact: true }).click();
   expect((await commit).status()).toBe(200);
   await expect(page.getByTestId("partner-profile").getByRole("heading", { name, exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\/contractors\/[^/?#]+(?:[/?#]|$)/);
   await page.reload();
   await expect(page.getByTestId("partner-profile").getByRole("heading", { name, exact: true })).toBeVisible();
 });
