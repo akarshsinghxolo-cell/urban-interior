@@ -343,7 +343,10 @@ async function journalInboundMessage(msg: any, workspaceId: string, sock: any): 
   if (error) throw new Error(`Could not journal inbound WhatsApp message: ${error.message}`);
 }
 
-export async function createUrbanCastleWhatsAppSocket(workspaceId = whatsappWorkspaceId()) {
+export async function createUrbanCastleWhatsAppSocket(
+  workspaceId = whatsappWorkspaceId(),
+  onConnectionUpdate?: (update: any) => void | Promise<void>,
+) {
   if (isWhatsAppQaMode()) {
     throw new Error("WhatsApp transport is disabled against the local QA Supabase mock.");
   }
@@ -374,6 +377,9 @@ export async function createUrbanCastleWhatsAppSocket(workspaceId = whatsappWork
 
   sock.ev.on("connection.update", async (update: any) => {
     try {
+      if (onConnectionUpdate) {
+        await onConnectionUpdate(update);
+      }
       if (update.connection === "open") {
         const now = new Date().toISOString();
         await patchAccount({
@@ -444,43 +450,31 @@ function waitForSocketOpen(sock: any, timeoutMs = 20_000): Promise<void> {
   });
 }
 
-export async function requestWhatsAppPairingCode(phoneNumber: string) {
+export async function startWhatsAppQrPairing(
+  onConnectionUpdate?: (update: any) => void | Promise<void>,
+) {
   if (isWhatsAppQaMode()) throw new Error("WhatsApp pairing is disabled in local QA mode.");
   const workspaceId = whatsappWorkspaceId();
   await ensureAccountRow(workspaceId);
   const snapshot = await getWhatsAppAccountSnapshot(workspaceId);
   if (snapshot.paired) {
-    throw new Error("Urban Castle already has a paired WhatsApp account. Disconnect it before pairing another number.");
+    throw new Error("Urban Castle already has a paired WhatsApp account. Disconnect it before pairing another device.");
   }
-  const dialDigits = whatsappDialDigits(phoneNumber);
-  const { sock } = await createUrbanCastleWhatsAppSocket(workspaceId);
-  const code = await sock.requestPairingCode(dialDigits);
+
+  // A new QR pairing attempt should start from a clean, unregistered auth state.
+  // Never persist or log the QR token itself; only the resulting Baileys credentials
+  // are stored after WhatsApp confirms the device link.
+  await clearWhatsAppAuthState(workspaceId);
   const now = new Date().toISOString();
   await patchAccount({
     status: "pairing",
-    phone_number: dialDigits,
+    phone_number: null,
     pairing_requested_at: now,
     last_error: null,
   }, workspaceId);
-  return { code, phoneNumber: dialDigits, sock, expiresInSeconds: 180 };
-}
 
-export async function holdPairingSocket(sock: any, timeoutMs = 180_000): Promise<void> {
-  await new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
-    const timer = setTimeout(finish, timeoutMs);
-    sock.ev.on("connection.update", (update: any) => {
-      if (update.connection === "open" || update.connection === "close") {
-        clearTimeout(timer);
-        finish();
-      }
-    });
-  });
+  const { sock } = await createUrbanCastleWhatsAppSocket(workspaceId, onConnectionUpdate);
+  return { sock, expiresInSeconds: 240 };
 }
 
 async function loadSendableAttachments(sourceAttachmentIds: string[] | undefined, workspaceId: string) {
