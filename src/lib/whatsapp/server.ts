@@ -470,6 +470,48 @@ export async function holdPairingSocket(sock: any, timeoutMs = 180_000): Promise
   });
 }
 
+async function loadSendableAttachments(sourceAttachmentIds: string[] | undefined, workspaceId: string) {
+  const ids = [...new Set((sourceAttachmentIds || []).filter(Boolean))];
+  if (!ids.length) return [] as Array<{ url: string; mimeType: string; fileName: string; caption?: string }>;
+
+  const { data: attachmentRows, error: attachmentError } = await adminClient()
+    .from("entity_entityFileAttachments")
+    .select("id,data")
+    .eq("workspace_id", workspaceId)
+    .in("id", ids);
+  if (attachmentError) throw new Error(`Could not load WhatsApp attachments: ${attachmentError.message}`);
+
+  const attachments = attachmentRows || [];
+  if (attachments.length !== ids.length) {
+    throw new Error("One or more communication attachments no longer exist.");
+  }
+  const assetIds = [...new Set(attachments.map((row: any) => row.data?.file_asset_id).filter(Boolean))];
+  const { data: assetRows, error: assetError } = await adminClient()
+    .from("entity_master_fileAssets")
+    .select("id,data")
+    .eq("workspace_id", workspaceId)
+    .in("id", assetIds);
+  if (assetError) throw new Error(`Could not load WhatsApp file assets: ${assetError.message}`);
+
+  const assetsById = new Map((assetRows || []).map((row: any) => [row.id, row.data || {}]));
+  return attachments.map((row: any) => {
+    const attachment = row.data || {};
+    const asset: any = assetsById.get(attachment.file_asset_id);
+    if (!asset || asset.sync_status !== "uploaded") {
+      throw new Error("WhatsApp attachments must finish uploading to Google Drive before sending.");
+    }
+    if (!asset.google_file_id) {
+      throw new Error(`WhatsApp cannot send “${asset.file_name || "attachment"}” because it has no Google Drive file ID.`);
+    }
+    return {
+      url: `https://drive.google.com/uc?export=download&id=${encodeURIComponent(asset.google_file_id)}`,
+      mimeType: asset.mime_type || "application/octet-stream",
+      fileName: asset.file_name || "attachment",
+      caption: attachment.caption || undefined,
+    };
+  });
+}
+
 export async function sendWhatsAppMessage(input: {
   customerId: string;
   subject: string;
@@ -494,8 +536,41 @@ export async function sendWhatsAppMessage(input: {
 
   const parts = [input.subject?.trim(), input.body?.trim()].filter(Boolean);
   const text = parts.join("\n\n") || "Urban Castle";
+  const attachments = await loadSendableAttachments(input.sourceAttachmentIds, workspaceId);
   const sent = await sock.sendMessage(remoteJid, { text });
   const providerMessageId = sent?.key?.id || undefined;
+  const attachmentProviderMessageIds: string[] = [];
+
+  for (const attachment of attachments) {
+    let result: any;
+    if (attachment.mimeType.startsWith("image/")) {
+      result = await sock.sendMessage(remoteJid, {
+        image: { url: attachment.url },
+        mimetype: attachment.mimeType,
+        caption: attachment.caption || attachment.fileName,
+      } as any);
+    } else if (attachment.mimeType.startsWith("video/")) {
+      result = await sock.sendMessage(remoteJid, {
+        video: { url: attachment.url },
+        mimetype: attachment.mimeType,
+        caption: attachment.caption || attachment.fileName,
+      } as any);
+    } else if (attachment.mimeType.startsWith("audio/")) {
+      result = await sock.sendMessage(remoteJid, {
+        audio: { url: attachment.url },
+        mimetype: attachment.mimeType,
+      } as any);
+    } else {
+      result = await sock.sendMessage(remoteJid, {
+        document: { url: attachment.url },
+        mimetype: attachment.mimeType,
+        fileName: attachment.fileName,
+        caption: attachment.caption,
+      } as any);
+    }
+    if (result?.key?.id) attachmentProviderMessageIds.push(result.key.id);
+  }
+
   const now = new Date().toISOString();
 
   const { error } = await adminClient()
@@ -513,6 +588,7 @@ export async function sendWhatsAppMessage(input: {
       status: "sent",
       metadata: {
         sourceAttachmentIds: input.sourceAttachmentIds || [],
+        attachmentProviderMessageIds,
         transport: "baileys",
       },
       sent_at: now,
@@ -521,7 +597,7 @@ export async function sendWhatsAppMessage(input: {
   if (error) throw new Error(`WhatsApp sent, but Urban Castle could not journal the provider message: ${error.message}`);
 
   await patchAccount({ status: "connected", last_activity_at: now, last_error: null }, workspaceId);
-  return { providerMessageId, remoteJid, sentAt: now };
+  return { providerMessageId, attachmentProviderMessageIds, remoteJid, sentAt: now };
 }
 
 export async function disconnectWhatsApp(): Promise<void> {
