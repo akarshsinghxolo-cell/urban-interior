@@ -1,13 +1,8 @@
 import { hydrateStaffReferenceLabels } from "../staff-reference-labels";
-import type { AuditLogEntry, RDashDatabase } from "../types";
-import { validateBusinessData } from "../business-rules";
-import { applyWorkspaceOperations, diffWorkspaceOperations, operationSummary, type WorkspaceOperation } from "../workspace-operations";
+import type { RDashDatabase } from "../types";
+import { diffWorkspaceOperations, type WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
-import { introducedIntegrityIssues } from "./integrity-delta";
-import {
-  assertNotImplicitSeedReset,
-  assertWorkspaceMutationAllowed,
-} from "./mutation-policy";
+import { assertNotImplicitSeedReset } from "./mutation-policy";
 
 // Supabase/PostgreSQL is the single server workspace persistence system.
 // The server fails closed if the canonical entity schema is unavailable.
@@ -97,20 +92,6 @@ export async function getWorkspaceSubset(plan: WorkspaceReadPlan): Promise<Works
   await assertSupabaseSchemaReady();
   const { getRestWorkspaceSubset } = await getRestModule();
   return getRestWorkspaceSubset(plan);
-}
-
-function secureMutationAudit(user: AuthenticatedUser, operations: ReturnType<typeof diffWorkspaceOperations>): AuditLogEntry {
-  return {
-    id: `audit-secure-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-    timestamp: new Date().toISOString(),
-    actor: user.name,
-    actor_role: user.role,
-    action: `Secure server commit: ${operationSummary(operations)}`,
-    entity_type: "workspace",
-    entity_id: process.env.UC_WORKSPACE_ID || "default",
-    entity_label: "Urban Castle workspace",
-    kind: "update",
-  };
 }
 
 /** Commits already-authorized row operations with PostgreSQL workspace/row CAS. */

@@ -11,7 +11,7 @@
  */
 import { getSupabaseAdminClient } from "../../supabase/server";
 import type { WorkspaceOperation } from "../workspace-operations";
-import type { RDashDatabase, Master } from "../types";
+import type { RDashDatabase } from "../types";
 import { WORK_CATALOG_VERSION } from "../work-category-master";
 import type { WorkspacePagination } from "./workspace";
 

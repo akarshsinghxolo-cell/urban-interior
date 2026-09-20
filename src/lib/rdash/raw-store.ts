@@ -1,13 +1,9 @@
 "use client";
 import { create } from "zustand";
-import type { RDashDatabase, Customer, Task, Followup, Visit, Quotation, QuotationItem, Payment, CustomerInvoice, CustomerReceipt, ApprovalAction, WorkOrder, WorkOrderBOQ, WorkOrderBOQ as WorkOrderBOQT, PurchaseOrder, GRN, InventoryItem, StockMovement, SiteDispatch, VendorBill, VendorPayment, ContractorBill, ContractorPayment, Commission, WorkOrderCostLine, ContractorBid, ContractorSettlement, Drawing, DailyExecutionLog, VisitRoutePoint, Site, Area, Thread, ThreadMessage, ThreadKind, LineItem, BlockedItem, RiskItem, Master, FileAsset, FileAssetCreateInput, EntityFileAttachment, EntityReferenceAssignment, AttendancePolicy, AttendanceRecord, VariationRequest, RecurringTaskDefinition, VisitType, } from "./types";
-// mergeStaffLocationPings, StaffLocationPing moved to slices/core.ts (Phase 3o)
+import type { RDashDatabase } from "./types";
 import { applyVendorRateAverages } from "./vendor-rate-average";
-import { attachCustomerLabels, customerName, customerNameForJob, } from "./customer";
-import { assertUniqueCustomerIdentity } from "./customer-identity";
-import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitExitGps, verifyVisitGps, type GpsCapture, } from "./gps";
-import { areaDependencySummary, BusinessRuleError, assertAreaBelongsToSite, assertCustomerExists, assertAreasBelongToSite, assertWorkCategoryId, assertWorkSubcategoryId, assertFinanceContext, assertMeasurementRevisionRelations, assertQuotationRelations, assertSiteBelongsToCustomer, assertSiteExists, assertWorkOrderRelations, assertWorkRequiredMatchesContext, replaceAreaId, validateBusinessData, } from "./business-rules";
-import { resolveCustomerIdFromLinks } from "./customer-relations";
+import { attachCustomerLabels } from "./customer";
+import { validateBusinessData } from "./business-rules";
 import { diffWorkspaceOperations } from "./workspace-operations";
 import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent, workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";
 import { workspaceFoundationRevisionState } from "./workspace-foundation-revision-state";
@@ -21,7 +17,7 @@ import { isRegisteredModuleId, resolveRenderer } from "./modules";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
 // Re-export UI types from the store/ subfolder (Phase 1 split)
 export type { WorkspaceTab, DetailPanelKind, ContextCustomerTab, ContextDetailTab, ContextHistoryEntry, DetailPanelState, ContextRecord, CurrentUserContext, AuthenticatedWorkspaceUser, WorkspaceSyncStatus, GuardResult, SavedView, CreateDialogKind, CreateDialogRequest, } from "./store/ui-types";
-import type { WorkspaceTab, DetailPanelKind, ContextCustomerTab, ContextDetailTab, ContextHistoryEntry, DetailPanelState, ContextRecord, CurrentUserContext, AuthenticatedWorkspaceUser, WorkspaceSyncStatus, GuardResult, SavedView, CreateDialogKind, CreateDialogRequest, } from "./store/ui-types";
+import type { WorkspaceTab } from "./store/ui-types";
 import type { RDashState } from "./store/types";
 import type { StoreContext } from "./store/context";
 import { createRisksSlice } from "./store/slices/risks";
