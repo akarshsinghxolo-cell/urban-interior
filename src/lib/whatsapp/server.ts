@@ -374,8 +374,12 @@ export async function createUrbanCastleWhatsAppSocket(
     generateHighQualityLinkPreview: false,
   } as any);
 
-  sock.ev.on("creds.update", async () => {
+  sock.ev.on("creds.update", async (update: any) => {
     try {
+      // Baileys may emit partial credential updates. Merge them into the
+      // persisted auth object before writing to Supabase so fields such as
+      // `registered` survive the QR-link restart boundary.
+      Object.assign(state.creds as any, update || {});
       await saveCreds();
     } catch (error) {
       await patchAccount({
@@ -388,6 +392,13 @@ export async function createUrbanCastleWhatsAppSocket(
   sock.ev.on("connection.update", async (update: any) => {
     try {
       if (update.connection === "open") {
+        // A socket that reached "open" has completed WhatsApp device
+        // registration. Persist this synchronously before returning success to
+        // the browser; otherwise a serverless function can finish while an
+        // asynchronous creds.update write is still pending.
+        state.creds.registered = true;
+        await saveCreds();
+
         const now = new Date().toISOString();
         await patchAccount({
           status: "connected",
