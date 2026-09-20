@@ -31,6 +31,16 @@ export interface WhatsAppAccountSnapshot {
   lastError?: string;
 }
 
+export function whatsappDisconnectCode(update: any): number | undefined {
+  const code = update?.lastDisconnect?.error?.output?.statusCode;
+  return typeof code === "number" ? code : undefined;
+}
+
+export function shouldReconnectWhatsApp(update: any): boolean {
+  if (update?.connection !== "close") return false;
+  return whatsappDisconnectCode(update) !== DisconnectReason.loggedOut;
+}
+
 export interface WhatsAppJournalMessage {
   id: string;
   direction: "inbound" | "outbound";
@@ -388,7 +398,7 @@ export async function createUrbanCastleWhatsAppSocket(
           last_error: null,
         }, workspaceId);
       } else if (update.connection === "close") {
-        const statusCode = update.lastDisconnect?.error?.output?.statusCode;
+        const statusCode = whatsappDisconnectCode(update);
         if (statusCode === DisconnectReason.loggedOut) {
           await clearWhatsAppAuthState(workspaceId);
           await patchAccount({
@@ -397,10 +407,18 @@ export async function createUrbanCastleWhatsAppSocket(
             display_name: null,
             last_error: "WhatsApp logged this linked device out.",
           }, workspaceId);
+        } else if (statusCode === DisconnectReason.restartRequired) {
+          // WhatsApp deliberately closes the first socket after a successful QR scan.
+          // Baileys expects the app to recreate the socket with the newly saved creds.
+          // This is a normal part of linking, not a user-facing error.
+          await patchAccount({
+            status: "connecting",
+            last_error: null,
+          }, workspaceId);
         } else {
           await patchAccount({
             status: "degraded",
-            last_error: update.lastDisconnect?.error?.message || "WhatsApp socket closed; it will reconnect on the next Urban Castle request.",
+            last_error: update.lastDisconnect?.error?.message || "WhatsApp socket closed; reconnecting is required.",
           }, workspaceId);
         }
       }
