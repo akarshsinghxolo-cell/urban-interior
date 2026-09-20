@@ -51,6 +51,11 @@ describe("Urban Castle WhatsApp integration", () => {
     expect(centre).toContain("<WhatsAppConnectionPanel");
   });
 
+  test("keeps Baileys external to the Turbopack server bundle", async () => {
+    const config = await readFile("next.config.ts", "utf8");
+    expect(config).toContain('serverExternalPackages: ["@whiskeysockets/baileys"]');
+  });
+
   test("keeps WhatsApp provider history module-scoped instead of bloating bootstrap", async () => {
     const centre = await readFile("src/components/rdash/WhatsAppConnectionPanel.tsx", "utf8");
     const bootstrap = await readFile("src/app/api/bootstrap/route.ts", "utf8");
