@@ -155,7 +155,7 @@ export async function clearWhatsAppAuthState(workspaceId = whatsappWorkspaceId()
   if (error) throw new Error(`Could not clear WhatsApp auth state: ${error.message}`);
 }
 
-export async function useSupabaseWhatsAppAuthState(workspaceId = whatsappWorkspaceId()): Promise<{
+export async function loadSupabaseWhatsAppAuthState(workspaceId = whatsappWorkspaceId()): Promise<{
   state: AuthenticationState;
   saveCreds: () => Promise<void>;
 }> {
@@ -334,7 +334,7 @@ export async function createUrbanCastleWhatsAppSocket(workspaceId = whatsappWork
   if (isWhatsAppQaMode()) {
     throw new Error("WhatsApp transport is disabled against the local QA Supabase mock.");
   }
-  const { state, saveCreds } = await useSupabaseWhatsAppAuthState(workspaceId);
+  const { state, saveCreds } = await loadSupabaseWhatsAppAuthState(workspaceId);
   const { version } = await fetchLatestBaileysVersion();
   await patchAccount({ status: state.creds.registered ? "connecting" : "pairing", last_error: null }, workspaceId);
 
