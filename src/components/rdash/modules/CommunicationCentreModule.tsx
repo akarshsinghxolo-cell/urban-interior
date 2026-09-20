@@ -7,6 +7,7 @@ import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, w
 import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
 import { assetPreview, attachedFilesForIds } from "@/lib/rdash/file-attachments";
+import { WhatsAppConnectionPanel } from "../WhatsAppConnectionPanel";
 import type { CommChannel, CommSend } from "@/lib/rdash/types";
 import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
 import { formatDateTime, relativeDay, titleCase } from "@/lib/rdash/format";
@@ -47,6 +48,10 @@ export function CommunicationCentreModule({ channelFilter }: {
     const sendComm = useRDashStore((s) => s.sendComm);
     const currentUser = useRDashStore((s) => s.currentUser);
     const openDetail = useRDashStore((s) => s.openDetail);
+    const actor = React.useMemo(() => {
+        try { return currentUser(); }
+        catch { return null; }
+    }, [currentUser]);
     const [composeOpen, setComposeOpen] = React.useState(false);
     const [composeChannel, setComposeChannel] = React.useState<CommChannel>((channelFilter as CommChannel) || "whatsapp");
     const filtered = React.useMemo(() => {
@@ -75,6 +80,14 @@ export function CommunicationCentreModule({ channelFilter }: {
           <Send className="mr-1 h-3.5 w-3.5"/> New message
         </Button>
       </div>
+
+      {(!channelFilter || channelFilter === "all" || channelFilter === "whatsapp") && (
+        <WhatsAppConnectionPanel
+          isOwner={actor?.role === "Owner"}
+          customers={db.customers.map((customer) => ({ id: customer.id, name: customer.name }))}
+          onOpenCustomer={(customerId) => openDetail("customer", customerId)}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Total sends" value={db.commSends.length} tone="primary" icon={<Send className="h-4 w-4"/>}/>
@@ -128,8 +141,31 @@ export function CommunicationCentreModule({ channelFilter }: {
           </div>)}
       </div>
 
-      {composeOpen && (<ComposeDialog channel={composeChannel} onClose={() => setComposeOpen(false)} onSend={(data) => {
-                sendComm({ ...data, channel: composeChannel });
+      {composeOpen && (<ComposeDialog channel={composeChannel} onClose={() => setComposeOpen(false)} onSend={async (data) => {
+                if (composeChannel === "whatsapp") {
+                    for (const attachmentId of data.source_attachment_ids || []) {
+                        const attachment = db.entityFileAttachments.find((row) => row.id === attachmentId);
+                        const asset = attachment && db.master.fileAssets.find((row) => row.id === attachment.file_asset_id);
+                        if (!attachment || !asset || asset.sync_status !== "uploaded") {
+                            throw new Error("Wait for every attachment to finish uploading to Google Drive before sending WhatsApp.");
+                        }
+                    }
+                    const response = await fetch("/api/whatsapp/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            customerId: data.customer_id,
+                            subject: data.subject,
+                            body: data.body,
+                            sourceAttachmentIds: data.source_attachment_ids,
+                        }),
+                    });
+                    const payload = await response.json().catch(() => ({})) as { error?: string };
+                    if (!response.ok) {
+                        throw new Error(payload.error || "WhatsApp could not send this message.");
+                    }
+                }
+                sendComm({ ...data, channel: composeChannel, status: "sent" });
                 toast.success(`${CHANNEL_META[composeChannel].label} sent to ${db.customers.find((customer) => customer.id === data.customer_id)?.name || "Customer"}`);
                 setComposeOpen(false);
             }}/>)}
@@ -149,7 +185,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
         work_order_id?: string;
         quotation_id?: string;
         schedules_next_followup?: { due_date: string; purpose: string };
-    }) => void;
+    }) => Promise<void> | void;
 }) {
     const db = useRDashStore((s) => s.db);
     // B-14: Use the actual signed-in user (from the store) instead of the hardcoded "Anita Rao".
@@ -211,7 +247,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
                     purpose: nextPurpose.trim() || `Follow up after "${subject}"`,
                 };
             }
-            onSend(payload);
+            await onSend(payload);
             commitBatches();
         }
         catch (error) {
@@ -337,7 +373,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
           <Button size="sm" onClick={send} disabled={!customerId || !subject || sending}>
-            <Send className="mr-1 h-3.5 w-3.5"/> {sending ? "Saving…" : `Send ${meta.label}`}
+            <Send className="mr-1 h-3.5 w-3.5"/> {sending ? "Sending…" : `Send ${meta.label}`}
           </Button>
         </DialogFooter>
       </DialogContent>
