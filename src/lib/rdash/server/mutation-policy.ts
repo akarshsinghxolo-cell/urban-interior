@@ -1,4 +1,4 @@
-import type { Master, RDashDatabase } from "../types";
+import type { RDashDatabase } from "../types";
 import { buildSeedDatabase } from "../seed";
 import {
   assertStaffOperationAllowed,
