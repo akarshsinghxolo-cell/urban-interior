@@ -68,6 +68,7 @@ describe("Urban Castle WhatsApp integration", () => {
     expect(server).toContain('asset.sync_status !== "uploaded"');
     expect(server).toContain('message_type: extracted.messageType');
     expect(server).toContain('direction: "inbound"');
+    expect(server).toContain("getPNForLID");
     expect(server).toContain('direction: "outbound"');
     expect(server).toContain("sock.ev.on(\"messages.upsert\"");
   });
