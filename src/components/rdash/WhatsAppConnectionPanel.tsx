@@ -1,11 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import * as React from "react";
 import { CheckCircle2, Link2, Loader2, MessageCircle, RefreshCw, Unlink, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 type AccountSnapshot = {
@@ -43,9 +43,10 @@ export function WhatsAppConnectionPanel({
 }) {
   const [account, setAccount] = React.useState<AccountSnapshot | null>(null);
   const [messages, setMessages] = React.useState<JournalMessage[]>([]);
-  const [phoneNumber, setPhoneNumber] = React.useState("");
-  const [pairingCode, setPairingCode] = React.useState("");
+  const [qrImage, setQrImage] = React.useState("");
+  const [pairingActive, setPairingActive] = React.useState(false);
   const [busy, setBusy] = React.useState<"pair" | "disconnect" | "refresh" | null>(null);
+  const pairingSourceRef = React.useRef<EventSource | null>(null);
 
   const customerNames = React.useMemo(() => new Map(customers.map((customer) => [customer.id, customer.name])), [customers]);
 
@@ -94,25 +95,59 @@ export function WhatsAppConnectionPanel({
     };
   }, [account?.paired, refresh]);
 
-  const pair = async () => {
-    if (!phoneNumber.trim() || busy) return;
+  const pair = () => {
+    if (busy || pairingActive) return;
+    pairingSourceRef.current?.close();
     setBusy("pair");
-    try {
-      const response = await fetch("/api/whatsapp/pair", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phoneNumber }),
-      });
-      const payload = await response.json().catch(() => ({})) as { code?: string; error?: string };
-      if (!response.ok || !payload.code) throw new Error(payload.error || "Could not create WhatsApp pairing code.");
-      setPairingCode(payload.code);
-      toast.success("Pairing code created. Enter it in WhatsApp Linked devices.");
-      await refresh(true);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not pair WhatsApp.");
-    } finally {
+    setQrImage("");
+    setPairingActive(true);
+
+    const source = new EventSource("/api/whatsapp/pair");
+    pairingSourceRef.current = source;
+
+    const stop = () => {
+      source.close();
+      if (pairingSourceRef.current === source) pairingSourceRef.current = null;
+      setPairingActive(false);
       setBusy(null);
-    }
+    };
+
+    source.addEventListener("qr", (event) => {
+      const payload = JSON.parse((event as MessageEvent).data || "{}") as { image?: string };
+      if (payload.image) {
+        setQrImage(payload.image);
+        setBusy(null);
+      }
+    });
+
+    source.addEventListener("paired", () => {
+      setQrImage("");
+      stop();
+      toast.success("WhatsApp linked successfully.");
+      void refresh(true);
+    });
+
+    const handleFailure = (event: Event) => {
+      let message = "WhatsApp QR pairing session ended. Generate a fresh QR code and try again.";
+      if ("data" in event) {
+        try {
+          const payload = JSON.parse((event as MessageEvent).data || "{}") as { error?: string };
+          if (payload.error) message = payload.error;
+        } catch {
+          // Keep the safe fallback message.
+        }
+      }
+      stop();
+      toast.error(message);
+      void refresh(true);
+    };
+
+    source.addEventListener("failed", handleFailure);
+    source.addEventListener("expired", handleFailure);
+    source.onerror = () => {
+      stop();
+      toast.error("Could not keep the WhatsApp QR pairing session open.");
+    };
   };
 
   const disconnect = async () => {
@@ -122,8 +157,10 @@ export function WhatsAppConnectionPanel({
       const response = await fetch("/api/whatsapp/disconnect", { method: "POST" });
       const payload = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Could not disconnect WhatsApp.");
-      setPairingCode("");
-      setPhoneNumber("");
+      pairingSourceRef.current?.close();
+      pairingSourceRef.current = null;
+      setQrImage("");
+      setPairingActive(false);
       toast.success("Urban Castle WhatsApp disconnected.");
       await refresh(true);
     } catch (error) {
@@ -173,30 +210,41 @@ export function WhatsAppConnectionPanel({
       {!paired && isOwner && (
         <div className="grid gap-3 border-b border-border px-4 py-3 md:grid-cols-[1fr_auto]">
           <div>
-            <label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">WhatsApp number</label>
-            <Input
-              value={phoneNumber}
-              onChange={(event) => setPhoneNumber(event.target.value)}
-              placeholder="9876543210 or 919876543210"
-              inputMode="tel"
-              className="mt-1 h-9"
-            />
-            <p className="mt-1 text-[10px] text-muted-foreground">India numbers can be entered as 10 digits. Other countries should include the country code.</p>
+            <p className="text-xs font-semibold">Link Urban Castle as a WhatsApp device</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              On the primary phone open WhatsApp → Linked devices → Link a device, then scan the QR code shown here.
+            </p>
           </div>
-          <div className="flex items-end">
-            <Button type="button" size="sm" className="h-9" onClick={() => void pair()} disabled={!phoneNumber.trim() || busy !== null}>
+          <div className="flex items-start md:items-center">
+            <Button type="button" size="sm" className="h-9" onClick={pair} disabled={busy !== null || pairingActive}>
               {busy === "pair" ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Link2 className="mr-1 h-3.5 w-3.5" />}
-              Pair WhatsApp
+              {pairingActive ? "Waiting for scan…" : "Generate QR"}
             </Button>
           </div>
-          {pairingCode && (
-            <div className="rounded-md border border-success/20 bg-success/5 p-3 md:col-span-2">
+          {qrImage && (
+            <div className="rounded-md border border-success/20 bg-success/5 p-4 md:col-span-2">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-success" />
-                <p className="text-xs font-semibold">Pairing code</p>
+                <p className="text-xs font-semibold">Scan this QR code with the primary WhatsApp phone</p>
               </div>
-              <p className="mt-2 font-mono text-2xl font-bold tracking-[0.25em]">{pairingCode}</p>
-              <p className="mt-2 text-[11px] text-muted-foreground">On the phone: WhatsApp → Linked devices → Link a device → Link with phone number, then enter this code. Keep this Urban Castle page open until it shows paired.</p>
+              <div className="mt-3 flex flex-col items-center gap-3 sm:flex-row sm:items-start">
+                <div className="rounded-xl border border-border bg-white p-3 shadow-sm">
+                  <Image
+                    src={qrImage}
+                    alt="WhatsApp linked-device QR code"
+                    width={320}
+                    height={320}
+                    unoptimized
+                    className="h-64 w-64 sm:h-72 sm:w-72"
+                  />
+                </div>
+                <div className="max-w-sm text-[11px] leading-relaxed text-muted-foreground">
+                  <p>1. Open WhatsApp on the phone that owns the company account.</p>
+                  <p className="mt-1">2. Open Linked devices → Link a device.</p>
+                  <p className="mt-1">3. Point the phone camera at this QR code.</p>
+                  <p className="mt-2 font-medium text-foreground">Keep this page open. If WhatsApp rotates the QR code, Urban Castle updates it automatically.</p>
+                </div>
+              </div>
             </div>
           )}
         </div>
