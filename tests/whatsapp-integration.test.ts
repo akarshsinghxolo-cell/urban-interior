@@ -82,6 +82,9 @@ describe("Urban Castle WhatsApp integration", () => {
     expect(server).toContain("loadSendableAttachments");
     expect(server).toContain("DisconnectReason.restartRequired");
     expect(server).toContain("shouldReconnectWhatsApp");
+    expect(server).toContain("Object.assign(state.creds as any, update || {})");
+    expect(server).toContain("state.creds.registered = true");
+    expect(server).toContain("await saveCreds();");
     expect(server).toContain('asset.sync_status !== "uploaded"');
     expect(server).toContain('message_type: extracted.messageType');
     expect(server).toContain('direction: "inbound"');
