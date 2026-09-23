@@ -308,6 +308,7 @@ export async function getDirectUploadWorkspace(
   targetEntityType: FileAttachmentEntityType,
   targetEntityId: string,
   purpose: UploadPurpose,
+  options: { validateTarget?: boolean } = {},
 ): Promise<WorkspaceSubset> {
   let workspace = await getWorkspaceSubset(initialPlan(targetEntityType, targetEntityId, purpose));
   for (let round = 0; round < MAX_DEPENDENCY_ROUNDS; round += 1) {
@@ -319,7 +320,7 @@ export async function getDirectUploadWorkspace(
   }
 
   prepareNestedResolverProjection(workspace.data, targetEntityType, targetEntityId);
-  if (targetEntityType !== "general") {
+  if (options.validateTarget !== false && targetEntityType !== "general") {
     try {
       resolveEntityContext(workspace.data, targetEntityType, targetEntityId, "Upload target");
     } catch (error) {
