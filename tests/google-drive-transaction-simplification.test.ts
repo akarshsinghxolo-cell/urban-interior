@@ -35,9 +35,14 @@ describe("Google Drive transaction simplification", () => {
 
   test("waits for every persisted attachment target and retries automatically", async () => {
     const initiate = await readFile("src/lib/rdash/server/direct-upload-initiate.ts", "utf8");
+    const workspace = await readFile("src/lib/rdash/server/direct-upload-workspace.ts", "utf8");
+    const route = await readFile("src/app/api/uploads/[action]/route.ts", "utf8");
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
 
     expect(initiate).toContain("assertUploadTargetReady");
+    expectTokens(initiate, ["{ validateTarget: false }"]);
+    expectTokens(workspace, ["options.validateTarget !== false"]);
+    expectTokens(route, ['raw.startsWith("TARGET_NOT_READY:") ? 409 : 422']);
     expectTokens(initiate, ["uploadPurposeAllowedForEntity(targetEntityType, purpose)"]);
     expectTokens(initiate, ['targetEntityType === "general"']);
     expectTokens(initiate, ['resolveEntityContext(db, targetEntityType, targetEntityId, "Upload target")']);
