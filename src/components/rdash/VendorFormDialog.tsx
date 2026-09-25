@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Navigation, Plus, Search, Star, Trash2, X } from "lucide-react";
+import { Navigation, Plus, Star, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -33,6 +33,9 @@ import {
   vendorArticlesForTaxonomy,
 } from "@/lib/rdash/vendor-capability-taxonomy";
 import { FilePreview } from "./FilePreview";
+import { CapabilityTaxonomyPicker } from "./CapabilityTaxonomyPicker";
+import { applyVendorRateUpdates, vendorRateUpdatesFromDrafts, type VendorRateDraft } from "@/lib/rdash/vendor-rate";
+import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
 
 type VendorFormDialogProps = {
   open: boolean;
@@ -108,7 +111,7 @@ function capabilityDrafts(rows: VendorSupplyCapability[]): CapabilityDraft[] {
   }));
 }
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
-  return <label className="space-y-1.5 text-xs font-semibold text-foreground"><span>{label}</span>{children}{hint && <span className="block text-[10px] font-normal text-muted-foreground">{hint}</span>}</label>;
+  return <label className="block min-w-0 space-y-1.5 text-xs font-semibold text-foreground"><span>{label}</span>{children}{hint && <span className="block text-[10px] font-normal text-muted-foreground">{hint}</span>}</label>;
 }
 
 export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormDialogProps) {
@@ -125,6 +128,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
   const [businessCard, setBusinessCard] = React.useState<MediaValue>("");
   const [shopPhoto, setShopPhoto] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
+  const [priceEdits, setPriceEdits] = React.useState<Record<string, VendorRateDraft>>({});
   const [articleQuery, setArticleQuery] = React.useState("");
   const [taxonomyCategoryIds, setTaxonomyCategoryIds] = React.useState<string[]>([]);
   const [taxonomySubcategoryIds, setTaxonomySubcategoryIds] = React.useState<string[]>([]);
@@ -187,6 +191,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setTaxonomyCategoryIds(taxonomySelection.categoryIds);
     setTaxonomySubcategoryIds(taxonomySelection.subcategoryIds);
     setArticleQuery("");
+    setPriceEdits({});
     setSoftDuplicateAcknowledged(false);
     baselineRef.current = normalized;
     setBaselineMetadata({
@@ -199,11 +204,21 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editId]);
 
-  const dirty = open && (mediaLoading || isPending(businessCard) || isPending(shopPhoto) || fingerprint(currentPayload) !== baselineKey);
+  let priceUpdates: ReturnType<typeof vendorRateUpdatesFromDrafts> = [];
+  let priceError: string | null = null;
+  try {
+    const activeEdits = Object.values(priceEdits).filter((edit) => capabilities.some((row) => row.article_id === edit.articleId && (!edit.variantId || row.variant_ids.includes(edit.variantId))));
+    priceUpdates = vendorRateUpdatesFromDrafts(db.master, editId || reservedId, activeEdits);
+    if (priceUpdates.length && ["inactive", "blacklisted"].includes(draft.status)) priceError = "Activate this vendor before adding or changing prices.";
+  } catch (error) {
+    priceError = error instanceof Error ? error.message : "Invalid Article price.";
+  }
+
+  const dirty = open && (priceUpdates.length > 0 || Boolean(priceError) || mediaLoading || isPending(businessCard) || isPending(shopPhoto) || fingerprint(currentPayload) !== baselineKey);
   const duplicateConflicts = vendorDuplicateConflicts(db, currentPayload, editId);
   const hardDuplicate = duplicateConflicts.find((row) => row.hard);
   const softDuplicate = duplicateConflicts.find((row) => !row.hard);
-  const validationError = vendorProfileValidationError(currentPayload)
+  const validationError = priceError || vendorProfileValidationError(currentPayload)
     || coordinateInputError(coordinates)
     || (hardDuplicate ? `Duplicate Vendor blocked: ${hardDuplicate.name} has ${hardDuplicate.reasons.join(", ")}.` : null)
     || (softDuplicate && !softDuplicateAcknowledged ? `Review possible duplicate ${softDuplicate.name} before saving.` : null);
@@ -221,6 +236,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     setTaxonomyCategoryIds(taxonomySelection.categoryIds);
     setTaxonomySubcategoryIds(taxonomySelection.subcategoryIds);
     setArticleQuery("");
+    setPriceEdits({});
     setSoftDuplicateAcknowledged(false);
     return true;
   }
@@ -240,13 +256,13 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
         created_at: before?.created_at || timestamp,
         updated_at: timestamp,
       };
+      const actor = currentUser();
       mutateMaster((master) => ({
-        ...master,
+        ...applyVendorRateUpdates(master, priceUpdates.map((rate) => ({ ...rate, changedBy: actor.name })), timestamp),
         vendors: editId
           ? master.vendors.map((vendor) => vendor.id === id ? record as any : vendor)
           : [record as any, ...master.vendors],
       }));
-      const actor = currentUser();
       logAudit({
         actor: actor.name,
         actor_role: actor.role,
@@ -268,6 +284,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
         created_at: record.created_at,
       });
       setBaselineKey(fingerprint(record));
+      setPriceEdits({});
       dirtyFormRegistry.markClean(formId);
       toast.success(`Vendor ${editId ? "updated" : "created"}`, { description: "The single canonical Vendor profile was confirmed by the workspace server." });
       onSaved?.(id);
@@ -317,13 +334,12 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
       selectedSubcategoryIds: taxonomySubcategoryIds,
       excludedArticleIds: capabilities.map((row) => row.article_id),
       query: articleQuery,
-      limit: 8,
     });
   }, [articleQuery, capabilities, db.master, taxonomyCategoryIds, taxonomySubcategoryIds]);
   const businessFile = mediaFile(businessCard, db);
   const shopFile = mediaFile(shopPhoto, db);
 
-  return <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}><DialogContent className="max-h-[92vh] max-w-5xl overflow-y-auto"><DialogHeader><DialogTitle>{editId ? "Edit Vendor" : "Add Vendor"}</DialogTitle><DialogDescription>One canonical Vendor profile for identity, location, GST and supply capability. PAN, banking, payment/credit terms, warranty, Udyam and bank verification are intentionally excluded.</DialogDescription></DialogHeader><div className="space-y-5">
+  return <Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-5xl"><DialogHeader><DialogTitle>{editId ? "Edit Vendor" : "Add Vendor"}</DialogTitle><DialogDescription>One canonical Vendor profile for identity, location, GST and supply capability. PAN, banking, payment/credit terms, warranty, Udyam and bank verification are intentionally excluded.</DialogDescription></DialogHeader><div className="space-y-5">
     <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Identity & contact</h3><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Field label="Vendor name"><Input value={draft.name} onChange={(e) => set("name", e.target.value)} /></Field><Field label="Legal / registered name"><Input value={draft.legalName} onChange={(e) => set("legalName", e.target.value)} /></Field><Field label="Vendor type"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.vendorType} onChange={(e) => set("vendorType", e.target.value as VendorType)}><option value="manufacturer">Manufacturer</option><option value="distributor">Distributor</option><option value="dealer">Dealer</option><option value="retailer">Retailer</option><option value="service_provider">Service provider</option><option value="other">Other</option></select></Field><Field label="Lifecycle"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={draft.status} onChange={(e) => set("status", e.target.value as Draft["status"])}><option value="onboarding">Onboarding</option><option value="active">Active</option><option value="on_hold">On hold</option><option value="blacklisted">Blacklisted</option><option value="inactive">Inactive</option></select></Field><Field label="Mobile"><Input value={draft.phone} onChange={(e) => set("phone", e.target.value)} /></Field><Field label="GSTIN"><Input value={draft.gstin} onChange={(e) => set("gstin", e.target.value.toUpperCase())} /></Field></div></section>
 
     <section className="rounded-xl border border-border bg-muted/10 p-4"><div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-bold">Location</h3><p className="text-[10px] text-muted-foreground">Fresh master-location GPS also reverse-geocodes full address, city and locality.</p></div><Button type="button" size="sm" variant="outline" disabled={gpsLoading} onClick={() => void captureGps()}><Navigation className="mr-1.5 h-3.5 w-3.5" />{gpsLoading ? "Capturing…" : "Capture GPS"}</Button></div><div className="mt-3 grid gap-3 sm:grid-cols-3"><Field label="City"><Input value={draft.city} onChange={(e) => set("city", e.target.value)} /></Field><Field label="Locality"><Input value={draft.locality} onChange={(e) => set("locality", e.target.value)} /></Field><Field label="Coordinates"><Input value={coordinates} onChange={(e) => updateCoordinates(e.target.value)} placeholder="26.8467, 80.9462" /></Field><div className="sm:col-span-3"><Field label="Full address"><Textarea rows={2} value={draft.address} onChange={(e) => set("address", e.target.value)} /></Field></div></div></section>
@@ -334,65 +350,27 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
         <p className="text-[10px] text-muted-foreground">Category → Subcategory → Article → optional Variants → brand → availability / lead time / MOQ.</p>
       </div>
 
-      <div className="mt-3 rounded-lg border border-border bg-background p-3">
-        <p className="text-[10px] font-semibold uppercase text-muted-foreground">Supply categories</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">Choose broad Categories, then the specific Subcategories this Vendor supplies.</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {db.master.workCategories.map((category) => {
-            const selected = taxonomyCategoryIds.includes(category.id);
-            return (
-              <button
-                key={category.id}
-                type="button"
-                aria-pressed={selected}
-                onClick={() => toggleTaxonomyCategory(category.id)}
-                className={cn("rounded-md border px-2 py-1 text-[11px]", selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}
-              >
-                {category.name}
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-2 space-y-1">
-          {db.master.workCategories.filter((category) => taxonomyCategoryIds.includes(category.id)).map((category) => {
-            const subcategories = db.master.workSubcategories.filter((subcategory) => subcategory.category_id === category.id);
-            return (
-              <details key={category.id} className="rounded-md border border-border bg-muted/10">
-                <summary className="cursor-pointer px-2.5 py-1 text-xs font-medium">Specific {category.name} supply</summary>
-                <div className="flex flex-wrap gap-1 p-2">
-                  {subcategories.map((subcategory) => {
-                    const selected = taxonomySubcategoryIds.includes(subcategory.id);
-                    return (
-                      <button
-                        key={subcategory.id}
-                        type="button"
-                        aria-pressed={selected}
-                        onClick={() => toggleTaxonomySubcategory(category.id, subcategory.id)}
-                        className={cn("rounded-md border px-2 py-0.5 text-[10px]", selected ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-muted-foreground")}
-                      >
-                        {subcategory.name}
-                      </button>
-                    );
-                  })}
-                  {!subcategories.length && <span className="text-[10px] text-muted-foreground">No Subcategories are configured for this Category.</span>}
-                </div>
-              </details>
-            );
-          })}
-        </div>
+      <div className="mt-3">
+        <CapabilityTaxonomyPicker
+          categories={db.master.workCategories}
+          subcategories={db.master.workSubcategories}
+          categoryIds={taxonomyCategoryIds}
+          subcategoryIds={taxonomySubcategoryIds}
+          onCategory={toggleTaxonomyCategory}
+          onSubcategory={toggleTaxonomySubcategory}
+        />
       </div>
 
-      <div className="relative mt-3 w-full max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="mt-3 space-y-2">
+        <label className="block text-xs font-semibold" htmlFor={`${formId}-articles`}>Articles to add</label>
         <Input
-          className="pl-8"
+          id={`${formId}-articles`}
           value={articleQuery}
           onChange={(event) => setArticleQuery(event.target.value)}
-          placeholder={taxonomySubcategoryIds.length ? "Search Article to add" : "Select a Category and Subcategory first"}
-          disabled={!taxonomySubcategoryIds.length}
+          placeholder="Search articles (optional)"
         />
         {filteredArticles.length > 0 && (
-          <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover p-1 shadow-lg">
+          <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-background p-1" role="group" aria-label="Available articles">
             {filteredArticles.map((article) => {
               const taxonomy = vendorArticleTaxonomyLabels(db.master, article.id);
               return (
@@ -404,8 +382,8 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
             })}
           </div>
         )}
-        {taxonomySubcategoryIds.length > 0 && articleQuery.trim() && filteredArticles.length === 0 && (
-          <p className="mt-1 text-[10px] text-muted-foreground">No unselected Articles linked to the chosen Subcategories match this search.</p>
+        {filteredArticles.length === 0 && (
+          <p className="mt-1 text-[10px] text-muted-foreground">No more Articles match these filters. Clear the search or category selections to browse all Articles.</p>
         )}
       </div>
 
@@ -417,10 +395,10 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
           return (
             <div key={row.article_id} className="rounded-xl border border-border bg-background p-3">
               <div className="flex items-start justify-between gap-3">
-                <div><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{taxonomy.categoryName}{taxonomy.subcategoryNames.length ? ` → ${taxonomy.subcategoryNames.join(", ")}` : ""}</p></div>
-                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button>
+                <div className="min-w-0 break-words"><p className="text-sm font-bold">{article?.name || row.article_id}</p><p className="text-[10px] text-muted-foreground">{taxonomy.categoryName}{taxonomy.subcategoryNames.length ? ` → ${taxonomy.subcategoryNames.join(", ")}` : ""}</p></div>
+                <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-destructive" onClick={() => setCapabilities((current) => current.filter((_, rowIndex) => rowIndex !== index))}><Trash2 className="h-3.5 w-3.5" /></Button>
               </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <Field label="Brand"><Input value={row.brand} onChange={(event) => updateCapability(index, { brand: event.target.value })} /></Field>
                 <Field label="Availability"><select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={row.availability} onChange={(event) => updateCapability(index, { availability: event.target.value as VendorAvailability })}><option value="unknown">Unknown</option><option value="in_stock">In stock</option><option value="limited">Limited</option><option value="on_order">On order</option></select></Field>
                 <Field label="Typical lead days"><Input type="number" min="0" value={row.typical_lead_time_days} onChange={(event) => updateCapability(index, { typical_lead_time_days: event.target.value })} /></Field>
@@ -428,6 +406,19 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
                 <label className="flex h-9 items-center gap-2 self-end rounded-md border border-input px-3 text-xs"><input type="checkbox" checked={row.preferred} onChange={(event) => updateCapability(index, { preferred: event.target.checked })} /><Star className={cn("h-3.5 w-3.5", row.preferred && "fill-warning text-warning")} />Preferred</label>
               </div>
               {variants.length > 0 && <div className="mt-3"><p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Variants supplied</p><div className="flex flex-wrap gap-1.5">{variants.map((variant) => { const active = row.variant_ids.includes(variant.id); return <button key={variant.id} type="button" onClick={() => updateCapability(index, { variant_ids: active ? row.variant_ids.filter((id) => id !== variant.id) : [...row.variant_ids, variant.id] })} className={cn("rounded-full border px-2.5 py-1 text-[10px] font-medium", active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted")}>{variant.name}</button>; })}</div></div>}
+              <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {[undefined, ...row.variant_ids].map((variantId) => {
+                  const key = JSON.stringify([row.article_id, variantId || ""]);
+                  const stored = db.master.vendorRates.find((rate) => rate.vendor_id === (editId || reservedId) && rate.article_id === row.article_id && (rate.variant_id || "") === (variantId || ""));
+                  const config = resolveArticleRateConfig({ articleId: row.article_id, variantId, articles: db.master.articles, variants: db.master.articleVariants });
+                  const unit = db.master.units.find((unit) => unit.id === config.rateUnit);
+                  const variant = variants.find((variant) => variant.id === variantId);
+                  return <Field key={key} label={`${variant?.name || "Article"} price (₹)`} hint={`Per ${unit?.symbol || config.rateUnit || "unit not configured"}${stored?.status === "inactive" ? " · Inactive rate — activate in Price Matrix" : ""}`}>
+                    <Input type="number" min="0.01" step="0.01" inputMode="decimal" placeholder="Not quoted" value={priceEdits[key]?.value ?? (stored ? String(stored.quoted_rate) : "")} onChange={(event) => setPriceEdits((current) => ({ ...current, [key]: { articleId: row.article_id, variantId, value: event.target.value } }))} />
+                  </Field>;
+                })}
+              </div>
+              <p className="mt-2 text-[10px] text-muted-foreground">Prices and history are shared with the Vendor Price Matrix. Removing a capability does not delete its saved prices.</p>
               <div className="mt-3"><Field label="Capability notes"><Input value={row.notes} onChange={(event) => updateCapability(index, { notes: event.target.value })} /></Field></div>
             </div>
           );
@@ -441,5 +432,5 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     <section className="rounded-xl border border-border bg-muted/10 p-4"><h3 className="text-sm font-bold">Profile media</h3><div className="mt-3 grid gap-4 sm:grid-cols-2"><div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between"><p className="text-xs font-semibold">Business card</p>{businessCard && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(businessCard, setBusinessCard)}><X className="h-3.5 w-3.5" /></Button>}</div>{businessFile ? <div className="mt-2"><FilePreview file={businessFile} compact /></div> : <label className="mt-2 flex cursor-pointer justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(e) => void uploadMedia(e, setBusinessCard, "business_card_attachment_id", "Vendor business card")} />Upload business card</label>}</div><div className="rounded-lg border border-border bg-background p-3"><div className="flex items-center justify-between"><p className="text-xs font-semibold">Shop / warehouse</p>{shopPhoto && <Button type="button" size="icon" variant="ghost" className="h-7 w-7" onClick={() => void removeMedia(shopPhoto, setShopPhoto)}><X className="h-3.5 w-3.5" /></Button>}</div>{shopFile ? <div className="mt-2"><FilePreview file={shopFile} compact /></div> : <label className="mt-2 flex cursor-pointer justify-center rounded-md border border-dashed border-border px-3 py-6 text-xs text-muted-foreground"><input type="file" accept={MANAGED_FILE_ACCEPT} className="hidden" onChange={(e) => void uploadMedia(e, setShopPhoto, "shop_attachment_id", "Vendor shop or warehouse")} />Upload shop / warehouse photo</label>}</div></div></section>
 
     {duplicateConflicts.length > 0 && <section className={cn("rounded-xl border p-4", hardDuplicate ? "border-destructive/30 bg-destructive/[0.04]" : "border-warning/30 bg-warning/[0.04]")}><h3 className="text-sm font-bold">Duplicate check</h3><div className="mt-2 space-y-1 text-xs text-muted-foreground">{duplicateConflicts.slice(0, 3).map((conflict) => <p key={conflict.id}>• <strong>{conflict.name}</strong>: {conflict.reasons.join(", ")}</p>)}</div>{softDuplicate && !hardDuplicate && <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={softDuplicateAcknowledged} onChange={(e) => setSoftDuplicateAcknowledged(e.target.checked)} />I reviewed this possible duplicate and still want to save this Vendor.</label>}</section>}
-  </div><DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || mediaLoading || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter></DialogContent></Dialog>;
+  </div>{priceError && <p role="alert" className="text-xs text-destructive">{priceError}</p>}<DialogFooter className="mt-5"><Button type="button" variant="outline" onClick={requestClose}>Cancel</Button><Button type="button" disabled={saving || mediaLoading || Boolean(validationError) || (Boolean(editId) && !dirty)} onClick={() => void save()}>{saving ? "Saving…" : editId ? "Save Vendor" : "Create Vendor"}</Button></DialogFooter></DialogContent></Dialog>;
 }

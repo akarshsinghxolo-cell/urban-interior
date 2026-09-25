@@ -52,12 +52,23 @@ describe("Vendor capability taxonomy", () => {
     })).toEqual([]);
   });
 
-  test("requires the complete hierarchy before Article search is enabled", () => {
+  test("browses all Articles without filters and narrows without requiring search text", () => {
+    expect(vendorArticlesForTaxonomy(master, {
+      selectedCategoryIds: [], selectedSubcategoryIds: [],
+    })).toEqual(master.articles);
     expect(vendorArticlesForTaxonomy(master, {
       selectedCategoryIds: ["cat-wall"],
       selectedSubcategoryIds: [],
-      query: "panel",
+    }).map((row) => row.id)).toEqual(["art-panel", "art-paper", "art-orphan"]);
+    expect(vendorArticlesForTaxonomy(master, {
+      selectedCategoryIds: ["cat-wall"], selectedSubcategoryIds: ["sub-paper"],
+    }).map((row) => row.id)).toEqual(["art-paper"]);
+    expect(vendorArticlesForTaxonomy(master, {
+      selectedCategoryIds: ["cat-wall"], selectedSubcategoryIds: ["sub-paint"],
     })).toEqual([]);
+    expect(vendorArticlesForTaxonomy(master, {
+      selectedCategoryIds: [], selectedSubcategoryIds: [], query: "PRIMER",
+    }).map((row) => row.id)).toEqual(["art-primer"]);
   });
 
   test("labels saved capabilities with their canonical taxonomy path", () => {

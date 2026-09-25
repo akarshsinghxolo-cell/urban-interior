@@ -20,6 +20,8 @@ import { workspaceLocationPresentation } from "@/lib/rdash/workspace-location-pr
 import { workspaceRouteAccessDecision } from "@/lib/rdash/workspace-route-access";
 import { selectWorkspaceRoute } from "@/lib/rdash/workspace-route-adapter";
 import { workspacePathForModule } from "@/lib/rdash/workspace-routes";
+import { useWorkspaceReadState, workspaceReadLoadStateForTarget } from "@/lib/rdash/workspace-read-state";
+import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 import { UrbanCastleApp } from "./UrbanCastleApp";
 
 /**
@@ -38,6 +40,7 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
 
   const authUser = useRDashStore((state) => state.authUser);
   const db = useRDashStore((state) => state.db);
+  const readState = useWorkspaceReadState();
   const activeModuleId = useRDashStore((state) => state.activeModuleId);
   const detailPanel = useRDashStore((state) => state.detailPanel);
   const contextHistory = useRDashStore((state) => state.contextHistory);
@@ -125,6 +128,10 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
     if (access.status !== "allowed") return;
 
     if (!detailRecordExists(db, entity.kind, entity.id)) {
+      // Bootstrap is not the partner directory. Only a completed scoped read
+      // can establish that a newly created/deep-linked record is missing.
+      const target = workspaceReadTargetForActiveNavigation(pathname, selection.moduleId);
+      if (workspaceReadLoadStateForTarget(readState, target).status !== "loaded") return;
       if (handledEntityRef.current !== `missing:${entityKey}`) {
         handledEntityRef.current = `missing:${entityKey}`;
         toast.error("Record not found", {
@@ -180,7 +187,7 @@ export function WorkspaceRouteShell({ children }: { children: React.ReactNode })
       return;
     }
     startHistory();
-  }, [authUser, db, pathname, router, search, selection, startHistory]);
+  }, [authUser, db, pathname, readState, router, search, selection, startHistory]);
 
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem={true} disableTransitionOnChange>
