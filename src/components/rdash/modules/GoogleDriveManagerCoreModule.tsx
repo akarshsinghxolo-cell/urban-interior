@@ -223,11 +223,11 @@ export function GoogleDriveManagerModule() {
   ];
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex min-w-0 flex-col gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><Cloud className="h-5 w-5" /></span>
-          <div>
+        <div className="flex min-w-0 max-w-full items-center gap-2.5">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Cloud className="h-5 w-5" /></span>
+          <div className="min-w-0">
             <h2 className="text-lg font-bold tracking-tight">Files & Storage</h2>
             <p className="text-xs text-muted-foreground">Manage files and Google Drive accounts across your Urban Castle workspace.</p>
           </div>
@@ -251,10 +251,10 @@ export function GoogleDriveManagerModule() {
       </div>
 
       {tab === "overview" && (
-        <div className="grid gap-4">
+        <div className="grid min-w-0 gap-4">
           <section className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <h3 className="flex items-center gap-2 text-sm font-bold"><Settings2 className="h-4 w-4 text-primary" /> Storage Settings</h3>
                 <p className="mt-1 max-w-4xl text-xs text-muted-foreground">New uploads use the active Drive until it reaches the threshold. File bytes continue to upload directly to Google Drive; Vercel only authorizes and finalizes metadata.</p>
               </div>
@@ -313,9 +313,9 @@ export function GoogleDriveManagerModule() {
             </div>
           </section>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="rounded-xl border border-border bg-card shadow-sm">
-              <div className="flex items-center justify-between border-b border-border px-4 py-3"><div><h3 className="text-sm font-bold">All Files</h3><p className="text-[11px] text-muted-foreground">Business links point to the exact original file; files are not copied when reused elsewhere.</p></div><span className="text-xs text-muted-foreground">{files.length} active</span></div>
+          <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <section className="min-w-0 rounded-xl border border-border bg-card shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3"><div className="min-w-0"><h3 className="text-sm font-bold">All Files</h3><p className="text-[11px] text-muted-foreground">Business links point to the exact original file; files are not copied when reused elsewhere.</p></div><span className="text-xs text-muted-foreground">{files.length} active</span></div>
               <div className="max-h-96 divide-y divide-border overflow-y-auto">
                 {files.map((item) => { const parent = accounts.find((a) => a.id === item.storage_account_id); const links = (db.entityFileAttachments || []).filter((l: any) => l.file_asset_id === item.id); const openUrl = authorizedOpenUrl(item); return (
                   <div key={item.id} className="flex items-start gap-3 px-4 py-3">

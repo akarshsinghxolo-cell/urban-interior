@@ -277,10 +277,10 @@ export function AttendancePayrollModule() {
             <p className="text-xs text-muted-foreground">Verified GPS attendance, hours, absence reconciliation and salary view</p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="outline" onClick={() => setWeekOffset((week) => week - 1)}>← Prev week</Button>
-          <Button size="sm" variant="ghost" onClick={() => setWeekOffset(0)}>This week</Button>
-          <Button size="sm" variant="outline" onClick={() => setWeekOffset((week) => week + 1)}>Next week →</Button>
+        <div className="flex w-full items-center gap-1 sm:w-auto">
+          <Button size="sm" variant="outline" className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none sm:px-3 sm:text-xs" onClick={() => setWeekOffset((week) => week - 1)}>← Prev week</Button>
+          <Button size="sm" variant="ghost" className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none sm:px-3 sm:text-xs" onClick={() => setWeekOffset(0)}>This week</Button>
+          <Button size="sm" variant="outline" className="min-w-0 flex-1 px-2 text-[11px] sm:flex-none sm:px-3 sm:text-xs" onClick={() => setWeekOffset((week) => week + 1)}>Next week →</Button>
         </div>
       </div>
 
@@ -482,7 +482,7 @@ function PayrollPeriodsSection({ db, isOwner, onGenerate, onApprove, onPay, onRe
         draft: "bg-muted text-muted-foreground border-border",
     };
     return (<div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-      <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary"/> Payroll periods</h3>
           <p className="text-[11px] text-muted-foreground">Generate, approve, and pay monthly payroll. Lines auto-created from computeStaffSalary.</p>

@@ -167,7 +167,7 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId, defaultIsA
             <Switch id="pay-advance" checked={isAdvance} onCheckedChange={setIsAdvance}/>
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="pay-amount">Amount (₹) <span className="text-destructive">*</span></Label>
               <Input id="pay-amount" type="number" inputMode="decimal" min={0} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" autoFocus required/>
@@ -193,7 +193,7 @@ export function RecordPaymentDialog({ open, onOpenChange, customerId, defaultIsA
             <Input id="pay-milestone" value={milestone} onChange={(e) => setMilestone(e.target.value)} placeholder={isAdvance ? "e.g. Booking advance / Token / First advance" : "e.g. 50% advance / Site measurement / Final"}/>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1.5">
               <Label htmlFor="pay-due">Due date</Label>
               <Input id="pay-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}/>

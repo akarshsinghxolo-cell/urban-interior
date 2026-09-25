@@ -104,6 +104,7 @@ for (const kind of ["vendor", "contractor"] as const) {
 }
 
 test("vendor directory filters, correct profile, scoped tabs and deep-link reload", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
   const note = `Partner workspace QA persistence check ${Date.now()}`;
   await page.goto("/workspace/vendors");
   await expect(page.getByRole("heading", { name: "Vendors", exact: true })).toBeVisible();
@@ -112,8 +113,11 @@ test("vendor directory filters, correct profile, scoped tabs and deep-link reloa
   await page.getByRole("button", { name: "Open Ceiling Hub", exact: true }).click();
   const profile = page.getByTestId("partner-profile");
   await expect(profile.getByRole("heading", { name: "Ceiling Hub", exact: true })).toBeVisible();
-  await page.reload();
-  await expect(profile.getByRole("heading", { name: "Ceiling Hub", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\/vendors\/ven-ceiling(?:[/?#]|$)/);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/workspace\/vendors\/ven-ceiling(?:[/?#]|$)/);
+  await expect(profile).toBeVisible({ timeout: 15_000 });
+  await expect(profile.getByRole("heading", { name: "Ceiling Hub", exact: true })).toBeVisible({ timeout: 15_000 });
   const sections = profile.getByRole("group", { name: "Partner sections" });
   await profile.getByRole("button", { name: "Edit profile", exact: true }).click();
   await page.getByRole("textbox", { name: "Notes", exact: true }).fill(note);
@@ -127,7 +131,24 @@ test("vendor directory filters, correct profile, scoped tabs and deep-link reloa
   await sections.getByRole("button", { name: "Capabilities & rates", exact: true }).click();
   await expect(profile.getByLabel("Vendor", { exact: true })).toHaveValue("ven-ceiling");
   await expect(profile.getByLabel("Vendor", { exact: true })).toBeDisabled();
+  await expect(profile.getByRole("table")).toHaveCount(0);
+  await expect.poll(() => profile.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   await sections.getByRole("button", { name: "Work & orders", exact: true }).click();
+  await profile.getByRole("button", { name: "Create PO", exact: true }).click();
+  const poDialog = page.getByRole("dialog").filter({ hasText: "Create Purchase Order" });
+  await expect(poDialog).toBeVisible();
+  const materialPicker = poDialog.getByRole("combobox", { name: "Search submodule material" });
+  await materialPicker.focus();
+  const materialResults = page.locator("#po-material-results");
+  await expect(materialResults).toBeVisible();
+  await expect.poll(async () => {
+    const [dialogBox, resultsBox] = await Promise.all([poDialog.boundingBox(), materialResults.boundingBox()]);
+    return Boolean(dialogBox && resultsBox
+      && resultsBox.x >= dialogBox.x - 1
+      && resultsBox.x + resultsBox.width <= dialogBox.x + dialogBox.width + 1);
+  }).toBe(true);
+  await poDialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(poDialog).toHaveCount(0);
   await expect(profile.getByText("PO-2026-601", { exact: false })).toHaveCount(0);
   await sections.getByRole("button", { name: "Bills & payments", exact: true }).click();
   await expect(profile.getByRole("heading", { name: "Payment history" })).toBeVisible();
@@ -176,6 +197,7 @@ test("a contractor can be created without a photo and survives a reload", async 
   await page.getByRole("button", { name: "Create contractor", exact: true }).click();
   expect((await commit).status()).toBe(200);
   await expect(page.getByTestId("partner-profile").getByRole("heading", { name, exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/workspace\/contractors\/[^/?#]+(?:[/?#]|$)/);
   await page.reload();
   await expect(page.getByTestId("partner-profile").getByRole("heading", { name, exact: true })).toBeVisible();
 });
