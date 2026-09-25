@@ -56,13 +56,18 @@ export function CustomerDetailsFields({
     const normalizedQuery = query.toLowerCase();
     if (!normalizedQuery) return [];
 
-    // Customer Desk owns a CRM-only referral directory. Contractor/Vendor
-    // masters belong to their own permission domains and are intentionally not
-    // read here merely to populate a dropdown.
+    // Vendor/Contractor rows only exist here when the server granted their
+    // owning module permission. The Customer form can therefore restore the
+    // richer referrer search without making Customers permission imply access
+    // to either restricted master directory.
     const entityOptions: ReferralOption[] = [
       ...db.customers
         .filter((row) => row.id !== customerId)
         .map((row) => ({ key: `customer:${row.id}`, id: row.id, name: row.name, type: "customer" as const, label: "Customer" })),
+      ...db.master.contractors
+        .map((row) => ({ key: `contractor:${row.id}`, id: row.id, name: row.name, type: "contractor" as const, label: "Contractor" })),
+      ...db.master.vendors
+        .map((row) => ({ key: `vendor:${row.id}`, id: row.id, name: row.name, type: "vendor" as const, label: "Vendor" })),
       ...db.master.sourcePartners
         .map((row) => ({ key: `source:${row.id}`, id: row.id, name: row.name, type: "source_partner" as const, label: row.type || "Source partner" })),
     ].filter((row) => row.name.toLowerCase().includes(normalizedQuery)).slice(0, 9);
@@ -77,7 +82,7 @@ export function CustomerDetailsFields({
       });
     }
     return entityOptions;
-  }, [customer.referralQuery, customerId, db.customers, db.master.sourcePartners]);
+  }, [customer.referralQuery, customerId, db.customers, db.master.contractors, db.master.sourcePartners, db.master.vendors]);
 
   const selectReferral = (option: { id?: string; name: string; type: CustomerReferrerType }) => {
     setCustomer((current) => ({
@@ -180,7 +185,7 @@ export function CustomerDetailsFields({
               }}
               onFocus={() => setShowReferralDropdown(true)}
               onKeyDown={handleReferralKeyDown}
-              placeholder="Search customers or source partners, or enter an external referrer"
+              placeholder="Search customers, contractors, vendors, source partners, or enter an external referrer"
             />
           </div>
         </Field>

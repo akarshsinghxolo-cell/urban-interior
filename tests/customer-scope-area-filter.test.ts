@@ -3,30 +3,41 @@ import { testFile } from "./test-file";
 
 const source = async (path: string) => testFile(path).text();
 
-describe("Customer scope ownership", () => {
-  test("Customer Desk exposes the familiar capture flow without inventing a second data model", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
-
-    expect(desk).toContain("WorkRequiredCreateDialog");
-    expect(desk).toContain("CustomerWorkCaptureDialog");
-    expect(desk).toContain("Capture detailed area");
-    expect(capture).toContain("captureStructuredWorkRequired");
-    expect(capture).toContain("areaDims: changedAreaDimensions");
-    expect(capture).not.toContain("saveCustomerWithSites");
+describe("Customer Site / Area / Work Required ownership", () => {
+  test("Customer portfolio presents Work Required grouped by its Customer Site Areas", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expect(portfolio).toContain("siteAreas");
+    expect(portfolio).toContain("work.area_ids.map");
+    expect(portfolio).toContain("workRequiredDisplayTitle");
+    expect(portfolio).toContain("Capture detailed area");
   });
 
-  test("Customer Desk and Site Execution are two entry points into the same Site/Area/Work Required domain", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    const capture = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
-    const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
+  test("advanced whole-Site detailed-area capture is implemented only once under Customer", async () => {
+    const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expect(capture).toContain("seedDetailedAreaLines");
+    expect(capture).toContain("captureStructuredWorkRequired");
+    expect(capture).toContain("removedSelections");
+    expect(capture).toContain("areaDims");
+    expect(capture).toContain("CustomerAreaDimensionsFields");
+    expect(portfolio).toContain("CustomerWorkCaptureDialog");
+    expect(portfolio).not.toContain("captureStructuredWorkRequired");
+    expect(portfolio).not.toContain("saveCustomerWithSites");
+  });
 
-    expect(desk).toContain('setActiveModule("siteExecution")');
-    expect(desk).toContain('openDetail("site", site.id)');
-    expect(capture).toContain("db.workRequired.filter((row) => row.site_id === site.id)");
-    expect(capture).toContain("areas.filter((row) => !row.is_archived)");
+  test("Customer portfolio and Site Execution are two launchers into one Customer-owned Site/Area/Work Required domain", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
+    const canonicalCreate = await source("src/components/rdash/customer/CustomerWorkRequiredDialog.tsx");
+
+    expect(portfolio).toContain("WorkRequiredCreateDialog");
     expect(siteExecution).toContain('label: "Areas & Scope"');
     expect(siteExecution).toContain('label: "Scope Register"');
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
+    expect(siteExecution).toContain("CustomerWorkCaptureDialog");
+    expect(siteExecution).not.toContain("const addArea = useRDashStore");
+    expect(siteExecution).not.toContain("const addWorkRequired = useRDashStore");
+    expect(canonicalCreate).toContain("addArea");
+    expect(canonicalCreate).toContain("addWorkRequired");
   });
 });

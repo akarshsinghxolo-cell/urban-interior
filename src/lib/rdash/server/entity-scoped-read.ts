@@ -1,3 +1,4 @@
+import { canRole, normalizeStaffPermissions } from "../staff-operations";
 import type { RDashDatabase } from "../types";
 import { workspaceRouteAccessDecision } from "../workspace-route-access";
 import {
@@ -19,11 +20,8 @@ import { getProjectedWorkspacePermissions } from "./projected-workspace-bootstra
 import { getWorkspaceSubset, type WorkspaceSubset } from "./workspace";
 import { rowsFor } from "./rows";
 
-// Entity-scoped reads are the authoritative Customer/Site detail architecture.
 const MAX_ENTITY_IDS = 500;
 
-// These commercial reference collections are Site/Finance concerns. Customer
-// entity reads intentionally do not load them under Customers permission.
 export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([
   "commercialTerms",
   "paymentTermTemplates",
@@ -31,7 +29,7 @@ export const ENTITY_REFERENCE_COLLECTIONS = Object.freeze([
   "validityConfigs",
 ] as const);
 
-/** Customer entity reads use the same direct CRM graph as Customer Desk. */
+/** The always-safe Customer entity graph remains CRM-only. */
 export const CUSTOMER_RELATION_COLLECTIONS = CUSTOMER_CRM_DIRECT_RELATIONS;
 
 export const SITE_RELATION_COLLECTIONS = Object.freeze([
@@ -70,6 +68,14 @@ interface EntityScopedWorkspace extends WorkspaceSubset {
   collectionCount: number;
   rowCount: number;
   loadMs: number;
+}
+
+interface CustomerEntityPermissions {
+  finance: boolean;
+  procurement: boolean;
+  media: boolean;
+  vendors: boolean;
+  contractors: boolean;
 }
 
 function unique(values: unknown[]): string[] {
@@ -140,6 +146,10 @@ function addRows(plan: EntityScopedReadPlan, collection: string, values: string[
   plan.rowsByCollection[collection] = unique([...(plan.rowsByCollection[collection] || []), ...values]);
 }
 
+function addFullCollections(plan: EntityScopedReadPlan, collections: string[]): void {
+  plan.fullCollections = unique([...(plan.fullCollections || []), ...collections]);
+}
+
 function requestedCollections(plan: EntityScopedReadPlan): string[] {
   return unique([
     ...(plan.fullCollections || []),
@@ -153,8 +163,6 @@ function relationPlan(
   id: string,
 ): EntityScopedReadPlan {
   const plan: EntityScopedReadPlan = {
-    // Source Partners are the only CRM-owned referral directory needed while
-    // editing a Customer. Site reads retain their existing commercial refs.
     fullCollections: kind === "customer"
       ? ["master.sourcePartners"]
       : [...ENTITY_REFERENCE_COLLECTIONS],
@@ -164,12 +172,7 @@ function relationPlan(
   const collections = kind === "customer" ? CUSTOMER_RELATION_COLLECTIONS : SITE_RELATION_COLLECTIONS;
   const field = kind === "customer" ? "customer_id" : "site_id";
   for (const collection of collections) addJsonValues(plan, collection, field, [id]);
-  addJsonValues(
-    plan,
-    "threads",
-    "record_id",
-    [kind === "customer" ? `customer-conversation:${id}` : id],
-  );
+  addJsonValues(plan, "threads", "record_id", [kind === "customer" ? `customer-conversation:${id}` : id]);
   addJsonValues(plan, "auditLog", kind === "customer" ? "customer_id" : "entity_id", [id]);
   addJsonValues(plan, "master.fileAssets", `${kind}_id`, [id]);
   addJsonValues(plan, "master.storageFolderInstances", `${kind}_id`, [id]);
@@ -185,29 +188,20 @@ function customerDownstreamPlan(database: RDashDatabase): EntityScopedReadPlan {
   const quotationIds = idsFor(database, "quotations");
   const visitIds = idsFor(database, "visits");
 
-  // Site-linked CRM rows that may not redundantly carry customer_id.
   for (const collection of ["areas", "measurementRevisions", "visits", "tasks", "followups", "blocked", "risks", "commSends"]) {
     addJsonValues(plan, collection, "site_id", siteIds);
   }
-
-  // Work Required-linked activity remains CRM/operations data.
   for (const collection of ["measurementRevisions", "quotations", "visits", "tasks", "followups"]) {
     addJsonValues(plan, collection, "work_required_id", workRequiredIds);
   }
-
-  // Work-order descendants are deliberately limited to CRM/execution history.
-  // Procurement, AP, contractor payables and cost lines belong to their modules.
   for (const collection of ["boqs", "drawings", "executionLogs", "variationRequests", "tasks", "followups", "commSends"]) {
     addJsonValues(plan, collection, "work_order_id", workOrderIds);
   }
-
   for (const collection of ["acceptedScopes", "workOrders", "tasks", "followups", "commSends"]) {
     addJsonValues(plan, collection, "quotation_id", quotationIds);
   }
   for (const collection of ["tasks", "followups"]) addJsonValues(plan, collection, "visit_id", visitIds);
 
-  // Guard against constant drift: every downstream row type above must remain
-  // part of the canonical Customer CRM graph.
   const canonical = new Set<string>([
     ...CUSTOMER_CRM_DIRECT_RELATIONS,
     ...CUSTOMER_CRM_DOWNSTREAM_RELATIONS,
@@ -260,6 +254,106 @@ function downstreamPlan(
   return kind === "customer" ? customerDownstreamPlan(database) : siteDownstreamPlan(database);
 }
 
+function customerEntityPermissions(
+  user: Pick<AuthenticatedUser, "role">,
+  authorization: WorkspaceSubset,
+): CustomerEntityPermissions {
+  const permissions = normalizeStaffPermissions(
+    authorization.data.staffRolePermissions as unknown[],
+  );
+  return {
+    finance: canRole(permissions, user.role, "finance", "view"),
+    procurement:
+      canRole(permissions, user.role, "procurement", "view")
+      || canRole(permissions, user.role, "purchaseOrders", "view")
+      || canRole(permissions, user.role, "grns", "view"),
+    media: canRole(permissions, user.role, "media", "view"),
+    vendors: canRole(permissions, user.role, "vendors", "view"),
+    contractors: canRole(permissions, user.role, "contractors", "view"),
+  };
+}
+
+/**
+ * Restore the rich Customer portfolio as a row-scoped graph. Cross-domain rows
+ * are added only when the user's role can already view their owning module.
+ */
+function customerExtensionPlan(
+  database: RDashDatabase,
+  customerId: string,
+  allowed: CustomerEntityPermissions,
+): EntityScopedReadPlan {
+  const plan: EntityScopedReadPlan = {};
+  const workOrderIds = idsFor(database, "workOrders");
+  const entityIds = allLoadedEntityIds(database);
+
+  if (allowed.media) {
+    addJsonValues(plan, "entityReferenceAssignments", "customer_id", [customerId]);
+    addJsonValues(plan, "entityReferenceAssignments", "entity_id", entityIds);
+  }
+
+  if (allowed.vendors) addFullCollections(plan, ["master.vendors"]);
+  if (allowed.contractors) addFullCollections(plan, ["master.contractors", "master.contractorRates"]);
+
+  if (allowed.finance) {
+    for (const collection of [
+      "payments", "invoices", "customerReceipts", "vendorBills", "vendorPayments",
+      "contractorBills", "contractorPayments", "contractorSettlements", "workOrderCostLines", "actions",
+    ]) {
+      addJsonValues(plan, collection, "customer_id", [customerId]);
+    }
+    for (const collection of [
+      "vendorBills", "vendorPayments", "contractorBills", "contractorPayments",
+      "contractorSettlements", "workOrderCostLines", "actions",
+    ]) {
+      addJsonValues(plan, collection, "work_order_id", workOrderIds);
+    }
+    addJsonValues(plan, "actions", "linked_record_id", workOrderIds);
+  }
+
+  if (allowed.procurement) {
+    for (const collection of ["purchaseOrders", "grns", "dispatches", "vendorRfqs", "vendorBids"]) {
+      addJsonValues(plan, collection, "customer_id", [customerId]);
+    }
+    for (const collection of ["purchaseOrders", "grns", "dispatches", "vendorRfqs"]) {
+      addJsonValues(plan, collection, "work_order_id", workOrderIds);
+    }
+  }
+
+  return plan;
+}
+
+function customerExtensionDownstreamPlan(
+  database: RDashDatabase,
+  allowed: CustomerEntityPermissions,
+): EntityScopedReadPlan {
+  const plan: EntityScopedReadPlan = {};
+
+  if (allowed.procurement) {
+    const rfqIds = idsFor(database, "vendorRfqs");
+    const poIds = idsFor(database, "purchaseOrders");
+    addJsonValues(plan, "vendorBids", "rfq_id", rfqIds);
+    addJsonValues(plan, "grns", "po_id", poIds);
+    if (allowed.finance) addJsonValues(plan, "vendorBills", "po_id", poIds);
+  }
+
+  if (allowed.finance) {
+    const vendorBillIds = idsFor(database, "vendorBills");
+    const contractorBillIds = idsFor(database, "contractorBills");
+    addJsonValues(plan, "vendorPayments", "vendor_bill_id", vendorBillIds);
+    addJsonValues(plan, "contractorPayments", "contractor_bill_id", contractorBillIds);
+    addJsonValues(plan, "actions", "linked_record_id", unique([
+      ...idsFor(database, "payments"),
+      ...idsFor(database, "invoices"),
+      ...idsFor(database, "vendorBills"),
+      ...idsFor(database, "vendorPayments"),
+      ...idsFor(database, "contractorBills"),
+      ...idsFor(database, "contractorPayments"),
+    ]));
+  }
+
+  return plan;
+}
+
 function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind, id: string): EntityScopedReadPlan {
   const plan: EntityScopedReadPlan = {};
   const entityIds = allLoadedEntityIds(database);
@@ -275,11 +369,7 @@ function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind
   addJsonValues(plan, "auditLog", "entity_id", entityIds);
   addJsonValues(plan, "entityFileAttachments", "entity_id", entityIds);
 
-  if (kind === "customer") {
-    // Customer detail never reaches Vendor/Contractor masters or rates. Source
-    // Partners are already loaded as the CRM referral directory in round one.
-    return plan;
-  }
+  if (kind === "customer") return plan;
 
   addJsonValues(plan, "entityReferenceAssignments", "entity_id", entityIds);
   addRows(plan, "master.vendors", fieldValues(database, ["vendor_id"]));
@@ -291,14 +381,13 @@ function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind
   return plan;
 }
 
-function filePlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind): EntityScopedReadPlan {
+function filePlan(database: RDashDatabase): EntityScopedReadPlan {
   const plan: EntityScopedReadPlan = {};
   addRows(plan, "master.fileAssets", fieldValues(database, ["file_asset_id", "drive_asset_id"]));
 
-  // Reference-media joins belong to Site/Media surfaces. Customer CRM files use
-  // entityFileAttachments + fileAssets only.
-  if (kind === "customer") return plan;
-
+  // When a Customer role lacks Media permission there are no loaded assignment
+  // rows, so this resolves nothing. Authorized Customer/Site reads resolve only
+  // the referenced resources, not the whole media library.
   const catalogueIds: string[] = [];
   const pinterestIds: string[] = [];
   const referenceIds: string[] = [];
@@ -355,13 +444,24 @@ async function readEntityScope(
   requestedCollections(second).forEach((collection) => touchedCollections.add(collection));
   merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(second));
 
-  const third = contextPlan(merged.data, entity.kind, entity.id);
-  requestedCollections(third).forEach((collection) => touchedCollections.add(collection));
-  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(third));
+  if (entity.kind === "customer") {
+    const allowed = customerEntityPermissions(user, authorization);
+    const extension = customerExtensionPlan(merged.data, entity.id, allowed);
+    requestedCollections(extension).forEach((collection) => touchedCollections.add(collection));
+    merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(extension));
 
-  const fourth = filePlan(merged.data, entity.kind);
-  requestedCollections(fourth).forEach((collection) => touchedCollections.add(collection));
-  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(fourth));
+    const extensionDownstream = customerExtensionDownstreamPlan(merged.data, allowed);
+    requestedCollections(extensionDownstream).forEach((collection) => touchedCollections.add(collection));
+    merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(extensionDownstream));
+  }
+
+  const context = contextPlan(merged.data, entity.kind, entity.id);
+  requestedCollections(context).forEach((collection) => touchedCollections.add(collection));
+  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(context));
+
+  const files = filePlan(merged.data);
+  requestedCollections(files).forEach((collection) => touchedCollections.add(collection));
+  merged = mergeWorkspaceSubsets(merged, await getRestWorkspaceBySelectors(files));
 
   const revisionFence = await getWorkspaceSubset({});
   if (revisionFence.revision !== merged.revision) throw new Error("READ_CONFLICT");
