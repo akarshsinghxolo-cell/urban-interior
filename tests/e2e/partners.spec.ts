@@ -134,7 +134,7 @@ test("vendor directory filters, correct profile, scoped tabs and deep-link reloa
   await expect(profile.getByRole("table")).toHaveCount(0);
   await expect.poll(() => profile.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
   await sections.getByRole("button", { name: "Work & orders", exact: true }).click();
-  await profile.getByRole("button", { name: "+ Create PO", exact: true }).click();
+  await profile.getByRole("button", { name: "Create PO", exact: true }).click();
   const poDialog = page.getByRole("dialog").filter({ hasText: "Create Purchase Order" });
   await expect(poDialog).toBeVisible();
   const materialPicker = poDialog.getByRole("combobox", { name: "Search submodule material" });
