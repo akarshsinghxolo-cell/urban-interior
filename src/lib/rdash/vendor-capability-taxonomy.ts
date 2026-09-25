@@ -58,15 +58,14 @@ export function vendorArticlesForTaxonomy(
     limit?: number;
   },
 ): Article[] {
-  if (!options.selectedCategoryIds.length || !options.selectedSubcategoryIds.length) return [];
-
   const selectedCategories = new Set(options.selectedCategoryIds);
+  const hasSubcategoryFilter = options.selectedSubcategoryIds.length > 0;
   const selectedSubcategories = new Set(
     master.workSubcategories
-      .filter((row) => selectedCategories.has(row.category_id) && options.selectedSubcategoryIds.includes(row.id))
+      .filter((row) => (!selectedCategories.size || selectedCategories.has(row.category_id))
+        && (!hasSubcategoryFilter || options.selectedSubcategoryIds.includes(row.id)))
       .map((row) => row.id),
   );
-  if (!selectedSubcategories.size) return [];
 
   const allowedArticleIds = new Set(
     master.subcategoryArticleMap
@@ -75,13 +74,13 @@ export function vendorArticlesForTaxonomy(
   );
   const excludedArticleIds = new Set(options.excludedArticleIds || []);
   const query = String(options.query || "").trim().toLowerCase();
-  if (!query) return [];
-
   return master.articles
-    .filter((article) => allowedArticleIds.has(article.id))
+    .filter((article) => hasSubcategoryFilter
+      ? allowedArticleIds.has(article.id)
+      : !selectedCategories.size || selectedCategories.has(article.category_id || "") || allowedArticleIds.has(article.id))
     .filter((article) => !excludedArticleIds.has(article.id))
     .filter((article) => article.name.toLowerCase().includes(query))
-    .slice(0, options.limit ?? 8);
+    .slice(0, options.limit);
 }
 
 export function vendorArticleTaxonomyLabels(

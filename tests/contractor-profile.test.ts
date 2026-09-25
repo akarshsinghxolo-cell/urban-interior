@@ -165,13 +165,12 @@ describe("contractor contact fields", () => {
 });
 
 describe("contractor capability picker layout", () => {
-  test("shows the active category's subcategories immediately after its chip", () => {
+  test("shares catalogue controls with vendors and keeps work-type options visible", () => {
     const source = readFileSync(new URL("../src/components/rdash/ContractorFormDialog.tsx", import.meta.url), "utf8");
-    expectTokens(source, ['aria-label="Work capability categories"']);
-    expectTokens(source, ["rounded-full", "border", "px-3", "py-1.5"]);
+    const vendor = readFileSync(new URL("../src/components/rdash/VendorFormDialog.tsx", import.meta.url), "utf8");
+    expectTokens(source, ["<CapabilityTaxonomyPicker", "<MultiTickDropdown", "inline"]);
+    expectTokens(vendor, ["<CapabilityTaxonomyPicker"]);
     expect(source).toContain("activeCapabilityCategoryId");
-    expectTokens(source, ["{active ? ("]);
-    expectTokens(source, ['className="basis-full rounded-lg border']);
     expectNoTokens(source, ["<details key={category.id}"]);
   });
 });

@@ -22,6 +22,24 @@ interface VendorRateUpdateInput {
   notes?: string;
 }
 
+export type VendorRateDraft = { articleId: string; variantId?: string; value: string };
+
+// Profile edits write to the same Article/Variant rate and history as the Price Matrix.
+export function vendorRateUpdatesFromDrafts(master: Master, vendorId: string, drafts: VendorRateDraft[]): VendorRateUpdateInput[] {
+  return drafts.flatMap((draft) => {
+    const existing = master.vendorRates.find((rate) => rate.vendor_id === vendorId && rate.article_id === draft.articleId && (rate.variant_id || "") === (draft.variantId || ""));
+    const article = master.articles.find((row) => row.id === draft.articleId);
+    if (!article) throw new Error("Choose an existing Article before entering a price.");
+    if (!draft.value.trim() && !existing) return [];
+    const amount = Math.round(Number(draft.value) * 100) / 100;
+    if (!Number.isFinite(amount) || amount <= 0) throw new Error(`${article.name}: enter a price greater than zero. Use the Price Matrix to remove an existing rate.`);
+    if (draft.variantId && !master.articleVariants.some((row) => row.id === draft.variantId && row.article_id === article.id)) throw new Error(`${article.name}: choose a Variant belonging to this Article.`);
+    if (!currentUnit(master, article.id, draft.variantId)) throw new Error(`${article.name}: configure its Article/Variant rate unit first.`);
+    if (existing && money(existing.quoted_rate) === amount) return [];
+    return [{ vendorId, articleId: article.id, variantId: draft.variantId, quotedRate: amount, sourceType: "MANUAL" as const, sourceNo: "Vendor profile" }];
+  });
+}
+
 const money = (value: unknown) => Math.round(Number(value || 0) * 100) / 100;
 const key = (vendorId: string, articleId: string, variantId?: string) => `${vendorId}:${articleId}:${variantId || "base"}`;
 const rateId = (change: VendorRateUpdateInput) => `vendor-rate-${change.vendorId}-${change.articleId}-${change.variantId || "base"}`.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -80,7 +98,7 @@ export function applyVendorRateUpdates(master: Master, changes: VendorRateUpdate
   let vendorRateHistories = [...master.vendorRateHistories];
   for (const raw of changes) {
     const amount = money(raw.quotedRate);
-    if (!raw.vendorId || !raw.articleId || amount <= 0) continue;
+    if (!raw.vendorId || !raw.articleId || !Number.isFinite(amount) || amount <= 0) continue;
     const change = { ...raw, quotedRate: amount, sourceType: raw.sourceType || "MANUAL" as const };
     const index = currentIndex(vendorRates, change.vendorId, change.articleId, change.variantId);
     const existing = index >= 0 ? vendorRates[index] : undefined;

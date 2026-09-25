@@ -6,12 +6,16 @@ import {
 } from "../src/lib/rdash/workspace-customer-tabs";
 
 describe("workspace customer-tab query state", () => {
-  test("covers only the canonical CRM customer tabs", () => {
+  test("covers the restored Customer portfolio tabs", () => {
     expect(WORKSPACE_CUSTOMER_TABS).toEqual([
       "overview",
       "sites",
       "tasks",
       "quotations",
+      "payments",
+      "invoices",
+      "advances",
+      "liabilities",
       "visits",
       "activity",
     ]);
@@ -25,7 +29,7 @@ describe("workspace customer-tab query state", () => {
     });
   });
 
-  test("accepts durable customer views", () => {
+  test("accepts every durable restored customer view", () => {
     for (const tab of WORKSPACE_CUSTOMER_TABS) {
       expect(workspaceCustomerTabRequest(`tab=${tab}`)).toEqual({
         tab,
@@ -35,14 +39,7 @@ describe("workspace customer-tab query state", () => {
     }
   });
 
-  test("rejects retired finance tabs, record-detail, unknown and repeated values", () => {
-    for (const retired of ["payments", "invoices", "advances", "liabilities"]) {
-      expect(workspaceCustomerTabRequest(`tab=${retired}`)).toEqual({
-        tab: "overview",
-        explicit: true,
-        invalid: true,
-      });
-    }
+  test("rejects record-detail, unknown and repeated values", () => {
     expect(workspaceCustomerTabRequest("tab=thread")).toEqual({
       tab: "overview",
       explicit: true,
@@ -60,16 +57,16 @@ describe("workspace customer-tab query state", () => {
     )).toBe("/workspace/customers/cust-1");
   });
 
-  test("adds a customer tab while preserving unrelated parameters", () => {
+  test("adds restored tabs while preserving unrelated parameters", () => {
     expect(workspaceUrlWithCustomerTab(
       "/workspace/customers/cust-1",
       "source=notification",
-      "activity",
-    )).toBe("/workspace/customers/cust-1?source=notification&tab=activity");
+      "payments",
+    )).toBe("/workspace/customers/cust-1?source=notification&tab=payments");
     expect(workspaceUrlWithCustomerTab(
       "/workspace/customers/cust-1",
       "tab=sites&source=search",
-      "visits",
-    )).toBe("/workspace/customers/cust-1?source=search&tab=visits");
+      "liabilities",
+    )).toBe("/workspace/customers/cust-1?source=search&tab=liabilities");
   });
 });

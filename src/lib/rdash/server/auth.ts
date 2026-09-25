@@ -292,13 +292,6 @@ async function supabaseCredentialSession(email: string, password: string): Promi
     };
 }
 
-async function supabaseCredentials(
-    email: string,
-    password: string,
-): Promise<Omit<AuthenticatedUser, "expiresAt"> | null> {
-    return (await supabaseCredentialSession(email, password))?.user || null;
-}
-
 /**
  * Restored owner-approved static super-owner credential (owner request).
  *

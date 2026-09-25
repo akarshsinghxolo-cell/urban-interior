@@ -28,6 +28,7 @@ export function MultiTickDropdown({
     ariaLabel,
     onToggle,
     footer,
+    inline = false,
 }: {
     selected: string[];
     groups: MultiTickGroup[];
@@ -36,10 +37,32 @@ export function MultiTickDropdown({
     ariaLabel: string;
     onToggle: (id: string) => void;
     footer?: (close: () => void) => React.ReactNode;
+    inline?: boolean;
 }) {
     const [open, setOpen] = React.useState(false);
     const close = React.useCallback(() => setOpen(false), []);
     const firstName = groups.flatMap((group) => group.items).find((item) => selected.includes(item.id))?.name;
+    const options = (
+        <div role="group" aria-label={ariaLabel}>
+            {groups.map((group, groupIndex) => (
+                <React.Fragment key={group.key}>
+                    {groupIndex > 0 ? <div className="h-3" aria-hidden="true" /> : null}
+                    {group.items.map((item) => {
+                        const ticked = selected.includes(item.id);
+                        return (
+                            <label key={item.id} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
+                                <input type="checkbox" disabled={disabled} checked={ticked} onChange={() => onToggle(item.id)} />
+                                <span className="min-w-0 truncate" title={item.name}>{item.name}</span>
+                            </label>
+                        );
+                    })}
+                    {group.footer ? <div className="mt-0.5 px-1 pb-0.5">{group.footer(close)}</div> : null}
+                </React.Fragment>
+            ))}
+            {footer?.(close)}
+        </div>
+    );
+    if (inline) return <div className="max-h-56 overflow-y-auto rounded-md border border-border p-1">{options}</div>;
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger
@@ -60,24 +83,7 @@ export function MultiTickDropdown({
                 className="max-h-56 w-[calc(var(--radix-popover-trigger-width)+0px)] overflow-y-auto p-1 rd-scroll"
                 onOpenAutoFocus={(event) => event.preventDefault()}
             >
-                <div role="group" aria-label={ariaLabel}>
-                    {groups.map((group, groupIndex) => (
-                        <React.Fragment key={group.key}>
-                            {groupIndex > 0 ? <div className="h-3" aria-hidden="true" /> : null}
-                            {group.items.map((item) => {
-                                const ticked = selected.includes(item.id);
-                                return (
-                                    <label key={item.id} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
-                                        <input type="checkbox" checked={ticked} onChange={() => onToggle(item.id)} />
-                                        <span className="min-w-0 truncate" title={item.name}>{item.name}</span>
-                                    </label>
-                                );
-                            })}
-                            {group.footer ? <div className="mt-0.5 px-1 pb-0.5">{group.footer(close)}</div> : null}
-                        </React.Fragment>
-                    ))}
-                    {footer?.(close)}
-                </div>
+                {options}
             </PopoverContent>
         </Popover>
     );
