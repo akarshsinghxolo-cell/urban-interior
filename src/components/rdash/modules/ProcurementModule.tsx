@@ -1037,8 +1037,8 @@ function CreatePODialog(props: CreatePODialogProps) {
           {hasVendorRateUpdates && (<p className="-mt-2 text-[11px] text-primary">
               Edited rates will be saved to the selected vendor’s exact material price matrix with a PO source history entry.
             </p>)}
-          <div className="overflow-x-auto rd-scroll rounded-lg border border-border">
-            <div className="min-w-0 sm:min-w-[560px]">
+          <div className="overflow-visible rounded-lg border border-border">
+            <div className="min-w-0">
             <div className="hidden gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground sm:grid sm:grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_auto]">
               <span>Submodule material</span>
               <span className="text-right">Qty</span>
@@ -1161,7 +1161,7 @@ function SearchableMaterialPicker({ value, options, onChange, }: {
                 setOpen(false);
             }
         }} className="h-8 w-full rounded-md border border-input bg-card py-1 pl-7 pr-2 text-xs outline-none ring-ring focus-visible:ring-2"/>
-      {open && (<div id="po-material-results" role="listbox" className="absolute left-0 top-full z-[80] mt-1 max-h-72 w-[min(38rem,calc(100vw-4rem))] overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+      {open && (<div id="po-material-results" role="listbox" className="absolute left-0 top-full z-[80] mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg sm:w-[min(32rem,calc(100vw-4rem))]">
           {results.length ? results.map((option, index) => (<button key={option.id} type="button" role="option" aria-selected={option.id === value} onMouseDown={(event) => event.preventDefault()} onClick={() => choose(option)} className={cn("block w-full rounded-sm px-2.5 py-2 text-left text-xs hover:bg-accent focus:bg-accent", index === highlightedIndex && "bg-accent", option.id === value && "bg-primary/10 text-primary")}>
               <span className="block font-medium text-foreground">{option.articleName}</span>
               <span className="mt-0.5 block text-[10px] text-muted-foreground">
