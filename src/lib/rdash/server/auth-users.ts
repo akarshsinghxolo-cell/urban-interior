@@ -5,13 +5,11 @@ import type { AuthenticatedUser } from "./auth";
 
 type RDashUserApprovalStatus = "pending" | "active" | "rejected" | "inactive";
 
-interface RDashUserRoleAssignment {
+interface RDashUserRoleStoredRow {
   id: string;
   user_id: string;
-  email: string | null;
   role: string;
   staff_id: string | null;
-  display_name: string | null;
   status: RDashUserApprovalStatus;
   approved_by: string | null;
   approved_at: string | null;
@@ -19,6 +17,16 @@ interface RDashUserRoleAssignment {
   created_at: string;
   updated_at: string;
 }
+
+interface RDashUserRoleAssignment extends RDashUserRoleStoredRow {
+  email: string | null;
+  display_name: string | null;
+}
+
+type CanonicalStaffIdentity = {
+  email: string | null;
+  displayName: string | null;
+};
 
 interface StaffIdentityDriftRow {
   identity_key: string;
@@ -44,7 +52,7 @@ interface StaffIdentityDriftRow {
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROLE_ASSIGNMENT_SELECT = "id,user_id,email,role,staff_id,display_name,status,approved_by,approved_at,rejected_at,created_at,updated_at";
+const ROLE_ASSIGNMENT_SELECT = "id,user_id,role,staff_id,status,approved_by,approved_at,rejected_at,created_at,updated_at";
 
 function normalizeAuthEmail(email: string) {
   return email.trim().toLowerCase();
@@ -83,6 +91,64 @@ function approvedByUuid(user: AuthenticatedUser) {
     : null;
 }
 
+function canonicalStaffIdentity(data: string | Record<string, unknown> | null | undefined): CanonicalStaffIdentity {
+  let parsed: Record<string, unknown> = {};
+  if (typeof data === "string") {
+    try {
+      parsed = JSON.parse(data) as Record<string, unknown>;
+    } catch {
+      parsed = {};
+    }
+  } else if (data && typeof data === "object") {
+    parsed = data;
+  }
+  const email = normalizeAuthEmail(String(parsed.email || parsed.login_email || ""));
+  const displayName = String(parsed.name || "").trim();
+  return {
+    email: EMAIL_PATTERN.test(email) ? email : null,
+    displayName: displayName || null,
+  };
+}
+
+async function loadCanonicalStaffIdentities(rows: RDashUserRoleStoredRow[]) {
+  const staffIds = [...new Set(rows.map((row) => row.staff_id).filter((value): value is string => Boolean(value)))];
+  const identities = new Map<string, CanonicalStaffIdentity>();
+  if (staffIds.length === 0) return identities;
+
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("entity_master_staff")
+    .select("id,data")
+    .eq("workspace_id", process.env.UC_WORKSPACE_ID || "default")
+    .in("id", staffIds);
+  if (error) throw new Error(`Could not load canonical Staff identities: ${error.message}`);
+
+  for (const row of data || []) {
+    const typed = row as { id: string; data: string | Record<string, unknown> };
+    identities.set(typed.id, canonicalStaffIdentity(typed.data));
+  }
+  return identities;
+}
+
+async function enrichRoleAssignments(rows: RDashUserRoleStoredRow[]): Promise<RDashUserRoleAssignment[]> {
+  const identities = await loadCanonicalStaffIdentities(rows);
+  return rows.map((row) => {
+    const identity = row.staff_id ? identities.get(row.staff_id) : undefined;
+    return {
+      ...row,
+      email: identity?.email || null,
+      display_name: identity?.displayName || null,
+    };
+  });
+}
+
+async function canonicalIdentityForAssignment(row: RDashUserRoleStoredRow): Promise<CanonicalStaffIdentity> {
+  const identities = await loadCanonicalStaffIdentities([row]);
+  return row.staff_id
+    ? identities.get(row.staff_id) || { email: null, displayName: null }
+    : { email: null, displayName: null };
+}
+
 async function syncStaffIdentity(input: {
   assignmentId?: string | null;
   userId: string;
@@ -96,12 +162,14 @@ async function syncStaffIdentity(input: {
   rejectedAt?: string | null;
 }) {
   const admin = getSupabaseAdminClient();
+  const canonicalEmail = validAssignmentEmail(input.email);
+  const canonicalDisplayName = String(input.displayName || canonicalEmail).trim();
   const { data, error } = await admin.rpc("sync_staff_identity_bundle", {
     p_assignment_id: input.assignmentId || null,
     p_user_id: input.userId,
-    p_email: validAssignmentEmail(input.email),
+    p_email: canonicalEmail,
     p_role: normalizeRequestedRole(input.role),
-    p_display_name: String(input.displayName || input.email).trim(),
+    p_display_name: canonicalDisplayName,
     p_status: input.status,
     p_staff_id: String(input.staffId || "").trim() || null,
     p_approved_by: input.approvedBy || null,
@@ -111,7 +179,7 @@ async function syncStaffIdentity(input: {
   });
   if (error) throw new Error(`Could not synchronize staff identity: ${error.message}`);
   const result = data as {
-    assignment?: RDashUserRoleAssignment;
+    assignment?: RDashUserRoleStoredRow;
     staffId?: string;
     workspaceRevision?: number;
   } | null;
@@ -119,7 +187,11 @@ async function syncStaffIdentity(input: {
     throw new Error("Staff synchronization returned an incomplete result.");
   }
   return {
-    assignment: result.assignment,
+    assignment: {
+      ...result.assignment,
+      email: canonicalEmail,
+      display_name: canonicalDisplayName,
+    },
     staffId: result.staffId,
     workspaceRevision: Number(result.workspaceRevision || 0),
   };
@@ -157,22 +229,28 @@ export async function createPendingAccessRequest(input: {
   const { email, password, displayName } = validateSignupInput(input);
   const role = normalizeRequestedRole(input.requestedRole);
   const admin = getSupabaseAdminClient();
+  const existingAuthUser = await findAuthUserByEmail(email);
 
-  const { data: existingAssignments, error: assignmentError } = await admin
-    .from("uc_user_roles")
-    .select(ROLE_ASSIGNMENT_SELECT)
-    .ilike("email", email)
-    .in("status", ["pending", "active"])
-    .limit(1);
-  if (assignmentError) throw new Error(`Urban Castle role request lookup failed: ${assignmentError.message}`);
-  const existingAssignment = existingAssignments?.[0] as RDashUserRoleAssignment | undefined;
+  let existingAssignment: RDashUserRoleStoredRow | undefined;
+  if (existingAuthUser?.id) {
+    const { data: existingAssignments, error: assignmentError } = await admin
+      .from("uc_user_roles")
+      .select(ROLE_ASSIGNMENT_SELECT)
+      .eq("user_id", existingAuthUser.id)
+      .in("status", ["pending", "active"])
+      .limit(1);
+    if (assignmentError) throw new Error(`Urban Castle role request lookup failed: ${assignmentError.message}`);
+    existingAssignment = existingAssignments?.[0] as RDashUserRoleStoredRow | undefined;
+  }
+
   if (existingAssignment?.status === "active") throw new Error("This email already has active Urban Castle access.");
   if (existingAssignment?.status === "pending") {
+    const identity = await canonicalIdentityForAssignment(existingAssignment);
     const synced = await syncStaffIdentity({
       assignmentId: existingAssignment.id,
       userId: existingAssignment.user_id,
       email,
-      displayName: existingAssignment.display_name || displayName,
+      displayName: identity.displayName || displayName,
       role: existingAssignment.role,
       status: "pending",
       staffId: existingAssignment.staff_id,
@@ -180,7 +258,6 @@ export async function createPendingAccessRequest(input: {
     return { status: "pending" as const, assignment: synced.assignment };
   }
 
-  const existingAuthUser = await findAuthUserByEmail(email);
   let createdAuthUserId: string | null = null;
   let resolvedUserId = existingAuthUser?.id || null;
 
@@ -225,7 +302,7 @@ export async function listRoleAssignments(user: AuthenticatedUser) {
     .select(ROLE_ASSIGNMENT_SELECT)
     .order("created_at", { ascending: false });
   if (error) throw new Error(`Could not load user approvals: ${error.message}`);
-  return (data || []) as RDashUserRoleAssignment[];
+  return enrichRoleAssignments((data || []) as RDashUserRoleStoredRow[]);
 }
 
 export async function listStaffIdentityDrift(user: AuthenticatedUser) {
@@ -258,14 +335,16 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
     .eq("status", "pending")
     .limit(1);
   if (lookupError) throw new Error(`Could not load user for approval: ${lookupError.message}`);
-  const pending = pendingRows?.[0] as RDashUserRoleAssignment | undefined;
+  const pending = pendingRows?.[0] as RDashUserRoleStoredRow | undefined;
   if (!pending) throw new Error("No pending user approval was found.");
-  const displayName = String(input.displayName || pending.display_name || pending.email || "Urban Castle User").trim();
+  const identity = await canonicalIdentityForAssignment(pending);
+  const email = validAssignmentEmail(identity.email);
+  const displayName = String(input.displayName || identity.displayName || email).trim();
   const now = new Date().toISOString();
   const synced = await syncStaffIdentity({
     assignmentId: pending.id,
     userId: pending.user_id,
-    email: validAssignmentEmail(pending.email),
+    email,
     displayName,
     role,
     status: "active",
@@ -288,14 +367,16 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
     .eq("status", "pending")
     .limit(1);
   if (lookupError) throw new Error(`Could not load user for rejection: ${lookupError.message}`);
-  const pending = pendingRows?.[0] as RDashUserRoleAssignment | undefined;
+  const pending = pendingRows?.[0] as RDashUserRoleStoredRow | undefined;
   if (!pending) throw new Error("No pending user approval was found.");
+  const identity = await canonicalIdentityForAssignment(pending);
+  const email = validAssignmentEmail(identity.email);
   const now = new Date().toISOString();
   const synced = await syncStaffIdentity({
     assignmentId: pending.id,
     userId: pending.user_id,
-    email: validAssignmentEmail(pending.email),
-    displayName: pending.display_name || pending.email || "Urban Castle User",
+    email,
+    displayName: identity.displayName || email,
     role: pending.role,
     status: "rejected",
     staffId: pending.staff_id,
