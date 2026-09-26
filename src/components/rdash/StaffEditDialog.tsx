@@ -11,6 +11,8 @@ import { ShieldCheck, UserPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { createDefaultAttendancePolicy } from "@/lib/rdash/attendance-policy";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, normalizeRoleKey, roleLabel } from "@/lib/rdash/staff-operations";
 import type { AttendancePolicy, Staff, StaffRoleKey } from "@/lib/rdash/types";
 
@@ -26,26 +28,34 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const updateStaff = useRDashStore((s) => s.updateStaff);
   const staff = staffId ? db.master.staff.find((s) => s.id === staffId) : undefined;
   const [draft, setDraft] = React.useState<Partial<Staff>>({});
+  const initialDraftRef = React.useRef<Partial<Staff>>({});
   const policy = (draft.attendance_policy || createDefaultAttendancePolicy()) as AttendancePolicy;
   const isNew = !staffId;
 
   React.useEffect(() => {
     if (!open) return;
     const base = staff || ({ id: "", name: "", role: "Field Staff", role_key: "FIELD_STAFF", status: "active", attendance_policy: createDefaultAttendancePolicy(), salary_type: "monthly", gps_tracking_enabled: true } as Staff);
-    setDraft({
+    const initialDraft = {
       ...base,
       role_key: normalizeRoleKey(base.role_key || base.role),
       role: roleLabel(normalizeRoleKey(base.role_key || base.role)),
       login_email: base.login_email || base.email || "",
       attendance_policy: base.attendance_policy || createDefaultAttendancePolicy(),
-    });
+    };
+    initialDraftRef.current = initialDraft;
+    setDraft(initialDraft);
   }, [open, staff]);
 
   const patch = (value: Partial<Staff>) => setDraft((current) => ({ ...current, ...value }));
   const patchPolicy = (value: Partial<AttendancePolicy>) => patch({ attendance_policy: { ...policy, ...value } });
 
-  const handleSave = () => {
-    if (!draft.name?.trim()) return toast.error("Staff name is required");
+  const formId = `staff:${staffId || "new"}`;
+  const dirty = open && JSON.stringify(draft) !== JSON.stringify(initialDraftRef.current);
+  const handleSave = (): boolean => {
+    if (!draft.name?.trim()) {
+      toast.error("Staff name is required");
+      return false;
+    }
     const roleKey = normalizeRoleKey(draft.role_key || draft.role);
     const payload: Partial<Staff> = {
       ...draft,
@@ -70,11 +80,26 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       updateStaff(staff.id, payload);
       toast.success(`Staff "${payload.name}" updated`);
     }
+    dirtyFormRegistry.markClean(formId);
     onClose();
+    return true;
   };
+  useDirtyFormRegistration({
+    id: formId,
+    label: "Staff Operations profile",
+    dirty,
+    save: handleSave,
+    discard: () => {
+      setDraft(initialDraftRef.current);
+      return true;
+    },
+  });
+  const requestClose = React.useCallback(() => {
+    dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Staff profile form" });
+  }, [onClose]);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o) => !o && requestClose()}>
       <DialogContent className="max-h-[94vh] max-w-5xl gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -174,7 +199,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
         </div>
 
         <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
           <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim()}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
         </DialogFooter>
       </DialogContent>
