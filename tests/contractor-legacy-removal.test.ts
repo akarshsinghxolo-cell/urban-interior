@@ -24,7 +24,7 @@ describe("Contractor legacy-path removal", () => {
     expectNoTokens(profile, ["const legacyUnmapped"]);
     expect(profile).not.toContain("capabilities_v2");
     expect(policy).not.toContain("capabilities_v2");
-    expectTokens(policy, ["must be linked to a Work Subcategory"]);
+    expect(policy).not.toContain("addContractorRate");
     expectTokens(governance, ["canonicalContractorCapabilities(selected, db)"]);
     expectNoTokens(governance, ["capabilities_v2: contractorGovernanceCapabilityProjection"]);
     expectNoTokens(governance, ["else if (Array.isArray(patch.capabilities_v2))"]);
