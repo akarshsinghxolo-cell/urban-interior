@@ -146,55 +146,10 @@ export function installContractorStorePolicy(store: RDashStore): void {
     synchronizeRateProjection(store, id);
   });
 
-  const addContractorRate: RDashState["addContractorRate"] = (rate) => inTransaction("addContractorRate", () => {
-    const state = store.getState();
-    assertContractorPermission(state, "edit contractor rates");
-    const contractor = state.db.master.contractors.find((row) => row.id === rate.contractor_id) as ContractorProfileRecord | undefined;
-    if (!contractor) throw new Error("Contractor not found.");
-    const contractorId = contractor.id;
-    if (!contractorId) throw new Error("Contractor ID is required.");
-    if (!rate.work_subcategory_id || !rate.work_type_id) {
-      throw new Error("Contractor rates must be linked to a Work Subcategory and Work Type. Edit the contractor capability instead of creating a free-form rate.");
-    }
 
-    const subcategory = state.db.master.workSubcategories.find((row) => row.id === rate.work_subcategory_id);
-    if (!subcategory) throw new Error("Work Subcategory not found.");
-    const workType = workTypesForSubcategory(subcategory).find((row) => row.id === rate.work_type_id);
-    if (!workType) throw new Error("Work Type not found for this Work Subcategory.");
-    const capabilities = canonicalContractorCapabilities(contractor, state.db);
-    const existing = capabilities.find((row) => row.subcategory_id === rate.work_subcategory_id);
-    const workTypeRates = [
-      ...(existing?.work_type_rates || []).filter((row) => row.work_type_id !== workType.id),
-      {
-        work_type_id: workType.id,
-        work_type_name: workType.name,
-        unit_id: rate.unit_id || workType.unit_id || subcategory.unit_id,
-        material_rate: rate.material_rate,
-        labour_rate: rate.labour_rate ?? rate.rate ?? 0,
-        notes: rate.notes,
-      },
-    ];
-    const next: ContractorCapability = {
-      ...existing,
-      subcategory_id: rate.work_subcategory_id,
-      subcategory_name: subcategory.name,
-      work_type_rates: workTypeRates,
-    };
-    const updated = existing
-      ? capabilities.map((row) => row.subcategory_id === next.subcategory_id ? next : row)
-      : [...capabilities, next];
-    updateContractor(contractorId, { work_capabilities: updated } as never);
-    const refreshed = store.getState().db.master.contractorRates.find(
-      (row) => row.contractor_id === contractorId
-        && row.work_subcategory_id === next.subcategory_id
-        && row.work_type_id === workType.id,
-    );
-    return refreshed?.id || `crate-${contractorId}-${next.subcategory_id}-${workType.id}`;
-  });
 
   store.setState({
     addContractor,
     updateContractor,
-    addContractorRate,
   });
 }
