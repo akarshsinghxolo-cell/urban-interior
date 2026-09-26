@@ -226,55 +226,10 @@ async function authorizedUserFromSupabase(user: SupabaseAuthUser): Promise<Omit<
         }
     }
 
-    // Compatibility mapping while all approved users are moved onto Staff rows.
-    const { data: rows, error: mappingError } = await admin
-        .from("uc_user_roles")
-        .select("role,staff_id,display_name,status")
-        .eq("user_id", user.id)
-        .in("status", ["active", "pending", "rejected", "inactive"]);
-    if (mappingError) {
-        throw new Error(`Urban Castle Supabase role lookup failed: ${mappingError.message}`);
-    }
-
-    const activeRow = rows?.find((candidate: { status?: string }) => candidate.status === "active");
-    if (activeRow?.role) {
-        return {
-            userId: user.id,
-            email: user.email.toLowerCase(),
-            name: activeRow.display_name || String(user.user_metadata?.full_name || user.email),
-            role: asRDashRole(activeRow.role),
-            staffId: activeRow.staff_id || undefined,
-        };
-    }
-
-    const pendingRow = rows?.find((candidate: { status?: string }) => candidate.status === "pending");
-    if (pendingRow) {
-        throw new AuthAccessError(
-            "Your Urban Castle login request is waiting for owner approval.",
-            403,
-            "PENDING_APPROVAL",
-        );
-    }
-    const rejectedRow = rows?.find((candidate: { status?: string }) => candidate.status === "rejected");
-    if (rejectedRow) {
-        throw new AuthAccessError(
-            "Your Urban Castle login request was rejected by the owner.",
-            403,
-            "ACCESS_REJECTED",
-        );
-    }
-    const inactiveRow = rows?.find((candidate: { status?: string }) => candidate.status === "inactive");
-    if (inactiveRow) {
-        throw new AuthAccessError(
-            "This Urban Castle account is inactive. Contact the owner.",
-            403,
-            "ACCESS_INACTIVE",
-        );
-    }
     throw new AuthAccessError(
-        "This authenticated account has no Urban Castle role assignment yet.",
+        "This authenticated account is not linked to a canonical Urban Castle Staff record.",
         403,
-        "NO_ROLE_ASSIGNMENT",
+        "NO_STAFF_ASSIGNMENT",
     );
 }
 
@@ -324,8 +279,7 @@ function matchesOwnerPassword(candidate: string): boolean {
  * Sign in and preserve Supabase's rotating refresh token in a server-only
  * cookie. The static super-owner account is checked first (no Supabase
  * needed); every other account authenticates through Supabase Auth with
- * authorization derived from the linked active Staff record or the temporary
- * role-mapping compatibility table.
+ * authorization derived only from the linked canonical Staff record.
  */
 export async function authenticateCredentialsWithSession(
     emailInput: string,

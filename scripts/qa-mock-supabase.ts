@@ -231,10 +231,7 @@ function seedDatabase(): void {
     roleRows.push({
       id: deterministicUuid(`qa-role:${staffId}`),
       user_id: userId,
-      email,
-      role: String(data.role_key || "OWNER"),
       staff_id: staffId,
-      display_name: String(data.name || staffId),
       status: "active",
       approved_by: null,
       approved_at: new Date(Date.now() - 89 * 86400_000).toISOString(),
@@ -882,10 +879,7 @@ function rpcSyncStaffIdentityBundle(args: Row): Response {
     if (!assignmentRow) return postgrestError(400, "P0002", "ROLE_ASSIGNMENT_NOT_FOUND");
     Object.assign(assignmentRow, {
       user_id: userId,
-      email,
-      role,
       staff_id: staffId,
-      display_name: name,
       status,
       approved_by: status === "active" || status === "rejected" ? (args.p_approved_by ?? null) : null,
       approved_at: status === "active" ? (args.p_approved_at ?? timestamp) : null,
@@ -897,10 +891,7 @@ function rpcSyncStaffIdentityBundle(args: Row): Response {
     assignment = {
       id: deterministicUuid(`qa-role:${userId}:${email}`),
       user_id: userId,
-      email,
-      role,
       staff_id: staffId,
-      display_name: name,
       status,
       approved_by: status === "active" || status === "rejected" ? (args.p_approved_by ?? null) : null,
       approved_at: status === "active" ? (args.p_approved_at ?? timestamp) : null,
@@ -1045,8 +1036,8 @@ function staffIdentityDriftRows(): Row[] {
       role_assignment_id: assignment.id,
       user_id: assignment.user_id,
       staff_id: assignment.staff_id,
-      email: assignment.email,
-      role: assignment.role,
+      email: staffData?.email ?? null,
+      role: staffData?.role_key ?? null,
       role_status: assignment.status,
       expected_profile_status: ["rejected", "inactive"].includes(String(assignment.status)) ? "inactive" : assignment.status,
       profile_email: staffData?.email ?? null,
