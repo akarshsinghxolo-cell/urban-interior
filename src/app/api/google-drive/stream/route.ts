@@ -35,11 +35,10 @@ async function resolveAccessToken(storageAccountId: string | null) {
   const accounts = workspace.data.master.storageAccounts || [];
   const candidates = storageAccountId
     ? accounts.filter((account) => account.id === storageAccountId)
-    : accounts.filter((account) => account.status === "connected" && account.oauth_connection_id);
+    : accounts.filter((account) => account.status === "connected");
   for (const account of candidates) {
-    if (!account.oauth_connection_id) continue;
     try {
-      return { token: await accessTokenForDriveConnection(account.oauth_connection_id), accountLabel: account.label };
+      return { token: await accessTokenForDriveConnection(account.id), accountLabel: account.label };
     } catch {
       // Try the next connected account (multi-account failover).
     }
