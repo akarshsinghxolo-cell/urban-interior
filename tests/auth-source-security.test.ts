@@ -75,6 +75,8 @@ describe("server authentication source security", () => {
     expect(login).toContain("refreshTokenCookie(renewable.refreshToken)");
     expect(refresh).toContain("extractRefreshToken(request)");
     expect(refresh).toContain("refreshAuthenticatedSession(refreshToken)");
+    expect(refresh).toContain('current.userId !== "super-owner" || current.role !== "Owner"');
+    expect(refresh).not.toContain("Compatibility bridge");
     expect(logout).toContain("expiredRefreshTokenCookie()");
     expect(shell).toContain('locks.request("uc-auth-session-refresh"');
     expectTokens(shell, ["AUTH_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000"]);
