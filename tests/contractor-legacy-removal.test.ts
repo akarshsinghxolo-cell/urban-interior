@@ -83,7 +83,7 @@ describe("Contractor legacy-path removal", () => {
     const policy = await source("src/lib/rdash/contractor-store-policy.ts");
     expect(policy).toContain("inTransaction(\"updateContractor\"");
     expect(policy).toContain("inTransaction(\"addContractor\"");
-    expect(policy).toContain("inTransaction(\"addContractorRate\"");
+    expect(policy).not.toContain("addContractorRate");
     const store = await source("src/lib/rdash/raw-store.ts");
     expect(store).toContain("__runInWorkspaceTransaction");
   });
