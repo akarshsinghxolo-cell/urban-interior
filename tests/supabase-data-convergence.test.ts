@@ -14,7 +14,7 @@ describe("Supabase persistence convergence", () => {
     const migration = await testFile(MIGRATION).text();
     const server = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const drive = await testFile("src/lib/rdash/server/drive-connections.ts").text();
-    const cleanup = await testFile("supabase/migrations/20260926113000_finalize_canonical_architecture_cutover.sql").text();
+    const cleanup = await testFile("supabase/migrations/20260926103000_remove_legacy_runtime_compatibility.sql").text();
 
     expectTokens(migration, ["drop function if exists public.commit_operations"]);
     expectTokens(migration, ["drop function if exists public.write_workspace_snapshot"]);
