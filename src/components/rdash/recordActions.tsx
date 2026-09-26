@@ -391,7 +391,7 @@ export function buildJobActions(workOrderId: string, opts?: {
                     useRDashStore.getState().openDetail("boq", currentBoq.id);
                 }
                 else {
-                    useRDashStore.getState().setActiveModule("boq");
+                    useRDashStore.getState().setActiveModule("boqControlCentre");
                     toast.info("Open the BOQ board to create the material plan for this workOrder");
                 }
             },
@@ -414,7 +414,7 @@ export function buildJobActions(workOrderId: string, opts?: {
             label: "WorkOrder P&L",
             icon: <Wallet className="h-4 w-4"/>,
             onClick: () => {
-                useRDashStore.getState().setActiveModule("workOrderPnl");
+                useRDashStore.getState().setActiveModule("profitability");
                 useRDashStore.getState().openDetail("workOrder", workOrderId);
             },
         },
