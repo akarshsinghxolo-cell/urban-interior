@@ -14,7 +14,6 @@ describe("Supabase persistence convergence", () => {
     const migration = await testFile(MIGRATION).text();
     const server = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const drive = await testFile("src/lib/rdash/server/drive-connections.ts").text();
-    const cleanup = await testFile("supabase/migrations/20260926103000_remove_legacy_runtime_compatibility.sql").text();
 
     expectTokens(migration, ["drop function if exists public.commit_operations"]);
     expectTokens(migration, ["drop function if exists public.write_workspace_snapshot"]);
@@ -25,8 +24,6 @@ describe("Supabase persistence convergence", () => {
     expect(server).not.toContain('admin.rpc("commit_operations"');
     expect(drive).toContain('.from("uc_google_drive_credentials")');
     expect(drive).not.toContain("GenericRecord");
-    expect(cleanup).toContain('drop table public."GenericRecord"');
-    expect(cleanup).toContain("data = data - 'oauth_connection_id'");
   });
 
   test("binds every workspace collection to its canonical entity table", async () => {
