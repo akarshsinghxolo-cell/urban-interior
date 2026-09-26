@@ -148,7 +148,7 @@ function PolicyDialog({ policy, onClose, onSave }: {
     const [escalateHours, setEscalateHours] = React.useState(policy?.auto_escalate_hours || 24);
     const [escalateTo, setEscalateTo] = React.useState(policy?.escalate_to || "Owner");
     const [description, setDescription] = React.useState(policy?.description || "");
-    const initialRef = React.useRef({
+    const initial = {
       name: policy?.name || "",
       trigger: policy?.trigger || "po_amount",
       threshold: policy?.threshold || 0,
@@ -157,10 +157,10 @@ function PolicyDialog({ policy, onClose, onSave }: {
       escalateHours: policy?.auto_escalate_hours || 24,
       escalateTo: policy?.escalate_to || "Owner",
       description: policy?.description || "",
-    });
+    };
     const formId = `approval-policy:${policy?.id || "new"}`;
     const current = { name, trigger, threshold, operator, approverRole, escalateHours, escalateTo, description };
-    const dirty = JSON.stringify(current) !== JSON.stringify(initialRef.current);
+    const dirty = JSON.stringify(current) !== JSON.stringify(initial);
     const save = () => {
       if (!name.trim()) return false;
       onSave({ name, trigger, threshold, operator, approver_role: approverRole, approver_name: approverRole, auto_escalate_hours: escalateHours, escalate_to: escalateTo, description });
