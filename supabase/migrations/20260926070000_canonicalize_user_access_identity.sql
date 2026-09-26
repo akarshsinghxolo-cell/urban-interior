@@ -68,6 +68,9 @@ begin
 end;
 $constraint$;
 
+create index if not exists uc_user_roles_staff_id_idx
+  on public.uc_user_roles(staff_id);
+
 comment on table public.uc_user_roles is
   'Login access approval/audit state only. Canonical Staff profile identity and role live in entity_master_staff; authentication identity lives in auth.users.';
 
