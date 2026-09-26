@@ -12,6 +12,7 @@ describe("canonical user access identity", () => {
     expect(sql).toContain("alter column staff_id set not null");
     expect(sql).toContain("constraint uc_user_roles_staff_id_fkey");
     expect(sql).toContain("references public.entity_master_staff(id)");
+    expect(sql).toContain("create index if not exists uc_user_roles_staff_id_idx");
   });
 
   test("stores identity and role only on canonical Staff during auth sync", async () => {
