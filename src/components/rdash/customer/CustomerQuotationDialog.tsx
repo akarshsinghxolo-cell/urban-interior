@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { notifyCreated } from "@/lib/rdash/notify";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { useRDashStore, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { RDashDatabase, WorkRequired } from "@/lib/rdash/types";
 import { workTypeNamesForIds } from "@/lib/rdash/work-types";
@@ -46,6 +48,15 @@ export function CustomerQuotationDialog({ request, onClose }: {
   const [title, setTitle] = React.useState(initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""));
   const [validUntil, setValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
   const [submitting, setSubmitting] = React.useState(false);
+  const initialFormRef = React.useRef({
+    customerId: initialCustomerId,
+    siteId: initialSiteId,
+    workRequiredIds: request.workRequiredId ? [request.workRequiredId] : [],
+    title: initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""),
+    validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  });
+  const formId = `quotation:new:${request.customerId || "customer"}:${request.siteId || "no-site"}`;
+  const dirty = JSON.stringify({ customerId, siteId, workRequiredIds, title, validUntil }) !== JSON.stringify(initialFormRef.current);
 
   const customerSites = React.useMemo(
     () => db.sites.filter((site) => site.customer_id === customerId && !site.is_archived),
@@ -78,10 +89,10 @@ export function CustomerQuotationDialog({ request, onClose }: {
     ...workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids),
   ].filter(Boolean).join(" · ") || work.title;
 
-  const handleSubmit = () => {
+  const handleSubmit = (): boolean => {
     if (!customerId) {
       toast.error("Please select a customer");
-      return;
+      return false;
     }
 
     setSubmitting(true);
@@ -143,8 +154,9 @@ export function CustomerQuotationDialog({ request, onClose }: {
         if (alreadyCovered.length === 1 && selectedWorkRequired.length === 1) {
           toast.info(`${alreadyCovered[0].quotation.quotation_no} already covers this Work Required.`);
           openDetail("quotation", alreadyCovered[0].quotation.id);
+          dirtyFormRegistry.markClean(formId);
           onClose();
-          return;
+          return true;
         }
         throw new Error(`Existing active quotation coverage: ${alreadyCovered.map(({ quotation }) => quotation.quotation_no).join(", ")}`);
       }
@@ -228,16 +240,30 @@ export function CustomerQuotationDialog({ request, onClose }: {
         `Draft for ${customer.name}${site ? ` · ${site.name}` : " · no site yet"} · valid until ${validUntil}`,
       );
       openDetail("quotation", id);
+      dirtyFormRegistry.markClean(formId);
       onClose();
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not create quotation");
+      return false;
     } finally {
       setSubmitting(false);
     }
   };
 
+  useDirtyFormRegistration({
+    id: formId,
+    label: "Quotation draft",
+    dirty,
+    save: handleSubmit,
+    discard: () => true,
+  });
+  const requestClose = React.useCallback(() => {
+    dirtyFormRegistry.requestNavigation(onClose, { reason: "close this quotation form" });
+  }, [onClose]);
+
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-2.5">
@@ -318,7 +344,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
           <Button size="sm" onClick={handleSubmit} disabled={submitting} className="gap-1.5"><Check className="h-4 w-4" />Create quotation</Button>
         </DialogFooter>
       </DialogContent>
