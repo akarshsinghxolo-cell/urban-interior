@@ -1863,7 +1863,6 @@ export interface StorageAccount {
     id: ID;
     label: string;
     email?: string;
-    oauth_connection_id?: string;
     status: StorageAccountStatus;
     write_enabled: boolean;
     priority_order: number;
