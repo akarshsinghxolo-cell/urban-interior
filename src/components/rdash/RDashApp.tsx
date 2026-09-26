@@ -11,7 +11,7 @@ import { Sidebar } from "./Sidebar";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceModulePanels } from "./WorkspaceModuleRouter";
 import { FavoritesBar } from "./FavoritesBar";
-import { requestNotificationPermission, notifyPendingApprovals } from "@/lib/rdash/notifications";
+import { notifyPendingApprovals } from "@/lib/rdash/notifications";
 import { configureWorkspaceOutboxScope } from "@/lib/uploads/workspace-outbox";
 const DetailPanel = React.lazy(() => import("./DetailPanelWithHistory").then((module) => ({ default: module.DetailPanelWithHistory })));
 const CommandPalette = React.lazy(() => import("./CommandPalette").then((module) => ({ default: module.CommandPalette })));
@@ -39,11 +39,7 @@ export function RDashApp() {
     const [secureBootstrapReady, setSecureBootstrapReady] = React.useState(false);
     const [secureWorkspaceError, setSecureWorkspaceError] = React.useState<string | null>(null);
     const secureWorkspaceReady = secureBootstrapReady;
-    // CRON-7: Request notification permission on mount + check pending approvals
-    React.useEffect(() => {
-        requestNotificationPermission();
-    }, []);
-    React.useEffect(() => {
+    // Notification permission is requested only from the explicit Settings action.\n    React.useEffect(() => {
         if (!secureWorkspaceReady) return;
         const pendingCount = db.actions?.filter((a: any) => a.status === "pending").length || 0;
         if (pendingCount > 0) {
