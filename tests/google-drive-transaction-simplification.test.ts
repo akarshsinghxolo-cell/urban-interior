@@ -211,7 +211,9 @@ describe("Google Drive transaction simplification", () => {
     expectTokens(hierarchy, ['leaf("Procurement", "root:procurement")']);
     expectTokens(hierarchy, ['leaf("Vendors", "root:vendors")']);
     expect(storage).toContain("ensureCanonicalFolderPath");
-    expect(storage).toContain('segment.key.includes(":commercial")');
+    expect(storage).not.toContain("legacyKeys");
+    expect(storage).not.toContain('segment.key.includes(":commercial")');
+    expect(hierarchy).not.toContain("legacyKeys");
   });
 
   test("uses one paused state for temporary and target-readiness upload waits", async () => {
