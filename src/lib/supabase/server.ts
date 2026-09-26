@@ -71,7 +71,7 @@ type RDashSupabaseSchema = {
     Tables: {
       uc_user_roles: {
         Row: RDashUserRoleRow;
-        Insert: Partial<RDashUserRoleRow> & Pick<RDashUserRoleRow, "user_id" | "role">;
+        Insert: Partial<RDashUserRoleRow> & Pick<RDashUserRoleRow, "user_id" | "staff_id">;
         Update: Partial<RDashUserRoleRow>;
         Relationships: [];
       };
