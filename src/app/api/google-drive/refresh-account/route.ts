@@ -26,11 +26,11 @@ export async function POST(request: NextRequest) {
     if (!accountId) return NextResponse.json({ error: "accountId is required." }, { status: 400 });
 
     const initial = await readAccount(accountId);
-    if (!initial.account?.oauth_connection_id) {
-      return NextResponse.json({ error: "This account has no server-side Google Drive connection." }, { status: 422 });
+    if (!initial.account) {
+      return NextResponse.json({ error: "The Drive account no longer exists." }, { status: 404 });
     }
 
-    const refreshed = await refreshDriveConnection(initial.account.oauth_connection_id);
+    const refreshed = await refreshDriveConnection(accountId);
 
     // Refreshing Google quota can take long enough for unrelated ERP writes to
     // advance the workspace revision. Re-read only this account before commit;
@@ -43,9 +43,6 @@ export async function POST(request: NextRequest) {
       const updated: StorageAccount = {
         ...current.account,
         email: refreshed.email || current.account.email,
-        root_folder_id: refreshed.rootFolderId || current.account.root_folder_id,
-        root_folder_name: refreshed.rootFolderName || current.account.root_folder_name,
-        web_view_link: refreshed.rootFolderUrl || current.account.web_view_link,
         quota_used_bytes: refreshed.quotaUsedBytes,
         quota_limit_bytes: refreshed.quotaLimitBytes,
         status: "connected",
