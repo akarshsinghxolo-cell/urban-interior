@@ -518,4 +518,83 @@ cross join lateral (
 revoke all on public.staff_identity_drift_report from public, anon, authenticated;
 grant select on public.staff_identity_drift_report to service_role;
 
+-- Reconcile the partially-applied canonical Staff-reference migration present in
+-- production: its functions/FKs exist, but normalization triggers are missing.
+do $staff_integrity$
+begin
+  if to_regprocedure('public.uc_guard_staff_assignment()') is null
+     or to_regprocedure('public.uc_normalize_staff_history_payload()') is null then
+    raise exception using
+      errcode = '55000',
+      message = 'CANONICAL_STAFF_REFERENCE_FUNCTIONS_MISSING';
+  end if;
+end;
+$staff_integrity$;
+
+-- Historical records retain Staff IDs; display names are always hydrated from
+-- canonical Staff at read time and must not remain as stored mirrors.
+update public.entity_attendance
+set data = data - 'staff_name'
+where data ? 'staff_name';
+
+update public."entity_payrollLines"
+set data = data - 'staff_name'
+where data ? 'staff_name';
+
+update public."entity_leaveRequests"
+set data = data - 'staff_name'
+where data ? 'staff_name';
+
+update public."entity_salaryAdjustments"
+set data = data - 'staff_name'
+where data ? 'staff_name';
+
+-- Restore the canonical Staff assignment guards. These strip legacy display
+-- labels/aliases and require new assignments to reference active Staff.
+drop trigger if exists entity_tasks_staff_assignment_guard on public.entity_tasks;
+create trigger entity_tasks_staff_assignment_guard
+before insert or update of data on public.entity_tasks
+for each row execute function public.uc_guard_staff_assignment();
+
+drop trigger if exists entity_followups_staff_assignment_guard on public.entity_followups;
+create trigger entity_followups_staff_assignment_guard
+before insert or update of data on public.entity_followups
+for each row execute function public.uc_guard_staff_assignment();
+
+drop trigger if exists entity_visits_staff_assignment_guard on public.entity_visits;
+create trigger entity_visits_staff_assignment_guard
+before insert or update of data on public.entity_visits
+for each row execute function public.uc_guard_staff_assignment();
+
+drop trigger if exists entity_recurring_tasks_staff_assignment_guard on public."entity_recurringTasks";
+create trigger entity_recurring_tasks_staff_assignment_guard
+before insert or update of data on public."entity_recurringTasks"
+for each row execute function public.uc_guard_staff_assignment();
+
+drop trigger if exists entity_approval_policies_staff_assignment_guard on public."entity_approvalPolicies";
+create trigger entity_approval_policies_staff_assignment_guard
+before insert or update of data on public."entity_approvalPolicies"
+for each row execute function public.uc_guard_staff_assignment();
+
+-- Historical HR tables retain only staff_id; UI-facing staff_name is hydrated.
+drop trigger if exists entity_attendance_staff_history_normalizer on public.entity_attendance;
+create trigger entity_attendance_staff_history_normalizer
+before insert or update of data on public.entity_attendance
+for each row execute function public.uc_normalize_staff_history_payload();
+
+drop trigger if exists entity_payroll_lines_staff_history_normalizer on public."entity_payrollLines";
+create trigger entity_payroll_lines_staff_history_normalizer
+before insert or update of data on public."entity_payrollLines"
+for each row execute function public.uc_normalize_staff_history_payload();
+
+drop trigger if exists entity_leave_requests_staff_history_normalizer on public."entity_leaveRequests";
+create trigger entity_leave_requests_staff_history_normalizer
+before insert or update of data on public."entity_leaveRequests"
+for each row execute function public.uc_normalize_staff_history_payload();
+
+drop trigger if exists entity_salary_adjustments_staff_history_normalizer on public."entity_salaryAdjustments";
+create trigger entity_salary_adjustments_staff_history_normalizer
+before insert or update of data on public."entity_salaryAdjustments"
+for each row execute function public.uc_normalize_staff_history_payload();
+
 commit;
