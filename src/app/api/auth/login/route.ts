@@ -40,8 +40,9 @@ export async function POST(request: NextRequest) {
       token,
     }, { headers: { "Cache-Control": "no-store" } });
     response.cookies.set(sessionCookie(token));
-    // The static super-owner login has no Supabase session, hence no rotating
-    // refresh token — skip the cookie so /api/auth/refresh uses its compat bridge.
+    // The static Owner login has no Supabase session, so it intentionally has
+    // no rotating refresh cookie. The refresh route handles only that explicit
+    // Owner case; canonical Staff users renew through Supabase Auth.
     if (renewable.refreshToken) {
       response.cookies.set(refreshTokenCookie(renewable.refreshToken));
     }

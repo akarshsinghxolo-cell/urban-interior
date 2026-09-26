@@ -1591,7 +1591,7 @@ function JobOverviewBody({ j }: {
         <LinkedRow icon={<FileText className="h-3.5 w-3.5"/>} label="Drawings" value={`${drawings.length} drawing${drawings.length === 1 ? "" : "s"}`} onClick={() => setActiveModule("drawings")}/>
         <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Execution logs" value={`${executionLogs.length} log${executionLogs.length === 1 ? "" : "s"}`} onClick={() => setActiveModule("executionLogs")}/>
 
-        <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Cost lines" value={`${costLines.length} entries · ${formatINRShort(costLines.reduce((n, c) => n + c.amount, 0))}`} onClick={() => setActiveModule("workOrderPnl")}/>
+        <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Cost lines" value={`${costLines.length} entries · ${formatINRShort(costLines.reduce((n, c) => n + c.amount, 0))}`} onClick={() => setActiveModule("profitability")}/>
         <LinkedRow icon={<AlertCircle className="h-3.5 w-3.5"/>} label="Obstacles" value={`${db.blocked.filter((b) => b.linked_work_order_id === j.id).length} blocked`} onClick={() => setActiveModule("blockedRisks")}/>
       </div>
     </div>);

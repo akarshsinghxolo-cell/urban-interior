@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CustomerSitesDialog } from "@/components/rdash/CustomerSitesDialog";
-import { WorkRequiredCreateDialog } from "@/components/rdash/WorkRequiredCreateDialog";
+import { CustomerWorkRequiredDialog as WorkRequiredCreateDialog } from "@/components/rdash/customer/CustomerWorkRequiredDialog";
 import { CustomerWorkCaptureDialog } from "@/components/rdash/customer/CustomerWorkCaptureDialog";
 import {
   activeQuotationForWork,

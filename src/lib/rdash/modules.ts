@@ -1,5 +1,3 @@
-import { canonicalLegacyModuleId } from "./module-aliases";
-
 export type ModuleRenderer =
   | "daily-work"
   | "customer-desk"
@@ -789,14 +787,11 @@ export const DEFAULT_MODULE_ID = "workdesk";
 
 
 export function canonicalModuleId(id: string): string {
-  const canonicalId = canonicalLegacyModuleId(id);
-  return MODULE_ROUTE_REGISTRY.has(canonicalId)
-    ? canonicalId
-    : DEFAULT_MODULE_ID;
+  return MODULE_ROUTE_REGISTRY.has(id) ? id : DEFAULT_MODULE_ID;
 }
 
 export function isRegisteredModuleId(id: string): boolean {
-  return MODULE_ROUTE_REGISTRY.has(canonicalLegacyModuleId(id));
+  return MODULE_ROUTE_REGISTRY.has(id);
 }
 
 export function resolveRenderer(id: string): ModuleRoute {

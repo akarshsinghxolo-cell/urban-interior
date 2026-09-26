@@ -13,7 +13,6 @@ interface FavoriteItem {
 }
 
 const STORAGE_KEY = "uc_favorites_v2";
-const LEGACY_STORAGE_KEY = "uc_favorites";
 const FAVORITES_CHANGED_EVENT = "uc:favorites-changed";
 const MAX_FAVORITES = 12;
 
@@ -31,7 +30,7 @@ function isFavoriteItem(value: unknown): value is FavoriteItem {
 function readFavorites(): FavoriteItem[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY) ?? "[]";
+    const raw = window.localStorage.getItem(STORAGE_KEY) ?? "[]";
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.filter(isFavoriteItem).slice(-MAX_FAVORITES) : [];
   } catch {
@@ -43,7 +42,6 @@ function writeFavorites(items: readonly FavoriteItem[]): void {
   const next = items.slice(-MAX_FAVORITES);
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
     window.dispatchEvent(new CustomEvent(FAVORITES_CHANGED_EVENT));
   } catch {
     // Favorites are a non-critical device preference.
@@ -56,7 +54,7 @@ function useFavoriteItems() {
     const sync = () => setFavorites(readFavorites());
     sync();
     const onStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY || event.key === LEGACY_STORAGE_KEY) sync();
+      if (event.key === STORAGE_KEY) sync();
     };
     window.addEventListener("storage", onStorage);
     window.addEventListener(FAVORITES_CHANGED_EVENT, sync);
