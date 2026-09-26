@@ -229,7 +229,7 @@ async function authorizedUserFromSupabase(user: SupabaseAuthUser): Promise<Omit<
     // Compatibility mapping while all approved users are moved onto Staff rows.
     const { data: rows, error: mappingError } = await admin
         .from("uc_user_roles")
-        .select("role,staff_id,display_name,status")
+        .select("role,staff_id,status")
         .eq("user_id", user.id)
         .in("status", ["active", "pending", "rejected", "inactive"]);
     if (mappingError) {
@@ -241,7 +241,7 @@ async function authorizedUserFromSupabase(user: SupabaseAuthUser): Promise<Omit<
         return {
             userId: user.id,
             email: user.email.toLowerCase(),
-            name: activeRow.display_name || String(user.user_metadata?.full_name || user.email),
+            name: String(user.user_metadata?.full_name || user.email),
             role: asRDashRole(activeRow.role),
             staffId: activeRow.staff_id || undefined,
         };
