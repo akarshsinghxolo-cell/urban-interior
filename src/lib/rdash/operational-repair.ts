@@ -182,28 +182,6 @@ function repairInventoryAndMovements(db: RDashDatabase) {
   }
 }
 
-function repairWorkCosts(db: RDashDatabase) {
-  // FIX-CONTRACTOR-BATCH1 / F.3: vendor_id is the canonical counterparty
-  // field on WorkOrderCostLine (matches runtime code in contractors.ts and
-  // the ContractorDetailModule filter `cl.vendor_id === c.id`). Previously
-  // this repair function UNSET vendor_id when the counterparty was a
-  // contractor — which actively broke the canonical-field filter for
-  // runtime-created cost lines (createContractorRABill, settleContractor).
-  // Now we MIRROR vendor_id → contractor_id (for backward compat with any
-  // consumer that still reads contractor_id) but NEVER unset vendor_id.
-  db.workOrderCostLines = db.workOrderCostLines.map((line) => {
-    if (line.vendor_id && db.master.contractors.some((contractor) => contractor.id === line.vendor_id)) {
-      return { ...line, contractor_id: line.contractor_id || line.vendor_id, contractor_name: line.contractor_name || line.vendor_name } as typeof line;
-    }
-    // Legacy seed rows that only have contractor_id (no vendor_id): mirror
-    // contractor_id → vendor_id so the canonical filter finds them too.
-    if (!line.vendor_id && line.contractor_id && db.master.contractors.some((contractor) => contractor.id === line.contractor_id)) {
-      return { ...line, vendor_id: line.contractor_id, vendor_name: line.vendor_name || line.contractor_name } as typeof line;
-    }
-    return line;
-  });
-}
-
 export function repairOperationalWorkspace(input: RDashDatabase): RDashDatabase {
   const db = attachCustomerLabels(prepareWorkspaceData(structuredClone(input) as RDashDatabase));
   seedArticleVariants(db);
@@ -219,6 +197,5 @@ export function repairOperationalWorkspace(input: RDashDatabase): RDashDatabase 
   db.grns = db.grns.map((grn) => ({ ...grn, items: grn.items.map((line) => repairLine(db, line, "grn")) }));
   db.dispatches = db.dispatches.map((dispatch) => ({ ...dispatch, items: dispatch.items.map((line) => repairLine(db, line, "inventory")) }));
   repairInventoryAndMovements(db);
-  repairWorkCosts(db);
   return attachCustomerLabels(prepareWorkspaceData(db));
 }
