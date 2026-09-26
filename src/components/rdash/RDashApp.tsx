@@ -39,7 +39,8 @@ export function RDashApp() {
     const [secureBootstrapReady, setSecureBootstrapReady] = React.useState(false);
     const [secureWorkspaceError, setSecureWorkspaceError] = React.useState<string | null>(null);
     const secureWorkspaceReady = secureBootstrapReady;
-    // Notification permission is requested only from the explicit Settings action.\n    React.useEffect(() => {
+    // Notification permission is requested only from the explicit Settings action.
+    React.useEffect(() => {
         if (!secureWorkspaceReady) return;
         const pendingCount = db.actions?.filter((a: any) => a.status === "pending").length || 0;
         if (pendingCount > 0) {
