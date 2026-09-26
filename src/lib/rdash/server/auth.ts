@@ -297,9 +297,9 @@ export async function authenticateCredentialsWithSession(
                 role: "Owner",
                 staffId: SUPER_OWNER.staffId,
             },
-            // No Supabase session exists for the static owner login, so there
-            // is no refresh token: the login route skips the refresh cookie
-            // and /api/auth/refresh renews the bearer through its compat bridge.
+            // The static Owner is the one intentional non-Supabase session.
+            // Its bearer can be renewed only by the explicit Owner path in
+            // /api/auth/refresh; every canonical Staff user uses Supabase.
             refreshToken: "",
         };
     }
