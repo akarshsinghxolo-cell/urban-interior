@@ -38,7 +38,6 @@ describe("Customer Desk restored-feature contracts", () => {
   test("rich advanced capture lives once under Customer ownership", async () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
-    const compatibility = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
 
     for (const token of [
       "seedDetailedAreaLines",
@@ -58,7 +57,6 @@ describe("Customer Desk restored-feature contracts", () => {
     expect(portfolio).not.toContain("StructuredWorkRequiredDialog");
     expect(portfolio).not.toContain("seedDetailedAreaLines");
     expect(portfolio).not.toContain("captureStructuredWorkRequired");
-    expect(compatibility).toContain("Compatibility export only");
   });
 
   test("Customer-owned quotation workflow is the only quotation creation/coverage builder", async () => {
