@@ -8,7 +8,6 @@ type RDashUserApprovalStatus = "pending" | "active" | "rejected" | "inactive";
 interface RDashUserRoleStoredRow {
   id: string;
   user_id: string;
-  role: string;
   staff_id: string | null;
   status: RDashUserApprovalStatus;
   approved_by: string | null;
@@ -21,11 +20,13 @@ interface RDashUserRoleStoredRow {
 interface RDashUserRoleAssignment extends RDashUserRoleStoredRow {
   email: string | null;
   display_name: string | null;
+  role: string;
 }
 
 type CanonicalStaffIdentity = {
   email: string | null;
   displayName: string | null;
+  role: string;
 };
 
 interface StaffIdentityDriftRow {
@@ -52,7 +53,7 @@ interface StaffIdentityDriftRow {
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ROLE_ASSIGNMENT_SELECT = "id,user_id,role,staff_id,status,approved_by,approved_at,rejected_at,created_at,updated_at";
+const ROLE_ASSIGNMENT_SELECT = "id,user_id,staff_id,status,approved_by,approved_at,rejected_at,created_at,updated_at";
 
 function normalizeAuthEmail(email: string) {
   return email.trim().toLowerCase();
@@ -107,6 +108,7 @@ function canonicalStaffIdentity(data: string | Record<string, unknown> | null | 
   return {
     email: EMAIL_PATTERN.test(email) ? email : null,
     displayName: displayName || null,
+    role: normalizeRequestedRole(String(parsed.role_key || parsed.role || "FIELD_STAFF")),
   };
 }
 
@@ -138,6 +140,7 @@ async function enrichRoleAssignments(rows: RDashUserRoleStoredRow[]): Promise<RD
       ...row,
       email: identity?.email || null,
       display_name: identity?.displayName || null,
+      role: identity?.role || "FIELD_STAFF",
     };
   });
 }
@@ -145,8 +148,8 @@ async function enrichRoleAssignments(rows: RDashUserRoleStoredRow[]): Promise<RD
 async function canonicalIdentityForAssignment(row: RDashUserRoleStoredRow): Promise<CanonicalStaffIdentity> {
   const identities = await loadCanonicalStaffIdentities([row]);
   return row.staff_id
-    ? identities.get(row.staff_id) || { email: null, displayName: null }
-    : { email: null, displayName: null };
+    ? identities.get(row.staff_id) || { email: null, displayName: null, role: "FIELD_STAFF" }
+    : { email: null, displayName: null, role: "FIELD_STAFF" };
 }
 
 async function syncStaffIdentity(input: {
@@ -191,6 +194,7 @@ async function syncStaffIdentity(input: {
       ...result.assignment,
       email: canonicalEmail,
       display_name: canonicalDisplayName,
+      role: normalizeRequestedRole(input.role),
     },
     staffId: result.staffId,
     workspaceRevision: Number(result.workspaceRevision || 0),
@@ -251,7 +255,7 @@ export async function createPendingAccessRequest(input: {
       userId: existingAssignment.user_id,
       email,
       displayName: identity.displayName || displayName,
-      role: existingAssignment.role,
+      role: identity.role,
       status: "pending",
       staffId: existingAssignment.staff_id,
     });
@@ -377,7 +381,7 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
     userId: pending.user_id,
     email,
     displayName: identity.displayName || email,
-    role: pending.role,
+    role: identity.role,
     status: "rejected",
     staffId: pending.staff_id,
     approvedBy: approvedByUuid(user),
