@@ -8,10 +8,8 @@ if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(configuredWorkspaceId)) {
 type RDashUserRoleRow = {
   id: string;
   user_id: string;
-  email: string | null;
   role: string;
   staff_id: string | null;
-  display_name: string | null;
   status: "pending" | "active" | "rejected" | "inactive";
   approved_by: string | null;
   approved_at: string | null;
