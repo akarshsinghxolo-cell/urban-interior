@@ -46,17 +46,18 @@ export function CustomerQuotationDialog({ request, onClose }: {
   const [siteId, setSiteId] = React.useState(initialSiteId);
   const [workRequiredIds, setWorkRequiredIds] = React.useState<string[]>(request.workRequiredId ? [request.workRequiredId] : []);
   const [title, setTitle] = React.useState(initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""));
-  const [validUntil, setValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  const [initialValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  const [validUntil, setValidUntil] = React.useState(initialValidUntil);
   const [submitting, setSubmitting] = React.useState(false);
-  const initialFormRef = React.useRef({
+  const initialForm = {
     customerId: initialCustomerId,
     siteId: initialSiteId,
     workRequiredIds: request.workRequiredId ? [request.workRequiredId] : [],
     title: initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""),
-    validUntil: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-  });
+    validUntil: initialValidUntil,
+  };
   const formId = `quotation:new:${request.customerId || "customer"}:${request.siteId || "no-site"}`;
-  const dirty = JSON.stringify({ customerId, siteId, workRequiredIds, title, validUntil }) !== JSON.stringify(initialFormRef.current);
+  const dirty = JSON.stringify({ customerId, siteId, workRequiredIds, title, validUntil }) !== JSON.stringify(initialForm);
 
   const customerSites = React.useMemo(
     () => db.sites.filter((site) => site.customer_id === customerId && !site.is_archived),
