@@ -25,6 +25,16 @@ export interface WorkspaceDeltaPayload {
   loadMs?: number;
 }
 
+export function isValidWorkspaceDelta(delta: WorkspaceDeltaPayload, afterRevision: number): boolean {
+  return Number.isInteger(delta.fromRevision) &&
+    Number.isInteger(delta.revision) &&
+    Number.isInteger(delta.currentRevision) &&
+    delta.fromRevision === afterRevision &&
+    delta.revision >= afterRevision &&
+    delta.currentRevision >= delta.revision &&
+    typeof delta.hasMore === "boolean";
+}
+
 type StaffDeltaProjection = "directory" | "full";
 
 const KNOWN_COLLECTIONS = new Set<string>([

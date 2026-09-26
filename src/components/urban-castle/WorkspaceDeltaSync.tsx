@@ -7,6 +7,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import {
   applyWorkspaceDelta,
+  isValidWorkspaceDelta,
   deletedDeltaVersionKeys,
   expandedDeltaRowVersions,
   workspaceCollectionFilterParam,
@@ -62,16 +63,6 @@ function currentRunIsSafe(pathname: string): boolean {
     visible: document.visibilityState === "visible",
     online: navigator.onLine,
   });
-}
-
-function isValidDelta(delta: WorkspaceDeltaPayload, afterRevision: number): boolean {
-  return Number.isInteger(delta.fromRevision) &&
-    Number.isInteger(delta.revision) &&
-    Number.isInteger(delta.currentRevision) &&
-    delta.fromRevision === afterRevision &&
-    delta.revision >= afterRevision &&
-    delta.currentRevision >= delta.revision &&
-    typeof delta.hasMore === "boolean";
 }
 
 async function redirectToSignin(): Promise<never> {
@@ -209,7 +200,7 @@ export function WorkspaceDeltaSync(): null {
             window.location.reload();
             return;
           }
-          if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
+          if (delta.requiresFullReload || !isValidWorkspaceDelta(delta, afterRevision)) {
             if (!await reloadCurrentWorkspace(pathname, controller.signal)) {
               throw new Error("Delta recovery reload failed.");
             }

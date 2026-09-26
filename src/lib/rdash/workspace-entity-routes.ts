@@ -1,5 +1,5 @@
 import type { DetailPanelKind } from "./store/ui-types";
-import { resolveWorkspacePath, workspacePathForModule, type WorkspaceRouteMatch } from "./workspace-routes";
+import { normalizeWorkspacePath, resolveWorkspacePath, workspacePathForModule, type WorkspaceRouteMatch } from "./workspace-routes";
 
 export type WorkspaceEntityKind = Extract<
   Exclude<DetailPanelKind, null>,
@@ -135,14 +135,6 @@ const ENTITY_ROUTE_BY_KIND = new Map(
   ENTITY_ROUTE_DEFINITIONS.map((definition) => [definition.kind, definition]),
 );
 
-function pathnameOnly(input: string): string {
-  const raw = String(input || "").split(/[?#]/, 1)[0] || "/";
-  let path = raw.startsWith("/") ? raw : `/${raw}`;
-  path = path.replace(/\/{2,}/g, "/");
-  if (path.length > 1) path = path.replace(/\/+$/, "");
-  return path;
-}
-
 function entityBasePath(definition: WorkspaceEntityRouteDefinition): string {
   return definition.basePath || workspacePathForModule(definition.moduleId);
 }
@@ -170,7 +162,7 @@ export function workspaceEntityPath(kind: WorkspaceEntityKind, id: string): stri
 }
 
 export function resolveWorkspaceLocation(input: string): WorkspaceLocation | undefined {
-  const pathname = pathnameOnly(input);
+  const pathname = normalizeWorkspacePath(input);
   const moduleMatch = resolveWorkspacePath(pathname);
   if (moduleMatch) return moduleMatch;
 
