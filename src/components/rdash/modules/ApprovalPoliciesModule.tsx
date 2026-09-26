@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 const TRIGGER_LABELS: Record<ApprovalTrigger, string> = {
     po_amount: "Purchase Order amount",
     quotation_discount: "Quotation discount %",
@@ -146,7 +148,36 @@ function PolicyDialog({ policy, onClose, onSave }: {
     const [escalateHours, setEscalateHours] = React.useState(policy?.auto_escalate_hours || 24);
     const [escalateTo, setEscalateTo] = React.useState(policy?.escalate_to || "Owner");
     const [description, setDescription] = React.useState(policy?.description || "");
-    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
+    const initialRef = React.useRef({
+      name: policy?.name || "",
+      trigger: policy?.trigger || "po_amount",
+      threshold: policy?.threshold || 0,
+      operator: policy?.operator || ">",
+      approverRole: policy?.approver_role || "Owner",
+      escalateHours: policy?.auto_escalate_hours || 24,
+      escalateTo: policy?.escalate_to || "Owner",
+      description: policy?.description || "",
+    });
+    const formId = `approval-policy:${policy?.id || "new"}`;
+    const current = { name, trigger, threshold, operator, approverRole, escalateHours, escalateTo, description };
+    const dirty = JSON.stringify(current) !== JSON.stringify(initialRef.current);
+    const save = () => {
+      if (!name.trim()) return false;
+      onSave({ name, trigger, threshold, operator, approver_role: approverRole, approver_name: approverRole, auto_escalate_hours: escalateHours, escalate_to: escalateTo, description });
+      dirtyFormRegistry.markClean(formId);
+      return true;
+    };
+    useDirtyFormRegistration({
+      id: formId,
+      label: "Approval Policy form",
+      dirty,
+      save,
+      discard: () => true,
+    });
+    const requestClose = React.useCallback(() => {
+      dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Approval Policy form" });
+    }, [onClose]);
+    return (<Dialog open onOpenChange={(o) => !o && requestClose()}>
       <DialogContent className="max-w-lg gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -203,8 +234,8 @@ function PolicyDialog({ policy, onClose, onSave }: {
           </div>
         </div>
         <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" onClick={() => onSave({ name, trigger, threshold, operator, approver_role: approverRole, approver_name: approverRole, auto_escalate_hours: escalateHours, escalate_to: escalateTo, description })} disabled={!name}>
+          <Button variant="outline" size="sm" onClick={requestClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
+          <Button size="sm" onClick={save} disabled={!name}>
             <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> {policy ? "Save Changes" : "Create Policy"}
           </Button>
         </DialogFooter>
