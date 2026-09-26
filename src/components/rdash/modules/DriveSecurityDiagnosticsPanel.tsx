@@ -54,7 +54,6 @@ type DriveDiagnostics = {
   label: string;
   status: string;
   email: string | null;
-  oauthConnectionId: string | null;
   googleAccountId: string | null;
   rootFolderId: string | null;
   rootFolderName: string | null;
@@ -88,14 +87,6 @@ type SecurityDiagnostics = {
     updatedAt: string | null;
   };
   drives: DriveDiagnostics[];
-  orphanConnections: Array<{
-    oauthConnectionId: string;
-    email: string | null;
-    googleAccountId: string | null;
-    refreshTokenConfigured: boolean;
-    refreshTokenFingerprint: string | null;
-    updatedAt: string | null;
-  }>;
 };
 
 function formatDate(value: string | null) {
@@ -253,8 +244,8 @@ export function DriveSecurityDiagnosticsPanel() {
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-lg border border-border bg-card p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">OAuth connection</p>
-                      <p className="mt-1 break-all font-mono text-[11px]">{drive.oauthConnectionId || "Not linked"}</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Canonical credential</p>
+                      <p className="mt-1 break-all font-mono text-[11px]">{drive.storageAccountId}</p>
                       <p className="mt-1 break-all text-[10px] text-muted-foreground">Google identity: {drive.googleAccountId || "Unavailable"}</p>
                     </div>
                     <div className="rounded-lg border border-border bg-card p-3">
@@ -339,13 +330,6 @@ export function DriveSecurityDiagnosticsPanel() {
               {!data.drives.length ? <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">No Drive slots are configured in this workspace.</div> : null}
             </div>
 
-            {data.orphanConnections.length ? (
-              <div className="rounded-lg border border-warning/30 bg-warning/[0.06] p-3">
-                <p className="text-xs font-bold text-warning">Orphan server authorizations</p>
-                <p className="mt-1 text-[11px] text-muted-foreground">These server OAuth connections are not currently mapped to a workspace Drive slot.</p>
-                <div className="mt-2 grid gap-2 md:grid-cols-2">{data.orphanConnections.map((connection) => <div key={connection.oauthConnectionId} className="rounded-md border border-border bg-card p-2 text-[10px]"><p className="font-semibold">{connection.email || connection.oauthConnectionId}</p><p className="mt-1 font-mono text-muted-foreground">Refresh token: {connection.refreshTokenFingerprint ? `sha256:${connection.refreshTokenFingerprint}` : "missing"}</p></div>)}</div>
-              </div>
-            ) : null}
           </>
         ) : null}
       </div>
