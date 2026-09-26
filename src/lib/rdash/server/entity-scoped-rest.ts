@@ -1,6 +1,5 @@
 import { getSupabaseAdminClient } from "../../supabase/server";
-import type { RDashDatabase } from "../types";
-import { COLLECTION_TO_TABLE } from "./commit-rest";
+import { COLLECTION_TO_TABLE, emptyWorkspaceData, putCollectionRows, readRevision, type RestEntityRow } from "./commit-rest";
 import type { WorkspaceSubset } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -24,12 +23,6 @@ export type EntityScopedReadPlan = {
   fullCollections?: string[];
   rowsByCollection?: Record<string, string[]>;
   jsonFieldValuesByCollection?: Record<string, Record<string, string[]>>;
-};
-
-type RestEntityRow = {
-  id: string;
-  revision?: number;
-  data: unknown;
 };
 
 type CollectionQuery = {
@@ -59,44 +52,6 @@ function selectorColumn(collection: string, field: string): { column: string; js
     return { column: "site_id_gen", json: false };
   }
   return { column: `data->>${field}`, json: true };
-}
-
-function emptyWorkspaceData(): RDashDatabase {
-  const data: Record<string, unknown> = { master: {} };
-  const master = data.master as Record<string, unknown>;
-  for (const collection of Object.keys(COLLECTION_TO_TABLE)) {
-    if (collection.startsWith("master.")) {
-      master[collection.slice("master.".length)] = [];
-    } else {
-      data[collection] = [];
-    }
-  }
-  data._workspace_mode = "rest";
-  data._data_source = "supabase-rest";
-  return data as unknown as RDashDatabase;
-}
-
-function decodeRow(row: RestEntityRow): Record<string, unknown> | null {
-  try {
-    const value = typeof row.data === "string" ? JSON.parse(row.data) : row.data;
-    return value && typeof value === "object" ? value as Record<string, unknown> : null;
-  } catch {
-    return null;
-  }
-}
-
-async function readRevision(): Promise<{ revision: number; updatedAt: string }> {
-  const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("entity_workspace_revision")
-    .select("revision,updated_at")
-    .eq("id", workspaceId)
-    .maybeSingle();
-  if (error) throw new Error(`Could not read workspace revision: ${error.message}`);
-  return {
-    revision: typeof data?.revision === "number" ? data.revision : 0,
-    updatedAt: String(data?.updated_at || new Date().toISOString()),
-  };
 }
 
 function collectionQueries(plan: EntityScopedReadPlan): CollectionQuery[] {
@@ -179,20 +134,7 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
   const data = emptyWorkspaceData();
   const rowVersions: Record<string, number> = {};
   for (const result of results) {
-    const decoded = result.rows.map((row) => {
-      if (typeof row.revision === "number") {
-        rowVersions[row.id] = row.revision;
-        rowVersions[`${result.collection}:${row.id}`] = row.revision;
-      }
-      return decodeRow(row);
-    }).filter(Boolean) as Array<Record<string, unknown>>;
-
-    if (result.collection.startsWith("master.")) {
-      const key = result.collection.slice("master.".length);
-      (data.master as unknown as Record<string, unknown>)[key] = decoded;
-    } else {
-      (data as unknown as Record<string, unknown>)[result.collection] = decoded;
-    }
+    putCollectionRows(data, rowVersions, result.collection, result.rows);
   }
 
   return {

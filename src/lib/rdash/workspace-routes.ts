@@ -88,7 +88,7 @@ const ROUTE_DEFINITIONS: readonly WorkspaceRouteDefinition[] = [
   { moduleId: "calendarRecurring", canonicalPath: "/workspace/calendar" },
 ] as const;
 
-function normalizeWorkspacePath(input: string): string {
+export function normalizeWorkspacePath(input: string): string {
   const rawPath = String(input || "").split(/[?#]/, 1)[0] || "/";
   let path = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
   path = path.replace(/\/{2,}/g, "/");

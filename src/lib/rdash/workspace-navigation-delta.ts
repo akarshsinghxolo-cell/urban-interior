@@ -2,6 +2,7 @@
 
 import {
   applyWorkspaceDelta,
+  isValidWorkspaceDelta,
   deletedDeltaVersionKeys,
   expandedDeltaRowVersions,
   workspaceCollectionFilterParam,
@@ -18,16 +19,6 @@ type WorkspaceNavigationRevalidationResult =
   | { kind: "fresh"; entry: WorkspaceReadCacheEntry; changed: boolean; deletedRowVersionKeys: string[] }
   | { kind: "reload"; reason: string }
   | { kind: "unauthorized" };
-
-function isValidDelta(delta: WorkspaceDeltaPayload, afterRevision: number): boolean {
-  return Number.isInteger(delta.fromRevision) &&
-    Number.isInteger(delta.revision) &&
-    Number.isInteger(delta.currentRevision) &&
-    delta.fromRevision === afterRevision &&
-    delta.revision >= afterRevision &&
-    delta.currentRevision >= delta.revision &&
-    typeof delta.hasMore === "boolean";
-}
 
 function touchedCollections(delta: WorkspaceDeltaPayload): Set<string> {
   const touched = new Set<string>();
@@ -110,7 +101,7 @@ export async function revalidateWorkspaceReadCacheEntry(
     }
 
     const delta = await response.json() as WorkspaceDeltaPayload;
-    if (!isValidDelta(delta, afterRevision)) {
+    if (!isValidWorkspaceDelta(delta, afterRevision)) {
       return { kind: "reload", reason: "invalid_delta" };
     }
     if (delta.requiresFullReload) {

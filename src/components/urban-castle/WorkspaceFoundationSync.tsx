@@ -8,6 +8,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { workspaceReadTargetForActiveNavigation } from "@/lib/rdash/workspace-active-read-target";
 import {
   applyWorkspaceDelta,
+  isValidWorkspaceDelta,
   deletedDeltaVersionKeys,
   expandedDeltaRowVersions,
   type WorkspaceDeltaPayload,
@@ -29,16 +30,6 @@ interface BootstrapPayload {
   data?: import("@/lib/rdash/types").RDashDatabase;
   rowVersions?: Record<string, number>;
   user?: import("@/lib/rdash/store").AuthenticatedWorkspaceUser;
-}
-
-function isValidDelta(delta: WorkspaceDeltaPayload, afterRevision: number): boolean {
-  return Number.isInteger(delta.fromRevision)
-    && Number.isInteger(delta.revision)
-    && Number.isInteger(delta.currentRevision)
-    && delta.fromRevision === afterRevision
-    && delta.revision >= afterRevision
-    && delta.currentRevision >= delta.revision
-    && typeof delta.hasMore === "boolean";
 }
 
 function deltaHasRows(delta: WorkspaceDeltaPayload): boolean {
@@ -160,7 +151,7 @@ export function WorkspaceFoundationSync(): null {
             window.location.reload();
             return;
           }
-          if (delta.requiresFullReload || !isValidDelta(delta, afterRevision)) {
+          if (delta.requiresFullReload || !isValidWorkspaceDelta(delta, afterRevision)) {
             await reloadFoundation(controller.signal);
             return;
           }
