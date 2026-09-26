@@ -218,7 +218,7 @@ export function SiteVisitsModule() {
                   {unassigned ? activeStaff.length > 0 ? (
                     <button type="button" onClick={() => openDetail("visit", visit.id)} className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning ring-1 ring-inset ring-warning/20 hover:bg-warning/20"><UserPlus className="h-3 w-3" />Assign staff</button>
                   ) : (
-                    <button type="button" onClick={() => setActiveModule("staff")} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-inset ring-primary/20 hover:bg-primary/20"><UserPlus className="h-3 w-3" />Add staff</button>
+                    <button type="button" onClick={() => setActiveModule("hrStaff")} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-inset ring-primary/20 hover:bg-primary/20"><UserPlus className="h-3 w-3" />Add staff</button>
                   ) : null}
                 </div>
               </div>
