@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import type { AuthenticatedUser } from "./auth";
 import { getSupabaseAdminClient } from "../../supabase/server";
 
@@ -91,8 +91,7 @@ function tokenEncryptionKey() {
 }
 
 function encryptSecret(value: string): EncryptedSecret {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ivBuffer = Buffer.from(iv);
+  const ivBuffer = randomBytes(12);
   const cipher = createCipheriv(TOKEN_CIPHER, tokenEncryptionKey(), ivBuffer);
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
