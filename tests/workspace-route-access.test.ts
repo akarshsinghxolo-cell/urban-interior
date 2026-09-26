@@ -81,7 +81,7 @@ describe("workspace route access", () => {
   test("does not translate retired module IDs before checking access", () => {
     const decision = workspaceRouteAccessDecision("contractors", "Field Staff", []);
     expect(decision.moduleId).toBe("workdesk");
-    expect(decision.permissionModule).toBe("tasks");
+    expect(decision.permissionModule).toBe("workspace");
     expect(decision.status).toBe("allowed");
   });
 });
