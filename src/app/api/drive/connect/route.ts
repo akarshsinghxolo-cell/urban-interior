@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
       label,
       origin,
       returnTo: request.nextUrl.searchParams.get("returnTo"),
-      existingConnectionId: request.nextUrl.searchParams.get("connectionId") || undefined,
+      existingStorageAccountId: request.nextUrl.searchParams.get("accountId") || undefined,
     });
     return NextResponse.redirect(authorizeUrl);
   } catch (error) {

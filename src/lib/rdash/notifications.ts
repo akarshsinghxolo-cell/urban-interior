@@ -63,9 +63,7 @@ export function saveNotificationPreferences(settings: NotificationPreferences): 
 }
 
 /**
- * Browser permission prompts must be triggered by a user action. The workspace
- * still calls this helper during mount for backwards compatibility, but that
- * call now safely returns without prompting because user activation is absent.
+ * Browser permission prompts are initiated only by an explicit user action.
  */
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === "undefined" || !("Notification" in window)) return false;

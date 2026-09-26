@@ -4,18 +4,7 @@ import type { AuthenticatedUser } from "./auth";
 import { accessTokenForDriveConnection, GOOGLE_DRIVE_SCOPE } from "./drive-connections";
 import { getWorkspace } from "./workspace";
 
-const OAUTH_CONFIG_COLLECTION = "system.googleDriveOAuth";
-const OAUTH_CONFIG_ID = "default";
-const DRIVE_VAULT_COLLECTION = "system.googleDriveVault";
-const DRIVE_VAULT_ID = "default";
 const DRIVE_ABOUT_URL = "https://www.googleapis.com/drive/v3/about?fields=user(permissionId,emailAddress)";
-
-type StoredOAuthSettings = {
-  clientId?: string;
-  clientSecret?: string;
-  updatedAt?: string;
-  updatedBy?: string;
-};
 
 type StoredEncryptedSecret = {
   version?: number;
@@ -24,23 +13,12 @@ type StoredEncryptedSecret = {
   ciphertext?: string;
 };
 
-type StoredDriveConnection = {
-  id: string;
-  refreshTokenEncrypted?: StoredEncryptedSecret;
-  /** Legacy plaintext token. Retained only so old vault rows can still be diagnosed during migration. */
-  refreshToken?: string;
-  email?: string;
-  googleAccountId?: string;
-  rootFolderId?: string;
-  rootFolderName?: string;
-  rootFolderUrl?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
-
-type StoredDriveVault = {
-  version?: number;
-  connections?: StoredDriveConnection[];
+type StoredDriveCredential = {
+  storage_account_id: string;
+  google_account_id?: string | null;
+  refresh_token_encrypted?: StoredEncryptedSecret | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 };
 
 type UploadSessionRow = {
@@ -60,30 +38,17 @@ type UploadSessionRow = {
   retry_count?: number | null;
 };
 
-function parseJson<T>(value: string | null | undefined, fallback: T): T {
-  if (!value) return fallback;
-  try {
-    const parsed = JSON.parse(value) as T;
-    return parsed && typeof parsed === "object" ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 function fingerprint(value: string | null | undefined) {
   if (!value) return null;
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
 }
 
-function hasReusableRefreshToken(connection: StoredDriveConnection | undefined) {
-  return Boolean(connection?.refreshToken || connection?.refreshTokenEncrypted?.ciphertext);
+function hasReusableRefreshToken(credential: StoredDriveCredential | undefined) {
+  return Boolean(credential?.refresh_token_encrypted?.ciphertext);
 }
 
-function refreshTokenFingerprint(connection: StoredDriveConnection | undefined) {
-  if (connection?.refreshTokenEncrypted?.ciphertext) {
-    return fingerprint(connection.refreshTokenEncrypted.ciphertext);
-  }
-  return fingerprint(connection?.refreshToken);
+function refreshTokenFingerprint(credential: StoredDriveCredential | undefined) {
+  return fingerprint(credential?.refresh_token_encrypted?.ciphertext);
 }
 
 function sessionHost(value: string | null | undefined) {
@@ -95,31 +60,23 @@ function sessionHost(value: string | null | undefined) {
   }
 }
 
-async function readGenericRecord(collection: string, id: string) {
-  const { data, error } = await getSupabaseAdminClient()
-    .from("GenericRecord")
-    .select("dataJson")
-    .eq("collection", collection)
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw new Error(`Could not read ${collection}: ${error.message}`);
-  return data?.dataJson as string | null | undefined;
-}
-
-async function inspectAccessToken(connection: StoredDriveConnection) {
-  if (!connection.id || !hasReusableRefreshToken(connection)) {
+async function inspectAccessToken(
+  storageAccountId: string,
+  credential: StoredDriveCredential | undefined,
+) {
+  if (!credential || !hasReusableRefreshToken(credential)) {
     return {
       state: "missing" as const,
       fingerprint: null,
       verifiedAt: null,
       scope: [GOOGLE_DRIVE_SCOPE],
       serverCacheWindowMinutes: 50,
-      error: "No reusable server connection token is stored.",
+      error: "No canonical server credential is stored for this Drive account.",
     };
   }
 
   try {
-    const token = await accessTokenForDriveConnection(connection.id);
+    const token = await accessTokenForDriveConnection(storageAccountId);
     const response = await fetch(DRIVE_ABOUT_URL, {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
@@ -128,7 +85,9 @@ async function inspectAccessToken(connection: StoredDriveConnection) {
       user?: { permissionId?: string; emailAddress?: string };
       error?: { message?: string };
     };
-    if (!response.ok) throw new Error(payload.error?.message || "Google rejected the access token verification request.");
+    if (!response.ok) {
+      throw new Error(payload.error?.message || "Google rejected the access token verification request.");
+    }
 
     return {
       state: "active" as const,
@@ -136,8 +95,8 @@ async function inspectAccessToken(connection: StoredDriveConnection) {
       verifiedAt: new Date().toISOString(),
       scope: [GOOGLE_DRIVE_SCOPE],
       serverCacheWindowMinutes: 50,
-      googleAccountId: payload.user?.permissionId || connection.googleAccountId || null,
-      email: payload.user?.emailAddress || connection.email || null,
+      googleAccountId: payload.user?.permissionId || credential.google_account_id || null,
+      email: payload.user?.emailAddress || null,
       error: null,
     };
   } catch (error) {
@@ -153,12 +112,12 @@ async function inspectAccessToken(connection: StoredDriveConnection) {
 }
 
 export async function readGoogleDriveSecurityDiagnostics(user: AuthenticatedUser) {
-  if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner can view Google Drive security diagnostics.");
+  if (user.role !== "Owner") {
+    throw new Error("FORBIDDEN:Only Owner can view Google Drive security diagnostics.");
+  }
 
   const admin = getSupabaseAdminClient();
-  const [oauthRaw, vaultRaw, workspace, sessionsResult] = await Promise.all([
-    readGenericRecord(OAUTH_CONFIG_COLLECTION, OAUTH_CONFIG_ID),
-    readGenericRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID),
+  const [workspace, sessionsResult, credentialsResult] = await Promise.all([
     getWorkspace(),
     admin
       .from("uc_upload_items")
@@ -166,30 +125,30 @@ export async function readGoogleDriveSecurityDiagnostics(user: AuthenticatedUser
       .not("session_uri", "is", null)
       .order("updated_at", { ascending: false })
       .limit(100),
+    admin
+      .from("uc_google_drive_credentials")
+      .select("storage_account_id,google_account_id,refresh_token_encrypted,created_at,updated_at"),
   ]);
 
-  if (sessionsResult.error) throw new Error(`Could not load upload sessions: ${sessionsResult.error.message}`);
+  if (sessionsResult.error) {
+    throw new Error(`Could not load upload sessions: ${sessionsResult.error.message}`);
+  }
+  if (credentialsResult.error) {
+    throw new Error(`Could not load Drive credentials: ${credentialsResult.error.message}`);
+  }
 
-  const savedOAuth = parseJson<StoredOAuthSettings>(oauthRaw, {});
-  const vault = parseJson<StoredDriveVault>(vaultRaw, { version: 1, connections: [] });
-  const connections = Array.isArray(vault.connections) ? vault.connections : [];
   const sessions = (sessionsResult.data || []) as UploadSessionRow[];
-  const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || savedOAuth.clientId || "";
-  const clientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || savedOAuth.clientSecret || "";
+  const credentials = (credentialsResult.data || []) as unknown as StoredDriveCredential[];
+  const credentialsByAccount = new Map(
+    credentials.map((credential) => [credential.storage_account_id, credential]),
+  );
   const storageAccounts = workspace.data.master.storageAccounts || [];
+  const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID || "";
+  const clientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET || "";
 
   const accountDiagnostics = await Promise.all(storageAccounts.map(async (account) => {
-    const connection = connections.find((entry) => entry.id === account.oauth_connection_id);
-    const accessToken = connection
-      ? await inspectAccessToken(connection)
-      : {
-          state: "missing" as const,
-          fingerprint: null,
-          verifiedAt: null,
-          scope: [GOOGLE_DRIVE_SCOPE],
-          serverCacheWindowMinutes: 50,
-          error: "This Drive slot is not linked to a server OAuth connection.",
-        };
+    const credential = credentialsByAccount.get(account.id);
+    const accessToken = await inspectAccessToken(account.id, credential);
     const accountSessions = sessions
       .filter((session) => String(session.storage_account_id || "") === account.id)
       .map((session) => ({
@@ -213,54 +172,40 @@ export async function readGoogleDriveSecurityDiagnostics(user: AuthenticatedUser
       storageAccountId: account.id,
       label: account.label,
       status: account.status,
-      email: account.email || connection?.email || null,
-      oauthConnectionId: account.oauth_connection_id || null,
-      googleAccountId: connection?.googleAccountId || null,
-      rootFolderId: connection?.rootFolderId || account.root_folder_id || null,
-      rootFolderName: connection?.rootFolderName || account.root_folder_name || null,
+      email: account.email || accessToken.email || null,
+      googleAccountId: credential?.google_account_id || accessToken.googleAccountId || null,
+      rootFolderId: account.root_folder_id || null,
+      rootFolderName: account.root_folder_name || null,
       refreshToken: {
-        configured: hasReusableRefreshToken(connection),
-        fingerprint: refreshTokenFingerprint(connection),
-        storage: "server-only",
-        updatedAt: connection?.updatedAt || null,
+        configured: hasReusableRefreshToken(credential),
+        fingerprint: refreshTokenFingerprint(credential),
+        storage: "server-only canonical credential table",
+        updatedAt: credential?.updated_at || null,
       },
       accessToken,
       resumableSessions: accountSessions,
     };
   }));
 
-  const mappedConnectionIds = new Set(storageAccounts.map((account) => account.oauth_connection_id).filter(Boolean));
-  const orphanConnections = connections
-    .filter((connection) => !mappedConnectionIds.has(connection.id))
-    .map((connection) => ({
-      oauthConnectionId: connection.id,
-      email: connection.email || null,
-      googleAccountId: connection.googleAccountId || null,
-      refreshTokenConfigured: hasReusableRefreshToken(connection),
-      refreshTokenFingerprint: refreshTokenFingerprint(connection),
-      updatedAt: connection.updatedAt || null,
-    }));
-
   return {
     generatedAt: new Date().toISOString(),
     policy: {
       rawSecretsSentToBrowser: false,
-      explanation: "Client secrets, OAuth access tokens, refresh tokens and resumable-session URIs remain server-only. The UI receives fingerprints and operational metadata only.",
+      explanation: "OAuth client secrets, access tokens, refresh tokens and resumable-session URIs remain server-only. The UI receives fingerprints and operational metadata only.",
     },
     oauthApplication: {
       clientId,
       configured: Boolean(clientId && clientSecret),
-      clientIdSource: process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID ? "environment" : savedOAuth.clientId ? "supabase" : "missing",
+      clientIdSource: clientId ? "environment" : "missing",
       clientSecret: {
         configured: Boolean(clientSecret),
         fingerprint: fingerprint(clientSecret),
-        source: process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET ? "environment" : savedOAuth.clientSecret ? "supabase" : "missing",
+        source: clientSecret ? "environment" : "missing",
         storage: "server-only",
       },
       scope: [GOOGLE_DRIVE_SCOPE],
-      updatedAt: savedOAuth.updatedAt || null,
+      updatedAt: null,
     },
     drives: accountDiagnostics,
-    orphanConnections,
   };
 }

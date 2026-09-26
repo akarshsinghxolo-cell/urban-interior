@@ -155,11 +155,6 @@ export function workRequiredStatusForQuotationRevision(
     return "contractor_bidding";
   }
 
-  // Defensive compatibility for legacy records whose operational relation is
-  // missing but whose lifecycle has already advanced.
-  if (work.status === "awarded" || work.status === "in_progress" || work.status === "completed") {
-    return work.status;
-  }
   return "quotation_in_progress";
 }
 

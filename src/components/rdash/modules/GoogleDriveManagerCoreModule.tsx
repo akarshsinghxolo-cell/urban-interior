@@ -72,9 +72,7 @@ export function GoogleDriveManagerModule() {
   const [fileDraft, setFileDraft] = React.useState({ accountId: "", name: "", kind: "document", url: "", googleFileId: "", tags: "" });
 
   const accounts = db.master.storageAccounts || [];
-  const serverConnections = config?.connections || [];
-  const mappedConnectionIds = new Set(accounts.map((account) => account.oauth_connection_id).filter(Boolean));
-  const orphanConnections = serverConnections.filter((connection) => !mappedConnectionIds.has(connection.id));
+  const credentialIds = new Set((config?.connections || []).map((connection) => connection.id));
   const files = (db.master.fileAssets || []).filter((f: FileAsset) => f.status === "active");
   const writeDestination = selectWriteStorageAccount({ storageAccounts: accounts });
   const lastUploaded = [...files].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
@@ -125,11 +123,11 @@ export function GoogleDriveManagerModule() {
     toast.success("New uploads will prefer this Drive when it is under threshold");
   };
 
-  const connectConnection = async (label: string, connectionId?: string) => {
+  const connectConnection = async (label: string, accountId?: string) => {
     const cleaned = label.trim();
     if (!isOwner) return toast.error("Only Owner can connect Google Drive accounts.");
     if (!cleaned) return toast.error("Enter a clear name for this Google Drive account");
-    if (!connectionId && accounts.some((account) => account.label.trim().toLowerCase() === cleaned.toLowerCase())) {
+    if (!accountId && accounts.some((account) => account.label.trim().toLowerCase() === cleaned.toLowerCase())) {
       return toast.error("That Drive label is already in use. Choose a unique label for the new Google account.");
     }
     try {
@@ -143,9 +141,9 @@ export function GoogleDriveManagerModule() {
       setTab("oauth");
       return toast.error(error instanceof Error ? error.message : "Google Drive OAuth is not configured.");
     }
-    toast.info(connectionId ? `Reconnecting ${cleaned}. Choose the same Google account shown for this Drive slot.` : `Connecting ${cleaned}. Complete consent for one Google account only.`, { duration: 5000 });
+    toast.info(accountId ? `Reconnecting ${cleaned}. Choose the same Google account shown for this Drive slot.` : `Connecting ${cleaned}. Complete consent for one Google account only.`, { duration: 5000 });
     const params = new URLSearchParams({ label: cleaned, returnTo: "/" });
-    if (connectionId) params.set("connectionId", connectionId);
+    if (accountId) params.set("accountId", accountId);
     window.location.assign(`/api/drive/connect?${params.toString()}`);
   };
 
@@ -303,7 +301,7 @@ export function GoogleDriveManagerModule() {
                         <td className="px-4 py-4 align-top"><div className="flex gap-2"><span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span><div className="min-w-0"><p className="font-bold">{account.label}</p><p className="truncate text-[11px] text-muted-foreground">{account.email || "Google account identity pending"} · Folder: {account.root_folder_name || "Urban Castle"}</p><p className="mt-1 text-[10px] text-muted-foreground">{ownFiles.length} active file(s) linked here</p></div></div></td>
                         <td className="w-[220px] px-4 py-4 align-top"><Capacity account={account} /></td>
                         <td className="w-[240px] px-4 py-4 align-top"><div className="grid gap-2"><Input type="number" min={1} className="h-9" value={account.priority_order} onChange={(e) => updateAccount(account.id, { priority_order: Math.max(1, Number(e.target.value) || 1) })} /><select value={account.status} onChange={(e) => updateAccount(account.id, { status: e.target.value as StorageAccount["status"], write_enabled: e.target.value === "connected" })} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="connected">Connected</option><option value="paused">Standby</option><option value="reconnect_required">Reconnect required</option><option value="disabled">Disabled</option></select></div></td>
-                        <td className="px-4 py-4 align-top"><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={working || !account.oauth_connection_id} onClick={() => refreshAccount(account.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Refresh quota</Button><Button size="sm" variant="outline" disabled={working || !isOwner} onClick={() => connectConnection(account.label, account.oauth_connection_id)}><KeyRound className="mr-1 h-3.5 w-3.5" />{account.oauth_connection_id ? "Reconnect same account" : "Authorize account"}</Button><Button size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>{account.web_view_link ? <Button size="sm" variant="ghost" onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="h-3.5 w-3.5" /></Button> : null}</div><p className="mt-2 max-w-xs text-[10px] text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p></td>
+                        <td className="px-4 py-4 align-top"><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={working || !credentialIds.has(account.id)} onClick={() => refreshAccount(account.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Refresh quota</Button><Button size="sm" variant="outline" disabled={working || !isOwner} onClick={() => connectConnection(account.label, account.id)}><KeyRound className="mr-1 h-3.5 w-3.5" />{credentialIds.has(account.id) ? "Reconnect same account" : "Authorize account"}</Button><Button size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>{account.web_view_link ? <Button size="sm" variant="ghost" onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="h-3.5 w-3.5" /></Button> : null}</div><p className="mt-2 max-w-xs text-[10px] text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p></td>
                       </tr>
                     );
                   })}
@@ -367,7 +365,7 @@ export function GoogleDriveManagerModule() {
               <h3 className="mb-3 text-sm font-bold">Add one Drive account</h3>
               <div className="mb-4 rounded-lg border border-primary/25 bg-primary/[0.05] p-3">
                 <p className="text-xs font-bold text-foreground">One Drive slot = one Google account authorization</p>
-                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Finish Google consent for one account before adding the next. Refresh tokens are stored only in the encrypted server vault.</p>
+                <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Finish Google consent for one account before adding the next. Refresh tokens are stored only in the server-only encrypted credential store keyed by this Drive account.</p>
               </div>
               {accounts.length ? (
                 <div className="mb-4 grid gap-2">
@@ -378,13 +376,6 @@ export function GoogleDriveManagerModule() {
                       <span className="text-muted-foreground">{account.email || "Google identity pending"} · {account.status.replaceAll("_", " ")}</span>
                     </div>
                   ))}
-                </div>
-              ) : null}
-              {orphanConnections.length ? (
-                <div className="mb-4 rounded-lg border border-warning/35 bg-warning/[0.08] p-3 text-xs">
-                  <p className="font-bold text-warning">{orphanConnections.length} server authorization{orphanConnections.length === 1 ? "" : "s"} need workspace recovery</p>
-                  <p className="mt-1 text-muted-foreground">Reconnect the same Google account shown below. Its existing secure connection will be reused and restored to the workspace.</p>
-                  <ul className="mt-2 space-y-1">{orphanConnections.map((connection) => <li key={connection.id} className="font-mono text-[11px]">{connection.email || connection.id}</li>)}</ul>
                 </div>
               ) : null}
               <div className="flex flex-wrap items-end gap-3">

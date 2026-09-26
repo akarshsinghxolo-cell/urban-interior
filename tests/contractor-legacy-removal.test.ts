@@ -24,7 +24,7 @@ describe("Contractor legacy-path removal", () => {
     expectNoTokens(profile, ["const legacyUnmapped"]);
     expect(profile).not.toContain("capabilities_v2");
     expect(policy).not.toContain("capabilities_v2");
-    expectTokens(policy, ["must be linked to a Work Subcategory"]);
+    expect(policy).not.toContain("addContractorRate");
     expectTokens(governance, ["canonicalContractorCapabilities(selected, db)"]);
     expectNoTokens(governance, ["capabilities_v2: contractorGovernanceCapabilityProjection"]);
     expectNoTokens(governance, ["else if (Array.isArray(patch.capabilities_v2))"]);
@@ -83,7 +83,7 @@ describe("Contractor legacy-path removal", () => {
     const policy = await source("src/lib/rdash/contractor-store-policy.ts");
     expect(policy).toContain("inTransaction(\"updateContractor\"");
     expect(policy).toContain("inTransaction(\"addContractor\"");
-    expect(policy).toContain("inTransaction(\"addContractorRate\"");
+    expect(policy).not.toContain("addContractorRate");
     const store = await source("src/lib/rdash/raw-store.ts");
     expect(store).toContain("__runInWorkspaceTransaction");
   });

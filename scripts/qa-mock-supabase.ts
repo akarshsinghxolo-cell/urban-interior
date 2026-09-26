@@ -22,7 +22,7 @@
  *            `return=representation`, `resolution=merge-duplicates` upserts,
  *            `columns=` projection and 23505 duplicate handling, unknown-table
  *            auto-create on write (uc_workspace_operations receipts, uc_upload_*,
- *            uc_drive_folders, GenericRecord, ...). The generated column
+ *            uc_drive_folders, uc_google_drive_credentials, ...). The generated column
  *            entity_master_staff.auth_user_id_gen is always re-derived from
  *            data.auth_user_id and never required in writes.
  * - RPCs:    commit_workspace_operations (workspace + row CAS, receipts),
@@ -83,7 +83,7 @@ const STATIC_AUX_TABLES = [
   "uc_upload_batches",
   "uc_upload_events",
   "uc_drive_folders",
-  "GenericRecord",
+  "uc_google_drive_credentials",
   "StaffRouteBundle",
 ];
 

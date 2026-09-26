@@ -10,7 +10,7 @@ const OPERATION_SANITIZE_MIGRATION = "supabase/migrations/20260801152000_sanitiz
 const WORK_CATALOG_MIGRATION = "supabase/migrations/20260801153000_persist_work_catalog_master.sql";
 
 describe("Supabase persistence convergence", () => {
-  test("removes obsolete workspace writers without removing active GenericRecord", async () => {
+  test("keeps current runtime on canonical workspace and Drive persistence only", async () => {
     const migration = await testFile(MIGRATION).text();
     const server = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const drive = await testFile("src/lib/rdash/server/drive-connections.ts").text();
@@ -19,11 +19,11 @@ describe("Supabase persistence convergence", () => {
     expectTokens(migration, ["drop function if exists public.write_workspace_snapshot"]);
     expectTokens(migration, ["drop function if exists public.uc_bump_workspace_revision"]);
     expectTokens(migration, ['drop table if exists public."CollectionMeta"']);
-    expectNoTokens(migration, ['drop table if exists public."GenericRecord"']);
 
     expect(server).toContain('admin.rpc("commit_workspace_operations"');
     expect(server).not.toContain('admin.rpc("commit_operations"');
-    expect(drive).toContain('.from("GenericRecord")');
+    expect(drive).toContain('.from("uc_google_drive_credentials")');
+    expect(drive).not.toContain("GenericRecord");
   });
 
   test("binds every workspace collection to its canonical entity table", async () => {
@@ -78,25 +78,17 @@ describe("Supabase persistence convergence", () => {
     expectTokens(migration, ["create trigger entity_master_staff_auth_journal"]);
   });
 
-  test("keeps workspace Staff and auth/profile mirrors on explicit ownership boundaries", async () => {
-    const migration = await testFile(STAFF_MIRROR_MIGRATION).text();
+  test("historical Staff mirrors are superseded by canonical Staff convergence", async () => {
+    const historical = await testFile(STAFF_MIRROR_MIGRATION).text();
+    const canonical = await testFile("supabase/migrations/20260804060639_canonicalize_staff_identity_storage.sql").text();
+    const integrity = await testFile("supabase/migrations/20260804094126_canonical_staff_reference_integrity.sql").text();
 
-    expectTokens(migration, ["create or replace function public.uc_sanitize_workspace_staff_auth_fields()"]);
-    expectTokens(migration, ["create trigger entity_master_staff_workspace_auth_sanitize"]);
-    expectTokens(migration, ["create or replace function public.uc_sync_workspace_staff_mirrors()"]);
-    expectTokens(migration, ["current_setting('uc.write_source', true) is distinct from 'workspace-commit'"]);
-    expect(migration).toContain("STAFF_AUTH_LINK_MUST_USE_AUTH_FLOW");
-    expect(migration).toContain("STAFF_LOGIN_MUST_USE_AUTH_FLOW");
-    expect(migration).toContain("STAFF_LOGIN_EMAIL_MUST_USE_AUTH_FLOW");
-    expect(migration).toContain("STAFF_LOGIN_ACCESS_MUST_USE_AUTH_FLOW");
-    expect(migration).toContain("STAFF_ACCESS_MUST_USE_AUTH_FLOW");
-    expect(migration).toContain("STAFF_ROLE_ASSIGNMENT_NOT_FOUND");
-    expectTokens(migration, ['insert into public."StaffProfile"']);
-    expectTokens(migration, ["update public.uc_user_roles"]);
-    expectTokens(migration, ["where id = v_role_assignment_id"]);
-    expectTokens(migration, ["create trigger entity_master_staff_workspace_mirror"]);
-    expect(migration).toContain("STAFF_AUTH_LINK_DELETE_MUST_USE_AUTH_FLOW");
-    expectTokens(migration, ["create trigger entity_master_staff_workspace_delete_guard"]);
+    expect(historical).toContain('insert into public."StaffProfile"');
+    expect(canonical).toContain('drop table public."StaffProfile"');
+    expect(canonical).toContain("public.entity_master_staff");
+    expect(canonical).toContain("create function public.uc_sync_workspace_staff_access()");
+    expect(integrity).toContain('drop view if exists public."StaffProfile"');
+    expect(integrity).toContain("Runtime has zero compatibility-view consumers");
   });
 
   test("routes Staff login changes to User Approvals and declares the persisted auth link", async () => {

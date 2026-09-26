@@ -97,7 +97,7 @@ describe("dirty form integration boundaries", () => {
 
     expect(app).toContain("useInstallDirtyFormNavigationGuards");
     expect(app).toContain("DirtyFormNavigationGuard");
-    expect(app).toContain("LegacyDirtyFormAdapter");
+    expect(app).not.toContain("LegacyDirtyFormAdapter");
     expect(history).toContain("dirtyFormRegistry.hasDirtyForms()");
     expectTokens(history, ['phase: "reverting"']);
     expectTokens(exitGuard, ["dirtyForms.dirtyForms.length > 0"]);
@@ -113,42 +113,16 @@ describe("dirty form integration boundaries", () => {
     expect(source).toContain("dirtyFormRegistry.markClean(formId)");
   });
 
-  test("legacy high-risk dialogs use the compatibility registry adapter", async () => {
-    const source = await testFile("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").text();
-
-    for (const title of [
-      "New quotation",
-      "Edit BOQ rate",
-      "Create Purchase Order",
-      "Direct Award PO",
-      "Record vendor bid",
-      "Invite contractor bid",
-      "Direct Award Contractor",
-      "Record Supplier Invoice",
-      "Request contractor payment",
-      "Add Staff Operations Profile",
-      "Edit Staff Operations Profile",
-      "New Approval Policy",
-      "Edit Policy",
+  test("high-risk canonical dialogs register directly with the dirty-form registry", async () => {
+    for (const path of [
+      "src/components/rdash/customer/CustomerQuotationDialog.tsx",
+      "src/components/rdash/StaffEditDialog.tsx",
+      "src/components/rdash/modules/ApprovalPoliciesModule.tsx",
     ]) {
-      expect(source).toContain(title);
+      const source = await testFile(path).text();
+      expect(source).toContain("useDirtyFormRegistration");
+      expect(source).toContain("dirtyFormRegistry.requestNavigation");
     }
-    expect(source).toContain('[role="switch"]');
-    expectTokens(source, ['button[title^="Preview "]']);
-    expect(source).toContain("selectedButtonValues");
-    expect(source).toContain("entry.config.saveTimeoutMs");
-    expect(source).toContain("syncAllManagedDialogs");
-    expect(source).toContain("onFormValueCapture");
-    expect(source).toContain("onClickCapture");
-    expect(source).toContain("onKeyDownCapture");
-    expect(source).toContain("onPointerDownCapture");
-    expect(source).toContain("closeBypass");
-    expect(source).toContain("requestDialogClose");
-    expect(source).toContain("event.stopImmediatePropagation()");
-    expect(source).toContain("legacyDialogFingerprint");
-    expect(source).toContain("MutationObserver");
-    expect(source).toContain("dirtyFormRegistry.register");
-    expect(source).toContain("dirtyFormRegistry.markClean(entry.id)");
-    expect(source).toContain("waitForDialogClose");
+    expect(await testFile("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").exists()).toBe(false);
   });
 });

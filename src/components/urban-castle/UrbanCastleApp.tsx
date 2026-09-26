@@ -14,7 +14,6 @@ import { useWorkspaceExitGuard } from "@/lib/uploads/use-workspace-exit-guard";
 import { useWorkspaceReadState } from "@/lib/rdash/workspace-read-state";
 import type { WorkspaceReadScope } from "@/lib/rdash/workspace-read-scope";
 import { DirtyFormNavigationGuard } from "./DirtyFormNavigationGuard";
-import { LegacyDirtyFormAdapter } from "./LegacyDirtyFormAdapter";
 import { WorkspaceDeltaSync } from "./WorkspaceDeltaSync";
 import { WorkspaceFoundationSync } from "./WorkspaceFoundationSync";
 import { WorkspaceScopedReadBoundary } from "./WorkspaceScopedReadBoundary";
@@ -178,7 +177,6 @@ export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boo
     <RenewableSessionGate>
       <UploadManagerProvider>
         <RDashApp />
-        <LegacyDirtyFormAdapter />
         <DirtyFormNavigationGuard />
         <WorkspaceScopedReadBoundary />
         <WorkspaceFoundationSync />

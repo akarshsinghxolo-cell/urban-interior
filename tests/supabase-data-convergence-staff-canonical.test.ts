@@ -21,14 +21,14 @@ describe("canonical Staff storage convergence", () => {
     );
   });
 
-  test("makes entity_master_staff the only stored Staff profile", async () => {
+  test("makes entity_master_staff the only Staff source and removes the compatibility view", async () => {
     const sql = await migrationSource();
+    const finalIntegrity = await testFile(
+      "supabase/migrations/20260804094126_canonical_staff_reference_integrity.sql",
+    ).text();
     expect(sql).toContain('drop table public."StaffProfile";');
-    expect(sql).toContain('create view public."StaffProfile"');
-    expect(sql).toContain("from public.entity_master_staff m;");
-    expect(sql).toContain(
-      "Compatibility read view backed by canonical entity_master_staff; stores no duplicate Staff rows.",
-    );
+    expect(finalIntegrity).toContain('drop view if exists public."StaffProfile";');
+    expect(finalIntegrity).toContain("Runtime has zero compatibility-view consumers");
   });
 
   test("moves GPS route ownership directly onto canonical Staff", async () => {

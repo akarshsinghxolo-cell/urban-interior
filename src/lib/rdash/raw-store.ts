@@ -625,8 +625,8 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         // ── sendComm moved to threads slice (Phase 3b) ──
         // ── Masters slice: attendance actions (Phase 3d, part 2) ──
         ...((() => {
-            const { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addContractorRate, addCommissionRule, addSourcePartner } = createMastersSlice(ctx);
-            return { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addContractorRate, addCommissionRule, addSourcePartner };
+            const { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addCommissionRule, addSourcePartner } = createMastersSlice(ctx);
+            return { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addCommissionRule, addSourcePartner };
         })()),
         // ── finance config actions (toggleCommercialTerm, toggleTaxConfig, toggleValidityConfig,
         //     setDefaultPaymentTermTemplate) moved to finance slice (Phase 3e) ──

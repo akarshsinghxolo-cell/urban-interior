@@ -608,7 +608,6 @@ export interface MastersState {
   // lookup was operationally unreachable on production (0 rows in all 3
   // tables). The MastersSalesOpsModule now exposes "Add" dialogs that drive
   // these actions.
-  addContractorRate: (r: Partial<import("../types").ContractorRate>) => string;
   addCommissionRule: (r: Partial<import("../types").CommissionRule>) => string;
   addSourcePartner: (p: Partial<import("../types").SourcePartner>) => string;
 }

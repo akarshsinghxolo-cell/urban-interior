@@ -17,10 +17,12 @@ type RDashUserRoleRow = {
   updated_at: string;
 };
 
-type GenericRecordRow = {
-  collection: string;
-  id: string;
-  dataJson: string;
+type GoogleDriveCredentialRow = {
+  storage_account_id: string;
+  google_account_id: string | null;
+  refresh_token_encrypted: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 };
 
 type CanonicalStaffEntityRow = {
@@ -75,10 +77,10 @@ type RDashSupabaseSchema = {
         Update: Partial<RDashUserRoleRow>;
         Relationships: [];
       };
-      GenericRecord: {
-        Row: GenericRecordRow;
-        Insert: GenericRecordRow;
-        Update: Partial<GenericRecordRow>;
+      uc_google_drive_credentials: {
+        Row: GoogleDriveCredentialRow;
+        Insert: Partial<GoogleDriveCredentialRow> & Pick<GoogleDriveCredentialRow, "storage_account_id" | "refresh_token_encrypted">;
+        Update: Partial<GoogleDriveCredentialRow>;
         Relationships: [];
       };
       entity_master_staff: {

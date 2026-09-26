@@ -1,10 +1,9 @@
-import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule, ContractorRate, SourcePartner, PayrollPeriod, PayrollLine, SalaryAdjustment, AutomationRule, AutomationAction, ApprovalPolicy } from "../../types";
+import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule, SourcePartner, PayrollPeriod, PayrollLine, SalaryAdjustment, AutomationRule, AutomationAction, ApprovalPolicy } from "../../types";
 import type { MastersState } from "../types";
 import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
-import { workTypesForSubcategory } from "../../work-types";
 
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
@@ -1049,57 +1048,6 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 entity_label: `${period.month}/${period.year}`,
                 kind: "update",
             });
-        },
-
-        // Compatibility action for callers that still write a single rate.
-        // The contractor policy wraps this boundary and persists the canonical
-        // Work Subcategory + Work Type capability instead of a free-form row.
-        addContractorRate: (r) => {
-            const actor = get().currentUser();
-            const contractor = get().db.master.contractors.find((c: any) => c.id === r.contractor_id);
-            if (!contractor)
-                throw new Error("Contractor not found.");
-            const sub = r.work_subcategory_id
-                ? get().db.master.workSubcategories.find((s: any) => s.id === r.work_subcategory_id)
-                : undefined;
-            const workType = sub
-                ? workTypesForSubcategory(sub).find((row) => row.id === r.work_type_id)
-                : undefined;
-            const id = genId("crate");
-            const now = nowIso();
-            const rate: ContractorRate = {
-                id,
-                contractor_id: r.contractor_id || "",
-                trade: r.trade || `${sub?.name || contractor.trade || "Contractor rate"}${workType ? ` · ${workType.name}` : ""}`,
-                rate: r.rate ?? r.labour_rate ?? 0,
-                unit_id: r.unit_id || workType?.unit_id,
-                work_subcategory_id: r.work_subcategory_id,
-                work_subcategory_name: sub?.name || r.work_subcategory_name,
-                work_type_id: r.work_type_id,
-                work_type_name: workType?.name || r.work_type_name,
-                labour_rate: r.labour_rate,
-            };
-            void now; // created_at field doesn't exist on ContractorRate type — kept for parity with future schema extension.
-            commitState((s: any) => ({
-                db: {
-                    ...s.db,
-                    master: {
-                        ...s.db.master,
-                        contractorRates: [...s.db.master.contractorRates, rate],
-                    },
-                },
-            }));
-            get().logAudit({
-                actor: actor.name,
-                actor_role: actor.role,
-                action: `Added contractor labour rate for ${contractor.name} · ${rate.trade} — ${rate.labour_rate ?? rate.rate}`,
-                entity_type: "contractorRate",
-                entity_id: id,
-                entity_label: `${contractor.name} · ${rate.trade}`,
-                kind: "create",
-                source_module: "masters",
-            });
-            return id;
         },
 
         // FIX-CONTRACTOR-BATCH2 / F.12: Add a commission-rule row. Drives

@@ -35,7 +35,8 @@ describe("public Google Drive files", () => {
     expect(connections).toContain("refreshTokenEncrypted");
     expect(connections).toContain("createCipheriv");
     expect(connections).toContain("createDecipheriv");
-    expectTokens(connections, ["Legacy plaintext value. Read only so old vaults can be migrated"]);
+    expectNoTokens(connections, ["Legacy plaintext value", "refreshToken?: string", "GenericRecord"]);
+    expectTokens(connections, ['.from("uc_google_drive_credentials")']);
     expectTokens(configRoute, ["status: 405"]);
     expect(configRoute).not.toContain("request.json");
     expectTokens(manager, ["Google OAuth Environment Setup"]);
@@ -46,10 +47,11 @@ describe("public Google Drive files", () => {
   test("recognizes encrypted refresh tokens in owner diagnostics", async () => {
     const diagnostics = await readFile("src/lib/rdash/server/drive-security-diagnostics.ts", "utf8");
 
-    expectTokens(diagnostics, ["refreshTokenEncrypted?: StoredEncryptedSecret"]);
-    expect(diagnostics).toContain("hasReusableRefreshToken(connection)");
-    expect(diagnostics).toContain("refreshTokenFingerprint(connection)");
-    expectNoTokens(diagnostics, ["if (!connection.id || !connection.refreshToken)"]);
+    expectTokens(diagnostics, ["refresh_token_encrypted?: StoredEncryptedSecret"]);
+    expect(diagnostics).toContain("hasReusableRefreshToken(credential)");
+    expect(diagnostics).toContain("refreshTokenFingerprint(credential)");
+    expect(diagnostics).toContain('.from("uc_google_drive_credentials")');
+    expectNoTokens(diagnostics, ["GenericRecord", "refreshToken?: string"]);
     expectNoTokens(diagnostics, ["configured: Boolean(connection?.refreshToken)"]);
   });
 

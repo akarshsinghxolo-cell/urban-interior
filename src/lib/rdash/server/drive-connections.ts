@@ -4,10 +4,9 @@ import { getSupabaseAdminClient } from "../../supabase/server";
 
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
-const DRIVE_VAULT_COLLECTION = "system.googleDriveVault";
-const DRIVE_VAULT_ID = "default";
 const TOKEN_CIPHER = "aes-256-gcm";
 const TOKEN_KEY_ENV = "DRIVE_TOKEN_ENCRYPTION_KEY";
+const OAUTH_STATE_VERSION = 1;
 export const GOOGLE_DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
 type EncryptedSecret = {
@@ -17,11 +16,38 @@ type EncryptedSecret = {
   ciphertext: string;
 };
 
-type DriveConnection = {
+type CredentialRow = {
+  storage_account_id: string;
+  google_account_id: string | null;
+  refresh_token_encrypted: unknown;
+  created_at: string;
+  updated_at: string;
+};
+
+type CanonicalStorageAccountRow = {
   id: string;
-  refreshTokenEncrypted?: EncryptedSecret;
-  /** Legacy plaintext value. Read only so old vaults can be migrated on next use. */
-  refreshToken?: string;
+  data: Record<string, unknown>;
+};
+
+type OAuthStatePayload = {
+  version: 1;
+  userId: string;
+  label: string;
+  origin: string;
+  returnTo: string;
+  existingStorageAccountId?: string;
+  expiresAt: number;
+};
+
+export type PendingDriveCredential = {
+  googleAccountId?: string;
+  refreshTokenEncrypted: EncryptedSecret;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type DriveConnectionResult = {
+  id: string;
   email?: string;
   googleAccountId?: string;
   rootFolderId?: string;
@@ -33,30 +59,15 @@ type DriveConnection = {
   updatedAt: string;
 };
 
-type PersistedDriveConnection = Omit<DriveConnection, "refreshToken"> & {
-  refreshTokenEncrypted: EncryptedSecret;
+type DriveConnectionSummary = {
+  id: string;
+  googleAccountId?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-type PendingConnect = {
-  state: string;
-  userId: string;
-  label: string;
-  origin: string;
-  returnTo: string;
-  existingConnectionId?: string;
-  expiresAt: number;
-};
-
-type Vault = {
-  version: 1;
-  connections: DriveConnection[];
-  pending: PendingConnect[];
-};
-
-type DriveConnectionResult = Omit<DriveConnection, "refreshToken" | "refreshTokenEncrypted">;
-
-function emptyVault(): Vault {
-  return { version: 1, connections: [], pending: [] };
+function workspaceId() {
+  return process.env.UC_WORKSPACE_ID || "default";
 }
 
 function safeReturnPath(value: string | null) {
@@ -66,26 +77,6 @@ function safeReturnPath(value: string | null) {
 function normalizedEmail(value?: string) {
   return value?.trim().toLowerCase() || "";
 }
-
-function sameGoogleIdentity(
-  connection: Pick<DriveConnection, "googleAccountId" | "email">,
-  identity: { googleAccountId?: string; email?: string },
-) {
-  if (connection.googleAccountId && identity.googleAccountId) {
-    return connection.googleAccountId === identity.googleAccountId;
-  }
-  const leftEmail = normalizedEmail(connection.email);
-  const rightEmail = normalizedEmail(identity.email);
-  return Boolean(leftEmail && rightEmail && leftEmail === rightEmail);
-}
-
-type DriveConnectionSummary = {
-  id: string;
-  email?: string;
-  googleAccountId?: string;
-  createdAt: string;
-  updatedAt: string;
-};
 
 function envValue(name: string) {
   return process.env[name]?.trim() || "";
@@ -100,16 +91,32 @@ function tokenEncryptionKey() {
 }
 
 function encryptSecret(value: string): EncryptedSecret {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv(TOKEN_CIPHER, tokenEncryptionKey(), iv);
+  const ivBuffer = randomBytes(12);
+  const cipher = createCipheriv(TOKEN_CIPHER, tokenEncryptionKey(), ivBuffer);
   const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return {
     version: 1,
-    iv: iv.toString("base64"),
+    iv: ivBuffer.toString("base64"),
     tag: tag.toString("base64"),
     ciphertext: ciphertext.toString("base64"),
   };
+}
+
+function encryptedSecret(value: unknown): EncryptedSecret {
+  if (!value || typeof value !== "object") {
+    throw new Error("Google Drive credential is invalid. Reconnect the Drive account.");
+  }
+  const row = value as Partial<EncryptedSecret>;
+  if (
+    row.version !== 1 ||
+    typeof row.iv !== "string" ||
+    typeof row.tag !== "string" ||
+    typeof row.ciphertext !== "string"
+  ) {
+    throw new Error("Google Drive credential is invalid. Reconnect the Drive account.");
+  }
+  return row as EncryptedSecret;
 }
 
 function decryptSecret(value: EncryptedSecret): string {
@@ -122,45 +129,94 @@ function decryptSecret(value: EncryptedSecret): string {
   return plaintext.toString("utf8");
 }
 
-function refreshTokenForConnection(connection: DriveConnection): string {
-  if (connection.refreshTokenEncrypted) return decryptSecret(connection.refreshTokenEncrypted);
-  if (connection.refreshToken) return connection.refreshToken;
-  throw new Error("This Google Drive connection has no usable refresh token. Reconnect the Drive account.");
+function sealOAuthState(payload: OAuthStatePayload): string {
+  const encrypted = encryptSecret(JSON.stringify(payload));
+  return Buffer.from(JSON.stringify(encrypted), "utf8").toString("base64url");
 }
 
-function publicConnection(connection: DriveConnection): DriveConnectionResult {
-  const {
-    refreshToken: _refreshToken,
-    refreshTokenEncrypted: _refreshTokenEncrypted,
-    ...safeConnection
-  } = connection;
-  return safeConnection;
+function openOAuthState(value: string): OAuthStatePayload {
+  if (!value || value.length > 4096) throw new Error("Google Drive connection state is invalid.");
+  try {
+    const envelope = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
+    const payload = JSON.parse(decryptSecret(encryptedSecret(envelope))) as OAuthStatePayload;
+    if (
+      payload.version !== OAUTH_STATE_VERSION ||
+      !payload.userId ||
+      !payload.origin ||
+      !payload.label ||
+      !Number.isFinite(payload.expiresAt) ||
+      payload.expiresAt <= Date.now()
+    ) {
+      throw new Error("expired");
+    }
+    return payload;
+  } catch {
+    throw new Error("Google Drive connection request is invalid or expired. Start again from Drive storage.");
+  }
 }
 
-function persistedConnection(connection: DriveConnection, refreshToken?: string): PersistedDriveConnection {
-  const token = refreshToken || refreshTokenForConnection(connection);
-  return {
-    ...publicConnection(connection),
-    refreshTokenEncrypted: encryptSecret(token),
-  };
-}
-
-async function readRecord(collection: string, id: string) {
+async function readCredential(storageAccountId: string): Promise<CredentialRow | null> {
   const { data, error } = await getSupabaseAdminClient()
-    .from("GenericRecord")
-    .select("dataJson")
-    .eq("collection", collection)
-    .eq("id", id)
+    .from("uc_google_drive_credentials")
+    .select("storage_account_id,google_account_id,refresh_token_encrypted,created_at,updated_at")
+    .eq("storage_account_id", storageAccountId)
     .maybeSingle();
-  if (error || !data) return null;
-  return data;
+  if (error) throw new Error(`Could not load Google Drive credential: ${error.message}`);
+  return (data || null) as CredentialRow | null;
 }
 
-async function writeRecord(collection: string, id: string, value: unknown) {
+async function credentialByGoogleAccountId(googleAccountId: string): Promise<CredentialRow | null> {
+  const { data, error } = await getSupabaseAdminClient()
+    .from("uc_google_drive_credentials")
+    .select("storage_account_id,google_account_id,refresh_token_encrypted,created_at,updated_at")
+    .eq("google_account_id", googleAccountId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not check Google Drive identity: ${error.message}`);
+  return (data || null) as CredentialRow | null;
+}
+
+async function readStorageAccount(storageAccountId: string): Promise<CanonicalStorageAccountRow | null> {
+  const { data, error } = await getSupabaseAdminClient()
+    .from("entity_master_storageAccounts")
+    .select("id,data")
+    .eq("workspace_id", workspaceId())
+    .eq("id", storageAccountId)
+    .maybeSingle();
+  if (error) throw new Error(`Could not load canonical Drive account: ${error.message}`);
+  if (!data) return null;
+  const row = data as unknown as CanonicalStorageAccountRow;
+  const parsed = typeof row.data === "string" ? JSON.parse(row.data) as Record<string, unknown> : row.data;
+  return { id: row.id, data: parsed || {} };
+}
+
+function refreshTokenForCredential(credential: CredentialRow): string {
+  return decryptSecret(encryptedSecret(credential.refresh_token_encrypted));
+}
+
+function canonicalStorageAccountId(identity: { googleAccountId?: string; email?: string }) {
+  const stableIdentity = identity.googleAccountId || normalizedEmail(identity.email);
+  if (!stableIdentity) throw new Error("Google did not return an account identity.");
+  const key = createHash("sha256")
+    .update(`${workspaceId()}:${stableIdentity}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `storage-${key}`;
+}
+
+export async function persistGoogleDriveCredential(
+  storageAccountId: string,
+  credential: PendingDriveCredential,
+) {
   const { error } = await getSupabaseAdminClient()
-    .from("GenericRecord")
-    .upsert({ collection, id, dataJson: JSON.stringify(value) }, { onConflict: "collection,id" });
-  if (error) throw new Error(`Could not write Google Drive record: ${error.message}`);
+    .from("uc_google_drive_credentials")
+    .upsert({
+      storage_account_id: storageAccountId,
+      google_account_id: credential.googleAccountId || null,
+      refresh_token_encrypted: credential.refreshTokenEncrypted,
+      created_at: credential.createdAt,
+      updated_at: credential.updatedAt,
+    }, { onConflict: "storage_account_id" });
+  if (error) throw new Error(`Could not persist Google Drive credential: ${error.message}`);
 }
 
 export async function readGoogleDriveOAuthConfig(origin?: string) {
@@ -188,52 +244,30 @@ async function config() {
   return { clientId, clientSecret };
 }
 
-// ── Vault: encrypted JSON ──
-// Refresh tokens are encrypted before persistence. Legacy plaintext vault rows
-// are read only for migration and are rewritten encrypted on next successful use.
-let vaultWritePromise: Promise<void> | null = null;
-
-async function readVault(): Promise<Vault> {
-  const row = await readRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID);
-  if (!row?.dataJson) return emptyVault();
-  try {
-    const value = JSON.parse(row.dataJson) as Vault;
-    if (value.version !== 1 || !Array.isArray(value.connections) || !Array.isArray(value.pending)) return emptyVault();
-    value.pending = value.pending.filter((p) => p.expiresAt > Date.now());
-    return value;
-  } catch {
-    return emptyVault();
-  }
-}
-
 export async function readGoogleDriveConnectionSummaries(user: AuthenticatedUser): Promise<DriveConnectionSummary[]> {
   if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner can view Google Drive connections.");
-  const vault = await readVault();
-  return vault.connections.map(({ id, email, googleAccountId, createdAt, updatedAt }) => ({
-    id,
-    email,
-    googleAccountId,
-    createdAt,
-    updatedAt,
-  }));
-}
-
-async function writeVault(vault: Vault) {
-  while (vaultWritePromise) {
-    await vaultWritePromise;
-  }
-  const encryptedVault: Vault = {
-    version: 1,
-    pending: vault.pending,
-    connections: vault.connections.map((connection) => persistedConnection(connection)),
-  };
-  vaultWritePromise = writeRecord(DRIVE_VAULT_COLLECTION, DRIVE_VAULT_ID, encryptedVault)
-    .finally(() => { vaultWritePromise = null; });
-  await vaultWritePromise;
+  const { data, error } = await getSupabaseAdminClient()
+    .from("uc_google_drive_credentials")
+    .select("storage_account_id,google_account_id,created_at,updated_at")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Could not load Google Drive connections: ${error.message}`);
+  return (data || []).map((row) => {
+    const typed = row as Pick<CredentialRow, "storage_account_id" | "google_account_id" | "created_at" | "updated_at">;
+    return {
+      id: typed.storage_account_id,
+      googleAccountId: typed.google_account_id || undefined,
+      createdAt: typed.created_at,
+      updatedAt: typed.updated_at,
+    };
+  });
 }
 
 async function google(url: string, accessToken: string, init?: RequestInit) {
-  return fetch(url, { ...init, headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers || {}) }, cache: "no-store" });
+  return fetch(url, {
+    ...init,
+    headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers || {}) },
+    cache: "no-store",
+  });
 }
 
 async function refreshToken(refreshTokenValue: string) {
@@ -241,13 +275,21 @@ async function refreshToken(refreshTokenValue: string) {
   const response = await fetch(OAUTH_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshTokenValue, grant_type: "refresh_token" }),
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshTokenValue,
+      grant_type: "refresh_token",
+    }),
     cache: "no-store",
   });
-  const payload = await response.json().catch(() => ({})) as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+  const payload = await response.json().catch(() => ({})) as {
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+  };
   if (!response.ok || !payload.access_token) {
-    const errorCode = payload.error || "";
-    if (errorCode === "invalid_grant" || errorCode === "invalid_client") {
+    if (payload.error === "invalid_grant" || payload.error === "invalid_client") {
       const err = new Error("Google Drive authorization has been revoked. Reconnect this Drive account.");
       err.name = "RefreshTokenRevokedError";
       throw err;
@@ -260,52 +302,83 @@ async function refreshToken(refreshTokenValue: string) {
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 const TOKEN_CACHE_TTL_MS = 50 * 60 * 1000;
 
-async function getCachedAccessToken(connectionId: string, refreshTokenValue: string): Promise<string> {
-  const cached = tokenCache.get(connectionId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.token;
-  }
+async function getCachedAccessToken(storageAccountId: string, refreshTokenValue: string): Promise<string> {
+  const cached = tokenCache.get(storageAccountId);
+  if (cached && cached.expiresAt > Date.now()) return cached.token;
   const token = await refreshToken(refreshTokenValue);
-  tokenCache.set(connectionId, { token, expiresAt: Date.now() + TOKEN_CACHE_TTL_MS });
+  tokenCache.set(storageAccountId, { token, expiresAt: Date.now() + TOKEN_CACHE_TTL_MS });
   return token;
 }
 
-function invalidateTokenCache(connectionId?: string) {
-  if (connectionId) {
-    tokenCache.delete(connectionId);
-  } else {
-    tokenCache.clear();
-  }
+function invalidateTokenCache(storageAccountId?: string) {
+  if (storageAccountId) tokenCache.delete(storageAccountId);
+  else tokenCache.clear();
 }
 
 async function findOrCreateRoot(accessToken: string) {
   const query = "'root' in parents and name = 'Urban Castle' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
   const found = await google(`${DRIVE_API}/files?q=${encodeURIComponent(query)}&fields=files(id,name,webViewLink)&pageSize=1`, accessToken);
-  const listed = await found.json().catch(() => ({})) as { files?: Array<{ id?: string; name?: string; webViewLink?: string }> };
+  const listed = await found.json().catch(() => ({})) as {
+    files?: Array<{ id?: string; name?: string; webViewLink?: string }>;
+  };
   if (found.ok && listed.files?.[0]?.id) {
     const folder = listed.files[0];
-    return { id: folder.id!, name: folder.name || "Urban Castle", webViewLink: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}` };
+    return {
+      id: folder.id!,
+      name: folder.name || "Urban Castle",
+      webViewLink: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
+    };
   }
   const created = await google(`${DRIVE_API}/files?fields=id,name,webViewLink`, accessToken, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: "Urban Castle", mimeType: "application/vnd.google-apps.folder", parents: ["root"] }),
   });
-  const folder = await created.json().catch(() => ({})) as { id?: string; name?: string; webViewLink?: string; error?: { message?: string } };
-  if (!created.ok || !folder.id) throw new Error(folder.error?.message || "Could not create the Urban Castle folder in this Google Drive account.");
-  return { id: folder.id, name: folder.name || "Urban Castle", webViewLink: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}` };
+  const folder = await created.json().catch(() => ({})) as {
+    id?: string;
+    name?: string;
+    webViewLink?: string;
+    error?: { message?: string };
+  };
+  if (!created.ok || !folder.id) {
+    throw new Error(folder.error?.message || "Could not create the Urban Castle folder in this Google Drive account.");
+  }
+  return {
+    id: folder.id,
+    name: folder.name || "Urban Castle",
+    webViewLink: folder.webViewLink || `https://drive.google.com/drive/folders/${folder.id}`,
+  };
 }
 
-export async function beginGoogleDriveConnect(user: AuthenticatedUser, input: { label: string; origin: string; returnTo?: string | null; existingConnectionId?: string }) {
+export async function beginGoogleDriveConnect(
+  user: AuthenticatedUser,
+  input: {
+    label: string;
+    origin: string;
+    returnTo?: string | null;
+    existingStorageAccountId?: string;
+  },
+) {
   if (user.role !== "Owner") throw new Error("FORBIDDEN:Only Owner can connect a Google Drive account.");
   const { clientId } = await config();
-  const label = input.label.trim();
+  const label = input.label.trim().slice(0, 100);
   if (!label) throw new Error("A display name is required for the Google Drive account.");
-  const state = randomBytes(32).toString("base64url");
-  const vault = await readVault();
-  vault.pending = vault.pending.filter((pending) => pending.expiresAt > Date.now());
-  vault.pending.push({ state, userId: user.userId, label, origin: input.origin, returnTo: safeReturnPath(input.returnTo || null), existingConnectionId: input.existingConnectionId, expiresAt: Date.now() + 10 * 60 * 1000 });
-  await writeVault(vault);
+
+  if (input.existingStorageAccountId) {
+    const existing = await readStorageAccount(input.existingStorageAccountId);
+    if (!existing) throw new Error("The Drive account being reauthorized no longer exists.");
+  }
+
+  const state = sealOAuthState({
+    version: OAUTH_STATE_VERSION,
+    userId: user.userId,
+    label,
+    origin: input.origin,
+    returnTo: safeReturnPath(input.returnTo || null),
+    existingStorageAccountId: input.existingStorageAccountId,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  });
+
   const redirectUri = `${input.origin}/api/google-drive/oauth/callback`;
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", clientId);
@@ -318,30 +391,48 @@ export async function beginGoogleDriveConnect(user: AuthenticatedUser, input: { 
   return url.toString();
 }
 
-export async function completeGoogleDriveConnect(user: AuthenticatedUser, input: { state: string; code: string; origin: string }) {
-  const vault = await readVault();
-  const pending = vault.pending.find((item) => item.state === input.state && item.expiresAt > Date.now());
-  if (!pending) throw new Error("Google Drive connection request expired. Start again from Drive storage.");
-  if (pending.userId !== user.userId || pending.origin !== input.origin) throw new Error("Google Drive connection state is not valid for this session.");
+export async function completeGoogleDriveConnect(
+  user: AuthenticatedUser,
+  input: { state: string; code: string; origin: string },
+) {
+  const pending = openOAuthState(input.state);
+  if (pending.userId !== user.userId || pending.origin !== input.origin) {
+    throw new Error("Google Drive connection state is not valid for this session.");
+  }
+
   const { clientId, clientSecret } = await config();
   const exchange = await fetch(OAUTH_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ code: input.code, client_id: clientId, client_secret: clientSecret, redirect_uri: `${input.origin}/api/google-drive/oauth/callback`, grant_type: "authorization_code" }),
+    body: new URLSearchParams({
+      code: input.code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: `${input.origin}/api/google-drive/oauth/callback`,
+      grant_type: "authorization_code",
+    }),
     cache: "no-store",
   });
-  const token = await exchange.json().catch(() => ({})) as { refresh_token?: string; access_token?: string; error_description?: string };
-  if (!exchange.ok || !token.access_token) throw new Error(token.error_description || "Google rejected the Drive connection request.");
-  const previous = pending.existingConnectionId ? vault.connections.find((connection) => connection.id === pending.existingConnectionId) : undefined;
-  if (pending.existingConnectionId && !previous) {
-    throw new Error("The Drive connection being reauthorized no longer exists. Start a new Drive connection instead.");
+  const token = await exchange.json().catch(() => ({})) as {
+    refresh_token?: string;
+    access_token?: string;
+    error_description?: string;
+  };
+  if (!exchange.ok || !token.access_token) {
+    throw new Error(token.error_description || "Google rejected the Drive connection request.");
   }
-  const aboutResponse = await google(`${DRIVE_API}/about?fields=user(permissionId,emailAddress,displayName),storageQuota(limit,usage)`, token.access_token);
+
+  const aboutResponse = await google(
+    `${DRIVE_API}/about?fields=user(permissionId,emailAddress,displayName),storageQuota(limit,usage)`,
+    token.access_token,
+  );
   const about = await aboutResponse.json().catch(() => ({})) as {
     user?: { permissionId?: string; emailAddress?: string };
     storageQuota?: { limit?: string; usage?: string };
   };
-  if (!aboutResponse.ok) throw new Error("Google Drive did not allow Urban Castle to read account storage details.");
+  if (!aboutResponse.ok) {
+    throw new Error("Google Drive did not allow Urban Castle to read account storage details.");
+  }
 
   const identity = {
     googleAccountId: about.user?.permissionId?.trim() || undefined,
@@ -350,88 +441,133 @@ export async function completeGoogleDriveConnect(user: AuthenticatedUser, input:
   if (!identity.googleAccountId && !identity.email) {
     throw new Error("Google did not return an account identity. The Drive was not connected.");
   }
-  if (previous && !sameGoogleIdentity(previous, identity)) {
-    throw new Error(`Reconnect “${previous.email || previous.id}” using that same Google account. To add a different account, start a new Drive connection.`);
+
+  const existingStorageAccountId = pending.existingStorageAccountId;
+  const existingCredential = existingStorageAccountId
+    ? await readCredential(existingStorageAccountId)
+    : null;
+  const existingAccount = existingStorageAccountId
+    ? await readStorageAccount(existingStorageAccountId)
+    : null;
+
+  if (
+    existingCredential?.google_account_id &&
+    identity.googleAccountId &&
+    existingCredential.google_account_id !== identity.googleAccountId
+  ) {
+    throw new Error("Reconnect this Drive slot using the same Google account. To add a different account, create a new Drive account.");
+  }
+  const existingEmail = normalizedEmail(String(existingAccount?.data.email || ""));
+  if (!existingCredential?.google_account_id && existingEmail && identity.email && existingEmail !== identity.email) {
+    throw new Error("Reconnect this Drive slot using the same Google account. To add a different account, create a new Drive account.");
   }
 
-  const duplicate = previous ? undefined : vault.connections.find((connection) => sameGoogleIdentity(connection, identity));
-  const target = previous || duplicate;
-  const refresh = token.refresh_token || (target ? refreshTokenForConnection(target) : undefined);
-  if (!refresh) throw new Error("Google did not return a reusable connection token. Disconnect this Google account from Google permissions and connect it again.");
+  if (identity.googleAccountId) {
+    const duplicate = await credentialByGoogleAccountId(identity.googleAccountId);
+    if (duplicate && duplicate.storage_account_id !== existingStorageAccountId) {
+      throw new Error("This Google account is already connected to another Urban Castle Drive account.");
+    }
+  }
+
+  const storageAccountId = existingStorageAccountId || canonicalStorageAccountId(identity);
+  const sameIdAccount = await readStorageAccount(storageAccountId);
+  const sameIdEmail = normalizedEmail(String(sameIdAccount?.data.email || ""));
+  if (!existingStorageAccountId && sameIdAccount && sameIdEmail && identity.email && sameIdEmail !== identity.email) {
+    throw new Error("The canonical Drive account ID is already assigned to a different Google account.");
+  }
+
+  const refresh = token.refresh_token || (existingCredential ? refreshTokenForCredential(existingCredential) : undefined);
+  if (!refresh) {
+    throw new Error("Google did not return a reusable connection token. Reconnect the Drive account with consent enabled.");
+  }
 
   const root = await findOrCreateRoot(token.access_token);
-  const id = target?.id || `drive-connection-${randomBytes(12).toString("base64url")}`;
-  const connection: PersistedDriveConnection = {
-    id,
-    refreshTokenEncrypted: encryptSecret(refresh),
+  const now = new Date().toISOString();
+  const connection: DriveConnectionResult = {
+    id: storageAccountId,
     email: identity.email,
-    googleAccountId: identity.googleAccountId || target?.googleAccountId,
+    googleAccountId: identity.googleAccountId || existingCredential?.google_account_id || undefined,
     rootFolderId: root.id,
     rootFolderName: root.name,
     rootFolderUrl: root.webViewLink,
     quotaUsedBytes: Number(about.storageQuota?.usage || 0),
     quotaLimitBytes: Number(about.storageQuota?.limit || 0),
-    createdAt: target?.createdAt || new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: existingCredential?.created_at || now,
+    updatedAt: now,
   };
-  vault.connections = [
-    ...vault.connections.filter((item) => item.id !== id && !sameGoogleIdentity(item, identity)),
+  const credential: PendingDriveCredential = {
+    googleAccountId: connection.googleAccountId,
+    refreshTokenEncrypted: encryptSecret(refresh),
+    createdAt: connection.createdAt,
+    updatedAt: now,
+  };
+  return {
+    storageAccountId,
     connection,
-  ];
-  vault.pending = vault.pending.filter((item) => item.state !== input.state && item.expiresAt > Date.now());
-  await writeVault(vault);
-  return { connection: publicConnection(connection), label: pending.label, returnTo: pending.returnTo };
+    credential,
+    label: pending.label,
+    returnTo: pending.returnTo,
+  };
 }
 
-export async function accessTokenForDriveConnection(connectionId: string) {
-  const vault = await readVault();
-  const connection = vault.connections.find((item) => item.id === connectionId);
-  if (!connection) throw new Error("This Google Drive account is not connected on the server. Reconnect it before using its files.");
-  const refresh = refreshTokenForConnection(connection);
-  if (connection.refreshToken && !connection.refreshTokenEncrypted) {
-    vault.connections = vault.connections.map((item) => item.id === connectionId ? persistedConnection(item, refresh) : item);
-    await writeVault(vault);
+export async function accessTokenForDriveConnection(storageAccountId: string) {
+  const credential = await readCredential(storageAccountId);
+  if (!credential) {
+    throw new Error("This Google Drive account has no canonical server credential. Reconnect it before using its files.");
   }
+  const refresh = refreshTokenForCredential(credential);
   try {
-    return await getCachedAccessToken(connectionId, refresh);
+    return await getCachedAccessToken(storageAccountId, refresh);
   } catch (error) {
     if (error instanceof Error && error.name === "RefreshTokenRevokedError") {
-      invalidateTokenCache(connectionId);
-      throw error;
+      invalidateTokenCache(storageAccountId);
     }
     throw error;
   }
 }
 
-export async function refreshDriveConnection(connectionId: string) {
-  invalidateTokenCache(connectionId);
-  const vault = await readVault();
-  const connection = vault.connections.find((item) => item.id === connectionId);
-  if (!connection) throw new Error("This Google Drive account is not connected on the server.");
-  const refresh = refreshTokenForConnection(connection);
+export async function refreshDriveConnection(storageAccountId: string) {
+  invalidateTokenCache(storageAccountId);
+  const credential = await readCredential(storageAccountId);
+  if (!credential) throw new Error("This Google Drive account has no canonical server credential.");
+
+  const refresh = refreshTokenForCredential(credential);
   const accessToken = await refreshToken(refresh);
-  const aboutResponse = await google(`${DRIVE_API}/about?fields=user(permissionId,emailAddress),storageQuota(limit,usage)`, accessToken);
+  const aboutResponse = await google(
+    `${DRIVE_API}/about?fields=user(permissionId,emailAddress),storageQuota(limit,usage)`,
+    accessToken,
+  );
   const about = await aboutResponse.json().catch(() => ({})) as {
     user?: { permissionId?: string; emailAddress?: string };
     storageQuota?: { limit?: string; usage?: string };
   };
   if (!aboutResponse.ok) throw new Error("Google Drive storage quota could not be refreshed.");
-  const refreshedIdentity = {
-    googleAccountId: about.user?.permissionId?.trim() || undefined,
-    email: normalizedEmail(about.user?.emailAddress) || undefined,
-  };
-  if (!sameGoogleIdentity(connection, refreshedIdentity)) {
-    throw new Error("Google Drive returned a different account identity. Reconnect the original account before refreshing it.");
+
+  const refreshedGoogleAccountId = about.user?.permissionId?.trim() || undefined;
+  if (
+    credential.google_account_id &&
+    refreshedGoogleAccountId &&
+    credential.google_account_id !== refreshedGoogleAccountId
+  ) {
+    throw new Error("Google Drive returned a different account identity. Reconnect the original account.");
   }
-  const updated: PersistedDriveConnection = {
-    ...persistedConnection(connection, refresh),
-    email: refreshedIdentity.email || connection.email,
-    googleAccountId: refreshedIdentity.googleAccountId || connection.googleAccountId,
+
+  const updatedAt = new Date().toISOString();
+  const { error } = await getSupabaseAdminClient()
+    .from("uc_google_drive_credentials")
+    .update({
+      google_account_id: refreshedGoogleAccountId || credential.google_account_id,
+      updated_at: updatedAt,
+    })
+    .eq("storage_account_id", storageAccountId);
+  if (error) throw new Error(`Could not update Google Drive credential metadata: ${error.message}`);
+
+  return {
+    id: storageAccountId,
+    email: normalizedEmail(about.user?.emailAddress) || undefined,
+    googleAccountId: refreshedGoogleAccountId || credential.google_account_id || undefined,
     quotaUsedBytes: Number(about.storageQuota?.usage || 0),
     quotaLimitBytes: Number(about.storageQuota?.limit || 0),
-    updatedAt: new Date().toISOString(),
+    updatedAt,
   };
-  vault.connections = vault.connections.map((item) => item.id === connectionId ? updated : item);
-  await writeVault(vault);
-  return publicConnection(updated);
 }

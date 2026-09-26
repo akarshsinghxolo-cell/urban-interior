@@ -1,57 +1,45 @@
 -- ============================================================================
--- Urban Castle — bootstrap schema for authentication, settings, staff profiles,
--- and frontend-collected GPS route bundles. Workspace business data is stored in
--- revisioned entity_* tables and committed through commit_workspace_operations().
+-- Urban Castle — canonical bootstrap surfaces outside the revisioned entity_*
+-- workspace tables.
 --
--- Tables (4 total):
---   uc_user_roles       - maps Supabase Auth users to app roles/approval status
---   "GenericRecord"     - JSON key/value store for settings such as Google Drive
---   "StaffProfile"      - normalized staff identity/profile records
---   "StaffRouteBundle"  - hourly/manual browser GPS route bundles
+-- Business/profile truth lives in entity_* tables. This file intentionally
+-- contains no compatibility mirrors, generic key/value persistence, or legacy
+-- StaffProfile table.
 --
--- Safe to re-run: every statement is idempotent (if not exists / or replace).
+-- Canonical auxiliary tables:
+--   uc_user_roles                 - Auth user ↔ canonical Staff access approval
+--   uc_google_drive_credentials   - server-only encrypted Drive credentials
+--   "StaffRouteBundle"            - historical GPS route bundles keyed to Staff
 -- ============================================================================
 
 create extension if not exists pgcrypto;
 
 -- ----------------------------------------------------------------------------
--- uc_user_roles — Supabase Auth role mapping
+-- Access approval/link state only. Staff email, name, role and profile data live
+-- exclusively in entity_master_staff.
 -- ----------------------------------------------------------------------------
 create table if not exists public.uc_user_roles (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  email text,
-  role text not null,
-  staff_id text,
-  display_name text,
+  staff_id text not null references public.entity_master_staff(id) on delete restrict,
   status text not null default 'pending',
   approved_by uuid references auth.users(id) on delete set null,
   approved_at timestamptz,
   rejected_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint uc_user_roles_status_check
+    check (status in ('pending', 'active', 'rejected', 'inactive'))
 );
-
-alter table public.uc_user_roles drop constraint if exists uc_user_roles_role_check;
-alter table public.uc_user_roles add constraint uc_user_roles_role_check check (
-  role in (
-    'OWNER', 'OPERATIONS_MANAGER', 'FIELD_STAFF', 'SALES_TELECALLER',
-    'PROCUREMENT_STAFF', 'FINANCE', 'ACCOUNTS_ADMIN',
-    'Owner', 'Operations Manager', 'Field Staff', 'Sales / Telecaller',
-    'Procurement Staff', 'Finance', 'Accounts / Admin'
-  )
-);
-
-alter table public.uc_user_roles drop constraint if exists uc_user_roles_status_check;
-alter table public.uc_user_roles add constraint uc_user_roles_status_check
-  check (status in ('pending', 'active', 'rejected', 'inactive'));
 
 create unique index if not exists uc_user_roles_one_active_role
   on public.uc_user_roles (user_id) where status = 'active';
 create unique index if not exists uc_user_roles_one_open_request
   on public.uc_user_roles (user_id) where status in ('pending', 'active');
-create index if not exists uc_user_roles_email_idx
-  on public.uc_user_roles (lower(email));
+create index if not exists uc_user_roles_staff_id_idx
+  on public.uc_user_roles (staff_id);
+create index if not exists uc_user_roles_approved_by_idx
+  on public.uc_user_roles (approved_by);
 
 alter table public.uc_user_roles enable row level security;
 drop policy if exists "Users can read their own RDash role" on public.uc_user_roles;
@@ -63,51 +51,33 @@ grant select on public.uc_user_roles to authenticated;
 grant all on public.uc_user_roles to service_role;
 
 -- ----------------------------------------------------------------------------
--- GenericRecord — JSON key/value store, keyed by (collection, id)
+-- Google Drive credentials. Canonical workspace account metadata lives in
+-- entity_master_storageAccounts; only encrypted server secrets live here.
 -- ----------------------------------------------------------------------------
-create table if not exists public."GenericRecord" (
-  collection text not null,
-  id text not null,
-  "dataJson" text not null,
-  primary key (collection, id)
-);
-create index if not exists "GenericRecord_collection_idx"
-  on public."GenericRecord" (collection);
-
--- ----------------------------------------------------------------------------
--- StaffProfile — real staff records.
--- ----------------------------------------------------------------------------
-create table if not exists public."StaffProfile" (
-  id text primary key,
-  code text not null unique,
-  name text not null,
-  phone text,
-  email text,
-  "roleId" text not null,
-  department text,
-  designation text,
-  "reportingManagerId" text,
-  status text not null,
-  "joiningDate" text,
-  "exitDate" text,
-  city text,
-  address text,
-  "emergencyContact" text,
-  "attendancePolicyId" text,
-  "salaryType" text not null,
-  "monthlySalary" double precision,
-  "dailyWage" double precision,
-  "bankDetailsJson" text,
-  "gpsTrackingEnabled" boolean not null default true,
-  "dataJson" text not null
+create table if not exists public.uc_google_drive_credentials (
+  storage_account_id text primary key
+    references public."entity_master_storageAccounts"(id) on delete cascade,
+  google_account_id text,
+  refresh_token_encrypted jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
+create unique index if not exists uc_google_drive_credentials_google_account_uidx
+  on public.uc_google_drive_credentials(google_account_id)
+  where google_account_id is not null;
+
+alter table public.uc_google_drive_credentials enable row level security;
+revoke all on public.uc_google_drive_credentials from public, anon, authenticated;
+grant select, insert, update, delete on public.uc_google_drive_credentials to service_role;
+
 -- ----------------------------------------------------------------------------
--- StaffRouteBundle — one browser upload per hour or manual sync.
+-- Route history references canonical Staff directly. Route history survives
+-- Staff lifecycle changes, so deletes remain restricted.
 -- ----------------------------------------------------------------------------
 create table if not exists public."StaffRouteBundle" (
   id text primary key,
-  "staffId" text not null references public."StaffProfile"(id) on delete cascade,
+  "staffId" text not null references public.entity_master_staff(id) on delete restrict,
   "startedAt" timestamptz not null,
   "endedAt" timestamptz not null,
   "pointCount" integer not null check ("pointCount" between 1 and 6000),
@@ -117,23 +87,12 @@ create table if not exists public."StaffRouteBundle" (
   constraint "StaffRouteBundle_time_order_check"
     check ("endedAt" >= "startedAt")
 );
+
 create index if not exists "StaffRouteBundle_staffId_startedAt_idx"
   on public."StaffRouteBundle" ("staffId", "startedAt" desc);
 create index if not exists "StaffRouteBundle_endedAt_idx"
   on public."StaffRouteBundle" ("endedAt");
 
--- ----------------------------------------------------------------------------
--- Row Level Security — these tables are touched only by the server-side
--- service-role client. No browser reads or writes them directly.
--- ----------------------------------------------------------------------------
-alter table public."GenericRecord" enable row level security;
-alter table public."StaffProfile" enable row level security;
 alter table public."StaffRouteBundle" enable row level security;
-
-revoke all on public."GenericRecord" from anon, authenticated;
-revoke all on public."StaffProfile" from anon, authenticated;
 revoke all on public."StaffRouteBundle" from anon, authenticated;
-
-grant select, insert, update, delete on public."GenericRecord" to service_role;
-grant select, insert, update, delete on public."StaffProfile" to service_role;
 grant select, insert, update, delete on public."StaffRouteBundle" to service_role;
