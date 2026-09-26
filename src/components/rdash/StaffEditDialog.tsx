@@ -27,22 +27,20 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const addStaff = useRDashStore((s) => s.addStaff);
   const updateStaff = useRDashStore((s) => s.updateStaff);
   const staff = staffId ? db.master.staff.find((s) => s.id === staffId) : undefined;
-  const [draft, setDraft] = React.useState<Partial<Staff>>({});
-  const initialDraftRef = React.useRef<Partial<Staff>>({});
+  const baseStaff = staff || ({ id: "", name: "", role: "Field Staff", role_key: "FIELD_STAFF", status: "active", attendance_policy: createDefaultAttendancePolicy(), salary_type: "monthly", gps_tracking_enabled: true } as Staff);
+  const initialDraft: Partial<Staff> = {
+    ...baseStaff,
+    role_key: normalizeRoleKey(baseStaff.role_key || baseStaff.role),
+    role: roleLabel(normalizeRoleKey(baseStaff.role_key || baseStaff.role)),
+    login_email: baseStaff.login_email || baseStaff.email || "",
+    attendance_policy: baseStaff.attendance_policy || createDefaultAttendancePolicy(),
+  };
+  const [draft, setDraft] = React.useState<Partial<Staff>>(initialDraft);
   const policy = (draft.attendance_policy || createDefaultAttendancePolicy()) as AttendancePolicy;
   const isNew = !staffId;
 
   React.useEffect(() => {
     if (!open) return;
-    const base = staff || ({ id: "", name: "", role: "Field Staff", role_key: "FIELD_STAFF", status: "active", attendance_policy: createDefaultAttendancePolicy(), salary_type: "monthly", gps_tracking_enabled: true } as Staff);
-    const initialDraft = {
-      ...base,
-      role_key: normalizeRoleKey(base.role_key || base.role),
-      role: roleLabel(normalizeRoleKey(base.role_key || base.role)),
-      login_email: base.login_email || base.email || "",
-      attendance_policy: base.attendance_policy || createDefaultAttendancePolicy(),
-    };
-    initialDraftRef.current = initialDraft;
     setDraft(initialDraft);
   }, [open, staff]);
 
@@ -50,7 +48,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const patchPolicy = (value: Partial<AttendancePolicy>) => patch({ attendance_policy: { ...policy, ...value } });
 
   const formId = `staff:${staffId || "new"}`;
-  const dirty = open && JSON.stringify(draft) !== JSON.stringify(initialDraftRef.current);
+  const dirty = open && JSON.stringify(draft) !== JSON.stringify(initialDraft);
   const handleSave = (): boolean => {
     if (!draft.name?.trim()) {
       toast.error("Staff name is required");
@@ -90,7 +88,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     dirty,
     save: handleSave,
     discard: () => {
-      setDraft(initialDraftRef.current);
+      setDraft(initialDraft);
       return true;
     },
   });
