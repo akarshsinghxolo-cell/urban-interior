@@ -612,13 +612,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     date: today(),
                     source_kind: "settlement",
                     source_id: settlementId,
-                    // FIX-CONTRACTOR-BATCH1 / F.3: vendor_id is canonical; mirror to
-                    // contractor_id for backward compat with any consumer that still
-                    // reads the legacy field.
                     vendor_id: contractor.id,
                     vendor_name: contractor.name,
-                    contractor_id: contractor.id,
-                    contractor_name: contractor.name,
                     created_at: now,
                 };
                 const updatedJobs = s.db.workOrders.map((j: any) => j.id === workOrder.id
@@ -833,13 +828,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 date: now,
                 source_kind: "bill",
                 source_id: id,
-                // FIX-CONTRACTOR-BATCH1 / F.3: vendor_id is canonical; mirror to
-                // contractor_id for backward compat with any consumer that still
-                // reads the legacy field.
                 vendor_id: contractor.id,
                 vendor_name: contractor.name,
-                contractor_id: contractor.id,
-                contractor_name: contractor.name,
                 created_at: now,
             };
             commitState((s: any) => ({
