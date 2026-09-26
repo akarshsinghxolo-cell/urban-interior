@@ -55,11 +55,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Selected Drive is not active for new uploads." }, { status: 422 });
     }
 
-    if (!selected.oauth_connection_id) {
-      return NextResponse.json({ error: "Selected Drive has no OAuth connection. Connect or refresh it first." }, { status: 422 });
-    }
-
-    const accessToken = await accessTokenForDriveConnection(selected.oauth_connection_id);
+    const accessToken = await accessTokenForDriveConnection(selected.id);
     const timestamp = new Date().toISOString();
     const fileName = `Urban Castle Drive Test ${timestamp.replace(/[:.]/g, "-")}.txt`;
     const content = [
