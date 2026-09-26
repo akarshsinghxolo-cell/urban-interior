@@ -80,7 +80,7 @@ RPCs) so browser QA never needs cloud credentials.
     (Content-Range), `return=representation`, upserts
     (`resolution=merge-duplicates`), duplicate-key 23505 errors, and
     auto-creation of unknown tables on write (e.g. `uc_workspace_operations`
-    receipts, `uc_upload_*`, `uc_drive_folders`, `GenericRecord`).
+    receipts, `uc_upload_*`, `uc_drive_folders`, `uc_google_drive_credentials`).
   - RPCs: `commit_workspace_operations` (workspace + row CAS, receipts,
     change journal), `get_workspace_health_summary_v2`,
     `sync_staff_identity_bundle`, `get_auth_user_by_email`,
