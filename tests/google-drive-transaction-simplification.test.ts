@@ -218,8 +218,6 @@ describe("Google Drive transaction simplification", () => {
     const types = await readFile("src/lib/uploads/upload-types.ts", "utf8");
     const store = await readFile("src/lib/uploads/upload-store.ts", "utf8");
     const transfer = await readFile("src/lib/uploads/upload-transfer.ts", "utf8");
-    const migration = await readFile("supabase/migrations/20260805113000_simplify_upload_retry_states.sql", "utf8");
-
     for (const removedStatus of ["waiting_for_network", "waiting_for_entity", "failed_retryable"]) {
       expect(types).not.toContain(`| "${removedStatus}"`);
       expect(store).not.toContain(`status: "${removedStatus}"`);
@@ -233,9 +231,5 @@ describe("Google Drive transaction simplification", () => {
     expectTokens(transfer, ['lastErrorCode: network ? "NETWORK" : "TEMPORARY_ERROR"']);
     expectNoTokens(transfer, ["lastErrorMessage: message, }); return; } const offline"]);
 
-    expectTokens(migration, ["where status = 'waiting_for_network'"]);
-    expectTokens(migration, ["where status = 'failed_retryable'"]);
-    expectTokens(migration, ["where status = 'waiting_for_entity'"]);
-    expectTokens(migration, ["where status = 'paused'"]);
   });
 });

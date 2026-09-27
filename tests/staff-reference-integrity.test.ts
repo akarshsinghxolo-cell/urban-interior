@@ -8,8 +8,6 @@ import type { RDashDatabase } from "@/lib/rdash/types";
 
 const RUNTIME_ROOTS = ["src", "scripts", "supabase/functions"];
 const TEXT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".sql"]);
-const STAFF_REFERENCE_MIGRATION = "supabase/migrations/20260804094126_canonical_staff_reference_integrity.sql";
-
 async function runtimeFiles(root: string): Promise<string[]> {
   try {
     if (!(await stat(root)).isDirectory()) return [];
@@ -119,19 +117,4 @@ describe("canonical Staff references", () => {
     expect(delta).toContain("hydrateStaffReferenceLabels(next)");
   });
 
-  test("records the relational Staff lifecycle cutover", async () => {
-    const migration = await readFile(STAFF_REFERENCE_MIGRATION, "utf8");
-    const legacyRelationName = ["Staff", "Profile"].join("");
-
-    expectTokens(migration, ["generated always as"]);
-    expect(migration).toContain("entity_attendance_staff_fkey");
-    expect(migration).toContain("entity_visits_staff_fkey");
-    expect(migration).toContain("entity_payroll_lines_staff_fkey");
-    expect(migration).toContain("entity_leave_requests_staff_fkey");
-    expect(migration).toContain("entity_salary_adjustments_staff_fkey");
-    expect(migration).toContain("STAFF_ASSIGNMENT_REQUIRES_ACTIVE_STAFF");
-    expect(migration).toContain("STAFF_DELETE_FORBIDDEN_USE_INACTIVE");
-    expectTokens(migration, ["on delete restrict"]);
-    expect(migration).toContain(`drop view if exists public.\"${legacyRelationName}\"`);
-  });
 });

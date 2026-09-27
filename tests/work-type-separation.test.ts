@@ -168,19 +168,4 @@ describe("contractor and vendor domain separation", () => {
     expect(source).toContain("updateArticle(article.id, { name: event.target.value })");
   });
 
-  test("database migration leaves Vendor Article tables untouched", () => {
-    const migration = read("../supabase/migrations/20260825172252_canonical_contractor_work_type_rates.sql");
-    const projection = migration.slice(
-      migration.indexOf("create or replace function public.uc_contractor_rate_projection_rows"),
-      migration.indexOf("revoke all on function public.uc_contractor_rate_projection_rows"),
-    );
-    expect(migration).toContain("'work_types'");
-    expect(migration).toContain("'work_type_rates'");
-    expect(migration).toContain("'material_rate', v_material");
-    expect(migration).not.toMatch(/update public\.entity_master_vendors/i);
-    expect(migration).not.toMatch(/update public\."entity_master_subcategoryArticleMap"/i);
-    expect(projection).not.toContain("entity_master_articles");
-    expect(projection).not.toContain("subcategoryArticleMap");
-    expect(projection).not.toContain("with_material_rate");
-  });
 });

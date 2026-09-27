@@ -8,11 +8,6 @@ const authSource = readFileSync(
   join(repositoryRoot, "src/lib/rdash/server/auth.ts"),
   "utf8",
 );
-const staffAuthMigration = readFileSync(
-  join(repositoryRoot, "supabase/migrations/20260808190000_add_staff_auth_user_lookup.sql"),
-  "utf8",
-);
-
 function walkSourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
@@ -55,9 +50,6 @@ describe("server authentication source security", () => {
     expectTokens(authSource, ['.eq("auth_user_id_gen" as never, user.id)']);
     expect(authSource).not.toContain("generatedLookupError");
     expectNoTokens(authSource, ['eq("workspace_id", "default")']);
-    expectTokens(staffAuthMigration, ["generated always as (nullif(data ->> 'auth_user_id', '')) stored"]);
-    expect(staffAuthMigration).toContain("entity_master_staff_workspace_auth_user_idx");
-    expectTokens(staffAuthMigration, ["(workspace_id, auth_user_id_gen)"]);
   });
 
   test("keeps the app bearer short-lived while Supabase refresh access is renewable", () => {

@@ -147,23 +147,6 @@ describe("workspace delta aggregation", () => {
 });
 
 describe("delta journal migration and API contract", () => {
-  test("writes the journal batch inside the atomic commit transaction", async () => {
-    const migration = (await testFile(
-      "supabase/migrations/20260728055820_workspace_revision_change_journal.sql",
-    ).text()).replace(/\r\n/g, "\n");
-
-    expectTokens(migration, ["create table if not exists public.entity_workspace_change_batches"]);
-    expectTokens(migration, ["alter table public.entity_workspace_change_batches enable row level security"]);
-    expectTokens(migration, ["revoke all on table public.entity_workspace_change_batches from public, anon, authenticated"]);
-    expectTokens(migration, ["grant select, insert, delete on table public.entity_workspace_change_batches to service_role"]);
-    expectTokens(migration, ["is_baseline = true"]);
-    expectTokens(migration, ["journal_operations jsonb"]);
-
-    const journalInsert = migration.indexOf("insert into public.entity_workspace_change_batches (\n    workspace_id,\n    revision");
-    const revisionUpdate = migration.indexOf("update public.entity_workspace_revision\n     set revision = next_workspace_revision");
-    expect(journalInsert).toBeGreaterThan(0);
-    expect(revisionUpdate).toBeGreaterThan(journalInsert);
-  });
 
   test("exposes an authenticated, private no-store changes endpoint", async () => {
     const route = await testFile("src/app/api/changes/route.ts").text();

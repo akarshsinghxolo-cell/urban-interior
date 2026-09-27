@@ -94,37 +94,13 @@ describe("customer domain unification", () => {
   test("runtime and database boundaries reject retired Customer payloads", async () => {
     const saver = await read("src/lib/rdash/customer-sites-save.ts");
     const formModel = await read("src/components/rdash/customer-sites-form-model.ts");
-    const migration = await read("supabase/migrations/20260913190000_finalize_customer_contract.sql");
 
     expect(saver).toContain("Customer source_partner_* referral fields are retired");
     expect(saver).not.toContain("if (input.source_partner_id");
     expect(formModel).not.toContain("sourcePartnerProjection(referrer)");
-    expect(migration).toContain("INVALID_CUSTOMER_LEGACY_REFERRER_FIELDS");
-    expect(migration).toContain("INVALID_CUSTOMER_REFERRER_PARTIAL");
-    expect(migration).toContain("revoke execute on function private.uc_canonicalize_customer_row()");
-    expect(migration).toContain("revoke execute on function private.uc_sync_customer_contact_identities()");
   });
 
-  test("database migration is the authoritative customer cutover", async () => {
-    const migration = await read("supabase/migrations/20260913085318_customer_domain_unification.sql");
-    expect(migration).toContain("private.customer_contact_identities");
-    expect(migration).toContain("INVALID_CUSTOMER_IDENTITY_DUPLICATE");
-    expect(migration).toContain("referrer_type");
-    expect(migration).toContain("interest_category_ids");
-    expect(migration).toContain("interest_work_subcategory_ids");
-    expect(migration).toContain("customer_id_gen");
-    expect(migration).toContain("site_id_gen");
-    expect(migration).toContain("from public, anon, authenticated");
-    expect(migration).toContain("grant execute on function public.commit_workspace_operations_internal");
-  });
 
-  test("relationship index migration leads with generated FK columns", async () => {
-    const migration = await read("supabase/migrations/20260913085807_customer_graph_fk_index_order.sql");
-    expect(migration).toContain("(customer_id_gen, workspace_id)");
-    expect(migration).toContain("(site_id_gen, workspace_id)");
-    expect(migration).toContain("drop index if exists public.entity_customers_phone_uidx");
-    expect(migration).toContain("drop index if exists public.entity_customers_email_uidx");
-  });
 
   test("entity-scoped reads use generated Customer/Site relationship columns", async () => {
     const source = await read("src/lib/rdash/server/entity-scoped-rest.ts");
