@@ -35,6 +35,24 @@ describe("canonical runtime only", () => {
     expect(hierarchy).not.toContain("legacyKeys");
   });
 
+  test("keeps one canonical root and commission-rule contract", () => {
+    const rootPage = source("src/app/page.tsx");
+    const types = source("src/lib/rdash/types.ts");
+    const masters = source("src/lib/rdash/store/slices/masters.ts");
+    const workTypes = source("src/lib/rdash/work-types.ts");
+    const receipts = source("src/app/api/operations/commit/route.ts");
+
+    expect(rootPage).toContain("redirect(WORKSPACE_ROOT_PATH)");
+    expect(rootPage).not.toContain("UrbanCastleApp");
+    expect(types).toContain('applies_to: "partner" | "category"');
+    expect(types).not.toContain('applies_to: "all" | "category" | "workOrder"');
+    expect(masters).not.toContain('applies_to === "workOrder"');
+    expect(masters).not.toContain('applies_to === "all"');
+    expect(workTypes).not.toContain("mergeExplodedOptionItems");
+    expect(receipts).not.toContain("compactStoredResult");
+    expect(receipts).not.toContain("rewriteAppliedReceiptResult");
+  });
+
   test("keeps canonical Staff references in task and visit state", () => {
     const types = source("src/lib/rdash/types.ts");
     const visit = types.slice(types.indexOf("export interface Visit {"), types.indexOf("export type Priority"));
