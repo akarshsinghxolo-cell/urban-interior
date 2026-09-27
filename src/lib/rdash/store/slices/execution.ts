@@ -307,7 +307,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                     site_id: workOrder.site_id,
                     task_scope: "site",
                     task_type: "progress_verification",
-                    assignee_name: "Operations Manager",
+                    assigned_staff_id: userForRole(get().db, "Operations Manager").staffId,
                     due_date: today(),
                     auto_generated: true,
                 });
@@ -518,7 +518,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 site_id: workOrder.site_id,
                 task_scope: "client",
                 task_type: "variation_customer_approval",
-                assignee_name: "Owner",
+                assigned_staff_id: userForRole(get().db, "Owner").staffId,
                 due_date: today(),
                 auto_generated: true,
             });
@@ -707,7 +707,7 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
                 work_order_id: workOrderId,
                 task_scope: "site",
                 task_type: "boq_approval",
-                assignee_name: "Owner",
+                assigned_staff_id: userForRole(get().db, "Owner").staffId,
                 auto_generated: true,
                 due_date: today(),
             });
