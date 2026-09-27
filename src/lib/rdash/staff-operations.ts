@@ -403,7 +403,6 @@ export function createSeedAttendanceRecords(staff: Staff[]): AttendanceRecord[] 
     return {
       id: `att-${today}-${member.id}`,
       staff_id: member.id,
-      staff_name: member.name,
       date: today,
       attendance_mode: "office",
       check_in: absent ? undefined : `${today}T${String(9 + Math.min(index, 1)).padStart(2, "0")}:${index === 2 ? "55" : "28"}:00.000+05:30`,
@@ -435,8 +434,8 @@ export function createSeedVisits(): Visit[] {
       customer_id: "cust-das",
       site_id: "site-das-apartment",
       work_required_id: "work-das-ceiling",
-      staff_id: "staff-field",
-      staff_name: "Ravi Kumar",
+      assigned_staff_id: "staff-field",
+      assignee_type: "staff",
       visit_type: "measurement",
       status: "checked_in",
       location_name: "Das Residence — Master Bedroom",
@@ -456,9 +455,9 @@ export function createSeedVisits(): Visit[] {
       customer_id: "cust-aarav",
       site_id: "site-aarav-home",
       work_required_id: "work-aarav-kitchen",
-      staff_id: "staff-sales",
-      staff_name: "Pooja Singh",
-      visit_type: "followup",
+      assigned_staff_id: "staff-sales",
+      assignee_type: "staff",
+      visit_type: "site_visit",
       status: "scheduled",
       location_name: "Mehta Residence — Kitchen discussion",
       scheduled_at: `${today}T16:30:00.000+05:30`,
@@ -485,7 +484,7 @@ export function assertStaffOperationAllowed(data: RDashDatabase, rolePermissions
   const roleKey = normalizeRoleKey(role);
   if (roleKey === "OWNER" || roleKey === "OPERATIONS_MANAGER") return;
   const recordObj = record as Record<string, unknown> | undefined;
-  const recordStaffId = recordObj?.staff_id || recordObj?.assigned_staff_id || recordObj?.assigned_to_staff_id;
+  const recordStaffId = recordObj?.staff_id || recordObj?.assigned_staff_id;
   const staffModule = moduleForCollection(collection);
   if (!canRole(rolePermissions, role, staffModule, "update") && !canRole(rolePermissions, role, staffModule, "create")) {
     throw new Error(`FORBIDDEN:${collection}`);
@@ -499,11 +498,15 @@ export function assertStaffOperationAllowed(data: RDashDatabase, rolePermissions
     if (recordStaffId && recordStaffId !== staffId) {
       throw new Error(`FORBIDDEN:Field Staff can change only their own ${collection}.`);
     }
-    // Force-bind staff_id to the session's identity (don't trust the client).
-    // This closes the bypass where a Field Staff omits staff_id to create
-    // unowned records that pollute attendance/payroll/GPS views.
+    // Force-bind the collection's canonical Staff reference to the session
+    // identity; never create compatibility assignment aliases.
     if (recordObj) {
-      recordObj.staff_id = staffId;
+      if (collection === "visits" || collection === "tasks") {
+        recordObj.assigned_staff_id = staffId;
+        delete recordObj.staff_id;
+      } else {
+        recordObj.staff_id = staffId;
+      }
     }
   }
   const staff = staffId ? data.master.staff.find((member) => member.id === staffId) : undefined;
