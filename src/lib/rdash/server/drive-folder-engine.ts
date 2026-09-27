@@ -114,7 +114,7 @@ async function adoptFolder(
   parentFolderKey: string | undefined,
   segment: CanonicalFolderSegment,
 ): Promise<void> {
-  const keys = [segment.key, ...(segment.legacyKeys || [])];
+  const keys = [segment.key];
   const registeredRows = (await Promise.all(keys.map((key) => registryRow(account.id, key))))
     .filter((row): row is FolderRegistryRow => Boolean(row));
   const candidates = await findFoldersByKey(accessToken, keys);
@@ -179,16 +179,6 @@ async function adoptFolder(
   }
 
   await persistRegistry(account.id, segment, parentFolderKey, canonical);
-
-  for (const legacyKey of segment.legacyKeys || []) {
-    const legacy = registeredRows.find((row) => row.folder_key === registryKey(account.id, legacyKey));
-    if (legacy && legacy.google_folder_id === canonical.id) {
-      await getSupabaseAdminClient().from("uc_drive_folders")
-        .update({ status: "migrated", updated_at: nowIso() })
-        .eq("folder_key", legacy.folder_key)
-        .eq("google_folder_id", legacy.google_folder_id);
-    }
-  }
 
   const duplicateIds = candidates
     .map((candidate) => candidate.id)
