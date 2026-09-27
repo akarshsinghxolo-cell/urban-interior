@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
-const MIGRATION = "supabase/migrations/20260926070000_canonicalize_user_access_identity.sql";
+const MIGRATION = "supabase/migrations/20260926071412_canonicalize_user_access_identity.sql";
 
 describe("canonical user access identity", () => {
   test("keeps uc_user_roles as approval/link state rather than a second Staff profile", async () => {
