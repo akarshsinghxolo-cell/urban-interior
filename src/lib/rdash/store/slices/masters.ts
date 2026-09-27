@@ -559,7 +559,6 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const record: AttendanceRecord = {
                 id: existing?.id || genId("att"),
                 staff_id: staff.id,
-                staff_name: staff.name,
                 date,
                 attendance_mode: mode,
                 visit_id: input.visit_id,
