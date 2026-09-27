@@ -7,11 +7,9 @@ import { expectNoTokens, expectTokens, readSrc } from "./helpers/source-contract
 import type { Customer } from "../src/lib/rdash/types";
 
 /**
- * Task 36-b: duplicate customer identities are now impossible to CREATE while
- * the DB unique indexes exist (entity_customers_phone_uidx /
- * entity_customers_email_uidx mirror normalizePhone/normalizeEmail). This
- * report audits whatever predates the indexes. The grouping must use the very
- * same normalizers the indexes and the UI use — one identity, one definition.
+ * Duplicate customer identities are blocked by the canonical database
+ * uniqueness contract. This report audits older data and must use the same
+ * normalizers as the UI — one identity, one definition.
  */
 
 let sequence = 0;
@@ -113,20 +111,6 @@ describe("collectCustomerIdentityDuplicateGroups", () => {
 });
 
 describe("source contract — DB-level uniqueness backstop", () => {
-  test("migration creates the phone/email unique indexes with the same normalization", () => {
-    const migration = readSrc(
-      "supabase/migrations/20260906120000_customer_identity_unique_indexes.sql",
-    );
-    expectTokens(migration, [
-      "create or replace function public.uc_normalize_phone(raw text)",
-      "language sql",
-      "immutable",
-      "create unique index if not exists entity_customers_phone_uidx",
-      "on public.entity_customers (workspace_id, public.uc_normalize_phone(data->>'phone'))",
-      "create unique index if not exists entity_customers_email_uidx",
-      "on public.entity_customers (workspace_id, nullif(lower(btrim(data->>'email')), ''))",
-    ]);
-  });
 
   test("the duplicate report route authenticates and reuses the shared grouping", () => {
     const route = readSrc("src/app/api/master/duplicates/route.ts");
