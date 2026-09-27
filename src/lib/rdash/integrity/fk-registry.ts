@@ -309,7 +309,7 @@ const hrFks: ForeignKeyRule[] = [
 // Recurring tasks — polymorphic linked entity (ignored)
 // ─────────────────────────────────────────────────────────────────────────
 const recurringFks: ForeignKeyRule[] = [
-    { collection: "recurringTasks", field: "assignee_id", targetCollection: "master.staff", onDelete: "nullify", nullable: true, label: "Recurring Task → Assignee" },
+    { collection: "recurringTasks", field: "assigned_staff_id", targetCollection: "master.staff", onDelete: "nullify", nullable: true, label: "Recurring Task → Assignee" },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────
