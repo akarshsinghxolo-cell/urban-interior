@@ -1,4 +1,3 @@
-import { hydrateStaffReferenceLabels } from "./staff-reference-labels";
 import type { RDashDatabase } from "./types";
 import { WORKSPACE_SESSION_BOOTSTRAP_COLLECTIONS } from "./workspace-session-merge";
 import {
@@ -125,7 +124,6 @@ export function applyWorkspaceDelta(
 ): { database: RDashDatabase; operations: WorkspaceOperation[] } {
   const operations = workspaceDeltaOperations(delta, loadedWorkspaceCollections(database));
   const next = operations.length ? applyWorkspaceOperations(database, operations) : database;
-  if (operations.length) hydrateStaffReferenceLabels(next);
   return {
     database: next,
     operations,
