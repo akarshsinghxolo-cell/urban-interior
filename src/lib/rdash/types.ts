@@ -367,10 +367,6 @@ export interface Visit {
     vendor_name?: string;
     assignee_type?: "staff" | "contractor";
     assigned_staff_id?: ID;
-    /** @deprecated Runtime compatibility alias; persist assigned_staff_id instead. */
-    staff_id: ID;
-    /** @deprecated Derived from canonical Staff at read time. */
-    staff_name: string;
     contractor_id?: ID;
     contractor_name?: string;
     visit_type: VisitType;
@@ -438,14 +434,6 @@ export interface Task {
     status: TaskStatus;
     priority: Priority;
     assigned_staff_id?: ID;
-    /** @deprecated Runtime compatibility alias; persist assigned_staff_id instead. */
-    assignee_id?: ID;
-    /** @deprecated Derived from canonical Staff at read time. */
-    assignee_name?: string;
-    /** @deprecated Derived from canonical Staff at read time. */
-    assigned_to?: string;
-    /** @deprecated Derived from canonical Staff at read time. */
-    assigned_role?: string;
     due_date: string;
     task_scope: TaskScope;
     task_type?: string;
@@ -484,10 +472,6 @@ export interface Followup {
     due_at: string;
     due_date: string;
     assigned_staff_id?: ID;
-    /** @deprecated Derived from canonical Staff at read time. */
-    assigned_to?: string;
-    /** @deprecated Derived from canonical Staff at read time. */
-    assigned_role?: string;
     followup_type?: FollowupType;
     promise_date?: string;
     outcome?: FollowupOutcome;
@@ -1265,7 +1249,6 @@ export interface AttendancePolicy {
 export interface AttendanceRecord {
     id: ID;
     staff_id: ID;
-    staff_name: string;
     date: string;
     attendance_mode: AttendanceMode;
     visit_id?: ID;
@@ -1405,7 +1388,6 @@ export interface ApprovalPolicy {
     operator: ">" | ">=" | "=";
     approver_role: string;
     approver_id?: ID;
-    approver_name?: string;
     auto_escalate_hours?: number;
     escalate_to?: string;
     enabled: boolean;
@@ -1425,10 +1407,6 @@ export interface RecurringTaskDefinition {
     title: string;
     frequency: "daily" | "weekly" | "monthly";
     assigned_staff_id?: ID;
-    /** @deprecated Runtime compatibility alias; persist assigned_staff_id instead. */
-    assignee_id?: ID;
-    /** @deprecated Derived from canonical Staff at read time. */
-    assignee_name?: string;
     scope: TaskScope;
     priority: Priority;
     next_run: string;
