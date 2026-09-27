@@ -111,14 +111,6 @@ function RenewableSessionGate({ children }: { children: React.ReactNode }) {
 
 /** Urban Castle application shell. */
 export function UrbanCastleApp({ historyEnabled = true }: { historyEnabled?: boolean }) {
-  React.useEffect(() => {
-    // /workspace routes set a module-specific title in WorkspaceRouteShell.
-    // Keep the generic title only for the legacy root route during migration.
-    if (!window.location.pathname.startsWith("/workspace")) {
-      document.title = "Urban Castle";
-    }
-  }, []);
-
   useInstallWorkspaceRowVersionBridge();
   useInstallDirtyFormNavigationGuards();
   useBrowserHistorySync(historyEnabled);
