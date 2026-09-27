@@ -1,5 +1,4 @@
 import { attachCustomerLabels } from "./customer";
-import { hydrateStaffReferenceLabels } from "./staff-reference-labels";
 import type { RDashDatabase } from "./types";
 import {
   WORK_CATALOG_VERSION,
@@ -160,7 +159,6 @@ export function normalizeWorkspaceSession(input: RDashDatabase): RDashDatabase {
   const normalized = attachCustomerLabels(
     prepareWorkspaceData(structuredClone(input) as RDashDatabase),
   );
-  hydrateStaffReferenceLabels(normalized);
   return normalized;
 }
 
