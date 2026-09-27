@@ -32,7 +32,7 @@ const commitHeaders = (
 
 type OperationReceipt = {
   status?: string;
-  result?: Record<string, unknown> | null;
+  result?: CompactCommitPayload | null;
   last_error?: string | null;
   updated_at?: string | null;
   attempt_count?: number | null;
@@ -94,29 +94,6 @@ function recoveredPayload(
     patches: operations,
     rowVersions: touchedRowVersions(workspace.rowVersions, operations),
   };
-}
-
-function compactStoredResult(
-  result: Record<string, unknown>,
-  operationId: string,
-  fallbackOperations: WorkspaceOperation[],
-): Record<string, unknown> {
-  const revision = typeof result.revision === "number" ? result.revision : undefined;
-  const patches = Array.isArray(result.patches) ? result.patches as WorkspaceOperation[] : fallbackOperations;
-  const rowVersions = result.rowVersions && typeof result.rowVersions === "object"
-    ? result.rowVersions as Record<string, number>
-    : undefined;
-  if (revision !== undefined) {
-    return {
-      status: "applied",
-      operationId,
-      revision,
-      patches,
-      rowVersions: touchedRowVersions(rowVersions, patches),
-    };
-  }
-  const { data: _discardedWorkspace, ...compact } = result;
-  return { ...compact, operationId, patches };
 }
 
 function isFreshProcessingReceipt(receipt: OperationReceipt): boolean {
@@ -275,14 +252,6 @@ async function saveAppliedReceipt(operationId: string, result: Record<string, un
   if (!data) throw new Error("Could not persist the workspace operation receipt.");
 }
 
-async function rewriteAppliedReceiptResult(operationId: string, result: Record<string, unknown>): Promise<void> {
-  const { error } = await getSupabaseAdminClient().from("uc_workspace_operations").update({
-    result,
-    updated_at: new Date().toISOString(),
-  }).eq("id", operationId).eq("status", "applied");
-  if (error) console.error("[operations/commit] Could not compact legacy operation receipt", error);
-}
-
 async function loadReceipt(operationId: string): Promise<OperationReceipt | null> {
   const { data, error } = await getSupabaseAdminClient().from("uc_workspace_operations")
     .select("status,result,last_error,updated_at,attempt_count")
@@ -391,11 +360,7 @@ export async function POST(request: NextRequest) {
       });
       if (!claim.claimed) {
         if (claim.receipt.status === "applied" && claim.receipt.result) {
-          const compacted = compactStoredResult(claim.receipt.result, operationId, operations);
-          if (Object.prototype.hasOwnProperty.call(claim.receipt.result, "data")) {
-            await rewriteAppliedReceiptResult(operationId, compacted);
-          }
-          return NextResponse.json(compacted, {
+          return NextResponse.json(claim.receipt.result, {
             headers: commitHeaders("idempotent-replay", undefined, {
               "X-UC-Idempotent-Replay": "1",
             }),
