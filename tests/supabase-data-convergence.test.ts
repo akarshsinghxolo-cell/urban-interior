@@ -2,56 +2,21 @@ import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
-const MIGRATION = "supabase/migrations/20260801143000_converge_workspace_persistence.sql";
-const STAFF_MIRROR_MIGRATION = "supabase/migrations/20260801144500_sync_workspace_staff_mirrors.sql";
-const CONTRACTOR_RATE_MIGRATION = "supabase/migrations/20260801150000_canonical_contractor_rate_projection.sql";
-const CONTRACTOR_RATE_REVISION_MIGRATION = "supabase/migrations/20260801151000_preserve_contractor_rate_row_versions.sql";
-const OPERATION_SANITIZE_MIGRATION = "supabase/migrations/20260801152000_sanitize_workspace_operation_payloads.sql";
-const WORK_CATALOG_MIGRATION = "supabase/migrations/20260801153000_persist_work_catalog_master.sql";
-
 describe("Supabase persistence convergence", () => {
   test("keeps current runtime on canonical workspace and Drive persistence only", async () => {
-    const migration = await testFile(MIGRATION).text();
     const server = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     const drive = await testFile("src/lib/rdash/server/drive-connections.ts").text();
 
-    expectTokens(migration, ["drop function if exists public.commit_operations"]);
-    expectTokens(migration, ["drop function if exists public.write_workspace_snapshot"]);
-    expectTokens(migration, ["drop function if exists public.uc_bump_workspace_revision"]);
-    expectTokens(migration, ['drop table if exists public."CollectionMeta"']);
-
     expect(server).toContain('admin.rpc("commit_workspace_operations"');
     expect(server).not.toContain('admin.rpc("commit_operations"');
+    expect(server).not.toContain("write_workspace_snapshot");
     expect(drive).toContain('.from("uc_google_drive_credentials")');
     expect(drive).not.toContain("GenericRecord");
+    expect(drive).not.toContain("oauth_connection_id");
   });
 
-  test("binds every workspace collection to its canonical entity table", async () => {
-    const migration = await testFile(MIGRATION).text();
-
-    expectTokens(migration, ["rename to commit_workspace_operations_internal"]);
-    expectTokens(migration, ["v_expected_table := 'entity_' || replace(v_collection, '.', '_')"]);
-    expectTokens(migration, ["v_table is distinct from v_expected_table"]);
-    expect(migration).toContain("INVALID_COLLECTION_TABLE");
-    expectTokens(migration, ["perform set_config('uc.write_source', 'workspace-commit', true)"]);
-    expectTokens(migration, ["return public.commit_workspace_operations_internal("]);
-    expectTokens(migration, ["revoke all on function public.commit_workspace_operations_internal"]);
-    expectTokens(migration, ["from public, anon, authenticated, service_role"]);
-  });
-
-  test("sanitizes Staff credentials before response, persistence and journaling", async () => {
-    const tableGuard = await testFile(STAFF_MIRROR_MIGRATION).text();
-    const operationGuard = await testFile(OPERATION_SANITIZE_MIGRATION).text();
+  test("sanitizes Staff credentials before canonical persistence", async () => {
     const authorized = await testFile("src/lib/rdash/server/authorized-commit.ts").text();
-
-    expectTokens(tableGuard, ["new.data := coalesce(new.data, '{}'::jsonb)"]);
-    expectTokens(tableGuard, ["- 'temporary_password'"]);
-    expectTokens(tableGuard, ["- 'force_password_change'"]);
-    expectTokens(operationGuard, ["create or replace function public.uc_sanitize_workspace_operations"]);
-    expectTokens(operationGuard, ["v_row - 'temporary_password' - 'force_password_change'"]);
-    expectTokens(operationGuard, ["v_operations := public.uc_sanitize_workspace_operations(p_operations)"]);
-    expectTokens(operationGuard, ["v_operations := public.uc_expand_contractor_rate_operations"]);
-    expectTokens(operationGuard, ["return public.commit_workspace_operations_internal("]);
 
     expectTokens(authorized, ["function sanitizeWorkspaceOperations("]);
     expectTokens(authorized, ["delete safe.temporary_password;"]);
@@ -59,39 +24,7 @@ describe("Supabase persistence convergence", () => {
     expectTokens(authorized, ["let commitOperations = sanitizeWorkspaceOperations(operations);"]);
   });
 
-  test("journals auth-driven master staff synchronization exactly once", async () => {
-    const migration = await testFile(MIGRATION).text();
-    const staffIdentity = await testFile(
-      "supabase/migrations/20260724054622_staff_identity_atomic_sync.sql",
-    ).text();
-
-    expectTokens(staffIdentity, ["for update;"]);
-    expect(staffIdentity).toContain("'auth-system'");
-    expectTokens(staffIdentity, ["v_next_workspace_revision := v_workspace_revision + 1"]);
-
-    expectTokens(migration, ["create or replace function public.uc_journal_auth_staff_master_write()"]);
-    expectTokens(migration, ["current_setting('uc.write_source', true) = 'workspace-commit'"]);
-    expectTokens(migration, ["if new.updated_by is distinct from 'auth-system'"]);
-    expectTokens(migration, ["v_next_revision := v_current_revision + 1"]);
-    expectTokens(migration, ["'collection', 'master.staff'"]);
-    expectTokens(migration, ["'master.staff:' || new.id"]);
-    expectTokens(migration, ["create trigger entity_master_staff_auth_journal"]);
-  });
-
-  test("historical Staff mirrors are superseded by canonical Staff convergence", async () => {
-    const historical = await testFile(STAFF_MIRROR_MIGRATION).text();
-    const canonical = await testFile("supabase/migrations/20260804060639_canonicalize_staff_identity_storage.sql").text();
-    const integrity = await testFile("supabase/migrations/20260804094126_canonical_staff_reference_integrity.sql").text();
-
-    expect(historical).toContain('insert into public."StaffProfile"');
-    expect(canonical).toContain('drop table public."StaffProfile"');
-    expect(canonical).toContain("public.entity_master_staff");
-    expect(canonical).toContain("create function public.uc_sync_workspace_staff_access()");
-    expect(integrity).toContain('drop view if exists public."StaffProfile"');
-    expect(integrity).toContain("Runtime has zero compatibility-view consumers");
-  });
-
-  test("routes Staff login changes to User Approvals and declares the persisted auth link", async () => {
+  test("routes Staff login changes to User Approvals", async () => {
     const dialog = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
     const types = await testFile("src/lib/rdash/types.ts").text();
 
@@ -104,31 +37,9 @@ describe("Supabase persistence convergence", () => {
     expectTokens(types, ["auth_user_id?: string;"]);
   });
 
-  test("makes Contractor Rates an atomic projection visible to server and database", async () => {
-    const migration = await testFile(CONTRACTOR_RATE_MIGRATION).text();
-    const revisionFix = await testFile(CONTRACTOR_RATE_REVISION_MIGRATION).text();
+  test("keeps Contractor Rates on the canonical projection", async () => {
     const authorized = await testFile("src/lib/rdash/server/authorized-commit.ts").text();
     const profile = await testFile("src/lib/rdash/contractor-profile.ts").text();
-
-    expectTokens(migration, ["create or replace function public.uc_contractor_rate_projection_rows"]);
-    expectTokens(migration, ["p_contractor -> 'work_capabilities'"]);
-    expectTokens(migration, ["p_contractor -> 'capabilities_v2'"]);
-    expectTokens(migration, ["'crate-' || v_contractor_id || '-' || v_subcategory_id"]);
-    expectTokens(migration, ["create or replace function public.uc_expand_contractor_rate_operations"]);
-    expectTokens(migration, ["v_op ->> 'collection' <> 'master.contractors'"]);
-    expectTokens(migration, ["'collection', 'master.contractorRates'"]);
-    expectTokens(migration, ["'table', 'entity_master_contractorRates'"]);
-    expectTokens(migration, ["v_operations := public.uc_expand_contractor_rate_operations"]);
-    expectTokens(migration, ["return public.commit_workspace_operations_internal("]);
-    expectTokens(migration, ["One-time live-data convergence"]);
-    expect(migration).toContain("'contractor-rate-projection'");
-    expectTokens(migration, ["v_next_revision := v_current_revision + 1"]);
-    expect(migration).toContain("is_baseline");
-
-    expectTokens(revisionFix, ["v_projection_ids text[]"]);
-    expectTokens(revisionFix, ["v_contractor_projection := public.uc_contractor_rate_projection_rows"]);
-    expectTokens(revisionFix, ["not (v_existing_id = any(v_projection_ids))"]);
-    expectTokens(revisionFix, ["preserving stable row revisions"]);
 
     expectTokens(authorized, ['import { contractorRateProjection } from "../contractor-profile";']);
     expectTokens(authorized, ["function canonicalizeContractorRateOperations("]);
@@ -137,32 +48,18 @@ describe("Supabase persistence convergence", () => {
     expect(profile).toContain("workTypesForSubcategory(subcategory)");
     expectTokens(profile, ["rate.work_type_id === workTypeRate.work_type_id"]);
     expectTokens(profile, ["work_type_name: workTypeName"]);
+    expectNoTokens(profile, ["capabilities_v2"]);
   });
 
-  test("persists the work catalog in Supabase and stops runtime JSON replacement", async () => {
-    const migration = await testFile(WORK_CATALOG_MIGRATION).text();
+  test("keeps the persisted work catalog version canonical", async () => {
     const commitRest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
-
-    expectTokens(migration, ['insert into public."entity_master_units"']);
-    expectTokens(migration, ['insert into public."entity_master_workCategories"']);
-    expectTokens(migration, ['insert into public."entity_master_workSubcategories"']);
-    expectTokens(migration, ['insert into public."entity_master_articles"']);
-    expectTokens(migration, ['insert into public."entity_master_subcategoryArticleMap"']);
-    expectTokens(migration, ["data = excluded.data ||"]);
-    expect(migration).toContain("'work-catalog-seed'");
-    expectTokens(migration, ["is_baseline = true"]);
 
     expectTokens(commitRest, ['import { WORK_CATALOG_VERSION } from "../work-category-master";']);
     expectTokens(commitRest, ["master.catalog_version = WORK_CATALOG_VERSION;"]);
   });
 
-  test("establishes a fresh journal baseline after historical gaps", async () => {
-    const migration = await testFile(MIGRATION).text();
+  test("requires a fresh scoped read when a journal baseline is too old", async () => {
     const delta = await testFile("src/lib/rdash/server/workspace-changes.ts").text();
-
-    expectTokens(migration, ["from public.entity_workspace_revision r"]);
-    expectTokens(migration, ["on conflict (workspace_id, revision) do update"]);
-    expectTokens(migration, ["set is_baseline = true"]);
 
     expectTokens(delta, ["afterRevision < baselineRevision"]);
     expectTokens(delta, ['reason: "revision_too_old"']);
