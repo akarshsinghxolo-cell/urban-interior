@@ -474,10 +474,10 @@ export function createSeedTasks(): Task[] {
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
   return [
-    { id: "task-field-progress-photo", title: "Upload ceiling progress photos", description: "Attach before/after and material placement proof before checkout.", status: "todo", priority: "high", assignee_id: "staff-field", assignee_name: "Ravi Kumar", assigned_role: "Field Staff", due_date: today, task_scope: "site", task_type: "site_progress", site_id: "site-das-apartment", work_required_id: "work-das-ceiling", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
-    { id: "task-ops-approve-attendance", title: "Review Ravi late attendance", description: "Late check-in should be reviewed before payroll generation.", status: "review", priority: "medium", assignee_id: "staff-ops", assignee_name: "Anita Rao", assigned_role: "Operations Manager", due_date: today, task_scope: "office", task_type: "attendance_review", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
-    { id: "task-procurement-rate-check", title: "Confirm Build Mart invoice rate", description: "Vendor bill rate can update active vendor rate after approval.", status: "todo", priority: "medium", assignee_id: "staff-procurement", assignee_name: "Vikas Tiwari", assigned_role: "Procurement Staff", due_date: today, task_scope: "office", task_type: "vendor_rate_review", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
-    { id: "task-finance-payroll-draft", title: "Prepare monthly payroll draft", description: "Use attendance calendar reasons before releasing salary.", status: "todo", priority: "high", assignee_id: "staff-finance", assignee_name: "Meera Nair", assigned_role: "Finance", due_date: today, task_scope: "office", task_type: "payroll", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
+    { id: "task-field-progress-photo", title: "Upload ceiling progress photos", description: "Attach before/after and material placement proof before checkout.", status: "todo", priority: "high", assigned_staff_id: "staff-field", due_date: today, task_scope: "site", task_type: "site_progress", site_id: "site-das-apartment", work_required_id: "work-das-ceiling", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
+    { id: "task-ops-approve-attendance", title: "Review Ravi late attendance", description: "Late check-in should be reviewed before payroll generation.", status: "review", priority: "medium", assigned_staff_id: "staff-ops", due_date: today, task_scope: "office", task_type: "attendance_review", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
+    { id: "task-procurement-rate-check", title: "Confirm Build Mart invoice rate", description: "Vendor bill rate can update active vendor rate after approval.", status: "todo", priority: "medium", assigned_staff_id: "staff-procurement", due_date: today, task_scope: "office", task_type: "vendor_rate_review", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
+    { id: "task-finance-payroll-draft", title: "Prepare monthly payroll draft", description: "Use attendance calendar reasons before releasing salary.", status: "todo", priority: "high", assigned_staff_id: "staff-finance", due_date: today, task_scope: "office", task_type: "payroll", comments: [], checklist: [], proofs: [], created_at: now, updated_at: now },
   ];
 }
 
@@ -485,7 +485,7 @@ export function assertStaffOperationAllowed(data: RDashDatabase, rolePermissions
   const roleKey = normalizeRoleKey(role);
   if (roleKey === "OWNER" || roleKey === "OPERATIONS_MANAGER") return;
   const recordObj = record as Record<string, unknown> | undefined;
-  const recordStaffId = recordObj?.staff_id || recordObj?.assigned_to_staff_id || recordObj?.assignee_id;
+  const recordStaffId = recordObj?.staff_id || recordObj?.assigned_staff_id || recordObj?.assigned_to_staff_id;
   const staffModule = moduleForCollection(collection);
   if (!canRole(rolePermissions, role, staffModule, "update") && !canRole(rolePermissions, role, staffModule, "create")) {
     throw new Error(`FORBIDDEN:${collection}`);
