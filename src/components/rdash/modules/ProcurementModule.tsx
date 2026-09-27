@@ -51,19 +51,20 @@ function useProcurementDirtyDialog(input: {
     onClose: () => void;
     onSave: () => boolean;
 }) {
-    const currentValueRef = React.useRef(input.value);
-    currentValueRef.current = input.value;
-    const baselineRef = React.useRef("");
+    const [baseline, setBaseline] = React.useState("");
     React.useEffect(() => {
-        baselineRef.current = input.open ? JSON.stringify(currentValueRef.current) : "";
+        setBaseline(input.open ? JSON.stringify(input.value) : "");
+        // The baseline is captured only when the dialog opens/closes.
+        // Subsequent value changes are what make the form dirty.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [input.open]);
     useDirtyFormRegistration({
         id: input.id,
         label: input.label,
         dirty: Boolean(
             input.open &&
-            baselineRef.current &&
-            JSON.stringify(input.value) !== baselineRef.current
+            baseline &&
+            JSON.stringify(input.value) !== baseline
         ),
         save: input.onSave,
         discard: () => {
