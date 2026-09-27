@@ -257,8 +257,7 @@ export function FieldModeModule() {
             const visitId = addVisit({
                 customer_id: nearest.site.customer_id,
                 site_id: nearest.site.id,
-                staff_id: user.staffId,
-                staff_name: user.name,
+                assigned_staff_id: user.staffId,
                 assignee_type: "staff",
                 visit_type: "site_visit",
                 scheduled_at: new Date().toISOString(),
