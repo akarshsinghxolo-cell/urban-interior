@@ -102,11 +102,17 @@ describe("client delta application", () => {
     expect(filter).toContain("tasks");
   });
 
-  test("treats full snapshots as unfiltered", () => {
+  test("treats only explicit full snapshots as unfiltered", () => {
     const database = scopedDatabase();
-    (database as unknown as Record<string, unknown>)._workspace_read_scope = "full";
+    const metadata = database as unknown as Record<string, unknown>;
+    metadata._workspace_read_scope = "full";
     expect(loadedWorkspaceCollections(database)).toBeNull();
     expect(workspaceCollectionFilterParam(database)).toBeUndefined();
+
+    delete metadata._workspace_read_scope;
+    delete metadata._workspace_read_collections;
+    expect(loadedWorkspaceCollections(database)).toEqual(new Set());
+    expect(workspaceCollectionFilterParam(database)).toBe("");
   });
 
   test("expands row versions for compatibility and removes deletion keys", () => {
