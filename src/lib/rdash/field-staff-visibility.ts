@@ -34,15 +34,9 @@ function filterRows<T>(rows: T[], predicate: (row: T) => boolean): T[] {
 }
 
 function assignedToViewer(row: AnyRow, viewer: Viewer): boolean {
-  if (viewer.staffId) {
-    for (const field of ["staff_id", "assignee_id", "assigned_staff_id"]) {
-      if (String(row[field] || "") === viewer.staffId) return true;
-    }
-  }
-  for (const field of ["staff_name", "assignee_name", "assigned_to"]) {
-    if (normalize(row[field]) && normalize(row[field]) === normalize(viewer.name)) return true;
-  }
-  return normalize(row.assigned_role) === normalize(viewer.role);
+  if (!viewer.staffId) return false;
+  return ["staff_id", "assigned_staff_id", "filed_by_staff_id", "received_by_staff_id"]
+    .some((field) => String(row[field] || "") === viewer.staffId);
 }
 
 function createdByViewer(db: RDashDatabase, viewer: Viewer): Map<string, Set<string>> {
