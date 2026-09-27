@@ -35,7 +35,7 @@ import {
 import { workRequiredDisplayTitle } from "@/lib/rdash/work-types";
 import { Avatar, EmptyState, MetricCard, StatusBadge } from "../primitives";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
-import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
+import { CustomerWorkRequiredDialog as WorkRequiredCreateDialog } from "../customer/CustomerWorkRequiredDialog";
 import { CustomerWorkCaptureDialog } from "../customer/CustomerWorkCaptureDialog";
 import { EntityFilesCard } from "../EntityFilesCard";
 import { RecordPaymentDialog } from "../ActionDialogs";
