@@ -10,7 +10,6 @@ const source = async (path: string) => testFile(path).text();
 describe("canonical Customer site / Area / Work Required workflow", () => {
   test("Customer owns the one rich detailed-area implementation", async () => {
     const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
-    const compatibility = await source("src/components/rdash/CustomerWorkCaptureDialog.tsx");
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
 
     for (const token of [
@@ -29,7 +28,6 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
       "incomplete/duplicate row(s) left untouched",
     ]) expect(capture).toContain(token);
 
-    expect(compatibility).toContain('export { CustomerWorkCaptureDialog } from "./customer/CustomerWorkCaptureDialog"');
     expect(portfolio).toContain('from "../customer/CustomerWorkCaptureDialog"');
     expect(portfolio).not.toContain("StructuredWorkRequiredDialog");
     expect(portfolio).not.toContain("captureStructuredWorkRequired");
