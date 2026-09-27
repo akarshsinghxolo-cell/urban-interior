@@ -1,10 +1,6 @@
-"use client";
-import { UrbanCastleApp } from "@/components/urban-castle/UrbanCastleApp";
-import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@/components/ui/sonner";
+import { redirect } from "next/navigation";
+import { WORKSPACE_ROOT_PATH } from "@/lib/rdash/workspace-routes";
+
 export default function Home() {
-    return (<ThemeProvider attribute="class" defaultTheme="system" enableSystem={true} disableTransitionOnChange>
-      <UrbanCastleApp />
-      <Toaster richColors mobileOffset={16} toastOptions={{ className: "max-w-[calc(100vw-2rem)]" }}/>
-    </ThemeProvider>);
+  redirect(WORKSPACE_ROOT_PATH);
 }
