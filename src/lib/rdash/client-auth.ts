@@ -52,7 +52,7 @@ function decodeSessionIdentity(token: string | null) {
   if (!token) return "anonymous";
   try {
     const payloadPart = token.split(".")[1];
-    if (!payloadPart) return `token:${hashIdentity(token)}`;
+    if (!payloadPart) return "invalid";
     const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
     const payload = JSON.parse(window.atob(padded)) as Record<string, unknown>;
@@ -61,9 +61,9 @@ function decodeSessionIdentity(token: string | null) {
       return `user:${hashIdentity(stableIdentity.trim().toLowerCase())}`;
     }
   } catch {
-    // Fall back to a token fingerprint only for non-JWT legacy sessions.
+    return "invalid";
   }
-  return `token:${hashIdentity(token)}`;
+  return "invalid";
 }
 
 function healthStorageKey() {
