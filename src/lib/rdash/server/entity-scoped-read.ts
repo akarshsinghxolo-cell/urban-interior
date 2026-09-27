@@ -374,7 +374,7 @@ function contextPlan(database: RDashDatabase, kind: RowScopedWorkspaceEntityKind
   addJsonValues(plan, "entityReferenceAssignments", "entity_id", entityIds);
   addRows(plan, "master.vendors", fieldValues(database, ["vendor_id"]));
   addRows(plan, "master.contractors", fieldValues(database, ["contractor_id", "abandoned_contractor_id"]));
-  addRows(plan, "master.staff", fieldValues(database, ["staff_id", "assignee_id", "assigned_to_staff_id"]));
+  addRows(plan, "master.staff", fieldValues(database, ["staff_id", "assigned_staff_id", "filed_by_staff_id", "received_by_staff_id", "approver_id"]));
   addRows(plan, "master.sourcePartners", fieldValues(database, ["source_partner_id"]));
   addJsonValues(plan, "master.vendorRates", "vendor_id", fieldValues(database, ["vendor_id"]));
   addJsonValues(plan, "master.contractorRates", "contractor_id", fieldValues(database, ["contractor_id"]));
