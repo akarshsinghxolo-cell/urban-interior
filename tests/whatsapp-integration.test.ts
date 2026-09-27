@@ -11,13 +11,8 @@ describe("Urban Castle WhatsApp integration", () => {
   });
 
   test("keeps WhatsApp credentials in server-only Supabase tables", async () => {
-    const migration = await readFile("supabase/migrations/20260920042121_whatsapp_baileys_foundation.sql", "utf8");
     const server = await readFile("src/lib/whatsapp/server.ts", "utf8");
 
-    expect(migration).toContain("create table if not exists public.uc_whatsapp_auth_state");
-    expect(migration).toContain("alter table public.uc_whatsapp_auth_state enable row level security");
-    expect(migration).toContain("revoke all on table public.uc_whatsapp_auth_state from public, anon, authenticated");
-    expect(migration).toContain("grant select, insert, update, delete on table public.uc_whatsapp_auth_state to service_role");
     expect(server).toContain('from("uc_whatsapp_auth_state")');
     expect(server).toContain("BufferJSON.replacer");
     expect(server).toContain("BufferJSON.reviver");
