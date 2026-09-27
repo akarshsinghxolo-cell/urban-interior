@@ -10,6 +10,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { formatINRShort, formatDate, formatDateTime, relativeDay } from "@/lib/rdash/format";
 import { cn } from "@/lib/utils";
 import type { AuditLogEntry } from "@/lib/rdash/types";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 
 /**
  * Work Order Timeline — a TRUE unified timeline that aggregates events from
@@ -188,7 +189,7 @@ export function WorkOrderTimelineModule() {
 
         // Task events
         db.tasks.filter((t: any) => t.work_order_id === woId).forEach((t: any) => {
-            out.push({ timestamp: t.created_at, type: "task", typeLabel: TYPE_META.task.label, label: `Task created: ${t.title}`, icon: TYPE_META.task.icon, source_module: "tasks", entity_kind: "task", entity_id: t.id, actor: t.assignee_name, description: `Due ${t.due_date} · ${t.status}` });
+            out.push({ timestamp: t.created_at, type: "task", typeLabel: TYPE_META.task.label, label: `Task created: ${t.title}`, icon: TYPE_META.task.icon, source_module: "tasks", entity_kind: "task", entity_id: t.id, actor: staffNameForId(db, t.assigned_staff_id), description: `Due ${t.due_date} · ${t.status}` });
             if (t.status === "completed" && t.completed_at) {
                 out.push({ timestamp: t.completed_at, type: "task", typeLabel: "Task completed", label: `Task completed: ${t.title}`, icon: <CheckCircle2 className="h-3.5 w-3.5"/>, source_module: "tasks", entity_kind: "task", entity_id: t.id, actor: t.completed_by });
             }
@@ -196,7 +197,7 @@ export function WorkOrderTimelineModule() {
 
         // Follow-up events
         db.followups.filter((f: any) => f.work_order_id === woId || (workOrder as any).followup_ids?.includes(f.id)).forEach((f: any) => {
-            out.push({ timestamp: f.created_at, type: "followup", typeLabel: TYPE_META.followup.label, label: `Follow-up: ${f.title}`, icon: TYPE_META.followup.icon, source_module: "tasks", entity_kind: "followup", entity_id: f.id, actor: f.assigned_to, description: `Due ${f.due_date}` });
+            out.push({ timestamp: f.created_at, type: "followup", typeLabel: TYPE_META.followup.label, label: `Follow-up: ${f.title}`, icon: TYPE_META.followup.icon, source_module: "tasks", entity_kind: "followup", entity_id: f.id, actor: staffNameForId(db, f.assigned_staff_id), description: `Due ${f.due_date}` });
             if (f.status === "completed" && f.completed_at) {
                 out.push({ timestamp: f.completed_at, type: "followup", typeLabel: "Follow-up completed", label: `Follow-up closed: ${f.title}`, icon: <CheckCircle2 className="h-3.5 w-3.5"/>, source_module: "tasks", entity_kind: "followup", entity_id: f.id, actor: f.completed_by, description: `Outcome: ${f.outcome || "—"}` });
             }
@@ -204,12 +205,12 @@ export function WorkOrderTimelineModule() {
 
         // Visit events
         db.visits.filter((v: any) => v.work_order_id === woId).forEach((v: any) => {
-            out.push({ timestamp: v.scheduled_at, type: "visit", typeLabel: TYPE_META.visit.label, label: `Visit scheduled: ${v.location_name}`, icon: TYPE_META.visit.icon, source_module: "fieldOperations", entity_kind: "visit", entity_id: v.id, description: `${v.visit_type} · ${v.staff_name || v.contractor_name || "Unassigned"}` });
+            out.push({ timestamp: v.scheduled_at, type: "visit", typeLabel: TYPE_META.visit.label, label: `Visit scheduled: ${v.location_name}`, icon: TYPE_META.visit.icon, source_module: "fieldOperations", entity_kind: "visit", entity_id: v.id, description: `${v.visit_type} · ${v.assignee_type === "contractor" ? (v.contractor_name || "Contractor") : staffNameForId(db, v.assigned_staff_id)}` });
             if (v.check_in_at) {
-                out.push({ timestamp: v.check_in_at, type: "visit", typeLabel: "Visit check-in", label: `Checked in at ${v.location_name}`, icon: <MapPin className="h-3.5 w-3.5"/>, source_module: "fieldOperations", entity_kind: "visit", entity_id: v.id, actor: v.staff_name });
+                out.push({ timestamp: v.check_in_at, type: "visit", typeLabel: "Visit check-in", label: `Checked in at ${v.location_name}`, icon: <MapPin className="h-3.5 w-3.5"/>, source_module: "fieldOperations", entity_kind: "visit", entity_id: v.id, actor: v.assignee_type === "contractor" ? v.contractor_name : staffNameForId(db, v.assigned_staff_id) });
             }
             if (v.check_out_at) {
-                out.push({ timestamp: v.check_out_at, type: "visit", typeLabel: "Visit check-out", label: `Checked out at ${v.location_name}`, icon: <CheckCircle2 className="h-3.5 w-3.5"/>, source_module: "fieldOperations", entity_kind: "visit", entity_id: v.id, actor: v.staff_name, description: v.dwell_minutes ? `Dwell ${v.dwell_minutes}m` : undefined });
+                out.push({ timestamp: v.check_out_at, type: "visit", typeLabel: "Visit check-out", label: `Checked out at ${v.location_name}`, icon: <CheckCircle2 className="h-3.5 w-3.5"/>, source_module: "fieldOperations", entity_kind: "visit", entity_id: v.id, actor: v.assignee_type === "contractor" ? v.contractor_name : staffNameForId(db, v.assigned_staff_id), description: v.dwell_minutes ? `Dwell ${v.dwell_minutes}m` : undefined });
             }
         });
 
