@@ -107,7 +107,7 @@ function dispatchAutomationAction(
                 task_scope: (payload.task_scope as any) || "general",
                 task_type: `automation:${rule.id}`,
                 due_date: dueDate,
-                assignee_name: (payload.assignee_name as string) || undefined,
+                assigned_staff_id: (payload.assigned_staff_id as string) || undefined,
                 customer_id: (context.customerId as string) || (payload.customer_id as string) || undefined,
                 quotation_id: (context.quotationId as string) || (payload.quotation_id as string) || undefined,
                 work_order_id: (context.workOrderId as string) || (payload.work_order_id as string) || undefined,
@@ -218,6 +218,11 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
     return {
         addApprovalPolicy: (p) => {
             const actor = get().currentUser();
+            if (!p.approver_id)
+                throw new Error("Select an active Staff approver.");
+            const approver = get().db.master.staff.find((staff) => staff.id === p.approver_id && staff.status === "active");
+            if (!approver)
+                throw new Error("Approval policy approver must be an active Staff member.");
             const created = commitState((s: any) => {
                 const now = nowIso();
                 const pol: ApprovalPolicy = {
@@ -226,9 +231,8 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                     trigger: p.trigger || "po_amount",
                     threshold: p.threshold || 0,
                     operator: p.operator || ">",
-                    approver_role: p.approver_role || "Owner",
-                    approver_id: p.approver_id,
-                    approver_name: p.approver_name || "Owner",
+                    approver_role: approver.role,
+                    approver_id: approver.id,
                     auto_escalate_hours: p.auto_escalate_hours,
                     escalate_to: p.escalate_to,
                     enabled: p.enabled ?? true,
