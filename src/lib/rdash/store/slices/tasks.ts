@@ -212,8 +212,13 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     auditChanges.push({ id: `ch-${Date.now()}-p`, field: "priority", before: before.priority, after: patch.priority });
                 if (patch.due_date !== undefined && patch.due_date !== before.due_date)
                     auditChanges.push({ id: `ch-${Date.now()}-dd`, field: "due_date", before: before.due_date, after: patch.due_date });
-                if (nextAssignee && nextAssignee !== oldAssignee)
-                    auditChanges.push({ id: `ch-${Date.now()}-a`, field: "assignee", before: oldAssignee, after: nextAssignee });
+                if (nextAssigneeId && nextAssigneeId !== oldAssigneeId)
+                    auditChanges.push({
+                        id: `ch-${Date.now()}-a`,
+                        field: "assigned_staff_id",
+                        before: oldAssigneeId,
+                        after: nextAssigneeId,
+                    });
                 get().logAudit({
                     actor: actor.name,
                     actor_role: actor.role,
