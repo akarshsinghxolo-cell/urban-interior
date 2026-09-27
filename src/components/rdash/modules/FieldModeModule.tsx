@@ -17,6 +17,7 @@ import { FilePreview } from "../FilePreview";
 import { captureDeviceGps, deviceGpsErrorMessage, watchDevicePosition } from "@/lib/rdash/device-gps";
 import { distanceMeters } from "@/lib/rdash/gps";
 import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 export function FieldModeModule() {
     const db = useRDashStore((s) => s.db);
     const checkIn = useRDashStore((s) => s.checkInVisit);
@@ -49,7 +50,7 @@ export function FieldModeModule() {
             return true;
         if (visit.assignee_type === "contractor" || visit.contractor_id)
             return isActiveStaff;
-        return user.role === "Field Staff" && visit.staff_id === user.staffId;
+        return user.role === "Field Staff" && visit.assigned_staff_id === user.staffId;
     };
     const todayVisits = db.visits.filter((v) => canOperateVisit(v) &&
         (indiaBusinessDate(new Date(v.scheduled_at)) === today || relativeDay(v.scheduled_at) === "Yesterday"));
@@ -67,7 +68,7 @@ export function FieldModeModule() {
     // STAGE-4-FIX: deps without db.visits (was tearing down watchPosition on
     // every visit mutation, dropping GPS points). Read visits via getState().
     const activeVisitId = React.useMemo(() => {
-        const active = db.visits.find((visit) => visit.assignee_type !== "contractor" && !visit.contractor_id && visit.status === "checked_in" && (canManageAll || visit.staff_id === user.staffId));
+        const active = db.visits.find((visit) => visit.assignee_type !== "contractor" && !visit.contractor_id && visit.status === "checked_in" && (canManageAll || visit.assigned_staff_id === user.staffId));
         return active?.id || null;
     }, [db.visits, canManageAll, user.staffId]);
     React.useEffect(() => {
@@ -95,7 +96,7 @@ export function FieldModeModule() {
             latitude: coordinates.latitude,
             longitude: coordinates.longitude,
             address: visit.location_name,
-            meta: `${visit.staff_name} · ${titleCase(visit.status)}`,
+            meta: `${staffNameForId(db, visit.assigned_staff_id)} · ${titleCase(visit.status)}`,
             status: visit.status === "checked_in" || visit.status === "en_route"
                 ? "active"
                 : visit.status === "report_pending"
