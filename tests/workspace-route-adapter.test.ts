@@ -15,10 +15,9 @@ describe("workspace route adapter", () => {
     expect(selectWorkspaceRoute("/workspace/field/gps", "gpsTracking")?.shouldActivate).toBe(false);
   });
 
-  test("resolves compatibility aliases through the canonical registry", () => {
-    const selection = selectWorkspaceRoute("/workspace/boq", "workdesk");
-    expect(selection?.moduleId).toBe("boqControlCentre");
-    expect(selection?.canonicalPath).toBe("/workspace/procurement/boq");
+  test("rejects retired compatibility aliases", () => {
+    expect(selectWorkspaceRoute("/workspace/boq", "workdesk")).toBeUndefined();
+    expect(selectWorkspaceRoute("/workspace/customerDesk", "workdesk")).toBeUndefined();
   });
 
   test("selects entities without inventing separate page components", () => {
