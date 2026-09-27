@@ -494,6 +494,7 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "Vendor bid could not be recorded.");
+            return false;
         }
         return true;
     };
@@ -590,6 +591,7 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "Direct-award PO could not be created.");
+            return false;
         }
         return true;
     };
@@ -811,6 +813,14 @@ function VendorBidDialog({ lockedVendorId, open, onOpenChange, rfqId, vendorId, 
     db: any;
     onSave: () => boolean;
 }) {
+    const requestClose = useProcurementDirtyDialog({
+        id: "vendor-bid-record",
+        label: "Vendor bid form",
+        open: open && Boolean(rfqId),
+        value: { rfqId, vendorId, rates, deliveryDays },
+        onClose: () => onOpenChange(false),
+        onSave,
+    });
     if (!rfqId)
         return null;
     const rfq = db.vendorRfqs.find((r: any) => r.id === rfqId);
@@ -819,14 +829,6 @@ function VendorBidDialog({ lockedVendorId, open, onOpenChange, rfqId, vendorId, 
         return null;
     const bidItems = boq.items.filter((item: any) => rfq.item_ids.includes(item.id));
     const total = bidItems.reduce((sum: number, item: any) => sum + (Number(rates[item.id]) || 0) * item.quantity, 0);
-    const requestClose = useProcurementDirtyDialog({
-        id: "vendor-bid-record",
-        label: "Vendor bid form",
-        open,
-        value: { vendorId, rates, deliveryDays },
-        onClose: () => onOpenChange(false),
-        onSave,
-    });
     return (<Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
