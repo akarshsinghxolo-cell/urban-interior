@@ -124,10 +124,9 @@ export function withPrimaryWorkTypeIds(
 }
 
 /**
- * Quotation-facing title derived from the selection: one
+ * Quotation-facing title derived from the canonical selection: one
  * "subcategory · work type" segment per selected work type, joined with
- * " / ". Falls back to the selected subcategory names when no work types are
- * ticked (legacy rows), and to "" when nothing is selected at all.
+ * " / ". Returns "" when the explicit work-type selection is empty.
  */
 export function workRequiredTitleFromSelection(
   workSubcategories: WorkSubcategory[],
@@ -137,9 +136,7 @@ export function workRequiredTitleFromSelection(
   const selectedSubcategories = workSubcategories.filter((row) => subcategoryIds.includes(row.id));
   if (!selectedSubcategories.length) return "";
   const rows = resolveWorkTypes(selectedSubcategories, workTypeIds);
-  if (!rows.length) {
-    return selectedSubcategories.map((row) => row.name).join(" / ");
-  }
+  if (!rows.length) return "";
   const subcategoryNameByWorkTypeId = new Map<string, string>();
   for (const subcategory of selectedSubcategories) {
     for (const workType of workTypesForSubcategory(subcategory)) {
@@ -152,13 +149,9 @@ export function workRequiredTitleFromSelection(
 }
 
 /**
- * Display title for a saved Work Required row: re-derived from the current
- * subcategory / work-type selection (tier-qualified, e.g. "Toughened Glass
- * Railing · Standard / SS Railing · Standard"), falling back to the stored
- * title when the selection cannot be derived (legacy rows with no
- * subcategories). One display master so scorecards, site rows and detail
- * links agree with what the Add/Edit form would save — legacy seed titles
- * render correctly without a data migration.
+ * Display title for a saved Work Required row, re-derived from its explicit
+ * canonical subcategory / work-type selection. The stored title is used only
+ * when referenced master data is unavailable.
  */
 export function workRequiredDisplayTitle(
   workSubcategories: WorkSubcategory[],
@@ -166,11 +159,7 @@ export function workRequiredDisplayTitle(
 ): string {
   const subcategoryIds = work.work_subcategory_ids || [];
   if (!subcategoryIds.length) return work.title;
-  // Apply the same normalization the Add/Edit form applies on load/save:
-  // every ticked subcategory keeps at least its primary work type, so legacy
-  // rows without explicit work types still render "… · Standard".
-  const workTypeIds = withPrimaryWorkTypeIds(workSubcategories, subcategoryIds, work.work_type_ids);
-  return workRequiredTitleFromSelection(workSubcategories, subcategoryIds, workTypeIds) || work.title;
+  return workRequiredTitleFromSelection(workSubcategories, subcategoryIds, work.work_type_ids) || work.title;
 }
 
 // ── Detailed-area measurement ────────────────────────────────────────────────
@@ -447,12 +436,10 @@ export function areaChipQuantity(chips: LineItem["area_chips"]): number {
 
 export type OptedPair = { subcategory_id: ID; work_type_id?: ID };
 
-/** The (subcategory · work type) pairs the customer opted for — every Work
- *  Required row's ticked selection, deduped across rows, following the same
- *  derivation the capture view seeds from (seedDetailedAreaLines): explicit
- *  work-type ticks resolve to their own subcategory (only under a declared
- *  one); legacy rows without ticks fall back to each declared subcategory's
- *  primary work type. Pairs whose subcategory left the master drop out. */
+/** The explicit (subcategory · work type) pairs the customer opted for,
+ *  deduped across Work Required rows. Pairs whose subcategory left the master
+ *  drop out; missing work-type selections are invalid canonical data and are
+ *  not inferred at read time. */
 export function customerOptedPairs(input: {
   workRequired: Array<Pick<WorkRequired, "customer_id" | "work_subcategory_ids" | "work_type_ids">>;
   customerId: ID;
@@ -465,30 +452,19 @@ export function customerOptedPairs(input: {
     if (work.customer_id !== input.customerId) continue;
     const subcategoryIds = declaredIds(work.work_subcategory_ids);
     if (!subcategoryIds.length) continue;
-    const tickedIds = (work.work_type_ids || []).map(String);
-    if (tickedIds.length) {
-      for (const workTypeId of tickedIds) {
-        const subcategory = input.workSubcategories.find((row) => workTypesForSubcategory(row).some((wt) => wt.id === workTypeId));
-        // Only pairs under a subcategory the row declares count as opted.
-        if (!subcategory || !subcategoryIds.includes(subcategory.id)) continue;
-        opted.set(`${subcategory.id}::${workTypeId}`, { subcategory_id: subcategory.id, work_type_id: workTypeId });
-      }
-    }
-    else {
-      for (const subcategoryId of subcategoryIds) {
-        const subcategory = input.workSubcategories.find((row) => row.id === subcategoryId)!;
-        const primary = primaryWorkType(subcategory);
-        opted.set(`${subcategoryId}::${primary.id}`, { subcategory_id: subcategoryId, work_type_id: primary.id });
-      }
+    for (const workTypeId of (work.work_type_ids || []).map(String)) {
+      const subcategory = input.workSubcategories.find((row) => workTypesForSubcategory(row).some((wt) => wt.id === workTypeId));
+      // Only pairs under a subcategory the row declares count as opted.
+      if (!subcategory || !subcategoryIds.includes(subcategory.id)) continue;
+      opted.set(`${subcategory.id}::${workTypeId}`, { subcategory_id: subcategory.id, work_type_id: workTypeId });
     }
   }
   return Array.from(opted.values());
 }
 
 /** The opted pairs this quotation does NOT price yet — the editor's bottom
- *  "add them back" list. A line pair covers its own exact key; a legacy line
- *  pair WITHOUT a work type covers every opted type of its subcategory (the
- *  line quotes that work generically, so its types are not "missing"). */
+ *  "add them back" list. Canonical quotation pairs cover exact
+ *  (subcategory · work type) keys only. */
 export function omittedOptedPairs(input: {
   workRequired: Array<Pick<WorkRequired, "customer_id" | "work_subcategory_ids" | "work_type_ids">>;
   customerId: ID;
@@ -496,17 +472,14 @@ export function omittedOptedPairs(input: {
   items: Array<Pick<LineItem, "subcategory_id" | "work_type_id" | "option_pairs">>;
 }): OptedPair[] {
   const coveredKeys = new Set<string>();
-  const coveredAnyType = new Set<string>();
   for (const item of input.items) {
     for (const pair of itemOptionPairs(item)) {
-      if (!pair.subcategory_id) continue;
-      if (pair.work_type_id) coveredKeys.add(`${pair.subcategory_id}::${pair.work_type_id}`);
-      else coveredAnyType.add(String(pair.subcategory_id));
+      if (!pair.subcategory_id || !pair.work_type_id) continue;
+      coveredKeys.add(`${pair.subcategory_id}::${pair.work_type_id}`);
     }
   }
   return customerOptedPairs(input).filter((pair) =>
-    !coveredAnyType.has(String(pair.subcategory_id))
-    && !coveredKeys.has(`${pair.subcategory_id}::${pair.work_type_id || ""}`));
+    !coveredKeys.has(`${pair.subcategory_id}::${pair.work_type_id || ""}`));
 }
 
 /** One quotation line per covered Work Required decision — the annotation F
@@ -595,18 +568,12 @@ export function seedDetailedAreaLines(input: {
   const seen = new Set<string>();
   for (const work of input.siteWorks) {
     const subcategoryIds = (work.work_subcategory_ids || []).filter((id) => declared.has(id));
-    const planned: Array<{ subcategory: WorkSubcategory; workTypeId?: string }> = [];
-    if ((work.work_type_ids || []).length) {
-      for (const workTypeId of work.work_type_ids || []) {
-        const subcategory = subcategoryOfWorkType(workTypeId);
-        // Only seed work types that belong to a subcategory the row declares.
-        if (subcategory && subcategoryIds.includes(subcategory.id)) {
-          planned.push({ subcategory, workTypeId });
-        }
-      }
-    } else {
-      for (const id of subcategoryIds) {
-        planned.push({ subcategory: input.workSubcategories.find((row) => row.id === id)! });
+    const planned: Array<{ subcategory: WorkSubcategory; workTypeId: string }> = [];
+    for (const workTypeId of work.work_type_ids || []) {
+      const subcategory = subcategoryOfWorkType(workTypeId);
+      // Only seed explicit work types that belong to a declared subcategory.
+      if (subcategory && subcategoryIds.includes(subcategory.id)) {
+        planned.push({ subcategory, workTypeId });
       }
     }
     for (const areaId of work.area_ids || []) {
@@ -615,7 +582,7 @@ export function seedDetailedAreaLines(input: {
       // / WPC · Standard" — measured ONCE, because the customer takes any one
       // of them. Already-captured pairs drop out of the option list.
       const options = planned
-        .map(({ subcategory, workTypeId }) => ({ subcategory_id: subcategory.id, work_type_id: workTypeId || primaryWorkType(subcategory).id }))
+        .map(({ subcategory, workTypeId }) => ({ subcategory_id: subcategory.id, work_type_id: workTypeId }))
         .filter((pair) => {
           const key = scopeKeyOf(areaId, pair.subcategory_id, pair.work_type_id);
           if (captured.has(key) || seen.has(key)) return false;
