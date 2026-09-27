@@ -119,13 +119,9 @@ function belongsToViewer(
   row: AnyRow,
   viewer: Viewer,
   idFields: string[],
-  nameFields: string[],
 ): boolean {
-  if (viewer.staffId && idFields.some((field) => String(row[field] || "") === viewer.staffId)) {
-    return true;
-  }
-  return nameFields.some((field) =>
-    normalize(row[field]) !== "" && normalize(row[field]) === normalize(viewer.name));
+  return Boolean(viewer.staffId) &&
+    idFields.some((field) => String(row[field] || "") === viewer.staffId);
 }
 
 function maskMoneyFields<T>(row: T): T {
@@ -208,19 +204,18 @@ export function fieldStaffPresentationDatabase(
   const visibleFollowupIds = new Set(visible.followups.map((row) => row.id));
 
   const ownAttendance = (visible.attendance || []).filter((row) =>
-    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"], ["staff_name"]));
+    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"]));
   const ownLocationPings = (visible.staffLocationPings || []).filter((row) =>
-    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"], []));
+    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"]));
   const ownLeaveRequests = (visible.leaveRequests || []).filter((row) =>
-    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"], []));
+    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"]));
   const ownStaffDocuments = (visible.staffDocuments || []).filter((row) =>
-    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"], []));
+    belongsToViewer(row as unknown as AnyRow, viewer, ["staff_id"]));
   const ownRecurringTasks = (visible.recurringTasks || []).filter((row) =>
     belongsToViewer(
       row as unknown as AnyRow,
       viewer,
-      ["assignee_id"],
-      ["assignee_name"],
+      ["assigned_staff_id"],
     ));
 
   const threads = sanitizedThreads(visible, viewer);
@@ -373,7 +368,6 @@ export function fieldStaffPresentationDatabase(
           row as unknown as AnyRow,
           viewer,
           ["id"],
-          ["name"],
         ))
         .map((row) => ({
           ...row,
