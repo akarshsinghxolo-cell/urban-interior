@@ -195,7 +195,7 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
         const taxAmount = Number(vendorInvoiceTax || 0);
         if (!Number.isFinite(taxAmount) || taxAmount < 0) {
             toast.error("Enter a valid tax amount.");
-            return;
+            return false;
         }
         try {
             const invoiceLines = vendorInvoiceLines.map((line) => {
