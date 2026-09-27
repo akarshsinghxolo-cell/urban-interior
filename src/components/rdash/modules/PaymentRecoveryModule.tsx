@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Payment } from "@/lib/rdash/types";
+import { activeStaffIdForRole } from "@/lib/rdash/staff-directory";
 function isWithinDays(iso: string, days: number): boolean {
     if (!iso)
         return false;
@@ -186,7 +187,7 @@ export function PaymentRecoveryModule() {
                 work_order_id: reminderFor.work_order_id,
                 task_scope: "office",
                 task_type: "followup_call",
-                assignee_name: "Accounts",
+                assigned_staff_id: activeStaffIdForRole(db, ["Accounts / Admin", "Finance"]),
                 due_date: new Date().toISOString().slice(0, 10),
                 notes: reminderNote.trim() || undefined,
             } as any);  // STAGE-6-FIX: payment_id not on Task type
