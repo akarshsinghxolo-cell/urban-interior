@@ -8,11 +8,9 @@ import { genId, nowIso, assertRole, businessDate } from "../helpers";
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
  *
- * Match priority (highest first):
- *   1. Rule with `source_partner_id` AND `applies_to="category"` AND `category_id` matches.
- *   2. Rule with `source_partner_id` AND `applies_to="workOrder"` (applies to any workOrder for this partner).
- *   3. Rule with `source_partner_id` AND `applies_to="all"` (partner-specific catch-all).
- *   4. First rule with `applies_to="all"` and no partner filter (global fallback).
+ * Match priority:
+ *   1. Partner category rule whose `category_id` matches.
+ *   2. Partner-wide rule.
  *
  * Returns the winning rule, or `undefined` if no rule matches. The caller is
  * expected to fall back to `partner.commission_pct || 5` if this returns
@@ -35,13 +33,7 @@ export function findCommissionRule(
         if (exact)
             return exact;
     }
-    const workOrderRule = forPartner.find((r) => r.applies_to === "workOrder");
-    if (workOrderRule)
-        return workOrderRule;
-    const partnerAll = forPartner.find((r) => r.applies_to === "all");
-    if (partnerAll)
-        return partnerAll;
-    return rules.find((r) => r.applies_to === "all" && !r.source_partner_id);
+    return forPartner.find((r) => r.applies_to === "partner");
 }
 
 /**
@@ -1074,14 +1066,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 source_partner_id: r.source_partner_id || "",
                 source_partner_name: partner.name,
                 rate_pct: r.rate_pct ?? 0,
-                // The legacy type allows "all" | "category" | "workOrder". The
-                // UI form lets the user pick "quotation" | "work_order" (the
-                // business labels) and we map them here: "quotation" → "all"
-                // (partner-specific catch-all), "work_order" → "workOrder"
-                // (partner-scoped workOrder rule).
-                applies_to: (r.applies_to as any) === "quotation" ? "all"
-                    : (r.applies_to as any) === "work_order" ? "workOrder"
-                        : r.applies_to || "all",  // STAGE-6-FIX: cast for comparison
+                applies_to: r.applies_to || "partner",
                 category_id: r.category_id,
             };
             void category;
