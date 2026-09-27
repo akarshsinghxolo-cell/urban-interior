@@ -27,6 +27,8 @@ import {
   verifiedMeasurementRevisionIds,
 } from "@/components/rdash/customer/CustomerQuotationDialog";
 import { useRDashStore } from "@/lib/rdash/store";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { formatINRShort } from "@/lib/rdash/format";
 import { workRequiredDisplayTitle } from "@/lib/rdash/work-types";
 import { EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
@@ -49,6 +51,39 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 const isTabId = (value?: string): value is TabId => !!value && TABS.some((tab) => tab.id === value);
 const titleFromType = (type: string) => type.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+
+function useSiteExecutionDirtyDialog(input: {
+  id: string;
+  label: string;
+  open: boolean;
+  value: unknown;
+  onClose: () => void;
+  onSave: () => boolean;
+}) {
+  const [baseline, setBaseline] = React.useState("");
+  React.useEffect(() => {
+    setBaseline(input.open ? JSON.stringify(input.value) : "");
+    // Capture only the open/close boundary; edits after open make it dirty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [input.open]);
+  useDirtyFormRegistration({
+    id: input.id,
+    label: input.label,
+    dirty: Boolean(
+      input.open &&
+      baseline &&
+      JSON.stringify(input.value) !== baseline
+    ),
+    save: input.onSave,
+    discard: () => {
+      input.onClose();
+      return true;
+    },
+  });
+  return () => dirtyFormRegistry.requestNavigation(input.onClose, {
+    reason: `close this ${input.label}`,
+  });
+}
 
 const siteStageStyle: Record<string, string> = {
   enquiry: "bg-muted text-muted-foreground border-border",
@@ -218,10 +253,16 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
     setBidScopeNotes("");
   };
 
-  const saveBid = () => {
-    if (!bidScopeId || !bidContractorId) return toast.error("Select a contractor for this bid.");
+  const saveBid = (): boolean => {
+    if (!bidScopeId || !bidContractorId) {
+      toast.error("Select a contractor for this bid.");
+      return false;
+    }
     const quote = Number(bidQuoteAmount);
-    if (!Number.isFinite(quote) || quote <= 0) return toast.error("Enter the contractor's actual quote amount above zero.");
+    if (!Number.isFinite(quote) || quote <= 0) {
+      toast.error("Enter the contractor's actual quote amount above zero.");
+      return false;
+    }
     const days = Number(bidEstimatedDays);
     const id = addContractorBid({
       accepted_scope_id: bidScopeId,
@@ -231,9 +272,14 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
       with_material: bidWithMaterial,
       evaluation_notes: bidScopeNotes.trim() || undefined,
     });
-    if (!id) return toast.error("Bid could not be recorded.");
+    if (!id) {
+      toast.error("Bid could not be recorded.");
+      return false;
+    }
     toast.success(`Bid recorded for ${formatINRShort(quote)}.`);
+    dirtyFormRegistry.markClean("contractor-bid-invite");
     setBidScopeId(null);
+    return true;
   };
 
   const openDirectAward = (scopeId: string) => {
@@ -248,11 +294,20 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
     setDirectAwardNote("");
   };
 
-  const saveDirectAward = () => {
-    if (!directAwardScopeId || !directAwardContractorId) return toast.error("Select a contractor for the direct award.");
-    if (!directAwardReason.trim()) return toast.error("A reason is required for a direct award.");
+  const saveDirectAward = (): boolean => {
+    if (!directAwardScopeId || !directAwardContractorId) {
+      toast.error("Select a contractor for the direct award.");
+      return false;
+    }
+    if (!directAwardReason.trim()) {
+      toast.error("A reason is required for a direct award.");
+      return false;
+    }
     const amount = Number(directAwardAmount);
-    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Enter a valid award amount.");
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid award amount.");
+      return false;
+    }
     const days = Number(directAwardDays);
     try {
       const workOrderId = directAwardContractor({
@@ -264,12 +319,17 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
         award_reason: directAwardReason.trim(),
         note: directAwardNote.trim() || undefined,
       });
-      if (workOrderId) {
-        toast.success("Direct-award Work Order created; reason recorded in the audit log.");
-        setDirectAwardScopeId(null);
+      if (!workOrderId) {
+        toast.error("Direct award did not create a Work Order.");
+        return false;
       }
+      toast.success("Direct-award Work Order created; reason recorded in the audit log.");
+      dirtyFormRegistry.markClean("contractor-direct-award");
+      setDirectAwardScopeId(null);
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Direct award failed.");
+      return false;
     }
   };
 
@@ -289,11 +349,17 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
     setVendorBidDeliveryDays("");
   };
 
-  const saveVendorBid = () => {
-    if (!vendorBidRfqId || !vendorBidVendorId) return toast.error("Select a vendor for this RFQ.");
+  const saveVendorBid = (): boolean => {
+    if (!vendorBidRfqId || !vendorBidVendorId) {
+      toast.error("Select a vendor for this RFQ.");
+      return false;
+    }
     const rfq = db.vendorRfqs.find((entry) => entry.id === vendorBidRfqId);
     const boq = rfq ? db.boqs.find((entry) => entry.id === rfq.boq_id) : undefined;
-    if (!rfq || !boq) return toast.error("The RFQ or approved BOQ is unavailable.");
+    if (!rfq || !boq) {
+      toast.error("The RFQ or approved BOQ is unavailable.");
+      return false;
+    }
     const lines = boq.items
       .filter((item) => rfq.item_ids.includes(item.id))
       .map((item) => ({
@@ -307,7 +373,10 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
         amount: Math.round(item.quantity * Number(vendorBidRates[item.id])),
         tax_rate: item.tax_rate,
       }));
-    if (!lines.length || lines.some((line) => !Number.isFinite(line.rate) || line.rate <= 0)) return toast.error("Enter an actual vendor rate for every requested BOQ article.");
+    if (!lines.length || lines.some((line) => !Number.isFinite(line.rate) || line.rate <= 0)) {
+      toast.error("Enter an actual vendor rate for every requested BOQ article.");
+      return false;
+    }
     const days = vendorBidDeliveryDays.trim() ? Number(vendorBidDeliveryDays) : undefined;
     const id = addVendorBid({
       rfq_id: vendorBidRfqId,
@@ -315,10 +384,62 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
       lines,
       delivery_days: days && Number.isFinite(days) ? days : undefined,
     });
-    if (!id) return toast.error("Vendor bid could not be recorded.");
+    if (!id) {
+      toast.error("Vendor bid could not be recorded.");
+      return false;
+    }
     toast.success("Vendor bid recorded for comparison.");
+    dirtyFormRegistry.markClean("site-vendor-bid");
     setVendorBidRfqId(null);
+    return true;
   };
+
+  const closeContractorBid = useSiteExecutionDirtyDialog({
+    id: "contractor-bid-invite",
+    label: "Contractor bid form",
+    open: Boolean(bidScopeId),
+    value: {
+      bidScopeId,
+      bidContractorId,
+      bidQuoteAmount,
+      bidEstimatedDays,
+      bidWithMaterial,
+      bidScopeNotes,
+    },
+    onClose: () => setBidScopeId(null),
+    onSave: saveBid,
+  });
+
+  const closeDirectAward = useSiteExecutionDirtyDialog({
+    id: "contractor-direct-award",
+    label: "Direct Award Contractor form",
+    open: Boolean(directAwardScopeId),
+    value: {
+      directAwardScopeId,
+      directAwardContractorId,
+      directAwardAmount,
+      directAwardDays,
+      directAwardWithMaterial,
+      directAwardReason,
+      directAwardNote,
+    },
+    onClose: () => setDirectAwardScopeId(null),
+    onSave: saveDirectAward,
+  });
+
+  const closeVendorBid = useSiteExecutionDirtyDialog({
+    id: "site-vendor-bid",
+    label: "Vendor bid form",
+    open: Boolean(vendorBidRfqId),
+    value: {
+      vendorBidRfqId,
+      vendorBidVendorId,
+      vendorBidRates,
+      vendorBidDeliveryDays,
+    },
+    onClose: () => setVendorBidRfqId(null),
+    onSave: saveVendorBid,
+  });
 
   const createProcurementOrder = (bidId: string) => {
     selectVendorBid(bidId);
@@ -407,11 +528,11 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
       {newWorkOpen && <WorkRequiredCreateDialog open customerId={selectedSite.customer_id} site={selectedSite} initialAreaIds={newWorkAreaId ? [newWorkAreaId] : []} onOpenChange={(next) => { if (!next) { setNewWorkOpen(false); setNewWorkAreaId(null); } }} onCreated={(id) => setCaptureWorkId(id)} />}
       {captureWorkId && (() => { const work = workRequired.find((row) => row.id === captureWorkId); return work ? <CustomerWorkCaptureDialog workRequired={work} site={selectedSite} areas={areas} onClose={() => setCaptureWorkId(null)} /> : null; })()}
 
-      {bidScopeId && <Modal title="Invite contractor bid" onClose={() => setBidScopeId(null)}><div className="space-y-3"><Field label="Contractor *"><select value={bidContractorId} onChange={(event) => setBidContractorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select contractor</option>{db.master.contractors.map((contractor) => <option key={contractor.id} value={contractor.id}>{contractor.name}{contractor.trade ? ` · ${contractor.trade}` : ""}</option>)}</select></Field><Field label="Quote amount (INR) *"><Input inputMode="decimal" value={bidQuoteAmount} onChange={(event) => setBidQuoteAmount(event.target.value)} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Estimated days"><Input inputMode="numeric" value={bidEstimatedDays} onChange={(event) => setBidEstimatedDays(event.target.value)} /></Field><label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={bidWithMaterial} onChange={(event) => setBidWithMaterial(event.target.checked)} />With material</label></div><Field label="Scope notes"><Input value={bidScopeNotes} onChange={(event) => setBidScopeNotes(event.target.value)} /></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setBidScopeId(null)}>Cancel</Button><Button onClick={saveBid}>Record bid</Button></div></div></Modal>}
+      {bidScopeId && <Modal title="Invite contractor bid" onClose={closeContractorBid}><div className="space-y-3"><Field label="Contractor *"><select value={bidContractorId} onChange={(event) => setBidContractorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select contractor</option>{db.master.contractors.map((contractor) => <option key={contractor.id} value={contractor.id}>{contractor.name}{contractor.trade ? ` · ${contractor.trade}` : ""}</option>)}</select></Field><Field label="Quote amount (INR) *"><Input inputMode="decimal" value={bidQuoteAmount} onChange={(event) => setBidQuoteAmount(event.target.value)} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Estimated days"><Input inputMode="numeric" value={bidEstimatedDays} onChange={(event) => setBidEstimatedDays(event.target.value)} /></Field><label className="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" checked={bidWithMaterial} onChange={(event) => setBidWithMaterial(event.target.checked)} />With material</label></div><Field label="Scope notes"><Input value={bidScopeNotes} onChange={(event) => setBidScopeNotes(event.target.value)} /></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={closeContractorBid}>Cancel</Button><Button onClick={saveBid}>Record bid</Button></div></div></Modal>}
 
-      {directAwardScopeId && <Modal title="Direct Award Contractor" onClose={() => setDirectAwardScopeId(null)}><div className="space-y-3"><Field label="Contractor *"><select value={directAwardContractorId} onChange={(event) => setDirectAwardContractorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select contractor</option>{db.master.contractors.map((contractor) => <option key={contractor.id} value={contractor.id}>{contractor.name}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Award amount"><Input inputMode="decimal" value={directAwardAmount} onChange={(event) => setDirectAwardAmount(event.target.value)} /></Field><Field label="Estimated days"><Input inputMode="numeric" value={directAwardDays} onChange={(event) => setDirectAwardDays(event.target.value)} /></Field></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={directAwardWithMaterial} onChange={(event) => setDirectAwardWithMaterial(event.target.checked)} />With material</label><Field label="Reason *"><Textarea value={directAwardReason} onChange={(event) => setDirectAwardReason(event.target.value)} rows={3} /></Field><Field label="Note"><Textarea value={directAwardNote} onChange={(event) => setDirectAwardNote(event.target.value)} rows={2} /></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setDirectAwardScopeId(null)}>Cancel</Button><Button onClick={saveDirectAward}>Create Work Order</Button></div></div></Modal>}
+      {directAwardScopeId && <Modal title="Direct Award Contractor" onClose={closeDirectAward}><div className="space-y-3"><Field label="Contractor *"><select value={directAwardContractorId} onChange={(event) => setDirectAwardContractorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select contractor</option>{db.master.contractors.map((contractor) => <option key={contractor.id} value={contractor.id}>{contractor.name}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Award amount"><Input inputMode="decimal" value={directAwardAmount} onChange={(event) => setDirectAwardAmount(event.target.value)} /></Field><Field label="Estimated days"><Input inputMode="numeric" value={directAwardDays} onChange={(event) => setDirectAwardDays(event.target.value)} /></Field></div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={directAwardWithMaterial} onChange={(event) => setDirectAwardWithMaterial(event.target.checked)} />With material</label><Field label="Reason *"><Textarea value={directAwardReason} onChange={(event) => setDirectAwardReason(event.target.value)} rows={3} /></Field><Field label="Note"><Textarea value={directAwardNote} onChange={(event) => setDirectAwardNote(event.target.value)} rows={2} /></Field><div className="flex justify-end gap-2"><Button variant="outline" onClick={closeDirectAward}>Cancel</Button><Button onClick={saveDirectAward}>Create Work Order</Button></div></div></Modal>}
 
-      {vendorBidRfqId && (() => { const rfq = db.vendorRfqs.find((entry) => entry.id === vendorBidRfqId); const boq = rfq ? db.boqs.find((entry) => entry.id === rfq.boq_id) : undefined; const bidItems = (boq?.items || []).filter((item) => rfq?.item_ids.includes(item.id)); const total = bidItems.reduce((sum, item) => sum + item.quantity * (Number(vendorBidRates[item.id]) || 0), 0); return <Modal title="Record Article-wise Vendor Bid" onClose={() => setVendorBidRfqId(null)}><div className="space-y-3"><Field label="Vendor"><select value={vendorBidVendorId} onChange={(event) => setVendorBidVendorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select vendor</option>{rfq?.vendor_ids.map((id) => db.master.vendors.find((vendor) => vendor.id === id)).filter(Boolean).map((vendor) => <option key={vendor!.id} value={vendor!.id}>{vendor!.name}</option>)}</select></Field><div className="rounded-md border border-border">{bidItems.map((item) => <div key={item.id} className="grid grid-cols-[1fr_92px_92px] items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-0"><span className="truncate font-medium">{item.title} · {item.quantity} {item.unit_name || ""}</span><Input inputMode="decimal" value={vendorBidRates[item.id] || ""} onChange={(event) => setVendorBidRates((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Rate" className="h-8" /><span className="text-right font-mono">{formatINRShort(item.quantity * (Number(vendorBidRates[item.id]) || 0))}</span></div>)}</div><div className="grid grid-cols-2 gap-3"><Field label="Delivery days"><Input inputMode="numeric" value={vendorBidDeliveryDays} onChange={(event) => setVendorBidDeliveryDays(event.target.value)} /></Field><div className="rounded-md bg-muted/40 px-3 py-2"><p className="text-[10px] uppercase text-muted-foreground">Bid total</p><p className="font-mono font-bold">{formatINRShort(total)}</p></div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setVendorBidRfqId(null)}>Cancel</Button><Button onClick={saveVendorBid}>Record bid</Button></div></div></Modal>; })()}
+      {vendorBidRfqId && (() => { const rfq = db.vendorRfqs.find((entry) => entry.id === vendorBidRfqId); const boq = rfq ? db.boqs.find((entry) => entry.id === rfq.boq_id) : undefined; const bidItems = (boq?.items || []).filter((item) => rfq?.item_ids.includes(item.id)); const total = bidItems.reduce((sum, item) => sum + item.quantity * (Number(vendorBidRates[item.id]) || 0), 0); return <Modal title="Record Article-wise Vendor Bid" onClose={closeVendorBid}><div className="space-y-3"><Field label="Vendor"><select value={vendorBidVendorId} onChange={(event) => setVendorBidVendorId(event.target.value)} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select vendor</option>{rfq?.vendor_ids.map((id) => db.master.vendors.find((vendor) => vendor.id === id)).filter(Boolean).map((vendor) => <option key={vendor!.id} value={vendor!.id}>{vendor!.name}</option>)}</select></Field><div className="rounded-md border border-border">{bidItems.map((item) => <div key={item.id} className="grid grid-cols-[1fr_92px_92px] items-center gap-2 border-b border-border px-3 py-2 text-xs last:border-0"><span className="truncate font-medium">{item.title} · {item.quantity} {item.unit_name || ""}</span><Input inputMode="decimal" value={vendorBidRates[item.id] || ""} onChange={(event) => setVendorBidRates((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="Rate" className="h-8" /><span className="text-right font-mono">{formatINRShort(item.quantity * (Number(vendorBidRates[item.id]) || 0))}</span></div>)}</div><div className="grid grid-cols-2 gap-3"><Field label="Delivery days"><Input inputMode="numeric" value={vendorBidDeliveryDays} onChange={(event) => setVendorBidDeliveryDays(event.target.value)} /></Field><div className="rounded-md bg-muted/40 px-3 py-2"><p className="text-[10px] uppercase text-muted-foreground">Bid total</p><p className="font-mono font-bold">{formatINRShort(total)}</p></div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={closeVendorBid}>Cancel</Button><Button onClick={saveVendorBid}>Record bid</Button></div></div></Modal>; })()}
     </div>
   );
 }

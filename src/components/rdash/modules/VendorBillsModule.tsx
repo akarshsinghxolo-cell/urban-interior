@@ -2,6 +2,8 @@
 import * as React from "react";
 import { Receipt, CheckCircle2, AlertTriangle, Building2, MoreHorizontal, Check, IndianRupee, ShieldCheck, X, Clock, } from "lucide-react";
 import { useRDashStore, vendorBalance } from "@/lib/rdash/store";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,6 +53,7 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
     const [vendorInvoiceTax, setVendorInvoiceTax] = React.useState("0");
     const [vendorInvoiceLines, setVendorInvoiceLines] = React.useState<VendorInvoiceLine[]>([]);
     const [updateVendorRatesFromInvoice, setUpdateVendorRatesFromInvoice] = React.useState(true);
+    const [vendorInvoiceBaseline, setVendorInvoiceBaseline] = React.useState("");
     // D: Reject dialog state — captures the rejection reason.
     const [rejectBill, setRejectBill] = React.useState<VendorBill | null>(null);
     const [rejectReason, setRejectReason] = React.useState("");
@@ -141,13 +144,24 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
             toast.error("File a GRN first. A vendor invoice must be matched to one received delivery.");
             return;
         }
+        const today = new Date().toISOString().slice(0, 10);
+        const initialLines = linesFromGrn(first.id);
         setSelectedGrnId(first.id);
         setVendorInvoiceNo("");
-        setVendorInvoiceDate(new Date().toISOString().slice(0, 10));
-        setVendorInvoiceDueDate(new Date().toISOString().slice(0, 10));
+        setVendorInvoiceDate(today);
+        setVendorInvoiceDueDate(today);
         setVendorInvoiceTax("0");
-        setVendorInvoiceLines(linesFromGrn(first.id));
+        setVendorInvoiceLines(initialLines);
         setUpdateVendorRatesFromInvoice(true);
+        setVendorInvoiceBaseline(JSON.stringify({
+            selectedGrnId: first.id,
+            vendorInvoiceNo: "",
+            vendorInvoiceDate: today,
+            vendorInvoiceDueDate: today,
+            vendorInvoiceTax: "0",
+            vendorInvoiceLines: initialLines,
+            updateVendorRatesFromInvoice: true,
+        }));
         setCreateInvoiceOpen(true);
     };
     const updateInvoiceLine = (index: number, patch: Partial<VendorInvoiceLine>) => {
@@ -158,30 +172,30 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
             return { ...next, amount: Math.round(((next.quantity || 0) * (next.rate || 0)) * 100) / 100 };
         }));
     };
-    const saveVendorInvoice = () => {
+    const saveVendorInvoice = (): boolean => {
         const grn = db.grns.find((entry) => entry.id === selectedGrnId);
         if (!grn) {
             toast.error("Select a GRN.");
-            return;
+            return false;
         }
         const po = db.purchaseOrders.find((entry) => entry.id === grn.po_id);
         if (!po) {
             toast.error("The selected GRN has no purchase order.");
-            return;
+            return false;
         }
         if (!vendorInvoiceNo.trim()) {
             toast.error("Vendor invoice number is required.");
-            return;
+            return false;
         }
         if (!vendorInvoiceLines.length || vendorInvoiceLines.some((line) => !line.quantity || !line.rate || line.amount <= 0)) {
             toast.error("Enter an actual received quantity and rate for every invoice line.");
-            return;
+            return false;
         }
         const taxableAmount = Math.round(vendorInvoiceLines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100;
         const taxAmount = Number(vendorInvoiceTax || 0);
         if (!Number.isFinite(taxAmount) || taxAmount < 0) {
             toast.error("Enter a valid tax amount.");
-            return;
+            return false;
         }
         try {
             const invoiceLines = vendorInvoiceLines.map((line) => {
@@ -222,13 +236,38 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
                 if (updates.length) mutateMaster((master) => applyVendorRateUpdates(master, updates));
             }
             toast.success(updateVendorRatesFromInvoice ? `Vendor invoice recorded and exact vendor rates updated.` : `Vendor invoice recorded. Run the 3-way match before approval.`);
+            dirtyFormRegistry.markClean("vendor-invoice-create");
             setCreateInvoiceOpen(false);
             openDetail("vendorBill", billId);
+            return true;
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "Vendor invoice could not be recorded");
+            return false;
         }
     };
+    const vendorInvoiceSnapshot = JSON.stringify({
+        selectedGrnId,
+        vendorInvoiceNo,
+        vendorInvoiceDate,
+        vendorInvoiceDueDate,
+        vendorInvoiceTax,
+        vendorInvoiceLines,
+        updateVendorRatesFromInvoice,
+    });
+    const closeVendorInvoice = () => dirtyFormRegistry.requestNavigation(() => {
+        setCreateInvoiceOpen(false);
+    }, { reason: "close this supplier invoice form" });
+    useDirtyFormRegistration({
+        id: "vendor-invoice-create",
+        label: "Supplier Invoice form",
+        dirty: Boolean(createInvoiceOpen && vendorInvoiceBaseline && vendorInvoiceSnapshot !== vendorInvoiceBaseline),
+        save: saveVendorInvoice,
+        discard: () => {
+            setCreateInvoiceOpen(false);
+            return true;
+        },
+    });
     const metrics: MetricSpec[] = [
         {
             label: "Total bills",
@@ -485,7 +524,7 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
     }
     return (<>
     <OperationsWorkspace title="Vendor Bills / Payables" description="Record supplier invoice against GRN → PO–GRN–invoice match → approve → partial/full payment. High-value bills require Owner approval before matching." icon={<Receipt className="h-4 w-4"/>} workflow={["GRN", "Supplier Invoice", "3-way Match", "Approve", "Pay", "Close"]} metrics={metrics} filterChips={filterChips} onFilterChange={(id) => setFilter(id)} queues={queues} onCreate={openCreateInvoice} createLabel="+ Record supplier invoice" searchPlaceholder="Search bills / vendors…"/>
-    <Dialog open={createInvoiceOpen} onOpenChange={setCreateInvoiceOpen}>
+    <Dialog open={createInvoiceOpen} onOpenChange={(open) => { if (!open) closeVendorInvoice(); }}>
       <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>Record Supplier Invoice</DialogTitle>
@@ -509,7 +548,7 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
           </label>
           <p className="rounded-md border border-dashed border-border bg-muted/30 p-2 text-[11px] text-muted-foreground">The selected GRN supplies received-quantity context. The PO remains a contractual rate ceiling. Any quantity, rate, or value difference becomes a recorded mismatch instead of silently changing cost.</p>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => setCreateInvoiceOpen(false)}>Cancel</Button><Button onClick={saveVendorInvoice}>Create draft invoice</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={closeVendorInvoice}>Cancel</Button><Button onClick={saveVendorInvoice}>Create draft invoice</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <Dialog open={Boolean(paymentBill)} onOpenChange={(open) => { if (!open)

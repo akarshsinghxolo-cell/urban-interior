@@ -3,6 +3,8 @@ import * as React from "react";
 import { ShoppingCart, CheckCircle2, Send, Plus, Trash2, AlertTriangle, FileText, Clock, Search, Zap, Trophy, Gavel, Paperclip, } from "lucide-react";
 import { toast } from "sonner";
 import { useRDashStore } from "@/lib/rdash/store";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import type { LineItem, Master, VendorBidLine } from "@/lib/rdash/types";
 import { searchCatalogOptions, type CatalogSearchOption } from "@/lib/rdash/catalog-search";
 import { applyVendorRateUpdates } from "@/lib/rdash/vendor-rate";
@@ -40,6 +42,39 @@ function newBuilderRow(): BuilderRow {
         quantity: 1,
         rate: null,
     };
+}
+function useProcurementDirtyDialog(input: {
+    id: string;
+    label: string;
+    open: boolean;
+    value: unknown;
+    onClose: () => void;
+    onSave: () => boolean;
+}) {
+    const [baseline, setBaseline] = React.useState("");
+    React.useEffect(() => {
+        setBaseline(input.open ? JSON.stringify(input.value) : "");
+        // The baseline is captured only when the dialog opens/closes.
+        // Subsequent value changes are what make the form dirty.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [input.open]);
+    useDirtyFormRegistration({
+        id: input.id,
+        label: input.label,
+        dirty: Boolean(
+            input.open &&
+            baseline &&
+            JSON.stringify(input.value) !== baseline
+        ),
+        save: input.onSave,
+        discard: () => {
+            input.onClose();
+            return true;
+        },
+    });
+    return () => dirtyFormRegistry.requestNavigation(input.onClose, {
+        reason: `close this ${input.label}`,
+    });
 }
 function procurementArticleId(master: Master, line: Pick<LineItem, "article_id" | "work_required_article_id">) {
     return line.article_id || (line.work_required_article_id ? master.subcategoryArticleMap.find((row) => row.id === line.work_required_article_id)?.article_id : undefined);
@@ -412,16 +447,16 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
     };
     // E: Save the recorded bid. Validates that every requested BOQ article has
     // a positive rate. Delegates to addVendorBid in the procurement slice.
-    const saveVendorBid = () => {
+    const saveVendorBid = (): boolean => {
         if (!bidRfqId || !bidVendorId) {
             toast.error("Select a vendor for this RFQ.");
-            return;
+            return false;
         }
         const rfq = db.vendorRfqs.find((r) => r.id === bidRfqId);
         const boq = rfq ? db.boqs.find((b) => b.id === rfq.boq_id) : undefined;
         if (!rfq || !boq) {
             toast.error("The RFQ or its BOQ is unavailable.");
-            return;
+            return false;
         }
         const lines: VendorBidLine[] = boq.items
             .filter((item) => rfq.item_ids.includes(item.id))
@@ -441,7 +476,7 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         });
         if (!lines.length || lines.some((l) => !Number.isFinite(l.rate) || l.rate <= 0)) {
             toast.error("Enter a positive rate for every requested BOQ article.");
-            return;
+            return false;
         }
         try {
             const days = bidDeliveryDays.trim() ? Number(bidDeliveryDays) : undefined;
@@ -453,14 +488,16 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
             });
             if (!id) {
                 toast.error("Vendor bid could not be recorded.");
-                return;
+                return false;
             }
             toast.success("Vendor bid recorded.");
             setBidRfqId(null);
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "Vendor bid could not be recorded.");
+            return false;
         }
+        return true;
     };
     // E-3: Lowest bid → PO quick action. Delegates to the store action.
     const handleLowestBidToPO = (rfqId: string) => {
@@ -493,20 +530,20 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         });
         setDirectAwardOpen(true);
     };
-    const handleCreateDirectAward = () => {
+    const handleCreateDirectAward = (): boolean => {
         const vendor = db.master.vendors.find((v) => v.id === directAwardForm.vendor_id);
         if (!vendor) {
             toast.error("Select a vendor for the direct award.");
-            return;
+            return false;
         }
         if (!directAwardForm.award_reason.trim()) {
             toast.error("A reason is required for a direct award (audit trail).");
-            return;
+            return false;
         }
         const validRows = directAwardForm.rows.filter((r) => r.work_required_article_id && r.quantity > 0 && r.rate !== null);
         if (!validRows.length) {
             toast.error("Add at least one line item with quantity and rate.");
-            return;
+            return false;
         }
         const items: LineItem[] = validRows.map((r, idx) => {
             const scope = db.master.subcategoryArticleMap.find((s) => s.id === r.work_required_article_id);
@@ -547,7 +584,7 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
             });
             if (!id) {
                 toast.error("Could not create direct-award PO.");
-                return;
+                return false;
             }
             setDirectAwardOpen(false);
             openDetail("po", id);
@@ -555,7 +592,9 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "Direct-award PO could not be created.");
+            return false;
         }
+        return true;
     };
     const updateRow = (rowId: string, patch: Partial<BuilderRow>) => {
         setForm((f) => ({
@@ -619,20 +658,20 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         amount: r.amount,
         source_kind: "po" as const,
     })), [resolvedRows]);
-    const handleCreatePO = () => {
+    const handleCreatePO = (): boolean => {
         const vendor = db.master.vendors.find((v) => v.id === form.vendor_id);
         if (!vendor) {
             toast.error("Please select a vendor.");
-            return;
+            return false;
         }
         const validRows = resolvedRows.filter((r) => r.article && r.row.quantity > 0);
         if (validRows.length === 0) {
             toast.error("Add at least one article with a quantity.");
-            return;
+            return false;
         }
         if (validRows.some((row) => !row.scope || row.rate <= 0)) {
             toast.error("Enter a positive exact rate for every PO material before creating the purchase order.");
-            return;
+            return false;
         }
         const boqForJob = form.work_order_id
             ? db.boqs.find((b) => b.work_order_id === form.work_order_id)
@@ -675,7 +714,7 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         });
         if (!id) {
             toast.error("Could not create PO.");
-            return;
+            return false;
         }
         const vendorRateUpdates = validRows
             .filter((row) => row.scope && row.article && row.willUpdateVendorRate)
@@ -700,6 +739,7 @@ export function ProcurementModule({ vendorId }: { vendorId?: string } = {}) {
         toast.success(vendorRateUpdates.length
             ? `PO created — ${vendorRateUpdates.length} vendor material rate${vendorRateUpdates.length === 1 ? "" : "s"} updated.`
             : "PO created — approval task generated.");
+        return true;
     };
     return (<>
       <OperationsWorkspace title="Procurement / Purchase Orders" description="Vendor POs raised against BOQs — approval, dispatch, delivery tracking" icon={<ShoppingCart className="h-4 w-4"/>} workflow={["BOQ", "PO Raise", "Approve", "Send", "Delivery", "GRN"]} metrics={metrics} filterChips={filterChips} onFilterChange={(id) => setFilter(id as FilterId)} queues={queues} onCreate={openCreate} createLabel="+ Create PO" searchPlaceholder="Search POs…" secondaryActions={[{ label: "Direct Award", icon: <Zap className="mr-1 h-3.5 w-3.5"/>, onClick: openDirectAward, variant: "outline" }]}/>
@@ -772,8 +812,16 @@ function VendorBidDialog({ lockedVendorId, open, onOpenChange, rfqId, vendorId, 
     deliveryDays: string;
     onDeliveryDaysChange: (v: string) => void;
     db: any;
-    onSave: () => void;
+    onSave: () => boolean;
 }) {
+    const requestClose = useProcurementDirtyDialog({
+        id: "vendor-bid-record",
+        label: "Vendor bid form",
+        open: open && Boolean(rfqId),
+        value: { rfqId, vendorId, rates, deliveryDays },
+        onClose: () => onOpenChange(false),
+        onSave,
+    });
     if (!rfqId)
         return null;
     const rfq = db.vendorRfqs.find((r: any) => r.id === rfqId);
@@ -782,7 +830,7 @@ function VendorBidDialog({ lockedVendorId, open, onOpenChange, rfqId, vendorId, 
         return null;
     const bidItems = boq.items.filter((item: any) => rfq.item_ids.includes(item.id));
     const total = bidItems.reduce((sum: number, item: any) => sum + (Number(rates[item.id]) || 0) * item.quantity, 0);
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
+    return (<Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Gavel className="h-4 w-4 text-primary"/> Record vendor bid</DialogTitle>
@@ -840,7 +888,7 @@ function VendorBidDialog({ lockedVendorId, open, onOpenChange, rfqId, vendorId, 
           <p className="text-[11px] text-muted-foreground">Each requested BOQ article needs the vendor's actual bid rate. The "Last rate" column shows the vendor's most recent negotiated rate from the price matrix — pre-filled into the bid rate field for convenience.</p>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={requestClose}>Cancel</Button>
           <Button onClick={onSave} disabled={!vendorId}><Gavel className="mr-1.5 h-3.5 w-3.5"/> Record bid</Button>
         </DialogFooter>
       </DialogContent>
@@ -868,13 +916,21 @@ function DirectAwardPODialog({ open, onOpenChange, form, setForm, vendors, workO
     vendors: import("@/lib/rdash/types").Vendor[];
     workOrders: import("@/lib/rdash/types").WorkOrder[];
     catalogOptions: Array<{ id: string; label: string; unitSymbol: string; referenceRate?: number }>;
-    onCreate: () => void;
+    onCreate: () => boolean;
 }) {
     const addRow = () => setForm((f) => ({ ...f, rows: [...f.rows, newBuilderRow()] }));
     const updateRow = (rowId: string, patch: Partial<BuilderRow>) => setForm((f) => ({ ...f, rows: f.rows.map((r) => (r.id === rowId ? { ...r, ...patch } : r)) }));
     const removeRow = (rowId: string) => setForm((f) => ({ ...f, rows: f.rows.length > 1 ? f.rows.filter((r) => r.id !== rowId) : f.rows }));
     const total = form.rows.reduce((sum, r) => sum + (r.quantity && r.rate ? r.quantity * r.rate : 0), 0);
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
+    const requestClose = useProcurementDirtyDialog({
+        id: "purchase-order-direct-award",
+        label: "Direct Award Purchase Order",
+        open,
+        value: form,
+        onClose: () => onOpenChange(false),
+        onSave: onCreate,
+    });
+    return (<Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Zap className="h-4 w-4 text-warning"/> Direct Award PO</DialogTitle>
@@ -953,7 +1009,7 @@ function DirectAwardPODialog({ open, onOpenChange, form, setForm, vendors, workO
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={requestClose}>Cancel</Button>
           <Button onClick={onCreate} disabled={!form.award_reason.trim()}>
             <Zap className="mr-1.5 h-3.5 w-3.5"/> Create direct-award PO
           </Button>
@@ -987,14 +1043,22 @@ interface CreatePODialogProps {
     onAddRow: () => void;
     onUpdateRow: (id: string, patch: Partial<BuilderRow>) => void;
     onRemoveRow: (id: string) => void;
-    onCreate: () => void;
+    onCreate: () => boolean;
     vendors: import("@/lib/rdash/types").Vendor[];
     workOrders: import("@/lib/rdash/types").WorkOrder[];
     catalogOptions: CatalogSearchOption[];
 }
 function CreatePODialog(props: CreatePODialogProps) {
     const { open, onOpenChange, form, setForm, resolvedRows, previewItems, totalAmount, hasMissingVendorRate, hasVendorRateUpdates, onAddRow, onUpdateRow, onRemoveRow, onCreate, vendors, workOrders, catalogOptions, } = props;
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
+    const requestClose = useProcurementDirtyDialog({
+        id: "purchase-order-create",
+        label: "Purchase Order form",
+        open,
+        value: form,
+        onClose: () => onOpenChange(false),
+        onSave: onCreate,
+    });
+    return (<Dialog open={open} onOpenChange={(next) => { if (!next) requestClose(); }}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -1095,7 +1159,7 @@ function CreatePODialog(props: CreatePODialogProps) {
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="outline" onClick={requestClose}>
             Cancel
           </Button>
           <Button type="button" onClick={onCreate}>

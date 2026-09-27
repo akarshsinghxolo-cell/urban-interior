@@ -2,6 +2,8 @@
 import * as React from "react";
 import { CheckCircle2, Clock3, HandCoins, IndianRupee, ShieldCheck, Check, AlertCircle, XCircle, FileText, ListFilter } from "lucide-react";
 import { useRDashStore, contractorOutstanding, contractorOutstandingTotal } from "@/lib/rdash/store";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { OperationsWorkspace, type FilterChip, type MetricSpec, type QueueSpec, type RecordRow } from "../OperationsWorkspace";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -201,6 +203,52 @@ export function ContractorPaymentsModule({ contractorId }: { contractorId?: stri
             toast.error(error instanceof Error ? error.message : "Could not record contractor payment");
         }
     };
+
+    const [paymentRequestBaseline, setPaymentRequestBaseline] = React.useState("");
+    React.useEffect(() => {
+        setPaymentRequestBaseline(billToRequest ? requestAmount : "");
+        // Capture the amount only when a payment-request dialog opens/closes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [billToRequest]);
+
+    const savePaymentRequest = (): boolean => {
+        if (!billToRequest) return false;
+        const amount = Number(requestAmount);
+        if (!Number.isFinite(amount) || amount <= 0) {
+            toast.error("Enter a payment release amount above zero.");
+            return false;
+        }
+        try {
+            const id = requestContractorBillPayment(billToRequest.id, amount);
+            toast.success(`Payment release ${id} created`);
+            dirtyFormRegistry.markClean("contractor-payment-request");
+            setBillToRequest(null);
+            return true;
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Payment request could not be created");
+            return false;
+        }
+    };
+
+    const closePaymentRequest = () => dirtyFormRegistry.requestNavigation(() => {
+        setBillToRequest(null);
+    }, { reason: "close this Contractor Payment Release form" });
+
+    useDirtyFormRegistration({
+        id: "contractor-payment-request",
+        label: "Contractor Payment Release form",
+        dirty: Boolean(
+            billToRequest &&
+            paymentRequestBaseline &&
+            requestAmount !== paymentRequestBaseline
+        ),
+        save: savePaymentRequest,
+        discard: () => {
+            setBillToRequest(null);
+            return true;
+        },
+    });
     // FIX-CONTRACTOR-BATCH2 / F.22: a global "All Settlements" view. Lists
     // every contractor settlement across every work order, with a button to
     // open the parent work order (where the full settlement details + the
@@ -265,20 +313,11 @@ export function ContractorPaymentsModule({ contractorId }: { contractorId?: stri
         <DialogFooter><Button variant="outline" onClick={() => setSelected(null)}>Cancel</Button><Button onClick={record}>Record payment</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-    <Dialog open={Boolean(billToRequest)} onOpenChange={(open) => { if (!open)
-        setBillToRequest(null); }}>
+    <Dialog open={Boolean(billToRequest)} onOpenChange={(open) => { if (!open) closePaymentRequest(); }}>
       <DialogContent>
         <DialogHeader><DialogTitle>Request Contractor Payment Release</DialogTitle><DialogDescription>{billToRequest ? `${billToRequest.ra_no || billToRequest.bill_no} · remaining balance ${formatINRShort(billToRequest.balance_amount)}` : ""}</DialogDescription></DialogHeader>
         <label className="grid gap-1 text-xs font-medium text-muted-foreground"><span>Amount to request *</span><Input type="number" min="0" step="0.01" value={requestAmount} onChange={(event) => setRequestAmount(event.target.value)}/></label>
-        <DialogFooter><Button variant="outline" onClick={() => setBillToRequest(null)}>Cancel</Button><Button onClick={() => { if (!billToRequest)
-        return; const amount = Number(requestAmount); try {
-        const id = requestContractorBillPayment(billToRequest.id, amount);
-        toast.success(`Payment release ${id} created`);
-        setBillToRequest(null);
-    }
-    catch (error) {
-        toast.error(error instanceof Error ? error.message : "Payment request could not be created");
-    } }}>Request release</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={closePaymentRequest}>Cancel</Button><Button onClick={savePaymentRequest}>Request release</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     {/* FIX-CONTRACTOR-BATCH2 / F.7: Dispute-bill reason dialog. */}
