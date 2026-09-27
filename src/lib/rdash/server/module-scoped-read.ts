@@ -1,5 +1,4 @@
 import { canReadFullStaffData } from "../staff-directory";
-import { hydrateStaffReferenceLabels } from "../staff-reference-labels";
 import { canRole, normalizeStaffPermissions } from "../staff-operations";
 import type { RDashDatabase } from "../types";
 import { workspaceRouteAccessDecision } from "../workspace-route-access";
@@ -79,7 +78,6 @@ export function mergeWorkspaceSubsets(target: WorkspaceSubset, source: Workspace
     );
   }
 
-  hydrateStaffReferenceLabels(data);
 
   return {
     revision: target.revision,
