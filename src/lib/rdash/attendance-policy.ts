@@ -30,6 +30,6 @@ export function attendancePolicyForStaff(db: Pick<RDashDatabase, "master">, staf
         throw new Error("Attendance policy requires an active staff record.");
     return normalizeAttendancePolicy(staff.attendance_policy);
 }
-export function attendancePolicyForVisit(db: Pick<RDashDatabase, "master">, visit: Pick<import("./types").Visit, "staff_id">): AttendancePolicy {
-    return attendancePolicyForStaff(db, visit.staff_id);
+export function attendancePolicyForVisit(db: Pick<RDashDatabase, "master">, visit: Pick<import("./types").Visit, "assigned_staff_id">): AttendancePolicy {
+    return attendancePolicyForStaff(db, visit.assigned_staff_id);
 }
