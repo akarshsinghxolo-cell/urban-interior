@@ -3,6 +3,8 @@ import * as React from "react";
 import { ClipboardList, CheckCircle2, FileEdit, Plus, ArrowRightCircle, FileText, Gavel, RefreshCw, ShoppingCart, Pencil, MessageSquare, } from "lucide-react";
 import { toast } from "sonner";
 import { useRDashStore } from "@/lib/rdash/store";
+import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
+import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { OperationsWorkspace, type MetricSpec, type QueueSpec, type RecordRow, type FilterChip, } from "../OperationsWorkspace";
 import type { ContextAction } from "../ContextMenuHost";
 import { formatINR, formatINRShort, boqStatusStyle, formatDate, } from "@/lib/rdash/format";
@@ -62,25 +64,48 @@ export function BOQModule() {
         }
     };
     // A-3: Save the inline-edited rate.
-    const saveEditedRate = () => {
+    const saveEditedRate = (): boolean => {
         if (!editRateFor)
-            return;
+            return false;
         const newRate = Number(editRate);
         if (!Number.isFinite(newRate) || newRate < 0) {
             toast.error("Rate must be a non-negative number.");
-            return;
+            return false;
         }
         try {
             updateBOQItemRate(editRateFor.boq.id, editRateFor.item.id, newRate, editReason.trim() || undefined);
             toast.success(`Rate updated to ${formatINR(newRate)} for "${editRateFor.item.title}".`);
+            dirtyFormRegistry.markClean("boq-rate-edit");
             setEditRateFor(null);
             setEditRate("");
             setEditReason("");
+            return true;
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "Could not update BOQ rate.");
+            return false;
         }
     };
+    const closeRateEditor = () => dirtyFormRegistry.requestNavigation(() => {
+        setEditRateFor(null);
+        setEditRate("");
+        setEditReason("");
+    }, { reason: "close this BOQ rate editor" });
+    useDirtyFormRegistration({
+        id: "boq-rate-edit",
+        label: "BOQ rate edit",
+        dirty: Boolean(editRateFor && (
+            editRate !== String(editRateFor.item.rate || "") ||
+            Boolean(editReason.trim())
+        )),
+        save: saveEditedRate,
+        discard: () => {
+            setEditRateFor(null);
+            setEditRate("");
+            setEditReason("");
+            return true;
+        },
+    });
     const boqs = db.boqs;
     const approvedBoqs = React.useMemo(() => boqs.filter((b) => b.status === "approved"), [boqs]);
     const draftBoqs = React.useMemo(() => boqs.filter((b) => b.status === "draft"), [boqs]);
@@ -260,7 +285,7 @@ export function BOQModule() {
       {approvedWithoutRFQ.length > 0 && (<ApprovedAwaitingRFQCallout boqs={approvedWithoutRFQ} onGenerate={handleGenerateRFQ} onOpen={(b) => openDetail("boq", b.id)}/>)}
       <OperationsWorkspace title="BOQ / Material Plan" description="Material planning for awarded work orders — rates carry from the quotation and are editable inline for negotiation" icon={<ClipboardList className="h-4 w-4"/>} workflow={["Accepted scope", "Contractor award", "Work Order", "BOQ", "PO", "GRN", "Vendor payment"]} metrics={metrics} filterChips={filterChips} onFilterChange={(id) => setFilter(id as typeof filter)} queues={queues} onCreate={onCreate} createLabel="+ Create BOQ" searchPlaceholder="Search BOQs…"/>
       {/* A-3: Inline rate edit dialog */}
-      <Dialog open={editRateFor !== null} onOpenChange={(v) => { if (!v) { setEditRateFor(null); setEditRate(""); setEditReason(""); } }}>
+      <Dialog open={editRateFor !== null} onOpenChange={(v) => { if (!v) closeRateEditor(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -286,7 +311,7 @@ export function BOQModule() {
               </div>)}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setEditRateFor(null); setEditRate(""); setEditReason(""); }}>Cancel</Button>
+            <Button variant="outline" onClick={closeRateEditor}>Cancel</Button>
             <Button onClick={saveEditedRate} disabled={!editRate}>
               <Pencil className="mr-1.5 h-3.5 w-3.5"/> Save rate
             </Button>
