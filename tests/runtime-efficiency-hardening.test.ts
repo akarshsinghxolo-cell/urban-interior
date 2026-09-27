@@ -16,17 +16,6 @@ describe("runtime efficiency hardening", () => {
     expect(source).not.toContain("HEALTH_SUMMARY_COLLECTIONS");
     expect(source).not.toContain("buildOperationalHealth");
 
-    const migration = await read("supabase/migrations/20260806131500_get_workspace_health_summary_v2.sql");
-    expectTokens(migration, ["create or replace function public.get_workspace_health_summary_v2"]);
-    expectTokens(migration, ["returns jsonb"]);
-    expectTokens(migration, ["security definer"]);
-    expectTokens(migration, ["grant execute on function public.get_workspace_health_summary_v2(text) to service_role"]);
-    expectTokens(migration, ["with recursive"]);
-    expect(migration).toContain("quotation_chain");
-    expect(migration).toContain("latest_quotations");
-    expect(migration).toContain("Asia/Kolkata");
-    expectTokens(migration, ["limit 5"]);
-    expect(migration).toContain('"entity_auditLog_workspace_timestamp_idx"');
   });
 
   test("dashboard health no longer loads or scans the full workspace", async () => {
@@ -107,14 +96,12 @@ describe("runtime efficiency hardening", () => {
     expect(config.regions).toEqual(["bom1"]);
   });
 
-  test("database migration prepares route bundles before removing point telemetry", async () => {
-    const migration = await read("supabase/migrations/20260730171000_frontend_route_bundles.sql");
-    const createIndex = migration.indexOf('create table if not exists public."StaffRouteBundle"');
-    const dropIndex = migration.indexOf('drop table if exists public."StaffLocationPing"');
-    expect(createIndex).toBeGreaterThanOrEqual(0);
-    expect(dropIndex).toBeGreaterThan(createIndex);
-    expect(migration).toContain('"StaffRouteBundle_staffId_startedAt_idx"');
-    expect(migration).toContain('"StaffRouteBundle_endedAt_idx"');
+  test("canonical bootstrap keeps route bundles and no point-telemetry table", async () => {
+    const schema = await read("supabase/schema.sql");
+    expect(schema).toContain('create table if not exists public."StaffRouteBundle"');
+    expect(schema).toContain('"StaffRouteBundle_staffId_startedAt_idx"');
+    expect(schema).toContain('"StaffRouteBundle_endedAt_idx"');
+    expect(schema).not.toContain('create table if not exists public."StaffLocationPing"');
   });
 
   test("bounded module pages use limit-plus-one without a count query", async () => {
@@ -282,13 +269,7 @@ describe("runtime efficiency hardening", () => {
     }
   });
 
-  test("canonical Customer thread migration removes the old bare identity", async () => {
-    const migration = await read("supabase/migrations/20260815163500_canonical_customer_thread_identity.sql");
-    expect(migration).toContain("customer-conversation:");
-    expectTokens(migration, ["data->>'record_id' like 'cust-%'"]);
-    expectTokens(migration, ['from public."entity_customers" as customer']);
-    expectTokens(migration, ["revision = thread.revision + 1"]);
-
+  test("canonical Customer threads reject the old bare identity at runtime", async () => {
     const targeted = await read("src/lib/rdash/server/targeted-commit.ts");
     const authorized = await read("src/lib/rdash/server/authorized-commit.ts");
     const entityRead = await read("src/lib/rdash/server/entity-scoped-read.ts");
