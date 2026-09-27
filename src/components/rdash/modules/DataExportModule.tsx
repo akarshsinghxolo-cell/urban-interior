@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Download, FileText, Users, Briefcase, CheckCircle2, Wallet, MapPin, Package, Truck, Building2, HardHat, UserCheck, ClipboardList, Phone, Calendar, } from "lucide-react";
 import { toast } from "sonner";
 import { formatINR, formatDate } from "@/lib/rdash/format";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 export function DataExportModule() {
     const db = useRDashStore((s) => s.db);
     interface ExportOption {
@@ -55,7 +56,7 @@ export function DataExportModule() {
                 icon: CheckCircle2,
                 count: db.tasks.length,
                 headers: ["Title", "Scope", "Status", "Priority", "Assignee", "Customer", "Due Date", "Created"],
-                rows: db.tasks.map((t) => [t.title, t.task_scope, t.status, t.priority, t.assignee_name || "", customerName(t.customer_id), t.due_date, t.created_at]),
+                rows: db.tasks.map((t) => [t.title, t.task_scope, t.status, t.priority, staffNameForId(db, t.assigned_staff_id, ""), customerName(t.customer_id), t.due_date, t.created_at]),
             },
             {
                 id: "payments",
@@ -73,7 +74,7 @@ export function DataExportModule() {
                 icon: MapPin,
                 count: db.visits.length,
                 headers: ["Type", "Customer", "Staff", "Location", "Status", "Scheduled", "Check-in", "Check-out"],
-                rows: db.visits.map((v) => [v.visit_type, customerName(v.customer_id), v.staff_name || "", v.location_name, v.status, v.scheduled_at, v.check_in_at || "", v.check_out_at || ""]),
+                rows: db.visits.map((v) => [v.visit_type, customerName(v.customer_id), v.assignee_type === "contractor" ? (v.contractor_name || "") : staffNameForId(db, v.assigned_staff_id, ""), v.location_name, v.status, v.scheduled_at, v.check_in_at || "", v.check_out_at || ""]),
             },
             {
                 id: "pos",
@@ -127,7 +128,7 @@ export function DataExportModule() {
                 icon: Phone,
                 count: db.followups.length,
                 headers: ["Title", "Type", "Status", "Priority", "Assignee", "Customer", "Due Date"],
-                rows: db.followups.map((f) => [f.title, f.followup_type, f.status, f.priority, f.assigned_to || "", customerName(f.customer_id), f.due_date || ""]),
+                rows: db.followups.map((f) => [f.title, f.followup_type, f.status, f.priority, staffNameForId(db, f.assigned_staff_id, ""), customerName(f.customer_id), f.due_date || ""]),
             },
             {
                 id: "workRequired",
