@@ -1769,7 +1769,7 @@ export interface CommissionRule {
     source_partner_id: ID;
     source_partner_name: string;
     rate_pct: number;
-    applies_to: "all" | "category" | "workOrder";
+    applies_to: "partner" | "category";
     category_id?: ID;
 }
 export type VendorRateSourceType = "PO" | "VENDOR_BILL" | "MANUAL" | "SEED";
