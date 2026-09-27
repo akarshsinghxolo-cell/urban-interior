@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isDateOnlyOverdue } from "@/lib/rdash/date";
 import {
   formatDate,
@@ -206,12 +207,12 @@ export function SiteVisitsModule() {
           {visits.map((visit) => {
             const customer = db.customers.find((row) => row.id === visit.customer_id);
             const status = visitStatusStyle(visit.status);
-            const unassigned = !visit.staff_id || visit.staff_name === "Unassigned";
+            const unassigned = visit.assignee_type !== "contractor" && !visit.assigned_staff_id;
             return (
               <div key={visit.id} className="group flex items-start gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:-translate-y-0.5 hover:shadow-soft">
                 <button type="button" onClick={() => openDetail("visit", visit.id)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                   <Avatar name={customer?.name || visit.location_name} size={36} />
-                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{customer?.name || visit.location_name}</p><p className="truncate text-[11px] text-muted-foreground">{visit.location_name} · {visit.staff_name}</p><div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground"><span className="inline-flex items-center gap-0.5"><Calendar className="h-2.5 w-2.5" />{formatDate(visit.scheduled_at)}</span>{visit.proof_attachment_ids.length > 0 ? <span className="inline-flex items-center gap-0.5"><FileText className="h-2.5 w-2.5" />{visit.proof_attachment_ids.length} proofs</span> : null}</div></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{customer?.name || visit.location_name}</p><p className="truncate text-[11px] text-muted-foreground">{visit.location_name} · {visit.assignee_type === "contractor" ? (visit.contractor_name || "Contractor") : staffNameForId(db, visit.assigned_staff_id)}</p><div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground"><span className="inline-flex items-center gap-0.5"><Calendar className="h-2.5 w-2.5" />{formatDate(visit.scheduled_at)}</span>{visit.proof_attachment_ids.length > 0 ? <span className="inline-flex items-center gap-0.5"><FileText className="h-2.5 w-2.5" />{visit.proof_attachment_ids.length} proofs</span> : null}</div></div>
                 </button>
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <StatusBadge label={status.label} className={status.className} />
@@ -252,7 +253,7 @@ export function CustomerDeskExtrasModule({ submodule, filterPresets }: { submodu
           {tasks.map((task) => {
             const customer = db.customers.find((row) => row.id === task.customer_id);
             const status = taskStatusStyle(task.status);
-            return <button key={task.id} type="button" onClick={() => openDetail("task", task.id)} className="flex w-full items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card hover:bg-accent/20"><Avatar name={customer?.name || "?"} size={32} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{task.title}</p><p className="text-[10px] text-muted-foreground">{customer?.name} · {task.assignee_name} · due {relativeDay(task.due_date)}</p></div><StatusBadge label={status.label} className={status.className} /></button>;
+            return <button key={task.id} type="button" onClick={() => openDetail("task", task.id)} className="flex w-full items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card hover:bg-accent/20"><Avatar name={customer?.name || "?"} size={32} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{task.title}</p><p className="text-[10px] text-muted-foreground">{customer?.name} · {staffNameForId(db, task.assigned_staff_id)} · due {relativeDay(task.due_date)}</p></div><StatusBadge label={status.label} className={status.className} /></button>;
           })}
         </div>
       </div>
