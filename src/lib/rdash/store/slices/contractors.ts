@@ -936,6 +936,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                         ],
                     },
                 }));
+                if (!policy.approver_id)
+                    throw new Error("Approval policy is missing its canonical Staff approver.");
                 get().addTask({
                     title: `Approve contractor payment · ${bill.contractor_name} (${formatINR(amount)})`,
                     customer_id: bill.customer_id,
@@ -943,7 +945,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     work_order_id: bill.work_order_id,
                     task_scope: "office",
                     task_type: "contractor_payment_approval",
-                    assignee_name: policy.approver_name || "Owner",
+                    assigned_staff_id: policy.approver_id,
                     auto_generated: true,
                     due_date: today(),
                 });
