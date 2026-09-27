@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
 import { captureDevicePosition, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { MapView } from "../MapView";
 import type { SalaryAdjustment } from "@/lib/rdash/types";
 function ymd(value: Date) {
@@ -124,7 +125,7 @@ export function AttendancePayrollModule() {
             return date;
         });
     }, [weekOffset]);
-    const assignedVisits = React.useMemo(() => db.visits.filter((visit) => visit.staff_id === user.staffId && ["scheduled", "en_route", "checked_in"].includes(visit.status)), [db.visits, user.staffId]);
+    const assignedVisits = React.useMemo(() => db.visits.filter((visit) => visit.assigned_staff_id === user.staffId && ["scheduled", "en_route", "checked_in"].includes(visit.status)), [db.visits, user.staffId]);
     const todayRecord = React.useMemo(() => db.attendance.find((record) => record.staff_id === user.staffId && record.date === ymd(new Date())), [db.attendance, user.staffId]);
     const staffWithAttendance = React.useMemo(() => {
         const month = currentMonthKey();
@@ -402,7 +403,7 @@ export function AttendancePayrollModule() {
       {/* Regularize Attendance Dialog — reverses wrongly auto-marked absences */}
       {regularizeRecordId && (() => {
         const record = db.attendance.find((r) => r.id === regularizeRecordId);
-        const staffName = record?.staff_name || "Staff";
+        const staffName = staffNameForId(db, record?.staff_id, "Staff");
         return (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true">
             <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
