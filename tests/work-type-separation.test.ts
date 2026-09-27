@@ -93,13 +93,12 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
 
   test("CustomerWorkRequiredDialog is the one create implementation and persists work_type_ids", () => {
     const canonical = read("../src/components/rdash/customer/CustomerWorkRequiredDialog.tsx");
-    const compatibility = read("../src/components/rdash/WorkRequiredCreateDialog.tsx");
     expect(canonical).toContain("work_type_ids: draft.workTypeIds");
     expect(canonical).toContain("WorkRequiredFields");
     expect(canonical).toContain("addArea");
     expect(canonical).toContain("addWorkRequired");
-    expect(compatibility).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
-    expect(compatibility).not.toContain("addWorkRequired({");
+    expect(read("../src/components/rdash/modules/CustomerDeskPortfolio.tsx")).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
+    expect(read("../src/components/rdash/modules/SiteExecutionModule.tsx")).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
   });
 
   test("Customer capture owns multi-work-type alternatives and contractor-rate estimates", () => {
