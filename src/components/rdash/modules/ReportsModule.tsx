@@ -9,6 +9,7 @@ import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, quotatio
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Users, Package, Clock, Target, MapPin, CheckCircle2, AlertTriangle, Download, FileText, Calendar as CalendarIcon, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 function BarRow({ label, value, max, color = "bg-primary", valueLabel }: {
     label: string;
     value: number;
@@ -182,13 +183,13 @@ function applyReportFilter(db: RDashDatabase, filter: ReportFilter): RDashDataba
             ? db.customerReceipts.filter((r) => (!customerId || r.customer_id === customerId) && (!filter.workOrderId || r.work_order_id === filter.workOrderId))
             : db.customerReceipts,
         visits: customerId || filter.workOrderId || filter.staffId
-            ? db.visits.filter((v) => (!customerId || v.customer_id === customerId) && (!filter.workOrderId || v.work_order_id === filter.workOrderId) && (!filter.staffId || v.staff_id === filter.staffId))
+            ? db.visits.filter((v) => (!customerId || v.customer_id === customerId) && (!filter.workOrderId || v.work_order_id === filter.workOrderId) && (!filter.staffId || v.assigned_staff_id === filter.staffId))
             : db.visits,
         tasks: customerId || filter.workOrderId || filter.staffId
-            ? db.tasks.filter((t) => (!customerId || t.customer_id === customerId) && (!filter.workOrderId || t.work_order_id === filter.workOrderId) && (!filter.staffId || t.assignee_id === filter.staffId))
+            ? db.tasks.filter((t) => (!customerId || t.customer_id === customerId) && (!filter.workOrderId || t.work_order_id === filter.workOrderId) && (!filter.staffId || t.assigned_staff_id === filter.staffId))
             : db.tasks,
         followups: customerId || filter.staffId
-            ? db.followups.filter((f) => (!customerId || f.customer_id === customerId) && (!filter.staffId || f.assigned_to === filter.staffId))
+            ? db.followups.filter((f) => (!customerId || f.customer_id === customerId) && (!filter.staffId || f.assigned_staff_id === filter.staffId))
             : db.followups,
         purchaseOrders: filter.workOrderId || filter.vendorId
             ? db.purchaseOrders.filter((p) => (!filter.workOrderId || p.work_order_id === filter.workOrderId) && (!filter.vendorId || p.vendor_id === filter.vendorId))
@@ -799,9 +800,9 @@ function StaffProductivityReport({ db: dbRaw, filter }: {
 }) {
     const db = applyReportFilter(dbRaw, filter);
     const staff = db.master.staff.map((s) => {
-        const tasks = db.tasks.filter((t) => t.assignee_id === s.id);
+        const tasks = db.tasks.filter((t) => t.assigned_staff_id === s.id);
         const completed = tasks.filter((t) => t.status === "completed").length;
-        const visits = db.visits.filter((v) => v.staff_id === s.id);
+        const visits = db.visits.filter((v) => v.assigned_staff_id === s.id);
         const visitsCompleted = visits.filter((v) => v.status === "completed").length;
         return {
             ...s,
@@ -1035,7 +1036,7 @@ function VisitComplianceReport({ db: dbRaw, filter }: {
       <ReportCard title="Missed visits" subtitle="Require follow-up and rescheduling" icon={<AlertTriangle className="h-4 w-4"/>}>
         {missed === 0 ? <p className="text-xs text-muted-foreground">No missed visits 🎉</p> : (<div className="space-y-2">
             {db.visits.filter((v) => v.status === "missed").map((v) => (<div key={v.id} className="flex items-center justify-between rounded-md border border-destructive/20 bg-destructive/[0.04] px-3 py-2">
-                <div><p className="text-sm font-medium">{titleCase(v.visit_type)} · {v.location_name}</p><p className="text-[11px] text-muted-foreground">{v.staff_name} · {formatDate(v.scheduled_at)}</p></div>
+                <div><p className="text-sm font-medium">{titleCase(v.visit_type)} · {v.location_name}</p><p className="text-[11px] text-muted-foreground">{staffNameForId(db, v.assigned_staff_id)} · {formatDate(v.scheduled_at)}</p></div>
                 <StatusBadge label="Missed" className="bg-destructive/10 text-destructive border-destructive/20"/>
               </div>))}
           </div>)}
@@ -1075,7 +1076,7 @@ function TaskThroughputReport({ db: dbRaw, filter }: {
       <ReportCard title="Blocked tasks" subtitle="Require unblocking — click to open" icon={<AlertTriangle className="h-4 w-4"/>}>
         {db.tasks.filter((t) => t.status === "blocked").length === 0 ? <p className="text-xs text-muted-foreground">No blocked tasks 🎉</p> : (<div className="space-y-2">
             {db.tasks.filter((t) => t.status === "blocked").map((t) => (<div key={t.id} className="flex items-center justify-between rounded-md border border-destructive/20 bg-destructive/[0.04] px-3 py-2">
-                <div><p className="text-sm font-medium">{t.title}</p><p className="text-[11px] text-muted-foreground">{t.assignee_name} · due {formatDate(t.due_date)}</p></div>
+                <div><p className="text-sm font-medium">{t.title}</p><p className="text-[11px] text-muted-foreground">{staffNameForId(db, t.assigned_staff_id)} · due {formatDate(t.due_date)}</p></div>
                 <StatusBadge label="Blocked" className="bg-destructive/10 text-destructive border-destructive/20"/>
               </div>))}
           </div>)}
