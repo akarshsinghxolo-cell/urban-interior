@@ -546,7 +546,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 const visit = state.db.visits.find((row: any) => row.id === input.visit_id);
                 if (!visit)
                     throw new Error("Visit not found for field attendance.");
-                if (visit.staff_id !== staff.id)
+                if (visit.assigned_staff_id !== staff.id)
                     throw new Error("Field attendance can only use a Visit assigned to the same staff member.");
                 verification = verifyVisitGps(input, visit, policy);
                 mode = "field_visit";
