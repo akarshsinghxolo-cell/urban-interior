@@ -2102,6 +2102,7 @@ function InvoiceOverview({ invoice }: {
 function TaskOverview({ t }: {
     t: import("@/lib/rdash/types").Task;
 }) {
+    const db = useRDashStore((s) => s.db);
     const completeTask = useRDashStore((s) => s.completeTask);
     const blockTask = useRDashStore((s) => s.blockTask);
     const [notes, setNotes] = React.useState("");
@@ -2757,6 +2758,7 @@ function LinkedRow({ icon, label, value, onClick }: {
 function FollowupOverview({ f }: {
     f: import("@/lib/rdash/types").Followup;
 }) {
+    const db = useRDashStore((s) => s.db);
     const st = followupStatusStyle(f.status);
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
       <div className="flex items-start justify-between gap-3">
