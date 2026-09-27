@@ -118,11 +118,33 @@ describe("dirty form integration boundaries", () => {
       "src/components/rdash/customer/CustomerQuotationDialog.tsx",
       "src/components/rdash/StaffEditDialog.tsx",
       "src/components/rdash/modules/ApprovalPoliciesModule.tsx",
+      "src/components/rdash/modules/BOQModule.tsx",
+      "src/components/rdash/modules/ProcurementModule.tsx",
+      "src/components/rdash/modules/SiteExecutionModule.tsx",
+      "src/components/rdash/modules/VendorBillsModule.tsx",
+      "src/components/rdash/modules/ContractorPaymentsModule.tsx",
     ]) {
       const source = await testFile(path).text();
       expect(source).toContain("useDirtyFormRegistration");
       expect(source).toContain("dirtyFormRegistry.requestNavigation");
     }
+
+    const boq = await testFile("src/components/rdash/modules/BOQModule.tsx").text();
+    const procurement = await testFile("src/components/rdash/modules/ProcurementModule.tsx").text();
+    const siteExecution = await testFile("src/components/rdash/modules/SiteExecutionModule.tsx").text();
+    const vendorBills = await testFile("src/components/rdash/modules/VendorBillsModule.tsx").text();
+    const contractorPayments = await testFile("src/components/rdash/modules/ContractorPaymentsModule.tsx").text();
+
+    expect(boq).toContain('"boq-rate-edit"');
+    expect(procurement).toContain('"purchase-order-create"');
+    expect(procurement).toContain('"purchase-order-direct-award"');
+    expect(procurement).toContain('"vendor-bid-record"');
+    expect(siteExecution).toContain('"contractor-bid-invite"');
+    expect(siteExecution).toContain('"contractor-direct-award"');
+    expect(siteExecution).toContain('"site-vendor-bid"');
+    expect(vendorBills).toContain('"vendor-invoice-create"');
+    expect(contractorPayments).toContain('"contractor-payment-request"');
+
     expect(await testFile("src/components/urban-castle/LegacyDirtyFormAdapter.tsx").exists()).toBe(false);
   });
 });
