@@ -34,6 +34,7 @@ import {
 } from "../../gps";
 import { attendancePolicyForVisit } from "../../attendance-policy";
 import { isOpenFollowup, findOpenLinkedFollowup } from "../finance-helpers";
+import { activeStaffIdForRole, staffNameForId } from "../../staff-directory";
 
 function resolveVisitLocation(db: RDashDatabase, draft: Partial<Visit>) {
     const workOrder = draft.work_order_id
@@ -84,7 +85,7 @@ function assertVisitOwnership(actor: CurrentUserContext, visit: Visit, db?: RDas
             return;
         throw new Error("Only an active staff member, Owner, or Operations Manager may record a contractor Visit.");
     }
-    if (actor.role !== "Field Staff" || actor.staffId !== visit.staff_id) {
+    if (actor.role !== "Field Staff" || actor.staffId !== visit.assigned_staff_id) {
         throw new Error("Only the assigned Field Staff member, Owner, or Operations Manager may act on this Visit.");
     }
 }
@@ -103,12 +104,12 @@ function assertVisitTimeWindow(visit: Visit, capturedAt: string) {
         throw new Error(`Field check-in is allowed from ${before} minutes before until ${after} minutes after the scheduled start. Reschedule the Visit or record a manager-approved exception.`);
     }
 }
-function visitAssigneeKey(visit: Pick<Visit, "staff_id" | "contractor_id" | "assignee_type">) {
+function visitAssigneeKey(visit: Pick<Visit, "assigned_staff_id" | "contractor_id" | "assignee_type">) {
     return visit.assignee_type === "contractor" || visit.contractor_id
         ? `contractor:${visit.contractor_id || ""}`
-        : `staff:${visit.staff_id || ""}`;
+        : `staff:${visit.assigned_staff_id || ""}`;
 }
-function assertVisitSchedulingAvailability(db: RDashDatabase, candidate: Pick<Visit, "staff_id" | "scheduled_at"> & Partial<Visit>, ignoreVisitId?: string) {
+function assertVisitSchedulingAvailability(db: RDashDatabase, candidate: Pick<Visit, "assigned_staff_id" | "scheduled_at"> & Partial<Visit>, ignoreVisitId?: string) {
     if (!candidate.scheduled_at)
         return;
     const key = visitAssigneeKey(candidate);
@@ -164,8 +165,7 @@ function upsertMissedVisitFollowup(state: any, visit: Visit) {
         priority: "high",
         due_date: dueDate,
         due_at: new Date(`${dueDate}T09:00:00`).toISOString(),
-        assigned_to: visit.staff_name || "Owner",
-        assigned_role: "Field Staff",
+        assigned_staff_id: visit.assigned_staff_id || activeStaffIdForRole(state.db, "Owner"),
         followup_type: "call",
     };
     if (existing) {
@@ -271,11 +271,10 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
             }
             const assigneeType = v.assignee_type || (v.contractor_id ? "contractor" : "staff");
             const fallbackStaff = state.db.master.staff.find((staff: any) => staff.status === "active");
-            const staff = assigneeType === "staff" ? activeStaffMember(state.db, v.staff_id || fallbackStaff?.id) : undefined;
-            const contractor = assigneeType === "contractor" ? activeContractor(state.db, v.contractor_id || v.staff_id) : undefined;
-            // Flexibility: allow unassigned visits (empty staff_id + "Unassigned" name) so a business
-            // with no staff set up yet can still schedule visits. Owner can assign later.
-            const isUnassignedStaff = assigneeType === "staff" && !v.staff_id && !staff && (v.staff_name === "Unassigned" || v.staff_name === "");
+            const staff = assigneeType === "staff" ? activeStaffMember(state.db, v.assigned_staff_id || fallbackStaff?.id) : undefined;
+            const contractor = assigneeType === "contractor" ? activeContractor(state.db, v.contractor_id) : undefined;
+            // An unassigned staff Visit carries no Staff ID. Owner can assign one later.
+            const isUnassignedStaff = assigneeType === "staff" && !v.assigned_staff_id && !staff;
             if (assigneeType === "staff" && !staff && !isUnassignedStaff)
                 throw new Error("Select an active staff member from the Visit assignee list.");
             if (assigneeType === "contractor" && !contractor)
@@ -290,7 +289,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 scheduled_at: scheduledAt,
                 scheduled_duration_minutes: plannedDuration,
                 assignee_type: assigneeType,
-                staff_id: staff?.id || "",
+                assigned_staff_id: staff?.id,
                 contractor_id: contractor?.id,
             };
             assertVisitSchedulingAvailability(state.db, draft as Visit);
@@ -313,8 +312,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 work_required_id: v.work_required_id,
                 work_order_id: v.work_order_id,
                 assignee_type: assigneeType,
-                staff_id: staff?.id || "",
-                staff_name: staff?.name || v.staff_name || (isUnassignedStaff ? "Unassigned" : ""),
+                assigned_staff_id: staff?.id,
                 contractor_id: contractor?.id,
                 contractor_name: contractor?.name,
                 visit_type: v.visit_type || "site_visit",
@@ -363,7 +361,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 throw new Error("Only a scheduled Visit can be marked en route.");
             const now = nowIso();
             commitState((snapshot: any) => ({ db: { ...snapshot.db, visits: snapshot.db.visits.map((row: any) => row.id === id ? { ...row, status: "en_route" as const, updated_at: now } : row) } }));
-            get().addThreadReply(visit.thread_id || get().openThreadFor("visit", id, `${visit.visit_type} · ${visit.location_name}`, [visit.staff_name || visit.contractor_name || ""].filter(Boolean)), { author: state.currentUser().name, role: state.currentUser().role, body: "Visit marked en route.", kind: "decision" });
+            get().addThreadReply(visit.thread_id || get().openThreadFor("visit", id, `${visit.visit_type} · ${visit.location_name}`, [visit.assignee_type === "contractor" ? (visit.contractor_name || "") : staffNameForId(state.db, visit.assigned_staff_id, "")].filter(Boolean)), { author: state.currentUser().name, role: state.currentUser().role, body: "Visit marked en route.", kind: "decision" });
         },
         recordVisitTrackingPoint: (id, capture) => {
             const state = get();
@@ -406,7 +404,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 throw new Error("Start the contractor Visit before recording completion.");
             const now = nowIso();
             const dwell = Math.max(0, Math.round((new Date(now).getTime() - new Date(visit.check_in_at).getTime()) / 60000));
-            const reportTaskId = get().addTask({ title: `File contractor visit report · ${visit.location_name}`, task_scope: "site", task_type: "visit_report", customer_id: visit.customer_id, visit_id: id, site_id: visit.site_id, assignee_name: state.currentUser().name, due_date: businessDate(new Date(Date.now() + 2 * 60 * 60 * 1000)), auto_generated: true });
+            const reportTaskId = get().addTask({ title: `File contractor visit report · ${visit.location_name}`, task_scope: "site", task_type: "visit_report", customer_id: visit.customer_id, visit_id: id, site_id: visit.site_id, assigned_staff_id: state.currentUser().staffId || activeStaffIdForRole(state.db, "Owner"), due_date: businessDate(new Date(Date.now() + 2 * 60 * 60 * 1000)), auto_generated: true });
             commitState((snapshot: any) => ({ db: { ...snapshot.db, visits: snapshot.db.visits.map((row: any) => row.id === id ? { ...row, status: "report_pending" as const, check_out_at: now, dwell_minutes: dwell, report_due_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), report_task_id: reportTaskId, updated_at: now } : row) } }));
         },
         cancelVisit: (id, reason) => {
@@ -435,7 +433,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
             const contractor = assignee.type === "contractor" ? activeContractor(state.db, assignee.id) : undefined;
             if (!staff && !contractor)
                 throw new Error("Choose an active staff member or contractor.");
-            const next = { ...visit, assignee_type: assignee.type, staff_id: staff?.id || "", staff_name: staff?.name || "", contractor_id: contractor?.id, contractor_name: contractor?.name } as Visit;
+            const next = { ...visit, assignee_type: assignee.type, assigned_staff_id: staff?.id, contractor_id: contractor?.id, contractor_name: contractor?.name } as Visit;
             assertVisitSchedulingAvailability(state.db, next, id);
             const now = nowIso();
             commitState((snapshot: any) => ({ db: { ...snapshot.db, visits: snapshot.db.visits.map((row: any) => row.id === id ? { ...next, status: "scheduled" as const, missed_at: undefined, missed_reason: undefined, updated_at: now } : row), followups: snapshot.db.followups.map((followup: any) => followup.visit_id === id && isOpenFollowup(followup.status) ? { ...followup, status: "closed" as const, notes: `${followup.notes || ""}\nVisit reassigned.`.trim(), updated_at: now } : followup) } }));
@@ -495,7 +493,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 const saved = get().db.visits.find((row: any) => row.id === visit.id)!;
                 upsertMissedVisitFollowup(get(), saved);
                 get().addThreadReply(saved.thread_id ||
-                    get().openThreadFor("visit", saved.id, `${saved.visit_type} · ${saved.location_name}`, [saved.staff_name]), {
+                    get().openThreadFor("visit", saved.id, `${saved.visit_type} · ${saved.location_name}`, [staffNameForId(get().db, saved.assigned_staff_id, "")].filter(Boolean)), {
                     author: "System",
                     role: "System",
                     body: "Visit marked missed because no verified check-in was recorded within the allowed time window. A rescheduling follow-up was created.",
@@ -525,20 +523,19 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
             assertVisitTimeWindow(visitBefore, timestamp);
             const verification = verifyVisitGps(capture, visitBefore, policy);
             const threadId = visitBefore.thread_id ||
-                get().openThreadFor("visit", id, `${visitBefore.visit_type || "Visit"} · ${visitBefore.location_name || id}`, [visitBefore.staff_name || actor.name]);
+                get().openThreadFor("visit", id, `${visitBefore.visit_type || "Visit"} · ${visitBefore.location_name || id}`, [staffNameForId(state.db, visitBefore.assigned_staff_id, actor.name)]);
             commitState((s: any) => {
-                const existingAttendance = s.db.attendance.find((row: any) => row.staff_id === visitBefore.staff_id &&
+                const existingAttendance = s.db.attendance.find((row: any) => row.staff_id === visitBefore.assigned_staff_id &&
                     row.date === dateFromIso(timestamp));
                 const staffPolicy = attendancePolicyForVisit(s.db, visitBefore);
                 const shouldAutoPresent = staffPolicy.auto_present_from_gps &&
-                    actor.staffId === visitBefore.staff_id &&
+                    actor.staffId === visitBefore.assigned_staff_id &&
                     !existingAttendance;
                 const lateMinutes = minutesLate(timestamp, staffPolicy.standard_check_in_time, staffPolicy.late_grace_minutes);
                 const attendance: AttendanceRecord | null = shouldAutoPresent
                     ? {
                         id: genId("att"),
-                        staff_id: visitBefore.staff_id,
-                        staff_name: visitBefore.staff_name,
+                        staff_id: visitBefore.assigned_staff_id,
                         date: dateFromIso(timestamp),
                         attendance_mode: "field_visit",
                         visit_id: visitBefore.id,
@@ -642,7 +639,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 : verifyVisitGps(capture, before, policy);
             const reportDueAt = new Date(new Date(timestamp).getTime() + 2 * 60 * 60 * 1000).toISOString();
             const threadId = before.thread_id ||
-                get().openThreadFor("visit", id, `${before.visit_type || "Visit"} · ${before.location_name || id}`, [before.staff_name || actor.name]);
+                get().openThreadFor("visit", id, `${before.visit_type || "Visit"} · ${before.location_name || id}`, [staffNameForId(state.db, before.assigned_staff_id, actor.name)]);
             // H4: Auto-compute distance traveled from the route_points collected
             // between check-in and check-out. Sum the haversine distance between
             // consecutive points (check-in → tracking → check-out). Stored on
@@ -692,7 +689,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                             }
                             : v),
                         attendance: s.db.attendance.map((attendance: any) => {
-                            if (attendance.visit_id !== id || attendance.staff_id !== before.staff_id || attendance.check_out)
+                            if (attendance.visit_id !== id || attendance.staff_id !== before.assigned_staff_id || attendance.check_out)
                                 return attendance;
                             const workMinutes = Math.max(0, Math.round((new Date(timestamp).getTime() - new Date(attendance.check_in || before.check_in_at || timestamp).getTime()) / 60000));
                             return {
@@ -721,8 +718,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
                 visit_id: id,
                 work_order_id: visit?.work_order_id,
                 site_id: visit?.site_id,
-                assignee_id: visit?.staff_id || undefined,
-                assignee_name: visit?.staff_name || actor.name,
+                assigned_staff_id: visit?.assigned_staff_id || actor.staffId,
                 description: `Report due by ${new Date(reportDueAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}.`,
                 due_date: businessDate(new Date(reportDueAt)),
                 auto_generated: true,
@@ -778,7 +774,7 @@ export function createVisitsSlice(ctx: StoreContext): VisitsState {
             if (invalidProof)
                 throw new Error(`Proof ${invalidProof.file_name} must be queued before filing the Visit report.`);
             const threadId = visit.thread_id ||
-                get().openThreadFor("visit", id, `${visit.visit_type || "Visit"} · ${visit.location_name || id}`, [visit.staff_name || actor.name]);
+                get().openThreadFor("visit", id, `${visit.visit_type || "Visit"} · ${visit.location_name || id}`, [staffNameForId(get().db, visit.assigned_staff_id, actor.name)]);
             const reportMessageId = get().addThreadReply(threadId, {
                 author: actor.name,
                 role: actor.role,
