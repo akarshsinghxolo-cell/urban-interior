@@ -10,8 +10,8 @@ export function StaffBoardModule() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const staff = React.useMemo(() => {
         const staffRows = db.master.staff.map((s) => {
-            const tasks = db.tasks.filter((t) => t.assignee_id === s.id);
-            const visits = db.visits.filter((v) => v.staff_id === s.id);
+            const tasks = db.tasks.filter((t) => t.assigned_staff_id === s.id);
+            const visits = db.visits.filter((v) => v.assigned_staff_id === s.id);
             const completedTasks = tasks.filter((t) => t.status === "completed").length;
             const completedVisits = visits.filter((v) => v.status === "completed").length;
             const activeVisits = visits.filter((v) => v.status === "checked_in" || v.status === "en_route").length;
@@ -33,7 +33,7 @@ export function StaffBoardModule() {
             };
         });
         const contractorRows = db.master.contractors.map((c) => {
-            const visits = db.visits.filter((v) => v.staff_id === c.id);
+            const visits = db.visits.filter((v) => v.contractor_id === c.id);
             const completedVisits = visits.filter((v) => v.status === "completed").length;
             const activeVisits = visits.filter((v) => v.status === "checked_in" || v.status === "en_route").length;
             return {
@@ -105,10 +105,10 @@ export function StaffBoardModule() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-1">
-              {db.visits.filter((v) => v.staff_id === s.id && (v.status === "checked_in" || v.status === "en_route")).slice(0, 2).map((v) => (<button key={v.id} type="button" title={v.location_name} onClick={() => openDetail("visit", v.id)} className="inline-flex min-w-0 max-w-[45vw] items-center gap-1 rounded-md border border-warning/20 bg-warning/[0.06] px-2 py-0.5 text-[10px] font-medium text-warning hover:bg-warning/10">
+              {db.visits.filter((v) => (s.kind === "contractor" ? v.contractor_id === s.id : v.assigned_staff_id === s.id) && (v.status === "checked_in" || v.status === "en_route")).slice(0, 2).map((v) => (<button key={v.id} type="button" title={v.location_name} onClick={() => openDetail("visit", v.id)} className="inline-flex min-w-0 max-w-[45vw] items-center gap-1 rounded-md border border-warning/20 bg-warning/[0.06] px-2 py-0.5 text-[10px] font-medium text-warning hover:bg-warning/10">
                   <MapPin className="h-2.5 w-2.5 shrink-0"/><span className="truncate">{v.location_name}</span>
                 </button>))}
-              {db.tasks.filter((t) => t.assignee_id === s.id && t.status === "todo").slice(0, 2).map((t) => (<button key={t.id} type="button" title={t.title} onClick={() => openDetail("task", t.id)} className="inline-flex min-w-0 max-w-[45vw] items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-accent/30">
+              {db.tasks.filter((t) => t.assigned_staff_id === s.id && t.status === "todo").slice(0, 2).map((t) => (<button key={t.id} type="button" title={t.title} onClick={() => openDetail("task", t.id)} className="inline-flex min-w-0 max-w-[45vw] items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[10px] font-medium text-foreground hover:bg-accent/30">
                   <Clock className="h-2.5 w-2.5 shrink-0"/><span className="truncate">{t.title}</span>
                 </button>))}
             </div>
