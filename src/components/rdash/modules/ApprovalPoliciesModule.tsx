@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from "sonner";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 const TRIGGER_LABELS: Record<ApprovalTrigger, string> = {
     po_amount: "Purchase Order amount",
     quotation_discount: "Quotation discount %",
@@ -80,7 +81,7 @@ export function ApprovalPoliciesModule() {
               </div>
               <div className="rounded-md bg-muted/40 p-2">
                 <p className="text-[10px] uppercase text-muted-foreground">Approver</p>
-                <p className="font-semibold">{p.approver_name || p.approver_role}</p>
+                <p className="font-semibold">{staffNameForId(db, p.approver_id, p.approver_role)}</p>
               </div>
               {p.auto_escalate_hours && (<div className="rounded-md bg-muted/40 p-2">
                   <p className="text-[10px] uppercase text-muted-foreground">Escalate after</p>
@@ -121,7 +122,7 @@ export function ApprovalPoliciesModule() {
         </ol>
       </div>
 
-      {(creating || editing) && (<PolicyDialog policy={editing} onClose={() => { setCreating(false); setEditing(null); }} onSave={(data) => {
+      {(creating || editing) && (<PolicyDialog policy={editing} staff={db.master.staff.filter((member) => member.status === "active")} onClose={() => { setCreating(false); setEditing(null); }} onSave={(data) => {
                 if (editing) {
                     updatePolicy(editing.id, data);
                     toast.success("Policy updated");
@@ -135,8 +136,9 @@ export function ApprovalPoliciesModule() {
             }}/>)}
     </div>);
 }
-function PolicyDialog({ policy, onClose, onSave }: {
+function PolicyDialog({ policy, staff, onClose, onSave }: {
     policy: ApprovalPolicy | null;
+    staff: import("@/lib/rdash/types").Staff[];
     onClose: () => void;
     onSave: (data: Partial<ApprovalPolicy>) => void;
 }) {
@@ -144,7 +146,7 @@ function PolicyDialog({ policy, onClose, onSave }: {
     const [trigger, setTrigger] = React.useState<ApprovalTrigger>(policy?.trigger || "po_amount");
     const [threshold, setThreshold] = React.useState(policy?.threshold || 0);
     const [operator, setOperator] = React.useState<ApprovalPolicy["operator"]>(policy?.operator || ">");
-    const [approverRole, setApproverRole] = React.useState(policy?.approver_role || "Owner");
+    const [approverId, setApproverId] = React.useState(policy?.approver_id || staff[0]?.id || "");
     const [escalateHours, setEscalateHours] = React.useState(policy?.auto_escalate_hours || 24);
     const [escalateTo, setEscalateTo] = React.useState(policy?.escalate_to || "Owner");
     const [description, setDescription] = React.useState(policy?.description || "");
@@ -153,17 +155,19 @@ function PolicyDialog({ policy, onClose, onSave }: {
       trigger: policy?.trigger || "po_amount",
       threshold: policy?.threshold || 0,
       operator: policy?.operator || ">",
-      approverRole: policy?.approver_role || "Owner",
+      approverId: policy?.approver_id || staff[0]?.id || "",
       escalateHours: policy?.auto_escalate_hours || 24,
       escalateTo: policy?.escalate_to || "Owner",
       description: policy?.description || "",
     };
     const formId = `approval-policy:${policy?.id || "new"}`;
-    const current = { name, trigger, threshold, operator, approverRole, escalateHours, escalateTo, description };
+    const current = { name, trigger, threshold, operator, approverId, escalateHours, escalateTo, description };
     const dirty = JSON.stringify(current) !== JSON.stringify(initial);
     const save = () => {
       if (!name.trim()) return false;
-      onSave({ name, trigger, threshold, operator, approver_role: approverRole, approver_name: approverRole, auto_escalate_hours: escalateHours, escalate_to: escalateTo, description });
+      const approver = staff.find((member) => member.id === approverId);
+      if (!approver) return false;
+      onSave({ name, trigger, threshold, operator, approver_id: approver.id, approver_role: approver.role, auto_escalate_hours: escalateHours, escalate_to: escalateTo, description });
       dirtyFormRegistry.markClean(formId);
       return true;
     };
@@ -212,9 +216,10 @@ function PolicyDialog({ policy, onClose, onSave }: {
               <Input type="number" value={threshold || ""} onChange={(e) => setThreshold(parseFloat(e.target.value) || 0)} className="h-9 text-sm"/>
             </div>
             <div>
-              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Approver role</label>
-              <select value={approverRole} onChange={(e) => setApproverRole(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                <option>Owner</option><option>Accounts</option><option>Designer</option><option>Sales Lead</option>
+              <label className="text-[10px] font-semibold uppercase text-muted-foreground">Approver</label>
+              <select value={approverId} onChange={(e) => setApproverId(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+                <option value="">— Select active Staff —</option>
+                {staff.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}
               </select>
             </div>
           </div>
@@ -235,7 +240,7 @@ function PolicyDialog({ policy, onClose, onSave }: {
         </div>
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={requestClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" onClick={save} disabled={!name}>
+          <Button size="sm" onClick={save} disabled={!name || !approverId}>
             <CheckCircle2 className="mr-1 h-3.5 w-3.5"/> {policy ? "Save Changes" : "Create Policy"}
           </Button>
         </DialogFooter>
