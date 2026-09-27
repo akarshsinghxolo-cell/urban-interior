@@ -22,6 +22,7 @@ import { MapView, type MapPoint, type MapRouteSegment } from "../MapView";
 import { EmptyState, MetricCard, StatusBadge } from "../primitives";
 import { formatDateTime, indiaBusinessDate, titleCase, formatLocationLabel } from "@/lib/rdash/format";
 import { toast } from "sonner";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 
 type LayerKey = "staff" | "route" | "stops" | "sites" | "vendors" | "visits";
 const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
@@ -204,14 +205,14 @@ export function GpsTrackingModule({ moduleId }: { moduleId: string; viewFilter?:
     }
     if (layers.visits) {
       for (const visit of db.visits) {
-        if (staffId !== "all" && visit.staff_id !== staffId) continue;
+        if (staffId !== "all" && visit.assigned_staff_id !== staffId) continue;
         if (indiaBusinessDate(new Date(visit.scheduled_at)) !== date) continue;
         result.push({
           id: `visit-${visit.id}`, label: visit.location_name,
           latitude: visit.latitude ?? visit.planned_latitude,
           longitude: visit.longitude ?? visit.planned_longitude,
           status: visit.status === "completed" ? "completed" : visit.status === "checked_in" ? "active" : "scheduled",
-          meta: `${visit.staff_name} · ${titleCase(visit.status)} · Visit`,
+          meta: `${staffNameForId(db, visit.assigned_staff_id)} · ${titleCase(visit.status)} · Visit`,
           onClick: () => openDetail("visit", visit.id),
         });
       }
