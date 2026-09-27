@@ -89,7 +89,7 @@ export function VendorBillsModule({ vendorId }: { vendorId?: string } = {}) {
             return;
         if (!rejectReason.trim()) {
             toast.error("A rejection reason is required for the audit trail.");
-            return false;
+            return;
         }
         try {
             rejectVendorBill(rejectBill.id, rejectReason.trim());
