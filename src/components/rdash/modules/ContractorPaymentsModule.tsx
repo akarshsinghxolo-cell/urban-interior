@@ -204,9 +204,11 @@ export function ContractorPaymentsModule({ contractorId }: { contractorId?: stri
         }
     };
 
-    const paymentRequestBaselineRef = React.useRef("");
+    const [paymentRequestBaseline, setPaymentRequestBaseline] = React.useState("");
     React.useEffect(() => {
-        paymentRequestBaselineRef.current = billToRequest ? requestAmount : "";
+        setPaymentRequestBaseline(billToRequest ? requestAmount : "");
+        // Capture the amount only when a payment-request dialog opens/closes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [billToRequest]);
 
     const savePaymentRequest = (): boolean => {
@@ -238,8 +240,8 @@ export function ContractorPaymentsModule({ contractorId }: { contractorId?: stri
         label: "Contractor Payment Release form",
         dirty: Boolean(
             billToRequest &&
-            paymentRequestBaselineRef.current &&
-            requestAmount !== paymentRequestBaselineRef.current
+            paymentRequestBaseline &&
+            requestAmount !== paymentRequestBaseline
         ),
         save: savePaymentRequest,
         discard: () => {
