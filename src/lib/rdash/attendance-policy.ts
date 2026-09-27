@@ -31,5 +31,7 @@ export function attendancePolicyForStaff(db: Pick<RDashDatabase, "master">, staf
     return normalizeAttendancePolicy(staff.attendance_policy);
 }
 export function attendancePolicyForVisit(db: Pick<RDashDatabase, "master">, visit: Pick<import("./types").Visit, "assigned_staff_id">): AttendancePolicy {
+    if (!visit.assigned_staff_id)
+        throw new Error("Attendance policy requires a staff-assigned Visit.");
     return attendancePolicyForStaff(db, visit.assigned_staff_id);
 }
