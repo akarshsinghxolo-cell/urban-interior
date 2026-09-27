@@ -4,6 +4,7 @@ import { CheckCircle2, Clock, MapPin, Navigation, User } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { indiaDate } from "@/lib/rdash/date";
 import { cn } from "@/lib/utils";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 
 /** Today's field visits in a compact timeline — gives the Owner an instant daily schedule view. */
 export function TodaysScheduleCard() {
@@ -101,7 +102,7 @@ export function TodaysScheduleCard() {
                                     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                                         <span className="flex items-center gap-0.5">
                                             <User className="h-2.5 w-2.5" />
-                                            {visit.staff_name || "Unassigned"}
+                                            {visit.assignee_type === "contractor" ? (visit.contractor_name || "Contractor") : staffNameForId(db, visit.assigned_staff_id)}
                                         </span>
                                         <span>·</span>
                                         <span className="capitalize">{visit.visit_type || "visit"}</span>
