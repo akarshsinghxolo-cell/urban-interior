@@ -19,6 +19,7 @@ import { ExceptionDashboard } from "../ExceptionDashboard";
 import { ProfitabilitySnapshot } from "../ProfitabilitySnapshot";
 import { CashFlowForecast } from "../CashFlowForecast";
 import { calculateQuotationMetrics } from "@/lib/rdash/metrics";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { TeamPerformance } from "../TeamPerformance";
 import { CustomerSatisfaction } from "../CustomerSatisfaction";
 import { MaterialPriceTracker } from "../MaterialPriceTracker";
@@ -388,7 +389,7 @@ export function DailyWork() {
             status: taskStatusStyle(task.status),
             priority: task.priority,
             due: task.due_date,
-            assignee: task.assignee_name,
+            assignee: staffNameForId(db, task.assigned_staff_id),
             tone: task.due_date < indiaDate() ? "danger" : "default",
             onClick: () => openDetail("task", task.id),
             actions: buildTaskActions(task.id, taskDispatch, { onOpen: () => openDetail("task", task.id), readOnly: true }),
@@ -441,7 +442,7 @@ export function DailyWork() {
             customerName: customer?.name,
             status: visitStatusStyle(visit.status),
             due: visit.scheduled_at,
-            assignee: visit.staff_name,
+            assignee: visit.assignee_type === "contractor" ? visit.contractor_name : staffNameForId(db, visit.assigned_staff_id),
             onClick: () => openDetail("visit", visit.id),
             actions: buildVisitActions(visit.id, null, {
                 onOpen: () => openDetail("visit", visit.id),
@@ -458,7 +459,7 @@ export function DailyWork() {
             status: followupStatusStyle(followup.status),
             priority: followup.priority,
             due: followup.due_date,
-            assignee: followup.assigned_to,
+            assignee: staffNameForId(db, followup.assigned_staff_id),
             tone: followup.status === "missed" ? "danger" : "default",
             onClick: () => openDetail("followup", followup.id),
             actions: buildFollowupActions(followup.id, followupDispatch, { onOpen: () => openDetail("followup", followup.id), readOnly: true }),
@@ -475,7 +476,7 @@ export function DailyWork() {
                 subtitle: task.site_id ? db.sites.find((site) => site.id === task.site_id)?.name : undefined,
                 customerName: customer?.name,
                 status: { label: "Task done", className: "bg-success/10 text-success border-success/20" },
-                assignee: task.assignee_name,
+                assignee: staffNameForId(db, task.assigned_staff_id),
                 onClick: () => openDetail("task", task.id),
                 actions: buildTaskActions(task.id, taskDispatch, { onOpen: () => openDetail("task", task.id), readOnly: true }),
             });
@@ -488,7 +489,7 @@ export function DailyWork() {
                 subtitle: visit.location_name,
                 customerName: customer?.name,
                 status: { label: "Visit done", className: "bg-success/10 text-success border-success/20" },
-                assignee: visit.staff_name,
+                assignee: visit.assignee_type === "contractor" ? visit.contractor_name : staffNameForId(db, visit.assigned_staff_id),
                 onClick: () => openDetail("visit", visit.id),
                 actions: buildVisitActions(visit.id, null, { onOpen: () => openDetail("visit", visit.id) }),
             });
@@ -501,7 +502,7 @@ export function DailyWork() {
                 subtitle: followup.notes,
                 customerName: customer?.name,
                 status: { label: "Follow-up done", className: "bg-success/10 text-success border-success/20" },
-                assignee: followup.assigned_to,
+                assignee: staffNameForId(db, followup.assigned_staff_id),
                 onClick: () => openDetail("followup", followup.id),
                 actions: buildFollowupActions(followup.id, followupDispatch, { onOpen: () => openDetail("followup", followup.id), readOnly: true }),
             });
@@ -525,7 +526,7 @@ export function DailyWork() {
                 subtitle: task.site_id ? db.sites.find((site) => site.id === task.site_id)?.name : undefined,
                 priority: task.priority,
                 due: task.due_date,
-                assignee: task.assignee_name,
+                assignee: staffNameForId(db, task.assigned_staff_id),
                 onClick: () => openDetail("task", task.id),
             });
         });
@@ -544,7 +545,7 @@ export function DailyWork() {
                 subtitle: visit.location_name,
                 priority: visit.status === "checked_in" ? "urgent" : "high",
                 due: scheduledDate,
-                assignee: visit.staff_name,
+                assignee: visit.assignee_type === "contractor" ? visit.contractor_name : staffNameForId(db, visit.assigned_staff_id),
                 onClick: () => openDetail("visit", visit.id),
             });
         });
@@ -562,7 +563,7 @@ export function DailyWork() {
                 subtitle: followup.notes,
                 priority: followup.status === "missed" ? "urgent" : followup.priority,
                 due: followup.due_date,
-                assignee: followup.assigned_to,
+                assignee: staffNameForId(db, followup.assigned_staff_id),
                 onClick: () => openDetail("followup", followup.id),
             });
         });
@@ -832,7 +833,7 @@ function TodayAttendancePanel() {
                 : "bg-muted text-muted-foreground border-border";
             return {
                 id: a.id,
-                title: staff?.name || a.staff_name || a.staff_id,
+                title: staff?.name || a.staff_id,
                 subtitle: `${a.attendance_mode || "—"}${a.location ? " · " + a.location : ""}${hasGps ? " · GPS ✓" : " · no GPS"}`,
                 status: { label: a.status, className: tone },
                 due: a.date,
@@ -920,7 +921,7 @@ function TodayVisitsPanel() {
                 customerName: customer?.name,
                 status: { label: statusLabel, className: statusClass },
                 due: v.scheduled_at?.slice(11, 16) || undefined,
-                assignee: v.staff_name || v.contractor_name,
+                assignee: v.assignee_type === "contractor" ? v.contractor_name : staffNameForId(db, v.assigned_staff_id),
                 onClick: () => openDetail("visit", v.id),
             } as QueueRecord;
         }).sort((a, b) => (a.due || "").localeCompare(b.due || ""));
@@ -963,7 +964,7 @@ function TodayFollowupsDuePanel() {
                 customerName: customer?.name,
                 status: { label: f.status, className: tone },
                 due: f.due_at?.slice(11, 16) || f.due_date,
-                assignee: f.assigned_to,
+                assignee: staffNameForId(db, f.assigned_staff_id),
                 priority: f.priority,
                 tone: f.status === "missed" ? "danger" as const : "default" as const,
                 onClick: () => openDetail("followup", f.id),
