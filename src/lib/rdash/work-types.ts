@@ -376,51 +376,6 @@ export function removeOptionPair(
   };
 }
 
-/** One-time healer for rows captured before alternatives lived on one item:
- *  a capture used to explode an any-one-of decision into one item per
- *  (subcategory · work type), all sharing the same measurement. Such twins
- *  (same area + category + unit + quantity + dimensions inside ONE row)
- *  merge into the first item — its option list grows, the duplicates vanish,
- *  and the quotation stops counting the same running foot once per option. */
-export function mergeExplodedOptionItems(input: {
-  workSubcategories: WorkSubcategory[];
-  items: LineItem[];
-}): LineItem[] {
-  const keyOf = (item: LineItem) =>
-    [item.area_id || "", item.category_id || "", item.unit_id || "", item.quantity ?? "", item.length_ft ?? "", item.breadth_ft ?? "", item.height_ft ?? ""].join("::");
-  const merged: LineItem[] = [];
-  const hostIndexByKey = new Map<string, number>();
-  const pendingPairsByHost = new Map<number, Map<string, { subcategory_id: ID; work_type_id?: ID }>>();
-  for (const item of input.items) {
-    const key = item.option_pairs?.length ? `self-${merged.length}` : keyOf(item);
-    const hostIndex = item.option_pairs?.length ? undefined : hostIndexByKey.get(key);
-    if (hostIndex === undefined) {
-      hostIndexByKey.set(key, merged.length);
-      merged.push({ ...item });
-      continue;
-    }
-    let pending = pendingPairsByHost.get(hostIndex);
-    if (!pending) {
-      pending = new Map(itemOptionPairs(merged[hostIndex]).map((own) => [`${own.subcategory_id}::${own.work_type_id || ""}`, own as { subcategory_id: ID; work_type_id?: ID }]));
-      pendingPairsByHost.set(hostIndex, pending);
-    }
-    for (const pair of itemOptionPairs(item)) {
-      if (!pair.subcategory_id) continue;
-      const pairKey = `${pair.subcategory_id}::${pair.work_type_id || ""}`;
-      if (!pending.has(pairKey)) pending.set(pairKey, pair as { subcategory_id: ID; work_type_id?: ID });
-    }
-  }
-  for (const [hostIndex, pending] of pendingPairsByHost) {
-    const pairs = Array.from(pending.values());
-    if (pairs.length <= 1) continue;
-    const host = merged[hostIndex];
-    host.option_pairs = pairs;
-    const areaName = host.area_name || "";
-    if (areaName) host.title = `${areaName} · ${capturedPairsTitle(input.workSubcategories, pairs)}`;
-  }
-  return merged;
-}
-
 /** Sum of an item's area chips — the quotation line's quantity master, shared
  *  by the derivation, the editor (chip × removes one chip and re-derives) and
  *  the tests. */
