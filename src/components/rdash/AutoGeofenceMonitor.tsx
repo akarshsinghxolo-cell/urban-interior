@@ -66,7 +66,7 @@ export function AutoGeofenceMonitor() {
                 dwellRef.current.set(key, result.state);
                 return result.decision;
             };
-            const activeVisit = state.db.visits.find((visit) => isStaffVisit(visit) && visit.staff_id === staffId && visit.status === "checked_in");
+            const activeVisit = state.db.visits.find((visit) => isStaffVisit(visit) && visit.assigned_staff_id === staffId && visit.status === "checked_in");
             if (activeVisit && activeVisit.planned_latitude != null && activeVisit.planned_longitude != null) {
                 const distance = distanceMeters(capture.latitude, capture.longitude, activeVisit.planned_latitude, activeVisit.planned_longitude);
                 const key = `visit-exit:${activeVisit.id}`;
@@ -86,7 +86,7 @@ export function AutoGeofenceMonitor() {
             }
             const candidates = state.db.visits
                 .filter((visit) => isStaffVisit(visit)
-                && visit.staff_id === staffId
+                && visit.assigned_staff_id === staffId
                 && (visit.status === "scheduled" || visit.status === "en_route")
                 && visit.planned_latitude != null
                 && visit.planned_longitude != null
