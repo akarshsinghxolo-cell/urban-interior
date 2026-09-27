@@ -171,8 +171,8 @@ function SystemShell({ moduleId, label, db, setActiveModule, }: {
         </div>
         <div className="rd-stagger grid gap-3 lg:grid-cols-2">
           {db.master.staff.map((s) => {
-                const tasks = db.tasks.filter((t) => t.assignee_id === s.id);
-                const visits = db.visits.filter((v) => v.staff_id === s.id);
+                const tasks = db.tasks.filter((t) => t.assigned_staff_id === s.id);
+                const visits = db.visits.filter((v) => v.assigned_staff_id === s.id);
                 return (<div key={s.id} className="group relative flex items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
                 <button type="button" onClick={() => { setEditStaffId(s.id); setStaffEditOpen(true); }} className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/80 text-muted-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100" aria-label={`Edit ${s.name}`} title="Edit staff"><Pencil className="h-3.5 w-3.5"/></button>
                 <Avatar name={s.name} size={42}/>
