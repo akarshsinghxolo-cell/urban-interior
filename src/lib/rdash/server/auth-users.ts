@@ -61,7 +61,7 @@ function normalizeAuthEmail(email: string) {
 
 function assertSupabaseAuthConfigured() {
   if (!isSupabaseConfigured()) {
-    throw new Error("Supabase Auth is not fully configured. Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY. Legacy aliases SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are also accepted.");
+    throw new Error("Supabase Auth is not fully configured. Set SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY and SUPABASE_SECRET_KEY.");
   }
 }
 
