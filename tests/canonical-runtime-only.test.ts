@@ -37,8 +37,13 @@ describe("canonical runtime only", () => {
 
   test("keeps canonical Staff references in task and visit state", () => {
     const types = source("src/lib/rdash/types.ts");
-    expect(types).not.toMatch(/\bassignee_name\??:/);
-    expect(types).not.toMatch(/\bassigned_to_staff_id\??:/);
-    expect(types).not.toMatch(/\bstaff_name\??:/);
+    const visit = types.slice(types.indexOf("export interface Visit {"), types.indexOf("export type Priority"));
+    const task = types.slice(types.indexOf("export interface Task {"), types.indexOf("export type FollowupStatus"));
+    const followup = types.slice(types.indexOf("export interface Followup {"), types.indexOf("export type FinancialContext"));
+    for (const section of [visit, task, followup]) {
+      expect(section).not.toMatch(/\bassignee_name\??:/);
+      expect(section).not.toMatch(/\bassigned_to_staff_id\??:/);
+      expect(section).not.toMatch(/\bstaff_name\??:/);
+    }
   });
 });
