@@ -14,6 +14,7 @@ import { buildTaskActions, buildFollowupActions } from "../recordActions";
 import type { FilterPreset, DataSource } from "@/lib/rdash/modules";
 import { toast } from "sonner";
 import { notifyCreated } from "@/lib/rdash/notify";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { CHANNEL_META } from "./CommunicationCentreModule";
 import { formatDateTime } from "@/lib/rdash/format";
 import { Button } from "@/components/ui/button";
@@ -269,7 +270,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
         label: s.name,
         sublabel: s.role,
         onClick: (ids) => {
-            ids.forEach((id) => updateTask(id, { assignee_id: s.id, assignee_name: s.name, assigned_to: s.name }));
+            ids.forEach((id) => updateTask(id, { assigned_staff_id: s.id }));
             toast.success(`${ids.length} task${ids.length > 1 ? "s" : ""} assigned to ${s.name}`);
             clearSelection();
         },
@@ -314,7 +315,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
                 case "weekly":
                     return t.task_scope === "office";
                 case "staff":
-                    return !!t.assignee_name;
+                    return !!t.assigned_staff_id;
             }
         }
         if (!presets) {
@@ -325,7 +326,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
                 case "weekly": return t.task_scope === "office";
                 case "client": return t.task_scope === "client";
                 case "site": return t.task_scope === "site";
-                case "staff": return !!t.assignee_name;
+                case "staff": return !!t.assigned_staff_id;
                 case "completed": return t.status === "completed";
                 default: return true;
             }
@@ -349,7 +350,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
             status: taskStatusStyle(t.status),
             priority: t.priority,
             due: t.due_date,
-            assignee: t.assignee_name,
+            assignee: staffNameForId(db, t.assigned_staff_id, ""),
             meta: titleCase(t.task_scope),
             tone: t.due_date < todayStr && t.status !== "completed" ? "danger" : "default",
             onClick: () => openDetail("task", t.id),
@@ -366,7 +367,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
             status: followupStatusStyle(f.status),
             priority: f.priority,
             due: f.due_date,
-            assignee: f.assigned_to,
+            assignee: staffNameForId(db, f.assigned_staff_id, ""),
             tone: f.status === "missed" ? "danger" : "default",
             onClick: () => openDetail("followup", f.id),
             actions: buildFollowupActions(f.id, fuDispatch, { onOpen: () => openDetail("followup", f.id) }),
@@ -447,7 +448,7 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
                         {customer?.name && <p className="truncate text-xs text-muted-foreground">{customer.name}</p>}
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                           <span className={cn("font-medium", overdue && "text-destructive")}>Due {relativeDay(t.due_date)}</span>
-                          {t.assignee_name && <span>· {t.assignee_name}</span>}
+                          {t.assigned_staff_id && <span>· {staffNameForId(db, t.assigned_staff_id)}</span>}
                         </div>
                       </div>
                       <StatusBadge label={st.label} className={st.className}/>
@@ -472,14 +473,13 @@ export function TasksFollowups({ moduleId, submoduleFilter, filterPresets, dataS
                     priority: payload.priority,
                     due_date: payload.due_date,
                     due_at: new Date(`${payload.due_date}T${payload.due_time || "09:00"}:00`).toISOString(),
-                    assigned_to: payload.assigned_to,
-                    assigned_role: payload.assigned_role,
+                    assigned_staff_id: payload.assigned_staff_id,
                     customer_id: payload.customer_id,
                     work_required_id: payload.work_required_id,
                     quotation_id: payload.quotation_id,
                     followup_type: payload.followup_type,
                 });
-                notifyCreated("followup", id, payload.title, `Due ${payload.due_date}${payload.assigned_to ? ` · ${payload.assigned_to}` : ""}`);
+                notifyCreated("followup", id, payload.title, `Due ${payload.due_date}${payload.assigned_staff_id ? ` · ${staffNameForId(db, payload.assigned_staff_id)}` : ""}`);
                 setCreateFollowupOpen(false);
             }
             catch (error) {
@@ -500,8 +500,7 @@ function CreateFollowupDialog({ db, onClose, onCreate }: {
         priority: "low" | "medium" | "high" | "urgent";
         due_date: string;
         due_time: string;
-        assigned_to: string;
-        assigned_role: string;
+        assigned_staff_id?: string;
         customer_id?: string;
         work_required_id?: string;
         quotation_id?: string;
@@ -514,8 +513,7 @@ function CreateFollowupDialog({ db, onClose, onCreate }: {
     const [priority, setPriority] = React.useState<"low" | "medium" | "high" | "urgent">("medium");
     const [dueDate, setDueDate] = React.useState(todayStr);
     const [dueTime, setDueTime] = React.useState("09:00");
-    const [assignedTo, setAssignedTo] = React.useState("");
-    const [assignedRole, setAssignedRole] = React.useState("Sales");
+    const [assignedStaffId, setAssignedStaffId] = React.useState(db.master.staff.find((member) => member.status === "active")?.id || "");
     const [followupType, setFollowupType] = React.useState<"call" | "quotation" | "payment" | "general" | "note">("general");
     const [customerId, setCustomerId] = React.useState<string>("");
     const [quotationId, setQuotationId] = React.useState<string>("");
@@ -534,8 +532,7 @@ function CreateFollowupDialog({ db, onClose, onCreate }: {
             priority,
             due_date: dueDate,
             due_time: dueTime,
-            assigned_to: assignedTo.trim() || "Owner",
-            assigned_role: assignedRole,
+            assigned_staff_id: assignedStaffId || undefined,
             customer_id: customerId || undefined,
             quotation_id: quotationId || undefined,
             work_required_id: workRequiredId || undefined,
@@ -586,21 +583,12 @@ function CreateFollowupDialog({ db, onClose, onCreate }: {
               <Input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className="mt-1 h-9 text-sm"/>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-[10px] font-semibold uppercase text-muted-foreground">Assignee name</Label>
-              <Input value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} placeholder="e.g. Pooja Singh" className="mt-1 h-9 text-sm"/>
-            </div>
-            <div>
-              <Label className="text-[10px] font-semibold uppercase text-muted-foreground">Assignee role</Label>
-              <select value={assignedRole} onChange={(e) => setAssignedRole(e.target.value)} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
-                <option>Sales</option>
-                <option>Owner</option>
-                <option>Operations Manager</option>
-                <option>Finance</option>
-                <option>Designer</option>
-              </select>
-            </div>
+          <div>
+            <Label className="text-[10px] font-semibold uppercase text-muted-foreground">Assignee</Label>
+            <select value={assignedStaffId} onChange={(e) => setAssignedStaffId(e.target.value)} className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+              <option value="">— Unassigned —</option>
+              {db.master.staff.filter((member) => member.status === "active").map((member) => <option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}
+            </select>
           </div>
           <div>
             <Label className="text-[10px] font-semibold uppercase text-muted-foreground">Linked customer (optional)</Label>
