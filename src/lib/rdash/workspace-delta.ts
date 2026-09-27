@@ -49,7 +49,8 @@ export function knownWorkspaceCollection(collection: string): boolean {
 
 /**
  * Staff deltas must follow the same projection as the snapshot that the client
- * currently holds. Missing/legacy metadata fails closed to the safe directory.
+ * currently holds. Anything other than an explicit full projection fails
+ * closed to the safe directory.
  */
 export function workspaceStaffProjectionParam(
   database: RDashDatabase,
@@ -59,16 +60,16 @@ export function workspaceStaffProjectionParam(
 }
 
 /**
- * Returns the collections represented by the current scoped snapshot. Full and
- * legacy snapshots without explicit metadata are treated as complete. Permission,
- * safe Staff directory and foundational work-taxonomy rows are always part of
- * every authenticated scoped snapshot so global create/edit pickers stay populated.
+ * Returns the collections represented by the current canonical snapshot.
+ * Only an explicit full scope is treated as complete. Missing or malformed
+ * metadata fails closed instead of being interpreted as a full workspace.
  */
 export function loadedWorkspaceCollections(database: RDashDatabase): Set<string> | null {
   const metadata = database as unknown as Record<string, unknown>;
-  const scope = String(metadata._workspace_read_scope || "full");
+  const scope = String(metadata._workspace_read_scope || "");
   const raw = metadata._workspace_read_collections;
-  if (scope === "full" || !Array.isArray(raw)) return null;
+  if (scope === "full") return null;
+  if (!Array.isArray(raw)) return new Set();
   const foundation = metadata._workspace_foundation_embedded === true
     ? WORKSPACE_DELTA_BOOTSTRAP_COLLECTIONS
     : [];
