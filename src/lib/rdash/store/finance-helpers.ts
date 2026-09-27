@@ -13,6 +13,7 @@ import type {
 import { assertFinanceContext } from "../business-rules";
 import { formatINR } from "../format";
 import { businessDate, today, nowIso, genId } from "./helpers";
+import { activeStaffIdForRole } from "../staff-directory";
 
 function milestoneOrder(payment: Payment): number | null {
     const label = (payment.milestone_label || "").toLowerCase();
@@ -218,8 +219,7 @@ export function upsertPaymentFollowup(state: any, payment: Payment, dueDate = pa
         priority: payment.status === "overdue" ? "urgent" : "high",
         due_date: dueDate,
         due_at: new Date(`${dueDate}T09:00:00`).toISOString(),
-        assigned_to: "Accounts",
-        assigned_role: "Finance",
+        assigned_staff_id: activeStaffIdForRole(state.db, ["Accounts / Admin", "Finance"]),
         followup_type: "payment",
         promise_date: payment.promise_date,
     };
