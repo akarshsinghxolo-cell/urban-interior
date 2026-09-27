@@ -51,11 +51,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Compatibility bridge for users who signed in before renewable sessions were
-  // deployed. Their current 8-hour token can still be renewed until they next
-  // sign in, at which point the rotating Supabase refresh cookie is installed.
+  // The explicitly configured static Owner has no Supabase refresh session.
+  // No other bearer-only session is renewable: canonical Staff users must
+  // renew through Supabase Auth and otherwise sign in again.
   try {
     const current = await requireSession(request);
+    if (current.userId !== "super-owner" || current.role !== "Owner") {
+      throw new Error("RENEWABLE_SESSION_REQUIRED");
+    }
     return successResponse({
       userId: current.userId,
       email: current.email,
