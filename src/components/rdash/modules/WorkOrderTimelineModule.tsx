@@ -284,7 +284,7 @@ export function WorkOrderTimelineModule() {
           {workOrder && (
             <button
               type="button"
-              onClick={() => { setReportFilter({ reportId: "jobPnlReport", workOrderId: workOrder.id }); setActiveModule("jobPnlReport"); }}
+              onClick={() => { setReportFilter({ reportId: "jobPnlReport", workOrderId: workOrder.id }); setActiveModule("financialAnalytics"); }}
               className="inline-flex h-9 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium text-foreground hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
               title="Open the P&L report filtered to this work order"
             >
