@@ -25,6 +25,7 @@ import { mapEntityTypeToThreadKind } from "./entity-thread-map";
 import { threadParentExists } from "./business-rules";
 import { canonicalThreadRecordIdForParent } from "./thread-record-id";
 import { parseMentions, mentionThreadKindForEntityType } from "./mentions";
+import { staffNameForId } from "./staff-directory";
 
 /**
  * Returns an ISO timestamp `offsetMs` milliseconds after `base`. Used to
@@ -268,10 +269,11 @@ export function backfillSeedThreads(input: RDashDatabase): RDashDatabase {
         const title = t.title;
         const thread = findOrCreateThread(ctx, "task", t.id, title, ts);
         appendSystemMessage(thread, "Task created", stagger(ts, 60_000));
-        if (t.assignee_name) {
+        const assignedStaffName = staffNameForId(db, t.assigned_staff_id, "");
+        if (assignedStaffName) {
             appendSystemMessage(
                 thread,
-                `Assigned to ${t.assignee_name}`,
+                `Assigned to ${assignedStaffName}`,
                 stagger(ts, 120_000),
             );
         }
@@ -471,7 +473,7 @@ function seedConversationMessages(ctx: BackfillContext, db: RDashDatabase): void
         const taskThread = find("task", t.id);
         if (taskThread) {
             const base = taskThread.created_at || nowIso();
-            const assignee = t.assignee_name || field;
+            const assignee = staffNameForId(db, t.assigned_staff_id, field);
             appendMessage(taskThread, `Task assigned to ${assignee}. Due: ${t.due_date ? new Date(t.due_date).toLocaleDateString("en-IN") : "TBD"}.`, "comment", stagger(base, 1_800_000), ops, "Operations Manager");
             if (t.status === "todo" || t.status === "in_progress") {
                 appendMessage(taskThread, "Started working on this. Will update with progress.", "comment", stagger(base, 28_800_000), assignee, "Field Staff");
