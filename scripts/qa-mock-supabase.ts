@@ -683,6 +683,12 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
   const expectedRowVersions = (args.p_expected_row_versions || {}) as Row;
 
   if (!Array.isArray(rawOperations)) return postgrestError(400, "22023", "INVALID_OPERATIONS");
+  if (Object.keys(expectedRowVersions).some((key) => {
+    const separator = key.indexOf(":");
+    return separator <= 0 || !key.slice(separator + 1);
+  })) {
+    return postgrestError(400, "22023", "INVALID_ROW_VERSION_KEY");
+  }
 
   const revRow = revisionRow(workspaceId);
   const currentRevision = Number(revRow.revision || 0);
