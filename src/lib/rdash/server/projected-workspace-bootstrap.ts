@@ -66,7 +66,6 @@ function decodeProjectedRows(
       if (row[field] !== undefined) decoded[field] = row[field];
     }
     if (typeof row.revision === "number") {
-      rowVersions[row.id] = row.revision;
       rowVersions[`${collection}:${row.id}`] = row.revision;
     }
     return decoded;
