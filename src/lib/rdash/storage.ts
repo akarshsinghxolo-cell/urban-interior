@@ -1,5 +1,4 @@
-import type { FileAttachmentEntityType, FileAttachmentRole, FileAssetKind, Master, StorageAccount, StorageFolderPurpose, StorageFolderTemplate } from "./types";
-import { uploadPurposeForEntity } from "../uploads/upload-purpose";
+import type { Master, StorageAccount, StorageFolderTemplate } from "./types";
 const DEFAULT_STORAGE_TEMPLATE_TIMESTAMP = "2026-07-07T00:00:00.000Z";
 const STORAGE_FOLDER_TEMPLATES: Array<Pick<StorageFolderTemplate, "id" | "purpose" | "label" | "path_template">> = [
     { id: "storage-template-catalogue", purpose: "catalogue", label: "Catalogues", path_template: "Catalogues/{category}/{subcategory}/{article}" },
@@ -38,8 +37,6 @@ export function normalizeStorageMaster(master: Master): Master {
     }))
         .sort((left, right) => left.priority_order - right.priority_order || left.label.localeCompare(right.label));
     const accountIds = new Set(accounts.map((account) => account.id));
-    // "local" is a built-in storage account for the local-storage fallback; preserve its folders/assets.
-    accountIds.add("local");
     const instances = (master.storageFolderInstances || []).filter((folder) => accountIds.has(folder.storage_account_id));
     const instanceIds = new Set(instances.map((folder) => folder.id));
     const assets = (master.fileAssets || []).map((file) => ({
@@ -76,11 +73,4 @@ export function selectWriteStorageAccount(master: Pick<Master, "storageAccounts"
         .filter((account) => account.status === "connected" && account.write_enabled !== false)
         .sort((a, b) => a.priority_order - b.priority_order || a.label.localeCompare(b.label))
         .find((account) => !accountIsAtSwitchThreshold(account, additionalBytes));
-}
-export function inferStoragePurpose(entityType: FileAttachmentEntityType, kind?: FileAssetKind, role?: FileAttachmentRole): StorageFolderPurpose {
-    if (kind === "catalogue" || role === "catalogue") return "catalogue";
-    if (kind === "drawing") return "drawing";
-    if (entityType === "visit" && role === "measurement") return "measurement";
-    if (entityType === "general" && kind === "media") return "reference_media";
-    return uploadPurposeForEntity(entityType);
 }
