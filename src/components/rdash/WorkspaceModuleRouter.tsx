@@ -52,7 +52,6 @@ const AttendancePayrollModule = React.lazy(() => import("./modules/AttendancePay
 const FieldModeModule = React.lazy(() => import("./modules/FieldModeModule").then((module) => ({ default: module.FieldModeModule })));
 const CommunicationCentreModule = React.lazy(() => import("./modules/CommunicationCentreModule").then((module) => ({ default: module.CommunicationCentreModule })));
 const QuotationConfigModule = React.lazy(() => import("./modules/QuotationConfigModule").then((module) => ({ default: module.QuotationConfigModule })));
-const StaffBoardModule = React.lazy(() => import("./modules/StaffBoardHistoryModule").then((module) => ({ default: module.StaffBoardModule })));
 const GstReturnsModule = React.lazy(() => import("./modules/SalesExtraModules").then((module) => ({ default: module.GstReturnsModule })));
 const MastersModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.MastersModule })));
 const SalesOpsModule = React.lazy(() => import("./modules/MastersSalesOpsModule").then((module) => ({ default: module.SalesOpsModule })));
@@ -216,7 +215,7 @@ function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
         case "field-mode": return <FieldModeModule />;
         case "communication-centre": return <CommunicationCentreModule channelFilter={route.filter?.channel}/>;
         case "quotation-config": return <QuotationConfigModule config={route.filter?.config}/>;
-        case "staff-board": return <StaffBoardModule />;
+        case "staff-board": return <MastersModule submodule="staff" />;
         case "gst-returns": return <GstReturnsModule />;
         case "sales-pipeline": return <SalesPipelineModule />;
         case "lost-closed-review": return <LostClosedReviewModule />;
