@@ -37,8 +37,8 @@ const eslintConfig = [
       ],
       "@typescript-eslint/prefer-as-const": "warn",
 
-      // Hooks stay enabled. Existing legacy patterns are warnings so the
-      // project can adopt the rules incrementally instead of suppressing them.
+      // Hooks stay enabled. Existing hardening debt remains warning-level so
+      // it can be eliminated incrementally instead of being suppressed.
       "react-hooks/exhaustive-deps": "warn",
       "react-hooks/purity": "warn",
       "react-hooks/set-state-in-effect": "warn",
