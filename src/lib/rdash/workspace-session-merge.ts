@@ -166,8 +166,11 @@ export function mergeWorkspaceVersionMap(
   incoming?: Record<string, number> | null,
 ): Record<string, number> | null {
   if (!current && !incoming) return null;
-  const merged: Record<string, number> = { ...(current || {}) };
-  for (const [rawKey, rawVersion] of Object.entries(incoming || {})) {
+  const merged: Record<string, number> = {};
+  for (const [rawKey, rawVersion] of [
+    ...Object.entries(current || {}),
+    ...Object.entries(incoming || {}),
+  ]) {
     const key = rawKey.trim();
     const separator = key.indexOf(":");
     const version = Number(rawVersion);
