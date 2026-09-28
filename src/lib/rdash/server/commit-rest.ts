@@ -296,7 +296,7 @@ export async function commitRestOperations(
     if (message.includes("WORKSPACE_CONFLICT") || message.includes("ROW_CONFLICT")) {
       throw new Error("CONFLICT");
     }
-    if (message.includes("INVALID_")) {
+    if (message.includes("INVALID_") || ["23502", "23503", "23505", "23514"].includes(error.code || "")) {
       throw new Error(`INVALID:${error.message}`);
     }
     throw new Error(`Workspace transaction failed: ${error.message}`);

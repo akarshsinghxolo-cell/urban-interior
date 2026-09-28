@@ -320,7 +320,7 @@ export async function commitAuthorizedPostgresOperations(
     );
     if (issues.length) throw new Error(`INVALID:${issues[0]}`);
     // FK backstop: reject dangling references INTRODUCED by this commit per
-    // the FK registry (jsonb storage cannot carry real constraints). Run on
+    // the FK registry, complementing database constraints on generated links. Run on
     // the raw shapes and restricted to rules whose child AND parent
     // collections the plan loaded full — anything narrower cannot tell a
     // true orphan from an unloaded row.

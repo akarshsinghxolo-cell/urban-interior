@@ -75,8 +75,7 @@ export function siteFinancials(db: RDashDatabase, siteId: string) {
     const labourCost = sitePnL.labour_cost;
     const overheadCost = sitePnL.overhead_cost;
     const totalCost = sitePnL.total_cost;
-    const invoices = db.invoices.filter((invoice) => invoice.site_id === siteId && invoice.status !== "cancelled");
-    const invoiced = invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0);
+    const invoiced = sitePnL.invoiced;
     const collected = sitePnL.collected;
     const receivable = sitePnL.receivable;
     const vendorBills = db.vendorBills.filter((bill) => bill.site_id === siteId &&
@@ -170,15 +169,9 @@ export function contractorOutstanding(db: RDashDatabase, contractorId: string): 
  * which show workspace-wide totals (not per-contractor rows).
  */
 export function contractorOutstandingTotal(db: RDashDatabase): number {
-    const totalBilled = db.contractorBills
-        .filter((b) => b.status !== "held")
-        .reduce((sum, b) => sum + (b.amount || 0), 0);
-    const totalPaid = db.contractorPayments
-        .filter((p) => p.status === "paid")
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalSettled = db.contractorSettlements
-        .reduce((sum, s) => sum + (s.payable_amount || 0), 0);
-    return Math.max(0, Math.round((totalBilled - totalPaid - totalSettled) * 100) / 100);
+    const contractorIds = new Set(db.contractorBills.map((bill) => bill.contractor_id));
+    return Math.round([...contractorIds]
+        .reduce((sum, contractorId) => sum + contractorOutstanding(db, contractorId), 0) * 100) / 100;
 }
 
 export function inventoryValuation(db: RDashDatabase) {

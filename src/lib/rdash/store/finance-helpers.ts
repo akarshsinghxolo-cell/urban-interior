@@ -382,7 +382,7 @@ export function computeWorkOrderPnL(db: RDashDatabase, workOrderId: string): Wor
     };
 }
 
-/** G: Roll up `computeWorkOrderPnL` for every work order on a site. */
+/** Job costs roll up from Work Orders; site invoices/receipts can precede an award. */
 export function computeSitePnLsFromCostLines(db: RDashDatabase, siteId: string) {
     const siteWorkOrders = db.workOrders.filter((wo) => wo.site_id === siteId);
     const workOrderPnLs = siteWorkOrders
@@ -392,11 +392,13 @@ export function computeSitePnLsFromCostLines(db: RDashDatabase, siteId: string) 
     const acceptedValue = db.acceptedScopes
         .filter((scope) => scope.site_id === siteId && scope.status !== "cancelled")
         .reduce((sum, scope) => sum + scope.accepted_value, 0);
+    const invoices = db.invoices.filter((invoice) => invoice.site_id === siteId && invoice.status !== "cancelled");
+    const receipts = db.customerReceipts.filter((receipt) => receipt.site_id === siteId);
     return {
         accepted_value: acceptedValue,
-        invoiced: workOrderPnLs.reduce((sum, p) => sum + p.invoiced, 0),
-        collected: workOrderPnLs.reduce((sum, p) => sum + p.collected, 0),
-        receivable: workOrderPnLs.reduce((sum, p) => sum + p.receivable, 0),
+        invoiced: invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0),
+        collected: receipts.reduce((sum, receipt) => sum + receipt.amount, 0),
+        receivable: invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0),
         material_cost: workOrderPnLs.reduce((sum, p) => sum + p.material_cost, 0),
         contractor_cost: workOrderPnLs.reduce((sum, p) => sum + p.contractor_cost, 0),
         labour_cost: workOrderPnLs.reduce((sum, p) => sum + p.labour_cost, 0),

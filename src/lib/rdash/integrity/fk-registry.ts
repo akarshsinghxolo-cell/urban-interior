@@ -81,6 +81,7 @@ const quotationDomainFks: ForeignKeyRule[] = [
     // WorkOrders: all parent links required (restrict); arrays of quotation/scope/work_required ids
     { collection: "workOrders", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Work Order → Customer" },
     { collection: "workOrders", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Work Order → Site" },
+    { collection: "workOrders", field: "contractor_id", targetCollection: "master.contractors", onDelete: "restrict", nullable: true, label: "Work Order → Contractor" },
     { collection: "workOrders", field: "quotation_ids", targetCollection: "quotations", onDelete: "restrict", nullable: false, isArray: true, label: "Work Order → Quotations" },
     { collection: "workOrders", field: "accepted_scope_ids", targetCollection: "acceptedScopes", onDelete: "restrict", nullable: false, isArray: true, label: "Work Order → Accepted Scopes" },
     { collection: "workOrders", field: "work_required_ids", targetCollection: "workRequired", onDelete: "restrict", nullable: false, isArray: true, label: "Work Order → Work Required" },
@@ -159,6 +160,7 @@ const contractorFks: ForeignKeyRule[] = [
     // ContractorPayment: meaningless without its bill → cascade
     { collection: "contractorPayments", field: "contractor_bill_id", targetCollection: "contractorBills", onDelete: "cascade", nullable: false, label: "Contractor Payment → Contractor Bill" },
     { collection: "contractorPayments", field: "work_order_id", targetCollection: "workOrders", onDelete: "restrict", nullable: false, label: "Contractor Payment → Work Order" },
+    { collection: "contractorPayments", field: "site_id", targetCollection: "sites", onDelete: "restrict", nullable: false, label: "Contractor Payment → Site" },
     { collection: "contractorPayments", field: "contractor_id", targetCollection: "master.contractors", onDelete: "restrict", nullable: false, label: "Contractor Payment → Contractor" },
     // Commission: work_order + source_partner required → restrict
     { collection: "commissions", field: "work_order_id", targetCollection: "workOrders", onDelete: "restrict", nullable: true, label: "Commission → Work Order" },
