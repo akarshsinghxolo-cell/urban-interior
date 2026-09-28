@@ -29,6 +29,24 @@ describe("canonical runtime only", () => {
     expect(signIn).not.toContain('"In-memory"');
   });
 
+  test("uses one CAS identity and no local storage fallback", () => {
+    const commitRest = source("src/lib/rdash/server/commit-rest.ts");
+    const rowVersions = source("src/lib/rdash/workspace-row-version-state.ts");
+    const delta = source("src/lib/rdash/workspace-delta.ts");
+    const rawStore = source("src/lib/rdash/raw-store.ts");
+    const commitRoute = source("src/app/api/operations/commit/route.ts");
+    const storage = source("src/lib/rdash/storage.ts");
+
+    expect(commitRest).not.toContain("rowVersions[row.id]");
+    expect(rowVersions).not.toContain("keys.add(id)");
+    expect(delta).not.toContain("expandedDeltaRowVersions");
+    expect(rawStore).toContain("touchedVersionKeys");
+    expect(rawStore).not.toContain("rowVersionsCache[id]");
+    expect(commitRoute).not.toContain("touched.add(id)");
+    expect(storage).not.toContain('accountIds.add("local")');
+    expect(storage).not.toContain("inferStoragePurpose");
+  });
+
   test("uses canonical workspace routes only", () => {
     const routes = source("src/lib/rdash/workspace-routes.ts");
     expect(routes).not.toContain("LEGACY_MODULE_ALIASES");
