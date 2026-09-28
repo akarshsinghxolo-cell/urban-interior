@@ -34,7 +34,10 @@ describe("shared workspace foundations", () => {
     putCollectionRows(data, versions, "master.vendors", [{ id: "v1", revision: 7, data: { id: "v1", name: "Vendor" } }]);
     expect(data.customers).toEqual([{ id: "c1", name: "Customer" }]);
     expect(data.master.vendors).toEqual([{ id: "v1", name: "Vendor" }]);
-    expect(versions).toEqual({ c1: 5, "customers:c1": 5, v1: 7, "master.vendors:v1": 7 });
+    expect(versions).toEqual({
+      "customers:c1": 5,
+      "master.vendors:v1": 7,
+    });
     expect(other.customers).toEqual([]);
     expect(other.master.vendors).toEqual([]);
     expect(data.master.catalog_version).toBeUndefined(); // Scoped readers do not invent catalogue metadata.

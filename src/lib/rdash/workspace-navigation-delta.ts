@@ -4,7 +4,7 @@ import {
   applyWorkspaceDelta,
   isValidWorkspaceDelta,
   deletedDeltaVersionKeys,
-  expandedDeltaRowVersions,
+  canonicalDeltaRowVersions,
   workspaceCollectionFilterParam,
   type WorkspaceDeltaPayload,
 } from "./workspace-delta";
@@ -119,7 +119,7 @@ export async function revalidateWorkspaceReadCacheEntry(
     const deltaChanged = touchedCollections(delta).size > 0;
     changed = changed || deltaChanged;
     const applied = applyWorkspaceDelta(entry.data, delta);
-    const changedRowVersions = expandedDeltaRowVersions(delta);
+    const changedRowVersions = canonicalDeltaRowVersions(delta);
     const deletedKeys = deletedDeltaVersionKeys(delta);
     for (const key of Object.keys(changedRowVersions)) deletedRowVersionKeys.delete(key);
     for (const key of deletedKeys) deletedRowVersionKeys.add(key);

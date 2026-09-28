@@ -683,6 +683,12 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
   const expectedRowVersions = (args.p_expected_row_versions || {}) as Row;
 
   if (!Array.isArray(rawOperations)) return postgrestError(400, "22023", "INVALID_OPERATIONS");
+  if (Object.keys(expectedRowVersions).some((key) => {
+    const separator = key.indexOf(":");
+    return separator <= 0 || !key.slice(separator + 1);
+  })) {
+    return postgrestError(400, "22023", "INVALID_ROW_VERSION_KEY");
+  }
 
   const revRow = revisionRow(workspaceId);
   const currentRevision = Number(revRow.revision || 0);
@@ -706,12 +712,10 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
     operations.push({ table, collection, upsert, deleteIds });
   }
 
-  // Row-level CAS: expected "collection:id" (or plain "id") must match reality.
+  // Row-level CAS uses one canonical identity: "collection:id".
   const expectedFor = (collection: string, rowId: string): number | null => {
     const keyed = expectedRowVersions[`${collection}:${rowId}`];
-    if (keyed !== undefined) return Number(keyed);
-    const plain = expectedRowVersions[rowId];
-    return plain !== undefined ? Number(plain) : null;
+    return keyed !== undefined ? Number(keyed) : null;
   };
   const actualRevisionOf = (table: string, rowId: string): number | null => {
     const row = (tables.get(table) ?? []).find((candidate) => candidate.id === rowId);
@@ -773,7 +777,6 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
       refreshGeneratedColumns(op.table, stored);
       upserted += 1;
       bumpedRowVersions[`${op.collection}:${rowId}`] = nextRevision;
-      bumpedRowVersions[rowId] = nextRevision;
     }
   }
 

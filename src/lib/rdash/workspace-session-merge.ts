@@ -98,7 +98,6 @@ export function workspaceSnapshotRemovedRowVersionKeys(
     for (const row of rowsFor(current, collection)) {
       const id = String(row.id || "").trim();
       if (!id || incomingIds.has(id)) continue;
-      removed.add(id);
       removed.add(`${collection}:${id}`);
     }
   }
@@ -167,10 +166,15 @@ export function mergeWorkspaceVersionMap(
   incoming?: Record<string, number> | null,
 ): Record<string, number> | null {
   if (!current && !incoming) return null;
-  const merged: Record<string, number> = { ...(current || {}) };
-  for (const [key, rawVersion] of Object.entries(incoming || {})) {
+  const merged: Record<string, number> = {};
+  for (const [rawKey, rawVersion] of [
+    ...Object.entries(current || {}),
+    ...Object.entries(incoming || {}),
+  ]) {
+    const key = rawKey.trim();
+    const separator = key.indexOf(":");
     const version = Number(rawVersion);
-    if (!Number.isInteger(version) || version < 0) continue;
+    if (separator <= 0 || !key.slice(separator + 1) || !Number.isInteger(version) || version < 0) continue;
     const previous = merged[key];
     if (previous === undefined || version > previous) merged[key] = version;
   }

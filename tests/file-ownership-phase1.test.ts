@@ -7,7 +7,6 @@ import { mapEntityTypeToThreadKind } from "../src/lib/rdash/entity-thread-map";
 import { threadParentExists, validateBusinessData } from "../src/lib/rdash/business-rules";
 import { destinationSegments } from "../src/lib/rdash/server/drive-folder-hierarchy";
 import { uploadPurposeAllowedForEntity, uploadPurposeForEntity } from "../src/lib/uploads/upload-purpose";
-import { inferStoragePurpose } from "../src/lib/rdash/storage";
 import type { UploadPurpose } from "../src/lib/uploads/upload-types";
 import type { RDashDatabase } from "../src/lib/rdash/types";
 
@@ -224,11 +223,11 @@ describe("Phase 2 Drive routing", () => {
     expect(destinationSegments(db, "commission_document", "commission", "comm-q").map((segment) => segment.name)).toEqual(["Customers", "Rajesh Sharma", "Sharma Residence", "Commercial", "Commissions"]);
   });
 
-  test("legacy storage-purpose inference delegates to the canonical owner mapper", () => {
-    expect(inferStoragePurpose("vendor_payment")).toBe(uploadPurposeForEntity("vendor_payment"));
-    expect(inferStoragePurpose("contractor_bill")).toBe(uploadPurposeForEntity("contractor_bill"));
-    expect(inferStoragePurpose("visit", undefined, "measurement")).toBe("measurement");
-    expect(inferStoragePurpose("general", "media")).toBe("reference_media");
+  test("uses the canonical upload-purpose mapper directly", () => {
+    expect(uploadPurposeForEntity("vendor_payment")).toBe("vendor_payment");
+    expect(uploadPurposeForEntity("contractor_bill")).toBe("contractor_bill");
+    expect(uploadPurposeForEntity("visit")).toBe("visit_evidence");
+    expect(uploadPurposeForEntity("general")).toBe("general_document");
   });
 
   test("keeps physical folder template metadata stable when multiple purposes share a folder", async () => {

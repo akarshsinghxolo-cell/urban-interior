@@ -82,7 +82,7 @@ describe("workspace session merge", () => {
       _workspace_read_collections: ["tasks"],
     });
     expect(workspaceSnapshotRemovedRowVersionKeys(current, complete)).toEqual(
-      expect.arrayContaining(["task-remove", "tasks:task-remove"]),
+      ["tasks:task-remove"],
     );
 
     const partial = structuredClone(complete);

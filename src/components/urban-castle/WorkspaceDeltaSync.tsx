@@ -9,7 +9,7 @@ import {
   applyWorkspaceDelta,
   isValidWorkspaceDelta,
   deletedDeltaVersionKeys,
-  expandedDeltaRowVersions,
+  canonicalDeltaRowVersions,
   workspaceCollectionFilterParam,
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
@@ -220,7 +220,7 @@ export function WorkspaceDeltaSync(): null {
           const applied = applyWorkspaceDelta(latest.db, delta);
           const mergedRowVersions = mergeWorkspaceRowVersions(
             workspaceRowVersionState.getSnapshot(),
-            expandedDeltaRowVersions(delta),
+            canonicalDeltaRowVersions(delta),
             deletedDeltaVersionKeys(delta),
           );
           const hydrated = latest.hydrateSecureWorkspace({

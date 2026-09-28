@@ -7,8 +7,8 @@ const nextConfig: NextConfig = {
   reactStrictMode: true, // STAGE-6-FIX: was false — enables double-invoke bug detection in dev
   // Pin the Turbopack workspace root to this repo. Without this, Next infers
   // the root from lockfiles up the tree (e.g. an outer scaffold project) and
-  // then ignores this repo's .env.local — the app silently boots on the
-  // in-memory fallback instead of the configured Supabase/mock backend.
+  // then ignores this repo's .env.local — canonical Supabase/mock
+  // configuration becomes unavailable and workspace requests fail closed.
   turbopack: { root: repoRoot },
   // Baileys probes optional media helpers (jimp/sharp) with dynamic imports.
   // Keep it as a Node server dependency instead of asking Turbopack to resolve

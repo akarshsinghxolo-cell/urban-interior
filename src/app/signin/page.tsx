@@ -41,12 +41,12 @@ interface ConfigHealth {
   status: string;
   config: {
     sessionSecret: "configured" | "dev-fallback" | "missing";
-    supabase: "configured" | "in-memory-fallback";
+    supabase: "configured" | "missing";
     workspaceId: string;
     ownerEmail: string;
   };
   warnings: string[];
-  dataLayer: "supabase" | "in-memory";
+  dataLayer: "supabase";
 }
 
 /* ─────────────────────────────────────────────────────────────────────── */
@@ -444,8 +444,8 @@ export default function SignInPage() {
                   <ConfigRow
                     icon={<Database className="h-3 w-3" />}
                     label="Database"
-                    value={config.config.supabase === "configured" ? "Supabase" : "In-memory"}
-                    status={config.config.supabase === "configured" ? "ok" : "warn"}
+                    value={config.config.supabase === "configured" ? "Supabase" : "Missing config"}
+                    status={config.config.supabase === "configured" ? "ok" : "bad"}
                   />
                 </div>
                 {config.warnings.length > 0 ? (

@@ -6,7 +6,7 @@ import type { RDashDatabase } from "@/lib/rdash/types";
 import {
   applyWorkspaceDelta,
   deletedDeltaVersionKeys,
-  expandedDeltaRowVersions,
+  canonicalDeltaRowVersions,
   loadedWorkspaceCollections,
   workspaceCollectionFilterParam,
   type WorkspaceDeltaPayload,
@@ -115,38 +115,33 @@ describe("client delta application", () => {
     expect(workspaceCollectionFilterParam(database)).toBe("");
   });
 
-  test("expands row versions for compatibility and removes deletion keys", () => {
+  test("keeps only canonical collection:id row versions and deletion keys", () => {
     const payload = delta({
-      rowVersions: { "tasks:task-1": 7 },
+      rowVersions: { "tasks:task-1": 7, "task-1": 99 },
       deletedRowIds: { tasks: ["task-2"] },
     });
-    expect(expandedDeltaRowVersions(payload)).toEqual({
+    expect(canonicalDeltaRowVersions(payload)).toEqual({
       "tasks:task-1": 7,
-      "task-1": 7,
     });
-    expect(deletedDeltaVersionKeys(payload)).toEqual(["tasks:task-2", "task-2"]);
+    expect(deletedDeltaVersionKeys(payload)).toEqual(["tasks:task-2"]);
   });
 
   test("preserves unchanged CAS versions while replacing changed and deleted rows", () => {
     workspaceRowVersionState.replace({
       "tasks:task-1": 2,
-      "task-1": 2,
+      "task-1": 99,
       "tasks:task-2": 5,
-      "task-2": 5,
       "visits:visit-1": 3,
-      "visit-1": 3,
     });
     const merged = mergeWorkspaceRowVersions(
       workspaceRowVersionState.getSnapshot(),
-      { "tasks:task-1": 3, "task-1": 3 },
-      ["tasks:task-2", "task-2"],
+      { "tasks:task-1": 3, "task-1": 100 },
+      ["tasks:task-2"],
     );
 
     expect(merged).toEqual({
       "tasks:task-1": 3,
-      "task-1": 3,
       "visits:visit-1": 3,
-      "visit-1": 3,
     });
   });
 });

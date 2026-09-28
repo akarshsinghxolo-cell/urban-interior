@@ -98,18 +98,24 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                     operations,
                 };
                 if (rowVersionsCache && Object.keys(rowVersionsCache).length > 0) {
-                    // Only send expectedRowVersions for rows this commit touches
-                    // (to avoid sending the entire version map every time).
-                    const touchedIds = new Set<string>();
+                    // Only send canonical collection:id CAS versions for rows
+                    // touched by this commit, including deletions.
+                    const touchedVersionKeys = new Set<string>();
                     for (const op of operations) {
                         for (const row of op.upsert || []) {
-                            const id = String(row.id || "");
-                            if (id && rowVersionsCache[id] !== undefined) touchedIds.add(id);
+                            const id = String(row.id || "").trim();
+                            const key = id ? `${op.collection}:${id}` : "";
+                            if (key && rowVersionsCache[key] !== undefined) touchedVersionKeys.add(key);
+                        }
+                        for (const rawId of op.deleteIds || []) {
+                            const id = String(rawId || "").trim();
+                            const key = id ? `${op.collection}:${id}` : "";
+                            if (key && rowVersionsCache[key] !== undefined) touchedVersionKeys.add(key);
                         }
                     }
-                    if (touchedIds.size > 0) {
+                    if (touchedVersionKeys.size > 0) {
                         const expectedRowVersions: Record<string, number> = {};
-                        for (const id of touchedIds) expectedRowVersions[id] = rowVersionsCache[id];
+                        for (const key of touchedVersionKeys) expectedRowVersions[key] = rowVersionsCache[key];
                         commitBody.expectedRowVersions = expectedRowVersions;
                     }
                 }

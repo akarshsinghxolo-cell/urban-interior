@@ -1,8 +1,8 @@
 /**
  * Supabase REST workspace data layer.
  *
- * Full reads remain available for reset/compatibility paths. Normal workspace
- * navigation uses bounded or row-scoped reads so the browser never needs a
+ * Full reads remain available only for explicit reset/integrity/diagnostic
+ * operations. Normal workspace navigation uses bounded or row-scoped reads so the browser never needs a
  * growing copy of every workspace table.
  *
  * Writes are delegated to the commit_workspace_operations PostgreSQL function
@@ -89,7 +89,6 @@ export function putCollectionRows(
 ): void {
   const decoded = rows.map((row) => {
     if (typeof row.revision === "number") {
-      rowVersions[row.id] = row.revision;
       rowVersions[`${collection}:${row.id}`] = row.revision;
     }
     return decodeRow(row);

@@ -56,12 +56,11 @@ function touchedRowVersions(
     for (const row of operation.upsert || []) {
       const id = String(row.id || "");
       if (!id) continue;
-      touched.add(id);
       touched.add(`${operation.collection}:${id}`);
     }
-    for (const id of operation.deleteIds || []) {
-      touched.add(id);
-      touched.add(`${operation.collection}:${id}`);
+    for (const rawId of operation.deleteIds || []) {
+      const id = String(rawId || "").trim();
+      if (id) touched.add(`${operation.collection}:${id}`);
     }
   }
   const compact: Record<string, number> = {};
@@ -78,7 +77,7 @@ function compactPayload(workspace: CommitResult, operationId?: string): CompactC
     operationId,
     revision: workspace.revision,
     patches: workspace.patches,
-    rowVersions: workspace.bumpedRowVersions,
+    rowVersions: touchedRowVersions(workspace.bumpedRowVersions, workspace.patches),
   };
 }
 

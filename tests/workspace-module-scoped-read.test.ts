@@ -304,14 +304,14 @@ describe("revision-consistent subset merge", () => {
         revision: 44,
         updatedAt: "2026-07-28T00:00:00.000Z",
         data: bootstrapDb,
-        rowVersions: { "staff-owner": 2 },
+        rowVersions: { "master.staff:staff-owner": 2 },
         queryCount: 3,
       },
       {
         revision: 44,
         updatedAt: "2026-07-28T00:01:00.000Z",
         data: scopedDb,
-        rowVersions: { "cust-1": 7, "staff-field": 1 },
+        rowVersions: { "customers:cust-1": 7, "master.staff:staff-field": 1 },
         queryCount: 5,
       },
     );
@@ -319,9 +319,9 @@ describe("revision-consistent subset merge", () => {
     expect(merged.data.customers.map((row) => row.id)).toEqual(["cust-1"]);
     expect(merged.data.master.staff.map((row) => row.id).sort()).toEqual(["staff-field", "staff-owner"]);
     expect(merged.rowVersions).toEqual({
-      "staff-owner": 2,
-      "cust-1": 7,
-      "staff-field": 1,
+      "master.staff:staff-owner": 2,
+      "customers:cust-1": 7,
+      "master.staff:staff-field": 1,
     });
     expect(merged.queryCount).toBe(8);
     expect(merged.updatedAt).toBe("2026-07-28T00:01:00.000Z");

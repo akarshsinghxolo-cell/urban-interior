@@ -10,7 +10,7 @@ import {
   applyWorkspaceDelta,
   isValidWorkspaceDelta,
   deletedDeltaVersionKeys,
-  expandedDeltaRowVersions,
+  canonicalDeltaRowVersions,
   type WorkspaceDeltaPayload,
 } from "@/lib/rdash/workspace-delta";
 import { workspaceFoundationRevisionState } from "@/lib/rdash/workspace-foundation-revision-state";
@@ -164,7 +164,7 @@ export function WorkspaceFoundationSync(): null {
           const latest = useRDashStore.getState();
           const rowVersions = mergeWorkspaceRowVersions(
             workspaceRowVersionState.getSnapshot(),
-            expandedDeltaRowVersions(delta),
+            canonicalDeltaRowVersions(delta),
             deletedDeltaVersionKeys(delta),
           );
 
