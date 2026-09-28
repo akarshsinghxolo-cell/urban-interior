@@ -4,9 +4,11 @@ let snapshot: WorkspaceRowVersions = {};
 
 function normalizedRowVersions(input: WorkspaceRowVersions | undefined): WorkspaceRowVersions {
   const result: WorkspaceRowVersions = {};
-  for (const [key, rawVersion] of Object.entries(input || {})) {
+  for (const [rawKey, rawVersion] of Object.entries(input || {})) {
+    const key = rawKey.trim();
+    const separator = key.indexOf(":");
     const version = Number(rawVersion);
-    if (!key.trim() || !Number.isInteger(version) || version < 0) continue;
+    if (separator <= 0 || !key.slice(separator + 1) || !Number.isInteger(version) || version < 0) continue;
     result[key] = version;
   }
   return result;
@@ -33,7 +35,6 @@ export function deletedWorkspaceOperationVersionKeys(
     for (const rawId of operation.deleteIds || []) {
       const id = String(rawId || "").trim();
       if (!id) continue;
-      keys.add(id);
       keys.add(`${operation.collection}:${id}`);
     }
   }
