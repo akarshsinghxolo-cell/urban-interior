@@ -4,6 +4,7 @@ import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
+import { hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
 
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
@@ -840,16 +841,28 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const id = genId("payroll");
             const now = nowIso();
             const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
-            // Generate one payrollLine per active staff member using computeStaffSalary.
+            // Generate one payrollLine per active staff member using the same
+            // canonical compensation helpers that power the HR salary UI.
             const activeStaff = state.db.master.staff.filter((s: any) => s.status === "active");
+            if (!activeStaff.length)
+                throw new Error("No active staff are available for payroll.");
+            const missingSalary = activeStaff.filter((staff: any) => !hasStaffSalaryConfiguration(staff));
+            if (missingSalary.length) {
+                const names = missingSalary.slice(0, 3).map((staff: any) => staff.name).join(", ");
+                const extra = missingSalary.length > 3 ? ` +${missingSalary.length - 3} more` : "";
+                throw new Error(`Complete salary setup before generating payroll: ${names}${extra}.`);
+            }
             const lines: PayrollLine[] = activeStaff.map((staff: any) => {
                 const computation = state.computeStaffSalary(staff.id, yearMonth);
-                // Pull approved salary adjustments for this staff in this month.
-                const adjustments = (state.db.salaryAdjustments || []).filter((adj: SalaryAdjustment) => adj.staff_id === staff.id && adj.status === "approved" && adj.adjustment_date.startsWith(yearMonth));
-                const overtimeAmount = Math.round(adjustments.filter((a) => a.type === "overtime" || a.type === "bonus").reduce((n, a) => n + a.amount, 0) * 100) / 100;
-                const otherDeductions = Math.round(adjustments.filter((a) => a.type === "deduction" || a.type === "advance" || a.type === "hold").reduce((n, a) => n + a.amount, 0) * 100) / 100;
-                const grossPay = Math.round((computation.base_salary) * 100) / 100;
-                const netPayable = Math.round((computation.net_salary + overtimeAmount - otherDeductions) * 100) / 100;
+                const adjustmentSummary = summarizeSalaryAdjustments(
+                    state.db.salaryAdjustments || [],
+                    staff.id,
+                    yearMonth,
+                );
+                const grossPay = Math.round(computation.base_salary * 100) / 100;
+                const netPayable = Math.round(
+                    (computation.net_salary + adjustmentSummary.additions - adjustmentSummary.deductions) * 100,
+                ) / 100;
                 const line: PayrollLine = {
                     id: genId("pline"),
                     payroll_period_id: id,
@@ -858,13 +871,13 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                     present_days: computation.present_days,
                     absent_days: computation.absent_days,
                     paid_leave_days: 0,
-                    overtime_amount: overtimeAmount,
-                    advance_deduction: Math.round(adjustments.filter((a) => a.type === "advance").reduce((n, a) => n + a.amount, 0) * 100) / 100,
-                    other_deductions: Math.round(adjustments.filter((a) => a.type === "deduction" || a.type === "hold").reduce((n, a) => n + a.amount, 0) * 100) / 100,
+                    overtime_amount: adjustmentSummary.additions,
+                    advance_deduction: adjustmentSummary.advance,
+                    other_deductions: adjustmentSummary.otherDeductions,
                     gross_pay: grossPay,
                     net_payable: netPayable,
                     payment_status: "pending",
-                    deduction_explanation: `${computation.late_days} late day(s), ${computation.absent_days} absent, ${computation.half_days} half-day.`,
+                    deduction_explanation: `${computation.late_days} late day(s), ${computation.absent_days} absent, ${computation.half_days} half-day; approved additions ₹${adjustmentSummary.additions}; approved deductions ₹${adjustmentSummary.deductions}.`,
                 };
                 return line;
             });
@@ -931,6 +944,42 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 kind: "create",
             });
             return id;
+        },
+
+        setSalaryAdjustmentStatus: (id, status) => {
+            assertRole(get().currentUser().role, ["Owner"], "review salary adjustments");
+            const state = get();
+            const actor = state.currentUser();
+            const adjustment = (state.db.salaryAdjustments || []).find((row: SalaryAdjustment) => row.id === id);
+            if (!adjustment)
+                throw new Error("Salary adjustment not found.");
+            if (adjustment.status === status)
+                return;
+            if (adjustment.status !== "draft")
+                throw new Error(`This salary adjustment is already ${adjustment.status}.`);
+            commitState((s: any) => ({
+                db: {
+                    ...s.db,
+                    salaryAdjustments: (s.db.salaryAdjustments || []).map((row: SalaryAdjustment) =>
+                        row.id === id
+                            ? {
+                                ...row,
+                                status,
+                                approved_by_staff_id: status === "approved" ? actor.staffId : undefined,
+                            }
+                            : row),
+                },
+            }));
+            const staff = state.db.master.staff.find((row: any) => row.id === adjustment.staff_id);
+            get().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `${status === "approved" ? "Approved" : "Rejected"} ${adjustment.type} salary adjustment of ₹${adjustment.amount} for ${staff?.name || adjustment.staff_id}.`,
+                entity_type: "salary_adjustment",
+                entity_id: id,
+                entity_label: `${staff?.name || adjustment.staff_id} · ${adjustment.type}`,
+                kind: status === "approved" ? "approve" : "update",
+            });
         },
 
         approvePayrollPeriod: (id) => {
