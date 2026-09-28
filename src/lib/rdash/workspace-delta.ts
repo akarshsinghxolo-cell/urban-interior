@@ -138,20 +138,23 @@ export function deletedDeltaVersionKeys(delta: WorkspaceDeltaPayload): string[] 
     for (const rawId of ids) {
       const id = String(rawId || "").trim();
       if (!id) continue;
-      keys.push(`${collection}:${id}`, id);
+      keys.push(`${collection}:${id}`);
     }
   }
   return keys;
 }
 
-export function expandedDeltaRowVersions(delta: WorkspaceDeltaPayload): Record<string, number> {
+export function canonicalDeltaRowVersions(delta: WorkspaceDeltaPayload): Record<string, number> {
   const result: Record<string, number> = {};
-  for (const [key, rawVersion] of Object.entries(delta.rowVersions || {})) {
+  for (const [rawKey, rawVersion] of Object.entries(delta.rowVersions || {})) {
+    const key = rawKey.trim();
+    const separator = key.indexOf(":");
     const version = Number(rawVersion);
-    if (!key.includes(":") || !Number.isInteger(version) || version < 0) continue;
-    result[key] = version;
-    const id = key.slice(key.indexOf(":") + 1);
-    if (id) result[id] = version;
+    if (separator <= 0 || !Number.isInteger(version) || version < 0) continue;
+    const collection = key.slice(0, separator);
+    const id = key.slice(separator + 1);
+    if (!id || !knownWorkspaceCollection(collection)) continue;
+    result[`${collection}:${id}`] = version;
   }
   return result;
 }
