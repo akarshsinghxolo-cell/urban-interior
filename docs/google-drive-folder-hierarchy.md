@@ -74,7 +74,7 @@ Urban Castle
 - Renaming a Customer, Site, Work Order, Purchase Order, Vendor, Contractor or Staff member renames the canonical folder without changing its Google folder ID.
 - Existing managed folders with old technical names are renamed when that canonical path is reconciled or used again.
 - If a registered canonical folder is under the wrong parent, Urban Castle moves that folder instead of creating a replacement.
-- Legacy folder keys may be adopted into the canonical hierarchy.
+- Only canonical folder keys are recognized; retired folder-key aliases are not adopted or recreated.
 - New folders are created only when the corresponding file category is first used.
 
 ## Current routing
