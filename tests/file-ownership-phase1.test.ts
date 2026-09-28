@@ -226,7 +226,7 @@ describe("Phase 2 Drive routing", () => {
   test("uses the canonical upload-purpose mapper directly", () => {
     expect(uploadPurposeForEntity("vendor_payment")).toBe("vendor_payment");
     expect(uploadPurposeForEntity("contractor_bill")).toBe("contractor_bill");
-    expect(uploadPurposeForEntity("visit")).toBe("visit_proof");
+    expect(uploadPurposeForEntity("visit")).toBe("visit_evidence");
     expect(uploadPurposeForEntity("general")).toBe("general_document");
   });
 
