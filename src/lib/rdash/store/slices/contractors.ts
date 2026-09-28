@@ -23,12 +23,9 @@ import { advanceSitesStage } from "../../site-lifecycle";
 import { materializePaymentSchedule } from "../finance-helpers";
 import { contractorMasterRecordForCreate, type ContractorProfileRecord } from "../../contractor-profile";
 import { deriveContractorPerformanceEvidenceExport } from "../../performance-reconciliation";
-// I: Import the canonical commission-rule lookup helper exposed by Agent A
-// in masters.ts. Match priority: (1) partner-specific category rule →
-// (2) partner-specific workOrder rule → (3) partner-specific all rule →
-// (4) global all rule. Falls back to partner.commission_pct || 5 if no rule
-// matches. Keeping this in lock-step with the master UI banner documented by
-// Agent A in MastersSalesOpsModule.
+// Commission accrual uses the shared canonical rule lookup: an exact
+// partner/category rule wins, then a partner-wide rule, then the partner's
+// default commission percentage.
 import { findCommissionRule } from "./masters";
 import {
     assertWorkOrderStatusTransition,
@@ -936,6 +933,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                         ],
                     },
                 }));
+                if (!policy.approver_id)
+                    throw new Error("Approval policy is missing its canonical Staff approver.");
                 get().addTask({
                     title: `Approve contractor payment · ${bill.contractor_name} (${formatINR(amount)})`,
                     customer_id: bill.customer_id,
@@ -943,7 +942,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     work_order_id: bill.work_order_id,
                     task_scope: "office",
                     task_type: "contractor_payment_approval",
-                    assignee_name: policy.approver_name || "Owner",
+                    assigned_staff_id: policy.approver_id,
                     auto_generated: true,
                     due_date: today(),
                 });
@@ -1081,26 +1080,15 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const partner = state.db.master.sourcePartners.find((p: any) => p.id === sourcePartnerId);
             if (!workOrder || !partner)
                 return;
-            // I: Look up the commissionRules master via Agent A's canonical
-            // `findCommissionRule(db, sourcePartnerId, workCategoryId)` helper
-            // (exported from masters.ts). The match priority is:
-            //   1. partner-specific + applies_to="category" + category_id match
-            //   2. partner-specific + applies_to="workOrder"
-            //   3. partner-specific + applies_to="all"
-            //   4. global applies_to="all" (no source_partner_id)
-            // Only when no rule matches do we fall back to partner.commission_pct
-            // (and finally to the historical 5% default). Previously this code
-            // inlined a partial lookup that missed the workOrder priority and the
-            // global fallback — so a rule saved with applies_to="workOrder" or a
-            // global catch-all was silently ignored. Using the shared helper keeps
-            // accruals consistent with the commission-rules master view and the
-            // MastersSalesOpsModule banner.
+            // Resolve one canonical rule path: exact partner/category first,
+            // then the partner-wide rule. If neither exists, use the partner's
+            // configured default percentage (and finally the system default).
             const workCategoryId = state.db.workRequired
                 .find((w: any) => workOrder.work_required_ids.includes(w.id))?.work_category_id;
             const matchedRule = findCommissionRule(state.db, sourcePartnerId, workCategoryId);
             const matchedLabel = matchedRule
-                ? `${matchedRule.applies_to}${matchedRule.category_id ? ` · ${matchedRule.category_id}` : ""}${matchedRule.source_partner_id ? ` · partner ${matchedRule.source_partner_name || matchedRule.source_partner_id}` : " · global"}`
-                : `fallback: partner.commission_pct || 5`;
+                ? `${matchedRule.applies_to}${matchedRule.category_id ? ` · ${matchedRule.category_id}` : ""} · partner ${matchedRule.source_partner_name || matchedRule.source_partner_id}`
+                : `default: partner.commission_pct || 5`;
             const rate = matchedRule?.rate_pct ?? partner.commission_pct ?? 5;
             const id = genId("comm");
             // FIX-CONTRACTOR-BATCH2 / F.18: previously used

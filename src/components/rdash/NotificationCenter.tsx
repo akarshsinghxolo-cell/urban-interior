@@ -8,6 +8,7 @@ import { useWorkspaceHealth } from "@/lib/rdash/workspace-health-client";
 import { Bell, AlertTriangle, CheckCircle2, Clock, X, Wallet, ShieldCheck, Ban, MapPin, CheckCheck, Filter, BellOff } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuLabel, } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 type NotifCategory = "task" | "overdue" | "approval" | "blocked" | "risk" | "visit";
 const NOTIFICATION_SOURCE_COLLECTION: Record<NotifCategory, string> = {
     task: "tasks",
@@ -208,7 +209,7 @@ export function NotificationCenter() {
         db.visits.filter((v) => v.status === "scheduled" && relativeDay(v.scheduled_at) === "Today").slice(0, 3).forEach((v) => {
             items.push({
                 id: `visit-${v.id}`, kind: "info", category: "visit", title: `Visit today: ${titleCase(v.visit_type)} · ${v.location_name}`,
-                body: `${v.staff_name} · scheduled ${relativeDay(v.scheduled_at)}`, time: v.scheduled_at,
+                body: `${v.assignee_type === "contractor" ? (v.contractor_name || "Contractor") : staffNameForId(db, v.assigned_staff_id)} · scheduled ${relativeDay(v.scheduled_at)}`, time: v.scheduled_at,
                 actionLabel: "Open", action: () => { openDetail("visit", v.id); setOpen(false); },
             });
         });

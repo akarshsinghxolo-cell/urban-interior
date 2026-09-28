@@ -165,9 +165,7 @@ type RDashSupabaseSchema = {
 type SupabaseEnvName =
   | "SUPABASE_URL"
   | "SUPABASE_PUBLISHABLE_KEY"
-  | "SUPABASE_SECRET_KEY"
-  | "SUPABASE_ANON_KEY"
-  | "SUPABASE_SERVICE_ROLE_KEY";
+  | "SUPABASE_SECRET_KEY";
 
 let authClient: SupabaseClient<RDashSupabaseSchema> | null = null;
 let adminClient: SupabaseClient<RDashSupabaseSchema> | null = null;
@@ -188,19 +186,23 @@ function supabaseUrl() {
 }
 
 function publishableKey() {
-  const value = configuredValue("SUPABASE_PUBLISHABLE_KEY") || configuredValue("SUPABASE_ANON_KEY");
-  if (!value) throw new Error("SUPABASE_PUBLISHABLE_KEY is required for Supabase authentication. SUPABASE_ANON_KEY is also accepted as a legacy alias.");
+  const value = configuredValue("SUPABASE_PUBLISHABLE_KEY");
+  if (!value) throw new Error("SUPABASE_PUBLISHABLE_KEY is required for Supabase authentication.");
   return value;
 }
 
 function secretKey() {
-  const value = configuredValue("SUPABASE_SECRET_KEY") || configuredValue("SUPABASE_SERVICE_ROLE_KEY");
-  if (!value) throw new Error("SUPABASE_SECRET_KEY is required for Supabase admin authentication. SUPABASE_SERVICE_ROLE_KEY is also accepted as a legacy alias.");
+  const value = configuredValue("SUPABASE_SECRET_KEY");
+  if (!value) throw new Error("SUPABASE_SECRET_KEY is required for Supabase admin authentication.");
   return value;
 }
 
 export function isSupabaseConfigured() {
-  return Boolean(configuredValue("SUPABASE_URL") && (configuredValue("SUPABASE_PUBLISHABLE_KEY") || configuredValue("SUPABASE_ANON_KEY")) && (configuredValue("SUPABASE_SECRET_KEY") || configuredValue("SUPABASE_SERVICE_ROLE_KEY")));
+  return Boolean(
+    configuredValue("SUPABASE_URL") &&
+    configuredValue("SUPABASE_PUBLISHABLE_KEY") &&
+    configuredValue("SUPABASE_SECRET_KEY"),
+  );
 }
 
 export function getSupabaseAuthClient() {

@@ -2,7 +2,7 @@ import type { BlockedItem, RiskItem } from "../../types";
 import type { RisksState } from "../types";
 import type { StoreContext } from "../context";
 import { resolveCustomerIdFromLinks } from "../../customer-relations";
-import { genId, nowIso, today, assertRole } from "../helpers";
+import { genId, nowIso, today, assertRole, userForRole } from "../helpers";
 
 export function createRisksSlice(ctx: StoreContext): RisksState {
     const { commitState, get } = ctx;
@@ -86,7 +86,7 @@ export function createRisksSlice(ctx: StoreContext): RisksState {
                 work_order_id: blk.linked_work_order_id,
                 po_id: blk.linked_po_id,
                 auto_generated: true,
-                assignee_name: "Owner",
+                assigned_staff_id: userForRole(get().db, "Owner").staffId,
                 due_date: today(),
             });
             get().logAudit({

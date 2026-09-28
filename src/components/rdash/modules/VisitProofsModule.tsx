@@ -11,6 +11,7 @@ import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { FilePreview } from "../FilePreview";
 import { attachedFilesForIds, assetPreview } from "@/lib/rdash/file-attachments";
 import type { Visit, VisitRoutePoint } from "@/lib/rdash/types";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 interface ProofItem {
     id: string;
     visitId: string;
@@ -39,7 +40,7 @@ export function VisitProofsModule() {
     const currentUser = useRDashStore((s) => s.currentUser);
     const user = currentUser();
     const canViewAllProofs = user.role === "Owner" || user.role === "Operations Manager";
-    const visibleVisits = React.useMemo(() => canViewAllProofs ? db.visits : db.visits.filter((visit) => visit.assignee_type !== "contractor" && !visit.contractor_id && visit.staff_id === user.staffId), [canViewAllProofs, db.visits, user.staffId]);
+    const visibleVisits = React.useMemo(() => canViewAllProofs ? db.visits : db.visits.filter((visit) => visit.assignee_type !== "contractor" && !visit.contractor_id && visit.assigned_staff_id === user.staffId), [canViewAllProofs, db.visits, user.staffId]);
     const openDetail = useRDashStore((s) => s.openDetail);
     const [filter, setFilter] = React.useState<string>("all");
     const proofs: ProofItem[] = (() => {
@@ -49,7 +50,7 @@ export function VisitProofsModule() {
             attachedFilesForIds(db, v.proof_attachment_ids).forEach(({ attachment, asset }) => {
                 out.push({
                     id: attachment.id, visitId: v.id, fileName: asset.file_name, type: attachment.role, capturedAt: attachment.created_at,
-                    customerName: customer?.name || v.location_name, location: v.location_name, staffName: v.staff_name,
+                    customerName: customer?.name || v.location_name, location: v.location_name, staffName: staffNameForId(db, v.assigned_staff_id),
                     visitType: v.visit_type, status: v.status, url: asset.web_view_link, mimeType: asset.mime_type, driveFileId: asset.google_file_id,
                 });
             });
@@ -110,7 +111,7 @@ export function VisitProofsModule() {
                 return (<button key={v.id} type="button" onClick={() => openDetail("visit", v.id)} className="flex items-center justify-between rounded-md border border-warning/20 bg-card px-3 py-2 text-left hover:bg-accent/30">
                   <div>
                     <p className="text-xs font-medium">{titleCase(v.visit_type)} · {customer?.name || v.location_name}</p>
-                    <p className="text-[10px] text-muted-foreground">{v.staff_name} · {formatDate(v.scheduled_at)}</p>
+                    <p className="text-[10px] text-muted-foreground">{staffNameForId(db, v.assigned_staff_id)} · {formatDate(v.scheduled_at)}</p>
                   </div>
                   <StatusBadge label="Optional proof" className="bg-warning/10 text-warning border-warning/20"/>
                 </button>);
@@ -196,7 +197,7 @@ function VisitGpsTrackPanel({ visits }: { visits: Visit[] }) {
                                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><Route className="h-3.5 w-3.5"/></span>
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm font-semibold">{customer?.name || v.location_name}</p>
-                                    <p className="truncate text-[11px] text-muted-foreground">{v.staff_name || v.contractor_name || "—"} · {points.length} GPS points · {Math.round(distance)} m · {dwellMin} min dwell</p>
+                                    <p className="truncate text-[11px] text-muted-foreground">{v.assignee_type === "contractor" ? (v.contractor_name || "Contractor") : staffNameForId(db, v.assigned_staff_id)} · {points.length} GPS points · {Math.round(distance)} m · {dwellMin} min dwell</p>
                                 </div>
                                 <span className="shrink-0 text-[10px] text-muted-foreground">{relativeDay(v.check_in_at || v.scheduled_at)}</span>
                             </button>

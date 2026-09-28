@@ -33,6 +33,7 @@ import type {
     Quotation, QuotationItem, WorkOrder, Followup,
 } from "../../types";
 import type { QuotationsState } from "../types";
+import { activeStaffIdForRole } from "../../staff-directory";
 import type { StoreContext } from "../context";
 import { assertRole, genId, nowIso, today, userForRole, addDays } from "../helpers";
 import { assertQuotationRelations, assertWorkOrderRelations } from "../../business-rules";
@@ -93,8 +94,7 @@ function upsertQuotationFollowup(state: any, quotation: Quotation) {
         priority: "high",
         due_date: dueDate,
         due_at: new Date(`${dueDate}T09:00:00`).toISOString(),
-        assigned_to: "Owner",
-        assigned_role: "Sales",
+        assigned_staff_id: activeStaffIdForRole(state.db, "Owner"),
         followup_type: "quotation",
     };
     if (existing) {

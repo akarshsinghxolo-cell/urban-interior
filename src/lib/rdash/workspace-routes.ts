@@ -3,17 +3,12 @@ import {
   MODULE_ROUTE_REGISTRY,
   type ModuleRoute,
 } from "./modules";
-import {
-  LEGACY_MODULE_ALIASES,
-  canonicalLegacyModuleId,
-} from "./module-aliases";
 
 export const WORKSPACE_ROOT_PATH = "/workspace";
 
 interface WorkspaceRouteDefinition {
   moduleId: string;
   canonicalPath: string;
-  aliases?: readonly string[];
 }
 
 export interface WorkspaceRouteMatch {
@@ -25,36 +20,36 @@ export interface WorkspaceRouteMatch {
 }
 
 const ROUTE_DEFINITIONS: readonly WorkspaceRouteDefinition[] = [
-  { moduleId: "workdesk", canonicalPath: "/workspace", aliases: ["/workspace/workdesk"] },
-  { moduleId: "customerDesk", canonicalPath: "/workspace/customers", aliases: ["/workspace/customerDesk"] },
+  { moduleId: "workdesk", canonicalPath: "/workspace" },
+  { moduleId: "customerDesk", canonicalPath: "/workspace/customers" },
   { moduleId: "customerTimeline", canonicalPath: "/workspace/customers/timeline" },
   { moduleId: "customerRequests", canonicalPath: "/workspace/customers/requests" },
-  { moduleId: "salesPipeline", canonicalPath: "/workspace/sales", aliases: ["/workspace/salesPipeline"] },
+  { moduleId: "salesPipeline", canonicalPath: "/workspace/sales" },
   { moduleId: "lostClosedReview", canonicalPath: "/workspace/sales/lost-closed-review" },
-  { moduleId: "fieldOperations", canonicalPath: "/workspace/field", aliases: ["/workspace/fieldOperations", "/workspace/visits"] },
+  { moduleId: "fieldOperations", canonicalPath: "/workspace/field" },
   { moduleId: "siteMeasurement", canonicalPath: "/workspace/field/measurements" },
   { moduleId: "visitProofs", canonicalPath: "/workspace/field/visit-proofs" },
   { moduleId: "fieldMode", canonicalPath: "/workspace/field/mobile" },
   { moduleId: "gpsTracking", canonicalPath: "/workspace/field/gps" },
-  { moduleId: "siteExecution", canonicalPath: "/workspace/sites", aliases: ["/workspace/siteExecution"] },
+  { moduleId: "siteExecution", canonicalPath: "/workspace/sites" },
   { moduleId: "drawings", canonicalPath: "/workspace/sites/drawings" },
   { moduleId: "executionLogs", canonicalPath: "/workspace/sites/execution-logs" },
   { moduleId: "woTimeline", canonicalPath: "/workspace/sites/work-order-timeline" },
   { moduleId: "quotationDesk", canonicalPath: "/workspace/finance/quotations" },
   { moduleId: "quotationConfig", canonicalPath: "/workspace/finance/quotations/settings" },
-  { moduleId: "procurementInventory", canonicalPath: "/workspace/procurement", aliases: ["/workspace/procurementInventory"] },
+  { moduleId: "procurementInventory", canonicalPath: "/workspace/procurement" },
   { moduleId: "boqControlCentre", canonicalPath: "/workspace/procurement/boq" },
   { moduleId: "grn", canonicalPath: "/workspace/procurement/grn" },
   { moduleId: "inventory", canonicalPath: "/workspace/procurement/inventory" },
   { moduleId: "dispatch", canonicalPath: "/workspace/procurement/dispatch" },
-  { moduleId: "contractorDetail", canonicalPath: "/workspace/contractors", aliases: ["/workspace/contractorDetail"] },
+  { moduleId: "contractorDetail", canonicalPath: "/workspace/contractors" },
   { moduleId: "contractorRates", canonicalPath: "/workspace/contractors/rates" },
   { moduleId: "vendors", canonicalPath: "/workspace/vendors" },
   { moduleId: "vendorRates", canonicalPath: "/workspace/vendors/rates" },
   { moduleId: "rateFinder", canonicalPath: "/workspace/vendors/rate-finder" },
-  { moduleId: "masterSetup", canonicalPath: "/workspace/masters", aliases: ["/workspace/masterSetup"] },
+  { moduleId: "masterSetup", canonicalPath: "/workspace/masters" },
   { moduleId: "articleVariants", canonicalPath: "/workspace/masters/article-variants" },
-  { moduleId: "financeDesk", canonicalPath: "/workspace/finance", aliases: ["/workspace/financeDesk"] },
+  { moduleId: "financeDesk", canonicalPath: "/workspace/finance" },
   { moduleId: "payments", canonicalPath: "/workspace/finance/collections" },
   { moduleId: "invoices", canonicalPath: "/workspace/finance/invoices" },
   { moduleId: "vendorBills", canonicalPath: "/workspace/finance/vendor-bills" },
@@ -62,18 +57,18 @@ const ROUTE_DEFINITIONS: readonly WorkspaceRouteDefinition[] = [
   { moduleId: "profitability", canonicalPath: "/workspace/finance/profitability" },
   { moduleId: "commissions", canonicalPath: "/workspace/finance/commissions" },
   { moduleId: "gstReturns", canonicalPath: "/workspace/finance/gst" },
-  { moduleId: "mediaCommunication", canonicalPath: "/workspace/media", aliases: ["/workspace/mediaCommunication"] },
+  { moduleId: "mediaCommunication", canonicalPath: "/workspace/media" },
   { moduleId: "driveManager", canonicalPath: "/workspace/media/drive" },
   { moduleId: "communicationCentre", canonicalPath: "/workspace/media/communication" },
-  { moduleId: "hrStaff", canonicalPath: "/workspace/staff", aliases: ["/workspace/hrStaff"] },
+  { moduleId: "hrStaff", canonicalPath: "/workspace/staff" },
   { moduleId: "attendancePayroll", canonicalPath: "/workspace/staff/attendance-payroll" },
   { moduleId: "staffSalary", canonicalPath: "/workspace/staff/salary" },
-  { moduleId: "reportsDesk", canonicalPath: "/workspace/reports", aliases: ["/workspace/reportsDesk"] },
+  { moduleId: "reportsDesk", canonicalPath: "/workspace/reports" },
   { moduleId: "salesAnalytics", canonicalPath: "/workspace/reports/sales" },
   { moduleId: "collectionAnalytics", canonicalPath: "/workspace/reports/collections" },
   { moduleId: "operationsAnalytics", canonicalPath: "/workspace/reports/operations" },
   { moduleId: "financialAnalytics", canonicalPath: "/workspace/reports/financial" },
-  { moduleId: "systemSettings", canonicalPath: "/workspace/settings", aliases: ["/workspace/systemSettings"] },
+  { moduleId: "systemSettings", canonicalPath: "/workspace/settings" },
   { moduleId: "userApprovals", canonicalPath: "/workspace/settings/access-requests" },
   { moduleId: "controlBrainWorkflows", canonicalPath: "/workspace/settings/control-brain" },
   { moduleId: "approvalPolicies", canonicalPath: "/workspace/settings/approval-rules" },
@@ -96,43 +91,28 @@ export function normalizeWorkspacePath(input: string): string {
   return path;
 }
 
-function legacyIdPath(moduleId: string): string {
-  return normalizeWorkspacePath(`${WORKSPACE_ROOT_PATH}/${moduleId}`);
-}
-
 function buildWorkspaceRouteRegistry() {
   const byModuleId = new Map<string, WorkspaceRouteDefinition>();
-  const byPath = new Map<string, { definition: WorkspaceRouteDefinition; isAlias: boolean }>();
+  const byPath = new Map<string, WorkspaceRouteDefinition>();
 
   const registerPath = (
     path: string,
     definition: WorkspaceRouteDefinition,
-    isAlias: boolean,
   ) => {
     const normalized = normalizeWorkspacePath(path);
     const existing = byPath.get(normalized);
-    if (existing && existing.definition.moduleId !== definition.moduleId) {
+    if (existing && existing.moduleId !== definition.moduleId) {
       throw new Error(
-        `Duplicate workspace path ${normalized}: ${existing.definition.moduleId} and ${definition.moduleId}`,
+        `Duplicate workspace path ${normalized}: ${existing.moduleId} and ${definition.moduleId}`,
       );
     }
-    if (existing) {
-      byPath.set(normalized, {
-        definition,
-        isAlias: existing.isAlias && isAlias,
-      });
-      return;
-    }
-    byPath.set(normalized, { definition, isAlias });
+    byPath.set(normalized, definition);
   };
 
   for (const rawDefinition of ROUTE_DEFINITIONS) {
     const definition = Object.freeze({
       ...rawDefinition,
       canonicalPath: normalizeWorkspacePath(rawDefinition.canonicalPath),
-      aliases: Object.freeze(
-        [...(rawDefinition.aliases || [])].map(normalizeWorkspacePath),
-      ),
     });
 
     if (byModuleId.has(definition.moduleId)) {
@@ -140,35 +120,12 @@ function buildWorkspaceRouteRegistry() {
     }
 
     byModuleId.set(definition.moduleId, definition);
-    registerPath(definition.canonicalPath, definition, false);
-    registerPath(
-      legacyIdPath(definition.moduleId),
-      definition,
-      definition.canonicalPath !== legacyIdPath(definition.moduleId),
-    );
-    for (const alias of definition.aliases || []) {
-      registerPath(alias, definition, true);
-    }
-  }
-
-  for (const [legacyModuleId, canonicalModuleId] of Object.entries(
-    LEGACY_MODULE_ALIASES,
-  )) {
-    const definition = byModuleId.get(canonicalModuleId);
-    if (!definition) {
-      throw new Error(
-        `Legacy module id ${legacyModuleId} points to missing canonical module ${canonicalModuleId}`,
-      );
-    }
-    registerPath(legacyIdPath(legacyModuleId), definition, true);
+    registerPath(definition.canonicalPath, definition);
   }
 
   return {
     byModuleId: byModuleId as ReadonlyMap<string, WorkspaceRouteDefinition>,
-    byPath: byPath as ReadonlyMap<
-      string,
-      { definition: WorkspaceRouteDefinition; isAlias: boolean }
-    >,
+    byPath: byPath as ReadonlyMap<string, WorkspaceRouteDefinition>,
   };
 }
 
@@ -179,9 +136,8 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze([
 ]);
 
 export function workspacePathForModule(moduleId: string): string {
-  const canonicalModuleId = canonicalLegacyModuleId(moduleId);
   return (
-    REGISTRY.byModuleId.get(canonicalModuleId)?.canonicalPath ||
+    REGISTRY.byModuleId.get(moduleId)?.canonicalPath ||
     REGISTRY.byModuleId.get(DEFAULT_MODULE_ID)?.canonicalPath ||
     WORKSPACE_ROOT_PATH
   );
@@ -194,16 +150,15 @@ export function resolveWorkspacePath(
   const match = REGISTRY.byPath.get(matchedPath);
   if (!match) return undefined;
 
-  const route = MODULE_ROUTE_REGISTRY.get(match.definition.moduleId);
+  const route = MODULE_ROUTE_REGISTRY.get(match.moduleId);
   if (!route) return undefined;
 
   return {
-    moduleId: match.definition.moduleId,
+    moduleId: match.moduleId,
     route,
-    canonicalPath: match.definition.canonicalPath,
+    canonicalPath: match.canonicalPath,
     matchedPath,
-    isAlias:
-      match.isAlias || matchedPath !== match.definition.canonicalPath,
+    isAlias: false,
   };
 }
 
@@ -253,16 +208,6 @@ export function validateWorkspaceRouteRegistry(): string[] {
     ) {
       issues.push(
         `Workspace URL for ${definition.moduleId} is not normalized.`,
-      );
-    }
-  }
-
-  for (const [legacyModuleId, canonicalModuleId] of Object.entries(
-    LEGACY_MODULE_ALIASES,
-  )) {
-    if (!REGISTRY.byModuleId.has(canonicalModuleId)) {
-      issues.push(
-        `Legacy module id ${legacyModuleId} points to missing canonical module ${canonicalModuleId}.`,
       );
     }
   }

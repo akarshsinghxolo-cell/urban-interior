@@ -7,9 +7,7 @@ import {
 } from "./direct-upload-storage-core";
 import { currentDriveFolderRouting } from "./drive-folder-routing-context";
 
-export type CanonicalFolderSegment = CoreFolderSegment & {
-  legacyKeys?: string[];
-};
+export type CanonicalFolderSegment = CoreFolderSegment;
 
 function targetNotReady(message: string): never {
   throw new Error(`TARGET_NOT_READY:${message}`);
@@ -31,8 +29,8 @@ function entityFolder(
   };
 }
 
-function leaf(name: string, key: string, legacyKeys?: string[]): CanonicalFolderSegment {
-  return { name, key, ...(legacyKeys?.length ? { legacyKeys } : {}) };
+function leaf(name: string, key: string): CanonicalFolderSegment {
+  return { name, key };
 }
 
 function routingText(): string {
@@ -149,7 +147,7 @@ export function destinationSegments(
     if (site) {
       return [
         ...siteRoot(),
-        leaf("Commercial", `site:${site.id}:commercial`, customer ? [`customer:${customer.id}:commercial`] : undefined),
+        leaf("Commercial", `site:${site.id}:commercial`),
       ];
     }
     if (!customer) targetNotReady("The related Customer is not synchronized yet.");

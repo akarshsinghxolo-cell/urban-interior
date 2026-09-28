@@ -87,8 +87,10 @@ const FIELD_TO_COLLECTION: Readonly<Record<string, string>> = Object.freeze({
   inventory_id: "inventory",
   source_partner_id: "master.sourcePartners",
   staff_id: "master.staff",
-  assignee_id: "master.staff",
-  assigned_to_staff_id: "master.staff",
+  assigned_staff_id: "master.staff",
+  filed_by_staff_id: "master.staff",
+  received_by_staff_id: "master.staff",
+  approver_id: "master.staff",
   article_id: "master.articles",
   variant_id: "master.articleVariants",
 });

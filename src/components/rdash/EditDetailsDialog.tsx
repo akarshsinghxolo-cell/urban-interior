@@ -88,7 +88,7 @@ function formValuesForEntity(
       description: task.description || "",
       priority: task.priority || "medium",
       dueDate: task.due_date || "",
-      assigneeId: task.assignee_id || "",
+      assigneeId: task.assigned_staff_id || "",
       status: task.status || "todo",
     };
   }
@@ -100,7 +100,7 @@ function formValuesForEntity(
       notes: followup.notes || "",
       dueDate: followup.due_date || "",
       status: followup.status || "pending",
-      assigneeId: followup.assigned_to || "",
+      assigneeId: followup.assigned_staff_id || "",
     };
   }
   if (type === "visit") {
@@ -110,7 +110,7 @@ function formValuesForEntity(
       title: visit.location_name || "",
       locationName: visit.location_name || "",
       scheduledAt: visit.scheduled_at ? visit.scheduled_at.slice(0, 16) : "",
-      assigneeId: visit.staff_id || "",
+      assigneeId: visit.assigned_staff_id || "",
       status: visit.status || "scheduled",
     };
   }
@@ -277,9 +277,7 @@ export function EditDetailsDialog({
             toast.error("Choose a valid active staff member");
             return false;
           }
-          patch.assignee_id = assigneeId;
-          patch.assignee_name = member.name;
-          patch.assigned_to = member.name;
+          patch.assigned_staff_id = assigneeId;
         }
         updateTask(entityId, patch);
         toast.success("Task updated");
@@ -297,7 +295,7 @@ export function EditDetailsDialog({
           const iso = scheduledAt.length === 16 ? `${scheduledAt}:00` : scheduledAt;
           rescheduleVisit(entityId, iso);
         }
-        if (assigneeId && assigneeId !== visit.staff_id) {
+        if (assigneeId && assigneeId !== visit.assigned_staff_id) {
           const member = staff.find((entry) => entry.id === assigneeId);
           if (!member) {
             toast.error("Choose a valid active staff member");

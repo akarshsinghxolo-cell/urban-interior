@@ -550,13 +550,15 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             });
             const policy = get().requiresApproval("po_amount", totalAmount);
             if (policy) {
+                if (!policy.approver_id)
+                    throw new Error("Approval policy is missing its canonical Staff approver.");
                 get().addTask({
                     title: `Approve ${poNo} · ${po.vendor_name} (${formatINR(totalAmount)})`,
                     customer_id: workOrder?.customer_id,
                     po_id: id,
                     task_scope: "office",
                     task_type: "po_approval",
-                    assignee_name: policy.approver_name || "Owner",
+                    assigned_staff_id: policy.approver_id,
                     auto_generated: true,
                     due_date: today(),
                 });

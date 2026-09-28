@@ -266,7 +266,8 @@ describe("omittedOptedPairs (editor's bottom 'opted but not priced' list)", () =
       work_subcategory_ids: ["ws-tv"],
       work_type_ids: ["wt-tv-std"],
     },
-    // Legacy row: subcategories declared, no explicit work types → primaries.
+    // Invalid canonical row: a subcategory without an explicit work type
+    // contributes no opted pair.
     {
       id: "wr-4",
       customer_id: "cust-a",
@@ -282,7 +283,7 @@ describe("omittedOptedPairs (editor's bottom 'opted but not priced' list)", () =
     },
   ] as any;
 
-  test("customerOptedPairs: ticked selections deduped across rows, other customers excluded, primaries for legacy rows", () => {
+  test("customerOptedPairs: explicit selections are deduped and untyped rows are ignored", () => {
     const opted = customerOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories });
     expect(opted).toEqual([
       { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" },
@@ -321,13 +322,14 @@ describe("omittedOptedPairs (editor's bottom 'opted but not priced' list)", () =
     ]);
   });
 
-  test("a legacy untyped line pair covers every opted type of its subcategory", () => {
+  test("an untyped line does not cover any canonical opted work type", () => {
     const items = [
       { title: "TV Unit", subcategory_id: "ws-tv", quantity: 5, rate: 10, amount: 50 },
     ] as any;
     expect(omittedOptedPairs({ workRequired: works, customerId: "cust-a", workSubcategories, items })).toEqual([
       { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-std" },
       { subcategory_id: "ws-wardrobe", work_type_id: "wt-wardrobe-premium" },
+      { subcategory_id: "ws-tv", work_type_id: "wt-tv-std" },
     ]);
   });
 

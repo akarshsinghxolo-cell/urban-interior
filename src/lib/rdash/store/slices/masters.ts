@@ -8,11 +8,9 @@ import { genId, nowIso, assertRole, businessDate } from "../helpers";
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
  *
- * Match priority (highest first):
- *   1. Rule with `source_partner_id` AND `applies_to="category"` AND `category_id` matches.
- *   2. Rule with `source_partner_id` AND `applies_to="workOrder"` (applies to any workOrder for this partner).
- *   3. Rule with `source_partner_id` AND `applies_to="all"` (partner-specific catch-all).
- *   4. First rule with `applies_to="all"` and no partner filter (global fallback).
+ * Match priority:
+ *   1. Partner category rule whose `category_id` matches.
+ *   2. Partner-wide rule.
  *
  * Returns the winning rule, or `undefined` if no rule matches. The caller is
  * expected to fall back to `partner.commission_pct || 5` if this returns
@@ -35,13 +33,7 @@ export function findCommissionRule(
         if (exact)
             return exact;
     }
-    const workOrderRule = forPartner.find((r) => r.applies_to === "workOrder");
-    if (workOrderRule)
-        return workOrderRule;
-    const partnerAll = forPartner.find((r) => r.applies_to === "all");
-    if (partnerAll)
-        return partnerAll;
-    return rules.find((r) => r.applies_to === "all" && !r.source_partner_id);
+    return forPartner.find((r) => r.applies_to === "partner");
 }
 
 /**
@@ -107,7 +99,7 @@ function dispatchAutomationAction(
                 task_scope: (payload.task_scope as any) || "general",
                 task_type: `automation:${rule.id}`,
                 due_date: dueDate,
-                assignee_name: (payload.assignee_name as string) || undefined,
+                assigned_staff_id: (payload.assigned_staff_id as string) || undefined,
                 customer_id: (context.customerId as string) || (payload.customer_id as string) || undefined,
                 quotation_id: (context.quotationId as string) || (payload.quotation_id as string) || undefined,
                 work_order_id: (context.workOrderId as string) || (payload.work_order_id as string) || undefined,
@@ -218,6 +210,11 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
     return {
         addApprovalPolicy: (p) => {
             const actor = get().currentUser();
+            if (!p.approver_id)
+                throw new Error("Select an active Staff approver.");
+            const approver = get().db.master.staff.find((staff) => staff.id === p.approver_id && staff.status === "active");
+            if (!approver)
+                throw new Error("Approval policy approver must be an active Staff member.");
             const created = commitState((s: any) => {
                 const now = nowIso();
                 const pol: ApprovalPolicy = {
@@ -226,9 +223,8 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                     trigger: p.trigger || "po_amount",
                     threshold: p.threshold || 0,
                     operator: p.operator || ">",
-                    approver_role: p.approver_role || "Owner",
-                    approver_id: p.approver_id,
-                    approver_name: p.approver_name || "Owner",
+                    approver_role: approver.role,
+                    approver_id: approver.id,
                     auto_escalate_hours: p.auto_escalate_hours,
                     escalate_to: p.escalate_to,
                     enabled: p.enabled ?? true,
@@ -542,7 +538,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 const visit = state.db.visits.find((row: any) => row.id === input.visit_id);
                 if (!visit)
                     throw new Error("Visit not found for field attendance.");
-                if (visit.staff_id !== staff.id)
+                if (visit.assigned_staff_id !== staff.id)
                     throw new Error("Field attendance can only use a Visit assigned to the same staff member.");
                 verification = verifyVisitGps(input, visit, policy);
                 mode = "field_visit";
@@ -555,7 +551,6 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const record: AttendanceRecord = {
                 id: existing?.id || genId("att"),
                 staff_id: staff.id,
-                staff_name: staff.name,
                 date,
                 attendance_mode: mode,
                 visit_id: input.visit_id,
@@ -1071,14 +1066,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 source_partner_id: r.source_partner_id || "",
                 source_partner_name: partner.name,
                 rate_pct: r.rate_pct ?? 0,
-                // The legacy type allows "all" | "category" | "workOrder". The
-                // UI form lets the user pick "quotation" | "work_order" (the
-                // business labels) and we map them here: "quotation" → "all"
-                // (partner-specific catch-all), "work_order" → "workOrder"
-                // (partner-scoped workOrder rule).
-                applies_to: (r.applies_to as any) === "quotation" ? "all"
-                    : (r.applies_to as any) === "work_order" ? "workOrder"
-                        : r.applies_to || "all",  // STAGE-6-FIX: cast for comparison
+                applies_to: r.applies_to || "partner",
                 category_id: r.category_id,
             };
             void category;

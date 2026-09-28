@@ -217,8 +217,8 @@ export function MastersModule({ submodule }: {
         </div>
         <div className="rd-stagger grid gap-3 lg:grid-cols-2">
           {staff.map((s) => {
-                const tasks = db.tasks.filter((t) => t.assignee_id === s.id);
-                const visits = db.visits.filter((v) => v.staff_id === s.id);
+                const tasks = db.tasks.filter((t) => t.assigned_staff_id === s.id);
+                const visits = db.visits.filter((v) => v.assigned_staff_id === s.id);
                 const docs = staffDocuments.filter((doc) => doc.staff_id === s.id);
                 return (<div key={s.id} role="button" tabIndex={0} onClick={() => openDetail("staff" as any, s.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDetail("staff" as any, s.id); } }} className="group relative flex cursor-pointer items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
                 <button type="button" onClick={(event) => { event.stopPropagation(); setEditStaffId(s.id); setStaffEditOpen(true); }} className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/80 text-muted-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100" aria-label={`Edit ${s.name}`} title="Edit staff">
@@ -331,7 +331,7 @@ export function MastersModule({ submodule }: {
             (masters.ts), which Agent B's contractors.ts accrueCommission will use
             to pick the best-matching rule for a (partner, workCategory) pair. */}
         {isCommission && (<div className="rounded-[var(--panel-radius)] border border-primary/20 bg-primary/[0.04] p-3 text-xs text-foreground/80">
-            <p><span className="font-semibold text-primary">Match priority:</span> exact category rule → workOrder-scoped rule → partner-specific catch-all → global fallback. <code className="rounded bg-muted px-1 py-0.5 text-[10px]">findCommissionRule(db, partnerId, categoryId)</code> in <code className="rounded bg-muted px-1 py-0.5 text-[10px]">masters.ts</code> resolves this; <code className="rounded bg-muted px-1 py-0.5 text-[10px]">accrueCommission</code> (contractors.ts) should consult it before falling back to <code className="rounded bg-muted px-1 py-0.5 text-[10px]">partner.commission_pct</code>.</p>
+            <p><span className="font-semibold text-primary">Match priority:</span> exact category rule → partner-wide rule. <code className="rounded bg-muted px-1 py-0.5 text-[10px]">findCommissionRule(db, partnerId, categoryId)</code> resolves the rule before <code className="rounded bg-muted px-1 py-0.5 text-[10px]">partner.commission_pct</code> is used as the default rate.</p>
           </div>)}
         <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
           {isVendor && db.master.vendorRates.map((r) => {
@@ -346,7 +346,7 @@ export function MastersModule({ submodule }: {
             })}
           {isCommission && db.master.commissionRules.map((r) => {
                 const categoryName = r.category_id ? categoryById.get(r.category_id)?.name : undefined;
-                const priority = r.applies_to === "category" ? 1 : r.applies_to === "workOrder" ? 2 : 3;
+                const priority = r.applies_to === "category" ? 1 : 2;
                 return (<div key={r.id} className="flex items-center justify-between border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20">
                     <div>
                       <p className="font-medium">{r.source_partner_name}</p>

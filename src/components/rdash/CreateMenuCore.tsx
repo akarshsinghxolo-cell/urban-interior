@@ -138,7 +138,7 @@ function CreateDialog({ request, onClose }: {
         return opts;
     }, [contractors, staff]);
     const meta = CREATE_OPTIONS.find((o) => o.kind === kind)!;
-    const defaultAssignee = staff[0]?.name || "Field Staff";
+    const defaultAssignee = staff[0]?.id || "";
     const defaultVisitAssignee = visitAssigneeOptions[0]?.value || "";
     const [title, setTitle] = React.useState("");
     const [customerId, setCustomerId] = React.useState("");
@@ -187,7 +187,7 @@ function CreateDialog({ request, onClose }: {
                     title: title.trim(),
                     description: description.trim(),
                     priority,
-                    assignee_name: assignee,
+                    assigned_staff_id: assignee || undefined,
                     due_date: dueDate,
                     customer_id: customerId || undefined,
                     task_scope: customerId ? "client" : "general",
@@ -261,8 +261,7 @@ function CreateDialog({ request, onClose }: {
                     customer_id: customerId,
                     site_id: site.id,
                     assignee_type: assigneeType,
-                    staff_id: assigneeType === "staff" ? assigneeId : "",
-                    staff_name: assigneeType === "staff" ? selectedVisitAssignee.name : "",
+                    assigned_staff_id: assigneeType === "staff" ? assigneeId : undefined,
                     contractor_id: assigneeType === "contractor" ? assigneeId : undefined,
                     contractor_name: assigneeType === "contractor" ? selectedVisitAssignee.name : undefined,
                     work_required_id: workRequired?.id,
@@ -294,7 +293,7 @@ function CreateDialog({ request, onClose }: {
                     setSubmitting(false);
                     return;
                 }
-                const id = addFollowup({ title: title.trim(), notes: description.trim(), priority, assigned_to: assignee, customer_id: customerId || undefined, followup_type: followupType, due_at: followupDate.toISOString(), due_date: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(followupDate), status: "pending" });
+                const id = addFollowup({ title: title.trim(), notes: description.trim(), priority, assigned_staff_id: assignee || undefined, customer_id: customerId || undefined, followup_type: followupType, due_at: followupDate.toISOString(), due_date: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(followupDate), status: "pending" });
                 addRecentCreated({ id, kind: "followup", label: title.trim() });
                 notifyCreated("followup", id, title.trim(), `${followupType.replace("_", " ")} follow-up${cust ? ` · ${cust.name}` : ""}`);
                 setActiveModule("workdesk");
@@ -348,7 +347,7 @@ function CreateDialog({ request, onClose }: {
                   <Select value={assignee} onValueChange={setAssignee}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {staff.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+                      {staff.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>
@@ -476,7 +475,7 @@ function CreateDialog({ request, onClose }: {
                   <Select value={assignee} onValueChange={setAssignee}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {staff.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
+                      {staff.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </Field>

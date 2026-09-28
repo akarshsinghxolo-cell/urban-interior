@@ -3,11 +3,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { MODULE_ROUTE_REGISTRY } from "../src/lib/rdash/modules";
-import { LEGACY_MODULE_ALIASES } from "../src/lib/rdash/module-aliases";
 
 /**
  * Every literal `setActiveModule("<id>")` in src/** must target a module that
- * actually exists in the route registry (or a legacy alias). Dead ids silently
+ * actually exists in the canonical route registry. Dead ids silently
  * fell back to the Workdesk and shipped unnoticed — this scan makes the class
  * of bug fail CI instead (Task 27: procurement, financeOverview,
  * paymentRecovery, sitesExecution, quotations and two "today" chips).
@@ -28,19 +27,15 @@ function collectSourceFiles(dir: string, files: string[] = []): string[] {
   return files;
 }
 
-function isKnownModuleId(id: string): boolean {
-  return MODULE_ROUTE_REGISTRY.has(id) || id in LEGACY_MODULE_ALIASES;
-}
-
 describe("module navigation ids", () => {
-  test("every literal setActiveModule target is a registered module id or legacy alias", () => {
+  test("every literal setActiveModule target is a registered canonical module id", () => {
     const offenders: Array<{ file: string; moduleId: string }> = [];
     let literalCallSites = 0;
     for (const file of collectSourceFiles(SRC_ROOT)) {
       const text = readFileSync(file, "utf8");
       for (const match of text.matchAll(LITERAL_SET_ACTIVE_MODULE)) {
         literalCallSites += 1;
-        if (!isKnownModuleId(match[1])) offenders.push({ file, moduleId: match[1] });
+        if (!MODULE_ROUTE_REGISTRY.has(match[1])) offenders.push({ file, moduleId: match[1] });
       }
     }
     // The scan must actually see the navigation surface — guard against the
@@ -51,7 +46,7 @@ describe("module navigation ids", () => {
     ).toEqual([]);
   });
 
-  test("the retired dead module ids never reappear in the registry or aliases", () => {
+  test("retired module ids never reappear in the canonical registry", () => {
     const retiredIds = [
       "procurement",
       "financeOverview",
@@ -62,7 +57,6 @@ describe("module navigation ids", () => {
     ];
     for (const id of retiredIds) {
       expect(MODULE_ROUTE_REGISTRY.has(id)).toBe(false);
-      expect(id in LEGACY_MODULE_ALIASES).toBe(false);
     }
   });
 

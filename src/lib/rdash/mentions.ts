@@ -19,6 +19,7 @@
  */
 import type { ThreadKind } from "./types";
 import { mapEntityTypeToThreadKind } from "./entity-thread-map";
+import { staffNameForId } from "./staff-directory";
 
 interface ParsedMention {
     entity_type: string;
@@ -180,8 +181,8 @@ export function buildMentionableEntities(db: any): MentionableEntity[] {
     (db.master?.vendors || []).forEach((v: any) => push("vendor", v.id, v.name, v.phone, "Vendors"));
     (db.master?.contractors || []).forEach((c: any) => push("contractor", c.id, c.name, c.phone, "Contractors"));
     (db.master?.staff || []).forEach((s: any) => push("staff", s.id, s.name, s.designation, "Staff"));
-    (db.tasks || []).forEach((t: any) => push("task", t.id, t.title, t.assignee_name, "Tasks"));
-    (db.visits || []).forEach((v: any) => push("visit", v.id, v.title || v.location_name, v.staff_name, "Visits"));
+    (db.tasks || []).forEach((t: any) => push("task", t.id, t.title, staffNameForId(db, t.assigned_staff_id, undefined as unknown as string), "Tasks"));
+    (db.visits || []).forEach((v: any) => push("visit", v.id, v.title || v.location_name, v.assignee_type === "contractor" ? v.contractor_name : staffNameForId(db, v.assigned_staff_id, undefined as unknown as string), "Visits"));
     (db.vendorBills || []).forEach((b: any) => push("vendorBill", b.id, b.bill_no || b.id, b.vendor_name, "Vendor Bills"));  // STAGE-3-FIX: bill_no (not bill_number)
     (db.payments || []).forEach((p: any) => push("payment", p.id, p.milestone_label || p.payment_no || p.id, p.customer_name, "Payments"));  // STAGE-3-FIX: milestone_label (Payment has no payment_no)
     (db.invoices || []).forEach((i: any) => push("invoice", i.id, i.invoice_no || i.id, i.customer_name, "Invoices"));  // STAGE-3-FIX: invoice_no (not invoice_number)

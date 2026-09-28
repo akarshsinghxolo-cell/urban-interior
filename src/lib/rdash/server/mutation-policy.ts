@@ -55,8 +55,7 @@ function linkedThreadIsAuthorized(
   if (!parent || !staffId) return false;
   const ownerId = String(
     parent.staff_id
-      || parent.assigned_to_staff_id
-      || parent.assignee_id
+      || parent.assigned_staff_id
       || parent.filed_by_staff_id
       || parent.received_by_staff_id
       || "",

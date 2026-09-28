@@ -67,10 +67,20 @@ describe("server authentication source security", () => {
     expect(login).toContain("refreshTokenCookie(renewable.refreshToken)");
     expect(refresh).toContain("extractRefreshToken(request)");
     expect(refresh).toContain("refreshAuthenticatedSession(refreshToken)");
+    expect(refresh).toContain('current.userId !== "super-owner" || current.role !== "Owner"');
+    expect(refresh).not.toContain("Compatibility bridge");
     expect(logout).toContain("expiredRefreshTokenCookie()");
     expect(shell).toContain('locks.request("uc-auth-session-refresh"');
     expectTokens(shell, ["AUTH_REFRESH_INTERVAL_MS = 4 * 60 * 60 * 1000"]);
     expect(shell).toContain("<RenewableSessionGate>");
+  });
+
+  test("requires only canonical Supabase environment names", () => {
+    const supabaseServer = readFileSync(join(repositoryRoot, "src/lib/supabase/server.ts"), "utf8");
+    const authUsers = readFileSync(join(repositoryRoot, "src/lib/rdash/server/auth-users.ts"), "utf8");
+    expectTokens(supabaseServer, ["SUPABASE_URL", "SUPABASE_PUBLISHABLE_KEY", "SUPABASE_SECRET_KEY"]);
+    expectNoTokens(supabaseServer, ["SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "legacy alias"]);
+    expectNoTokens(authUsers, ["SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY", "Legacy aliases"]);
   });
 
   test("never tracks a live root environment file", () => {

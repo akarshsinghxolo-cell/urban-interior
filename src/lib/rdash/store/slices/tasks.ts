@@ -21,6 +21,7 @@ import type { StoreContext } from "../context";
 import type { CurrentUserContext } from "../ui-types";
 import { assertRole, genId, nowIso, today, businessDate, isOwnerOrOperations } from "../helpers";
 import { resolveCustomerIdFromLinks } from "../../customer-relations";
+import { staffNameForId } from "../../staff-directory";
 
 const BUSINESS_DECISION_TASK_TYPES = new Set([
     "progress_verification",
@@ -38,30 +39,20 @@ function isBusinessDecisionTask(task: Task) {
 function isScheduledBefore(value: string | undefined, at: Date) {
     return Boolean(value && new Date(value).getTime() < at.getTime());
 }
-function isAssignedToActor(actor: CurrentUserContext, record: {
-    assignee_id?: string;
-    assignee_name?: string;
-    assigned_to?: string;
-    assigned_role?: string;
-}) {
-    if (record.assignee_id && actor.staffId === record.assignee_id)
-        return true;
-    const assigneeName = record.assignee_name || record.assigned_to;
-    if (assigneeName && assigneeName === actor.name)
-        return true;
-    return Boolean(record.assigned_role && record.assigned_role === actor.role);
+function isAssignedToActor(actor: CurrentUserContext, assignedStaffId?: string) {
+    return Boolean(assignedStaffId && actor.staffId === assignedStaffId);
 }
 function assertTaskActor(actor: CurrentUserContext, task: Task, action: string) {
     if (isOwnerOrOperations(actor))
         return;
-    if (!isAssignedToActor(actor, task)) {
+    if (!isAssignedToActor(actor, task.assigned_staff_id)) {
         throw new Error(`Only the assigned staff member may ${action} this Task.`);
     }
 }
 function assertFollowupActor(actor: CurrentUserContext, followup: Followup, action: string) {
     if (isOwnerOrOperations(actor))
         return;
-    if (!isAssignedToActor(actor, { assigned_to: followup.assigned_to, assigned_role: followup.assigned_role })) {
+    if (!isAssignedToActor(actor, followup.assigned_staff_id)) {
         throw new Error(`Only the assigned staff member may ${action} this Follow-up.`);
     }
 }
@@ -83,8 +74,9 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
         addTask: (t) => {
             const customerId = resolveCustomerIdFromLinks(get().db, t, "Task");
             const id = genId("task");
+            const assigneeName = staffNameForId(get().db, t.assigned_staff_id, "Owner");
             const threadId = get().openThreadFor("task", id, t.title || "New task", [
-                t.assignee_name || "Owner",
+                assigneeName,
             ]);
             commitState((s: any) => {
                 const task: Task = {
@@ -100,10 +92,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     po_id: t.po_id,
                     visit_id: t.visit_id,
                     site_id: t.site_id,
-                    assignee_id: t.assignee_id,
-                    assignee_name: t.assignee_name,
-                    assigned_to: t.assigned_to,
-                    assigned_role: t.assigned_role,
+                    assigned_staff_id: t.assigned_staff_id,
                     due_date: t.due_date || today(),
                     task_scope: t.task_scope || "general",
                     task_type: t.task_type || "general",
@@ -118,7 +107,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 return { db: { ...s.db, tasks: [task, ...s.db.tasks] } };
             });
             get().logAudit({
-                actor: t.assignee_name || "Owner",
+                actor: get().currentUser().name,
                 action: `Created task "${t.title || "New task"}"`,
                 entity_type: "task",
                 entity_id: id,
@@ -154,7 +143,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 throw new Error("This system Task must be resolved through its linked workflow and cannot be cancelled manually.");
             }
             assertTaskActor(actor, before, "update");
-            if ((patch.assignee_id || patch.assignee_name || patch.assigned_to) &&
+            if (patch.assigned_staff_id && patch.assigned_staff_id !== before.assigned_staff_id &&
                 !isOwnerOrOperations(actor)) {
                 throw new Error("Only Owner or Operations can reassign Tasks.");
             }
@@ -179,7 +168,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             }
             const threadId = before.thread_id ||
                 get().openThreadFor("task", id, before.title || patch.title || "Task", [
-                    before.assignee_name || before.assigned_to || "Owner",
+                    staffNameForId(get().db, before.assigned_staff_id, "Owner"),
                 ]);
             commitState((s: any) => ({
                 db: {
@@ -200,10 +189,10 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 changes.push(`status changed from ${before.status} to ${patch.status}`);
             if (patch.due_date && patch.due_date !== before.due_date)
                 changes.push(`due date changed from ${before.due_date} to ${patch.due_date}`);
-            const nextAssignee = patch.assignee_name || patch.assigned_to;
-            const oldAssignee = before.assignee_name || before.assigned_to;
-            if (nextAssignee && nextAssignee !== oldAssignee)
-                changes.push(`assigned to ${nextAssignee}`);
+            const nextAssigneeId = patch.assigned_staff_id;
+            const oldAssigneeId = before.assigned_staff_id;
+            if (nextAssigneeId && nextAssigneeId !== oldAssigneeId)
+                changes.push(`assigned to ${staffNameForId(get().db, nextAssigneeId)}`);
             if (patch.priority && patch.priority !== before.priority)
                 changes.push(`priority changed from ${before.priority} to ${patch.priority}`);
             if (changes.length) {
@@ -223,8 +212,13 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     auditChanges.push({ id: `ch-${Date.now()}-p`, field: "priority", before: before.priority, after: patch.priority });
                 if (patch.due_date !== undefined && patch.due_date !== before.due_date)
                     auditChanges.push({ id: `ch-${Date.now()}-dd`, field: "due_date", before: before.due_date, after: patch.due_date });
-                if (nextAssignee && nextAssignee !== oldAssignee)
-                    auditChanges.push({ id: `ch-${Date.now()}-a`, field: "assignee", before: oldAssignee, after: nextAssignee });
+                if (nextAssigneeId && nextAssigneeId !== oldAssigneeId)
+                    auditChanges.push({
+                        id: `ch-${Date.now()}-a`,
+                        field: "assigned_staff_id",
+                        before: oldAssigneeId,
+                        after: nextAssigneeId,
+                    });
                 get().logAudit({
                     actor: actor.name,
                     actor_role: actor.role,
@@ -259,7 +253,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 throw new Error("Task completion proofs must be uploaded to managed Google Drive before completion.");
             const threadId = task.thread_id ||
                 get().openThreadFor("task", id, task.title, [
-                    task.assignee_name || actor.name,
+                    staffNameForId(get().db, task.assigned_staff_id, actor.name),
                 ]);
             const now = nowIso();
             commitState((snapshot: any) => ({
@@ -322,7 +316,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             if (task.status === "blocked" || (task.blocked_item_id && state.db.blocked.some((row: any) => row.id === task.blocked_item_id && !row.resolved)))
                 throw new Error("This Task already has an unresolved blocker. Resolve or update that blocker instead of creating a duplicate.");
             const blockedId = genId("blk");
-            const threadId = get().openThreadFor("blocked", blockedId, `Blocked task · ${task.title}`, [actor.name, task.assignee_name || "Owner"]);
+            const threadId = get().openThreadFor("blocked", blockedId, `Blocked task · ${task.title}`, [actor.name, staffNameForId(get().db, task.assigned_staff_id, "Owner")]);
             const now = nowIso();
             commitState((snapshot: any) => ({
                 db: {
@@ -354,7 +348,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             }));
             get().addThreadReply(task.thread_id ||
                 get().openThreadFor("task", id, task.title, [
-                    task.assignee_name || actor.name,
+                    staffNameForId(get().db, task.assigned_staff_id, actor.name),
                 ]), {
                 author: actor.name,
                 role: actor.role,
@@ -409,7 +403,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             }));
             get().addThreadReply(task.thread_id ||
                 get().openThreadFor("task", id, task.title, [
-                    task.assignee_name || actor.name,
+                    staffNameForId(get().db, task.assigned_staff_id, actor.name),
                 ]), {
                 author: actor.name,
                 role: actor.role,
@@ -420,7 +414,8 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
         addFollowup: (f) => {
             const customerId = resolveCustomerIdFromLinks(get().db, f, "Follow-up");
             const id = genId("follow");
-            const threadId = get().openThreadFor("followup", id, f.title || "New follow-up", [f.assigned_to || "Owner"]);
+            const assigneeName = staffNameForId(get().db, f.assigned_staff_id, "Owner");
+            const threadId = get().openThreadFor("followup", id, f.title || "New follow-up", [assigneeName]);
             commitState((s: any) => {
                 const now = nowIso();
                 const fu: Followup = {
@@ -431,8 +426,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     priority: f.priority || "medium",
                     due_at: f.due_at || now,
                     due_date: f.due_date || today(),
-                    assigned_to: f.assigned_to,
-                    assigned_role: f.assigned_role,
+                    assigned_staff_id: f.assigned_staff_id,
                     customer_id: customerId,
                     work_required_id: f.work_required_id,
                     quotation_id: f.quotation_id,
@@ -448,7 +442,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 return { db: { ...s.db, followups: [fu, ...s.db.followups] } };
             });
             get().logAudit({
-                actor: f.assigned_to || "Owner",
+                actor: get().currentUser().name,
                 action: `Created follow-up "${f.title || "New follow-up"}"`,
                 entity_type: "followup",
                 entity_id: id,
@@ -472,7 +466,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             if (["completed", "closed", "missed"].includes(patch.status || "")) {
                 throw new Error("Complete or close a Follow-up through Record outcome. Missed status is assigned only by the reconciliation workflow.");
             }
-            if (patch.assigned_to && !isOwnerOrOperations(actor)) {
+            if (patch.assigned_staff_id && patch.assigned_staff_id !== before.assigned_staff_id && !isOwnerOrOperations(actor)) {
                 throw new Error("Only Owner or Operations can reassign Follow-ups.");
             }
             if (patch.due_date && !patch.due_at) {
@@ -485,7 +479,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 };
             }
             const threadId = before.thread_id ||
-                get().openThreadFor("followup", id, before.title || patch.title || "Follow-up", [before.assigned_to || "Owner"]);
+                get().openThreadFor("followup", id, before.title || patch.title || "Follow-up", [staffNameForId(get().db, before.assigned_staff_id, "Owner")]);
             commitState((s: any) => ({
                 db: {
                     ...s.db,
@@ -507,8 +501,8 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                 changes.push(`due date changed from ${before.due_date} to ${patch.due_date}`);
             if (patch.promise_date && patch.promise_date !== before.promise_date)
                 changes.push(`promise date set to ${patch.promise_date}`);
-            if (patch.assigned_to && patch.assigned_to !== before.assigned_to)
-                changes.push(`assigned to ${patch.assigned_to}`);
+            if (patch.assigned_staff_id && patch.assigned_staff_id !== before.assigned_staff_id)
+                changes.push(`assigned to ${staffNameForId(get().db, patch.assigned_staff_id)}`);
             if (patch.priority && patch.priority !== before.priority)
                 changes.push(`priority changed from ${before.priority} to ${patch.priority}`);
             if (changes.length)
@@ -538,7 +532,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             const now = nowIso();
             const threadId = followup.thread_id ||
                 get().openThreadFor("followup", id, followup.title, [
-                    followup.assigned_to || actor.name,
+                    staffNameForId(get().db, followup.assigned_staff_id, actor.name),
                 ]);
             const nextDueAt = input.nextDueAt?.trim();
             let nextFollowupId: string | undefined;
@@ -553,8 +547,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     priority: followup.priority,
                     due_at: next.toISOString(),
                     due_date: businessDate(next),
-                    assigned_to: followup.assigned_to,
-                    assigned_role: followup.assigned_role,
+                    assigned_staff_id: followup.assigned_staff_id,
                     customer_id: followup.customer_id,
                     work_required_id: followup.work_required_id,
                     quotation_id: followup.quotation_id,
@@ -624,7 +617,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             });
             const threadId = followup.thread_id ||
                 get().openThreadFor("followup", id, followup.title, [
-                    followup.assigned_to || "Owner",
+                    staffNameForId(get().db, followup.assigned_staff_id, "Owner"),
                 ]);
             get().addThreadReply(threadId, {
                 author: get().currentUser().name,
@@ -660,7 +653,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             overdue.forEach((followup: any) => {
                 const threadId = followup.thread_id ||
                     get().openThreadFor("followup", followup.id, followup.title, [
-                        followup.assigned_to || "Owner",
+                        staffNameForId(get().db, followup.assigned_staff_id, "Owner"),
                     ]);
                 get().addThreadReply(threadId, {
                     author: "System",
@@ -675,7 +668,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     quotation_id: followup.quotation_id,
                     task_scope: "client",
                     task_type: "followup_recovery",
-                    assignee_name: followup.assigned_to || "Owner",
+                    assigned_staff_id: followup.assigned_staff_id,
                     due_date: businessDate(now),
                     auto_generated: true,
                 });
@@ -693,7 +686,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             due.forEach((rule: any) => {
                 const exists = get().db.tasks.some((task: any) => task.task_type === `recurring:${rule.id}` && task.due_date === runDate);
                 if (!exists)
-                    get().addTask({ title: rule.title, task_scope: rule.scope, task_type: `recurring:${rule.id}`, assignee_id: rule.assignee_id, assignee_name: rule.assignee_name, assigned_to: rule.assignee_name, priority: rule.priority, due_date: runDate, auto_generated: true, description: `Created from ${rule.frequency} recurring schedule.` });
+                    get().addTask({ title: rule.title, task_scope: rule.scope, task_type: `recurring:${rule.id}`, assigned_staff_id: rule.assigned_staff_id, priority: rule.priority, due_date: runDate, auto_generated: true, description: `Created from ${rule.frequency} recurring schedule.` });
             });
             if (due.length)
                 commitState((s: any) => ({ db: { ...s.db, recurringTasks: s.db.recurringTasks.map((rule: any) => due.some((candidate: any) => candidate.id === rule.id) ? { ...rule, last_run: runDate, next_run: nextRecurringRun(rule.next_run, rule.frequency), runs_count: (rule.runs_count || 0) + 1,  /* STAGE-5-FIX: guard NaN */ updated_at: nowIso() } : rule) } }));

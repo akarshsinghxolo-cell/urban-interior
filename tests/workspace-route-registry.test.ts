@@ -9,27 +9,6 @@ import {
   workspacePathForModule,
 } from "../src/lib/rdash/workspace-routes";
 
-const LEGACY_IDS = [
-  "boq",
-  "contractors",
-  "contractorPerformance",
-  "vendorPerformance",
-  "staff",
-  "siteProfitability",
-  "workOrderPnl",
-  "salesReport",
-  "collectionReport",
-  "jobPnlReport",
-  "vendorExposureReport",
-  "taxReport",
-  "staffProductivity",
-  "quotationConversion",
-  "leadSourceReport",
-  "agingReportRep",
-  "visitCompliance",
-  "taskThroughput",
-] as const;
-
 describe("workspace route registry", () => {
   test("covers every internal module route", () => {
     expect(validateWorkspaceRouteRegistry()).toEqual([]);
@@ -59,32 +38,25 @@ describe("workspace route registry", () => {
     expect(workspacePathForModule("articleVariants")).toBe("/workspace/masters/article-variants");
   });
 
-  test("keeps internal-ID paths as aliases", () => {
-    const match = resolveWorkspacePath("/workspace/customerDesk");
-    expect(match?.moduleId).toBe("customerDesk");
-    expect(match?.canonicalPath).toBe("/workspace/customers");
-    expect(match?.isAlias).toBe(true);
-  });
-
-  test("maps legacy IDs without registering duplicate module routes", () => {
-    for (const legacyId of LEGACY_IDS) {
-      expect(MODULE_ROUTE_REGISTRY.has(legacyId)).toBe(false);
+  test("rejects retired compatibility module paths", () => {
+    for (const path of [
+      "/workspace/customerDesk",
+      "/workspace/salesPipeline",
+      "/workspace/fieldOperations",
+      "/workspace/siteExecution",
+      "/workspace/procurementInventory",
+      "/workspace/contractorDetail",
+      "/workspace/masterSetup",
+      "/workspace/financeDesk",
+      "/workspace/mediaCommunication",
+      "/workspace/hrStaff",
+      "/workspace/reportsDesk",
+      "/workspace/systemSettings",
+      "/workspace/boq",
+      "/workspace/workOrderPnl",
+    ]) {
+      expect(resolveWorkspacePath(path)).toBeUndefined();
     }
-
-    expect(workspacePathForModule("boq")).toBe("/workspace/procurement/boq");
-    expect(workspacePathForModule("contractors")).toBe("/workspace/contractors");
-    expect(workspacePathForModule("vendorPerformance")).toBe("/workspace/vendors");
-    expect(workspacePathForModule("staff")).toBe("/workspace/staff");
-    expect(workspacePathForModule("siteProfitability")).toBe("/workspace/finance/profitability");
-    expect(workspacePathForModule("salesReport")).toBe("/workspace/reports/sales");
-    expect(workspacePathForModule("agingReportRep")).toBe("/workspace/reports/collections");
-    expect(workspacePathForModule("taskThroughput")).toBe("/workspace/reports/operations");
-    expect(workspacePathForModule("taxReport")).toBe("/workspace/reports/financial");
-
-    const legacyPath = resolveWorkspacePath("/workspace/workOrderPnl");
-    expect(legacyPath?.moduleId).toBe("profitability");
-    expect(legacyPath?.canonicalPath).toBe("/workspace/finance/profitability");
-    expect(legacyPath?.isAlias).toBe(true);
   });
 
   test("normalizes query strings, hashes, duplicate slashes and trailing slashes", () => {

@@ -2,7 +2,7 @@ import { expectTokens } from "./helpers/source-contract";
 import { describe, expect, test } from "vitest";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { hydrateStaffReferenceLabels } from "@/lib/rdash/staff-reference-labels";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { buildSeedDatabase } from "@/lib/rdash/seed";
 import type { RDashDatabase } from "@/lib/rdash/types";
 
@@ -24,7 +24,7 @@ async function runtimeFiles(root: string): Promise<string[]> {
 }
 
 describe("canonical Staff references", () => {
-  test("derives compatibility labels from canonical Staff IDs", () => {
+  test("keeps assignment records ID-only and resolves presentation labels from Staff master", () => {
     const db = buildSeedDatabase() as RDashDatabase;
     db.master.staff = [
       {
@@ -61,9 +61,11 @@ describe("canonical Staff references", () => {
       due_date: "2026-08-05",
       task_scope: "general",
       comments: [],
+      checklist: [],
+      proofs: [],
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
-    } as never];
+    }];
     db.followups = [{
       id: "follow-canonical",
       title: "Canonical follow-up",
@@ -72,13 +74,15 @@ describe("canonical Staff references", () => {
       due_at: new Date(0).toISOString(),
       due_date: "2026-08-05",
       assigned_staff_id: "staff-active",
+      notes_history: [],
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
-    } as never];
+    }];
     db.visits = [{
       id: "visit-canonical",
       customer_id: "customer-1",
       assigned_staff_id: "staff-active",
+      assignee_type: "staff",
       visit_type: "site_visit",
       location_name: "Site",
       status: "scheduled",
@@ -86,14 +90,16 @@ describe("canonical Staff references", () => {
       proof_attachment_ids: [],
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
-    } as never];
+    }];
 
-    hydrateStaffReferenceLabels(db);
+    expect(staffNameForId(db, db.tasks[0].assigned_staff_id)).toBe("Canonical Staff");
+    expect(staffNameForId(db, db.followups[0].assigned_staff_id)).toBe("Canonical Staff");
+    expect(staffNameForId(db, db.visits[0].assigned_staff_id)).toBe("Canonical Staff");
 
-    expect((db.tasks[0] as unknown as Record<string, unknown>).assignee_name).toBe("Canonical Staff");
-    expect((db.followups[0] as unknown as Record<string, unknown>).assigned_to).toBe("Canonical Staff");
-    expect((db.visits[0] as unknown as Record<string, unknown>).staff_name).toBe("Canonical Staff");
-    expect((db.visits[0] as unknown as Record<string, unknown>).staff_id).toBe("staff-active");
+    expect((db.tasks[0] as unknown as Record<string, unknown>).assignee_name).toBeUndefined();
+    expect((db.followups[0] as unknown as Record<string, unknown>).assigned_to).toBeUndefined();
+    expect((db.visits[0] as unknown as Record<string, unknown>).staff_name).toBeUndefined();
+    expect((db.visits[0] as unknown as Record<string, unknown>).staff_id).toBeUndefined();
   });
 
   test("has no legacy Staff profile runtime dependency", async () => {
@@ -108,13 +114,13 @@ describe("canonical Staff references", () => {
     expect(matches, `Legacy Staff profile runtime references remain: ${matches.join(", ")}`).toEqual([]);
   });
 
-  test("hydrates scoped, full and delta workspace read paths", async () => {
+  test("does not reintroduce Staff compatibility hydration in workspace read paths", async () => {
     const scoped = await readFile("src/lib/rdash/server/module-scoped-read.ts", "utf8");
     const full = await readFile("src/lib/rdash/server/workspace.ts", "utf8");
     const delta = await readFile("src/lib/rdash/workspace-delta.ts", "utf8");
-    expect(scoped).toContain("hydrateStaffReferenceLabels(data)");
-    expect(full).toContain("hydrateStaffReferenceLabels(workspace.data)");
-    expect(delta).toContain("hydrateStaffReferenceLabels(next)");
+    expect(scoped).not.toContain("hydrateStaffReferenceLabels");
+    expect(full).not.toContain("hydrateStaffReferenceLabels");
+    expect(delta).not.toContain("hydrateStaffReferenceLabels");
   });
 
 });

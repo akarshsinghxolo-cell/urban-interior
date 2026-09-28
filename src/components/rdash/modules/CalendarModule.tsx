@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { buildCalendarICS, type IcsEventInput } from "@/lib/rdash/calendar-ics";
 import { isIcsShareAbort, shareOrDownloadIcsFile } from "@/lib/rdash/calendar-share";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 type EventType = "visit" | "task" | "payment" | "delivery";
 interface CalEvent {
     id: string;
@@ -32,7 +33,7 @@ function collectEvents(db: RDashDatabase): CalEvent[] {
     const events: CalEvent[] = [];
     db.visits.forEach((v) => {
         events.push({
-            id: v.id, type: "visit", title: `${titleCase(v.visit_type)} · ${v.location_name}`, subtitle: v.staff_name,
+            id: v.id, type: "visit", title: `${titleCase(v.visit_type)} · ${v.location_name}`, subtitle: v.assignee_type === "contractor" ? v.contractor_name : staffNameForId(db, v.assigned_staff_id),
             date: indiaBusinessDate(new Date(v.scheduled_at)), time: new Date(v.scheduled_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
             status: titleCase(v.status), statusClass: v.status === "completed" ? "bg-success/10 text-success border-success/20" : v.status === "missed" ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-primary/10 text-primary border-primary/20",
             detailKind: "visit", recordId: v.id,
@@ -40,7 +41,7 @@ function collectEvents(db: RDashDatabase): CalEvent[] {
     });
     db.tasks.forEach((t) => {
         events.push({
-            id: t.id, type: "task", title: t.title, subtitle: t.assignee_name, date: t.due_date,
+            id: t.id, type: "task", title: t.title, subtitle: staffNameForId(db, t.assigned_staff_id), date: t.due_date,
             status: titleCase(t.status), statusClass: t.status === "completed" ? "bg-success/10 text-success border-success/20" : t.status === "blocked" ? "bg-destructive/10 text-destructive border-destructive/20" : "bg-warning/10 text-warning border-warning/20",
             detailKind: "task", recordId: t.id,
         });

@@ -276,7 +276,7 @@ function assertLineItemRelations(db: RDashDatabase, item: LineItem, customerId: 
         assertWorkRequiredMatchesContext(db, item.work_required_id, customerId, siteId, context, options);
     }
 }
-export function assertVisitRelations(db: RDashDatabase, visit: Pick<Visit, "customer_id" | "site_id" | "work_required_id" | "work_order_id" | "location_target_type" | "vendor_id" | "staff_id" | "assignee_type" | "contractor_id">, context: string, options: ValidationOptions = {}) {
+export function assertVisitRelations(db: RDashDatabase, visit: Pick<Visit, "customer_id" | "site_id" | "work_required_id" | "work_order_id" | "location_target_type" | "vendor_id" | "assigned_staff_id" | "assignee_type" | "contractor_id">, context: string, options: ValidationOptions = {}) {
     if (!visit.customer_id || !visit.site_id)
         fail(context, "Visit requires a Customer and project Site context.");
     assertSiteBelongsToCustomer(db, visit.site_id, visit.customer_id, context, options);
@@ -296,10 +296,10 @@ export function assertVisitRelations(db: RDashDatabase, visit: Pick<Visit, "cust
     }
     const assigneeType = visit.assignee_type || (visit.contractor_id ? "contractor" : "staff");
     if (assigneeType === "staff") {
-        // Flexibility: allow unassigned visits (empty staff_id) so a business with no staff set up
+        // Flexibility: allow unassigned visits (no assigned_staff_id) so a business with no staff set up
         // yet can still schedule visits. The owner can assign an active staff member later.
-        if (visit.staff_id) {
-            const staff = db.master.staff.find((row) => row.id === visit.staff_id && row.status === "active");
+        if (visit.assigned_staff_id) {
+            const staff = db.master.staff.find((row) => row.id === visit.assigned_staff_id && row.status === "active");
             if (!staff)
                 fail(context, "Visit assignee must be an active Staff member.");
         }

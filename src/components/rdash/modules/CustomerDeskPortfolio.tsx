@@ -20,6 +20,7 @@ import {
   type ContextCustomerTab,
 } from "@/lib/rdash/store";
 import { customerProgress } from "@/lib/rdash/customer-progress";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import {
   formatDate,
@@ -35,7 +36,7 @@ import {
 import { workRequiredDisplayTitle } from "@/lib/rdash/work-types";
 import { Avatar, EmptyState, MetricCard, StatusBadge } from "../primitives";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
-import { WorkRequiredCreateDialog } from "../WorkRequiredCreateDialog";
+import { CustomerWorkRequiredDialog as WorkRequiredCreateDialog } from "../customer/CustomerWorkRequiredDialog";
 import { CustomerWorkCaptureDialog } from "../customer/CustomerWorkCaptureDialog";
 import { EntityFilesCard } from "../EntityFilesCard";
 import { RecordPaymentDialog } from "../ActionDialogs";
@@ -243,7 +244,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
             rows={tasks.map((task) => ({
               id: task.id,
               title: task.title,
-              detail: `Due ${relativeDay(task.due_date)} · ${task.assignee_name}`,
+              detail: `Due ${relativeDay(task.due_date)} · ${staffNameForId(db, task.assigned_staff_id)}`,
               status: taskStatusStyle(task.status),
               onOpen: () => openDetail("task", task.id),
             }))}
@@ -311,7 +312,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
           <RecordList
             action={<Button size="sm" variant="outline" onClick={() => openCreateDialog({ kind: "visit", customerId })}><Plus className="mr-1 h-3 w-3" />Add visit</Button>}
             empty="No Customer visits."
-            rows={visits.map((visit) => ({ id: visit.id, title: `${visit.visit_type.replaceAll("_", " ")} · ${visit.location_name}`, detail: `${formatDate(visit.scheduled_at)} · ${visit.staff_name}`, status: { label: visit.status, className: "bg-muted text-muted-foreground border-border" }, onOpen: () => openDetail("visit", visit.id) }))}
+            rows={visits.map((visit) => ({ id: visit.id, title: `${visit.visit_type.replaceAll("_", " ")} · ${visit.location_name}`, detail: `${formatDate(visit.scheduled_at)} · ${visit.assignee_type === "contractor" ? (visit.contractor_name || "Contractor") : staffNameForId(db, visit.assigned_staff_id)}`, status: { label: visit.status, className: "bg-muted text-muted-foreground border-border" }, onOpen: () => openDetail("visit", visit.id) }))}
           />
         )}
 

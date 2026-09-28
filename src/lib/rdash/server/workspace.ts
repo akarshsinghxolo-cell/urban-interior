@@ -1,4 +1,3 @@
-import { hydrateStaffReferenceLabels } from "../staff-reference-labels";
 import type { RDashDatabase } from "../types";
 import { diffWorkspaceOperations, type WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
@@ -78,7 +77,6 @@ export async function getWorkspace(includeRevisions = false): Promise<WorkspaceW
   await assertSupabaseSchemaReady();
   const { getRestWorkspace } = await getRestModule();
   const workspace = await getRestWorkspace();
-  hydrateStaffReferenceLabels(workspace.data);
   if (includeRevisions) return workspace;
   return { revision: workspace.revision, data: workspace.data, updatedAt: workspace.updatedAt };
 }

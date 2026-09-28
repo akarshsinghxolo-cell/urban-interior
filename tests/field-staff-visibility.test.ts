@@ -42,16 +42,16 @@ function visibilityFixture() {
     { id: "wo-hidden", work_order_no: "WO-2", customer_id: "cust-hidden", accepted_scope_ids: [], work_required_ids: ["work-hidden"], quotation_ids: [], site_id: "site-hidden", area_ids: [], title: "Hidden work order", status: "in_progress", contractor_id: "contractor-hidden", start_date: "2026-07-30", value: 100, progress: 10, created_at: "", updated_at: "" },
   ] as never[];
   db.followups = [
-    { id: "follow-visible", title: "Call", status: "pending", priority: "medium", due_at: "2026-07-30T10:00:00Z", due_date: "2026-07-30", assigned_to: "Field One", customer_id: "cust-followup", notes_history: [], created_at: "", updated_at: "" },
-    { id: "follow-hidden", title: "Other call", status: "pending", priority: "medium", due_at: "2026-07-30T10:00:00Z", due_date: "2026-07-30", assigned_to: "Other Staff", customer_id: "cust-hidden", notes_history: [], created_at: "", updated_at: "" },
+    { id: "follow-visible", title: "Call", status: "pending", priority: "medium", due_at: "2026-07-30T10:00:00Z", due_date: "2026-07-30", assigned_staff_id: "staff-field", customer_id: "cust-followup", notes_history: [], created_at: "", updated_at: "" },
+    { id: "follow-hidden", title: "Other call", status: "pending", priority: "medium", due_at: "2026-07-30T10:00:00Z", due_date: "2026-07-30", assigned_staff_id: "staff-other", customer_id: "cust-hidden", notes_history: [], created_at: "", updated_at: "" },
   ] as never[];
   db.visits = [
-    { id: "visit-visible", customer_id: "cust-visit", site_id: "site-visit", work_required_id: "work-visit", work_order_id: "wo-visible", vendor_id: "vendor-visit", staff_id: "staff-field", staff_name: "Field One", visit_type: "site_visit", location_name: "Visit site", status: "scheduled", scheduled_at: "2026-07-31T10:00:00Z", proof_attachment_ids: [], created_at: "", updated_at: "" },
-    { id: "visit-hidden", customer_id: "cust-hidden", site_id: "site-hidden", work_required_id: "work-hidden", work_order_id: "wo-hidden", vendor_id: "vendor-hidden", staff_id: "staff-other", staff_name: "Other Staff", visit_type: "site_visit", location_name: "Hidden site", status: "scheduled", scheduled_at: "2026-07-31T10:00:00Z", proof_attachment_ids: [], created_at: "", updated_at: "" },
+    { id: "visit-visible", customer_id: "cust-visit", site_id: "site-visit", work_required_id: "work-visit", work_order_id: "wo-visible", vendor_id: "vendor-visit", assigned_staff_id: "staff-field", assignee_type: "staff", visit_type: "site_visit", location_name: "Visit site", status: "scheduled", scheduled_at: "2026-07-31T10:00:00Z", proof_attachment_ids: [], created_at: "", updated_at: "" },
+    { id: "visit-hidden", customer_id: "cust-hidden", site_id: "site-hidden", work_required_id: "work-hidden", work_order_id: "wo-hidden", vendor_id: "vendor-hidden", assigned_staff_id: "staff-other", assignee_type: "staff", visit_type: "site_visit", location_name: "Hidden site", status: "scheduled", scheduled_at: "2026-07-31T10:00:00Z", proof_attachment_ids: [], created_at: "", updated_at: "" },
   ] as never[];
   db.tasks = [
-    { id: "task-visible", title: "Assigned task", status: "todo", priority: "medium", assignee_id: "staff-field", customer_id: "cust-visit", work_order_id: "wo-visible", due_date: "2026-07-31", task_scope: "site", comments: [], checklist: [], proofs: [], created_at: "", updated_at: "" },
-    { id: "task-hidden", title: "Hidden task", status: "todo", priority: "medium", assignee_id: "staff-other", customer_id: "cust-hidden", work_order_id: "wo-hidden", due_date: "2026-07-31", task_scope: "site", comments: [], checklist: [], proofs: [], created_at: "", updated_at: "" },
+    { id: "task-visible", title: "Assigned task", status: "todo", priority: "medium", assigned_staff_id: "staff-field", customer_id: "cust-visit", work_order_id: "wo-visible", due_date: "2026-07-31", task_scope: "site", comments: [], checklist: [], proofs: [], created_at: "", updated_at: "" },
+    { id: "task-hidden", title: "Hidden task", status: "todo", priority: "medium", assigned_staff_id: "staff-other", customer_id: "cust-hidden", work_order_id: "wo-hidden", due_date: "2026-07-31", task_scope: "site", comments: [], checklist: [], proofs: [], created_at: "", updated_at: "" },
   ] as never[];
   db.master = {
     ...db.master,
@@ -106,7 +106,7 @@ describe("field staff UI visibility", () => {
     expect(visible.customers).toHaveLength(4);
   });
 
-  test("treats role-assigned follow-ups as assigned to field staff", () => {
+  test("does not infer follow-up ownership from retired role labels", () => {
     const db = visibilityFixture();
     db.followups = [{
       id: "role-followup",
@@ -123,8 +123,8 @@ describe("field staff UI visibility", () => {
     }] as never[];
 
     const visible = fieldStaffPresentationDatabase(db, fieldUser);
-    expect(ids(visible.followups)).toEqual(["role-followup"]);
-    expect(ids(visible.customers)).toContain("cust-hidden");
+    expect(ids(visible.followups)).toEqual([]);
+    expect(ids(visible.customers)).not.toContain("cust-hidden");
   });
 
   test("removes financial collections and masks money on allowed operational records", () => {

@@ -38,11 +38,11 @@ function openEntity(kind: EntityKind, id: string) {
         return;
     }
     if (kind === "contractor") {
-        store.setActiveModule("contractors");
+        store.setActiveModule("contractorDetail");
         return;
     }
     if (kind === "staff") {
-        store.setActiveModule("staff");
+        store.setActiveModule("hrStaff");
         return;
     }
     store.openDetail(kind, id);

@@ -1,13 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import {
+  customerOptedPairs,
   defaultWorkTypeId,
   normalizeWorkSubcategoryWorkTypes,
+  omittedOptedPairs,
   pruneWorkTypeIds,
   resolveWorkTypes,
+  seedDetailedAreaLines,
   workTypeNamesForIds,
   workTypesForSubcategory,
 } from "../src/lib/rdash/work-types";
+
+import { buildSeedDatabase } from "../src/lib/rdash/seed";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
 
@@ -65,6 +70,60 @@ describe("work-type master", () => {
     expect(workTypeNamesForIds(subcategories, undefined)).toEqual([]);
   });
 
+
+  test("canonical Work Required rows always carry explicit work-type IDs", () => {
+    const db = buildSeedDatabase();
+    expect(db.workRequired.length).toBeGreaterThan(0);
+    expect(db.workRequired.every((row) => (row.work_type_ids || []).length > 0)).toBe(true);
+  });
+
+  test("does not infer opted or capture work types from a bare subcategory", () => {
+    const subcategories = [{
+      id: "sub-paint",
+      category_id: "cat-paint",
+      name: "Interior Painting",
+      work_types: [{ id: "wt-sub-paint-standard", name: "Standard" }],
+    }];
+    const work = [{
+      id: "work-1",
+      customer_id: "customer-1",
+      work_subcategory_ids: ["sub-paint"],
+      work_type_ids: [],
+      area_ids: ["area-1"],
+      structured_items: [],
+    }];
+
+    expect(customerOptedPairs({
+      workRequired: work,
+      customerId: "customer-1",
+      workSubcategories: subcategories,
+    })).toEqual([]);
+
+    expect(seedDetailedAreaLines({
+      siteWorks: work,
+      workSubcategories: subcategories,
+    })).toEqual([]);
+  });
+
+  test("a quotation line without a work type does not cover a canonical opted pair", () => {
+    const subcategories = [{
+      id: "sub-paint",
+      category_id: "cat-paint",
+      name: "Interior Painting",
+      work_types: [{ id: "wt-sub-paint-standard", name: "Standard" }],
+    }];
+    expect(omittedOptedPairs({
+      workRequired: [{
+        customer_id: "customer-1",
+        work_subcategory_ids: ["sub-paint"],
+        work_type_ids: ["wt-sub-paint-standard"],
+      }],
+      customerId: "customer-1",
+      workSubcategories: subcategories,
+      items: [{ subcategory_id: "sub-paint" }],
+    })).toEqual([{ subcategory_id: "sub-paint", work_type_id: "wt-sub-paint-standard" }]);
+  });
+
   test("pruneWorkTypeIds keeps only work types of the selected subcategories", () => {
     const subcategories = [
       { id: "sub-kitchen", category_id: "cat-wood", name: "Kitchen Cabinets (Modular)", work_types: [
@@ -93,13 +152,12 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
 
   test("CustomerWorkRequiredDialog is the one create implementation and persists work_type_ids", () => {
     const canonical = read("../src/components/rdash/customer/CustomerWorkRequiredDialog.tsx");
-    const compatibility = read("../src/components/rdash/WorkRequiredCreateDialog.tsx");
     expect(canonical).toContain("work_type_ids: draft.workTypeIds");
     expect(canonical).toContain("WorkRequiredFields");
     expect(canonical).toContain("addArea");
     expect(canonical).toContain("addWorkRequired");
-    expect(compatibility).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
-    expect(compatibility).not.toContain("addWorkRequired({");
+    expect(read("../src/components/rdash/modules/CustomerDeskPortfolio.tsx")).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
+    expect(read("../src/components/rdash/modules/SiteExecutionModule.tsx")).toContain("CustomerWorkRequiredDialog as WorkRequiredCreateDialog");
   });
 
   test("Customer capture owns multi-work-type alternatives and contractor-rate estimates", () => {

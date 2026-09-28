@@ -209,9 +209,9 @@ describe("workspace history URLs", () => {
     expect(workspaceHistoryUrl(snapshot("customerDesk"), "/workspace/customers", false)).toBeUndefined();
   });
 
-  test("canonicalizes hidden compatibility module IDs", () => {
-    expect(workspaceHistoryUrl(snapshot("boq"), "/workspace", true)).toBe("/workspace/procurement/boq");
-    expect(workspaceHistoryUrl(snapshot("staff"), "/workspace", true)).toBe("/workspace/staff");
+  test("does not generate URLs for retired compatibility module IDs", () => {
+    expect(workspaceHistoryUrl(snapshot("boq"), "/workspace", true)).toBe("/workspace");
+    expect(workspaceHistoryUrl(snapshot("staff"), "/workspace", true)).toBe("/workspace");
   });
 
   test("a direct entity starts with complete module and detail layers", () => {

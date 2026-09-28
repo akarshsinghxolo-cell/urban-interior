@@ -13,6 +13,7 @@ import { quotationStatusStyle, paymentStatusStyle, invoiceStatusStyle, jobStatus
 import { workRequiredDisplayTitle, areaChipQuantity, linePairBoxes, removeOptionPair, capturedPairsTitle, omittedOptedPairs, workTypesForSubcategory, averageWorkTypeTotalRate } from "@/lib/rdash/work-types";
 import { toast } from "sonner";
 import { notifyCompleted } from "@/lib/rdash/notify";
+import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { X, MessageCircle, MessageSquare, History, FileText, CheckCircle2, XCircle, Send, Truck, Package, Wrench, ArrowRight, Phone, MapPin, Calendar, User, Building2, AlertCircle, Wallet, Receipt, HandCoins, Download, Plus, Trash2, Gavel, HardHat, Star, Check, ChevronLeft, ChevronRight, RefreshCw, Zap, Paperclip, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -751,8 +752,8 @@ function StaffEntityOverview({ staff }: { staff: any }) {
     const auth = (db.staffAuthUsers || []).find((row: any) => row.staff_id === staff.id);
     const attendance = db.attendance.filter((row: any) => row.staff_id === staff.id).sort((a: any, b: any) => String(b.date).localeCompare(String(a.date)));
     const pings = (db.staffLocationPings || []).filter((row: any) => row.staff_id === staff.id).sort((a: any, b: any) => String(b.captured_at).localeCompare(String(a.captured_at)));
-    const visits = db.visits.filter((row: any) => row.staff_id === staff.id);
-    const tasks = db.tasks.filter((row: any) => row.assignee_id === staff.id || row.assigned_to_staff_id === staff.id);
+    const visits = db.visits.filter((row: any) => row.assigned_staff_id === staff.id);
+    const tasks = db.tasks.filter((row: any) => row.assigned_staff_id === staff.id);
     const payroll = (db.payrollLines || []).filter((row: any) => row.staff_id === staff.id);
     const docs = (db.staffDocuments || []).filter((row: any) => row.staff_id === staff.id);
     return <div className="h-full overflow-y-auto p-4 rd-scroll">
@@ -1591,7 +1592,7 @@ function JobOverviewBody({ j }: {
         <LinkedRow icon={<FileText className="h-3.5 w-3.5"/>} label="Drawings" value={`${drawings.length} drawing${drawings.length === 1 ? "" : "s"}`} onClick={() => setActiveModule("drawings")}/>
         <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Execution logs" value={`${executionLogs.length} log${executionLogs.length === 1 ? "" : "s"}`} onClick={() => setActiveModule("executionLogs")}/>
 
-        <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Cost lines" value={`${costLines.length} entries · ${formatINRShort(costLines.reduce((n, c) => n + c.amount, 0))}`} onClick={() => setActiveModule("workOrderPnl")}/>
+        <LinkedRow icon={<History className="h-3.5 w-3.5"/>} label="Cost lines" value={`${costLines.length} entries · ${formatINRShort(costLines.reduce((n, c) => n + c.amount, 0))}`} onClick={() => setActiveModule("profitability")}/>
         <LinkedRow icon={<AlertCircle className="h-3.5 w-3.5"/>} label="Obstacles" value={`${db.blocked.filter((b) => b.linked_work_order_id === j.id).length} blocked`} onClick={() => setActiveModule("blockedRisks")}/>
       </div>
     </div>);
@@ -2101,13 +2102,14 @@ function InvoiceOverview({ invoice }: {
 function TaskOverview({ t }: {
     t: import("@/lib/rdash/types").Task;
 }) {
+    const db = useRDashStore((s) => s.db);
     const completeTask = useRDashStore((s) => s.completeTask);
     const blockTask = useRDashStore((s) => s.blockTask);
     const [notes, setNotes] = React.useState("");
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
       <p className="text-base font-bold">{t.title}</p>
       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1"><User className="h-3 w-3"/> {t.assignee_name || "Unassigned"}</span>
+        <span className="inline-flex items-center gap-1"><User className="h-3 w-3"/> {staffNameForId(db, t.assigned_staff_id)}</span>
         <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3"/> Due {formatDate(t.due_date)}</span>
         {t.auto_generated && <StatusPill label="Auto-generated" tone="primary"/>}
       </div>
@@ -2168,7 +2170,7 @@ function VisitOverview({ v }: {
             latitude: v.latitude,
             longitude: v.longitude,
             address: v.location_name || site?.address || site?.name || "Site pending",
-            meta: `${v.staff_name} · ${titleCase(v.status)}`,
+            meta: `${v.assignee_type === "contractor" ? (v.contractor_name || "Contractor") : staffNameForId(db, v.assigned_staff_id)} · ${titleCase(v.status)}`,
             status: v.status === "checked_in" || v.status === "en_route" ? "active" : v.status === "report_pending" ? "warning" : v.status === "completed" ? "completed" : "scheduled",
         }];
     const routeMapPoints: MapPoint[] = visitToMapPoints(v);
@@ -2176,7 +2178,7 @@ function VisitOverview({ v }: {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-base font-bold">{titleCase(v.visit_type)} · {v.location_name}</p>
-          <p className="text-xs text-muted-foreground">{v.assignee_type === "contractor" || v.contractor_id ? `${v.contractor_name || "Contractor"} · contractor report` : v.staff_name} · {customer?.name || "—"}</p>
+          <p className="text-xs text-muted-foreground">{v.assignee_type === "contractor" || v.contractor_id ? `${v.contractor_name || "Contractor"} · contractor report` : staffNameForId(db, v.assigned_staff_id)} · {customer?.name || "—"}</p>
         </div>
         <StatusBadge label={st.label} className={st.className}/>
       </div>
@@ -2189,7 +2191,7 @@ function VisitOverview({ v }: {
         <Field label="Report" value={v.report_filed ? "Filed" : "Pending"}/>
       </div>
       <div className="mt-4">
-        <MapView points={routeMapPoints} title={`${titleCase(v.visit_type)} location map`} showRoute geofenceRadiusM={db.master.staff.find((staff) => staff.id === v.staff_id)?.attendance_policy.visit_geofence_radius_m} className="h-56 min-h-56"/>
+        <MapView points={routeMapPoints} title={`${titleCase(v.visit_type)} location map`} showRoute geofenceRadiusM={db.master.staff.find((staff) => staff.id === v.assigned_staff_id)?.attendance_policy.visit_geofence_radius_m} className="h-56 min-h-56"/>
       </div>
       <div className="mt-4 space-y-1.5">
         {customer && <LinkedRow icon={<User className="h-3.5 w-3.5"/>} label="Customer" value={customer.name} onClick={() => openDetail("customer", customer.id)}/>}
@@ -2756,6 +2758,7 @@ function LinkedRow({ icon, label, value, onClick }: {
 function FollowupOverview({ f }: {
     f: import("@/lib/rdash/types").Followup;
 }) {
+    const db = useRDashStore((s) => s.db);
     const st = followupStatusStyle(f.status);
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
       <div className="flex items-start justify-between gap-3">
@@ -2768,7 +2771,7 @@ function FollowupOverview({ f }: {
       <div className="mt-4 grid grid-cols-2 gap-3">
         <Field label="Type" value={f.followup_type || "general"}/>
         <Field label="Priority" value={f.priority}/>
-        <Field label="Assigned to" value={f.assigned_to || "—"}/>
+        <Field label="Assigned to" value={staffNameForId(db, f.assigned_staff_id, "—")}/>
         <Field label="Due at" value={formatDate(f.due_at)}/>
       </div>
       {f.notes && (<div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">

@@ -75,9 +75,10 @@ describe("workspace entity routes", () => {
     expect(isWorkspaceEntityLocation(contractorRates)).toBe(false);
     expect(contractorRates?.moduleId).toBe("contractorRates");
 
-    const visitsRoot = resolveWorkspaceLocation("/workspace/visits");
-    expect(isWorkspaceEntityLocation(visitsRoot)).toBe(false);
-    expect(visitsRoot?.moduleId).toBe("fieldOperations");
+    const fieldRoot = resolveWorkspaceLocation("/workspace/field");
+    expect(isWorkspaceEntityLocation(fieldRoot)).toBe(false);
+    expect(fieldRoot?.moduleId).toBe("fieldOperations");
+    expect(resolveWorkspaceLocation("/workspace/visits")).toBeUndefined();
 
     const tasksRoot = resolveWorkspaceLocation("/workspace/tasks");
     expect(isWorkspaceEntityLocation(tasksRoot)).toBe(false);

@@ -87,14 +87,5 @@ export function ensureFolderPath(
   account: StorageAccount,
   segments: CanonicalFolderSegment[],
 ): Promise<{ id: string; webViewLink: string; key: string }> {
-  // The old customer-level Commercial folder may contain communications and
-  // files from several Sites. Never adopt it wholesale into one Site. New
-  // Site Commercial folders are created canonically; historical files can be
-  // moved individually by a verified reconciliation pass.
-  const safeSegments = segments.map((segment) =>
-    segment.key.includes(":commercial") && segment.legacyKeys?.length
-      ? { ...segment, legacyKeys: undefined }
-      : segment,
-  );
-  return ensureCanonicalFolderPath(accessToken, account, safeSegments);
+  return ensureCanonicalFolderPath(accessToken, account, segments);
 }

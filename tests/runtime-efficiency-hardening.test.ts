@@ -199,6 +199,9 @@ describe("runtime efficiency hardening", () => {
     expect(route).toContain('commitHeaders("no-op-revision-read"');
     expect(route).not.toContain("getWorkspace(true)");
     expect(route).not.toContain("getWorkspace,");
+    expect(route).not.toContain("compactStoredResult");
+    expect(route).not.toContain("rewriteAppliedReceiptResult");
+    expect(route).not.toContain("legacy operation receipt");
   });
 
   test("all normal commits use row or domain subset validation with no old full-workspace fallback", async () => {
