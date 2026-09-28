@@ -594,6 +594,9 @@ export interface MastersState {
    *  for a staff member. Adjustments of type "deduction"/"advance"/"hold"
    *  reduce net pay; "overtime"/"bonus" increase it. Status starts as "draft". */
   addSalaryAdjustment: (staffId: string, type: import("../types").SalaryAdjustment["type"], amount: number, reason: string) => string;
+  /** Owner review step for draft salary adjustments. Approved adjustments are
+   *  the only adjustments included in payroll generation and salary previews. */
+  setSalaryAdjustmentStatus: (id: string, status: "approved" | "rejected") => void;
   /** F: Approve a payroll period (Owner only). Locks the period and marks every
    *  line as ready for payment. */
   approvePayrollPeriod: (id: string) => void;

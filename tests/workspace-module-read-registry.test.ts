@@ -124,6 +124,16 @@ const READ_ATTRIBUTION_ALLOWLIST: Record<string, Record<string, string>> = {
     "master.sourcePartners": "MastersModule spans source-partner/commission filter branches",
     "master.commissionRules": "MastersModule spans source-partner/commission filter branches",
   },
+  hrStaff: {
+    "master.vendors": "MastersModule staff branch shares MastersSalesOpsModule.tsx with vendor master branches",
+    "master.vendorRates": "MastersModule staff branch shares MastersSalesOpsModule.tsx with vendor-rate branches",
+    "master.sourcePartners": "MastersModule staff branch shares MastersSalesOpsModule.tsx with source-partner branches",
+    "master.commissionRules": "MastersModule staff branch shares MastersSalesOpsModule.tsx with commission branches",
+    "master.contractorRates": "MastersModule staff branch shares MastersSalesOpsModule.tsx with contractor-rate branches",
+    quotations: "MastersSalesOpsModule.tsx union: SalesOps sibling, not rendered by HR Staff",
+    invoices: "MastersSalesOpsModule.tsx union: SalesOps sibling, not rendered by HR Staff",
+    blocked: "MastersSalesOpsModule.tsx union: ObstacleThreads sibling, not rendered by HR Staff",
+  },
   vendorRates: {
     "master.contractors": "masters-v2 case unions MastersSalesOpsModule.tsx components",
     "master.sourcePartners": "masters-v2 case unions MastersSalesOpsModule.tsx components",

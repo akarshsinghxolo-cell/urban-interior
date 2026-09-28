@@ -17,6 +17,7 @@ import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { MapView } from "../MapView";
 import type { SalaryAdjustment } from "@/lib/rdash/types";
+import { hasStaffSalaryConfiguration } from "@/lib/rdash/payroll";
 function ymd(value: Date) {
     return value.toISOString().slice(0, 10);
 }
@@ -49,11 +50,14 @@ export function AttendancePayrollModule() {
     const payPayrollPeriod = useRDashStore((s) => s.payPayrollPeriod);
     const reopenPayrollPeriod = useRDashStore((s) => s.reopenPayrollPeriod);
     const addSalaryAdjustment = useRDashStore((s) => s.addSalaryAdjustment);
+    const setSalaryAdjustmentStatus = useRDashStore((s) => s.setSalaryAdjustmentStatus);
     const user = currentUser();
     const isPolicyManager = role === "Owner" || role === "Operations Manager";
     const isPayrollManager = role === "Owner" || role === "Operations Manager" || role === "Accounts / Admin";
     const isOwner = role === "Owner";
     const activeStaff = React.useMemo(() => db.master.staff.filter((staff) => staff.status === "active"), [db.master.staff]);
+    const activeStaffIds = React.useMemo(() => new Set(activeStaff.map((staff) => staff.id)), [activeStaff]);
+    const missingSalarySetup = React.useMemo(() => activeStaff.filter((staff) => !hasStaffSalaryConfiguration(staff)), [activeStaff]);
     const defaultPolicyStaff = activeStaff.find((staff) => staff.id === user.staffId) || activeStaff[0] || db.master.staff[0];
     const disposedRef = React.useRef(false);
     React.useEffect(() => { disposedRef.current = false; /* StrictMode dev remount */ return () => { disposedRef.current = true; }; }, []);  // STAGE-4-FIX: unmount guard
@@ -129,7 +133,7 @@ export function AttendancePayrollModule() {
     const todayRecord = React.useMemo(() => db.attendance.find((record) => record.staff_id === user.staffId && record.date === ymd(new Date())), [db.attendance, user.staffId]);
     const staffWithAttendance = React.useMemo(() => {
         const month = currentMonthKey();
-        return db.master.staff.map((staff) => {
+        return activeStaff.map((staff) => {
             const records = db.attendance.filter((record) => record.staff_id === staff.id);
             const monthRecords = records.filter((record) => record.date.startsWith(month));
             const weekRecords = weekDays.map((date) => records.find((record) => record.date === ymd(date)));
@@ -151,9 +155,9 @@ export function AttendancePayrollModule() {
             }
             return { ...staff, records, weekRecords, presentDays, halfDays, absentDays, totalMinutes, monthlySalary, earnedThisMonth };
         });
-    }, [db.master.staff, db.attendance, weekDays, computeStaffSalary]);
-    const totalPresent = db.attendance.filter((record) => record.status === "present" && record.date === ymd(new Date())).length;
-    const totalAbsent = db.attendance.filter((record) => record.status === "absent" && record.date === ymd(new Date())).length;
+    }, [activeStaff, db.attendance, weekDays, computeStaffSalary]);
+    const totalPresent = db.attendance.filter((record) => record.status === "present" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
+    const totalAbsent = db.attendance.filter((record) => record.status === "absent" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
     const totalPayroll = staffWithAttendance.reduce((sum, staff) => sum + staff.monthlySalary, 0);
     const totalEarned = staffWithAttendance.reduce((sum, staff) => sum + staff.earnedThisMonth, 0);
     const capturePosition = async (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {
@@ -286,11 +290,25 @@ export function AttendancePayrollModule() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Staff" value={db.master.staff.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
+        <MetricCard label="Active staff" value={activeStaff.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
         <MetricCard label="Present today" value={totalPresent} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
         <MetricCard label="Absent today" value={totalAbsent} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
-        <MetricCard label="Monthly payroll" value={formatINRShort(totalPayroll)} tone="warning" icon={<DollarSign className="h-4 w-4"/>}/>
+        <MetricCard label="Configured payroll" value={formatINRShort(totalPayroll)} tone="warning" icon={<DollarSign className="h-4 w-4"/>}/>
       </div>
+
+      {missingSalarySetup.length > 0 && isPayrollManager && (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-[var(--panel-radius)] border border-warning/30 bg-warning/[0.06] px-4 py-3">
+          <div>
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-warning"><AlertTriangle className="h-4 w-4"/> Salary setup required</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {missingSalarySetup.length} active staff member{missingSalarySetup.length === 1 ? "" : "s"} have no monthly salary or daily wage. Payroll generation is blocked until HR completes those shared Staff profiles.
+            </p>
+          </div>
+          <span className="rounded-full border border-warning/30 bg-background px-2.5 py-1 text-[10px] font-semibold text-warning">
+            {missingSalarySetup.slice(0, 3).map((staff) => staff.name).join(", ")}{missingSalarySetup.length > 3 ? ` +${missingSalarySetup.length - 3}` : ""}
+          </span>
+        </div>
+      )}
 
       <section className="rounded-[var(--panel-radius)] border border-primary/25 bg-primary/[0.035] shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-primary/15 px-4 py-3">
@@ -394,9 +412,18 @@ export function AttendancePayrollModule() {
       {/* F: Salary adjustments — overtime / advance / deduction / bonus / hold. */}
       {isPayrollManager && <SalaryAdjustmentsSection
         db={db}
+        isOwner={isOwner}
         onAdd={(staffId, type, amount, reason) => {
-            try { addSalaryAdjustment(staffId, type, amount, reason); toast.success("Adjustment recorded"); }
+            try { addSalaryAdjustment(staffId, type, amount, reason); toast.success("Adjustment recorded for review"); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not add adjustment"); }
+        }}
+        onReview={(id, status) => {
+            try {
+              setSalaryAdjustmentStatus(id, status);
+              toast.success(status === "approved" ? "Adjustment approved" : "Adjustment rejected");
+            } catch (error) {
+              toast.error(error instanceof Error ? error.message : "Adjustment review failed");
+            }
         }}
       />}
 
@@ -486,11 +513,11 @@ function PayrollPeriodsSection({ db, isOwner, onGenerate, onApprove, onPay, onRe
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary"/> Payroll periods</h3>
-          <p className="text-[11px] text-muted-foreground">Generate, approve, and pay monthly payroll. Lines auto-created from computeStaffSalary.</p>
+          <p className="text-[11px] text-muted-foreground">Generate or refresh draft payroll, then approve and pay it. Approved/paid periods stay locked.</p>
         </div>
-        <Button size="sm" onClick={onGenerate}><Plus className="mr-1 h-3.5 w-3.5"/> Generate payroll (this month)</Button>
+        <Button size="sm" onClick={onGenerate}><Plus className="mr-1 h-3.5 w-3.5"/> Generate / refresh payroll</Button>
       </div>
-      {periods.length === 0 ? (<p className="px-4 py-6 text-center text-xs text-muted-foreground">No payroll periods yet. Click "Generate payroll" to create one for the current month.</p>) : (<div className="divide-y divide-border">
+      {periods.length === 0 ? (<p className="px-4 py-6 text-center text-xs text-muted-foreground">No payroll periods yet. Generate payroll after salary setup is complete.</p>) : (<div className="divide-y divide-border">
         {periods.map((p) => {
             const periodLines = lines.filter((l) => l.payroll_period_id === p.id);
             const totalNet = periodLines.reduce((n, l) => n + l.net_payable, 0);
@@ -516,15 +543,17 @@ function PayrollPeriodsSection({ db, isOwner, onGenerate, onApprove, onPay, onRe
 }
 
 // F: Salary adjustments panel — add overtime / advance / deduction / bonus / hold.
-function SalaryAdjustmentsSection({ db, onAdd }: {
+function SalaryAdjustmentsSection({ db, isOwner, onAdd, onReview }: {
     db: import("@/lib/rdash/types").RDashDatabase;
+    isOwner: boolean;
     onAdd: (staffId: string, type: SalaryAdjustment["type"], amount: number, reason: string) => void;
+    onReview: (id: string, status: "approved" | "rejected") => void;
 }) {
     const [staffId, setStaffId] = React.useState<string>(db.master.staff[0]?.id || "");
     const [type, setType] = React.useState<SalaryAdjustment["type"]>("overtime");
     const [amount, setAmount] = React.useState<string>("");
     const [reason, setReason] = React.useState("");
-    const adjustments = (db.salaryAdjustments || []).slice().slice(0, 10);
+    const adjustments = (db.salaryAdjustments || []).slice().sort((a, b) => b.adjustment_date.localeCompare(a.adjustment_date)).slice(0, 20);
     const typeTone: Record<string, string> = {
         overtime: "bg-success/10 text-success border-success/20",
         bonus: "bg-success/10 text-success border-success/20",
@@ -571,9 +600,17 @@ function SalaryAdjustmentsSection({ db, onAdd }: {
                   <p className="truncate font-medium">{staff?.name || "Unknown"} · <span className="capitalize">{a.type}</span></p>
                   <p className="truncate text-[10px] text-muted-foreground">{a.reason}</p>
                 </div>
-                <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", typeTone[a.type] || typeTone.hold)}>
-                  {formatINR(a.amount)} · {a.status}
-                </span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", typeTone[a.type] || typeTone.hold)}>
+                    {formatINR(a.amount)} · {a.status}
+                  </span>
+                  {isOwner && a.status === "draft" && (
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => onReview(a.id, "approved")}>Approve</Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-[10px]" onClick={() => onReview(a.id, "rejected")}>Reject</Button>
+                    </>
+                  )}
+                </div>
               </div>);
           })}
         </div>
