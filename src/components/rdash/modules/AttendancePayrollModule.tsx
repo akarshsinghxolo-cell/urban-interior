@@ -513,11 +513,11 @@ function PayrollPeriodsSection({ db, isOwner, onGenerate, onApprove, onPay, onRe
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2">
         <div>
           <h3 className="flex items-center gap-1.5 text-sm font-semibold"><Wallet className="h-4 w-4 text-primary"/> Payroll periods</h3>
-          <p className="text-[11px] text-muted-foreground">Generate, approve, and pay monthly payroll. Lines auto-created from computeStaffSalary.</p>
+          <p className="text-[11px] text-muted-foreground">Generate or refresh draft payroll, then approve and pay it. Approved/paid periods stay locked.</p>
         </div>
-        <Button size="sm" onClick={onGenerate}><Plus className="mr-1 h-3.5 w-3.5"/> Generate payroll (this month)</Button>
+        <Button size="sm" onClick={onGenerate}><Plus className="mr-1 h-3.5 w-3.5"/> Generate / refresh payroll</Button>
       </div>
-      {periods.length === 0 ? (<p className="px-4 py-6 text-center text-xs text-muted-foreground">No payroll periods yet. Click "Generate payroll" to create one for the current month.</p>) : (<div className="divide-y divide-border">
+      {periods.length === 0 ? (<p className="px-4 py-6 text-center text-xs text-muted-foreground">No payroll periods yet. Generate payroll after salary setup is complete.</p>) : (<div className="divide-y divide-border">
         {periods.map((p) => {
             const periodLines = lines.filter((l) => l.payroll_period_id === p.id);
             const totalNet = periodLines.reduce((n, l) => n + l.net_payable, 0);
