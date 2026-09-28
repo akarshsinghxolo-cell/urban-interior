@@ -834,11 +834,12 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             assertRole(get().currentUser().role, ["Owner", "Operations Manager", "Accounts / Admin"], "generate payroll");
             const state = get();
             const actor = state.currentUser();
-            // Reject duplicate periods for the same month/year (status != cancelled).
+            // A generated period is a working draft and may be refreshed after HR
+            // fixes salary setup or approves adjustments. Approved/paid payroll is locked.
             const existing = (state.db.payrollPeriods || []).find((p: PayrollPeriod) => p.month === month && p.year === year && p.status !== "cancelled");
-            if (existing)
-                throw new Error(`Payroll for ${month}/${year} already exists (status: ${existing.status}). Reopen it instead.`);
-            const id = genId("payroll");
+            if (existing && existing.status !== "generated")
+                throw new Error(`Payroll for ${month}/${year} is ${existing.status} and cannot be regenerated. Reopen it first.`);
+            const id = existing?.id || genId("payroll");
             const now = nowIso();
             const yearMonth = `${year}-${String(month).padStart(2, "0")}`;
             // Generate one payrollLine per active staff member using the same
@@ -891,18 +892,23 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             commitState((s: any) => ({
                 db: {
                     ...s.db,
-                    payrollPeriods: [period, ...(s.db.payrollPeriods || [])],
-                    payrollLines: [...lines, ...(s.db.payrollLines || [])],
+                    payrollPeriods: existing
+                        ? (s.db.payrollPeriods || []).map((candidate: PayrollPeriod) => candidate.id === id ? period : candidate)
+                        : [period, ...(s.db.payrollPeriods || [])],
+                    payrollLines: [
+                        ...lines,
+                        ...(s.db.payrollLines || []).filter((candidate: PayrollLine) => candidate.payroll_period_id !== id),
+                    ],
                 },
             }));
             get().logAudit({
                 actor: actor.name,
                 actor_role: actor.role,
-                action: `Generated payroll for ${month}/${year} with ${lines.length} staff line(s).`,
+                action: `${existing ? "Regenerated" : "Generated"} payroll for ${month}/${year} with ${lines.length} staff line(s).`,
                 entity_type: "payroll_period",
                 entity_id: id,
                 entity_label: `${month}/${year}`,
-                kind: "create",
+                kind: existing ? "update" : "create",
             });
             return id;
         },
