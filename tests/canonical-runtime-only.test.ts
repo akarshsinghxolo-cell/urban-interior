@@ -11,6 +11,22 @@ describe("canonical runtime only", () => {
     expect(existsSync(join(root, "src/lib/rdash/staff-reference-labels.ts"))).toBe(false);
     expect(existsSync(join(root, "src/components/rdash/CustomerWorkCaptureDialog.tsx"))).toBe(false);
     expect(existsSync(join(root, "src/components/rdash/WorkRequiredCreateDialog.tsx"))).toBe(false);
+    expect(existsSync(join(root, "src/lib/rdash/store/slices/quotations-core.ts"))).toBe(false);
+  });
+
+  test("keeps quotations and data-layer configuration canonical", () => {
+    const quotations = source("src/lib/rdash/store/slices/quotations.ts");
+    const health = source("src/app/api/health/config/route.ts");
+    const signIn = source("src/app/signin/page.tsx");
+
+    expect(quotations).not.toContain("Compatibility facade");
+    expect(quotations).not.toContain("createCoreQuotationsSlice");
+    expect(quotations).toContain("Customer-level quotation draft created without a Site");
+    expect(health).toContain("isSupabaseConfigured");
+    expect(health).toContain('dataLayer: "supabase"');
+    expect(health).not.toContain("in-memory");
+    expect(signIn).not.toContain("in-memory-fallback");
+    expect(signIn).not.toContain('"In-memory"');
   });
 
   test("uses canonical workspace routes only", () => {
