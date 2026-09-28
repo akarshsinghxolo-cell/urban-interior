@@ -89,7 +89,6 @@ export function putCollectionRows(
 ): void {
   const decoded = rows.map((row) => {
     if (typeof row.revision === "number") {
-      rowVersions[row.id] = row.revision;
       rowVersions[`${collection}:${row.id}`] = row.revision;
     }
     return decodeRow(row);
