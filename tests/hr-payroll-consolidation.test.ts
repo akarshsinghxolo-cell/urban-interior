@@ -59,15 +59,15 @@ describe("HR payroll consolidation", () => {
   });
 
   test("HR root reuses Staff Operations instead of maintaining a second staff board", async () => {
-    const router = await testFile("src/components/rdash/WorkspaceModuleRouter.tsx");
+    const router = await testFile("src/components/rdash/WorkspaceModuleRouter.tsx").text();
     expectTokens(router, ['case "staff-board": return <MastersModule submodule="staff" />;']);
     expectNoTokens(router, ["StaffBoardHistoryModule", "<StaffBoardModule"]);
   });
 
   test("salary and attendance modules share payroll helpers and approval workflow", async () => {
-    const salary = await testFile("src/components/rdash/modules/StaffSalaryModule.tsx");
-    const attendance = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx");
-    const masters = await testFile("src/lib/rdash/store/slices/masters.ts");
+    const salary = await testFile("src/components/rdash/modules/StaffSalaryModule.tsx").text();
+    const attendance = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx").text();
+    const masters = await testFile("src/lib/rdash/store/slices/masters.ts").text();
 
     expectTokens(salary, ["payrollLineForStaffMonth", "summarizeSalaryAdjustments", "StaffEditDialog"]);
     expectTokens(attendance, ["hasStaffSalaryConfiguration", "setSalaryAdjustmentStatus", "Salary setup required"]);
