@@ -35,7 +35,9 @@ describe("canonical runtime only", () => {
     const delta = source("src/lib/rdash/workspace-delta.ts");
     const rawStore = source("src/lib/rdash/raw-store.ts");
     const commitRoute = source("src/app/api/operations/commit/route.ts");
+    const qaSupabase = source("scripts/qa-mock-supabase.ts");
     const storage = source("src/lib/rdash/storage.ts");
+    const migration = source("supabase/migrations/20260928092000_canonicalize_workspace_row_version_keys.sql");
 
     expect(commitRest).not.toContain("rowVersions[row.id]");
     expect(rowVersions).not.toContain("keys.add(id)");
@@ -43,8 +45,13 @@ describe("canonical runtime only", () => {
     expect(rawStore).toContain("touchedVersionKeys");
     expect(rawStore).not.toContain("rowVersionsCache[id]");
     expect(commitRoute).not.toContain("touched.add(id)");
+    expect(qaSupabase).not.toContain("const plain = expectedRowVersions[rowId]");
+    expect(qaSupabase).toContain("INVALID_ROW_VERSION_KEY");
     expect(storage).not.toContain('accountIds.add("local")');
     expect(storage).not.toContain("inferStoragePurpose");
+    expect(migration).toContain("INVALID_ROW_VERSION_KEY");
+    expect(migration).not.toContain("when p_expected_row_versions ? row_id");
+    expect(migration).not.toContain("jsonb_build_object(row_id, new_row_revision)");
   });
 
   test("uses canonical workspace routes only", () => {
