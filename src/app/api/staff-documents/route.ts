@@ -47,7 +47,8 @@ async function assetForId(assetId: string) {
 function staffIdFromAsset(asset: { data: Record<string, unknown> }) {
   const tags = Array.isArray(asset.data.tags) ? asset.data.tags.map(String) : [];
   if (!tags.includes("staff-document")) return null;
-  return tags.find((tag) => tag.startsWith("staff-")) || null;
+  const staffTag = tags.find((tag) => tag.startsWith("staff:"));
+  return staffTag ? staffTag.slice("staff:".length) : null;
 }
 
 export async function POST(request: NextRequest) {
