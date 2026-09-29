@@ -15,14 +15,21 @@ export function createDefaultAttendancePolicy(): AttendancePolicy {
         auto_exit_dwell_seconds: 180,
         auto_exit_buffer_m: 60,
         auto_absent_enabled: true,
-        auto_absent_after: "11:00",
+        auto_absent_after_minutes: 90,
         late_grace_minutes: 20,
         absent_deduction_enabled: true,
         absent_deduction_days: 1,
     };
 }
 export function normalizeAttendancePolicy(policy: Partial<AttendancePolicy> | null | undefined): AttendancePolicy {
-    return { ...createDefaultAttendancePolicy(), ...(policy || {}) };
+    const merged = { ...createDefaultAttendancePolicy(), ...(policy || {}) };
+    const autoAbsentMinutes = Number(merged.auto_absent_after_minutes);
+    return {
+        ...merged,
+        auto_absent_after_minutes: Number.isFinite(autoAbsentMinutes) && autoAbsentMinutes >= 0
+            ? Math.round(autoAbsentMinutes)
+            : createDefaultAttendancePolicy().auto_absent_after_minutes,
+    };
 }
 export function attendancePolicyForStaff(db: Pick<RDashDatabase, "master">, staffId: string): AttendancePolicy {
     const staff = db.master.staff.find((row) => row.id === staffId);
