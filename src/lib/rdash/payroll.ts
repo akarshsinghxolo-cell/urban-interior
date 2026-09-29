@@ -25,14 +25,13 @@ export function configuredStaffBaseSalary(
   if (salaryType === "daily_wage") {
     return Number.isFinite(daily) && daily > 0 ? money(daily * daysInPayrollMonth(yearMonth)) : 0;
   }
-  if (Number.isFinite(monthly) && monthly > 0) return money(monthly);
-  return Number.isFinite(daily) && daily > 0 ? money(daily * daysInPayrollMonth(yearMonth)) : 0;
+  return Number.isFinite(monthly) && monthly > 0 ? money(monthly) : 0;
 }
 
 export function hasStaffSalaryConfiguration(staff: Pick<Staff, "monthly_salary" | "daily_wage" | "salary_type">): boolean {
   const salaryType = staff.salary_type || "monthly";
   if (salaryType === "daily_wage") return Number(staff.daily_wage || 0) > 0;
-  return Number(staff.monthly_salary || 0) > 0 || Number(staff.daily_wage || 0) > 0;
+  return Number(staff.monthly_salary || 0) > 0;
 }
 
 export interface SalaryAdjustmentSummary {
