@@ -15,7 +15,7 @@ export function createDefaultAttendancePolicy(): AttendancePolicy {
         auto_exit_dwell_seconds: 180,
         auto_exit_buffer_m: 60,
         auto_absent_enabled: true,
-        auto_absent_after: "11:00",
+        auto_absent_after_minutes: 90,
         late_grace_minutes: 20,
         absent_deduction_enabled: true,
         absent_deduction_days: 1,

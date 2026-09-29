@@ -51,20 +51,32 @@ export function diffWorkspaceOperations(before: RDashDatabase, after: RDashDatab
   return ops;
 }
 
-function applyRows<T extends { id: string }>(rows: T[], operation: WorkspaceOperation): T[] {
+function applyRows<T extends { id: string }>(
+  rows: T[],
+  operation: WorkspaceOperation,
+  mergeProjectedFields = false,
+): T[] {
   const deleteIds = new Set(operation.deleteIds || []);
   const byId = new Map(rows.filter((row) => !deleteIds.has(row.id)).map((row) => [row.id, row]));
-  for (const row of (operation.upsert || []) as T[]) byId.set(row.id, row);
+  for (const row of (operation.upsert || []) as T[]) {
+    const current = byId.get(row.id);
+    byId.set(row.id, mergeProjectedFields && current ? { ...current, ...row } : row);
+  }
   return Array.from(byId.values());
 }
 
-export function applyWorkspaceOperations(base: RDashDatabase, operations: WorkspaceOperation[]): RDashDatabase {
+export function applyWorkspaceOperations(
+  base: RDashDatabase,
+  operations: WorkspaceOperation[],
+  options: { mergeProjectedStaff?: boolean } = {},
+): RDashDatabase {
   const next = structuredClone(base) as RDashDatabase;
   for (const operation of operations) {
     if (operation.collection.startsWith("master.")) {
       const key = operation.collection.slice("master.".length) as keyof Master;
       const current = Array.isArray(next.master[key]) ? next.master[key] as Array<{ id: string }> : [];
-      (next.master as unknown as Record<string, unknown>)[key] = applyRows(current, operation);
+      const mergeProjectedFields = operation.collection === "master.staff" && options.mergeProjectedStaff === true;
+      (next.master as unknown as Record<string, unknown>)[key] = applyRows(current, operation, mergeProjectedFields);
       continue;
     }
     const key = operation.collection as keyof RDashDatabase;

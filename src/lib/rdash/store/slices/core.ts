@@ -115,8 +115,8 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             return { db: { ...s.db, staffRolePermissions: current.filter((entry) => entry.id !== id) } };
         }),
         registerStaffDocument: (input) => commitState((s: any) => {
-            if (!input.fileUrl?.trim().startsWith("https://drive.google.com/")) {
-                throw new Error("Staff document file must be a Google Drive web link.");
+            if (!input.storageBucket?.trim() || !input.storagePath?.trim() || !input.webViewLink?.trim()) {
+                throw new Error("Uploaded staff document storage metadata is incomplete.");
             }
             const now = nowIso();
             const fileAssetId = genId("staff-file");
@@ -126,10 +126,12 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
                 file_name: input.fileName,
                 mime_type: input.mimeType,
                 kind: "document",
-                web_view_link: input.fileUrl.trim(),
+                web_view_link: input.webViewLink.trim(),
                 file_size_bytes: input.fileSizeBytes,
-                storage_provider: "google_drive",
-                storage_mode: "external_reference",
+                storage_provider: "supabase_storage",
+                storage_bucket: input.storageBucket.trim(),
+                storage_path: input.storagePath.trim(),
+                storage_mode: "managed",
                 sync_status: "uploaded",
                 tags: ["staff-document", input.staffId, input.documentType].filter(Boolean),
                 status: "active",
@@ -140,6 +142,7 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
                 id: documentId,
                 staff_id: input.staffId,
                 document_type: input.documentType,
+                label: input.label?.trim() || undefined,
                 document_no: input.documentNo?.trim() || undefined,
                 file_asset_id: fileAssetId,
                 status: "pending",

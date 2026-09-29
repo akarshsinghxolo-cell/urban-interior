@@ -53,7 +53,7 @@ export function uploadPurposeAllowedForEntity(
   purpose: UploadPurpose,
 ): boolean {
   if (entityType === "general") {
-    return ["general_document", "staff_document", "import_source", "catalogue", "reference_media", "diagnostic"].includes(purpose);
+    return ["general_document", "import_source", "catalogue", "reference_media", "diagnostic"].includes(purpose);
   }
   // Communication compose queues the file against the Customer first; after
   // send, the same FileAsset is also linked to the Communication record.

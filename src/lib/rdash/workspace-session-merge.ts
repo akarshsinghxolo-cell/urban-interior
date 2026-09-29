@@ -66,6 +66,19 @@ function representedCollections(database: RDashDatabase): string[] {
   return [...ALL_COLLECTIONS];
 }
 
+function mergeProjectedRows(
+  current: Array<Record<string, unknown>>,
+  incoming: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const byId = new Map(current.map((row) => [String(row.id || ""), row]));
+  for (const row of incoming) {
+    const id = String(row.id || "");
+    if (!id) continue;
+    byId.set(id, byId.has(id) ? { ...byId.get(id), ...row } : row);
+  }
+  return [...byId.values()];
+}
+
 function collectionMergesPartially(database: RDashDatabase, collection: string): boolean {
   const incomingMeta = metadata(database);
   const strategy = String(incomingMeta._workspace_read_strategy || "");
@@ -219,11 +232,16 @@ export function mergeWorkspaceSnapshot(
     const incomingRows = rowsFor(incoming, collection);
     const mergePartial = collectionMergesPartially(incoming, collection);
 
+    const projectedStaff = collection === "master.staff"
+      && !bootstrap
+      && String(incomingMeta._workspace_staff_projection || "") !== "full";
     setRows(
       next,
       collection,
       mergePartial
-        ? mergeRows(rowsFor(next, collection), incomingRows)
+        ? projectedStaff
+          ? mergeProjectedRows(rowsFor(next, collection), incomingRows)
+          : mergeRows(rowsFor(next, collection), incomingRows)
         : structuredClone(incomingRows),
     );
   }

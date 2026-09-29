@@ -27,14 +27,7 @@ function assertUploadTargetReady(
   if (!uploadPurposeAllowedForEntity(targetEntityType, purpose)) {
     throw new Error(`TARGET_NOT_READY:Upload purpose "${purpose}" does not belong to ${targetEntityType}.`);
   }
-  if (targetEntityType === "general") {
-    if (purpose === "staff_document") {
-      if (!db.master.staff.some((row) => row.id === targetEntityId)) {
-        throw new Error("TARGET_NOT_READY:The related Staff record is not synchronized yet.");
-      }
-    }
-    return;
-  }
+  if (targetEntityType === "general") return;
   // The canonical resolver validates both existence and parent relationships.
   // Keep upload ownership in one place rather than duplicating a second 41-case
   // entity switch here.

@@ -103,22 +103,19 @@ describe("human-readable Google Drive folder names", () => {
       .toEqual(["Procurement", "PO-2026-118 - Shree Plywood", "Purchase Order"]);
   });
 
-  test("uses Vendor, Contractor and Staff names while IDs remain hidden in canonical keys", () => {
+  test("uses Vendor and Contractor names while IDs remain hidden in canonical keys", () => {
     const db = namingFixture();
     const vendor = destinationSegments(db, "vendor_document", "vendor", "vendor-internal-d51f9981");
     const contractor = destinationSegments(db, "contractor_document", "contractor", "contractor-internal-91bdab41");
-    const staff = destinationSegments(db, "staff_document", "general", "staff-internal-049afb91");
 
     expect(names(vendor)).toEqual(["Vendors", "Shree Plywood - Lucknow", "Business Documents"]);
     expect(names(contractor)).toEqual(["Contractors", "Ravi Interiors - False Ceiling", "Business Documents"]);
-    expect(names(staff)).toEqual(["Staff", "Neha Singh", "Documents"]);
 
     expect(vendor[1]?.key).toBe("vendor:vendor-internal-d51f9981");
     expect(contractor[1]?.key).toBe("contractor:contractor-internal-91bdab41");
-    expect(staff[1]?.key).toBe("staff:staff-internal-049afb91");
 
-    for (const segment of [...vendor, ...contractor, ...staff]) {
-      expect(segment.name).not.toMatch(/\b(?:CUST|SITE|VEND|CONT|STAFF)-/);
+    for (const segment of [...vendor, ...contractor]) {
+      expect(segment.name).not.toMatch(/\b(?:CUST|SITE|VEND|CONT)-/);
       expect(segment.name).not.toContain("internal-");
     }
   });

@@ -51,7 +51,6 @@ export type UploadPurpose =
   | "blocked_evidence"
   | "thread_attachment"
   | "general_document"
-  | "staff_document"
   | "communication_attachment"
   | "import_source"
   | "catalogue"

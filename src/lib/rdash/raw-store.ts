@@ -35,6 +35,7 @@ import { createTasksSlice } from "./store/slices/tasks";
 import { createCrmSlice } from "./store/slices/crm";
 import { createUISlice } from "./store/slices/ui";
 import { createCoreSlice } from "./store/slices/core";
+import { canonicalizeStaffSalaryComputation } from "./staff-salary-canonical";
 // Boundary policies (contractor-store-policy) compose several primitive
 // actions into ONE workspace save via this runner; it is created inside the
 // store closure and attached to the store right after create() below.
@@ -631,7 +632,12 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         // ── sendComm moved to threads slice (Phase 3b) ──
         // ── Masters slice: attendance actions (Phase 3d, part 2) ──
         ...((() => {
-            const { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, setSalaryAdjustmentStatus, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addCommissionRule, addSourcePartner } = createMastersSlice(ctx);
+            const { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary: baseComputeStaffSalary, createPayrollPeriod, addSalaryAdjustment, setSalaryAdjustmentStatus, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addCommissionRule, addSourcePartner } = createMastersSlice(ctx);
+            const computeStaffSalary = (staffId: string, yearMonth: string) => {
+                const staff = get().db.master.staff.find((row) => row.id === staffId);
+                if (!staff) throw new Error("Staff not found.");
+                return canonicalizeStaffSalaryComputation(baseComputeStaffSalary(staffId, yearMonth), staff, yearMonth);
+            };
             return { updateAttendancePolicy, checkInAttendance, checkOutAttendance, runAttendanceReconciliation, regularizeAttendance, computeStaffSalary, createPayrollPeriod, addSalaryAdjustment, setSalaryAdjustmentStatus, approvePayrollPeriod, payPayrollPeriod, reopenPayrollPeriod, addCommissionRule, addSourcePartner };
         })()),
         // ── finance config actions (toggleCommercialTerm, toggleTaxConfig, toggleValidityConfig,

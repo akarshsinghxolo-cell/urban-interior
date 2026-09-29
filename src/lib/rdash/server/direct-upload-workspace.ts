@@ -250,9 +250,6 @@ function initialPlan(
   if (collection) rowsByCollection[collection] = [targetEntityId];
   const nestedParentCollection = NESTED_TARGET_PARENT_COLLECTION[targetEntityType];
   if (nestedParentCollection) fullCollections.add(nestedParentCollection);
-  if (targetEntityType === "general" && purpose === "staff_document") {
-    rowsByCollection["master.staff"] = [targetEntityId];
-  }
   return {
     fullCollections: [...fullCollections],
     rowsByCollection,

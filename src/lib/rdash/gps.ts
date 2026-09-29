@@ -105,6 +105,10 @@ export function minutesLate(timestamp: string, standardCheckInTime: string, grac
 export function dateFromIso(value: string) {
     return indiaDate(value);
 }
-export function isAtOrAfterTime(now: Date, time: string) {
-    return now.getTime() >= indiaDateTimeMs(indiaDate(now), time || "11:00");
+export function scheduledTimePlusMinutes(now: Date, time: string, offsetMinutes: number) {
+    const offset = Number.isFinite(offsetMinutes) ? Math.max(0, Math.round(offsetMinutes)) : 0;
+    return indiaDateTimeMs(indiaDate(now), time || "09:30") + offset * 60_000;
+}
+export function isAtOrAfterMinutesFromTime(now: Date, time: string, offsetMinutes: number) {
+    return now.getTime() >= scheduledTimePlusMinutes(now, time, offsetMinutes);
 }

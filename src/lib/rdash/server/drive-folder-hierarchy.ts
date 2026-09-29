@@ -383,15 +383,5 @@ export function destinationSegments(
     if (purchaseOrder) return [...purchaseOrderRoot(), leaf("Obstacles", `purchase_order:${purchaseOrder.id}:obstacles`)];
     targetNotReady("The Obstacle has no routable Customer, Site, Work Order, or Purchase Order.");
   }
-  if (purpose === "staff_document") {
-    const staff = db.master.staff.find((row) => row.id === entityId);
-    if (!staff) targetNotReady("The related Staff record is not synchronized yet.");
-    return [
-      leaf("Staff", "root:staff"),
-      entityFolder(staff.name, undefined, "Staff", `staff:${staff.id}`),
-      leaf("Documents", `staff:${staff.id}:documents`),
-    ];
-  }
-
   throw new Error(`No Drive destination is configured for upload purpose ${purpose}.`);
 }

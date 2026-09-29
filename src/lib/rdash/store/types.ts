@@ -53,7 +53,7 @@ export interface CoreState {
   upsertStaffRolePermission: (row: StaffRolePermission) => void;
   updateStaffRolePermission: (id: string, patch: Partial<Omit<StaffRolePermission, "id" | "role_key" | "module_key">>) => void;
   removeStaffRolePermission: (id: string) => void;
-  registerStaffDocument: (input: { staffId: string; documentType: StaffDocument["document_type"]; documentNo?: string; fileName: string; fileUrl?: string; mimeType?: string; fileSizeBytes?: number }) => void;
+  registerStaffDocument: (input: { staffId: string; documentType: StaffDocument["document_type"]; label?: string; documentNo?: string; fileName: string; mimeType?: string; fileSizeBytes?: number; storageBucket: string; storagePath: string; webViewLink: string }) => void;
   updateStaffDocument: (id: string, patch: Partial<Omit<StaffDocument, "id" | "staff_id" | "created_at">>) => void;
   removeStaffDocument: (id: string) => void;
   logAudit: (entry: {

@@ -169,7 +169,7 @@ export function WorkspaceFoundationSync(): null {
           );
 
           if (deltaHasRows(delta)) {
-            const applied = applyWorkspaceDelta(latest.db, delta);
+            const applied = applyWorkspaceDelta(latest.db, delta, { mergeProjectedStaff: true });
             const hydrated = latest.hydrateSecureWorkspace({
               db: applied.database,
               revision: delta.revision,

@@ -122,9 +122,10 @@ function workspaceDeltaOperations(
 export function applyWorkspaceDelta(
   database: RDashDatabase,
   delta: WorkspaceDeltaPayload,
+  options: { mergeProjectedStaff?: boolean } = {},
 ): { database: RDashDatabase; operations: WorkspaceOperation[] } {
   const operations = workspaceDeltaOperations(delta, loadedWorkspaceCollections(database));
-  const next = operations.length ? applyWorkspaceOperations(database, operations) : database;
+  const next = operations.length ? applyWorkspaceOperations(database, operations, options) : database;
   return {
     database: next,
     operations,
