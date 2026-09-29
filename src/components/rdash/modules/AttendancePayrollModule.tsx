@@ -370,7 +370,7 @@ export function AttendancePayrollModule() {
           <PolicyNumber label="Late grace period" suffix="min" value={policy.late_grace_minutes} min={0} disabled={!isPolicyManager} onChange={(value) => updateSelectedPolicy({ late_grace_minutes: value })}/>
           <PolicyNumber label="Half-day threshold" suffix="min" value={policy.minimum_half_day_minutes} min={1} disabled={!isPolicyManager} onChange={(value) => updateSelectedPolicy({ minimum_half_day_minutes: value })}/>
           <label className="grid gap-1.5"><span className="text-xs font-medium text-foreground">Scheduled check-in time</span><Input type="time" value={policy.standard_check_in_time} disabled={!isPolicyManager} onChange={(event) => updateSelectedPolicy({ standard_check_in_time: event.target.value })}/></label>
-          <label className="grid gap-1.5"><span className="text-xs font-medium text-foreground">Auto-absent after</span><Input type="time" value={policy.auto_absent_after} disabled={!isPolicyManager || !policy.auto_absent_enabled} onChange={(event) => updateSelectedPolicy({ auto_absent_after: event.target.value })}/><span className="text-[10px] text-muted-foreground">Runs when this operational workspace opens or when Operations runs reconciliation.</span></label>
+          <PolicyNumber label="Auto-absent after" suffix="min" value={policy.auto_absent_after_minutes} min={0} disabled={!isPolicyManager || !policy.auto_absent_enabled} onChange={(value) => updateSelectedPolicy({ auto_absent_after_minutes: value })}/>
         </div>
       </section>
 

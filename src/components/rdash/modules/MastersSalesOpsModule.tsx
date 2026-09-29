@@ -9,7 +9,7 @@ import { BulkActionBar, SelectCheckbox, type BulkAction } from "../BulkActions";
 import { EntityFormDialog } from "../EntityFormDialog";
 import { StaffEditDialog } from "../StaffEditDialog";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, invoiceStatusStyle } from "@/lib/rdash/format";
-import { Building2, Users, HardHat, HandCoins, Star, Phone, MapPin, TrendingUp, AlertTriangle, CheckCircle2, Search, Plus, ArrowRight, Pencil, CheckSquare, Wallet, Bell, Clock, ShieldCheck, FileUp, FileText, Trash2, CheckCircle, XCircle, } from "lucide-react";
+import { Building2, Users, HardHat, HandCoins, Star, Phone, MapPin, TrendingUp, AlertTriangle, CheckCircle2, Search, Plus, ArrowRight, Pencil, CheckSquare, Wallet, Bell, Clock, ShieldCheck, Trash2, } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,9 +17,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { toast } from "sonner";
 import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermissionRecord, type StaffRoleKey } from "@/lib/rdash/staff-operations";
-import type { StaffDocument } from "@/lib/rdash/types";
 import { latestQuotationRevisions } from "@/lib/rdash/metrics";
 import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
+import { configuredStaffBaseSalary } from "@/lib/rdash/payroll";
 export function MastersModule({ submodule }: {
     submodule: string;
 }) {
@@ -36,13 +36,9 @@ export function MastersModule({ submodule }: {
     const [contractorsTab, setContractorsTab] = React.useState<"contractors" | "rates">("contractors");
     const [permissionRole, setPermissionRole] = React.useState<StaffRoleKey>("OPERATIONS_MANAGER");
     const [permissionModuleKey, setPermissionModuleKey] = React.useState("");
-    const [docDraft, setDocDraft] = React.useState<{ staffId: string; documentType: StaffDocument["document_type"]; documentNo: string; fileName: string; fileUrl: string; mimeType?: string; fileSizeBytes?: number }>({ staffId: "", documentType: "photo", documentNo: "", fileName: "", fileUrl: "" });
     const upsertStaffRolePermission = useRDashStore((s) => s.upsertStaffRolePermission);
     const updateStaffRolePermission = useRDashStore((s) => s.updateStaffRolePermission);
     const removeStaffRolePermission = useRDashStore((s) => s.removeStaffRolePermission);
-    const registerStaffDocument = useRDashStore((s) => s.registerStaffDocument);
-    const updateStaffDocument = useRDashStore((s) => s.updateStaffDocument);
-    const removeStaffDocument = useRDashStore((s) => s.removeStaffDocument);
     const addSourcePartner = useRDashStore((s) => s.addSourcePartner);
     const addCommissionRule = useRDashStore((s) => s.addCommissionRule);
     // F.12: Add-dialog state for master entities that were previously read-only
@@ -128,13 +124,13 @@ export function MastersModule({ submodule }: {
     }
     if (effectiveSubmodule === "staff") {
         const staff = db.master.staff.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()) || s.role.toLowerCase().includes(q.toLowerCase()));
+        const now = new Date();
+        const payrollMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const configuredPayroll = db.master.staff.reduce((sum, member) => sum + configuredStaffBaseSalary(member, payrollMonth), 0);
         const permissions = ((db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || []);
         const roleCoverage = Array.from(new Set(permissions.map((p) => p.role_key))).length;
         const selectedPermissions = permissions.filter((p) => p.role_key === permissionRole).sort((a, b) => a.module_label.localeCompare(b.module_label));
         const missingModules = STAFF_MODULES.filter(([moduleKey]) => !selectedPermissions.some((p) => p.module_key === moduleKey));
-        const staffDocuments = ((db as unknown as { staffDocuments?: StaffDocument[] }).staffDocuments || []);
-        const fileAssetsById = new Map<string, any>((db.master.fileAssets || []).map((file: any) => [file.id, file]));
-        const staffById = new Map<string, any>(db.master.staff.map((member) => [member.id, member]));
         const addPermission = () => {
             const staffModule = STAFF_MODULES.find(([key]) => key === permissionModuleKey);
             if (!staffModule) return toast.error("Choose a module to add permission.");
@@ -153,14 +149,6 @@ export function MastersModule({ submodule }: {
             setPermissionModuleKey("");
             toast.success("Permission added");
         };
-        const registerDocument = () => {
-            if (!docDraft.staffId) return toast.error("Choose staff for the document.");
-            if (!docDraft.fileName.trim()) return toast.error("Choose a file or enter a document file name.");
-            if (!docDraft.fileUrl.trim().startsWith("https://drive.google.com/")) return toast.error("Paste the Google Drive file link for this staff document.");
-            registerStaffDocument({ staffId: docDraft.staffId, documentType: docDraft.documentType, documentNo: docDraft.documentNo, fileName: docDraft.fileName.trim(), fileUrl: docDraft.fileUrl.trim() || undefined, mimeType: docDraft.mimeType, fileSizeBytes: docDraft.fileSizeBytes });
-            setDocDraft({ staffId: docDraft.staffId, documentType: "photo", documentNo: "", fileName: "", fileUrl: "" });
-            toast.success("Staff Drive link registered as pending verification");
-        };
         return (<div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <MastersHeader icon={<Users className="h-5 w-5"/>} title="Staff Operations Master" desc="Staff profile, login, role permissions, attendance, GPS, visits, tasks and payroll spine" count={db.master.staff.length} q={q} setQ={setQ}/>
@@ -169,7 +157,7 @@ export function MastersModule({ submodule }: {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard label="Total staff" value={db.master.staff.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
           <MetricCard label="Active" value={db.master.staff.filter((s) => s.status === "active").length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
-          <MetricCard label="Monthly payroll" value={formatINRShort(db.master.staff.reduce((n, s) => n + (s.monthly_salary || 0), 0))} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
+          <MetricCard label="Configured payroll" value={formatINRShort(configuredPayroll)} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
           <MetricCard label="Role matrices" value={roleCoverage} tone="default" icon={<ShieldCheck className="h-4 w-4"/>}/>
         </div>
         <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
@@ -200,26 +188,10 @@ export function MastersModule({ submodule }: {
             </table>
           </div>
         </div>
-        <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-bold">Staff Drive-link registration & verification</p><p className="text-[11px] text-muted-foreground">Register links to staff documents that already exist in Google Drive, then verify, reject, expire or remove them. No local file is uploaded here.</p></div><StatusBadge label={`${staffDocuments.length} documents`} className="bg-success/10 text-success border-success/20"/></div>
-          <div className="grid gap-2 md:grid-cols-6">
-            <select value={docDraft.staffId} onChange={(event) => setDocDraft((value) => ({ ...value, staffId: event.target.value }))} className="h-9 rounded-md border border-input bg-card px-3 text-xs md:col-span-2"><option value="">Select staff…</option>{db.master.staff.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
-            <select value={docDraft.documentType} onChange={(event) => setDocDraft((value) => ({ ...value, documentType: event.target.value as StaffDocument["document_type"] }))} className="h-9 rounded-md border border-input bg-card px-3 text-xs"><option value="photo">Photo</option><option value="aadhaar">Aadhaar</option><option value="pan">PAN</option><option value="id_proof">ID proof</option><option value="address_proof">Address proof</option><option value="bank">Bank</option><option value="other">Other</option></select>
-            <input value={docDraft.documentNo} onChange={(event) => setDocDraft((value) => ({ ...value, documentNo: event.target.value }))} placeholder="Document no." className="h-9 rounded-md border border-input bg-card px-3 text-xs"/>
-            <input value={docDraft.fileUrl} onChange={(event) => setDocDraft((value) => ({ ...value, fileUrl: event.target.value }))} placeholder="Google Drive file URL required" className="h-9 rounded-md border border-input bg-card px-3 text-xs md:col-span-2"/>
-            <input value={docDraft.fileName} onChange={(event) => setDocDraft((value) => ({ ...value, fileName: event.target.value }))} placeholder="File name as shown in Drive" className="h-9 rounded-md border border-input bg-card px-3 text-xs md:col-span-4"/>
-            <Button size="sm" className="md:col-span-2" onClick={registerDocument}><FileText className="mr-1 h-3.5 w-3.5"/> Register Drive link</Button>
-          </div>
-          <div className="mt-3 divide-y divide-border rounded-lg border border-border">
-            {staffDocuments.map((doc) => { const staffRow = staffById.get(doc.staff_id); const file = doc.file_asset_id ? fileAssetsById.get(doc.file_asset_id) as any : undefined; return <div key={doc.id} className="grid gap-2 px-3 py-2 text-xs lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]"><div><p className="font-semibold">{staffRow?.name || doc.staff_id} · {titleCase(doc.document_type.replaceAll("_", " "))}</p><p className="text-[10px] text-muted-foreground">{doc.document_no || "No document number"} · {file?.file_name || "No linked file"}</p></div><div className="flex flex-wrap items-center gap-1.5"><StatusBadge label={titleCase(doc.status)} className={doc.status === "verified" ? "bg-success/10 text-success border-success/20" : doc.status === "rejected" ? "bg-destructive/10 text-destructive border-destructive/20" : doc.status === "expired" ? "bg-warning/10 text-warning border-warning/20" : "bg-muted text-muted-foreground border-border"}/>{file?.web_view_link ? <a className="rounded border border-border px-2 py-0.5 text-[10px] text-primary" href={file.web_view_link} target="_blank" rel="noreferrer">Open file</a> : null}</div><div className="flex flex-wrap justify-end gap-1"><Button size="sm" variant="ghost" onClick={() => updateStaffDocument(doc.id, { status: "verified" })}><CheckCircle className="mr-1 h-3.5 w-3.5"/>Verify</Button><Button size="sm" variant="ghost" onClick={() => updateStaffDocument(doc.id, { status: "rejected" })}><XCircle className="mr-1 h-3.5 w-3.5"/>Reject</Button><Button size="sm" variant="ghost" onClick={() => updateStaffDocument(doc.id, { status: "expired" })}>Expire</Button><Button size="sm" variant="ghost" onClick={() => removeStaffDocument(doc.id)}><Trash2 className="mr-1 h-3.5 w-3.5"/>Remove</Button></div></div>; })}
-            {!staffDocuments.length && <div className="px-3 py-8 text-center text-xs text-muted-foreground">No staff documents uploaded yet.</div>}
-          </div>
-        </div>
         <div className="rd-stagger grid gap-3 lg:grid-cols-2">
           {staff.map((s) => {
                 const tasks = db.tasks.filter((t) => t.assigned_staff_id === s.id);
                 const visits = db.visits.filter((v) => v.assigned_staff_id === s.id);
-                const docs = staffDocuments.filter((doc) => doc.staff_id === s.id);
                 return (<div key={s.id} role="button" tabIndex={0} onClick={() => openDetail("staff" as any, s.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openDetail("staff" as any, s.id); } }} className="group relative flex cursor-pointer items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
                 <button type="button" onClick={(event) => { event.stopPropagation(); setEditStaffId(s.id); setStaffEditOpen(true); }} className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card/80 text-muted-foreground opacity-0 backdrop-blur-sm transition-all hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100" aria-label={`Edit ${s.name}`} title="Edit staff">
                   <Pencil className="h-3.5 w-3.5"/>
@@ -230,9 +202,8 @@ export function MastersModule({ submodule }: {
                   <p className="text-[11px] text-muted-foreground">{s.role} · {s.department || "Team"} · {s.city}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                     <span className="inline-flex items-center gap-0.5"><Phone className="h-2.5 w-2.5"/>{s.phone}</span>
-                    {s.monthly_salary && <span className="font-mono">· {formatINR(s.monthly_salary)}/mo</span>}
+                    {s.salary_type === "daily_wage" && s.daily_wage ? <span className="font-mono">· {formatINR(s.daily_wage)}/day</span> : s.monthly_salary ? <span className="font-mono">· {formatINR(s.monthly_salary)}/mo</span> : null}
                     {s.login_email && <span>· login</span>}
-                    <span>· {docs.filter((doc) => doc.status === "verified").length}/{docs.length} docs verified</span>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-1">

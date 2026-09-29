@@ -15,14 +15,53 @@ export function createDefaultAttendancePolicy(): AttendancePolicy {
         auto_exit_dwell_seconds: 180,
         auto_exit_buffer_m: 60,
         auto_absent_enabled: true,
-        auto_absent_after: "11:00",
+        auto_absent_after_minutes: 90,
         late_grace_minutes: 20,
         absent_deduction_enabled: true,
         absent_deduction_days: 1,
     };
 }
 export function normalizeAttendancePolicy(policy: Partial<AttendancePolicy> | null | undefined): AttendancePolicy {
-    return { ...createDefaultAttendancePolicy(), ...(policy || {}) };
+    const defaults = createDefaultAttendancePolicy();
+    const source = policy || {};
+    const finite = (value: unknown, fallback: number) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const optionalCoordinate = (value: unknown) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const clockTime = (value: unknown, fallback: string) => {
+        const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || ""));
+        if (!match) return fallback;
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+        return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    };
+    return {
+        office_name: String(source.office_name || defaults.office_name),
+        office_latitude: optionalCoordinate(source.office_latitude),
+        office_longitude: optionalCoordinate(source.office_longitude),
+        geofence_radius_m: Math.max(1, finite(source.geofence_radius_m, defaults.geofence_radius_m)),
+        visit_geofence_radius_m: Math.max(1, finite(source.visit_geofence_radius_m, defaults.visit_geofence_radius_m)),
+        max_gps_accuracy_m: Math.max(1, finite(source.max_gps_accuracy_m, defaults.max_gps_accuracy_m)),
+        standard_check_in_time: clockTime(source.standard_check_in_time, defaults.standard_check_in_time),
+        minimum_half_day_minutes: Math.max(1, Math.round(finite(source.minimum_half_day_minutes, defaults.minimum_half_day_minutes))),
+        auto_present_from_gps: source.auto_present_from_gps ?? defaults.auto_present_from_gps,
+        auto_geofence_enabled: source.auto_geofence_enabled ?? defaults.auto_geofence_enabled,
+        auto_check_in_enabled: source.auto_check_in_enabled ?? defaults.auto_check_in_enabled,
+        auto_check_out_enabled: source.auto_check_out_enabled ?? defaults.auto_check_out_enabled,
+        auto_entry_dwell_seconds: Math.max(0, Math.round(finite(source.auto_entry_dwell_seconds, defaults.auto_entry_dwell_seconds))),
+        auto_exit_dwell_seconds: Math.max(0, Math.round(finite(source.auto_exit_dwell_seconds, defaults.auto_exit_dwell_seconds))),
+        auto_exit_buffer_m: Math.max(0, finite(source.auto_exit_buffer_m, defaults.auto_exit_buffer_m)),
+        auto_absent_enabled: source.auto_absent_enabled ?? defaults.auto_absent_enabled,
+        auto_absent_after_minutes: Math.max(0, Math.round(finite(source.auto_absent_after_minutes, defaults.auto_absent_after_minutes))),
+        late_grace_minutes: Math.max(0, Math.round(finite(source.late_grace_minutes, defaults.late_grace_minutes))),
+        absent_deduction_enabled: source.absent_deduction_enabled ?? defaults.absent_deduction_enabled,
+        absent_deduction_days: Math.max(0, finite(source.absent_deduction_days, defaults.absent_deduction_days)),
+    };
 }
 export function attendancePolicyForStaff(db: Pick<RDashDatabase, "master">, staffId: string): AttendancePolicy {
     const staff = db.master.staff.find((row) => row.id === staffId);

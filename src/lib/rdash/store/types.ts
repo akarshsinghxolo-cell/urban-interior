@@ -53,7 +53,7 @@ export interface CoreState {
   upsertStaffRolePermission: (row: StaffRolePermission) => void;
   updateStaffRolePermission: (id: string, patch: Partial<Omit<StaffRolePermission, "id" | "role_key" | "module_key">>) => void;
   removeStaffRolePermission: (id: string) => void;
-  registerStaffDocument: (input: { staffId: string; documentType: StaffDocument["document_type"]; documentNo?: string; fileName: string; fileUrl?: string; mimeType?: string; fileSizeBytes?: number }) => void;
+  registerStaffDocument: (input: { staffId: string; documentType: StaffDocument["document_type"]; documentNo?: string; assetId: string; fileName: string; mimeType?: string; fileSizeBytes?: number; storageBucket: string; storagePath: string }) => void;
   updateStaffDocument: (id: string, patch: Partial<Omit<StaffDocument, "id" | "staff_id" | "created_at">>) => void;
   removeStaffDocument: (id: string) => void;
   logAudit: (entry: {
@@ -561,7 +561,7 @@ export interface MastersState {
   }) => void;
   /** K1: Compute salary deductions for a staff member for a given month.
    *  Returns the full salary, total deductions, net salary, and a day-by-day
-   *  breakdown of each violation (late, absent, half-day) with the rule that
+   *  breakdown of each violation (late, absent, unpaid leave, half-day) with the rule that
    *  was violated, the date, and the deduction amount. */
   computeStaffSalary: (staffId: string, yearMonth: string) => {
     staff_id: string;
@@ -571,6 +571,8 @@ export interface MastersState {
     per_day_rate: number;
     present_days: number;
     absent_days: number;
+    paid_leave_days: number;
+    unpaid_leave_days: number;
     half_days: number;
     late_days: number;
     late_deduction_total: number;
@@ -579,7 +581,7 @@ export interface MastersState {
     net_salary: number;
     violations: Array<{
       date: string;
-      type: "late" | "absent" | "half_day";
+      type: "late" | "absent" | "half_day" | "unpaid_leave";
       late_minutes?: number;
       rule: string;
       deduction: number;

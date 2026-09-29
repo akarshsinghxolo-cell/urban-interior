@@ -203,8 +203,11 @@ async function readAuthorizedScope(
   );
   const plannedFullStaff = plannedCollections.includes("master.staff");
   const fullStaffAllowed = plannedFullStaff && canReadFullStaffData(user.role);
+  // Foundation embeds only the safe Staff directory projection. Privileged HR
+  // modules must explicitly re-fetch master.staff so salary/address/emergency
+  // fields replace the projected row instead of silently disappearing in forms.
   const transmittedCollections = plannedCollections.filter(
-    (collection) => !FOUNDATION_COLLECTIONS.has(collection),
+    (collection) => !FOUNDATION_COLLECTIONS.has(collection) || (collection === "master.staff" && fullStaffAllowed),
   );
   const fullCollections = fullStaffAllowed
     ? [...transmittedCollections]

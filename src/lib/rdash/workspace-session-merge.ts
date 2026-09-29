@@ -214,16 +214,26 @@ export function mergeWorkspaceSnapshot(
   const mode = String(incomingMeta._workspace_read_mode || "");
   const bootstrap = scope === "bootstrap" || mode === "bootstrap";
   const represented = representedCollections(incoming);
+  const currentMeta = metadata(current);
+  const currentHasFullStaff = currentMeta._workspace_staff_projection === "full";
+  const incomingStaffProjection = String(incomingMeta._workspace_staff_projection || "directory");
 
   for (const collection of represented) {
     const incomingRows = rowsFor(incoming, collection);
     const mergePartial = collectionMergesPartially(incoming, collection);
+    const preserveFullStaff = collection === "master.staff"
+      && currentHasFullStaff
+      && incomingStaffProjection !== "full";
 
     setRows(
       next,
       collection,
-      mergePartial
-        ? mergeRows(rowsFor(next, collection), incomingRows)
+      mergePartial || preserveFullStaff
+        ? mergeRows(
+            rowsFor(next, collection),
+            incomingRows,
+            { preserveExistingFields: preserveFullStaff },
+          )
         : structuredClone(incomingRows),
     );
   }
@@ -231,6 +241,9 @@ export function mergeWorkspaceSnapshot(
   copyReadMetadata(next, incoming);
 
   const nextMeta = metadata(next);
+  if (currentHasFullStaff && incomingStaffProjection !== "full") {
+    nextMeta._workspace_staff_projection = "full";
+  }
   const foundationPresent =
     bootstrap
     || incomingMeta._workspace_foundation_embedded === true

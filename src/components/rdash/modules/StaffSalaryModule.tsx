@@ -213,10 +213,11 @@ export function StaffSalaryModule() {
                 </div>
                 <span className="text-xs font-mono font-semibold">{formatINR(salary.net_salary)} after attendance</span>
               </div>
-              <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-5">
                 {[
                   ["Present", salary.present_days, "text-success"],
-                  ["Absent", salary.absent_days, "text-destructive"],
+                  ["Paid leave", salary.paid_leave_days, "text-primary"],
+                  ["Absent / unpaid", salary.absent_days, "text-destructive"],
                   ["Half days", salary.half_days, "text-warning"],
                   ["Late arrivals", salary.late_days, "text-warning"],
                 ].map(([label, value, tone]) => (

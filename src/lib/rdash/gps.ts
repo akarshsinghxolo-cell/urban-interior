@@ -108,3 +108,8 @@ export function dateFromIso(value: string) {
 export function isAtOrAfterTime(now: Date, time: string) {
     return now.getTime() >= indiaDateTimeMs(indiaDate(now), time || "11:00");
 }
+export function isAtOrAfterMinutesFromTime(now: Date, time: string, minutesAfter: number) {
+    const base = indiaDateTimeMs(indiaDate(now), time || "09:30");
+    const delay = Number.isFinite(minutesAfter) && minutesAfter >= 0 ? minutesAfter : 0;
+    return now.getTime() >= base + delay * 60_000;
+}

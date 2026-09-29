@@ -1241,7 +1241,7 @@ export interface AttendancePolicy {
     auto_exit_buffer_m: number;
 // --- 13. Thread domain (Universal Conversation Graph) ---
     auto_absent_enabled: boolean;
-    auto_absent_after: string;
+    auto_absent_after_minutes: number;
     late_grace_minutes: number;
     absent_deduction_enabled: boolean;
     absent_deduction_days: number;
@@ -1725,7 +1725,7 @@ export interface Contractor {
     performance_recomputed_at?: string;
 }
 export type StaffRoleKey = "OWNER" | "OPERATIONS_MANAGER" | "FIELD_STAFF" | "SALES_TELECALLER" | "PROCUREMENT_STAFF" | "FINANCE" | "ACCOUNTS_ADMIN";
-type StaffSalaryType = "monthly" | "daily_wage" | "contract";
+type StaffSalaryType = "monthly" | "daily_wage";
 export interface Staff {
     id: ID;
     code?: string;
@@ -1753,7 +1753,6 @@ export interface Staff {
     login_email?: string;
     temporary_password?: string;
     force_password_change?: boolean;
-    document_ids?: ID[];
     attendance_policy: AttendancePolicy;
 }
 export interface SourcePartner {
@@ -1880,7 +1879,9 @@ export interface FileAsset {
     web_view_link: string;
     thumbnail_url?: string;
     file_size_bytes?: number;
-    storage_provider: "google_drive";
+    storage_provider: "google_drive" | "supabase";
+    storage_bucket?: string;
+    storage_path?: string;
     storage_mode: FileAssetStorageMode;
     sync_status: FileAssetSyncStatus;
     tags?: string[];

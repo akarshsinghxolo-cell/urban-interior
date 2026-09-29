@@ -115,23 +115,21 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
             return { db: { ...s.db, staffRolePermissions: current.filter((entry) => entry.id !== id) } };
         }),
         registerStaffDocument: (input) => commitState((s: any) => {
-            if (!input.fileUrl?.trim().startsWith("https://drive.google.com/")) {
-                throw new Error("Staff document file must be a Google Drive web link.");
-            }
             const now = nowIso();
-            const fileAssetId = genId("staff-file");
             const documentId = genId("staff-doc");
             const asset: FileAsset = {
-                id: fileAssetId,
+                id: input.assetId,
                 file_name: input.fileName,
                 mime_type: input.mimeType,
                 kind: "document",
-                web_view_link: input.fileUrl.trim(),
+                web_view_link: `/api/staff-documents?assetId=${encodeURIComponent(input.assetId)}`,
                 file_size_bytes: input.fileSizeBytes,
-                storage_provider: "google_drive",
-                storage_mode: "external_reference",
+                storage_provider: "supabase",
+                storage_bucket: input.storageBucket,
+                storage_path: input.storagePath,
+                storage_mode: "managed",
                 sync_status: "uploaded",
-                tags: ["staff-document", input.staffId, input.documentType].filter(Boolean),
+                tags: ["staff-document", `staff:${input.staffId}`, input.documentType].filter(Boolean),
                 status: "active",
                 created_at: now,
                 updated_at: now,
@@ -141,7 +139,7 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
                 staff_id: input.staffId,
                 document_type: input.documentType,
                 document_no: input.documentNo?.trim() || undefined,
-                file_asset_id: fileAssetId,
+                file_asset_id: input.assetId,
                 status: "pending",
                 created_at: now,
             };
