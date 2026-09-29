@@ -8,6 +8,7 @@ import { SavedViewsBar } from "../SavedViewsBar";
 import { BulkActionBar, SelectCheckbox, type BulkAction } from "../BulkActions";
 import { EntityFormDialog } from "../EntityFormDialog";
 import { StaffEditDialog } from "../StaffEditDialog";
+import { IndianMobileInput } from "../IndianMobileInput";
 import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, invoiceStatusStyle } from "@/lib/rdash/format";
 import { Building2, Users, HardHat, HandCoins, Star, Phone, MapPin, TrendingUp, AlertTriangle, CheckCircle2, Search, Plus, ArrowRight, Pencil, CheckSquare, Wallet, Bell, Clock, ShieldCheck, Trash2, } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -271,10 +272,43 @@ export function MastersModule({ submodule }: {
                   <div className="flex items-center gap-2.5"><Avatar name={sp.name} size={36}/><div><p className="text-sm font-bold">{sp.name}</p><p className="text-[11px] text-muted-foreground">{titleCase(sp.type || "Partner")}</p></div></div>
                   <StatusBadge label={`${sp.commission_pct || 0}%`} className="bg-warning/10 text-warning border-warning/20"/>
                 </div>
-                <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground"><span className="inline-flex items-center gap-0.5"><Phone className="h-3 w-3"/>{sp.phone}</span><span>· {customers.length} customers referred</span></div>
+                <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground"><span className="inline-flex items-center gap-0.5"><Phone className="h-3 w-3"/>{sp.phone || "—"}</span><span>· {customers.length} customers referred</span></div>
               </div>);
             })}
         </div>
+        <Dialog open={addSpOpen} onOpenChange={setAddSpOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Add Source Partner</DialogTitle>
+              <DialogDescription>Create the canonical referral-partner record used by customer referrals and commission rules.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 py-2">
+              <div><Label>Name</Label><Input value={spDraft.name} onChange={(event) => setSpDraft((current) => ({ ...current, name: event.target.value }))} /></div>
+              <div><Label>Mobile</Label><IndianMobileInput value={spDraft.phone} onChange={(phone) => setSpDraft((current) => ({ ...current, phone }))} /></div>
+              <div><Label>Email</Label><Input type="email" value={spDraft.email} onChange={(event) => setSpDraft((current) => ({ ...current, email: event.target.value }))} /></div>
+              <div><Label>Default commission %</Label><Input type="number" min={0} max={100} step="0.1" value={spDraft.commission_pct} onChange={(event) => setSpDraft((current) => ({ ...current, commission_pct: event.target.value }))} /></div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddSpOpen(false)}>Cancel</Button>
+              <Button onClick={() => {
+                try {
+                  const commission = Number(spDraft.commission_pct || 0);
+                  if (!Number.isFinite(commission) || commission < 0 || commission > 100) throw new Error("Commission must be between 0 and 100.");
+                  addSourcePartner({
+                    name: spDraft.name,
+                    phone: spDraft.phone || undefined,
+                    email: spDraft.email.trim() || undefined,
+                    commission_pct: commission,
+                  });
+                  setAddSpOpen(false);
+                  toast.success("Source Partner added");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Source Partner could not be added.");
+                }
+              }}>Add partner</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>);
     }
     if (effectiveSubmodule === "vendorRates" || effectiveSubmodule === "contractorRates" || effectiveSubmodule === "commissionRules") {
