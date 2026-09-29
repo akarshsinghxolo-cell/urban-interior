@@ -1,44 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
-import { validIndianPhone } from "@/components/rdash/customer-sites-form-model";
+import {
+  indianMobileForWrite,
+  indianPhoneSearchDigits,
+  indianWhatsAppDialDigits,
+  isValidIndianMobile,
+  sanitizeIndianMobile,
+} from "@/lib/rdash/phone-validation";
 
-describe("sanitizeIndianMobile", () => {
-  it("strips formatting from a +91 country-code number", () => {
-    expect(sanitizeIndianMobile("+91 9876501933")).toBe("9876501933");
+describe("canonical Indian mobile contract", () => {
+  it("normalizes supported Indian input shapes to 10-digit storage", () => {
+    expect(sanitizeIndianMobile("+91 98765 01933")).toBe("9876501933");
     expect(sanitizeIndianMobile("91 98765 01933")).toBe("9876501933");
-  });
-
-  it("strips a leading trunk zero", () => {
+    expect(sanitizeIndianMobile("0091 98765 01933")).toBe("9876501933");
     expect(sanitizeIndianMobile("09876501933")).toBe("9876501933");
-  });
-
-  it("leaves plain 10-digit numbers untouched", () => {
     expect(sanitizeIndianMobile("9876501933")).toBe("9876501933");
   });
 
-  it("never strips 91 from a 10-digit number (country code is 12 digits only)", () => {
-    expect(sanitizeIndianMobile("9198765019")).toBe("9198765019");
-  });
-});
-
-describe("validIndianPhone (regression: seeded +91 numbers must validate)", () => {
-  it("accepts the canonical seeded mobile with +91 prefix", () => {
-    expect(validIndianPhone("+91 9876501933")).toBe(true);
+  it("does not silently truncate arbitrary long or invalid numbers", () => {
+    expect(sanitizeIndianMobile("1234567890123")).toBe("1234567890123");
+    expect(isValidIndianMobile("1234567890")).toBe(false);
+    expect(isValidIndianMobile("5876501933")).toBe(false);
+    expect(isValidIndianMobile("987650193")).toBe(false);
+    expect(isValidIndianMobile("98765019331")).toBe(false);
   });
 
-  it("accepts every seeded staff/customer phone shape", () => {
-    expect(validIndianPhone("+91 9876520110")).toBe(true);
-    expect(validIndianPhone("09876501933")).toBe(true);
-    expect(validIndianPhone("9876501933")).toBe(true);
+  it("allows an empty optional mobile and validates a required mobile at write time", () => {
+    expect(isValidIndianMobile("")).toBe(true);
+    expect(isValidIndianMobile("", { allowEmpty: false })).toBe(false);
+    expect(indianMobileForWrite("")).toBeUndefined();
+    expect(() => indianMobileForWrite("", { required: true, label: "Phone" })).toThrow("Phone is required");
   });
 
-  it("still rejects numbers with too few or too many digits", () => {
-    expect(validIndianPhone("987650193")).toBe(false);
-    expect(validIndianPhone("98765019331")).toBe(false);
-    expect(validIndianPhone("not-a-phone")).toBe(false);
+  it("returns exactly one canonical persisted value", () => {
+    expect(indianMobileForWrite("+91 98765 01933")).toBe("9876501933");
+    expect(() => indianMobileForWrite("5555555555")).toThrow("valid 10-digit Indian mobile number");
   });
 
-  it("treats empty input as valid (phone is optional)", () => {
-    expect(validIndianPhone("")).toBe(true);
+  it("uses the same canonical number for search and WhatsApp dialing", () => {
+    expect(indianPhoneSearchDigits("+91 97283 24682")).toBe("9728324682");
+    expect(indianWhatsAppDialDigits("9728324682")).toBe("919728324682");
+    expect(indianWhatsAppDialDigits("+91 97283 24682")).toBe("919728324682");
   });
 });
