@@ -32,6 +32,18 @@ function canManageStaff(user: Awaited<ReturnType<typeof requireSession>>, staffI
   return MANAGER_ROLES.has(user.role) || user.staffId === staffId;
 }
 
+async function canonicalStaffExists(staffId: string) {
+  const admin = getSupabaseAdminClient();
+  const { data, error } = await admin
+    .from("entity_master_staff")
+    .select("id")
+    .eq("workspace_id", workspaceId())
+    .eq("id", staffId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
 async function assetForId(assetId: string) {
   const admin = getSupabaseAdminClient();
   const { data, error } = await admin
@@ -60,6 +72,9 @@ export async function POST(request: NextRequest) {
 
     if (!staffId) return NextResponse.json({ error: "Staff is required." }, { status: 400 });
     if (!canManageStaff(user, staffId)) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+    if (!(await canonicalStaffExists(staffId))) {
+      return NextResponse.json({ error: "Canonical Staff profile was not found." }, { status: 404 });
+    }
     if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file to upload." }, { status: 400 });
     if (!ALLOWED_MIME_TYPES.has(file.type)) {
       return NextResponse.json({ error: "Only PDF, JPG, PNG and WebP staff documents are allowed." }, { status: 400 });
