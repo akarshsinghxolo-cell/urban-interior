@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
+import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot } from "@/lib/rdash/workspace-session-merge";
 import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { testFile } from "./test-file";
 
@@ -18,6 +19,50 @@ describe("Staff profile integrity", () => {
     expect((policy as any).auto_absent_after).toBeUndefined();
     expect((policy as any).grace_period_minutes).toBeUndefined();
     expect((policy as any).id).toBeUndefined();
+  });
+
+  test("directory foundation refresh cannot erase a full Staff profile already loaded in HR", () => {
+    const current = createEmptyWorkspaceDatabase();
+    (current as any)._workspace_staff_projection = "full";
+    (current as any)._workspace_foundation_embedded = true;
+    current.master.staff = [{
+      id: "staff-owner",
+      name: "Akarsh Singh",
+      role: "Owner",
+      role_key: "OWNER",
+      status: "active",
+      city: "Gorakhpur",
+      address: "Taramandal",
+      emergency_contact: "9453768144",
+      salary_type: "monthly",
+      monthly_salary: 34555,
+      attendance_policy: normalizeAttendancePolicy({}),
+    } as any];
+
+    const incoming = createEmptyWorkspaceDatabase();
+    (incoming as any)._workspace_read_scope = "bootstrap";
+    (incoming as any)._workspace_read_mode = "bootstrap";
+    (incoming as any)._workspace_read_strategy = "bootstrap";
+    (incoming as any)._workspace_foundation_embedded = true;
+    (incoming as any)._workspace_staff_projection = "directory";
+    incoming.master.staff = [{
+      id: "staff-owner",
+      name: "Akarsh Singh Updated",
+      role: "Owner",
+      role_key: "OWNER",
+      status: "active",
+      city: "Gorakhpur",
+      attendance_policy: normalizeAttendancePolicy({}),
+    } as any];
+
+    const merged = mergeWorkspaceSnapshot(current, incoming);
+    const owner = merged.master.staff.find((row) => row.id === "staff-owner")!;
+
+    expect(owner.name).toBe("Akarsh Singh Updated");
+    expect(owner.address).toBe("Taramandal");
+    expect(owner.emergency_contact).toBe("9453768144");
+    expect(owner.monthly_salary).toBe(34555);
+    expect((merged as any)._workspace_staff_projection).toBe("full");
   });
 
   test("Staff editor reuses shared GPS capture and private Supabase document upload", async () => {
