@@ -4,7 +4,7 @@ import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
-import { hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
+import { approvedLeaveDatesForMonth, hasStaffSalaryConfiguration, staffCompensationForMonth, summarizeSalaryAdjustments } from "../../payroll";
 
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
