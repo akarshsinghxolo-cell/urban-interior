@@ -129,7 +129,7 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
                 storage_path: input.storagePath,
                 storage_mode: "managed",
                 sync_status: "uploaded",
-                tags: ["staff-document", input.staffId, input.documentType].filter(Boolean),
+                tags: ["staff-document", `staff:${input.staffId}`, input.documentType].filter(Boolean),
                 status: "active",
                 created_at: now,
                 updated_at: now,
