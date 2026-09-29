@@ -27,6 +27,7 @@ export function rowsFor(
 export function mergeRows(
   current: Array<Record<string, unknown>>,
   incoming: Array<Record<string, unknown>>,
+  options: { preserveExistingFields?: boolean } = {},
 ): Array<Record<string, unknown>> {
   const merged = new Map<string, Record<string, unknown>>();
   for (const row of current) {
@@ -35,7 +36,14 @@ export function mergeRows(
   }
   for (const row of incoming) {
     const id = rowId(row);
-    if (id) merged.set(id, row);
+    if (!id) continue;
+    const existing = merged.get(id);
+    merged.set(
+      id,
+      options.preserveExistingFields && existing
+        ? { ...existing, ...row }
+        : row,
+    );
   }
   return [...merged.values()];
 }
