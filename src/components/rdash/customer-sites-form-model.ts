@@ -4,13 +4,12 @@ import type { QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { formatCoordinatePair } from "@/lib/rdash/coordinates";
 import { withPrimaryWorkTypeIds, workRequiredTitleFromSelection } from "@/lib/rdash/work-types";
-import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import {
   customerReferrer,
   customerReferrerSelection,
   type CustomerReferrerType,
 } from "@/lib/rdash/customer-referrer";
-import { validCustomerEmailValue, validCustomerPhone } from "@/lib/rdash/customer-domain-rules";
+import { validCustomerEmailValue } from "@/lib/rdash/customer-domain-rules";
 
 export type PendingSiteFile = QueuedWorkflowFile & { id: string; file_name: string; mime_type?: string; url: string };
 export type SiteDraft = { id: string; existing: boolean; enabled: boolean; expanded: boolean; name: string; siteType: Site["site_type"]; address: string; locality: string; city: string; latitude?: number; longitude?: number; coordinateInput: string; mapUrl: string; notes: string; photoAttachmentIds: string[]; pendingPhotos: PendingSiteFile[]; archiveRequested: boolean; archiveReason: string; archiveCancelled: boolean };
@@ -43,14 +42,13 @@ export function draftForWorkRequired(work: WorkRequired, master?: Master): Custo
 export function draftForArea(area: Area): AreaDraft { return { id: area.id, existing: true, siteId: area.site_id, name: area.name || "", areaType: area.area_type || "other", notes: area.notes || "", archiveRequested: false }; }
 
 export function fingerprint(customer: CustomerDraft, sites: SiteDraft[], detachAttachmentIds: string[], sameNameAcknowledged: boolean, areas: AreaDraft[] = [], workRequired: CustomerWorkRequiredDraft[] = []): string { return JSON.stringify({ customer, sites: sites.map(({ pendingPhotos, ...site }) => ({ ...site, pendingPhotoIds: pendingPhotos.map((photo) => photo.attachmentId) })), detachAttachmentIds: [...detachAttachmentIds].sort(), sameNameAcknowledged, areas, workRequired }); }
-export function validIndianPhone(value: string): boolean { return validCustomerPhone(value); }
 export function validCustomerEmail(value: string): boolean { return validCustomerEmailValue(value); }
 export function workRequiredBudgetValue(value: string): number | undefined { const trimmed = value.trim(); if (!trimmed) return undefined; const parsed = Number(trimmed); return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined; }
 export function confirmedPhotoAttachmentIds(attachmentIds: string[], detachAttachmentIds: string[] = []): string[] { const detached = new Set(detachAttachmentIds); return [...new Set(attachmentIds)].filter((id) => !detached.has(id)); }
 
 export function customerPayload(draft: CustomerDraft): Partial<Customer> {
   const referrer = draft.referralSelected ? customerReferrerSelection(draft.referralSelected.type, draft.referralSelected.id, draft.referralSelected.name) : {};
-  return { name: draft.name.trim(), phone: draft.phone.trim() ? sanitizeIndianMobile(draft.phone) : undefined, whatsapp: draft.whatsapp.trim() ? sanitizeIndianMobile(draft.whatsapp) : undefined, alternate_phone: draft.alternatePhone.trim() ? sanitizeIndianMobile(draft.alternatePhone) : undefined, email: draft.email.trim() || undefined, ...referrer, notes: draft.notes.trim() || undefined };
+  return { name: draft.name.trim(), phone: draft.phone.trim() || undefined, whatsapp: draft.whatsapp.trim() || undefined, alternate_phone: draft.alternatePhone.trim() || undefined, email: draft.email.trim() || undefined, ...referrer, notes: draft.notes.trim() || undefined };
 }
 export function sitePayload(draft: SiteDraft, actorName: string): CustomerSiteSaveDraft { return { id: draft.id, name: draft.name.trim(), site_type: draft.siteType, ...(draft.archiveRequested && draft.archiveCancelled ? { stage: "cancelled" as const } : {}), address: draft.address.trim() || undefined, locality: draft.locality.trim() || undefined, city: draft.city.trim() || undefined, latitude: draft.latitude, longitude: draft.longitude, map_url: draft.mapUrl.trim() || undefined, notes: draft.notes.trim() || undefined, photo_attachment_ids: confirmedPhotoAttachmentIds(draft.photoAttachmentIds), ...(draft.archiveRequested ? { is_archived: true, archived_at: new Date().toISOString(), archived_by: actorName, archive_reason: draft.archiveReason.trim() } : {}) }; }
 export function areaPayload(draft: AreaDraft, actorName: string): CustomerAreaSaveDraft { return { id: draft.id, site_id: draft.siteId, name: draft.name.trim(), area_type: draft.areaType, ...(draft.existing ? {} : { stage: "unmeasured" as const }), notes: draft.notes.trim() || undefined, ...(draft.archiveRequested ? { is_archived: true, archived_at: new Date().toISOString(), archived_by: actorName, archive_reason: "Removed from customer form" } : {}) }; }
