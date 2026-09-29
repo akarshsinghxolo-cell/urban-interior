@@ -35,6 +35,7 @@ import { eventMatchesPaymentTrigger } from "../finance-helpers";
 import { createDefaultAttendancePolicy } from "../../attendance-policy";
 import { deriveVendorPerformanceEvidenceExport } from "../../performance-reconciliation";
 import { normalizeRoleKey, roleLabel } from "../../staff-operations";
+import { indianMobileForWrite } from "../../phone-validation";
 
 /**
  * Validate that the procurement input has an awarded Work Order, a matching
@@ -98,7 +99,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             const vendor: import("../../types").Vendor = {
                 id,
                 name: v.name || "New vendor",
-                phone: v.phone,
+                phone: indianMobileForWrite(v.phone, { label: "Vendor mobile number" }),
                 city: v.city,
                 locality: v.locality,
                 address: v.address,
@@ -134,12 +135,16 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             return id;
         },
         updateVendor: (id, patch) => {
+            const canonicalPatch = { ...patch };
+            if (Object.prototype.hasOwnProperty.call(patch, "phone")) {
+                canonicalPatch.phone = indianMobileForWrite(patch.phone, { label: "Vendor mobile number" });
+            }
             commitState((s: any) => ({
                 db: {
                     ...s.db,
                     master: {
                         ...s.db.master,
-                        vendors: s.db.master.vendors.map((v: any) => v.id === id ? { ...v, ...patch } : v),
+                        vendors: s.db.master.vendors.map((v: any) => v.id === id ? { ...v, ...canonicalPatch } : v),
                     },
                 },
             }));
@@ -159,7 +164,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 id,
                 code: s.code || `STF-${Date.now().toString(36).toUpperCase().slice(-5)}`,
                 name: s.name || "New Staff",
-                phone: s.phone,
+                phone: indianMobileForWrite(s.phone, { label: "Staff phone" }),
                 email: s.email || s.login_email,
                 role_key: roleKey,
                 role: roleLabel(roleKey),
@@ -168,7 +173,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 reporting_manager_id: s.reporting_manager_id,
                 city: s.city,
                 address: s.address,
-                emergency_contact: s.emergency_contact,
+                emergency_contact: indianMobileForWrite(s.emergency_contact, { label: "Emergency contact" }),
                 joining_date: s.joining_date,
                 exit_date: s.exit_date,
                 status: s.status || "active",
@@ -201,12 +206,19 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
         },
         updateStaff: (id, patch) => {
             const before = get().db.master.staff.find((st: any) => st.id === id);
+            const canonicalPatch = { ...patch };
+            if (Object.prototype.hasOwnProperty.call(patch, "phone")) {
+                canonicalPatch.phone = indianMobileForWrite(patch.phone, { label: "Staff phone" });
+            }
+            if (Object.prototype.hasOwnProperty.call(patch, "emergency_contact")) {
+                canonicalPatch.emergency_contact = indianMobileForWrite(patch.emergency_contact, { label: "Emergency contact" });
+            }
             commitState((s: any) => ({
                 db: {
                     ...s.db,
                     master: {
                         ...s.db.master,
-                        staff: s.db.master.staff.map((st: any) => st.id === id ? { ...st, ...patch } : st),
+                        staff: s.db.master.staff.map((st: any) => st.id === id ? { ...st, ...canonicalPatch } : st),
                     },
                 },
             }));
