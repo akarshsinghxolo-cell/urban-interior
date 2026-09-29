@@ -9,11 +9,10 @@ import { cn } from "@/lib/utils";
 import type { Customer, RDashDatabase } from "@/lib/rdash/types";
 import type { CustomerIdentityMatch } from "@/lib/rdash/customer-identity";
 import type { CustomerReferrerType } from "@/lib/rdash/customer-referrer";
-import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { useDismissOnOutside } from "@/hooks/use-dismiss-on-outside";
+import { IndianMobileInput } from "./IndianMobileInput";
 import {
   validCustomerEmail,
-  validIndianPhone,
   type CustomerDraft,
   type CustomerReferrerSelectionDraft,
 } from "./customer-sites-form-model";
@@ -120,13 +119,13 @@ export function CustomerDetailsFields({
           }} placeholder="e.g. Mr. Das" autoFocus={!isEdit} />
         </Field>
         <Field label="Contact number (optional)" htmlFor="customer-phone">
-          <PhoneInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({ ...current, phone }))} placeholder="9876543210" />
+          <IndianMobileInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({ ...current, phone }))} />
         </Field>
         <Field label="WhatsApp number (optional)" htmlFor="customer-whatsapp">
-          <PhoneInput id="customer-whatsapp" value={customer.whatsapp} onChange={(whatsapp) => setCustomer((current) => ({ ...current, whatsapp }))} placeholder="9876543210" />
+          <IndianMobileInput id="customer-whatsapp" value={customer.whatsapp} onChange={(whatsapp) => setCustomer((current) => ({ ...current, whatsapp }))} />
         </Field>
         <Field label="Alternate phone (optional)" htmlFor="customer-alternate-phone">
-          <PhoneInput id="customer-alternate-phone" value={customer.alternatePhone} onChange={(alternatePhone) => setCustomer((current) => ({ ...current, alternatePhone }))} placeholder="9876543210" />
+          <IndianMobileInput id="customer-alternate-phone" value={customer.alternatePhone} onChange={(alternatePhone) => setCustomer((current) => ({ ...current, alternatePhone }))} />
         </Field>
         <Field label="Email (optional)" htmlFor="customer-email">
           <EmailInput id="customer-email" value={customer.email} onChange={(email) => setCustomer((current) => ({ ...current, email }))} placeholder="name@example.com" />
@@ -223,10 +222,6 @@ export function CustomerDetailsFields({
   );
 }
 
-function PhoneInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  const invalid = Boolean(value && !validIndianPhone(value));
-  return <div><Input id={id} value={value} onChange={(event) => onChange(sanitizeIndianMobile(event.target.value))} placeholder={placeholder} type="tel" inputMode="tel" autoComplete="tel" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter 10 digits starting with 6, 7, 8, or 9, or leave it empty</p>}</div>;
-}
 function EmailInput({ id, value, onChange, placeholder }: { id: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
   const invalid = !validCustomerEmail(value);
   return <div><Input id={id} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} type="email" inputMode="email" autoComplete="email" aria-invalid={invalid} />{invalid && <p className="text-[10px] text-destructive">Enter an email address containing @, or leave it empty</p>}</div>;
