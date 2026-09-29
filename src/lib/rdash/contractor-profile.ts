@@ -151,9 +151,8 @@ type ContractorCapabilityDraftRow = {
  * Draft rows for the contractor edit form: exactly the STORED work-type rows.
  * Catalog types the contractor never recorded are NOT fabricated as empty
  * rows — they are offered by the "Add work type" picker instead. Fabricated
- * rows made deleted work types reappear after every save (the payload drops
- * rate-less rows, so removing a fabricated row was not even a change) and
- * left Save disabled on pure removals.
+ * rows made deleted work types reappear after every save. Explicitly selected
+ * work types remain stored even before rates are known.
  */
 export function contractorCapabilityDraftRows(
   capability: ContractorCapability,

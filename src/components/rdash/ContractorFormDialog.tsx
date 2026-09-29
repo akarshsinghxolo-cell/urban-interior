@@ -132,8 +132,7 @@ function draftFromRecord(record: ContractorProfileRecord): Draft {
 
 // The draft shows exactly the STORED work-type rows. Catalog types are offered
 // by the shared work-type picker instead of being fabricated as empty rows —
-// fabricated rows resurrected deleted work types on every reopen and kept
-// Save disabled when the user removed a rate-less row (no payload change).
+// fabricated rows resurrected deleted work types on every reopen.
 function capabilitiesToDraft(capabilities: ContractorCapability[], subcategories: WorkSubcategory[]): CapabilityDraft[] {
   return capabilities.map((row) => {
     const subcategory = subcategories.find((item) => item.id === row.subcategory_id);
@@ -168,7 +167,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
   const [contractorPhoto, setContractorPhoto] = React.useState<MediaValue>("");
   const [businessCard, setBusinessCard] = React.useState<MediaValue>("");
   const [capabilities, setCapabilities] = React.useState<CapabilityDraft[]>([]);
-  const [activeCapabilityCategoryId, setActiveCapabilityCategoryId] = React.useState<string | null>(null);
+  const [selectedCategoryIds, setSelectedCategoryIds] = React.useState<string[]>([]);
   const [duplicateAcknowledged, setDuplicateAcknowledged] = React.useState(false);
   const [baselineKey, setBaselineKey] = React.useState("");
   const baselineRef = React.useRef<ContractorProfileRecord>({});
@@ -219,7 +218,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
           const name = rate.work_type_name.trim();
           const material = rate.material_rate.trim();
           const labour = rate.labour_rate.trim();
-          if (!name || (!material && !labour)) return [];
+          if (!name) return [];
           return [{
             work_type_id: rate.custom ? createWorkTypeId(row.subcategory_id, name) : rate.work_type_id,
             work_type_name: name,
@@ -288,7 +287,9 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setDraft(draftFromRecord(normalized));
     resetLocation(normalized, nextCoordinates);
     setCapabilities(capabilitiesToDraft(normalized.work_capabilities || [], allSubcategories));
-    setActiveCapabilityCategoryId(null);
+    setSelectedCategoryIds([...new Set(allSubcategories
+      .filter((subcategory) => normalized.work_capabilities?.some((row) => row.subcategory_id === subcategory.id))
+      .map((subcategory) => subcategory.category_id))]);
     setContractorPhoto(
       normalized.photo_attachment_id
         ? { attachment_id: String(normalized.photo_attachment_id) }
@@ -594,13 +595,18 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
 
             <section className="rounded-lg border p-3">
               <p className="text-xs font-semibold">Work capabilities and canonical rates</p>
-              <p className="mb-2 text-[10px] text-muted-foreground">Categories are derived automatically from selected subcategories. Governance and Contractor Rates are synchronized from these rows.</p>
+              <p className="mb-2 text-[10px] text-muted-foreground">Select multiple categories, then their subcategories and work types. Saved categories come from those subcategories. Deselecting a category removes its selected work and rates from this draft.</p>
               <CapabilityTaxonomyPicker
                 categories={allCategories}
                 subcategories={allSubcategories}
-                categoryIds={activeCapabilityCategoryId ? [activeCapabilityCategoryId] : []}
+                categoryIds={selectedCategoryIds}
                 subcategoryIds={capabilities.map((row) => row.subcategory_id)}
-                onCategory={(id) => setActiveCapabilityCategoryId((current) => current === id ? null : id)}
+                onCategory={(id) => {
+                  const removing = selectedCategoryIds.includes(id);
+                  setSelectedCategoryIds((current) => removing ? current.filter((value) => value !== id) : [...current, id]);
+                  if (removing) setCapabilities((current) => current.filter((row) =>
+                    allSubcategories.find((subcategory) => subcategory.id === row.subcategory_id)?.category_id !== id));
+                }}
                 onSubcategory={(_, id) => toggleCapability(id)}
               />
               <div className="mt-2 space-y-2">
@@ -608,7 +614,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                   const subcategory = allSubcategories.find((row) => row.id === capability.subcategory_id);
                   const workTypes = subcategory ? workTypesForSubcategory(subcategory) : [];
                   return (
-                    <div key={capability.subcategory_id} className="rounded border p-2.5">
+                    <div key={capability.subcategory_id} role="group" aria-label={`${capability.subcategory_name} capability`} className="rounded border p-2.5">
                       <div className="flex items-center gap-2">
                         <span className="min-w-0 flex-1 truncate text-xs font-semibold">{capability.subcategory_name}</span>
                         <button type="button" aria-label={`Remove ${capability.subcategory_name}`} onClick={() => toggleCapability(capability.subcategory_id)} className="shrink-0 text-destructive"><X className="h-4 w-4" /></button>
@@ -677,7 +683,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                           <p className="px-2 py-2 text-[10px] text-muted-foreground">Select work types above, then enter this contractor’s rates below.</p>
                         )}
                         <div className="m-2 flex items-center gap-2">
-                          <span className="text-[9px] text-muted-foreground">Rows without any rate are not saved.</span>
+                          <span className="text-[9px] text-muted-foreground">Selected work types are saved even when rates are not yet known. Enter a rate to include it in Contractor Rates.</span>
                         </div>
                       </div>
                     </div>

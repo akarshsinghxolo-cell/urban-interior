@@ -73,6 +73,18 @@ describe("canonical contractor profile", () => {
     expect(derivedContractorCategoryNames(db(), [{ subcategory_id: "sub-paint" }, { subcategory_id: "sub-wood" }])).toEqual(["Painting", "Carpentry"]);
   });
 
+  test("multiple capabilities retain selected unpriced work types without fabricating prices", () => {
+    const normalized = normalizeContractorForWrite({ id: "con-multi", name: "Multi-trade", work_capabilities: [
+      { subcategory_id: "sub-paint", work_type_rates: [budgetRate, { ...premiumRate, material_rate: undefined, labour_rate: undefined }] },
+      { subcategory_id: "sub-wood", work_type_rates: [{ work_type_id: "wt-wood", work_type_name: "Standard", unit_id: "sqft" }] },
+    ] }, db());
+    expect(normalized.categories).toEqual(["Painting", "Carpentry"]);
+    expect(normalized.work_capabilities?.map((row) => row.work_type_rates?.length)).toEqual([2, 1]);
+    const rates = contractorRateProjection(db(), normalized);
+    expect(rates).toHaveLength(1);
+    expect(rates[0].work_type_id).toBe(budgetRate.work_type_id);
+  });
+
   test("rate projections contain material, labour and total keyed by work type", () => {
     const rates = contractorRateProjection(db(), { id: "con-1", name: "Mr Das", work_capabilities: [{
       subcategory_id: "sub-paint", subcategory_name: "Interior Painting", work_type_rates: [budgetRate, premiumRate],
@@ -170,7 +182,7 @@ describe("contractor capability picker layout", () => {
     const vendor = readFileSync(new URL("../src/components/rdash/VendorFormDialog.tsx", import.meta.url), "utf8");
     expectTokens(source, ["<CapabilityTaxonomyPicker", "<MultiTickDropdown", "inline"]);
     expectTokens(vendor, ["<CapabilityTaxonomyPicker"]);
-    expect(source).toContain("activeCapabilityCategoryId");
+    expect(source).toContain("categoryIds={selectedCategoryIds}");
     expectNoTokens(source, ["<details key={category.id}"]);
   });
 });
