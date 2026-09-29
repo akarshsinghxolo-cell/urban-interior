@@ -764,14 +764,46 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const lateGrace = policy?.late_grace_minutes || 0;
             const absentDeductionEnabled = policy?.absent_deduction_enabled ?? true;
             const absentDeductionDays = policy?.absent_deduction_days ?? 1;
-            const violations: Array<{ date: string; type: "late" | "absent" | "half_day"; late_minutes?: number; rule: string; deduction: number; }> = [];
+
+            // Approved leave participates in payroll. Any approved non-unpaid leave
+            // is paid; unpaid leave always reduces salary by one day rate. A leave
+            // date is handled once even if an attendance "leave" row also exists.
+            const leaveByDate = new Map<string, "paid" | "unpaid">();
+            const monthStart = `${yearMonth}-01`;
+            const monthEnd = `${yearMonth}-${String(daysInMonth).padStart(2, "0")}`;
+            for (const request of state.db.leaveRequests || []) {
+                if (request.staff_id !== staffId || request.status !== "approved") continue;
+                const start = request.start_date < monthStart ? monthStart : request.start_date;
+                const end = request.end_date > monthEnd ? monthEnd : request.end_date;
+                if (start > end) continue;
+                let cursor = new Date(`${start}T00:00:00Z`);
+                const endMs = new Date(`${end}T00:00:00Z`).getTime();
+                while (cursor.getTime() <= endMs) {
+                    const date = cursor.toISOString().slice(0, 10);
+                    const kind = request.leave_type === "unpaid" ? "unpaid" : "paid";
+                    if (kind === "unpaid" || !leaveByDate.has(date)) leaveByDate.set(date, kind);
+                    cursor = new Date(cursor.getTime() + 86_400_000);
+                }
+            }
+            const paidLeaveDays = [...leaveByDate.values()].filter((kind) => kind === "paid").length;
+            const unpaidLeaveDates = [...leaveByDate.entries()].filter(([, kind]) => kind === "unpaid").map(([date]) => date);
+            const violations: Array<{ date: string; type: "late" | "absent" | "half_day" | "unpaid_leave"; late_minutes?: number; rule: string; deduction: number; }> = [];
             let presentDays = 0;
-            let absentDays = 0;
+            let absentDays = unpaidLeaveDates.length;
             let halfDays = 0;
             let lateDays = 0;
             let lateDeductionTotal = 0;
-            let absenceDeductionTotal = 0;
+            let absenceDeductionTotal = Math.round(unpaidLeaveDates.length * perDayRate * 100) / 100;
+            for (const date of unpaidLeaveDates) {
+                violations.push({
+                    date,
+                    type: "unpaid_leave",
+                    rule: `Approved unpaid leave. Deduction: ${perDayRate} × 1 day = ₹${perDayRate}`,
+                    deduction: perDayRate,
+                });
+            }
             for (const record of records) {
+                if (leaveByDate.has(record.date)) continue;
                 if (record.status === "present") {
                     presentDays++;
                     // Check lateness.
@@ -825,6 +857,8 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 per_day_rate: perDayRate,
                 present_days: presentDays,
                 absent_days: absentDays,
+                paid_leave_days: paidLeaveDays,
+                unpaid_leave_days: unpaidLeaveDates.length,
                 half_days: halfDays,
                 late_days: lateDays,
                 late_deduction_total: lateDeductionTotal,
@@ -876,14 +910,14 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                     base_salary: computation.base_salary,
                     present_days: computation.present_days,
                     absent_days: computation.absent_days,
-                    paid_leave_days: 0,
+                    paid_leave_days: computation.paid_leave_days,
                     overtime_amount: adjustmentSummary.additions,
                     advance_deduction: adjustmentSummary.advance,
                     other_deductions: adjustmentSummary.otherDeductions,
                     gross_pay: grossPay,
                     net_payable: netPayable,
                     payment_status: "pending",
-                    deduction_explanation: `${computation.late_days} late day(s), ${computation.absent_days} absent, ${computation.half_days} half-day; approved additions ₹${adjustmentSummary.additions}; approved deductions ₹${adjustmentSummary.deductions}.`,
+                    deduction_explanation: `${computation.late_days} late day(s), ${computation.absent_days} absent/unpaid leave, ${computation.paid_leave_days} paid leave, ${computation.half_days} half-day; approved additions ₹${adjustmentSummary.additions}; approved deductions ₹${adjustmentSummary.deductions}.`,
                 };
                 return line;
             });
