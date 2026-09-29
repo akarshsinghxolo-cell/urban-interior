@@ -4,7 +4,7 @@ import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
 import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
-import { hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
+import { configuredStaffBaseSalary, daysInPayrollMonth, hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
 
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
@@ -750,8 +750,13 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const staff = state.db.master.staff.find((s: any) => s.id === staffId);
             if (!staff)
                 throw new Error("Staff not found.");
-            const baseSalary = staff.monthly_salary || (staff.daily_wage ? staff.daily_wage * 30 : 0);
-            const perDayRate = baseSalary > 0 ? Math.round((baseSalary / 30) * 100) / 100 : 0;
+            const daysInMonth = daysInPayrollMonth(yearMonth);
+            const baseSalary = configuredStaffBaseSalary(staff, yearMonth);
+            const perDayRate = staff.salary_type === "daily_wage" && Number(staff.daily_wage || 0) > 0
+                ? Math.round(Number(staff.daily_wage) * 100) / 100
+                : baseSalary > 0
+                    ? Math.round((baseSalary / daysInMonth) * 100) / 100
+                    : 0;
             // Filter attendance records for this staff + month (yearMonth = "YYYY-MM").
             const records = state.db.attendance.filter((r: any) =>
                 r.staff_id === staffId && r.date.startsWith(yearMonth));
