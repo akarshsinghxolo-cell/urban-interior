@@ -39,7 +39,7 @@ describe("Vendor secondary-contact removal", () => {
     expect(workspace).not.toContain("partner.alternate_phone");
     expect(workspace).not.toContain("partner.email");
     expect(workspace).toContain("sanitizeIndianMobile(partner.phone)");
-    expect(workspace).toContain('https://wa.me/${phone}');
+    expect(workspace).toContain('https://wa.me/${whatsappDial}');
   });
 
   test("the unused business dialog cannot reintroduce fields removed from the canonical form", async () => {
