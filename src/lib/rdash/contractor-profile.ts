@@ -1,5 +1,6 @@
 import type { RDashDatabase, WorkSubcategory } from "./types";
 import { workTypesForSubcategory } from "./work-types";
+import { isValidIndianMobile, sanitizeIndianMobile } from "./phone-validation";
 
 export type ContractorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
 
@@ -73,11 +74,6 @@ function canonicalContractorInput(input: ContractorProfileRecord): ContractorPro
   return Object.fromEntries(Object.entries(input).filter(([key]) => CONTRACTOR_PROFILE_KEYS.has(key as keyof ContractorProfileRecord)));
 }
 
-const digits = (value?: string) => String(value || "").replace(/\D/g, "");
-const mobile = (value?: string) => {
-  const valueDigits = digits(value);
-  return valueDigits.length > 10 ? valueDigits.slice(-10) : valueDigits;
-};
 const normalizedName = (value?: string) => String(value || "").toLowerCase()
   .replace(/\b(pvt|private|ltd|limited|llp|company|co|enterprises|enterprise|traders|trading|contractor|contractors)\b/g, " ")
   .replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
@@ -275,12 +271,12 @@ export function contractorDuplicateConflicts(
   excludeId?: string,
 ): ContractorDuplicateConflict[] {
   const result: ContractorDuplicateConflict[] = [];
-  const candidatePhones = [mobile(candidate.phone), mobile(candidate.alternate_phone)].filter(Boolean);
+  const candidatePhones = [sanitizeIndianMobile(candidate.phone), sanitizeIndianMobile(candidate.alternate_phone)].filter(Boolean);
   const candidateName = normalizedName(candidate.legal_name || candidate.name);
   const candidateCity = String(candidate.city || "").trim().toLowerCase();
   for (const row of db.master.contractors as ContractorProfileRecord[]) {
     if (!row.id || row.id === excludeId || row.duplicate_of_id) continue;
-    const rowPhones = [mobile(row.phone), mobile(row.alternate_phone)].filter(Boolean);
+    const rowPhones = [sanitizeIndianMobile(row.phone), sanitizeIndianMobile(row.alternate_phone)].filter(Boolean);
     if (candidatePhones.some((phone) => rowPhones.includes(phone))) {
       result.push({ id: row.id, name: String(row.name || row.id), reasons: ["same phone"], hard: true });
       continue;
@@ -298,10 +294,10 @@ export function contractorProfileValidationError(
   options: { isCreate?: boolean; activating?: boolean } = {},
 ): string | null {
   if (!String(candidate.name || "").trim()) return "Contractor name is required.";
-  const phone = mobile(candidate.phone);
-  const alternatePhone = mobile(candidate.alternate_phone);
-  if (candidate.phone && !/^[6-9]\d{9}$/.test(phone)) return "Enter a valid 10-digit Indian contractor primary number.";
-  if (candidate.alternate_phone && !/^[6-9]\d{9}$/.test(alternatePhone)) return "Enter a valid 10-digit Indian contractor secondary number.";
+  const phone = sanitizeIndianMobile(candidate.phone);
+  const alternatePhone = sanitizeIndianMobile(candidate.alternate_phone);
+  if (!isValidIndianMobile(candidate.phone)) return "Enter a valid 10-digit Indian contractor primary number starting with 6, 7, 8, or 9.";
+  if (!isValidIndianMobile(candidate.alternate_phone)) return "Enter a valid 10-digit Indian contractor secondary number starting with 6, 7, 8, or 9.";
   for (const value of [candidate.available_workers, candidate.service_radius_km]) {
     if (value !== undefined && (!Number.isFinite(Number(value)) || Number(value) < 0)) return "Contractor capacity values must be valid non-negative numbers.";
   }
@@ -336,8 +332,8 @@ export function normalizeContractorForWrite(
     id,
     name: String(input.name || "").trim(),
     legal_name: String(input.legal_name || "").trim() || undefined,
-    phone: mobile(input.phone) || undefined,
-    alternate_phone: mobile(input.alternate_phone) || undefined,
+    phone: sanitizeIndianMobile(input.phone) || undefined,
+    alternate_phone: sanitizeIndianMobile(input.alternate_phone) || undefined,
     city: String(input.city || "").trim() || undefined,
     locality: String(input.locality || "").trim() || undefined,
     address: String(input.address || "").trim() || undefined,
