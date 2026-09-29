@@ -739,7 +739,20 @@ export function validateBusinessData(db: RDashDatabase) {
         if (!folder.folder_path.trim())
             fail("Storage folder", "must record its logical path.");
     }));
-    db.master.fileAssets.forEach((file) => capture(`Drive file ${file.id}`, () => {
+    db.master.fileAssets.forEach((file) => capture(`File asset ${file.id}`, () => {
+        const tags = file.tags || [];
+        const staffDocument = tags.includes("staff-document");
+        if (staffDocument) {
+            if (file.storage_provider !== "supabase")
+                fail("Staff document", "must use private Supabase Storage.");
+            if (file.storage_mode !== "managed" || file.sync_status !== "uploaded")
+                fail("Staff document", "must be a completed managed upload.");
+            if (file.storage_bucket !== "staff-documents" || !file.storage_path)
+                fail("Staff document", "must retain its private bucket and storage path.");
+            if (!/^\/api\/staff-documents\?assetId=/.test(file.web_view_link || ""))
+                fail("Staff document", "must use the authenticated Staff document gateway.");
+            return;
+        }
         if (!/^https:\/\/drive\.google\.com\//.test(file.web_view_link || ""))
             fail("Drive file", "must use a Google Drive web link.");
         if (/^(data:|blob:)/i.test(file.web_view_link || ""))
@@ -763,6 +776,17 @@ export function validateBusinessData(db: RDashDatabase) {
             if (!file.storage_folder_instance_id)
                 fail("Drive file", "managed uploads require their original physical folder.");
         }
+    }));
+    (db.staffDocuments || []).forEach((document) => capture(`Staff document ${document.id}`, () => {
+        if (!db.master.staff.some((staff) => staff.id === document.staff_id))
+            fail("Staff document", "references a missing Staff profile.");
+        if (!document.file_asset_id)
+            fail("Staff document", "requires a linked uploaded file.");
+        const file = document.file_asset_id
+            ? db.master.fileAssets.find((asset) => asset.id === document.file_asset_id)
+            : undefined;
+        if (!file || file.storage_provider !== "supabase" || !(file.tags || []).includes("staff-document"))
+            fail("Staff document", "must resolve to a canonical private Supabase file asset.");
     }));
     db.entityFileAttachments.forEach((attachment) => capture(`Drive attachment ${attachment.id}`, () => {
         assertCustomerRelation(db, attachment, "Drive attachment");
