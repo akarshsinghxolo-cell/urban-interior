@@ -32,6 +32,14 @@ export function normalizeAttendancePolicy(policy: Partial<AttendancePolicy> | nu
         const parsed = Number(value);
         return Number.isFinite(parsed) ? parsed : undefined;
     };
+    const clockTime = (value: unknown, fallback: string) => {
+        const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || ""));
+        if (!match) return fallback;
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+        return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    };
     return {
         office_name: String(source.office_name || defaults.office_name),
         office_latitude: optionalCoordinate(source.office_latitude),
@@ -39,7 +47,7 @@ export function normalizeAttendancePolicy(policy: Partial<AttendancePolicy> | nu
         geofence_radius_m: Math.max(1, finite(source.geofence_radius_m, defaults.geofence_radius_m)),
         visit_geofence_radius_m: Math.max(1, finite(source.visit_geofence_radius_m, defaults.visit_geofence_radius_m)),
         max_gps_accuracy_m: Math.max(1, finite(source.max_gps_accuracy_m, defaults.max_gps_accuracy_m)),
-        standard_check_in_time: String(source.standard_check_in_time || defaults.standard_check_in_time),
+        standard_check_in_time: clockTime(source.standard_check_in_time, defaults.standard_check_in_time),
         minimum_half_day_minutes: Math.max(1, Math.round(finite(source.minimum_half_day_minutes, defaults.minimum_half_day_minutes))),
         auto_present_from_gps: source.auto_present_from_gps ?? defaults.auto_present_from_gps,
         auto_geofence_enabled: source.auto_geofence_enabled ?? defaults.auto_geofence_enabled,
