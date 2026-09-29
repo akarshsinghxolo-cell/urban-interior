@@ -1,4 +1,4 @@
-import { sanitizeIndianMobile } from "./phone-validation";
+import { isValidIndianMobile } from "./phone-validation";
 import {
   customerReferrer,
   isCustomerReferrerType,
@@ -16,12 +16,6 @@ export type WorkRequiredValidationContext = {
 
 function present(value: unknown): boolean {
   return typeof value === "string" ? Boolean(value.trim()) : value != null;
-}
-
-export function validCustomerPhone(value: unknown): boolean {
-  const raw = String(value || "").trim();
-  if (!raw) return true;
-  return /^[6-9]\d{9}$/.test(sanitizeIndianMobile(raw));
 }
 
 export function validCustomerEmailValue(value: unknown): boolean {
@@ -66,7 +60,7 @@ export function assertCustomerRecord(
     ["WhatsApp", customer.whatsapp],
     ["alternate phone", customer.alternate_phone],
   ] as const) {
-    if (!validCustomerPhone(value)) {
+    if (!isValidIndianMobile(value)) {
       throw new Error(`${context}: ${label} must be a valid Indian mobile number or empty.`);
     }
   }
