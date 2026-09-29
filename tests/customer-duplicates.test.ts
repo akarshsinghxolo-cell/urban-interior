@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   collectCustomerIdentityDuplicateGroups,
 } from "../src/lib/rdash/server/customer-duplicates";
-import { normalizeEmail, normalizePhone } from "../src/lib/rdash/customer-identity";
+import { normalizeEmail } from "../src/lib/rdash/customer-identity";
+import { sanitizeIndianMobile } from "../src/lib/rdash/phone-validation";
 import { expectNoTokens, expectTokens, readSrc } from "./helpers/source-contract";
 import type { Customer } from "../src/lib/rdash/types";
 
@@ -27,14 +28,14 @@ function customer(overrides: Partial<Customer> = {}): Customer {
   };
 }
 
-describe("customer identity normalizers (must stay in sync with the DB function)", () => {
+describe("customer identity normalizers", () => {
   test("phone: digits only, 00/91/0 prefixes stripped", () => {
-    expect(normalizePhone("+91 98765 43210")).toBe("9876543210");
-    expect(normalizePhone("00919876543210")).toBe("9876543210");
-    expect(normalizePhone("09876543210")).toBe("9876543210");
-    expect(normalizePhone("9876543210")).toBe("9876543210");
-    expect(normalizePhone("not-a-phone")).toBe("");
-    expect(normalizePhone(undefined)).toBe("");
+    expect(sanitizeIndianMobile("+91 98765 43210")).toBe("9876543210");
+    expect(sanitizeIndianMobile("00919876543210")).toBe("9876543210");
+    expect(sanitizeIndianMobile("09876543210")).toBe("9876543210");
+    expect(sanitizeIndianMobile("9876543210")).toBe("9876543210");
+    expect(sanitizeIndianMobile("not-a-phone")).toBe("");
+    expect(sanitizeIndianMobile(undefined)).toBe("");
   });
 
   test("email: trimmed and lowercased", () => {
