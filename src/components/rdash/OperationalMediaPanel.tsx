@@ -9,6 +9,7 @@ import { FilePreview } from "./FilePreview";
 import { assetPreview } from "@/lib/rdash/file-attachments";
 import { resolveEntityContext, type EntityContext } from "@/lib/rdash/entity-context";
 import { toast } from "sonner";
+import { indianWhatsAppDialDigits, isValidIndianMobile } from "@/lib/rdash/phone-validation";
 import { Archive, BookOpen, ExternalLink, FilePlus2, Image as ImageIcon, Link2, Paperclip, Pin, Send, Share2, Sparkles, Trash2, } from "lucide-react";
 type Context = {
     customerId?: string;
@@ -332,8 +333,9 @@ export function OperationalMediaPanel({ entityType, entityId, title = "Files & r
         if (!context.customerId || !context.customerPhone || !url)
             return toast.error("A linked customer and a valid share URL are required");
         const message = `${subject}\n${url}`;
-        const digits = context.customerPhone.replace(/\D/g, "");
-        window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+        if (!isValidIndianMobile(context.customerPhone, { allowEmpty: false }))
+            return toast.error("Customer needs a valid Indian mobile number before sharing.");
+        window.open(`https://wa.me/${indianWhatsAppDialDigits(context.customerPhone)}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
         sendComm({ channel, customer_id: context.customerId, staff_name: "Owner", subject, body: message, status: "prepared" });
         toast.success("External WhatsApp draft opened and the share is logged as Prepared");
     };
