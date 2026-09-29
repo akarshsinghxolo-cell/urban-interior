@@ -1,5 +1,6 @@
 import type { Customer } from "@/lib/rdash/types";
-import { normalizeEmail, normalizePhone } from "@/lib/rdash/customer-identity";
+import { normalizeEmail } from "@/lib/rdash/customer-identity";
+import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 
 /**
  * Historical duplicate customer contact identities inside one workspace.
@@ -10,11 +11,9 @@ import { normalizeEmail, normalizePhone } from "@/lib/rdash/customer-identity";
  * appears as one customer's whatsapp and another customer's alternate_phone
  * is the same identity collision. Email lives in its own space.
  *
- * New same-field duplicates are impossible while the DB unique indexes exist
- * (entity_customers_phone_uidx / entity_customers_email_uidx). Cross-field
- * collisions cannot be expressed as a single jsonb unique index — this report
- * is the audit surface for those. Pure and synchronous so it stays unit
- * testable and cheap on the in-memory workspace snapshot.
+ * The canonical write path blocks new customer contact collisions across phone,
+ * WhatsApp and alternate phone. This report remains the audit surface for
+ * historical rows and uses the exact same shared mobile normalizer as writes.
  */
 
 export type CustomerIdentityField = "phone" | "whatsapp" | "alternate_phone" | "email";
@@ -72,7 +71,7 @@ export function collectCustomerIdentityDuplicateGroups(customers: Customer[]): C
         const customerId = String(customer.id || "");
         // Phone family: one shared value space, exactly like the UI guard.
         for (const field of PHONE_FIELDS) {
-            const normalized = normalizePhone(customer[field]);
+            const normalized = sanitizeIndianMobile(customer[field]);
             if (!normalized) continue;
             const bucket = record(`phone:${normalized}`, {
                 kind: "phone",
