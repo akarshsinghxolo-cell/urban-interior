@@ -11,9 +11,9 @@ export const maxDuration = 30;
 /**
  * Owner-facing audit of historical duplicate customer contact identities.
  *
- * Writes are already guarded twice (UI conflict check + DB unique indexes
- * entity_customers_phone_uidx / entity_customers_email_uidx). This report
- * surfaces anything that predates those guards so it can be merged by hand.
+ * Canonical customer writes reject duplicate contact identities before
+ * persistence. This report surfaces historical collisions so they can be
+ * reviewed and merged without maintaining a second duplicate-detection path.
  * Read-only over the caller's normal workspace scope.
  */
 export async function GET(request: NextRequest) {
