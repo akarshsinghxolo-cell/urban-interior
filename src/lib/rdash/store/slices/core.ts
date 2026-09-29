@@ -122,7 +122,7 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
                 file_name: input.fileName,
                 mime_type: input.mimeType,
                 kind: "document",
-                web_view_link: `/api/staff-documents/${encodeURIComponent(input.assetId)}`,
+                web_view_link: `/api/staff-documents?assetId=${encodeURIComponent(input.assetId)}`,
                 file_size_bytes: input.fileSizeBytes,
                 storage_provider: "supabase",
                 storage_bucket: input.storageBucket,
