@@ -11,10 +11,12 @@ import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { testFile } from "./test-file";
 
 describe("HR payroll consolidation", () => {
-  test("uses one canonical salary configuration rule", () => {
-    expect(configuredStaffBaseSalary({ monthly_salary: 30000, daily_wage: 900 } as Staff)).toBe(30000);
-    expect(configuredStaffBaseSalary({ daily_wage: 900 } as Staff)).toBe(27000);
-    expect(hasStaffSalaryConfiguration({ monthly_salary: 0, daily_wage: 0 } as Staff)).toBe(false);
+  test("uses one canonical salary configuration rule and real month length", () => {
+    expect(configuredStaffBaseSalary({ salary_type: "monthly", monthly_salary: 30000, daily_wage: 900 } as Staff, "2026-02")).toBe(30000);
+    expect(configuredStaffBaseSalary({ salary_type: "daily_wage", daily_wage: 900 } as Staff, "2026-02")).toBe(25200);
+    expect(configuredStaffBaseSalary({ salary_type: "daily_wage", daily_wage: 900 } as Staff, "2026-03")).toBe(27900);
+    expect(hasStaffSalaryConfiguration({ salary_type: "monthly", monthly_salary: 0, daily_wage: 900 } as Staff)).toBe(false);
+    expect(hasStaffSalaryConfiguration({ salary_type: "daily_wage", monthly_salary: 30000, daily_wage: 0 } as Staff)).toBe(false);
   });
 
   test("includes only approved adjustments in payroll math", () => {
