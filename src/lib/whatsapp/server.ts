@@ -8,6 +8,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { indianWhatsAppDialDigits, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 
 export type WhatsAppConnectionStatus =
   | "disconnected"
@@ -90,30 +91,9 @@ function decodeAuthPayload<T>(value: unknown): T {
   return JSON.parse(JSON.stringify(value), BufferJSON.reviver) as T;
 }
 
-function cleanPhoneDigits(raw: string): string {
-  return raw.replace(/\D/g, "");
-}
-
-function comparableIndianPhone(raw: string): string {
-  const digits = cleanPhoneDigits(raw);
-  if (!digits) return "";
-  if (digits.length >= 12 && digits.startsWith("91")) return digits.slice(-10);
-  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(-10);
-  return digits.length > 10 ? digits.slice(-10) : digits;
-}
-
-function whatsappDialDigits(raw: string): string {
-  const digits = cleanPhoneDigits(raw);
-  if (!digits) throw new Error("A WhatsApp phone number is required.");
-  if (digits.length === 10) return `91${digits}`;
-  if (digits.length === 12 && digits.startsWith("91")) return digits;
-  if (digits.length >= 10 && digits.length <= 15) return digits;
-  throw new Error("Enter a valid WhatsApp number including country code when outside India.");
-}
-
 function remotePhone(remoteJid: string): string {
   const local = remoteJid.split("@")[0]?.split(":")[0] || "";
-  return comparableIndianPhone(local);
+  return sanitizeIndianMobile(local);
 }
 
 async function ensureAccountRow(workspaceId = whatsappWorkspaceId()): Promise<void> {
@@ -280,7 +260,7 @@ async function customerIdForRemoteJid(remoteJid: string, workspaceId: string): P
     const customer = row.data || {};
     return [customer.whatsapp, customer.phone, customer.alternate_phone]
       .filter(Boolean)
-      .some((value: string) => comparableIndianPhone(value) === phone);
+      .some((value: string) => sanitizeIndianMobile(value) === phone);
   });
   return match?.id;
 }
@@ -561,7 +541,7 @@ export async function sendWhatsAppMessage(input: {
   const customer = customerRow.data || {};
   const recipient = customer.whatsapp || customer.phone;
   if (!recipient) throw new Error("This customer has no WhatsApp or phone number.");
-  const dialDigits = whatsappDialDigits(recipient);
+  const dialDigits = indianWhatsAppDialDigits(recipient);
   const remoteJid = `${dialDigits}@s.whatsapp.net`;
 
   const { sock, state } = await createUrbanCastleWhatsAppSocket(workspaceId);
