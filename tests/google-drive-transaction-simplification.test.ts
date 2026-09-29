@@ -177,8 +177,9 @@ describe("Google Drive transaction simplification", () => {
     expect(files).not.toContain("/api/local-file/");
     expectNoTokens(files, ['storageAccountId === "local"']);
     expect(thumbnail).not.toContain('fileId.startsWith("local-")');
-    expectTokens(types, ['storage_provider: "google_drive";']);
-    expectNoTokens(types, ['storage_provider: "google_drive" | "local";']);
+    expectTokens(types, ['storage_provider: "google_drive" | "supabase";']);
+    expectNoTokens(types, ['storage_provider: "google_drive" | "local"']);
+    expectNoTokens(types, ['storage_provider: "google_drive" | "supabase" | "local"']);
     expectNoTokens(businessRules, ['storage_provider === "local"']);
     expectNoTokens(businessRules, ['storage_account_id === "local"']);
     expectNoTokens(businessRules, ['storage_account_id !== "local"']);
