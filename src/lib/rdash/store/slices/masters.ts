@@ -2,7 +2,7 @@ import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule,
 import type { MastersState } from "../types";
 import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
-import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
+import { dateFromIso, isAtOrAfterMinutesFromTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
 import { approvedLeaveDatesForMonth, hasStaffSalaryConfiguration, staffCompensationForMonth, summarizeSalaryAdjustments } from "../../payroll";
 
