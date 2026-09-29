@@ -1725,7 +1725,7 @@ export interface Contractor {
     performance_recomputed_at?: string;
 }
 export type StaffRoleKey = "OWNER" | "OPERATIONS_MANAGER" | "FIELD_STAFF" | "SALES_TELECALLER" | "PROCUREMENT_STAFF" | "FINANCE" | "ACCOUNTS_ADMIN";
-type StaffSalaryType = "monthly" | "daily_wage" | "contract";
+type StaffSalaryType = "monthly" | "daily_wage";
 export interface Staff {
     id: ID;
     code?: string;
