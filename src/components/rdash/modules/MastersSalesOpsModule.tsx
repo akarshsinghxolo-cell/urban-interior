@@ -19,6 +19,7 @@ import { OperationalMediaPanel } from "../OperationalMediaPanel";
 import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermissionRecord, type StaffRoleKey } from "@/lib/rdash/staff-operations";
 import { latestQuotationRevisions } from "@/lib/rdash/metrics";
 import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
+import { configuredStaffBaseSalary } from "@/lib/rdash/payroll";
 export function MastersModule({ submodule }: {
     submodule: string;
 }) {
@@ -123,6 +124,9 @@ export function MastersModule({ submodule }: {
     }
     if (effectiveSubmodule === "staff") {
         const staff = db.master.staff.filter((s) => !q || s.name.toLowerCase().includes(q.toLowerCase()) || s.role.toLowerCase().includes(q.toLowerCase()));
+        const now = new Date();
+        const payrollMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        const configuredPayroll = db.master.staff.reduce((sum, member) => sum + configuredStaffBaseSalary(member, payrollMonth), 0);
         const permissions = ((db as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions || []);
         const roleCoverage = Array.from(new Set(permissions.map((p) => p.role_key))).length;
         const selectedPermissions = permissions.filter((p) => p.role_key === permissionRole).sort((a, b) => a.module_label.localeCompare(b.module_label));
@@ -153,7 +157,7 @@ export function MastersModule({ submodule }: {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <MetricCard label="Total staff" value={db.master.staff.length} tone="primary" icon={<Users className="h-4 w-4"/>}/>
           <MetricCard label="Active" value={db.master.staff.filter((s) => s.status === "active").length} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
-          <MetricCard label="Monthly payroll" value={formatINRShort(db.master.staff.reduce((n, s) => n + (s.monthly_salary || 0), 0))} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
+          <MetricCard label="Configured payroll" value={formatINRShort(configuredPayroll)} tone="warning" icon={<TrendingUp className="h-4 w-4"/>}/>
           <MetricCard label="Role matrices" value={roleCoverage} tone="default" icon={<ShieldCheck className="h-4 w-4"/>}/>
         </div>
         <div className="rounded-[var(--panel-radius)] border border-border bg-card p-4 shadow-card">
@@ -198,7 +202,7 @@ export function MastersModule({ submodule }: {
                   <p className="text-[11px] text-muted-foreground">{s.role} · {s.department || "Team"} · {s.city}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                     <span className="inline-flex items-center gap-0.5"><Phone className="h-2.5 w-2.5"/>{s.phone}</span>
-                    {s.monthly_salary && <span className="font-mono">· {formatINR(s.monthly_salary)}/mo</span>}
+                    {s.salary_type === "daily_wage" && s.daily_wage ? <span className="font-mono">· {formatINR(s.daily_wage)}/day</span> : s.monthly_salary ? <span className="font-mono">· {formatINR(s.monthly_salary)}/mo</span> : null}
                     {s.login_email && <span>· login</span>}
                   </div>
                 </div>
