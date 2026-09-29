@@ -1,3 +1,4 @@
+import { sanitizeIndianMobile } from "./phone-validation";
 import type { ID } from "./types";
 
 export type PartnerGovernanceMode = "vendor" | "contractor";
@@ -105,11 +106,6 @@ function normalizePartnerName(value?: string): string {
     .replace(/\s+/g, " ");
 }
 
-function normalizePhone(value?: string): string {
-  const digits = String(value || "").replace(/\D/g, "");
-  return digits.length > 10 ? digits.slice(-10) : digits;
-}
-
 function normalizeTaxId(value?: string): string {
   return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -210,8 +206,8 @@ export function detectPartnerDuplicates(partners: Array<Record<string, any>>, mo
       const rightGst = mode === "vendor" ? normalizeTaxId(right.gstin) : "";
       const leftPan = mode === "vendor" ? normalizeTaxId(left.pan) : "";
       const rightPan = mode === "vendor" ? normalizeTaxId(right.pan) : "";
-      const leftPhone = normalizePhone(left.phone);
-      const rightPhone = normalizePhone(right.phone);
+      const leftPhone = sanitizeIndianMobile(left.phone);
+      const rightPhone = sanitizeIndianMobile(right.phone);
       const leftBank = mode === "vendor" ? normalizeBankAccount(left.bank_account) : "";
       const rightBank = mode === "vendor" ? normalizeBankAccount(right.bank_account) : "";
       const leftName = normalizePartnerName(left.legal_name || left.name);
