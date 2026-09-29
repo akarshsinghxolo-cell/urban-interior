@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { IndianMobileInput } from "./IndianMobileInput";
 import { Textarea } from "@/components/ui/textarea";
 import { useRDashStore } from "@/lib/rdash/store";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
@@ -22,7 +23,6 @@ import {
   coordinateInputError,
   formatCoordinatePair,
 } from "@/lib/rdash/coordinates";
-import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { cancelQueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
 import { usePartnerLocation, usePartnerMedia, isPendingMedia as isPending, partnerMediaFile as mediaFile, removePartnerMedia as removeMedia, type PartnerMedia as MediaValue } from "./use-partner-form";
@@ -512,8 +512,8 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
               <div className="grid gap-2 sm:grid-cols-4">
                 <Input value={draft.name} onChange={(event) => { set("name", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Contractor / firm name" autoFocus={!isEdit} className="sm:col-span-2" />
                 <Input value={draft.legalName} onChange={(event) => { set("legalName", event.target.value); setDuplicateAcknowledged(false); }} placeholder="Legal / registered name" className="sm:col-span-2" />
-                <Input value={draft.phone} onChange={(event) => { set("phone", sanitizeIndianMobile(event.target.value)); setDuplicateAcknowledged(false); }} placeholder="Primary number" aria-label="Primary number" inputMode="numeric" />
-                <Input value={draft.secondaryPhone} onChange={(event) => { set("secondaryPhone", sanitizeIndianMobile(event.target.value)); setDuplicateAcknowledged(false); }} placeholder="Secondary number" aria-label="Secondary number" inputMode="numeric" />
+                <IndianMobileInput value={draft.phone} onChange={(phone) => { set("phone", phone); setDuplicateAcknowledged(false); }} placeholder="Primary number" aria-label="Primary number" />
+                <IndianMobileInput value={draft.secondaryPhone} onChange={(secondaryPhone) => { set("secondaryPhone", secondaryPhone); setDuplicateAcknowledged(false); }} placeholder="Secondary number" aria-label="Secondary number" />
                 <select value={draft.status} onChange={(event) => set("status", event.target.value as ContractorLifecycleStatus)} className="h-10 rounded-md border border-input bg-card px-3 text-sm sm:col-span-2">
                   <option value="onboarding">Onboarding</option>
                   <option value="active">Active</option>
