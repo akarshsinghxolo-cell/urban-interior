@@ -1,5 +1,5 @@
 import type { Customer, RDashDatabase } from "./types";
-import { normalizePhone } from "./customer-identity";
+import { indianPhoneSearchDigits } from "./phone-validation";
 
 /**
  * Customer Desk list search, shared by both list views.
@@ -23,10 +23,10 @@ export function customerMatchesQuery(db: RDashDatabase, customer: Customer, rawQ
         return true;
     if (String(customer.email || "").toLowerCase().includes(q))
         return true;
-    const qDigits = normalizePhone(q);
+    const qDigits = indianPhoneSearchDigits(q);
     if (qDigits.length >= 3) {
         const phones = [customer.phone, customer.whatsapp, customer.alternate_phone];
-        if (phones.some((phone) => normalizePhone(phone).includes(qDigits)))
+        if (phones.some((phone) => indianPhoneSearchDigits(phone).includes(qDigits)))
             return true;
     }
     return db.sites.some((site) => site.customer_id === customer.id &&
