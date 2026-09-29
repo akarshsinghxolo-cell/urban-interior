@@ -4,15 +4,35 @@ function money(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export function configuredStaffBaseSalary(staff: Pick<Staff, "monthly_salary" | "daily_wage">): number {
-  const monthly = Number(staff.monthly_salary || 0);
-  if (Number.isFinite(monthly) && monthly > 0) return money(monthly);
-  const daily = Number(staff.daily_wage || 0);
-  return Number.isFinite(daily) && daily > 0 ? money(daily * 30) : 0;
+export function daysInPayrollMonth(yearMonth: string): number {
+  const match = /^(\d{4})-(\d{2})$/.exec(yearMonth);
+  if (!match) throw new Error("Payroll month must use YYYY-MM format.");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error("Payroll month is invalid.");
+  }
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-export function hasStaffSalaryConfiguration(staff: Pick<Staff, "monthly_salary" | "daily_wage">): boolean {
-  return configuredStaffBaseSalary(staff) > 0;
+export function configuredStaffBaseSalary(
+  staff: Pick<Staff, "monthly_salary" | "daily_wage" | "salary_type">,
+  yearMonth: string,
+): number {
+  const salaryType = staff.salary_type || "monthly";
+  const monthly = Number(staff.monthly_salary || 0);
+  const daily = Number(staff.daily_wage || 0);
+  if (salaryType === "daily_wage") {
+    return Number.isFinite(daily) && daily > 0 ? money(daily * daysInPayrollMonth(yearMonth)) : 0;
+  }
+  if (Number.isFinite(monthly) && monthly > 0) return money(monthly);
+  return Number.isFinite(daily) && daily > 0 ? money(daily * daysInPayrollMonth(yearMonth)) : 0;
+}
+
+export function hasStaffSalaryConfiguration(staff: Pick<Staff, "monthly_salary" | "daily_wage" | "salary_type">): boolean {
+  const salaryType = staff.salary_type || "monthly";
+  if (salaryType === "daily_wage") return Number(staff.daily_wage || 0) > 0;
+  return Number(staff.monthly_salary || 0) > 0 || Number(staff.daily_wage || 0) > 0;
 }
 
 export interface SalaryAdjustmentSummary {
