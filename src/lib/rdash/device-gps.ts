@@ -3,7 +3,7 @@ import type { GpsCapture } from "./gps";
 
 export type DeviceGpsMode = "transaction" | "master-location" | "tracking";
 
-export const MASTER_LOCATION_MAX_ACCURACY_M = 75;
+const MASTER_LOCATION_TARGET_ACCURACY_M = 75;
 
 // Two-stage capture: try the precise GPS fix first, then fall back to a
 // balanced (Wi-Fi/network) fix. High-accuracy-only captures routinely time
@@ -94,22 +94,31 @@ export async function captureDevicePosition(
   options: CaptureDevicePositionOptions = {},
 ): Promise<GeolocationPosition> {
   const mode = options.mode || "transaction";
-  const maxAccuracyM =
+  // Master locations prefer precision, but laptops may only have a network fix.
+  // An explicit limit (e.g. attendance) remains mandatory, never a soft target.
+  const targetAccuracyM =
     options.maxAccuracyM
-    ?? (mode === "master-location" ? MASTER_LOCATION_MAX_ACCURACY_M : undefined);
+    ?? (mode === "master-location" ? MASTER_LOCATION_TARGET_ACCURACY_M : undefined);
 
   const api = geolocation();
+  let bestPosition: GeolocationPosition | undefined;
   let lastPositionError: unknown;
   for (const stageOptions of DEVICE_GPS_STAGES[mode]) {
     try {
       const position = await requestPosition(api, stageOptions);
-      return validatePosition(position, maxAccuracyM);
+      if (!bestPosition || position.coords.accuracy < bestPosition.coords.accuracy) {
+        bestPosition = position;
+      }
+      if (targetAccuracyM == null || bestPosition.coords.accuracy <= targetAccuracyM) {
+        return bestPosition;
+      }
     } catch (error) {
-      if (!isPositionError(error)) throw error; // accuracy/validation failure: retrying cannot fix it
+      if (!isPositionError(error)) throw error; // Invalid coordinates must never be accepted.
       lastPositionError = error;
       if (error.code === error.PERMISSION_DENIED) throw error; // retrying cannot fix it either
     }
   }
+  if (bestPosition) return validatePosition(bestPosition, options.maxAccuracyM);
   throw lastPositionError;
 }
 
@@ -147,7 +156,7 @@ export function deviceGpsErrorMessage(error: unknown) {
   if (typeof error === "object" && error && "code" in error) {
     const geoError = error as GeolocationPositionError;
     if (geoError.code === geoError.PERMISSION_DENIED) {
-      return "Location permission is blocked. Allow precise location in browser settings.";
+      return "Location permission is blocked. Allow location access in browser and device settings.";
     }
     if (geoError.code === geoError.POSITION_UNAVAILABLE) {
       return "This device cannot determine a reliable GPS position.";

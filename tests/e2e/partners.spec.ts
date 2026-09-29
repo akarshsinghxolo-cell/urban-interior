@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 for (const kind of ["vendor", "contractor"] as const) {
-  test(`${kind} GPS keeps typed addresses and ignores lookups after manual coordinate edits`, async ({ page }) => {
+  test(`${kind} approximate GPS autofills addresses, preserves typing and ignores stale lookups`, async ({ page }) => {
     await page.addInitScript(() => {
       Object.defineProperty(navigator, "geolocation", { configurable: true, value: {
         getCurrentPosition(success: PositionCallback) {
-          success({ coords: { latitude: 26.7606, longitude: 83.3732, accuracy: 10 }, timestamp: Date.now() } as GeolocationPosition);
+          success({ coords: { latitude: 26.7606, longitude: 83.3732, accuracy: 900 }, timestamp: Date.now() } as GeolocationPosition);
         },
         watchPosition() { return 1; },
         clearWatch() {},
@@ -30,6 +30,18 @@ for (const kind of ["vendor", "contractor"] as const) {
     await dialog.getByRole("button", { name: "Capture GPS", exact: true }).click();
     await requestStarted;
     await expect(coordinates).toHaveValue("26.760600, 83.373200");
+    release();
+    await expect(address).toHaveValue("GPS supplied address");
+    await expect(city).toHaveValue("GPS city");
+    await expect(locality).toHaveValue("GPS locality");
+
+    await address.fill("");
+    await city.fill("");
+    await locality.fill("");
+    gate = new Promise<void>((resolve) => { release = resolve; });
+    requestStarted = new Promise<void>((resolve) => { started = resolve; });
+    await dialog.getByRole("button", { name: "Capture GPS", exact: true }).click();
+    await requestStarted;
     await city.fill("My typed city");
     await address.fill("My typed address");
     release();
