@@ -2,7 +2,7 @@ import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule,
 import type { MastersState } from "../types";
 import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
-import { dateFromIso, isAtOrAfterTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
+import { dateFromIso, isAtOrAfterMinutesFromTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
 import { configuredStaffBaseSalary, daysInPayrollMonth, hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
 
@@ -670,7 +670,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 const policy = attendancePolicyForStaff(state.db, staff.id);
                 return staff.status === "active"
                     && policy.auto_absent_enabled
-                    && isAtOrAfterTime(now, policy.auto_absent_after)
+                    && isAtOrAfterMinutesFromTime(now, policy.standard_check_in_time, policy.auto_absent_after_minutes)
                     && !state.db.attendance.some((record: AttendanceRecord) => record.staff_id === staff.id && record.date === date);
             });
             if (!missing.length)
@@ -685,7 +685,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 status: "absent",
                 auto_generated: true,
                 review_required: true,
-                review_note: `No verified GPS attendance check-in by ${attendancePolicyForStaff(state.db, staff.id).auto_absent_after}.`,
+                review_note: `No verified GPS attendance check-in within ${attendancePolicyForStaff(state.db, staff.id).auto_absent_after_minutes} minute(s) after scheduled check-in.`,
                 created_at: timestamp,
                 updated_at: timestamp,
             }));
