@@ -1753,7 +1753,6 @@ export interface Staff {
     login_email?: string;
     temporary_password?: string;
     force_password_change?: boolean;
-    document_ids?: ID[];
     attendance_policy: AttendancePolicy;
 }
 export interface SourcePartner {
