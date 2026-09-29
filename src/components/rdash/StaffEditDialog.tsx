@@ -301,7 +301,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                   <div>
                     <p className="text-xs font-semibold">Login access is managed in User Approvals</p>
                     <p className="mt-1 text-[10px] text-muted-foreground">
-                      Authentication remains in Supabase Auth and User Approvals; this form only edits the operational Staff record.
+                      Authentication remains in Supabase Auth and User Approvals; this form only edits the operational Staff record. Passwords are never stored in Staff workspace data.
                     </p>
                   </div>
                 </div>
