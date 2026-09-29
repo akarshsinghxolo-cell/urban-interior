@@ -351,9 +351,9 @@ function enrichStaffRecords(staff: Staff[]): Staff[] {
       department: (member as Staff & { department?: string }).department || departmentForRole(role_key),
       designation: (member as Staff & { designation?: string }).designation || roleLabel(role_key),
       status: member.status || "active",
-      salary_type: (member as Staff & { salary_type?: string }).salary_type || "monthly",
-      monthly_salary: member.monthly_salary || defaultSalaryForRole(role_key),
-      daily_wage: (member as Staff & { daily_wage?: number }).daily_wage || Math.round(defaultSalaryForRole(role_key) / 30),
+      salary_type: (member as Staff & { salary_type?: string }).salary_type === "daily_wage" ? "daily_wage" : "monthly",
+      monthly_salary: member.monthly_salary,
+      daily_wage: member.daily_wage,
       gps_tracking_enabled: member.gps_tracking_enabled !== false,
       attendance_policy: policy,
     } as Staff;
@@ -369,18 +369,6 @@ function departmentForRole(role: StaffRoleKey) {
     case "PROCUREMENT_STAFF": return "Procurement";
     case "FINANCE":
     case "ACCOUNTS_ADMIN": return "Finance";
-  }
-}
-
-function defaultSalaryForRole(role: StaffRoleKey) {
-  switch (role) {
-    case "OWNER": return 0;
-    case "OPERATIONS_MANAGER": return 45000;
-    case "FIELD_STAFF": return 24000;
-    case "SALES_TELECALLER": return 22000;
-    case "PROCUREMENT_STAFF": return 26000;
-    case "FINANCE": return 32000;
-    case "ACCOUNTS_ADMIN": return 28000;
   }
 }
 
