@@ -6,6 +6,7 @@ import { Avatar, MetricCard } from "../primitives";
 import { formatDateTime, formatINR, formatINRShort, formatDate, relativeDay } from "@/lib/rdash/format";
 import { AlertTriangle, Calendar as CalendarIcon, CheckCircle2, Clock, DollarSign, MapPin, Navigation, ShieldCheck, Users, Plus, Wallet, } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -427,45 +428,50 @@ export function AttendancePayrollModule() {
         }}
       />}
 
-      {/* Regularize Attendance Dialog — reverses wrongly auto-marked absences */}
-      {regularizeRecordId && (() => {
-        const record = db.attendance.find((r) => r.id === regularizeRecordId);
-        const staffName = staffNameForId(db, record?.staff_id, "Staff");
-        return (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true">
-            <div className="w-full max-w-md rounded-xl border border-border bg-card p-5 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between gap-3">
-                <h2 className="flex items-center gap-2 text-base font-bold"><AlertTriangle className="h-4 w-4 text-warning"/>Regularize Attendance</h2>
-                <Button size="sm" variant="ghost" onClick={() => setRegularizeRecordId(null)}>Close</Button>
-              </div>
+      {/* Use the existing accessible Dialog; attendance correction rules and audit behavior remain unchanged. */}
+      <Dialog open={Boolean(regularizeRecordId)} onOpenChange={(nextOpen) => { if (!nextOpen) setRegularizeRecordId(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning" aria-hidden="true" />
+              Regularize Attendance
+            </DialogTitle>
+            <DialogDescription>
+              Correct the attendance status and record the reason for the audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          {regularizeRecordId && (() => {
+            const record = db.attendance.find((row) => row.id === regularizeRecordId);
+            const staffName = staffNameForId(db, record?.staff_id, "Staff");
+            return (
               <div className="space-y-3">
                 <div className="rounded-md border border-warning/40 bg-warning/[0.06] p-3">
-                  <p className="text-xs font-semibold text-warning">{staffName} · {record?.date}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">Current status: <strong>{record?.status}</strong> (auto-generated: {record?.auto_generated ? "yes" : "no"})</p>
-                  {record?.review_note && <p className="mt-1 text-[11px] text-muted-foreground">Review note: {record.review_note}</p>}
+                  <p className="text-sm font-semibold text-warning">{staffName} · {record?.date}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Current status: <strong>{record?.status}</strong> · Automatically generated: {record?.auto_generated ? "Yes" : "No"}</p>
+                  {record?.review_note && <p className="mt-1 text-xs text-muted-foreground">Review note: {record.review_note}</p>}
                 </div>
                 <label className="block space-y-1">
-                  <span className="text-xs font-semibold text-muted-foreground">Corrected status *</span>
-                  <select value={regularizeStatus} onChange={(e) => setRegularizeStatus(e.target.value as "present" | "half_day" | "leave")} className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <span className="text-sm font-medium">Corrected status *</span>
+                  <select value={regularizeStatus} onChange={(event) => setRegularizeStatus(event.target.value as "present" | "half_day" | "leave")} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm">
                     <option value="present">Present</option>
                     <option value="half_day">Half day</option>
                     <option value="leave">On leave</option>
                   </select>
                 </label>
                 <label className="block space-y-1">
-                  <span className="text-xs font-semibold text-warning">Reason (required for audit trail) *</span>
-                  <Textarea value={regularizeReason} onChange={(e) => setRegularizeReason(e.target.value)} placeholder="e.g. Staff was on an off-geofence site visit; phone battery died; bad GPS signal in basement." rows={3}/>
+                  <span className="text-sm font-medium">Reason for correction *</span>
+                  <Textarea value={regularizeReason} onChange={(event) => setRegularizeReason(event.target.value)} placeholder="Why does this attendance record need correction?" rows={3} aria-required="true" />
                 </label>
-                <p className="text-[11px] text-muted-foreground">The original auto-absent record is preserved (auto_generated stays true) so the correction trail is visible in the audit log.</p>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setRegularizeRecordId(null)}>Cancel</Button>
-                  <Button onClick={saveRegularize} disabled={!regularizeReason.trim()}>Regularize</Button>
-                </div>
+                <p className="text-xs text-muted-foreground">The original auto-generated record is preserved in the audit history.</p>
               </div>
-            </div>
-          </div>
-        );
-      })()}
+            );
+          })()}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRegularizeRecordId(null)}>Cancel</Button>
+            <Button type="button" onClick={saveRegularize} disabled={!regularizeRecordId || !regularizeReason.trim()}>Regularize</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>);
 }
 function PolicyToggle({ label, hint, checked, disabled, onCheckedChange }: {
