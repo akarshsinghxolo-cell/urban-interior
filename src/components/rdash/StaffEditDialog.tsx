@@ -112,6 +112,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const [documentError, setDocumentError] = React.useState("");
   const policy = normalizeAttendancePolicy(draft.attendance_policy);
   const isNew = !staffId;
+  const uncertainUpload = documentStage === "error" && Boolean(documentUploadIdRef.current) && !pendingDocumentLink;
 
   React.useEffect(() => {
     if (open) setDraft(initialDraft);
@@ -144,11 +145,10 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   );
 
   const handleSave = (): boolean => {
-    if (documentOperationRef.current || pendingDocumentLink) {
+    if (documentOperationRef.current || pendingDocumentLink || uncertainUpload) {
       setActiveSection("documents");
-      toast.error(pendingDocumentLink
-        ? "Finish linking or discard the uploaded document before saving the profile."
-        : "Wait until the document operation finishes.");
+      toast.error(documentOperationRef.current ? "Wait until the document operation finishes."
+        : "Retry or discard the pending document upload before saving the profile.");
       return false;
     }
     if (!draft.name?.trim()) {
@@ -220,14 +220,13 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   });
 
   const requestClose = React.useCallback(() => {
-    if (documentOperationRef.current || pendingDocumentLink) {
-      toast.error(pendingDocumentLink
-        ? "Finish linking the uploaded document before leaving this profile."
-        : "Wait for the document operation to finish.");
+    if (documentOperationRef.current || pendingDocumentLink || uncertainUpload) {
+      toast.error(documentOperationRef.current ? "Wait for the document operation to finish."
+        : "Retry or discard the pending document upload before leaving this profile.");
       return;
     }
     dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Staff profile form" });
-  }, [onClose, pendingDocumentLink]);
+  }, [onClose, pendingDocumentLink, uncertainUpload]);
 
   const captureOfficeGps = async () => {
     setGpsLoading(true);
@@ -317,16 +316,20 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   };
 
   const discardPendingUpload = async () => {
-    if (documentOperationRef.current || !pendingDocumentLink) return;
+    if (documentOperationRef.current || (!pendingDocumentLink && !uncertainUpload)) return;
+    const upload = pendingDocumentLink || (documentUploadIdRef.current && staffId && documentFile
+      ? { assetId: `staff-file-${documentUploadIdRef.current}`, staffId, fileName: documentFile.name }
+      : null);
+    if (!upload) return;
     documentOperationRef.current = true;
     setDocumentStage("discarding");
     setDocumentError("");
     try {
       const params = new URLSearchParams({
         discardPending: "true",
-        assetId: pendingDocumentLink.assetId,
-        staffId: pendingDocumentLink.staffId,
-        fileName: pendingDocumentLink.fileName || "",
+        assetId: upload.assetId,
+        staffId: upload.staffId,
+        fileName: upload.fileName,
       });
       const response = await fetch(`/api/staff-documents?${params.toString()}`, {
         method: "DELETE",
@@ -490,19 +493,19 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
               ) : (
                 <>
                   <div className="grid gap-2 md:grid-cols-[180px_180px_minmax(0,1fr)_auto]">
-                    <Select value={documentType} disabled={documentUploading || Boolean(pendingDocumentLink)} onValueChange={(value) => setDocumentType(value as StaffDocument["document_type"])}>
+                    <Select value={documentType} disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} onValueChange={(value) => setDocumentType(value as StaffDocument["document_type"])}>
                       <SelectTrigger aria-label="Document type" className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>{documentTypeOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Input value={documentNo} aria-label="Document or ID number" disabled={documentUploading || Boolean(pendingDocumentLink)} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
-                    <Input ref={documentFileInputRef} type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink)} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); documentUploadIdRef.current = null; setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
+                    <Input value={documentNo} aria-label="Document or ID number" disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
+                    <Input ref={documentFileInputRef} type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); documentUploadIdRef.current = null; setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
                     <Button type="button" size="sm" className="h-9" onClick={uploadDocument} disabled={documentUploading || Boolean(deletingDocumentId) || dirty || (!documentFile && !pendingDocumentLink)}>
-                      <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : "Upload"}
+                      <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : uncertainUpload ? "Retry upload" : "Upload"}
                     </Button>
                   </div>
-                  {pendingDocumentLink && !documentUploading ? (
+                  {(pendingDocumentLink || uncertainUpload) && !documentUploading ? (
                     <Button type="button" size="sm" variant="outline" onClick={() => void discardPendingUpload()}>
-                      Discard uploaded file
+                      Discard pending upload
                     </Button>
                   ) : null}
                   {dirty ? <p role="status" className="text-xs text-warning">Save profile changes before uploading documents.</p> : null}
@@ -510,7 +513,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                     {documentStage === "uploading" ? "Uploading file securely…" : documentStage === "discarding" ? "Discarding unlinked upload…" : "Linking the uploaded file to this Staff profile…"}
                   </p> : null}
                   {documentStage === "queued" ? <p role="status" className="text-xs text-muted-foreground">Document uploaded and queued for workspace sync. Verify it after refreshing.</p> : null}
-                  {documentError ? <p role="alert" className="text-xs text-destructive">{documentError}{pendingDocumentLink ? " Your file is already uploaded; retry linking instead of uploading again." : ""}</p> : null}
+                  {documentError ? <p role="alert" className="text-xs text-destructive">{documentError}{pendingDocumentLink ? " Your file is already uploaded; retry linking instead of uploading again." : uncertainUpload ? " Retry uses the same upload ID and cannot create another file." : ""}</p> : null}
                   <div className="divide-y divide-border rounded-lg border border-border">
                     {documents.map((document) => {
                       const asset = document.file_asset_id ? assetsById.get(document.file_asset_id) : undefined;
@@ -561,7 +564,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
         </AlertDialog>
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim() || documentUploading || Boolean(pendingDocumentLink) || Boolean(deletingDocumentId)}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
+          <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim() || documentUploading || Boolean(pendingDocumentLink) || uncertainUpload || Boolean(deletingDocumentId)}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
