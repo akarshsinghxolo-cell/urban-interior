@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
@@ -69,8 +68,12 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const file = form.get("file");
     const staffId = String(form.get("staffId") || "").trim();
+    const uploadId = String(form.get("uploadId") || "").trim();
 
     if (!staffId) return NextResponse.json({ error: "Staff is required." }, { status: 400 });
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(uploadId)) {
+      return NextResponse.json({ error: "A valid upload ID is required." }, { status: 400 });
+    }
     if (!canManageStaff(user, staffId)) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     if (!(await canonicalStaffExists(staffId))) {
       return NextResponse.json({ error: "Canonical Staff profile was not found." }, { status: 404 });
@@ -84,7 +87,9 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = getSupabaseAdminClient();
-    const assetId = `staff-file-${randomUUID()}`;
+    // An upload retry uses the same client-generated UUID; it can never create
+    // another storage object just because the first HTTP response was lost.
+    const assetId = `staff-file-${uploadId}`;
     const storagePath = `${workspaceId()}/${staffId}/${assetId}-${safeFileName(file.name)}`;
     const bytes = Buffer.from(await file.arrayBuffer());
 
@@ -93,7 +98,21 @@ export async function POST(request: NextRequest) {
       cacheControl: "3600",
       upsert: false,
     });
-    if (error) throw error;
+    if (error) {
+      // A conflict is only a successful retry if the exact original file and
+      // size exist at the expected, staff-scoped storage path.
+      const alreadyUploaded = String(error.statusCode || "") === "409";
+      if (!alreadyUploaded) throw error;
+      const directory = `${workspaceId()}/${staffId}`;
+      const expectedName = `${assetId}-${safeFileName(file.name)}`;
+      const { data: objects, error: listError } = await admin.storage.from(BUCKET)
+        .list(directory, { search: expectedName, limit: 10 });
+      if (listError) throw listError;
+      const existing = objects?.find((object) => object.name === expectedName);
+      if (!existing || Number(existing.metadata?.size) !== file.size) {
+        return NextResponse.json({ error: "An existing upload ID belongs to a different file." }, { status: 409 });
+      }
+    }
 
     return NextResponse.json({
       assetId,
