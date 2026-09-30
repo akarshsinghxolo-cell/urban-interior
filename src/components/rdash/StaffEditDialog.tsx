@@ -104,6 +104,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const [documentStage, setDocumentStage] = React.useState<"idle" | "uploading" | "linking" | "queued" | "error">("idle");
   const documentUploading = documentStage === "uploading" || documentStage === "linking";
   const documentOperationRef = React.useRef(false);
+  const documentFileInputRef = React.useRef<HTMLInputElement>(null);
   const [pendingDocumentLink, setPendingDocumentLink] = React.useState<UploadedStaffDocument | null>(null);
   const [documentToDelete, setDocumentToDelete] = React.useState<StaffDocument | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = React.useState<string | null>(null);
@@ -112,8 +113,11 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const isNew = !staffId;
 
   React.useEffect(() => {
+    if (open) setDraft(initialDraft);
+  }, [initialDraft, open]);
+  // A background Staff projection refresh must not reset an in-progress upload.
+  React.useEffect(() => {
     if (!open) return;
-    setDraft(initialDraft);
     setActiveSection("basic");
     setDocumentType("photo");
     setDocumentNo("");
@@ -122,7 +126,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     setPendingDocumentLink(null);
     setDocumentError("");
     setDocumentToDelete(null);
-  }, [initialDraft, open]);
+  }, [open, staffId]);
 
   const patch = (value: Partial<Staff>) => setDraft((current) => ({ ...current, ...value }));
   const patchPolicy = (value: Partial<AttendancePolicy>) => patch({ attendance_policy: { ...policy, ...value } });
@@ -207,8 +211,14 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   });
 
   const requestClose = React.useCallback(() => {
+    if (documentOperationRef.current || pendingDocumentLink) {
+      toast.error(pendingDocumentLink
+        ? "Finish linking the uploaded document before leaving this profile."
+        : "Wait for the document operation to finish.");
+      return;
+    }
     dirtyFormRegistry.requestNavigation(onClose, { reason: "close this Staff profile form" });
-  }, [onClose]);
+  }, [onClose, pendingDocumentLink]);
 
   const captureOfficeGps = async () => {
     setGpsLoading(true);
@@ -281,6 +291,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       setPendingDocumentLink(null);
       setDocumentNo("");
       setDocumentFile(null);
+      if (documentFileInputRef.current) documentFileInputRef.current.value = "";
       setDocumentStage("queued");
       toast.info("Document uploaded. Its record is queued for workspace sync.");
     } catch (error) {
@@ -437,7 +448,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                       <SelectContent>{documentTypeOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                     </Select>
                     <Input value={documentNo} aria-label="Document or ID number" disabled={documentUploading || Boolean(pendingDocumentLink)} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
-                    <Input type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink)} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
+                    <Input ref={documentFileInputRef} type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink)} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
                     <Button type="button" size="sm" className="h-9" onClick={uploadDocument} disabled={documentUploading || Boolean(deletingDocumentId) || dirty || (!documentFile && !pendingDocumentLink)}>
                       <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : "Upload"}
                     </Button>
