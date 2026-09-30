@@ -505,13 +505,13 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                         <div key={document.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-xs">
                           <div className="min-w-0">
                             <p className="font-semibold">{documentTypeOptions.find(([value]) => value === document.document_type)?.[1] || document.document_type}</p>
-                            <p className="truncate text-[10px] text-muted-foreground">{document.document_no || "No document number"} · {asset?.file_name || "Missing file asset"}</p>
+                            <p className="truncate text-xs text-muted-foreground">{document.document_no || "No document number"} · {asset?.file_name || "Missing file asset"}</p>
                           </div>
                           <div className="flex flex-wrap items-center gap-1.5">
-                            <span className={`text-[10px] font-semibold uppercase ${documentStatusClass(document.status)}`}>{document.status}</span>
-                            {asset?.web_view_link ? <a href={asset.web_view_link} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center rounded-md border border-border px-2 text-[10px] font-medium text-primary"><ExternalLink className="mr-1 h-3 w-3"/>Open</a> : null}
-                            {document.status === "pending" ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[10px]" onClick={() => updateStaffDocument(document.id, { status: "verified" })}>Verify</Button> : null}
-                            {document.status === "pending" ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[10px]" onClick={() => updateStaffDocument(document.id, { status: "rejected" })}>Reject</Button> : null}
+                            <span className={`text-xs font-semibold uppercase ${documentStatusClass(document.status)}`}>{document.status}</span>
+                            {asset?.web_view_link ? <a href={asset.web_view_link} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center rounded-md border border-border px-2 text-xs font-medium text-primary"><ExternalLink className="mr-1 h-3 w-3"/>Open</a> : null}
+                            {document.status === "pending" ? <Button type="button" size="sm" variant="ghost" className="min-h-9 px-2 text-xs" disabled={documentUploading || Boolean(deletingDocumentId)} onClick={() => updateStaffDocument(document.id, { status: "verified" })}>Verify</Button> : null}
+                            {document.status === "pending" ? <Button type="button" size="sm" variant="ghost" className="min-h-9 px-2 text-xs" disabled={documentUploading || Boolean(deletingDocumentId)} onClick={() => updateStaffDocument(document.id, { status: "rejected" })}>Reject</Button> : null}
                             <Button type="button" size="sm" variant="ghost" className="min-h-9 px-2 text-xs text-destructive" disabled={Boolean(deletingDocumentId) || documentUploading} onClick={() => setDocumentToDelete(document)}><Trash2 className="mr-1 h-3 w-3"/>Delete</Button>
                           </div>
                         </div>
