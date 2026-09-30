@@ -112,7 +112,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const [documentError, setDocumentError] = React.useState("");
   const policy = normalizeAttendancePolicy(draft.attendance_policy);
   const isNew = !staffId;
-  const uncertainUpload = documentStage === "error" && Boolean(documentUploadIdRef.current) && !pendingDocumentLink;
+  const uncertainUpload = documentStage === "error" && Boolean(documentFile) && !pendingDocumentLink;
 
   React.useEffect(() => {
     if (open) setDraft(initialDraft);
