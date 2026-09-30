@@ -101,8 +101,8 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const [documentType, setDocumentType] = React.useState<StaffDocument["document_type"]>("photo");
   const [documentNo, setDocumentNo] = React.useState("");
   const [documentFile, setDocumentFile] = React.useState<File | null>(null);
-  const [documentStage, setDocumentStage] = React.useState<"idle" | "uploading" | "linking" | "queued" | "error">("idle");
-  const documentUploading = documentStage === "uploading" || documentStage === "linking";
+  const [documentStage, setDocumentStage] = React.useState<"idle" | "uploading" | "linking" | "discarding" | "queued" | "error">("idle");
+  const documentUploading = ["uploading", "linking", "discarding"].includes(documentStage);
   const documentOperationRef = React.useRef(false);
   const documentFileInputRef = React.useRef<HTMLInputElement>(null);
   const [pendingDocumentLink, setPendingDocumentLink] = React.useState<UploadedStaffDocument | null>(null);
@@ -304,6 +304,40 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     }
   };
 
+  const discardPendingUpload = async () => {
+    if (documentOperationRef.current || !pendingDocumentLink) return;
+    documentOperationRef.current = true;
+    setDocumentStage("discarding");
+    setDocumentError("");
+    try {
+      const params = new URLSearchParams({
+        discardPending: "true",
+        assetId: pendingDocumentLink.assetId,
+        staffId: pendingDocumentLink.staffId,
+        fileName: pendingDocumentLink.fileName || "",
+      });
+      const response = await fetch(`/api/staff-documents?${params.toString()}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Pending upload could not be discarded.");
+      setPendingDocumentLink(null);
+      setDocumentFile(null);
+      setDocumentNo("");
+      if (documentFileInputRef.current) documentFileInputRef.current.value = "";
+      setDocumentStage("idle");
+      toast.info("Unlinked upload discarded.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Pending upload could not be discarded.";
+      setDocumentStage("error");
+      setDocumentError(message);
+      toast.error(message);
+    } finally {
+      documentOperationRef.current = false;
+    }
+  };
+
   const deleteDocument = async (document: StaffDocument) => {
     if (documentOperationRef.current) return;
     const asset = document.file_asset_id ? assetsById.get(document.file_asset_id) : undefined;
@@ -453,9 +487,14 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                       <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : "Upload"}
                     </Button>
                   </div>
+                  {pendingDocumentLink && !documentUploading ? (
+                    <Button type="button" size="sm" variant="outline" onClick={() => void discardPendingUpload()}>
+                      Discard uploaded file
+                    </Button>
+                  ) : null}
                   {dirty ? <p role="status" className="text-xs text-warning">Save profile changes before uploading documents.</p> : null}
                   {documentUploading ? <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-                    {documentStage === "uploading" ? "Uploading file securely…" : "Linking the uploaded file to this Staff profile…"}
+                    {documentStage === "uploading" ? "Uploading file securely…" : documentStage === "discarding" ? "Discarding unlinked upload…" : "Linking the uploaded file to this Staff profile…"}
                   </p> : null}
                   {documentStage === "queued" ? <p role="status" className="text-xs text-muted-foreground">Document uploaded and queued for workspace sync. Verify it after refreshing.</p> : null}
                   {documentError ? <p role="alert" className="text-xs text-destructive">{documentError}{pendingDocumentLink ? " Your file is already uploaded; retry linking instead of uploading again." : ""}</p> : null}
