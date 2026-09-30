@@ -48,6 +48,28 @@ async function openModule(page: Page, path: string) {
   return panel;
 }
 
+test("Staff editor sections fit mobile and landscape and expose labelled fields", async ({ page }) => {
+  for (const viewport of [{ width: 320, height: 844 }, { width: 390, height: 480 }]) {
+    await page.setViewportSize(viewport);
+    const panel = await openModule(page, "/workspace/staff");
+    await panel.getByRole("button", { name: "Add Staff", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add Staff Operations Profile" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Name", { exact: true })).toBeVisible();
+    const sections = dialog.getByLabel("Profile section");
+    await expect(sections).toBeVisible();
+    await sections.selectOption("attendance");
+    await expect(dialog.getByLabel("Office GPS")).toBeVisible();
+    await sections.selectOption("salary");
+    await expect(dialog.getByLabel("Monthly salary ₹")).toBeVisible();
+    await sections.selectOption("documents");
+    await expect(dialog.getByText("Save this Staff profile first.")).toBeVisible();
+    await expectContentFits(dialog);
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+  }
+});
+
 const views: Record<string, string[]> = {
   "/workspace/media": ["Catalogue links", "Pinterest boards", "Reference media", "Operational audit"],
   "/workspace/reports/sales": ["Sales Overview", "Quotation Conversion", "Lead Sources"],
