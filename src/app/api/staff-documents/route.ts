@@ -152,6 +152,38 @@ export async function DELETE(request: NextRequest) {
     const assetId = String(request.nextUrl.searchParams.get("assetId") || "").trim();
     if (!assetId) return NextResponse.json({ error: "assetId is required." }, { status: 400 });
 
+    // An upload whose workspace record could not be linked can be discarded
+    // through this same authenticated storage gateway, never a second path.
+    if (request.nextUrl.searchParams.get("discardPending") === "true") {
+      const staffId = String(request.nextUrl.searchParams.get("staffId") || "").trim();
+      const fileName = String(request.nextUrl.searchParams.get("fileName") || "");
+      if (!/^staff-file-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(assetId)
+        || !staffId || !fileName || fileName.length > 255) {
+        return NextResponse.json({ error: "Invalid pending upload." }, { status: 400 });
+      }
+      if (!canManageStaff(user, staffId) || !(await canonicalStaffExists(staffId))) {
+        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+      }
+      if (await assetForId(assetId)) {
+        return NextResponse.json({ error: "This upload is already linked. Refresh the workspace." }, { status: 409 });
+      }
+      const admin = getSupabaseAdminClient();
+      const { data: existingDocument, error: readError } = await admin
+        .from("entity_staffDocuments")
+        .select("id")
+        .eq("workspace_id", workspaceId())
+        .contains("data", { file_asset_id: assetId })
+        .limit(1);
+      if (readError) throw readError;
+      if (existingDocument?.length) {
+        return NextResponse.json({ error: "This upload has a document record. Refresh the workspace." }, { status: 409 });
+      }
+      const path = `${workspaceId()}/${staffId}/${assetId}-${safeFileName(fileName)}`;
+      const { error } = await admin.storage.from(BUCKET).remove([path]);
+      if (error) throw error;
+      return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+
     const asset = await assetForId(assetId);
     if (!asset) return NextResponse.json({ error: "File record has not finished syncing. Refresh the workspace and retry." }, { status: 409 });
     const staffId = staffIdFromAsset(asset);
