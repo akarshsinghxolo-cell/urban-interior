@@ -131,14 +131,14 @@ describe("Staff profile integrity", () => {
   });
 
   test("attendance regularization uses the shared keyboard-accessible modal", async () => {
-    const module = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx").text();
-    expectTokens(module, [
+    const attendanceSource = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx").text();
+    expectTokens(attendanceSource, [
       'Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle',
       '<Dialog open={Boolean(regularizeRecordId)}',
       '<DialogDescription>',
       'onClick={saveRegularize}',
     ]);
-    expectNoTokens(module, ['z-[80] flex items-center justify-center bg-black/45']);
+    expectNoTokens(attendanceSource, ['z-[80] flex items-center justify-center bg-black/45']);
   });
 
   test("privileged HR reads replace the bootstrap Staff directory projection", async () => {
