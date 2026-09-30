@@ -83,6 +83,50 @@ describe("Staff profile integrity", () => {
     ]);
   });
 
+  test("Staff editing uses linked labels and one responsive section model", async () => {
+    const editor = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
+    expectTokens(editor, [
+      'function fieldLabel(text: string, htmlFor: string)',
+      '<label htmlFor={htmlFor}',
+      'const labelPrefix = React.useId()',
+      'id={fieldId("name")}',
+      'id={fieldId("phone")}',
+      'id={fieldId("monthly-salary")}',
+      'value={activeSection}',
+      'onValueChange={(value) => setActiveSection(value as StaffSection)}',
+      'staffSections.map',
+    ]);
+    expectNoTokens(editor, ['grid-cols-4 lg:grid-cols-7', 'function fieldLabel(text: string)']);
+  });
+
+  test("Staff documents report phases and prevent premature or repeated deletes", async () => {
+    const editor = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
+    const route = await testFile("src/app/api/staff-documents/route.ts").text();
+    expectTokens(editor, [
+      'setPendingDocumentLink(uploaded)',
+      'uploaded = pendingDocumentLink',
+      'registerStaffDocument(uploaded)',
+      'documentOperationRef.current',
+      '<AlertDialog open={Boolean(documentToDelete)}',
+      'setDocumentToDelete(document)',
+      'Retry linking',
+      'queued for workspace sync',
+      'documentStage === "uploading"',
+    ]);
+    expectTokens(route, ['File record has not finished syncing', 'status: 409']);
+  });
+
+  test("attendance regularization uses the shared keyboard-accessible modal", async () => {
+    const module = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx").text();
+    expectTokens(module, [
+      'Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle',
+      '<Dialog open={Boolean(regularizeRecordId)}',
+      '<DialogDescription>',
+      'onClick={saveRegularize}',
+    ]);
+    expectNoTokens(module, ['z-[80] flex items-center justify-center bg-black/45']);
+  });
+
   test("privileged HR reads replace the bootstrap Staff directory projection", async () => {
     const scopedRead = await testFile("src/lib/rdash/server/module-scoped-read.ts").text();
     expectTokens(scopedRead, [
