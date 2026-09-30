@@ -30,7 +30,7 @@ const staffSections = [
 type StaffSection = (typeof staffSections)[number]["value"];
 type UploadedStaffDocument = {
   assetId: string;
-  fileName?: string;
+  fileName: string;
   mimeType?: string;
   fileSizeBytes?: number;
   storageBucket: string;
