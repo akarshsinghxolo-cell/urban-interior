@@ -20,6 +20,13 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const statusOptions = ["pending", "active", "inactive", "blocked", "blacklisted", "exited"] as const;
+const staffSections = [
+  { value: "basic", label: "Basic" }, { value: "login", label: "Login" },
+  { value: "access", label: "Access" }, { value: "attendance", label: "Attendance" },
+  { value: "salary", label: "Salary" }, { value: "documents", label: "Documents" },
+  { value: "status", label: "Status" },
+] as const;
+type StaffSection = (typeof staffSections)[number]["value"];
 const documentTypeOptions: Array<[StaffDocument["document_type"], string]> = [
   ["photo", "Photo"],
   ["aadhaar", "Aadhaar"],
@@ -30,8 +37,8 @@ const documentTypeOptions: Array<[StaffDocument["document_type"], string]> = [
   ["other", "Other"],
 ];
 
-function fieldLabel(text: string) {
-  return <label className="text-[10px] font-semibold uppercase text-muted-foreground">{text}</label>;
+function fieldLabel(text: string, htmlFor: string) {
+  return <label htmlFor={htmlFor} className="mb-1 block text-xs font-semibold text-foreground">{text}</label>;
 }
 
 function documentStatusClass(status: StaffDocument["status"]) {
@@ -75,6 +82,9 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   );
 
   const [draft, setDraft] = React.useState<Partial<Staff>>(initialDraft);
+  const labelPrefix = React.useId();
+  const fieldId = (key: string) => `${labelPrefix}-${key}`;
+  const [activeSection, setActiveSection] = React.useState<StaffSection>("basic");
   const [gpsLoading, setGpsLoading] = React.useState(false);
   const [documentType, setDocumentType] = React.useState<StaffDocument["document_type"]>("photo");
   const [documentNo, setDocumentNo] = React.useState("");
@@ -86,6 +96,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   React.useEffect(() => {
     if (!open) return;
     setDraft(initialDraft);
+    setActiveSection("basic");
     setDocumentType("photo");
     setDocumentNo("");
     setDocumentFile(null);
@@ -269,7 +280,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && requestClose()}>
-      <DialogContent className="max-h-[94vh] max-w-5xl gap-0 p-0">
+      <DialogContent className="max-h-[94dvh] w-full max-w-5xl gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             {isNew ? <UserPlus className="h-4 w-4 text-primary"/> : <Pencil className="h-4 w-4 text-primary"/>}
@@ -280,27 +291,27 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[72vh] overflow-y-auto px-5 py-4 rd-scroll">
-          <Tabs defaultValue="basic" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-4 lg:grid-cols-7">
-              <TabsTrigger value="basic">Basic</TabsTrigger>
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="access">Access</TabsTrigger>
-              <TabsTrigger value="attendance">Attendance</TabsTrigger>
-              <TabsTrigger value="salary">Salary</TabsTrigger>
-              <TabsTrigger value="documents">Docs</TabsTrigger>
-              <TabsTrigger value="status">Status</TabsTrigger>
+        <div className="max-h-[min(72dvh,calc(94dvh-10rem))] overflow-y-auto px-5 py-4 rd-scroll">
+          <Tabs value={activeSection} onValueChange={(value) => setActiveSection(value as StaffSection)} className="space-y-4">
+            <div className="md:hidden">
+              <label htmlFor={fieldId("section")} className="mb-1 block text-xs font-semibold">Profile section</label>
+              <select id={fieldId("section")} value={activeSection} onChange={(event) => setActiveSection(event.target.value as StaffSection)} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm">
+                {staffSections.map((section) => <option key={section.value} value={section.value}>{section.label}</option>)}
+              </select>
+            </div>
+            <TabsList aria-label="Staff profile sections" className="hidden h-auto w-full gap-1 p-1 md:grid md:grid-cols-7">
+              {staffSections.map((section) => <TabsTrigger key={section.value} value={section.value} className="min-w-0 px-1 py-2 text-xs lg:text-sm">{section.label}</TabsTrigger>)}
             </TabsList>
 
             <TabsContent value="basic" className="grid gap-3 md:grid-cols-3">
-              <div>{fieldLabel("Name")}<Input value={draft.name || ""} onChange={(e) => patch({ name: e.target.value })} autoFocus className="h-9"/></div>
-              <div>{fieldLabel("Phone")}<IndianMobileInput value={draft.phone || ""} onChange={(phone) => patch({ phone })} className="h-9"/></div>
-              <div>{fieldLabel(staff?.auth_user_id ? "Email (managed in User Approvals)" : "Email")}<Input value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} disabled={Boolean(staff?.auth_user_id)} className="h-9"/></div>
-              <div>{fieldLabel("Department")}<Input value={draft.department || ""} onChange={(e) => patch({ department: e.target.value })} className="h-9"/></div>
-              <div>{fieldLabel("Designation")}<Input value={draft.designation || ""} onChange={(e) => patch({ designation: e.target.value })} className="h-9"/></div>
-              <div>{fieldLabel("City")}<Input value={draft.city || ""} onChange={(e) => patch({ city: e.target.value })} className="h-9"/></div>
-              <div className="md:col-span-2">{fieldLabel("Address")}<Input value={draft.address || ""} onChange={(e) => patch({ address: e.target.value })} className="h-9"/></div>
-              <div>{fieldLabel("Emergency contact")}<IndianMobileInput value={draft.emergency_contact || ""} onChange={(emergency_contact) => patch({ emergency_contact })} className="h-9"/></div>
+              <div>{fieldLabel("Name", fieldId("name"))}<Input id={fieldId("name")} value={draft.name || ""} onChange={(e) => patch({ name: e.target.value })} autoFocus className="h-9"/></div>
+              <div>{fieldLabel("Phone", fieldId("phone"))}<IndianMobileInput id={fieldId("phone")} value={draft.phone || ""} onChange={(phone) => patch({ phone })} className="h-9"/></div>
+              <div>{fieldLabel(staff?.auth_user_id ? "Email (managed in User Approvals)" : "Email", fieldId("email"))}<Input id={fieldId("email")} value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} disabled={Boolean(staff?.auth_user_id)} className="h-9"/></div>
+              <div>{fieldLabel("Department", fieldId("department"))}<Input id={fieldId("department")} value={draft.department || ""} onChange={(e) => patch({ department: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("Designation", fieldId("designation"))}<Input id={fieldId("designation")} value={draft.designation || ""} onChange={(e) => patch({ designation: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("City", fieldId("city"))}<Input id={fieldId("city")} value={draft.city || ""} onChange={(e) => patch({ city: e.target.value })} className="h-9"/></div>
+              <div className="md:col-span-2">{fieldLabel("Address", fieldId("address"))}<Input id={fieldId("address")} value={draft.address || ""} onChange={(e) => patch({ address: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("Emergency contact", fieldId("emergency"))}<IndianMobileInput id={fieldId("emergency")} value={draft.emergency_contact || ""} onChange={(emergency_contact) => patch({ emergency_contact })} className="h-9"/></div>
             </TabsContent>
 
             <TabsContent value="login" className="grid gap-3 md:grid-cols-3">
@@ -315,37 +326,37 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                   </div>
                 </div>
               </div>
-              {staff?.auth_user_id ? <div>{fieldLabel("Linked login email")}<Input value={staff.login_email || staff.email || ""} disabled className="h-9"/></div> : null}
+              {staff?.auth_user_id ? <div>{fieldLabel("Linked login email", fieldId("login-email"))}<Input id={fieldId("login-email")} value={staff.login_email || staff.email || ""} disabled className="h-9"/></div> : null}
             </TabsContent>
 
             <TabsContent value="access" className="grid gap-3 md:grid-cols-3">
-              <div>{fieldLabel("Controlled role")}
+              <div>{fieldLabel("Controlled role", fieldId("role"))}
                 <Select value={normalizeRoleKey(draft.role_key || draft.role)} onValueChange={(value) => patch({ role_key: value as StaffRoleKey, role: roleLabel(value) })} disabled={staff?.status === "pending"}>
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id={fieldId("role")} className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>{STAFF_ROLE_KEYS.map((key) => <SelectItem key={key} value={key}>{STAFF_ROLE_LABELS[key]}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div>{fieldLabel("Reporting manager")}<Select value={draft.reporting_manager_id || "none"} onValueChange={(value) => patch({ reporting_manager_id: value === "none" ? undefined : value })}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{db.master.staff.filter((row) => row.id !== staffId).map((row) => <SelectItem key={row.id} value={row.id}>{row.name}</SelectItem>)}</SelectContent></Select></div>
+              <div>{fieldLabel("Reporting manager", fieldId("reporting-manager"))}<Select value={draft.reporting_manager_id || "none"} onValueChange={(value) => patch({ reporting_manager_id: value === "none" ? undefined : value })}><SelectTrigger id={fieldId("reporting-manager")} className="h-9"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{db.master.staff.filter((row) => row.id !== staffId).map((row) => <SelectItem key={row.id} value={row.id}>{row.name}</SelectItem>)}</SelectContent></Select></div>
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs"><ShieldCheck className="mb-1 h-4 w-4 text-primary"/><p className="font-semibold">Permissions are role-matrix driven</p><p className="mt-1 text-muted-foreground">The same role key drives UI visibility and server checks.</p></div>
             </TabsContent>
 
             <TabsContent value="attendance" className="grid gap-3 md:grid-cols-4">
-              <div>{fieldLabel("Office name")}<Input value={policy.office_name || ""} onChange={(e) => patchPolicy({ office_name: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("Office name", fieldId("office-name"))}<Input id={fieldId("office-name")} value={policy.office_name || ""} onChange={(e) => patchPolicy({ office_name: e.target.value })} className="h-9"/></div>
               <div className="md:col-span-2">
-                {fieldLabel("Office GPS")}
+                {fieldLabel("Office GPS", fieldId("office-gps"))}
                 <div className="flex gap-2">
-                  <Input value={gpsValue} readOnly placeholder="Capture latitude, longitude" className="h-9 font-mono text-xs"/>
+                  <Input id={fieldId("office-gps")} value={gpsValue} readOnly placeholder="Capture latitude, longitude" className="h-9 font-mono text-xs"/>
                   <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" onClick={captureOfficeGps} disabled={gpsLoading}>
                     <MapPin className="mr-1 h-3.5 w-3.5"/>{gpsLoading ? "Capturing…" : "Capture GPS"}
                   </Button>
                 </div>
               </div>
-              <div>{fieldLabel("Geofence radius m")}<Input type="number" min={1} value={policy.geofence_radius_m} onChange={(e) => patchPolicy({ geofence_radius_m: Number(e.target.value || 0) })} className="h-9"/></div>
-              <div>{fieldLabel("Check-in time")}<Input type="time" value={policy.standard_check_in_time} onChange={(e) => patchPolicy({ standard_check_in_time: e.target.value })} className="h-9"/></div>
-              <div>{fieldLabel("Late grace min")}<Input type="number" min={0} value={policy.late_grace_minutes} onChange={(e) => patchPolicy({ late_grace_minutes: Number(e.target.value || 0) })} className="h-9"/></div>
-              <div>{fieldLabel("Half-day min")}<Input type="number" min={1} value={policy.minimum_half_day_minutes} onChange={(e) => patchPolicy({ minimum_half_day_minutes: Number(e.target.value || 0) })} className="h-9"/></div>
-              <div>{fieldLabel("Auto absent after min")}<Input type="number" min={0} step={1} inputMode="numeric" value={policy.auto_absent_after_minutes} onChange={(e) => patchPolicy({ auto_absent_after_minutes: Math.max(0, Number(e.target.value || 0)) })} className="h-9"/></div>
-              <div>{fieldLabel("Absent deduction days")}<Input type="number" min={0} step={0.5} value={policy.absent_deduction_days} disabled={!policy.absent_deduction_enabled} onChange={(e) => patchPolicy({ absent_deduction_days: Math.max(0, Number(e.target.value || 0)) })} className="h-9"/></div>
+              <div>{fieldLabel("Geofence radius m", fieldId("geofence"))}<Input id={fieldId("geofence")} type="number" min={1} value={policy.geofence_radius_m} onChange={(e) => patchPolicy({ geofence_radius_m: Number(e.target.value || 0) })} className="h-9"/></div>
+              <div>{fieldLabel("Check-in time", fieldId("check-in"))}<Input id={fieldId("check-in")} type="time" value={policy.standard_check_in_time} onChange={(e) => patchPolicy({ standard_check_in_time: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("Late grace min", fieldId("late-grace"))}<Input id={fieldId("late-grace")} type="number" min={0} value={policy.late_grace_minutes} onChange={(e) => patchPolicy({ late_grace_minutes: Number(e.target.value || 0) })} className="h-9"/></div>
+              <div>{fieldLabel("Half-day min", fieldId("half-day"))}<Input id={fieldId("half-day")} type="number" min={1} value={policy.minimum_half_day_minutes} onChange={(e) => patchPolicy({ minimum_half_day_minutes: Number(e.target.value || 0) })} className="h-9"/></div>
+              <div>{fieldLabel("Auto absent after min", fieldId("auto-absent"))}<Input id={fieldId("auto-absent")} type="number" min={0} step={1} inputMode="numeric" value={policy.auto_absent_after_minutes} onChange={(e) => patchPolicy({ auto_absent_after_minutes: Math.max(0, Number(e.target.value || 0)) })} className="h-9"/></div>
+              <div>{fieldLabel("Absent deduction days", fieldId("deduction-days"))}<Input id={fieldId("deduction-days")} type="number" min={0} step={0.5} value={policy.absent_deduction_days} disabled={!policy.absent_deduction_enabled} onChange={(e) => patchPolicy({ absent_deduction_days: Math.max(0, Number(e.target.value || 0)) })} className="h-9"/></div>
               <div className="flex items-center justify-between rounded-lg border border-border p-3"><span className="text-xs font-semibold">Auto check-in</span><Switch checked={policy.auto_check_in_enabled} onCheckedChange={(value) => patchPolicy({ auto_check_in_enabled: value })}/></div>
               <div className="flex items-center justify-between rounded-lg border border-border p-3"><span className="text-xs font-semibold">Auto check-out</span><Switch checked={policy.auto_check_out_enabled} onCheckedChange={(value) => patchPolicy({ auto_check_out_enabled: value })}/></div>
               <div className="flex items-center justify-between rounded-lg border border-border p-3"><span className="text-xs font-semibold">Auto absent</span><Switch checked={policy.auto_absent_enabled} onCheckedChange={(value) => patchPolicy({ auto_absent_enabled: value })}/></div>
@@ -353,11 +364,11 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             </TabsContent>
 
             <TabsContent value="salary" className="grid gap-3 md:grid-cols-3">
-              <div>{fieldLabel("Salary type")}<Select value={draft.salary_type || "monthly"} onValueChange={(value) => patch({ salary_type: value as Staff["salary_type"] })}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly salary</SelectItem><SelectItem value="daily_wage">Daily wage</SelectItem></SelectContent></Select></div>
+              <div>{fieldLabel("Salary type", fieldId("salary-type"))}<Select value={draft.salary_type || "monthly"} onValueChange={(value) => patch({ salary_type: value as Staff["salary_type"] })}><SelectTrigger id={fieldId("salary-type")} className="h-9"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="monthly">Monthly salary</SelectItem><SelectItem value="daily_wage">Daily wage</SelectItem></SelectContent></Select></div>
               {draft.salary_type !== "daily_wage" ? (
-                <div>{fieldLabel("Monthly salary ₹")}<Input type="number" min={0} value={draft.monthly_salary ?? ""} onChange={(e) => patch({ monthly_salary: e.target.value ? Number(e.target.value) : undefined })} className="h-9"/></div>
+                <div>{fieldLabel("Monthly salary ₹", fieldId("monthly-salary"))}<Input id={fieldId("monthly-salary")} type="number" min={0} value={draft.monthly_salary ?? ""} onChange={(e) => patch({ monthly_salary: e.target.value ? Number(e.target.value) : undefined })} className="h-9"/></div>
               ) : (
-                <div>{fieldLabel("Daily wage ₹")}<Input type="number" min={0} value={draft.daily_wage ?? ""} onChange={(e) => patch({ daily_wage: e.target.value ? Number(e.target.value) : undefined })} className="h-9"/></div>
+                <div>{fieldLabel("Daily wage ₹", fieldId("daily-wage"))}<Input id={fieldId("daily-wage")} type="number" min={0} value={draft.daily_wage ?? ""} onChange={(e) => patch({ daily_wage: e.target.value ? Number(e.target.value) : undefined })} className="h-9"/></div>
               )}
               <div className="md:col-span-3 rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
                 Monthly salary stays fixed for the payroll month. Daily-wage payroll uses daily wage × the actual number of calendar days in the selected month (28/29/30/31), then applies attendance and approved adjustments.
@@ -408,9 +419,9 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             </TabsContent>
 
             <TabsContent value="status" className="grid gap-3 md:grid-cols-3">
-              <div>{fieldLabel("Lifecycle status")}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })} disabled={staff?.status === "pending"}><SelectTrigger className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value} disabled={value === "pending"}>{value}</SelectItem>)}</SelectContent></Select></div>
-              <div>{fieldLabel("Joining date")}<Input type="date" value={draft.joining_date || ""} onChange={(e) => patch({ joining_date: e.target.value })} className="h-9"/></div>
-              <div>{fieldLabel("Exit date")}<Input type="date" value={draft.exit_date || ""} onChange={(e) => patch({ exit_date: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("Lifecycle status", fieldId("lifecycle-status"))}<Select value={String(draft.status || "active")} onValueChange={(value) => patch({ status: value as Staff["status"] })} disabled={staff?.status === "pending"}><SelectTrigger id={fieldId("lifecycle-status")} className="h-9"><SelectValue /></SelectTrigger><SelectContent>{statusOptions.map((value) => <SelectItem key={value} value={value} disabled={value === "pending"}>{value}</SelectItem>)}</SelectContent></Select></div>
+              <div>{fieldLabel("Joining date", fieldId("joining-date"))}<Input id={fieldId("joining-date")} type="date" value={draft.joining_date || ""} onChange={(e) => patch({ joining_date: e.target.value })} className="h-9"/></div>
+              <div>{fieldLabel("Exit date", fieldId("exit-date"))}<Input id={fieldId("exit-date")} type="date" value={draft.exit_date || ""} onChange={(e) => patch({ exit_date: e.target.value })} className="h-9"/></div>
             </TabsContent>
           </Tabs>
         </div>
