@@ -153,7 +153,7 @@ export async function DELETE(request: NextRequest) {
     if (!assetId) return NextResponse.json({ error: "assetId is required." }, { status: 400 });
 
     const asset = await assetForId(assetId);
-    if (!asset) return NextResponse.json({ ok: true });
+    if (!asset) return NextResponse.json({ error: "File record has not finished syncing. Refresh the workspace and retry." }, { status: 409 });
     const staffId = staffIdFromAsset(asset);
     if (!staffId || !MANAGER_ROLES.has(user.role)) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
