@@ -1,4 +1,5 @@
 import type { ID, Customer } from "./types";
+import { sanitizeIndianMobile } from "./phone-validation";
 type CustomerIdentityField = "phone" | "whatsapp" | "alternate_phone" | "email";
 export interface CustomerIdentityMatch {
     customer: Customer;
@@ -25,19 +26,6 @@ class CustomerIdentityConflictError extends Error {
 function labelForField(field: CustomerIdentityField) {
     return field === "alternate_phone" ? "alternate phone" : field;
 }
-export function normalizePhone(value?: string | null) {
-    const digits = String(value || "").replace(/\D/g, "");
-    if (!digits)
-        return "";
-    const withoutInternationalPrefix = digits.startsWith("00") ? digits.slice(2) : digits;
-    if (withoutInternationalPrefix.length === 12 && withoutInternationalPrefix.startsWith("91")) {
-        return withoutInternationalPrefix.slice(2);
-    }
-    if (withoutInternationalPrefix.length === 11 && withoutInternationalPrefix.startsWith("0")) {
-        return withoutInternationalPrefix.slice(1);
-    }
-    return withoutInternationalPrefix;
-}
 export function normalizeEmail(value?: string | null) {
     return String(value || "").trim().toLowerCase();
 }
@@ -49,9 +37,9 @@ export function normalizeCustomerName(value?: string | null) {
 }
 function customerIdentityValues(input: CustomerIdentityInput) {
     const values: Partial<Record<CustomerIdentityField, string>> = {
-        phone: normalizePhone(input.phone),
-        whatsapp: normalizePhone(input.whatsapp),
-        alternate_phone: normalizePhone(input.alternate_phone),
+        phone: sanitizeIndianMobile(input.phone),
+        whatsapp: sanitizeIndianMobile(input.whatsapp),
+        alternate_phone: sanitizeIndianMobile(input.alternate_phone),
         email: normalizeEmail(input.email),
     };
     return Object.fromEntries(Object.entries(values).filter(([, value]) => Boolean(value))) as Partial<Record<CustomerIdentityField, string>>;

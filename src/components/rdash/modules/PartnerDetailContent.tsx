@@ -4,6 +4,7 @@ import * as React from "react";
 import dynamic from "next/dynamic";
 import { ArrowRight, CheckCircle2, MapPin, MessageCircle, Pencil, Phone, Plus } from "lucide-react";
 import { toast } from "sonner";
+import { indianWhatsAppDialDigits, isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -44,8 +45,9 @@ export function PartnerDetailContent({ kind, id }: { kind: PartnerKind; id: stri
   const partner = (kind === "vendor" ? db.master.vendors : db.master.contractors).find((row) => row.id === id);
   const model = React.useMemo(() => partner ? partnerPortfolio(db, kind, partner) : undefined, [db, kind, partner]);
   if (!partner || !model) return <EmptyState title="Partner not found" description="Return to the directory and choose an existing partner." />;
-  const digits = (partner.phone || "").replace(/\D/g, "");
-  const phone = digits.length === 10 ? `91${digits}` : digits;
+  const mobile = sanitizeIndianMobile(partner.phone);
+  const validMobile = isValidIndianMobile(mobile, { allowEmpty: false });
+  const whatsappDial = validMobile ? indianWhatsAppDialDigits(mobile) : "";
   const address = [partner.address, partner.locality, partner.city].filter(Boolean).join(", ");
   const mapUrl = Number.isFinite(partner.latitude) && Number.isFinite(partner.longitude)
     ? `https://www.google.com/maps?q=${partner.latitude},${partner.longitude}`
@@ -55,8 +57,8 @@ export function PartnerDetailContent({ kind, id }: { kind: PartnerKind; id: stri
     <section className="space-y-4 rounded-xl border border-border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><Avatar name={partner.name} size={48} /><div className="min-w-0"><h2 className="break-words text-lg font-bold">{partner.name}</h2><p className="mt-1 text-xs text-muted-foreground">{partner.phone || "Mobile pending"} · {partner.city || "City pending"}</p><div className="mt-2"><StatusBadge label={titleCase((partner.status || "onboarding").replaceAll("_", " "))} /></div></div></div><Button size="sm" variant="outline" onClick={() => setEditOpen(true)}><Pencil className="mr-1 h-3.5 w-3.5" />Edit profile</Button></div>
       <div className="flex flex-wrap gap-2">
-        {digits && <Button size="sm" variant="outline" asChild><a href={`tel:${digits}`}><Phone className="mr-1 h-3.5 w-3.5" />Call</a></Button>}
-        {phone && <Button size="sm" variant="outline" asChild><a href={`https://wa.me/${phone}`} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</a></Button>}
+        {validMobile && <Button size="sm" variant="outline" asChild><a href={`tel:${mobile}`}><Phone className="mr-1 h-3.5 w-3.5" />Call</a></Button>}
+        {whatsappDial && <Button size="sm" variant="outline" asChild><a href={`https://wa.me/${whatsappDial}`} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</a></Button>}
         {mapUrl && <Button size="sm" variant="outline" asChild><a href={mapUrl} target="_blank" rel="noreferrer"><MapPin className="mr-1 h-3.5 w-3.5" />Directions</a></Button>}
         <Button size="sm" onClick={() => setSection("work")}>{kind === "vendor" ? "Manage purchasing" : "Manage site work"}</Button>
         <Button size="sm" variant="outline" onClick={() => setSection("finance")}>Manage bills & payments</Button>

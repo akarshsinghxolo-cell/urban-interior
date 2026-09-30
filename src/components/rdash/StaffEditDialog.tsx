@@ -7,11 +7,12 @@ import { useRDashStore } from "@/lib/rdash/store";
 import { createDefaultAttendancePolicy, normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
-import { sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
+import { indianMobileForWrite, isValidIndianMobile } from "@/lib/rdash/phone-validation";
 import { STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, normalizeRoleKey, roleLabel } from "@/lib/rdash/staff-operations";
 import type { AttendancePolicy, Staff, StaffDocument, StaffRoleKey } from "@/lib/rdash/types";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { Button } from "@/components/ui/button";
+import { IndianMobileInput } from "./IndianMobileInput";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -108,15 +109,23 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       toast.error("Staff name is required");
       return false;
     }
+    if (!isValidIndianMobile(draft.phone)) {
+      toast.error("Staff phone must be a valid 10-digit Indian mobile number.");
+      return false;
+    }
+    if (!isValidIndianMobile(draft.emergency_contact)) {
+      toast.error("Emergency contact must be a valid 10-digit Indian mobile number.");
+      return false;
+    }
     const roleKey = normalizeRoleKey(draft.role_key || draft.role);
     const salaryType = draft.salary_type || "monthly";
     const payload: Partial<Staff> = {
       ...draft,
       name: draft.name.trim(),
-      phone: draft.phone?.trim() || undefined,
+      phone: indianMobileForWrite(draft.phone, { label: "Staff phone" }),
       email: staff?.auth_user_id ? staff.email : draft.email?.trim() || undefined,
       address: draft.address?.trim() || undefined,
-      emergency_contact: draft.emergency_contact?.trim() || undefined,
+      emergency_contact: indianMobileForWrite(draft.emergency_contact, { label: "Emergency contact" }),
       role_key: roleKey,
       role: roleLabel(roleKey),
       status: draft.status || "active",
@@ -285,13 +294,13 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
 
             <TabsContent value="basic" className="grid gap-3 md:grid-cols-3">
               <div>{fieldLabel("Name")}<Input value={draft.name || ""} onChange={(e) => patch({ name: e.target.value })} autoFocus className="h-9"/></div>
-              <div>{fieldLabel("Phone")}<Input value={draft.phone || ""} onChange={(e) => patch({ phone: sanitizeIndianMobile(e.target.value) })} type="tel" inputMode="numeric" maxLength={10} className="h-9"/></div>
+              <div>{fieldLabel("Phone")}<IndianMobileInput value={draft.phone || ""} onChange={(phone) => patch({ phone })} className="h-9"/></div>
               <div>{fieldLabel(staff?.auth_user_id ? "Email (managed in User Approvals)" : "Email")}<Input value={draft.email || ""} onChange={(e) => patch({ email: e.target.value })} disabled={Boolean(staff?.auth_user_id)} className="h-9"/></div>
               <div>{fieldLabel("Department")}<Input value={draft.department || ""} onChange={(e) => patch({ department: e.target.value })} className="h-9"/></div>
               <div>{fieldLabel("Designation")}<Input value={draft.designation || ""} onChange={(e) => patch({ designation: e.target.value })} className="h-9"/></div>
               <div>{fieldLabel("City")}<Input value={draft.city || ""} onChange={(e) => patch({ city: e.target.value })} className="h-9"/></div>
               <div className="md:col-span-2">{fieldLabel("Address")}<Input value={draft.address || ""} onChange={(e) => patch({ address: e.target.value })} className="h-9"/></div>
-              <div>{fieldLabel("Emergency contact")}<Input value={draft.emergency_contact || ""} onChange={(e) => patch({ emergency_contact: sanitizeIndianMobile(e.target.value) })} type="tel" inputMode="numeric" maxLength={10} className="h-9"/></div>
+              <div>{fieldLabel("Emergency contact")}<IndianMobileInput value={draft.emergency_contact || ""} onChange={(emergency_contact) => patch({ emergency_contact })} className="h-9"/></div>
             </TabsContent>
 
             <TabsContent value="login" className="grid gap-3 md:grid-cols-3">

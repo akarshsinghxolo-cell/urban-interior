@@ -1,5 +1,6 @@
 import type { Area, Customer, EntityFileAttachment, RDashDatabase, Site, WorkRequired } from "./types";
 import { titleCaseCustomerName } from "./customer-record";
+import { indianMobileForWrite } from "./phone-validation";
 import { assertUniqueCustomerIdentity } from "./customer-identity";
 import {
   customerReferrer,
@@ -98,9 +99,20 @@ function referrerFromInput(existing: Customer | undefined, input: SaveCustomerWi
 }
 
 function customerRecord(existing: Customer | undefined, input: SaveCustomerWithSitesInput["customer"], customerId: string, now: string): Customer {
-  const phoneValue = suppliedValue(input, "phone", existing?.phone);
-  const phone = String(phoneValue ?? "").trim() || undefined;
-  const whatsapp = suppliedValue(input, "whatsapp", existing?.whatsapp);
+  const phone = indianMobileForWrite(
+    suppliedValue(input, "phone", existing?.phone),
+    { label: "Customer phone" },
+  );
+  const whatsappValue = suppliedValue(input, "whatsapp", existing?.whatsapp);
+  const whatsapp = String(whatsappValue ?? "").trim()
+    ? indianMobileForWrite(whatsappValue, { label: "Customer WhatsApp number" })
+    : whatsappValue == null
+      ? phone
+      : undefined;
+  const alternatePhone = indianMobileForWrite(
+    suppliedValue(input, "alternate_phone", existing?.alternate_phone),
+    { label: "Customer alternate phone" },
+  );
   const name = titleCaseCustomerName(String(suppliedValue(input, "name", existing?.name ?? "") ?? ""));
   if (!name) throw new Error("Customer name is required.");
   const referrer = referrerFromInput(existing, input);
@@ -108,8 +120,8 @@ function customerRecord(existing: Customer | undefined, input: SaveCustomerWithS
     id: customerId,
     name,
     phone,
-    whatsapp: String(whatsapp ?? phone ?? "").trim() || undefined,
-    alternate_phone: suppliedValue(input, "alternate_phone", existing?.alternate_phone),
+    whatsapp,
+    alternate_phone: alternatePhone,
     email: suppliedValue(input, "email", existing?.email),
     status: suppliedValue(input, "status", existing?.status ?? "active") ?? "active",
     ...referrer,

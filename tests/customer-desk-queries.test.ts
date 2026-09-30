@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { customerLifecycleGaps, customerMatchesQuery } from "../src/lib/rdash/customer-desk-queries";
-import { normalizePhone } from "../src/lib/rdash/customer-identity";
+import { indianPhoneSearchDigits } from "../src/lib/rdash/phone-validation";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import type { RDashDatabase } from "../src/lib/rdash/types";
 
@@ -83,8 +83,8 @@ describe("customerMatchesQuery", () => {
     });
 
     it("normalizes phones the same way identity matching does", () => {
-        expect(normalizePhone("+91 97283 24682")).toBe("9728324682");
-        expect(normalizePhone("00919728324682")).toBe("9728324682");
+        expect(indianPhoneSearchDigits("+91 97283 24682")).toBe("9728324682");
+        expect(indianPhoneSearchDigits("00919728324682")).toBe("9728324682");
     });
 });
 

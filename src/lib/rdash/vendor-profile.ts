@@ -1,4 +1,5 @@
 import type { RDashDatabase, Vendor, VendorRate } from "./types";
+import { isValidIndianMobile, sanitizeIndianMobile } from "./phone-validation";
 
 type VendorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
 export type VendorType = "manufacturer" | "distributor" | "dealer" | "retailer" | "service_provider" | "other";
@@ -93,11 +94,6 @@ type VendorTimelineEvent = {
 
 const compact = (value: unknown) => String(value ?? "").trim();
 const lower = (value: unknown) => compact(value).toLowerCase();
-const rawDigits = (value: unknown) => compact(value).replace(/\D/g, "");
-const indianPhoneDigits = (value: unknown) => {
-  const valueDigits = rawDigits(value);
-  return valueDigits.length === 12 && valueDigits.startsWith("91") ? valueDigits.slice(2) : valueDigits;
-};
 const round = (value: number, digits = 0) => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
@@ -180,7 +176,7 @@ export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDat
     id: options.id || input.id,
     name: compact(input.name),
     legal_name: compact(input.legal_name) || undefined,
-    phone: compact(input.phone) || undefined,
+    phone: sanitizeIndianMobile(input.phone) || undefined,
     city: compact(input.city) || undefined,
     locality: compact(input.locality) || undefined,
     address: compact(input.address) || undefined,
@@ -208,8 +204,7 @@ export function normalizeVendorForWrite(input: VendorProfileRecord, db: RDashDat
 
 export function vendorProfileValidationError(vendor: VendorProfileRecord) {
   if (!compact(vendor.name)) return "Vendor name is required.";
-  const phone = indianPhoneDigits(vendor.phone);
-  if (phone && phone.length !== 10) return "Vendor mobile number must be a valid Indian mobile number.";
+  if (!isValidIndianMobile(vendor.phone)) return "Vendor mobile number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.";
   const gstin = compact(vendor.gstin).toUpperCase();
   if (gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) return "GSTIN format is invalid.";
   if (vendor.latitude != null && (!Number.isFinite(vendor.latitude) || vendor.latitude < -90 || vendor.latitude > 90)) return "Latitude is invalid.";
@@ -218,7 +213,7 @@ export function vendorProfileValidationError(vendor: VendorProfileRecord) {
 }
 
 export function vendorDuplicateConflicts(db: RDashDatabase, candidate: VendorProfileRecord, excludeId?: string): VendorDuplicateConflict[] {
-  const candidatePhone = indianPhoneDigits(candidate.phone);
+  const candidatePhone = sanitizeIndianMobile(candidate.phone);
   const candidateGstin = compact(candidate.gstin).toUpperCase();
   const candidateLegal = normalizeVendorName(candidate.legal_name);
   return db.master.vendors
@@ -227,7 +222,7 @@ export function vendorDuplicateConflicts(db: RDashDatabase, candidate: VendorPro
       const row = vendor as VendorProfileRecord;
       const reasons: string[] = [];
       let hard = false;
-      if (candidatePhone && indianPhoneDigits(row.phone) === candidatePhone) {
+      if (candidatePhone && sanitizeIndianMobile(row.phone) === candidatePhone) {
         hard = true;
         reasons.push("same mobile number");
       }

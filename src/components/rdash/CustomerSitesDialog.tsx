@@ -17,6 +17,7 @@ import { CustomerDetailsFields } from "./CustomerDetailsFields";
 import { CustomerSiteDraftCard } from "./CustomerSiteDraftCard";
 import { CustomerWorkRequiredDraftSection } from "./CustomerWorkRequiredDraftSection";
 import { EntityFilesCard } from "./EntityFilesCard";
+import { isValidIndianMobile } from "@/lib/rdash/phone-validation";
 import {
   areaPayload,
   customerPayload,
@@ -32,7 +33,6 @@ import {
   sitePayload,
   workRequiredPayload,
   validCustomerEmail,
-  validIndianPhone,
   type AreaDraft,
   type CustomerDraft,
   type CustomerWorkRequiredDraft,
@@ -197,8 +197,8 @@ export function CustomerSitesDialog({
 
   const formIsValid = React.useMemo(() => {
     if (!customer.name.trim()) return false;
-    if (!validIndianPhone(customer.phone) || duplicateMatches.length) return false;
-    if (!validIndianPhone(customer.whatsapp) || !validIndianPhone(customer.alternatePhone) || !validCustomerEmail(customer.email)) return false;
+    if (!isValidIndianMobile(customer.phone) || duplicateMatches.length) return false;
+    if (!isValidIndianMobile(customer.whatsapp) || !isValidIndianMobile(customer.alternatePhone) || !validCustomerEmail(customer.email)) return false;
     if (sameNameMatches.length && !sameNameAcknowledged) return false;
     const sitesValid = sites.filter((site) => site.existing || site.enabled).every((site) => {
       if (site.archiveRequested) return Boolean(site.archiveReason.trim());
@@ -215,7 +215,7 @@ export function CustomerSitesDialog({
 
   const validate = React.useCallback(() => {
     if (!customer.name.trim()) { toast.error("Customer name is required"); scrollToField("customer-name"); return false; }
-    if (!validIndianPhone(customer.phone)) {
+    if (!isValidIndianMobile(customer.phone)) {
       toast.error("If provided, the contact number must contain 10 digits and start with 6, 7, 8, or 9");
       scrollToField("customer-phone"); return false;
     }

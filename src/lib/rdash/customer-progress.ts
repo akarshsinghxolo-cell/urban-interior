@@ -1,3 +1,4 @@
+import { indianWhatsAppDialDigits, isValidIndianMobile } from "./phone-validation";
 import type { WorkRequired, WorkRequiredStatus, RDashDatabase, WorkOrder } from "./types";
 import { indiaDate } from "./date";
 
@@ -137,8 +138,6 @@ export function customerMapHref(address?: string, latitude?: number, longitude?:
 }
 
 export function customerWhatsappHref(phone?: string) {
-    const digits = (phone || "").replace(/\D/g, "");
-    if (!digits) return undefined;
-    const normalized = digits.length === 10 ? `91${digits}` : digits;
-    return `https://wa.me/${normalized}`;
+    if (!isValidIndianMobile(phone, { allowEmpty: false })) return undefined;
+    return `https://wa.me/${indianWhatsAppDialDigits(phone)}`;
 }

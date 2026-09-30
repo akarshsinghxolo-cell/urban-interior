@@ -7,6 +7,7 @@ import type { Customer, Site } from "@/lib/rdash/types";
 import { findCustomerIdentityMatches, findSameNameCustomers, normalizeCustomerName, } from "@/lib/rdash/customer-identity";
 import { notifyCreated } from "@/lib/rdash/notify";
 import { parseCoordinatePair } from "@/lib/rdash/coordinates";
+import { isValidIndianMobile } from "@/lib/rdash/phone-validation";
 import { MetricCard, EmptyState } from "../primitives";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -138,6 +139,13 @@ export function DataImportModule() {
                 errors.push("name is required");
             if (data.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email.trim()))
                 errors.push("invalid email");
+            for (const [field, value] of [
+                ["phone", data.phone],
+                ["whatsapp", data.whatsapp],
+                ["alternate_phone", data.alternate_phone],
+            ] as const) {
+                if (!isValidIndianMobile(value)) errors.push(`invalid ${field}; use a 10-digit Indian mobile number`);
+            }
             if (data.gps_coordinates && !parseCoordinatePair(data.gps_coordinates))
                 errors.push("invalid gps_coordinates; use latitude, longitude");
             if (data.property_type && !SITE_TYPES.has(data.property_type as Site["site_type"]))

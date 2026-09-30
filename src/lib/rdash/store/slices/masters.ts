@@ -4,6 +4,7 @@ import type { StoreContext } from "../context";
 import { attendancePolicyForStaff } from "../../attendance-policy";
 import { dateFromIso, isAtOrAfterMinutesFromTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
+import { indianMobileForWrite } from "../../phone-validation";
 import { configuredStaffBaseSalary, daysInPayrollMonth, hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
 
 /**
@@ -1201,7 +1202,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 id,
                 name: p.name.trim(),
                 type: p.type,
-                phone: p.phone,
+                phone: indianMobileForWrite(p.phone, { label: "Source Partner mobile number" }),
                 email: p.email,
                 commission_pct: p.commission_pct,
             };

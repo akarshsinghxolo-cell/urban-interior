@@ -38,8 +38,8 @@ describe("Vendor secondary-contact removal", () => {
     expect(workspace).not.toContain("partner.whatsapp");
     expect(workspace).not.toContain("partner.alternate_phone");
     expect(workspace).not.toContain("partner.email");
-    expect(workspace).toContain('(partner.phone || "").replace');
-    expect(workspace).toContain('https://wa.me/${phone}');
+    expect(workspace).toContain("sanitizeIndianMobile(partner.phone)");
+    expect(workspace).toContain('https://wa.me/${whatsappDial}');
   });
 
   test("the unused business dialog cannot reintroduce fields removed from the canonical form", async () => {
@@ -51,7 +51,7 @@ describe("Vendor secondary-contact removal", () => {
 
   test("partner governance duplicate detection matches on the canonical mobile only", async () => {
     const governance = await source("src/lib/rdash/partner-governance.ts");
-    expect(governance).toContain("normalizePhone(left.phone)");
+    expect(governance).toContain("sanitizeIndianMobile(left.phone)");
     expectNoTokens(governance, ["left.phone || left.whatsapp"]);
   });
 });

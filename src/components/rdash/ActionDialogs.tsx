@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, } from "@/components/ui/select";
 import { useRDashStore } from "@/lib/rdash/store";
 import { toast } from "sonner";
+import { indianWhatsAppDialDigits, isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { notifyCreated } from "@/lib/rdash/notify";
 import { Wallet, Send, BookOpen, Image as ImageIcon, Pin, Layers } from "lucide-react";
 function useCustomer(customerId?: string) {
@@ -225,17 +226,18 @@ function assetUrl(db: ReturnType<typeof useRDashStore.getState>["db"], driveAsse
     return db.master.fileAssets?.find((item) => item.id === driveAssetId)?.web_view_link || fallback || "";
 }
 function openExternalShare(channel: string, customer: ReturnType<typeof useCustomer>, text: string) {
-    const phone = String(customer?.whatsapp || customer?.phone || "").replace(/\D/g, "");
-    if (channel === "WhatsApp" && phone) {
-        window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+    const mobile = sanitizeIndianMobile(customer?.whatsapp || customer?.phone);
+    const validMobile = isValidIndianMobile(mobile, { allowEmpty: false });
+    if (channel === "WhatsApp" && validMobile) {
+        window.open(`https://wa.me/${indianWhatsAppDialDigits(mobile)}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
         return "WhatsApp draft opened";
     }
     if (channel === "Email" && customer?.email) {
         window.location.href = `mailto:${encodeURIComponent(customer.email)}?body=${encodeURIComponent(text)}`;
         return "Email draft opened";
     }
-    if (channel === "SMS" && phone) {
-        window.location.href = `sms:${phone}?body=${encodeURIComponent(text)}`;
+    if (channel === "SMS" && validMobile) {
+        window.location.href = `sms:${mobile}?body=${encodeURIComponent(text)}`;
         return "SMS draft opened";
     }
     void navigator.clipboard?.writeText(text);
