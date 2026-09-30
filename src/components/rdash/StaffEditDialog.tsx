@@ -492,14 +492,23 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                 </div>
               ) : (
                 <>
-                  <div className="grid gap-2 md:grid-cols-[180px_180px_minmax(0,1fr)_auto]">
-                    <Select value={documentType} disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} onValueChange={(value) => setDocumentType(value as StaffDocument["document_type"])}>
-                      <SelectTrigger aria-label="Document type" className="h-9"><SelectValue /></SelectTrigger>
-                      <SelectContent>{documentTypeOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
-                    </Select>
-                    <Input value={documentNo} aria-label="Document or ID number" disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
-                    <Input ref={documentFileInputRef} type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); documentUploadIdRef.current = null; setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
-                    <Button type="button" size="sm" className="h-9" onClick={uploadDocument} disabled={documentUploading || Boolean(deletingDocumentId) || dirty || (!documentFile && !pendingDocumentLink)}>
+                  <div className="grid gap-3 md:grid-cols-[180px_180px_minmax(0,1fr)_auto] md:items-end">
+                    <div>
+                      {fieldLabel("Document type", fieldId("document-type"))}
+                      <Select value={documentType} disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} onValueChange={(value) => setDocumentType(value as StaffDocument["document_type"])}>
+                        <SelectTrigger id={fieldId("document-type")} className="h-10"><SelectValue /></SelectTrigger>
+                        <SelectContent>{documentTypeOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      {fieldLabel("Document or ID number", fieldId("document-number"))}
+                      <Input id={fieldId("document-number")} value={documentNo} disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Optional" className="h-10"/>
+                    </div>
+                    <div className="min-w-0">
+                      {fieldLabel("Document file", fieldId("document-file"))}
+                      <Input id={fieldId("document-file")} ref={documentFileInputRef} type="file" disabled={documentUploading || Boolean(pendingDocumentLink) || uncertainUpload} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); documentUploadIdRef.current = null; setDocumentStage("idle"); setDocumentError(""); }} className="h-10 min-w-0"/>
+                    </div>
+                    <Button type="button" size="sm" className="h-10" onClick={uploadDocument} disabled={documentUploading || Boolean(deletingDocumentId) || dirty || (!documentFile && !pendingDocumentLink)}>
                       <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : uncertainUpload ? "Retry upload" : "Upload"}
                     </Button>
                   </div>
