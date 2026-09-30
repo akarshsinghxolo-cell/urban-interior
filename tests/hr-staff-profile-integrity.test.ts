@@ -106,6 +106,8 @@ describe("Staff profile integrity", () => {
       'setPendingDocumentLink(uploaded)',
       'uploaded = pendingDocumentLink',
       'registerStaffDocument(uploaded)',
+      'documentUploadIdRef.current = crypto.randomUUID()',
+      'body.set("uploadId", documentUploadIdRef.current)',
       'discardPendingUpload',
       'Discard uploaded file',
       'documentOperationRef.current',
@@ -119,6 +121,8 @@ describe("Staff profile integrity", () => {
       'File record has not finished syncing',
       'status: 409',
       'discardPending',
+      'const assetId = `staff-file-${uploadId}`',
+      'const alreadyUploaded = String(error.statusCode || "") === "409"',
       'if (await assetForId(assetId))',
       '.contains("data", { file_asset_id: assetId })',
     ]);
