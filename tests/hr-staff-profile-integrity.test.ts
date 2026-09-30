@@ -106,6 +106,8 @@ describe("Staff profile integrity", () => {
       'setPendingDocumentLink(uploaded)',
       'uploaded = pendingDocumentLink',
       'registerStaffDocument(uploaded)',
+      'discardPendingUpload',
+      'Discard uploaded file',
       'documentOperationRef.current',
       '<AlertDialog open={Boolean(documentToDelete)}',
       'setDocumentToDelete(document)',
@@ -113,7 +115,13 @@ describe("Staff profile integrity", () => {
       'queued for workspace sync',
       'documentStage === "uploading"',
     ]);
-    expectTokens(route, ['File record has not finished syncing', 'status: 409']);
+    expectTokens(route, [
+      'File record has not finished syncing',
+      'status: 409',
+      'discardPending',
+      'if (await assetForId(assetId))',
+      '.contains("data", { file_asset_id: assetId })',
+    ]);
   });
 
   test("attendance regularization uses the shared keyboard-accessible modal", async () => {
