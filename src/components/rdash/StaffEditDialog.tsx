@@ -14,6 +14,7 @@ import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { Button } from "@/components/ui/button";
 import { IndianMobileInput } from "./IndianMobileInput";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -27,6 +28,17 @@ const staffSections = [
   { value: "status", label: "Status" },
 ] as const;
 type StaffSection = (typeof staffSections)[number]["value"];
+type UploadedStaffDocument = {
+  assetId: string;
+  fileName?: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  storageBucket: string;
+  storagePath: string;
+  staffId: string;
+  documentType: StaffDocument["document_type"];
+  documentNo: string;
+};
 const documentTypeOptions: Array<[StaffDocument["document_type"], string]> = [
   ["photo", "Photo"],
   ["aadhaar", "Aadhaar"],
@@ -89,7 +101,13 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const [documentType, setDocumentType] = React.useState<StaffDocument["document_type"]>("photo");
   const [documentNo, setDocumentNo] = React.useState("");
   const [documentFile, setDocumentFile] = React.useState<File | null>(null);
-  const [documentUploading, setDocumentUploading] = React.useState(false);
+  const [documentStage, setDocumentStage] = React.useState<"idle" | "uploading" | "linking" | "queued" | "error">("idle");
+  const documentUploading = documentStage === "uploading" || documentStage === "linking";
+  const documentOperationRef = React.useRef(false);
+  const [pendingDocumentLink, setPendingDocumentLink] = React.useState<UploadedStaffDocument | null>(null);
+  const [documentToDelete, setDocumentToDelete] = React.useState<StaffDocument | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = React.useState<string | null>(null);
+  const [documentError, setDocumentError] = React.useState("");
   const policy = normalizeAttendancePolicy(draft.attendance_policy);
   const isNew = !staffId;
 
@@ -100,6 +118,10 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     setDocumentType("photo");
     setDocumentNo("");
     setDocumentFile(null);
+    setDocumentStage("idle");
+    setPendingDocumentLink(null);
+    setDocumentError("");
+    setDocumentToDelete(null);
   }, [initialDraft, open]);
 
   const patch = (value: Partial<Staff>) => setDraft((current) => ({ ...current, ...value }));
@@ -205,72 +227,99 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   };
 
   const uploadDocument = async () => {
-    if (!staffId) {
-      toast.error("Save the Staff profile before uploading documents.");
+    if (documentOperationRef.current) return;
+    if (!staffId || dirty) {
+      toast.error("Save the Staff profile changes before uploading documents.");
       return;
     }
-    if (!documentFile) {
+    if (!documentFile && !pendingDocumentLink) {
       toast.error("Choose a document file.");
       return;
     }
-    setDocumentUploading(true);
+    documentOperationRef.current = true;
+    setDocumentError("");
     try {
-      const body = new FormData();
-      body.set("staffId", staffId);
-      body.set("file", documentFile);
-      const response = await fetch("/api/staff-documents", {
-        method: "POST",
-        body,
-        credentials: "same-origin",
-      });
-      const result = await response.json().catch(() => ({})) as {
-        error?: string;
-        assetId?: string;
-        fileName?: string;
-        mimeType?: string;
-        fileSizeBytes?: number;
-        storageBucket?: string;
-        storagePath?: string;
-      };
-      if (!response.ok || !result.assetId || !result.storageBucket || !result.storagePath) {
-        throw new Error(result.error || "Document upload failed.");
+      let uploaded = pendingDocumentLink;
+      if (!uploaded) {
+        setDocumentStage("uploading");
+        const body = new FormData();
+        body.set("staffId", staffId);
+        body.set("file", documentFile!);
+        const response = await fetch("/api/staff-documents", {
+          method: "POST",
+          body,
+          credentials: "same-origin",
+        });
+        const result = await response.json().catch(() => ({})) as {
+          error?: string;
+          assetId?: string;
+          fileName?: string;
+          mimeType?: string;
+          fileSizeBytes?: number;
+          storageBucket?: string;
+          storagePath?: string;
+        };
+        if (!response.ok || !result.assetId || !result.storageBucket || !result.storagePath) {
+          throw new Error(result.error || "Document upload failed.");
+        }
+        uploaded = {
+          assetId: result.assetId,
+          fileName: result.fileName || documentFile!.name,
+          mimeType: result.mimeType || documentFile!.type,
+          fileSizeBytes: result.fileSizeBytes ?? documentFile!.size,
+          storageBucket: result.storageBucket,
+          storagePath: result.storagePath,
+          staffId,
+          documentType,
+          documentNo,
+        };
+        // A metadata retry must reuse the uploaded asset, not upload another copy.
+        setPendingDocumentLink(uploaded);
       }
-      registerStaffDocument({
-        staffId,
-        documentType,
-        documentNo,
-        assetId: result.assetId,
-        fileName: result.fileName || documentFile.name,
-        mimeType: result.mimeType || documentFile.type,
-        fileSizeBytes: result.fileSizeBytes ?? documentFile.size,
-        storageBucket: result.storageBucket,
-        storagePath: result.storagePath,
-      });
+      setDocumentStage("linking");
+      registerStaffDocument(uploaded);
+      setPendingDocumentLink(null);
       setDocumentNo("");
       setDocumentFile(null);
-      toast.success("Staff document uploaded to private Supabase Storage.");
+      setDocumentStage("queued");
+      toast.info("Document uploaded. Its record is queued for workspace sync.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Document upload failed.");
+      const message = error instanceof Error ? error.message : "Document upload failed.";
+      setDocumentStage("error");
+      setDocumentError(message);
+      toast.error(message);
     } finally {
-      setDocumentUploading(false);
+      documentOperationRef.current = false;
     }
   };
 
   const deleteDocument = async (document: StaffDocument) => {
+    if (documentOperationRef.current) return;
     const asset = document.file_asset_id ? assetsById.get(document.file_asset_id) : undefined;
+    if (!asset?.id) {
+      setDocumentError("Cannot delete a document without its saved file record. Refresh and try again.");
+      return;
+    }
+    documentOperationRef.current = true;
+    setDeletingDocumentId(document.id);
+    setDocumentError("");
     try {
-      if (asset?.id) {
-        const response = await fetch(`/api/staff-documents?assetId=${encodeURIComponent(asset.id)}`, {
-          method: "DELETE",
-          credentials: "same-origin",
-        });
-        const result = await response.json().catch(() => ({})) as { error?: string };
-        if (!response.ok) throw new Error(result.error || "Stored file could not be deleted.");
-      }
+      const response = await fetch(`/api/staff-documents?assetId=${encodeURIComponent(asset.id)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error || "Stored file could not be deleted.");
       removeStaffDocument(document.id);
-      toast.success("Staff document removed.");
+      setDocumentToDelete(null);
+      toast.info("File deleted. Document record removal is queued for workspace sync.");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Staff document could not be removed.");
+      const message = error instanceof Error ? error.message : "Staff document could not be removed.";
+      setDocumentError(message);
+      toast.error(message);
+    } finally {
+      documentOperationRef.current = false;
+      setDeletingDocumentId(null);
     }
   };
 
@@ -383,16 +432,22 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
               ) : (
                 <>
                   <div className="grid gap-2 md:grid-cols-[180px_180px_minmax(0,1fr)_auto]">
-                    <Select value={documentType} onValueChange={(value) => setDocumentType(value as StaffDocument["document_type"])}>
-                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <Select value={documentType} disabled={documentUploading || Boolean(pendingDocumentLink)} onValueChange={(value) => setDocumentType(value as StaffDocument["document_type"])}>
+                      <SelectTrigger aria-label="Document type" className="h-9"><SelectValue /></SelectTrigger>
                       <SelectContent>{documentTypeOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Input value={documentNo} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
-                    <Input type="file" accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => setDocumentFile(e.target.files?.[0] || null)} className="h-9"/>
-                    <Button type="button" size="sm" className="h-9" onClick={uploadDocument} disabled={documentUploading || !documentFile}>
-                      <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? "Uploading…" : "Upload"}
+                    <Input value={documentNo} aria-label="Document or ID number" disabled={documentUploading || Boolean(pendingDocumentLink)} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
+                    <Input type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink)} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
+                    <Button type="button" size="sm" className="h-9" onClick={uploadDocument} disabled={documentUploading || Boolean(deletingDocumentId) || dirty || (!documentFile && !pendingDocumentLink)}>
+                      <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : "Upload"}
                     </Button>
                   </div>
+                  {dirty ? <p role="status" className="text-xs text-warning">Save profile changes before uploading documents.</p> : null}
+                  {documentUploading ? <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+                    {documentStage === "uploading" ? "Uploading file securely…" : "Linking the uploaded file to this Staff profile…"}
+                  </p> : null}
+                  {documentStage === "queued" ? <p role="status" className="text-xs text-muted-foreground">Document uploaded and queued for workspace sync. Verify it after refreshing.</p> : null}
+                  {documentError ? <p role="alert" className="text-xs text-destructive">{documentError}{pendingDocumentLink ? " Your file is already uploaded; retry linking instead of uploading again." : ""}</p> : null}
                   <div className="divide-y divide-border rounded-lg border border-border">
                     {documents.map((document) => {
                       const asset = document.file_asset_id ? assetsById.get(document.file_asset_id) : undefined;
@@ -407,7 +462,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                             {asset?.web_view_link ? <a href={asset.web_view_link} target="_blank" rel="noreferrer" className="inline-flex h-7 items-center rounded-md border border-border px-2 text-[10px] font-medium text-primary"><ExternalLink className="mr-1 h-3 w-3"/>Open</a> : null}
                             {document.status === "pending" ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[10px]" onClick={() => updateStaffDocument(document.id, { status: "verified" })}>Verify</Button> : null}
                             {document.status === "pending" ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[10px]" onClick={() => updateStaffDocument(document.id, { status: "rejected" })}>Reject</Button> : null}
-                            <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-[10px] text-destructive" onClick={() => void deleteDocument(document)}><Trash2 className="mr-1 h-3 w-3"/>Delete</Button>
+                            <Button type="button" size="sm" variant="ghost" className="min-h-9 px-2 text-xs text-destructive" disabled={Boolean(deletingDocumentId) || documentUploading} onClick={() => setDocumentToDelete(document)}><Trash2 className="mr-1 h-3 w-3"/>Delete</Button>
                           </div>
                         </div>
                       );
@@ -426,6 +481,21 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
           </Tabs>
         </div>
 
+        <AlertDialog open={Boolean(documentToDelete)} onOpenChange={(nextOpen) => { if (!nextOpen && !deletingDocumentId) setDocumentToDelete(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete Staff document?</AlertDialogTitle>
+              <AlertDialogDescription>This deletes the stored file and removes its link from the Staff profile. This action cannot be undone.</AlertDialogDescription>
+            </AlertDialogHeader>
+            {documentError ? <p role="alert" className="text-sm text-destructive">{documentError}</p> : null}
+            <AlertDialogFooter>
+              <Button type="button" variant="outline" disabled={Boolean(deletingDocumentId)} onClick={() => setDocumentToDelete(null)}>Cancel</Button>
+              <Button type="button" variant="destructive" disabled={Boolean(deletingDocumentId)} onClick={() => { if (documentToDelete) void deleteDocument(documentToDelete); }}>
+                {deletingDocumentId ? "Deleting…" : "Delete document"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
           <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim()}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
