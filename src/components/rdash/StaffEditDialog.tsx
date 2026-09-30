@@ -144,6 +144,13 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   );
 
   const handleSave = (): boolean => {
+    if (documentOperationRef.current || pendingDocumentLink) {
+      setActiveSection("documents");
+      toast.error(pendingDocumentLink
+        ? "Finish linking or discard the uploaded document before saving the profile."
+        : "Wait until the document operation finishes.");
+      return false;
+    }
     if (!draft.name?.trim()) {
       toast.error("Staff name is required");
       return false;
@@ -554,7 +561,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
         </AlertDialog>
         <DialogFooter className="border-t border-border px-5 py-3">
           <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim()}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
+          <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim() || documentUploading || Boolean(pendingDocumentLink) || Boolean(deletingDocumentId)}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
