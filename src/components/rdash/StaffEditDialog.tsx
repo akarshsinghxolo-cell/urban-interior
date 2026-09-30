@@ -105,6 +105,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const documentUploading = ["uploading", "linking", "discarding"].includes(documentStage);
   const documentOperationRef = React.useRef(false);
   const documentFileInputRef = React.useRef<HTMLInputElement>(null);
+  const documentUploadIdRef = React.useRef<string | null>(null);
   const [pendingDocumentLink, setPendingDocumentLink] = React.useState<UploadedStaffDocument | null>(null);
   const [documentToDelete, setDocumentToDelete] = React.useState<StaffDocument | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = React.useState<string | null>(null);
@@ -122,6 +123,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     setDocumentType("photo");
     setDocumentNo("");
     setDocumentFile(null);
+    documentUploadIdRef.current = null;
     setDocumentStage("idle");
     setPendingDocumentLink(null);
     setDocumentError("");
@@ -254,6 +256,8 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
         setDocumentStage("uploading");
         const body = new FormData();
         body.set("staffId", staffId);
+        if (!documentUploadIdRef.current) documentUploadIdRef.current = crypto.randomUUID();
+        body.set("uploadId", documentUploadIdRef.current);
         body.set("file", documentFile!);
         const response = await fetch("/api/staff-documents", {
           method: "POST",
@@ -289,6 +293,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       setDocumentStage("linking");
       registerStaffDocument(uploaded);
       setPendingDocumentLink(null);
+      documentUploadIdRef.current = null;
       setDocumentNo("");
       setDocumentFile(null);
       if (documentFileInputRef.current) documentFileInputRef.current.value = "";
@@ -323,6 +328,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(result.error || "Pending upload could not be discarded.");
       setPendingDocumentLink(null);
+      documentUploadIdRef.current = null;
       setDocumentFile(null);
       setDocumentNo("");
       if (documentFileInputRef.current) documentFileInputRef.current.value = "";
@@ -482,7 +488,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
                       <SelectContent>{documentTypeOptions.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent>
                     </Select>
                     <Input value={documentNo} aria-label="Document or ID number" disabled={documentUploading || Boolean(pendingDocumentLink)} onChange={(e) => setDocumentNo(e.target.value)} placeholder="Document / ID number" className="h-9"/>
-                    <Input ref={documentFileInputRef} type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink)} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
+                    <Input ref={documentFileInputRef} type="file" aria-label="Document file" disabled={documentUploading || Boolean(pendingDocumentLink)} accept=".pdf,image/jpeg,image/png,image/webp" onChange={(e) => { setDocumentFile(e.target.files?.[0] || null); documentUploadIdRef.current = null; setDocumentStage("idle"); setDocumentError(""); }} className="h-9"/>
                     <Button type="button" size="sm" className="h-9" onClick={uploadDocument} disabled={documentUploading || Boolean(deletingDocumentId) || dirty || (!documentFile && !pendingDocumentLink)}>
                       <FileUp className="mr-1 h-3.5 w-3.5"/>{documentUploading ? (documentStage === "linking" ? "Linking…" : "Uploading…") : pendingDocumentLink ? "Retry linking" : "Upload"}
                     </Button>
