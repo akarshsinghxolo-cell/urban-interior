@@ -66,6 +66,32 @@ describe("HR payroll consolidation", () => {
     expectNoTokens(router, ["StaffBoardHistoryModule", "<StaffBoardModule"]);
   });
 
+  test("attendance and salary expose the audited high-priority UI states without new business logic", async () => {
+    const attendance = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx").text();
+    const salary = await testFile("src/components/rdash/modules/StaffSalaryModule.tsx").text();
+
+    expectTokens(attendance, [
+      'aria-label="Attendance status legend"',
+      'aria-label="Attendance staff member"',
+      '"Attendance exception"',
+      '"Review / regularize"',
+      'STATUS_META[record.status]',
+      'className="md:hidden"',
+      'className="hidden overflow-x-auto rd-scroll md:block"',
+    ]);
+    expectNoTokens(attendance, ['text-[8px]">⚠</span>']);
+
+    expectTokens(salary, [
+      '"Selected payroll month"',
+      'hasPersistedPayroll ? "Persisted payroll" : "Live preview"',
+      '"Why pay changed"',
+      '"attendance violation"',
+      '"Finalized source in view"',
+      '"Preview source in view"',
+    ]);
+    expectNoTokens(salary, ['<h3 className="text-sm font-bold">Payroll status</h3>']);
+  });
+
   test("salary and attendance modules share payroll helpers and approval workflow", async () => {
     const salary = await testFile("src/components/rdash/modules/StaffSalaryModule.tsx").text();
     const attendance = await testFile("src/components/rdash/modules/AttendancePayrollModule.tsx").text();
