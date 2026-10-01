@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
@@ -69,8 +68,12 @@ export async function POST(request: NextRequest) {
     const form = await request.formData();
     const file = form.get("file");
     const staffId = String(form.get("staffId") || "").trim();
+    const uploadId = String(form.get("uploadId") || "").trim();
 
     if (!staffId) return NextResponse.json({ error: "Staff is required." }, { status: 400 });
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(uploadId)) {
+      return NextResponse.json({ error: "A valid upload ID is required." }, { status: 400 });
+    }
     if (!canManageStaff(user, staffId)) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     if (!(await canonicalStaffExists(staffId))) {
       return NextResponse.json({ error: "Canonical Staff profile was not found." }, { status: 404 });
@@ -84,7 +87,9 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = getSupabaseAdminClient();
-    const assetId = `staff-file-${randomUUID()}`;
+    // An upload retry uses the same client-generated UUID; it can never create
+    // another storage object just because the first HTTP response was lost.
+    const assetId = `staff-file-${uploadId}`;
     const storagePath = `${workspaceId()}/${staffId}/${assetId}-${safeFileName(file.name)}`;
     const bytes = Buffer.from(await file.arrayBuffer());
 
@@ -93,7 +98,21 @@ export async function POST(request: NextRequest) {
       cacheControl: "3600",
       upsert: false,
     });
-    if (error) throw error;
+    if (error) {
+      // A conflict is only a successful retry if the exact original file and
+      // size exist at the expected, staff-scoped storage path.
+      const alreadyUploaded = String(error.statusCode || "") === "409";
+      if (!alreadyUploaded) throw error;
+      const directory = `${workspaceId()}/${staffId}`;
+      const expectedName = `${assetId}-${safeFileName(file.name)}`;
+      const { data: objects, error: listError } = await admin.storage.from(BUCKET)
+        .list(directory, { search: expectedName, limit: 10 });
+      if (listError) throw listError;
+      const existing = objects?.find((object) => object.name === expectedName);
+      if (!existing || Number(existing.metadata?.size) !== file.size) {
+        return NextResponse.json({ error: "An existing upload ID belongs to a different file." }, { status: 409 });
+      }
+    }
 
     return NextResponse.json({
       assetId,
@@ -152,8 +171,40 @@ export async function DELETE(request: NextRequest) {
     const assetId = String(request.nextUrl.searchParams.get("assetId") || "").trim();
     if (!assetId) return NextResponse.json({ error: "assetId is required." }, { status: 400 });
 
+    // An upload whose workspace record could not be linked can be discarded
+    // through this same authenticated storage gateway, never a second path.
+    if (request.nextUrl.searchParams.get("discardPending") === "true") {
+      const staffId = String(request.nextUrl.searchParams.get("staffId") || "").trim();
+      const fileName = String(request.nextUrl.searchParams.get("fileName") || "");
+      if (!/^staff-file-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(assetId)
+        || !staffId || !fileName || fileName.length > 255) {
+        return NextResponse.json({ error: "Invalid pending upload." }, { status: 400 });
+      }
+      if (!canManageStaff(user, staffId) || !(await canonicalStaffExists(staffId))) {
+        return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+      }
+      if (await assetForId(assetId)) {
+        return NextResponse.json({ error: "This upload is already linked. Refresh the workspace." }, { status: 409 });
+      }
+      const admin = getSupabaseAdminClient();
+      const { data: existingDocument, error: readError } = await admin
+        .from("entity_staffDocuments")
+        .select("id")
+        .eq("workspace_id", workspaceId())
+        .contains("data", { file_asset_id: assetId })
+        .limit(1);
+      if (readError) throw readError;
+      if (existingDocument?.length) {
+        return NextResponse.json({ error: "This upload has a document record. Refresh the workspace." }, { status: 409 });
+      }
+      const path = `${workspaceId()}/${staffId}/${assetId}-${safeFileName(fileName)}`;
+      const { error } = await admin.storage.from(BUCKET).remove([path]);
+      if (error) throw error;
+      return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "private, no-store" } });
+    }
+
     const asset = await assetForId(assetId);
-    if (!asset) return NextResponse.json({ ok: true });
+    if (!asset) return NextResponse.json({ error: "File record has not finished syncing. Refresh the workspace and retry." }, { status: 409 });
     const staffId = staffIdFromAsset(asset);
     if (!staffId || !MANAGER_ROLES.has(user.role)) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
