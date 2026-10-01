@@ -73,8 +73,8 @@ describe("HR payroll consolidation", () => {
     expectTokens(attendance, [
       'aria-label="Attendance status legend"',
       'aria-label="Attendance staff member"',
-      '"Attendance exception"',
-      '"Review / regularize"',
+      "Attendance exception",
+      "Review / regularize",
       'STATUS_META[record.status]',
       'className="md:hidden"',
       'className="hidden overflow-x-auto rd-scroll md:block"',
