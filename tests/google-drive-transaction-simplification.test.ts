@@ -163,6 +163,21 @@ describe("Google Drive transaction simplification", () => {
     expectTokens(attachments, ["url: asset.web_view_link"]);
   });
 
+  test("keeps one Drive account UI path that becomes cards on mobile", async () => {
+    const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
+    expectTokens(manager, [
+      "Account configuration",
+      "File management",
+      'className="hidden bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground md:table-header-group"',
+      'className="grid gap-3 p-3 md:table-row-group md:p-0"',
+      "Storage capacity",
+      "Priority & status",
+      "Account actions",
+      "% used",
+    ]);
+    expectNoTokens(manager, ['<h3 className="text-sm font-bold">Drive Accounts</h3>']);
+  });
+
   test("removes the local-file provider from the active routes, validation, and shared contract", async () => {
     const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
     const files = await readFile("src/lib/rdash/store/slices/files.ts", "utf8");

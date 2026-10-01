@@ -287,28 +287,60 @@ export function GoogleDriveManagerModule() {
           </section>
 
           <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-            <div className="border-b border-border px-4 py-3"><h3 className="text-sm font-bold">Drive Accounts</h3><p className="mt-0.5 text-xs text-muted-foreground">Only the active Drive receives new uploads. Pause or disable a Drive without breaking old links.</p></div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs md:min-w-[900px]">
-                <thead className="bg-muted/40 text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3">Active</th><th className="px-4 py-3">Drive account</th><th className="px-4 py-3">Storage</th><th className="px-4 py-3">Priority / status</th><th className="px-4 py-3">Actions</th></tr></thead>
-                <tbody className="divide-y divide-border">
+            <div className="border-b border-border px-4 py-3">
+              <h3 className="text-sm font-bold">Account configuration</h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">Choose the upload destination, inspect capacity, and manage each connected Google account. File browsing is kept in the separate File management section below.</p>
+            </div>
+            <div className="md:overflow-x-auto">
+              <table className="block w-full text-left text-xs md:table md:min-w-[900px]">
+                <thead className="hidden bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground md:table-header-group"><tr><th className="px-4 py-3">Active</th><th className="px-4 py-3">Drive account</th><th className="px-4 py-3">Storage</th><th className="px-4 py-3">Priority / status</th><th className="px-4 py-3">Actions</th></tr></thead>
+                <tbody className="grid gap-3 p-3 md:table-row-group md:p-0">
                   {accounts.map((account) => {
                     const isDest = writeDestination?.id === account.id;
                     const ownFiles = files.filter((f) => f.storage_account_id === account.id);
                     return (
-                      <tr key={account.id} className={isDest ? "bg-primary/[0.035]" : undefined}>
-                        <td className="px-4 py-4 align-top">{isDest ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary"><CheckCircle2 className="h-3 w-3" /> Active</span> : <Button size="sm" variant="outline" className="h-8 px-3 text-[11px]" onClick={() => activateAccount(account.id)}>Use</Button>}</td>
-                        <td className="px-4 py-4 align-top"><div className="flex gap-2"><span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span><div className="min-w-0"><p className="font-bold">{account.label}</p><p className="truncate text-[11px] text-muted-foreground">{account.email || "Google account identity pending"} · Folder: {account.root_folder_name || "Urban Castle"}</p><p className="mt-1 text-[10px] text-muted-foreground">{ownFiles.length} active file(s) linked here</p></div></div></td>
-                        <td className="w-[220px] px-4 py-4 align-top"><Capacity account={account} /></td>
-                        <td className="w-[240px] px-4 py-4 align-top"><div className="grid gap-2"><Input type="number" min={1} className="h-9" value={account.priority_order} onChange={(e) => updateAccount(account.id, { priority_order: Math.max(1, Number(e.target.value) || 1) })} /><select value={account.status} onChange={(e) => updateAccount(account.id, { status: e.target.value as StorageAccount["status"], write_enabled: e.target.value === "connected" })} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="connected">Connected</option><option value="paused">Standby</option><option value="reconnect_required">Reconnect required</option><option value="disabled">Disabled</option></select></div></td>
-                        <td className="px-4 py-4 align-top"><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={working || !credentialIds.has(account.id)} onClick={() => refreshAccount(account.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Refresh quota</Button><Button size="sm" variant="outline" disabled={working || !isOwner} onClick={() => connectConnection(account.label, account.id)}><KeyRound className="mr-1 h-3.5 w-3.5" />{credentialIds.has(account.id) ? "Reconnect same account" : "Authorize account"}</Button><Button size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>{account.web_view_link ? <Button size="sm" variant="ghost" onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="h-3.5 w-3.5" /></Button> : null}</div><p className="mt-2 max-w-xs text-[10px] text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p></td>
+                      <tr key={account.id} className={cn("block rounded-lg border border-border p-3 md:table-row md:rounded-none md:border-0 md:p-0", isDest && "bg-primary/[0.035]")}>
+                        <td className="block border-b border-border/70 pb-3 align-top md:table-cell md:border-0 md:px-4 md:py-4">
+                          <p className="mb-1 text-xs font-semibold text-muted-foreground md:hidden">Upload destination</p>
+                          {isDest ? <span className="inline-flex min-h-8 items-center gap-1 rounded-full bg-primary/10 px-2.5 text-xs font-bold text-primary"><CheckCircle2 className="h-3.5 w-3.5" /> Active for uploads</span> : <Button size="sm" variant="outline" onClick={() => activateAccount(account.id)}>Use for uploads</Button>}
+                        </td>
+                        <td className="block border-b border-border/70 py-3 align-top md:table-cell md:border-0 md:px-4 md:py-4">
+                          <p className="mb-1 text-xs font-semibold text-muted-foreground md:hidden">Drive account</p>
+                          <div className="flex gap-2"><span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span><div className="min-w-0"><p className="text-sm font-bold">{account.label}</p><p className="break-words text-xs text-muted-foreground">{account.email || "Google account identity pending"} · Folder: {account.root_folder_name || "Urban Castle"}</p><p className="mt-1 text-xs text-muted-foreground">{ownFiles.length} active file(s) linked here</p></div></div>
+                        </td>
+                        <td className="block border-b border-border/70 py-3 align-top md:table-cell md:w-[220px] md:border-0 md:px-4 md:py-4">
+                          <p className="mb-2 text-xs font-semibold text-muted-foreground md:hidden">Storage capacity</p>
+                          <Capacity account={account} />
+                        </td>
+                        <td className="block border-b border-border/70 py-3 align-top md:table-cell md:w-[240px] md:border-0 md:px-4 md:py-4">
+                          <p className="mb-2 text-xs font-semibold text-muted-foreground md:hidden">Priority & status</p>
+                          <div className="grid gap-2">
+                            <label className="grid gap-1"><span className="text-xs text-muted-foreground">Priority order</span><Input aria-label={account.label + " priority order"} type="number" min={1} className="h-10" value={account.priority_order} onChange={(e) => updateAccount(account.id, { priority_order: Math.max(1, Number(e.target.value) || 1) })} /></label>
+                            <label className="grid gap-1"><span className="text-xs text-muted-foreground">Connection status</span><select aria-label={account.label + " connection status"} value={account.status} onChange={(e) => updateAccount(account.id, { status: e.target.value as StorageAccount["status"], write_enabled: e.target.value === "connected" })} className="h-10 w-full rounded-md border border-input bg-card px-2 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"><option value="connected">Connected</option><option value="paused">Standby</option><option value="reconnect_required">Reconnect required</option><option value="disabled">Disabled</option></select></label>
+                          </div>
+                        </td>
+                        <td className="block pt-3 align-top md:table-cell md:px-4 md:py-4">
+                          <p className="mb-2 text-xs font-semibold text-muted-foreground md:hidden">Account actions</p>
+                          <div className="grid gap-2 sm:grid-cols-2 md:flex md:flex-wrap">
+                            <Button size="sm" variant="outline" disabled={working || !credentialIds.has(account.id)} onClick={() => refreshAccount(account.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Refresh quota</Button>
+                            <Button size="sm" variant="outline" disabled={working || !isOwner} onClick={() => connectConnection(account.label, account.id)}><KeyRound className="mr-1 h-3.5 w-3.5" />{credentialIds.has(account.id) ? "Reconnect same account" : "Authorize account"}</Button>
+                            <Button size="sm" variant="ghost" onClick={() => updateAccount(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>
+                            {account.web_view_link ? <Button size="sm" variant="ghost" aria-label={"Open " + account.label + " in Google Drive"} onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="mr-1 h-3.5 w-3.5" />Open Drive</Button> : null}
+                          </div>
+                          <p className="mt-2 max-w-sm text-xs leading-5 text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached: new uploads route onward; existing files remain connected here." : "Existing files remain available from this Drive even after another Drive becomes the upload destination."}</p>
+                        </td>
                       </tr>
                     );
                   })}
-                  {!accounts.length ? <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-muted-foreground">No Drive accounts connected. Go to Add Drive Account to start cloud storage.</td></tr> : null}
+                  {!accounts.length ? <tr className="block md:table-row"><td colSpan={5} className="block px-4 py-8 text-center text-xs text-muted-foreground md:table-cell">No Drive accounts connected. Go to Add Drive Account to start cloud storage.</td></tr> : null}
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+            <h3 className="text-sm font-bold">File management</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Browse linked files or register an existing Drive file. Account priorities, quota and connection state stay in Account configuration above.</p>
           </section>
 
           <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -464,7 +496,7 @@ function Capacity({ account }: { account: StorageAccount }) {
   return (
     <div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", pct > 85 ? "bg-destructive" : pct > 60 ? "bg-warning" : "bg-success")} style={{ width: `${Math.min(100, pct)}%` }} /></div>
-      <p className="mt-1 text-[10px] font-mono text-muted-foreground">{formatBytes(used)} / {formatBytes(limit)}</p>
+      <p className="mt-1 text-xs font-mono text-muted-foreground">{formatBytes(used)} / {formatBytes(limit)} · {pct}% used</p>
     </div>
   );
 }
