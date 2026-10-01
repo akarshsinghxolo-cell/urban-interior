@@ -27,13 +27,14 @@ function currentMonthKey(value = new Date()) {
 }
 const STATUS_META: Record<string, {
     label: string;
+    code: string;
     color: string;
 }> = {
-    present: { label: "Present", color: "bg-success/10 text-success border-success/20" },
-    half_day: { label: "Half day", color: "bg-warning/10 text-warning border-warning/20" },
-    absent: { label: "Absent", color: "bg-destructive/10 text-destructive border-destructive/20" },
-    leave: { label: "On leave", color: "bg-primary/10 text-primary border-primary/20" },
-    holiday: { label: "Holiday", color: "bg-muted text-muted-foreground border-border" },
+    present: { label: "Present", code: "P", color: "bg-success/10 text-success border-success/20" },
+    half_day: { label: "Half day", code: "½", color: "bg-warning/10 text-warning border-warning/20" },
+    absent: { label: "Absent", code: "A", color: "bg-destructive/10 text-destructive border-destructive/20" },
+    leave: { label: "On leave", code: "L", color: "bg-primary/10 text-primary border-primary/20" },
+    holiday: { label: "Holiday", code: "H", color: "bg-muted text-muted-foreground border-border" },
 };
 export function AttendancePayrollModule() {
     const db = useRDashStore((s) => s.db);
@@ -63,6 +64,7 @@ export function AttendancePayrollModule() {
     const disposedRef = React.useRef(false);
     React.useEffect(() => { disposedRef.current = false; /* StrictMode dev remount */ return () => { disposedRef.current = true; }; }, []);  // STAGE-4-FIX: unmount guard
     const [weekOffset, setWeekOffset] = React.useState(0);
+    const [mobileAttendanceStaffId, setMobileAttendanceStaffId] = React.useState(user.staffId || defaultPolicyStaff?.id || "");
     const [attendanceMode, setAttendanceMode] = React.useState<"office" | "field_visit">("office");
     const [selectedVisitId, setSelectedVisitId] = React.useState("");
     const [capturing, setCapturing] = React.useState<"check-in" | "check-out" | "office" | null>(null);
@@ -157,6 +159,16 @@ export function AttendancePayrollModule() {
             return { ...staff, records, weekRecords, presentDays, halfDays, absentDays, totalMinutes, monthlySalary, earnedThisMonth };
         });
     }, [activeStaff, db.attendance, weekDays, computeStaffSalary]);
+    React.useEffect(() => {
+        if (staffWithAttendance.some((staff) => staff.id === mobileAttendanceStaffId)) return;
+        setMobileAttendanceStaffId(
+            staffWithAttendance.find((staff) => staff.id === user.staffId)?.id
+            || staffWithAttendance[0]?.id
+            || "",
+        );
+    }, [mobileAttendanceStaffId, staffWithAttendance, user.staffId]);
+    const mobileAttendanceStaff = staffWithAttendance.find((staff) => staff.id === mobileAttendanceStaffId) || staffWithAttendance[0];
+
     const totalPresent = db.attendance.filter((record) => record.status === "present" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
     const totalAbsent = db.attendance.filter((record) => record.status === "absent" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
     const totalPayroll = staffWithAttendance.reduce((sum, staff) => sum + staff.monthlySalary, 0);
@@ -376,11 +388,119 @@ export function AttendancePayrollModule() {
       </section>
 
       <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2"><h3 className="text-sm font-semibold">Week attendance</h3><span className="text-[11px] text-muted-foreground">{weekDays[0].toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} – {weekDays[6].toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span></div>
-        <div className="overflow-x-auto rd-scroll"><table className="w-full text-xs"><thead><tr className="border-b border-border bg-muted/20"><th className="sticky left-0 z-10 bg-muted/20 px-3 py-2 text-left font-semibold text-muted-foreground">Staff</th>{weekDays.map((date) => <th key={ymd(date)} className={cn("px-2 py-2 text-center font-semibold", ymd(date) === ymd(new Date()) ? "bg-primary/10 text-primary" : "text-muted-foreground")}><div>{date.toLocaleDateString("en-IN", { weekday: "short" })}</div><div className="text-[10px] font-normal">{date.getDate()}</div></th>)}</tr></thead><tbody>{staffWithAttendance.map((staff) => <tr key={staff.id} className="border-b border-border last:border-0 hover:bg-accent/20"><td className="sticky left-0 z-10 bg-card px-3 py-2"><div className="flex items-center gap-2"><Avatar name={staff.name} size={28}/><div><p className="font-medium text-foreground">{staff.name}</p><p className="text-[10px] text-muted-foreground">{staff.role}</p></div></div></td>{staff.weekRecords.map((record, index) => <td key={index} className="px-2 py-2 text-center">{record ? (record.review_required || record.auto_generated) && isPolicyManager ? <button type="button" title={record.review_note || "Auto-marked — click to regularize"} onClick={() => openRegularize(record.id)} className={cn("inline-flex items-center justify-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-all hover:ring-2 hover:ring-warning/30", STATUS_META[record.status]?.color, "ring-1 ring-warning/40")}>{record.status === "present" ? "P" : record.status === "half_day" ? "½" : record.status === "absent" ? "A" : record.status === "leave" ? "L" : "H"}<span className="text-[8px]">⚠</span></button> : <span title={record.review_note || record.location} className={cn("inline-flex items-center justify-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium", STATUS_META[record.status]?.color)}>{record.status === "present" ? "P" : record.status === "half_day" ? "½" : record.status === "absent" ? "A" : record.status === "leave" ? "L" : "H"}</span> : <span className="text-[10px] text-muted-foreground/40">—</span>}</td>)}</tr>)}</tbody></table></div>
+        <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border bg-muted/30 px-4 py-3">
+          <div>
+            <h3 className="text-sm font-semibold">Week attendance</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">Statuses are shared across the desktop grid and staff-focused mobile view.</p>
+          </div>
+          <span className="text-xs text-muted-foreground">{weekDays[0].toLocaleDateString("en-IN", { day: "2-digit", month: "short" })} – {weekDays[6].toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</span>
+        </div>
+        <div aria-label="Attendance status legend" className="flex flex-wrap gap-2 border-b border-border px-4 py-3">
+          {Object.entries(STATUS_META).map(([status, meta]) => (
+            <span key={status} className={cn("inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold", meta.color)}>
+              <span aria-hidden="true">{meta.code}</span><span>{meta.label}</span>
+            </span>
+          ))}
+          <span className="inline-flex min-h-8 items-center gap-1.5 rounded-md border border-warning/30 bg-warning/[0.06] px-2.5 text-xs font-semibold text-warning">
+            <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true"/> Review required
+          </span>
+        </div>
+
+        <div className="md:hidden">
+          <div className="border-b border-border p-4">
+            <label className="grid gap-1.5">
+              <span className="text-xs font-semibold text-foreground">Staff member</span>
+              <select
+                aria-label="Attendance staff member"
+                value={mobileAttendanceStaff?.id || ""}
+                onChange={(event) => setMobileAttendanceStaffId(event.target.value)}
+                className="h-11 w-full rounded-md border border-input bg-card px-3 text-sm"
+              >
+                {staffWithAttendance.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} · {staff.role}</option>)}
+              </select>
+            </label>
+          </div>
+          {mobileAttendanceStaff ? (
+            <div className="divide-y divide-border">
+              {weekDays.map((date, index) => {
+                const record = mobileAttendanceStaff.weekRecords[index];
+                const meta = record ? STATUS_META[record.status] : null;
+                const review = Boolean(record && (record.review_required || record.auto_generated));
+                return (
+                  <div key={ymd(date)} className="grid gap-2 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold">{date.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short" })}</p>
+                        {record?.check_in || record?.check_out ? (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {record.check_in ? "In " + formatDateTime(record.check_in) : "No check-in"} · {record.check_out ? "Out " + formatDateTime(record.check_out) : "No check-out"}
+                          </p>
+                        ) : null}
+                      </div>
+                      {record && meta ? (
+                        <span className={cn("inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold", meta.color)}>
+                          <span aria-hidden="true">{meta.code}</span><span>{meta.label}</span>
+                        </span>
+                      ) : <span className="text-xs text-muted-foreground">No record</span>}
+                    </div>
+                    {record?.location ? <p className="text-xs text-muted-foreground">Location: {record.location}</p> : null}
+                    {review ? (
+                      <div className="rounded-md border border-warning/30 bg-warning/[0.06] p-3">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-warning"><AlertTriangle className="h-3.5 w-3.5"/> Attendance exception</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">{record?.review_note || (record?.auto_generated ? "This record was generated automatically and should be reviewed." : "This record requires review.")}</p>
+                        {isPolicyManager && record ? <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => openRegularize(record.id)}>Review / regularize</Button> : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : <p className="px-4 py-8 text-center text-sm text-muted-foreground">No active staff attendance is available.</p>}
+        </div>
+
+        <div className="hidden overflow-x-auto rd-scroll md:block">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-muted/20">
+                <th className="sticky left-0 z-10 bg-muted/20 px-3 py-2 text-left font-semibold text-muted-foreground">Staff</th>
+                {weekDays.map((date) => <th key={ymd(date)} className={cn("px-2 py-2 text-center font-semibold", ymd(date) === ymd(new Date()) ? "bg-primary/10 text-primary" : "text-muted-foreground")}><div>{date.toLocaleDateString("en-IN", { weekday: "short" })}</div><div className="text-xs font-normal">{date.getDate()}</div></th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {staffWithAttendance.map((staff) => (
+                <tr key={staff.id} className="border-b border-border last:border-0 hover:bg-accent/20">
+                  <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                    <div className="flex items-center gap-2"><Avatar name={staff.name} size={28}/><div><p className="font-medium text-foreground">{staff.name}</p><p className="text-xs text-muted-foreground">{staff.role}</p></div></div>
+                  </td>
+                  {staff.weekRecords.map((record, index) => {
+                    const meta = record ? STATUS_META[record.status] : null;
+                    const review = Boolean(record && (record.review_required || record.auto_generated));
+                    return (
+                      <td key={index} className="px-2 py-2 text-center">
+                        {record && meta ? review && isPolicyManager ? (
+                          <button
+                            type="button"
+                            aria-label={staff.name + ", " + weekDays[index].toLocaleDateString("en-IN") + ": " + meta.label + ". Review required. " + (record.review_note || "")}
+                            title={record.review_note || "Auto-marked — click to regularize"}
+                            onClick={() => openRegularize(record.id)}
+                            className={cn("inline-flex min-h-8 min-w-8 items-center justify-center gap-1 rounded-md border px-2 text-xs font-semibold transition-all hover:ring-2 hover:ring-warning/30", meta.color, "ring-1 ring-warning/40")}
+                          >
+                            <span aria-hidden="true">{meta.code}</span><AlertTriangle className="h-3 w-3" aria-hidden="true"/>
+                          </button>
+                        ) : (
+                          <span aria-label={staff.name + ", " + weekDays[index].toLocaleDateString("en-IN") + ": " + meta.label} title={record.review_note || record.location} className={cn("inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border px-2 text-xs font-semibold", meta.color)}>{meta.code}</span>
+                        ) : <span className="text-xs text-muted-foreground/50">—</span>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card"><div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2"><h3 className="text-sm font-semibold">Payroll summary (this month)</h3><span className="text-[11px] text-muted-foreground">Verified attendance only</span></div><div className="divide-y divide-border">{staffWithAttendance.map((staff) => { const earnedPct = staff.monthlySalary > 0 ? Math.round((staff.earnedThisMonth / staff.monthlySalary) * 100) : 0; return <div key={staff.id} className="flex items-center gap-3 px-4 py-2.5"><Avatar name={staff.name} size={36}/><div className="min-w-0 flex-1"><div className="flex items-baseline justify-between"><p className="truncate text-sm font-semibold">{staff.name}</p><span className="text-xs text-muted-foreground">{staff.role} · {staff.city}</span></div><div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground"><span>{staff.presentDays} present · {staff.halfDays} half · {staff.absentDays} absent</span><span>· {Math.round(staff.totalMinutes / 60)}h verified</span></div><div className="mt-1.5 flex items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", earnedPct >= 80 ? "bg-success" : earnedPct >= 50 ? "bg-primary" : "bg-warning")} style={{ width: `${Math.min(100, earnedPct)}%` }}/></div><span className="text-[10px] font-mono text-muted-foreground">{earnedPct}%</span></div></div><div className="text-right"><p className="text-xs font-mono font-semibold text-foreground">{formatINR(Math.round(staff.earnedThisMonth))}</p><p className="text-[10px] text-muted-foreground">of {formatINR(staff.monthlySalary)}</p></div></div>; })}</div><div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-2.5"><span className="text-xs font-semibold">Total earned this month</span><div className="text-right"><p className="text-sm font-mono font-bold text-foreground">{formatINR(Math.round(totalEarned))}</p><p className="text-[10px] text-muted-foreground">of {formatINR(totalPayroll)} payroll</p></div></div></div>
+            <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card"><div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2"><h3 className="text-sm font-semibold">Payroll summary (this month)</h3><span className="text-[11px] text-muted-foreground">Verified attendance only</span></div><div className="divide-y divide-border">{staffWithAttendance.map((staff) => { const earnedPct = staff.monthlySalary > 0 ? Math.round((staff.earnedThisMonth / staff.monthlySalary) * 100) : 0; return <div key={staff.id} className="flex items-center gap-3 px-4 py-2.5"><Avatar name={staff.name} size={36}/><div className="min-w-0 flex-1"><div className="flex items-baseline justify-between"><p className="truncate text-sm font-semibold">{staff.name}</p><span className="text-xs text-muted-foreground">{staff.role} · {staff.city}</span></div><div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground"><span>{staff.presentDays} present · {staff.halfDays} half · {staff.absentDays} absent</span><span>· {Math.round(staff.totalMinutes / 60)}h verified</span></div><div className="mt-1.5 flex items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"><div className={cn("h-full rounded-full", earnedPct >= 80 ? "bg-success" : earnedPct >= 50 ? "bg-primary" : "bg-warning")} style={{ width: `${Math.min(100, earnedPct)}%` }}/></div><span className="text-[10px] font-mono text-muted-foreground">{earnedPct}%</span></div></div><div className="text-right"><p className="text-xs font-mono font-semibold text-foreground">{formatINR(Math.round(staff.earnedThisMonth))}</p><p className="text-[10px] text-muted-foreground">of {formatINR(staff.monthlySalary)}</p></div></div>; })}</div><div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-2.5"><span className="text-xs font-semibold">Total earned this month</span><div className="text-right"><p className="text-sm font-mono font-bold text-foreground">{formatINR(Math.round(totalEarned))}</p><p className="text-[10px] text-muted-foreground">of {formatINR(totalPayroll)} payroll</p></div></div></div>
 
       {/* F: Payroll period lifecycle — generate, approve, pay, reopen. */}
       {isPayrollManager && <PayrollPeriodsSection
