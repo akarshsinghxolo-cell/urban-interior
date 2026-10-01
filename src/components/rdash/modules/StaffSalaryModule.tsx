@@ -7,8 +7,6 @@ import {
   CheckCircle2,
   Clock,
   Pencil,
-  TrendingDown,
-  TrendingUp,
   Wallet,
 } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
@@ -22,7 +20,7 @@ import {
 } from "@/lib/rdash/payroll";
 import { Button } from "@/components/ui/button";
 import { StaffEditDialog } from "../StaffEditDialog";
-import { Avatar, EmptyState, MetricCard, StatusBadge } from "../primitives";
+import { Avatar, EmptyState, StatusBadge } from "../primitives";
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
