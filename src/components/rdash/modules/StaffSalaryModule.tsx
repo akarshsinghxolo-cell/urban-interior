@@ -225,6 +225,7 @@ export function StaffSalaryModule() {
                   label={hasPersistedPayroll ? "Persisted payroll" : "Live preview"}
                   className={hasPersistedPayroll ? "border-success/20 bg-success/10 text-success" : "border-primary/20 bg-primary/10 text-primary"}
                 />
+                <span className="text-xs font-medium text-muted-foreground">Payment status</span>
                 <StatusBadge label={titleCase(payrollStatus)} className={payrollTone(payrollStatus)}/>
               </div>
             </div>
