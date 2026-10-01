@@ -28,6 +28,12 @@ function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
+function monthLabel(yearMonth: string) {
+  const [year, month] = yearMonth.split("-").map(Number);
+  if (!year || !month) return yearMonth;
+  return new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
 function adjustmentTone(type: string) {
   return type === "overtime" || type === "bonus"
     ? "border-success/20 bg-success/10 text-success"
@@ -101,6 +107,12 @@ export function StaffSalaryModule() {
   const previewPayable = salary ? previewNetPay(salary.net_salary, adjustmentSummary) : 0;
   const finalPayable = payroll.line?.net_payable ?? previewPayable;
   const payrollStatus = payroll.line?.payment_status || payroll.period?.status || "preview";
+  const selectedMonthLabel = monthLabel(yearMonth);
+  const hasPersistedPayroll = Boolean(payroll.line);
+  const attendanceDeduction = salary?.total_deductions || 0;
+  const otherDeduction = adjustmentSummary.deductions;
+  const deductionCount = (salary?.violations.length || 0)
+    + adjustmentSummary.approved.filter((adjustment) => ["advance", "deduction", "hold"].includes(adjustment.type)).length;
 
   if (!staff) {
     return (
@@ -131,7 +143,7 @@ export function StaffSalaryModule() {
         <div className="flex flex-wrap items-end gap-2">
           {isManager && (
             <label className="grid gap-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Staff</span>
+              <span className="text-xs font-semibold text-foreground">Staff</span>
               <select
                 value={selectedStaffId}
                 onChange={(event) => setSelectedStaffId(event.target.value)}
@@ -144,7 +156,7 @@ export function StaffSalaryModule() {
             </label>
           )}
           <label className="grid gap-1">
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Month</span>
+            <span className="text-xs font-semibold text-foreground">Payroll month</span>
             <input
               type="month"
               value={yearMonth}
@@ -196,12 +208,58 @@ export function StaffSalaryModule() {
         </section>
       ) : salary ? (
         <>
-          <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            <MetricCard label="Base salary" value={formatINR(salary.base_salary)} tone="primary" icon={<Wallet className="h-4 w-4"/>}/>
-            <MetricCard label="Attendance deductions" value={formatINR(salary.total_deductions)} tone={salary.total_deductions > 0 ? "destructive" : "default"} icon={<TrendingDown className="h-4 w-4"/>}/>
-            <MetricCard label="Approved additions" value={formatINR(adjustmentSummary.additions)} tone={adjustmentSummary.additions > 0 ? "success" : "default"} icon={<TrendingUp className="h-4 w-4"/>}/>
-            <MetricCard label="Other deductions" value={formatINR(adjustmentSummary.deductions)} tone={adjustmentSummary.deductions > 0 ? "warning" : "default"} icon={<TrendingDown className="h-4 w-4"/>}/>
-            <MetricCard label={payroll.line ? "Payroll payable" : "Preview payable"} value={formatINR(finalPayable)} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
+          <section className={cn(
+            "overflow-hidden rounded-[var(--panel-radius)] border shadow-card",
+            hasPersistedPayroll ? "border-success/30 bg-success/[0.035]" : "border-primary/30 bg-primary/[0.035]",
+          )}>
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selected payroll month</p>
+                <h3 className="mt-0.5 text-lg font-bold">{selectedMonthLabel}</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {hasPersistedPayroll
+                    ? "Showing the persisted payroll line for this month. Live calculations remain visible below for explanation only."
+                    : "No persisted payroll line exists for this month. The payable shown here is a live calculation preview."}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge
+                  label={hasPersistedPayroll ? "Persisted payroll" : "Live preview"}
+                  className={hasPersistedPayroll ? "border-success/20 bg-success/10 text-success" : "border-primary/20 bg-primary/10 text-primary"}
+                />
+                <StatusBadge label={titleCase(payrollStatus)} className={payrollTone(payrollStatus)}/>
+              </div>
+            </div>
+            <div className="grid gap-px bg-border sm:grid-cols-5">
+              <div className="bg-card p-3">
+                <p className="text-xs font-medium text-muted-foreground">Base salary</p>
+                <p className="mt-1 font-mono text-sm font-bold">{formatINR(salary.base_salary)}</p>
+              </div>
+              <div className="bg-card p-3">
+                <p className="text-xs font-medium text-muted-foreground">Attendance deductions</p>
+                <p className="mt-1 font-mono text-sm font-bold text-destructive">−{formatINR(attendanceDeduction)}</p>
+              </div>
+              <div className="bg-card p-3">
+                <p className="text-xs font-medium text-muted-foreground">Approved additions</p>
+                <p className="mt-1 font-mono text-sm font-bold text-success">+{formatINR(adjustmentSummary.additions)}</p>
+              </div>
+              <div className="bg-card p-3">
+                <p className="text-xs font-medium text-muted-foreground">Other deductions</p>
+                <p className="mt-1 font-mono text-sm font-bold text-destructive">−{formatINR(otherDeduction)}</p>
+              </div>
+              <div className={cn("p-3", hasPersistedPayroll ? "bg-success/[0.08]" : "bg-primary/[0.08]")}>
+                <p className="text-xs font-semibold">{hasPersistedPayroll ? "Final payable" : "Preview payable"}</p>
+                <p className="mt-1 font-mono text-lg font-black">{formatINR(finalPayable)}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 px-4 py-3 text-xs">
+              <p className="text-muted-foreground">
+                {deductionCount
+                  ? deductionCount + " deduction reason" + (deductionCount === 1 ? "" : "s") + " are explained below with dates and rules."
+                  : "No attendance or approved adjustment deductions affect this month."}
+              </p>
+              {hasPersistedPayroll && payroll.period?.generated_at ? <span className="font-medium text-muted-foreground">Generated {formatDate(payroll.period.generated_at)}</span> : null}
+            </div>
           </section>
 
           <section className="grid gap-3 lg:grid-cols-[1.15fr_0.85fr]">
@@ -241,32 +299,42 @@ export function StaffSalaryModule() {
 
             <div className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
               <div className="border-b border-border bg-muted/30 px-4 py-3">
-                <h3 className="text-sm font-bold">Payroll status</h3>
-                <p className="text-[11px] text-muted-foreground">Persisted monthly payroll takes priority over the live preview.</p>
+                <h3 className="text-sm font-bold">Why pay changed</h3>
+                <p className="text-xs text-muted-foreground">A short explanation before the detailed date-by-date records below.</p>
               </div>
               <div className="space-y-3 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">Period</span>
-                  <span className="text-xs font-semibold">{payroll.period ? `${payroll.period.month}/${payroll.period.year}` : "Not generated"}</span>
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold">Attendance deductions</span>
+                    <span className="font-mono text-xs font-bold text-destructive">−{formatINR(attendanceDeduction)}</span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {salary.violations.length
+                      ? salary.violations.length + " attendance violation" + (salary.violations.length === 1 ? "" : "s") + " from late, absent or half-day rules."
+                      : "No late, absence or half-day rule created an attendance deduction."}
+                  </p>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">Status</span>
-                  <StatusBadge label={titleCase(payrollStatus)} className={payrollTone(payrollStatus)}/>
+                <div className="rounded-lg border border-border bg-muted/20 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold">Approved adjustments</span>
+                    <span className="font-mono text-xs font-bold">
+                      +{formatINR(adjustmentSummary.additions)} / −{formatINR(otherDeduction)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    Only Owner-approved bonuses, overtime, advances, deductions or holds affect this month. Draft and rejected adjustments are excluded.
+                  </p>
                 </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">Approved additions</span>
-                  <span className="font-mono text-xs font-semibold text-success">+{formatINR(adjustmentSummary.additions)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">Approved deductions</span>
-                  <span className="font-mono text-xs font-semibold text-destructive">−{formatINR(adjustmentSummary.deductions)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
-                  <span className="text-sm font-bold">{payroll.line ? "Final payable" : "Current preview"}</span>
-                  <span className="font-mono text-base font-bold">{formatINR(finalPayable)}</span>
-                </div>
-                {payroll.period?.generated_at && (
-                  <p className="text-[10px] text-muted-foreground">Generated {formatDate(payroll.period.generated_at)}</p>
+                {hasPersistedPayroll ? (
+                  <div className="rounded-lg border border-success/25 bg-success/[0.06] p-3">
+                    <p className="text-xs font-semibold text-success">Finalized source in view</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">The payable at the top comes from the saved payroll line, not from recalculating the preview on this screen.</p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-primary/25 bg-primary/[0.06] p-3">
+                    <p className="text-xs font-semibold text-primary">Preview source in view</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">Generate payroll from Attendance & Payroll when this calculation is ready to become the persisted monthly payroll.</p>
+                  </div>
                 )}
               </div>
             </div>
