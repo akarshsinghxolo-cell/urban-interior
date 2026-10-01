@@ -82,12 +82,12 @@ describe("HR payroll consolidation", () => {
     expectNoTokens(attendance, ['text-[8px]">⚠</span>']);
 
     expectTokens(salary, [
-      '"Selected payroll month"',
+      "Selected payroll month",
       'hasPersistedPayroll ? "Persisted payroll" : "Live preview"',
-      '"Why pay changed"',
-      '"attendance violation"',
-      '"Finalized source in view"',
-      '"Preview source in view"',
+      "Why pay changed",
+      "attendance violation",
+      "Finalized source in view",
+      "Preview source in view",
     ]);
     expectNoTokens(salary, ['<h3 className="text-sm font-bold">Payroll status</h3>']);
   });
