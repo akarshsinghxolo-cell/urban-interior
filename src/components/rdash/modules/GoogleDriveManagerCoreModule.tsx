@@ -292,7 +292,7 @@ export function GoogleDriveManagerModule() {
               <p className="mt-0.5 text-xs text-muted-foreground">Choose the upload destination, inspect capacity, and manage each connected Google account. File browsing is kept in the separate File management section below.</p>
             </div>
             <div className="md:overflow-x-auto">
-              <table className="w-full text-left text-xs md:min-w-[900px]">
+              <table className="block w-full text-left text-xs md:table md:min-w-[900px]">
                 <thead className="hidden bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground md:table-header-group"><tr><th className="px-4 py-3">Active</th><th className="px-4 py-3">Drive account</th><th className="px-4 py-3">Storage</th><th className="px-4 py-3">Priority / status</th><th className="px-4 py-3">Actions</th></tr></thead>
                 <tbody className="grid gap-3 p-3 md:table-row-group md:p-0">
                   {accounts.map((account) => {
