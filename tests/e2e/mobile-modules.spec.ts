@@ -56,7 +56,7 @@ test("Staff editor sections fit mobile and landscape and expose labelled fields"
     const dialog = page.getByRole("dialog", { name: "Add Staff Operations Profile" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByLabel("Name", { exact: true })).toBeVisible();
-    const sections = dialog.getByLabel("Profile section");
+    const sections = dialog.getByLabel("Profile section", { exact: true });
     await expect(sections).toBeVisible();
     await sections.selectOption("attendance");
     await expect(dialog.getByLabel("Office GPS")).toBeVisible();
