@@ -64,9 +64,9 @@ export function AddWorkCategoryAction({
   }
 
   return (
-    <div className={cn("rounded-md border border-dashed bg-muted/20 p-2", className)}>
+    <div className={cn("min-w-0 rounded-md border border-dashed bg-muted/20 p-2", className)}>
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">New work category</p>
-      <div className="flex gap-1.5">
+      <div className="flex min-w-0 gap-1.5">
         <Input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -157,15 +157,15 @@ export function AddWorkSubcategoryAction({
   }
 
   return (
-    <div className="mt-1 space-y-1.5 rounded-md border border-dashed bg-muted/20 p-2">
+    <div className="mt-1 min-w-0 space-y-1.5 rounded-md border border-dashed bg-muted/20 p-2">
       <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="Subcategory name" className="h-8 text-xs" autoFocus />
       <div className="grid grid-cols-3 gap-1.5">
-        <select value={unitId} onChange={(event) => setUnitId(event.target.value)} className="h-8 rounded-md border border-input bg-background px-2 text-xs" aria-label="Execution unit">
+        <select value={unitId} onChange={(event) => setUnitId(event.target.value)} className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-xs" aria-label="Execution unit">
           {master.units.map((unit) => <option key={unit.id} value={unit.id}>{unit.symbol}</option>)}
         </select>
       </div>
       <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Scope notes (optional)" className="min-h-14 text-xs" />
-      <div className="flex justify-end gap-1.5">
+      <div className="flex flex-wrap justify-end gap-1.5">
         <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { reset(); onCancelled?.(); }}>Cancel</Button>
         <Button type="button" size="sm" className="h-7 text-xs" onClick={save}><Check className="h-3 w-3" /> Save subcategory</Button>
       </div>
@@ -233,7 +233,7 @@ export function AddWorkTypeAction({
   }
 
   return (
-    <div className="mt-1 space-y-1.5 rounded-md border border-dashed bg-muted/20 p-2">
+    <div className="mt-1 min-w-0 space-y-1.5 rounded-md border border-dashed bg-muted/20 p-2">
       <Input
         value={name}
         onChange={(event) => setName(event.target.value)}
@@ -245,7 +245,7 @@ export function AddWorkTypeAction({
         className="h-8 text-xs"
         autoFocus
       />
-      <div className="flex justify-end gap-1.5">
+      <div className="flex flex-wrap justify-end gap-1.5">
         <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { reset(); onCancelled?.(); }}>Cancel</Button>
         <Button type="button" size="sm" className="h-7 text-xs" onClick={save}><Check className="h-3 w-3" /> Save work type</Button>
       </div>

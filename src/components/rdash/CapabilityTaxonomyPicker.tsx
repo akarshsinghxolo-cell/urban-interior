@@ -14,7 +14,7 @@ export function CapabilityTaxonomyPicker({ categories, subcategories, categoryId
   onCategory: (id: string) => void;
   onSubcategory: (categoryId: string, id: string) => void;
 }) {
-  return <div className="space-y-2">
+  return <div className="min-w-0 space-y-2">
     <div className="flex flex-wrap gap-2" role="group" aria-label="Capability categories">
       {categories.map((category) => <button
         key={category.id}
@@ -26,7 +26,7 @@ export function CapabilityTaxonomyPicker({ categories, subcategories, categoryId
           : "border-border bg-background text-muted-foreground hover:bg-muted")}
       >{category.name}</button>)}
     </div>
-    {categories.filter((category) => categoryIds.includes(category.id)).map((category) => <div key={category.id} className="rounded-lg border border-border bg-muted/20 p-2.5">
+    {categories.filter((category) => categoryIds.includes(category.id)).map((category) => <div key={category.id} className="min-w-0 rounded-lg border border-border bg-muted/20 p-2.5">
       <p className="mb-2 text-xs font-semibold">{category.name} · Select subcategories</p>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${category.name} subcategories`}>
         {subcategories.filter((row) => row.category_id === category.id).map((row) => <button
