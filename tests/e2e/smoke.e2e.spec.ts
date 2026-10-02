@@ -88,6 +88,44 @@ test.describe("workdesk navigation", () => {
 });
 
 test.describe("customer drawer", () => {
+  test("quick actions use the selected customer's existing workflows on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openCustomersDeskModule(page);
+    await openCustomerDrawer(page, "Mr. Das");
+    const drawer = recordDrawer(page);
+    const actions = drawer.getByRole("group", { name: "Customer quick actions" });
+    await expect(actions.getByRole("link", { name: "Call", exact: true })).toHaveAttribute("href", "tel:9876501933");
+    await expect(actions.getByRole("link", { name: "WhatsApp", exact: true })).toHaveAttribute("href", "https://wa.me/919876501933");
+    await expectNoHorizontalOverflow(page, "customer quick actions @390px");
+
+    await actions.getByRole("button", { name: "Directions", exact: true }).click();
+    const destinations = page.getByRole("menuitem");
+    await expect(destinations).toHaveCount(2);
+    for (const destination of await destinations.all()) {
+      await expect(destination).toHaveAttribute("href", /^https:\/\/www\.google\.com\/maps\//);
+    }
+    await page.keyboard.press("Escape");
+
+    await actions.getByRole("button", { name: "Manage site work", exact: true }).click();
+    await expect(drawer.getByRole("button", { name: "Edit site", exact: true }).first()).toBeVisible();
+    await actions.getByRole("button", { name: "Manage payments", exact: true }).click();
+    await expect(drawer.getByRole("button", { name: "Add collection milestone", exact: true })).toHaveCount(2);
+
+    for (const [action, title] of [
+      ["Create quotation", "New quotation"],
+      ["Schedule visit", "Schedule visit"],
+      ["Add collection milestone", "Create Collection Milestone"],
+    ]) {
+      await actions.getByRole("button", { name: action, exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: title, exact: true });
+      await expect(dialog).toBeVisible();
+      if (action === "Add collection milestone") await expect(dialog.getByLabel("Customer", { exact: false })).toHaveValue("Mr. Das");
+      else await expect(dialog.getByText("Mr. Das", { exact: true }).first()).toBeVisible();
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+    }
+  });
+
   test("drawer opens from a customer card and every CRM tab keeps it alive", async ({ page }) => {
     await openCustomersDeskModule(page);
     await openCustomerDrawer(page, "Mr. Das");

@@ -8,18 +8,22 @@ import {
   FileText,
   ListChecks,
   MapPin,
+  MessageCircle,
+  Phone,
   Plus,
   Receipt,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
   useRDashStore,
   siteFinancials,
   type ContextCustomerTab,
 } from "@/lib/rdash/store";
-import { customerProgress } from "@/lib/rdash/customer-progress";
+import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
+import { isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import {
@@ -97,6 +101,14 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
   if (!customer) return <EmptyState title="Customer not found" description="This Customer record is no longer available." />;
 
   const sites = db.sites.filter((row) => row.customer_id === customerId && !row.is_archived);
+  const mobile = sanitizeIndianMobile(customer.phone);
+  const whatsappHref = customerWhatsappHref(customer.whatsapp || customer.phone);
+  const siteDirections = sites.map((site) => ({
+    id: site.id,
+    name: site.name,
+    href: customerMapHref([site.address, site.locality, site.city].filter(Boolean).join(", "), site.latitude, site.longitude)
+      || (/^https?:\/\//i.test(site.map_url || "") ? site.map_url : undefined),
+  })).filter((site) => site.href);
   const siteIds = new Set(sites.map((row) => row.id));
   const workRequired = db.workRequired.filter((row) => row.customer_id === customerId || (row.site_id ? siteIds.has(row.site_id) : false));
   const quotations = db.quotations.filter((row) => row.customer_id === customerId);
@@ -173,6 +185,22 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
           </div>
         </div>
         <StatusBadge label={progress.label} className="border-primary/20 bg-primary/10 text-primary" />
+      </div>
+
+      <div role="group" aria-label="Customer quick actions" className="mt-4 flex flex-wrap gap-2">
+        {isValidIndianMobile(mobile, { allowEmpty: false }) && <Button size="sm" variant="outline" asChild><a href={`tel:${mobile}`}><Phone className="mr-1 h-3.5 w-3.5" />Call</a></Button>}
+        {whatsappHref && <Button size="sm" variant="outline" asChild><a href={whatsappHref} target="_blank" rel="noreferrer"><MessageCircle className="mr-1 h-3.5 w-3.5" />WhatsApp</a></Button>}
+        {siteDirections.length > 0 && <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><MapPin className="mr-1 h-3.5 w-3.5" />Directions</Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-w-[calc(100vw-2rem)]">
+            {siteDirections.map((site) => <DropdownMenuItem key={site.id} asChild><a href={site.href} target="_blank" rel="noreferrer" className="whitespace-normal break-words">{site.name}</a></DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>}
+        <Button size="sm" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5" />Create quotation</Button>
+        <Button size="sm" variant="outline" onClick={() => openCreateDialog({ kind: "visit", customerId })}><MapPin className="mr-1 h-3.5 w-3.5" />Schedule visit</Button>
+        <Button size="sm" variant="outline" onClick={() => openActionDialog("record-payment", customerId)}><Wallet className="mr-1 h-3.5 w-3.5" />Add collection milestone</Button>
+        <Button size="sm" variant="outline" onClick={() => selectTab("sites")}>Manage site work</Button>
+        <Button size="sm" variant="outline" onClick={() => selectTab("payments")}>Manage payments</Button>
       </div>
 
       <div className="rd-scroll mt-4 flex gap-1 overflow-x-auto border-b border-border pb-2">
