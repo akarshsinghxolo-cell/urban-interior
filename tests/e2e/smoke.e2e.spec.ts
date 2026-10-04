@@ -119,8 +119,15 @@ test.describe("customer drawer", () => {
       await actions.getByRole("button", { name: action, exact: true }).click();
       const dialog = page.getByRole("dialog", { name: title, exact: true });
       await expect(dialog).toBeVisible();
-      if (action === "Add collection milestone") await expect(dialog.getByLabel("Customer", { exact: false })).toHaveValue("Mr. Das");
-      else await expect(dialog.getByText("Mr. Das", { exact: true }).first()).toBeVisible();
+      if (action === "Add collection milestone") {
+        await expect(dialog.getByLabel("Customer", { exact: false })).toHaveValue("Mr. Das");
+      } else {
+        // Customer Select items intentionally include location context (for
+        // example "Mr. Das · Kanpur"). Assert the selected Customer control,
+        // not an exact incidental text node, so this still proves the drawer
+        // quick action carried the selected customer into the canonical flow.
+        await expect(dialog.getByRole("combobox").first()).toContainText("Mr. Das");
+      }
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await expect(dialog).not.toBeVisible();
     }
