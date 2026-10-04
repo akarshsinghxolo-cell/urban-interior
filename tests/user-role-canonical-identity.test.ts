@@ -48,6 +48,21 @@ describe("canonical user access identity", () => {
     expect(approvals).not.toContain('.ilike("email", email)');
   });
 
+  test("revokes active access through the canonical Staff synchronization path", async () => {
+    const approvals = await testFile("src/lib/rdash/server/auth-users.ts").text();
+    const route = await testFile("src/app/api/auth/users/route.ts").text();
+    const ui = await testFile("src/components/rdash/modules/UserApprovalsModule.tsx").text();
+
+    expect(approvals).toContain("export async function revokeRoleAssignment");
+    expect(approvals).toContain('.eq("status", "active")');
+    expect(approvals).toContain('status: "inactive"');
+    expect(approvals).toContain("You cannot revoke your own access while signed in.");
+    expect(route).toContain('action?: "approve" | "reject" | "revoke"');
+    expect(route).toContain("revokeRoleAssignment(user, body)");
+    expect(ui).toContain("Revoke access");
+    expect(ui).toContain('action: "revoke"');
+  });
+
   test("login authorization has no independent role-table fallback", async () => {
     const auth = await testFile("src/lib/rdash/server/auth.ts").text();
     expect(auth).toContain('.from("entity_master_staff")');
