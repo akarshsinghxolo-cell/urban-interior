@@ -389,3 +389,35 @@ export async function rejectRoleAssignment(user: AuthenticatedUser, input: { id?
   });
   return synced.assignment;
 }
+
+export async function revokeRoleAssignment(user: AuthenticatedUser, input: { id?: string }) {
+  assertOwner(user);
+  const id = String(input.id || "").trim();
+  if (!id) throw new Error("Missing role assignment id.");
+  const admin = getSupabaseAdminClient();
+  const { data: activeRows, error: lookupError } = await admin
+    .from("uc_user_roles")
+    .select(ROLE_ASSIGNMENT_SELECT)
+    .eq("id", id)
+    .eq("status", "active")
+    .limit(1);
+  if (lookupError) throw new Error(`Could not load user for access revocation: ${lookupError.message}`);
+  const active = activeRows?.[0] as RDashUserRoleStoredRow | undefined;
+  if (!active) throw new Error("No active user access record was found.");
+  if (active.user_id === user.userId) {
+    throw new Error("You cannot revoke your own access while signed in.");
+  }
+
+  const identity = await canonicalIdentityForAssignment(active);
+  const email = validAssignmentEmail(identity.email);
+  const synced = await syncStaffIdentity({
+    assignmentId: active.id,
+    userId: active.user_id,
+    email,
+    displayName: identity.displayName || email,
+    role: identity.role,
+    status: "inactive",
+    staffId: active.staff_id,
+  });
+  return synced.assignment;
+}
