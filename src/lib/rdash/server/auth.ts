@@ -324,6 +324,22 @@ export async function refreshAuthenticatedSession(refreshToken: string): Promise
     };
 }
 
+async function revalidateSignedSession(user: AuthenticatedUser): Promise<AuthenticatedUser> {
+    if (user.userId === SUPER_OWNER.userId) return user;
+
+    try {
+        const current = await authorizedUserFromSupabase({
+            id: user.userId,
+            email: user.email,
+            user_metadata: { full_name: user.name },
+        });
+        return { ...current, expiresAt: user.expiresAt };
+    } catch (error) {
+        if (error instanceof AuthAccessError) throw new Error("UNAUTHORIZED");
+        throw error;
+    }
+}
+
 export async function requireSession(request?: NextRequest) {
     let token = extractSessionToken(request);
     if (!token && !request) {
@@ -331,5 +347,5 @@ export async function requireSession(request?: NextRequest) {
     }
     const user = verifySession(token);
     if (!user) throw new Error("UNAUTHORIZED");
-    return user;
+    return revalidateSignedSession(user);
 }
