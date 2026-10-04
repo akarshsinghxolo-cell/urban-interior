@@ -5,6 +5,7 @@ import {
   listRoleAssignments,
   listStaffIdentityDrift,
   rejectRoleAssignment,
+  revokeRoleAssignment,
 } from "@/lib/rdash/server/auth-users";
 
 export const runtime = "nodejs";
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const user = await requireSession(request);
-    const body = await request.json() as { id?: string; action?: "approve" | "reject"; role?: string; displayName?: string; staffId?: string };
+    const body = await request.json() as { id?: string; action?: "approve" | "reject" | "revoke"; role?: string; displayName?: string; staffId?: string };
     if (body.action === "approve") {
       const updated = await approveRoleAssignment(user, body);
       return NextResponse.json({ user: updated });
@@ -35,7 +36,11 @@ export async function PATCH(request: NextRequest) {
       const updated = await rejectRoleAssignment(user, body);
       return NextResponse.json({ user: updated });
     }
-    return NextResponse.json({ error: "Unknown user approval action." }, { status: 400 });
+    if (body.action === "revoke") {
+      const updated = await revokeRoleAssignment(user, body);
+      return NextResponse.json({ user: updated });
+    }
+    return NextResponse.json({ error: "Unknown user access action." }, { status: 400 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update user approval.";
     return NextResponse.json({ error: message }, { status: message.startsWith("Only the Owner") ? 403 : 400 });
