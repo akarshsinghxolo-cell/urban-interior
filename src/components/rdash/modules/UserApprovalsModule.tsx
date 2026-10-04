@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, UserCheck, UserX, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, ShieldOff, UserCheck, UserX, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MetricCard, StatusBadge, EmptyState } from "../primitives";
 import { relativeDay } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
+import { confirmDialog } from "../ConfirmDialog";
 
 const ROLE_OPTIONS = [
   ["OWNER", "Owner"],
@@ -89,7 +90,18 @@ export function UserApprovalsModule() {
     void loadUsers();
   }, [loadUsers]);
 
-  async function updateUser(input: { id: string; action: "approve" | "reject"; role?: string; displayName?: string; staffId?: string }) {
+  async function updateUser(input: { id: string; action: "approve" | "reject" | "revoke"; role?: string; displayName?: string; staffId?: string }) {
+    if (input.action === "revoke") {
+      const target = users.find((user) => user.id === input.id);
+      const confirmed = await confirmDialog({
+        title: "Revoke user access?",
+        description: `${target?.display_name || target?.email || "This user"} will lose Urban Castle access immediately. Their Staff record stays in history and can be re-approved through the normal access flow.`,
+        confirmLabel: "Revoke access",
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+
     setBusy(true);
     setError("");
     try {
@@ -100,7 +112,13 @@ export function UserApprovalsModule() {
       });
       const payload = await response.json().catch(() => ({})) as { user?: RDashUserRow; error?: string };
       if (!response.ok || !payload.user) throw new Error(payload.error || "Could not update user approval.");
-      toast.success(input.action === "approve" ? "User approved" : "User rejected");
+      toast.success(
+        input.action === "approve"
+          ? "User approved"
+          : input.action === "reject"
+            ? "User rejected"
+            : "User access revoked",
+      );
       await loadUsers();
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not update user approval.";
@@ -199,19 +217,39 @@ export function UserApprovalsModule() {
 
       <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
-          <h3 className="text-sm font-semibold">Approved and rejected users</h3>
+          <h3 className="text-sm font-semibold">Access history</h3>
           <span className="text-[11px] text-muted-foreground">{users.length - pending.length} records</span>
         </div>
         <div className="divide-y divide-border">
           {users.filter((user) => user.status !== "pending").map((user) => (
-            <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <p className="text-sm font-bold">{user.display_name || user.email || "Unnamed user"}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">{user.email} · {roleLabel(user.role)}</p>
+            <div key={user.id} className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{user.display_name || user.email || "Unnamed user"}</p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email} · {roleLabel(user.role)}</p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">{user.approved_at ? `Approved ${relativeDay(user.approved_at)}` : user.rejected_at ? `Rejected ${relativeDay(user.rejected_at)}` : `Updated ${relativeDay(user.updated_at)}`}</span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
+                <span className="text-[11px] text-muted-foreground">
+                  {user.status === "inactive"
+                    ? `Revoked ${relativeDay(user.updated_at)}`
+                    : user.approved_at
+                      ? `Approved ${relativeDay(user.approved_at)}`
+                      : user.rejected_at
+                        ? `Rejected ${relativeDay(user.rejected_at)}`
+                        : `Updated ${relativeDay(user.updated_at)}`}
+                </span>
                 <StatusBadge label={user.status} className={statusClass(user.status)} />
+                {user.status === "active" ? (
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="h-8 w-full gap-1.5 sm:w-auto"
+                    disabled={busy}
+                    onClick={() => void updateUser({ id: user.id, action: "revoke" })}
+                  >
+                    <ShieldOff className="h-3.5 w-3.5" />
+                    Revoke access
+                  </Button>
+                ) : null}
               </div>
             </div>
           ))}
@@ -224,7 +262,7 @@ export function UserApprovalsModule() {
 function PendingUserRow({ user, busy, onUpdate }: {
   user: RDashUserRow;
   busy: boolean;
-  onUpdate: (input: { id: string; action: "approve" | "reject"; role?: string; displayName?: string; staffId?: string }) => Promise<void>;
+  onUpdate: (input: { id: string; action: "approve" | "reject" | "revoke"; role?: string; displayName?: string; staffId?: string }) => Promise<void>;
 }) {
   const [role, setRole] = React.useState(user.role || "FIELD_STAFF");
   const [displayName, setDisplayName] = React.useState(user.display_name || "");
