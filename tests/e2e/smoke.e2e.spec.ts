@@ -120,7 +120,7 @@ test.describe("customer drawer", () => {
       const dialog = page.getByRole("dialog", { name: title, exact: true });
       await expect(dialog).toBeVisible();
       if (action === "Add collection milestone") {
-        await expect(dialog.getByLabel("Customer", { exact: false })).toHaveValue("Mr. Das");
+        await expect(dialog.getByRole("textbox", { name: "Customer *", exact: true })).toHaveValue("Mr. Das");
       } else {
         // Customer Select items intentionally include location context (for
         // example "Mr. Das · Kanpur"). Assert the selected Customer control,
