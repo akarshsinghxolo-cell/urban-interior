@@ -309,7 +309,8 @@ export async function authenticateCredentialsWithSession(
 
 /**
  * Rotate a Supabase refresh token and re-read the current Staff authorization.
- * This means role deactivation/rejection takes effect on the next silent renew.
+ * Signed app sessions are also revalidated in requireSession, so access
+ * revocation takes effect on the next authenticated request.
  */
 export async function refreshAuthenticatedSession(refreshToken: string): Promise<RenewableAuthSession> {
     if (!refreshToken) throw new AuthAccessError("The renewable browser session is missing.", 401, "MISSING_REFRESH_TOKEN");
