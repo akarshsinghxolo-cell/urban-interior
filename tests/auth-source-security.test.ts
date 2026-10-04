@@ -52,6 +52,16 @@ describe("server authentication source security", () => {
     expectNoTokens(authSource, ['eq("workspace_id", "default")']);
   });
 
+  test("revalidates every signed app session against canonical Staff access", () => {
+    expectTokens(authSource, [
+      "async function revalidateSignedSession",
+      "await authorizedUserFromSupabase({",
+      "return revalidateSignedSession(user);",
+    ]);
+    expect(authSource).toContain("if (user.userId === SUPER_OWNER.userId) return user;");
+    expect(authSource).toContain('if (error instanceof AuthAccessError) throw new Error("UNAUTHORIZED");');
+  });
+
   test("keeps the app bearer short-lived while Supabase refresh access is renewable", () => {
     const login = readFileSync(join(repositoryRoot, "src/app/api/auth/login/route.ts"), "utf8");
     const refresh = readFileSync(join(repositoryRoot, "src/app/api/auth/refresh/route.ts"), "utf8");
