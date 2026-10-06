@@ -11,6 +11,7 @@ import { calculateSalesPipelineMetrics, collectWonWorkRequiredIds } from "@/lib/
 import { formatLocationLabel } from "@/lib/rdash/format";
 import { Avatar, EmptyState, MetricCard, SectionHeader, StatusBadge } from "../primitives";
 import { ContextRow } from "../ContextMenuHost";
+import { buildCustomerActions } from "../recordActions";
 import { CustomerSitesDialog } from "../CustomerSitesDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +47,14 @@ export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
   const [query, setQuery] = React.useState("");
   const [sort, setSort] = React.useState("newest");
   const [filter, setFilter] = React.useState("all");
-  const [addCustomerOpen, setAddCustomerOpen] = React.useState(false);
+  const [customerForm, setCustomerForm] = React.useState<{ editId?: string } | null>(null);
+  const actionsForCustomer = (id: string) => buildCustomerActions(id, useRDashStore.getState(), {
+    onOpen: () => {
+      selectCustomer(id);
+      openDetail("customer", id, "customerDesk");
+    },
+    onEdit: () => setCustomerForm({ editId: id }),
+  });
 
   const filtered = React.useMemo(() => db.customers
     .filter((customer) => customerMatchesQuery(db, customer, query))
@@ -107,24 +115,24 @@ export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
     return (
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="flex min-w-0 flex-col gap-3">
-          <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setAddCustomerOpen(true)} />
+          <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setCustomerForm({})} />
           <SectionHeader title="Customers" count={filtered.length} action={listControls} />
           <div className="rd-scroll flex max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto pr-1">
             {filtered.map((customer) => {
               const progress = customerProgress(db, customer.id);
               return (
-                <button key={customer.id} type="button" onClick={() => selectCustomer(customer.id)} className="rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
+                <ContextRow key={customer.id} actions={actionsForCustomer(customer.id)} onSelect={() => selectCustomer(customer.id)} className="rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
                   <div className="flex items-start gap-3">
                     <Avatar name={customer.name} size={38} />
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2 pr-9">
                         <p className="truncate text-sm font-bold">{customer.name}</p>
                         <StatusBadge label={progress.label} className="border-primary/20 bg-primary/10 text-primary" />
                       </div>
                       <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> {customer.phone || "No phone"}</p>
                     </div>
                   </div>
-                </button>
+                </ContextRow>
               );
             })}
             {!filtered.length && <EmptyState title="No customers found" description="Adjust the search or add a new customer." />}
@@ -133,14 +141,14 @@ export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
         <div className="min-w-0">
           <EmptyState title="No customer selected" description="Pick a customer to view the restored activity timeline." />
         </div>
-        <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => selectCustomer(id)} />
+        <CustomerSitesDialog open={Boolean(customerForm)} editId={customerForm?.editId} onClose={() => setCustomerForm(null)} onSaved={(id) => selectCustomer(id)} />
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setAddCustomerOpen(true)} duplicateControl={<CustomerDuplicateMergeControl />} />
+      <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setCustomerForm({})} duplicateControl={<CustomerDuplicateMergeControl />} />
       <div className="rd-metric-grid">
         <MetricCard label="Customers" value={filtered.length} hint={query || filter !== "all" ? "matching filters" : "visible now"} />
         <MetricCard label="Open work required" value={openRequiredCount} tone="primary" />
@@ -159,6 +167,7 @@ export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
           return (
             <ContextRow
               key={customer.id}
+              actions={actionsForCustomer(customer.id)}
               onSelect={() => {
                 selectCustomer(customer.id);
                 openDetail("customer", customer.id, "customerDesk");
@@ -185,7 +194,7 @@ export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
         })}
       </div>
       {!filtered.length && <EmptyState title="No customers found" description="Adjust the search or add a new customer." />}
-      <CustomerSitesDialog open={addCustomerOpen} onClose={() => setAddCustomerOpen(false)} onSaved={(id) => {
+      <CustomerSitesDialog open={Boolean(customerForm)} editId={customerForm?.editId} onClose={() => setCustomerForm(null)} onSaved={(id) => {
         selectCustomer(id);
         openDetail("customer", id, "customerDesk");
       }} />

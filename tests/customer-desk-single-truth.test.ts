@@ -4,6 +4,18 @@ import { testFile } from "./test-file";
 const source = async (path: string) => testFile(path).text();
 
 describe("Customer Desk restored-feature contracts", () => {
+  test("customer menus and drawer editing reuse the existing actions and form", async () => {
+    const shell = await source("src/components/rdash/modules/CustomerDesk.tsx");
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expect(shell).toContain("buildCustomerActions(id, useRDashStore.getState()");
+    expect(shell.match(/actions=\{actionsForCustomer\(customer.id\)\}/g)).toHaveLength(2);
+    expect(shell).toContain("editId={customerForm?.editId}");
+    expect(portfolio).toContain("Edit customer</Button>");
+    expect(portfolio.match(/<CustomerSitesDialog /g)).toHaveLength(1);
+    expect(portfolio).toContain("autoAddSite={customerForm?.autoAddSite}");
+    expect(portfolio).toContain("expandSiteId={customerForm?.expandSiteId}");
+  });
+
   test("safe route shell never silently selects the first customer", async () => {
     const shell = await source("src/components/rdash/modules/CustomerDesk.tsx");
     expect(shell).toContain("const selected = selectedCustomerId");

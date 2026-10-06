@@ -10,6 +10,7 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  Pencil,
   Plus,
   Receipt,
   Wallet,
@@ -92,8 +93,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
     else setLocalTab(next);
   };
 
-  const [addSiteOpen, setAddSiteOpen] = React.useState(false);
-  const [editSiteId, setEditSiteId] = React.useState<string | undefined>();
+  const [customerForm, setCustomerForm] = React.useState<{ autoAddSite?: boolean; expandSiteId?: string } | null>(null);
   const [createWorkRequiredSiteId, setCreateWorkRequiredSiteId] = React.useState<string | null>(null);
   const [captureWorkRequiredId, setCaptureWorkRequiredId] = React.useState<string | null>(null);
   const [advanceDialogOpen, setAdvanceDialogOpen] = React.useState(false);
@@ -184,7 +184,10 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
             <p className="mt-1 text-xs text-foreground/70">{progress.summary}</p>
           </div>
         </div>
-        <StatusBadge label={progress.label} className="border-primary/20 bg-primary/10 text-primary" />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge label={progress.label} className="border-primary/20 bg-primary/10 text-primary" />
+          <Button size="sm" variant="outline" onClick={() => setCustomerForm({})}><Pencil className="mr-1 h-3.5 w-3.5" />Edit customer</Button>
+        </div>
       </div>
 
       <div role="group" aria-label="Customer quick actions" className="mt-4 flex flex-wrap gap-2">
@@ -225,7 +228,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
             </section>
             <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" />
             <section>
-              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-bold uppercase text-muted-foreground">Sites</h3><Button size="sm" variant="outline" onClick={() => setAddSiteOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>
+              <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-bold uppercase text-muted-foreground">Sites</h3><Button size="sm" variant="outline" onClick={() => setCustomerForm({ autoAddSite: true })}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {sites.map((site) => {
                   const financials = siteFinancials(db, site.id);
@@ -243,14 +246,14 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
 
         {tab === "sites" && (
           <div className="space-y-3">
-            <div className="flex justify-end"><Button size="sm" onClick={() => setAddSiteOpen(true)}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>
+            <div className="flex justify-end"><Button size="sm" onClick={() => setCustomerForm({ autoAddSite: true })}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>
             {sites.map((site) => {
               const siteAreas = db.areas.filter((row) => row.site_id === site.id && !row.is_archived);
               const siteWork = workRequired.filter((row) => row.site_id === site.id);
               return <section key={site.id} className="rounded-lg border border-border bg-background p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div><p className="font-bold">{site.name}</p><p className="text-xs text-muted-foreground">{site.locality || site.city || site.address || "Location pending"} · {siteAreas.length} Area(s)</p></div>
-                  <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setEditSiteId(site.id)}>Edit site</Button><Button size="sm" variant="outline" onClick={() => setCreateWorkRequiredSiteId(site.id)}><Plus className="mr-1 h-3 w-3" />Work Required</Button></div>
+                  <div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => setCustomerForm({ expandSiteId: site.id })}>Edit site</Button><Button size="sm" variant="outline" onClick={() => setCreateWorkRequiredSiteId(site.id)}><Plus className="mr-1 h-3 w-3" />Work Required</Button></div>
                 </div>
                 <div className="mt-3 space-y-2">
                   {siteWork.map((work) => <div key={work.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-2.5">
@@ -353,8 +356,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
         )}
       </div>
 
-      <CustomerSitesDialog editId={customerId} open={addSiteOpen} autoAddSite onClose={() => setAddSiteOpen(false)} />
-      <CustomerSitesDialog editId={customerId} open={Boolean(editSiteId)} expandSiteId={editSiteId} onClose={() => setEditSiteId(undefined)} />
+      <CustomerSitesDialog editId={customerId} open={Boolean(customerForm)} autoAddSite={customerForm?.autoAddSite} expandSiteId={customerForm?.expandSiteId} onClose={() => setCustomerForm(null)} />
       {createWorkRequiredSiteId && (() => {
         const site = sites.find((row) => row.id === createWorkRequiredSiteId);
         return site ? <WorkRequiredCreateDialog open customerId={customerId} site={site} onOpenChange={(open) => !open && setCreateWorkRequiredSiteId(null)} onCreated={(id) => setCaptureWorkRequiredId(id)} /> : null;

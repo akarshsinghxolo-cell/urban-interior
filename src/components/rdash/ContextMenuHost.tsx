@@ -56,7 +56,7 @@ export function ContextRow({ children, actions, className, onSelect, onOpenConte
         tabIndex={onSelect ? 0 : -1}
         onClick={onSelect}
         onKeyDown={(event) => {
-            if (!onSelect) return;
+            if (!onSelect || event.target !== event.currentTarget) return;
             if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 onSelect();
@@ -83,7 +83,7 @@ export function ContextRow({ children, actions, className, onSelect, onOpenConte
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
+              <DropdownMenuContent align="end" className="w-52" onClick={(event) => event.stopPropagation()}>
                 {dropItems}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -97,7 +97,7 @@ export function ContextRow({ children, actions, className, onSelect, onOpenConte
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-        <ContextMenuContent className="w-56">{items}</ContextMenuContent>
+        <ContextMenuContent className="w-56" onClick={(event) => event.stopPropagation()}>{items}</ContextMenuContent>
       </ContextMenu>
     );
 }

@@ -88,6 +88,45 @@ test.describe("workdesk navigation", () => {
 });
 
 test.describe("customer drawer", () => {
+  for (const width of [1280, 390]) {
+    test(`customer card menu and drawer edit share the customer form at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await openCustomersDeskModule(page);
+      const card = page.getByRole("button", { name: /Aarav Mehta/ }).first();
+      const trigger = card.getByRole("button", { name: "Record actions", exact: true });
+      await trigger.focus();
+      await trigger.press("Enter");
+      await expect(page.getByRole("menuitem", { name: "Edit", exact: true })).toBeVisible();
+      await expect(recordDrawer(page)).not.toBeVisible();
+      if (width === 1280) {
+        await page.keyboard.press("Escape");
+        await card.click({ button: "right" });
+      }
+      await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Edit Customer and Sites", exact: true });
+      await expect(dialog.getByLabel("Customer name *", { exact: true })).toHaveValue("Aarav Mehta");
+      await expect(recordDrawer(page)).not.toBeVisible();
+      const notes = dialog.getByLabel("Customer notes", { exact: true });
+      const originalNotes = await notes.inputValue();
+      const editedNotes = `QA customer menu edit at ${width}px`;
+      await notes.fill(editedNotes);
+      await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+
+      const edit = recordDrawer(page).getByRole("button", { name: "Edit customer", exact: true });
+      await edit.click();
+      await expect(notes).toHaveValue(editedNotes);
+      await notes.fill(originalNotes);
+      await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+      await page.reload();
+      await edit.click();
+      await expect(notes).toHaveValue(originalNotes);
+      await expectNoHorizontalOverflow(page, `customer edit @${width}px`);
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    });
+  }
+
   test("quick actions use the selected customer's existing workflows on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openCustomersDeskModule(page);
