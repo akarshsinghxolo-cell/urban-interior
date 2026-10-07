@@ -113,13 +113,17 @@ test.describe("customer drawer", () => {
       await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
       await expect(dialog).not.toBeVisible();
 
+      // Read from a fresh document so this checks persistence, not form state.
+      await openCustomersDeskModule(page);
+      await openCustomerDrawer(page, "Aarav Mehta");
       const edit = recordDrawer(page).getByRole("button", { name: "Edit customer", exact: true });
       await edit.click();
       await expect(notes).toHaveValue(editedNotes);
       await notes.fill(originalNotes);
       await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
       await expect(dialog).not.toBeVisible();
-      await page.reload();
+      await openCustomersDeskModule(page);
+      await openCustomerDrawer(page, "Aarav Mehta");
       await edit.click();
       await expect(notes).toHaveValue(originalNotes);
       await expectNoHorizontalOverflow(page, `customer edit @${width}px`);
