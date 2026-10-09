@@ -4,14 +4,13 @@ import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
-import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { FilePreview } from "../FilePreview";
 import { assetPreview, attachedFilesForIds } from "@/lib/rdash/file-attachments";
 import { WhatsAppConnectionPanel } from "../WhatsAppConnectionPanel";
 import type { CommChannel, CommSend } from "@/lib/rdash/types";
-import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
-import { formatDateTime, relativeDay, titleCase } from "@/lib/rdash/format";
-import { MessageSquare, Image as ImageIcon, BookOpen, Palette, Send, Paperclip, CheckCircle2, AlertTriangle, X, ExternalLink, } from "lucide-react";
+import { MetricCard, StatusBadge } from "../primitives";
+import { relativeDay } from "@/lib/rdash/format";
+import { MessageSquare, Image as ImageIcon, BookOpen, Palette, Send, Paperclip, CheckCircle2, AlertTriangle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -47,6 +46,7 @@ export function CommunicationCentreModule({ channelFilter }: {
 }) {
     const db = useRDashStore((s) => s.db);
     const sendComm = useRDashStore((s) => s.sendComm);
+    const awaitServerSync = useRDashStore((s) => s.awaitServerSync);
     const currentUser = useRDashStore((s) => s.currentUser);
     const openDetail = useRDashStore((s) => s.openDetail);
     const actor = React.useMemo(() => {
@@ -91,10 +91,10 @@ export function CommunicationCentreModule({ channelFilter }: {
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <MetricCard label="Total sends" value={db.commSends.length} tone="primary" icon={<Send className="h-4 w-4"/>}/>
+        <MetricCard label="Communications" value={db.commSends.length} tone="primary" icon={<Send className="h-4 w-4"/>}/>
         <MetricCard label="Read" value={readCount} tone="success" icon={<CheckCircle2 className="h-4 w-4"/>}/>
         <MetricCard label="Failed" value={failedCount} tone="destructive" icon={<AlertTriangle className="h-4 w-4"/>}/>
-        <MetricCard label="Channels" value={Object.keys(byChannel).length} tone="default" icon={<MessageSquare className="h-4 w-4"/>}/>
+        <MetricCard label="Channels" value={byChannel.size} tone="default" icon={<MessageSquare className="h-4 w-4"/>}/>
       </div>
       <div className="rd-stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {/* B-15: Email channel card is now included (previously excluded via c !== "email"),
@@ -116,10 +116,10 @@ export function CommunicationCentreModule({ channelFilter }: {
       </div>
       <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
-          <h3 className="text-sm font-semibold">Send history {channelFilter && channelFilter !== "all" ? `· ${CHANNEL_META[channelFilter as CommChannel]?.label || ""}` : ""}</h3>
-          <span className="text-[11px] text-muted-foreground">{filtered.length} sends</span>
+          <h3 className="text-sm font-semibold">Communication history {channelFilter && channelFilter !== "all" ? `· ${CHANNEL_META[channelFilter as CommChannel]?.label || ""}` : ""}</h3>
+          <span className="text-[11px] text-muted-foreground">{filtered.length} records</span>
         </div>
-        {filtered.length === 0 ? (<div className="py-8 text-center text-xs text-muted-foreground">No sends yet. Use a channel card above to compose.</div>) : (<div className="divide-y divide-border">
+        {filtered.length === 0 ? (<div className="py-8 text-center text-xs text-muted-foreground">No communications yet. Use a channel card above to compose.</div>) : (<div className="divide-y divide-border">
             {filtered.map((c) => {
                 const meta = CHANNEL_META[c.channel];
                 const status = STATUS_META[c.status];
@@ -168,8 +168,9 @@ export function CommunicationCentreModule({ channelFilter }: {
                         throw new Error(payload.error || "WhatsApp could not send this message.");
                     }
                 }
-                sendComm({ ...data, channel: composeChannel, status: "sent", id: commSendId });
-                toast.success(`${CHANNEL_META[composeChannel].label} sent to ${db.customers.find((customer) => customer.id === data.customer_id)?.name || "Customer"}`);
+                sendComm({ ...data, channel: composeChannel, status: composeChannel === "whatsapp" ? "sent" : "prepared", id: commSendId });
+                await awaitServerSync();
+                toast.success(composeChannel === "whatsapp" ? "WhatsApp sent and recorded" : "Prepared communication saved — not sent externally");
                 setComposeOpen(false);
             }}/>)}
     </div>);
@@ -213,9 +214,14 @@ function ComposeDialog({ channel, onClose, onSend }: {
     const [nextDate, setNextDate] = React.useState("");
     const [nextPurpose, setNextPurpose] = React.useState("");
     const [files, setFiles] = React.useState<QueuedWorkflowFile[]>([]);
-    const { registerBatch, commitBatches, cancelBatches } = useUploadDraft(true);
+    const [attaching, setAttaching] = React.useState(false);
+    const [submitted, setSubmitted] = React.useState(false);
     const [sending, setSending] = React.useState(false);
     const fileInputRef = React.useRef<HTMLInputElement>(null);
+    const previewUrls = React.useRef<string[]>([]);
+    React.useEffect(() => () => { previewUrls.current.forEach((url) => URL.revokeObjectURL(url)); }, []);
+    const attachmentsReady = files.every((file) => db.entityFileAttachments.some((attachment) =>
+        attachment.id === file.attachmentId && db.master.fileAssets.some((asset) => asset.id === attachment.file_asset_id && asset.sync_status === "uploaded")));
     const meta = CHANNEL_META[channel];
     const customer = db.customers.find((p) => p.id === customerId);
     // Customer-scoped follow-ups + tasks for the picker (only open items).
@@ -228,10 +234,11 @@ function ComposeDialog({ channel, onClose, onSend }: {
             (t.status === "todo" || t.status === "in_progress" || t.status === "review"));
     }, [db.tasks, customerId]);
     const send = async () => {
-        if (!customerId || !subject || sending)
+        if (!customerId || !subject.trim() || sending || attaching || !attachmentsReady || (scheduleNext && !nextDate))
             return;
         try {
             setSending(true);
+            setSubmitted(true);
             const sourceAttachmentIds = files.map((file) => file.attachmentId);
             const payload: {
                 id: string; customer_id: string; staff_name: string; subject: string; body?: string;
@@ -254,7 +261,6 @@ function ComposeDialog({ channel, onClose, onSend }: {
                 };
             }
             await onSend(payload);
-            commitBatches();
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "The message could not be saved.");
@@ -272,9 +278,9 @@ function ComposeDialog({ channel, onClose, onSend }: {
             return;
         }
         try {
+            setAttaching(true);
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "communication_compose",
-                deferProcessing: true,
                 sourceLabel: `Communication · ${meta.label}`,
                 targetEntityType: "customer",
                 targetEntityId: customerId,
@@ -284,11 +290,14 @@ function ComposeDialog({ channel, onClose, onSend }: {
                 customerShareable: true,
                 files: selected.map((file) => ({ file, ...classifyWorkflowFile(file), role: "document", caption: `Communication attachment · ${subject || meta.label}` })),
             });
-            registerBatch(queued.batchId);
-            setFiles((current) => [...current, ...queued.files.map((file, index) => withLocalPreview(file, selected[index]))]);
+            const previews = queued.files.map((file, index) => withLocalPreview(file, selected[index]));
+            previewUrls.current.push(...previews.map((file) => file.previewUrl));
+            setFiles((current) => [...current, ...previews]);
             toast.success(`${queued.files.length} attachment${queued.files.length === 1 ? "" : "s"} queued`);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "Attachments could not be queued");
+        } finally {
+            setAttaching(false);
         }
     };
     const removeQueuedFile = async (file: QueuedWorkflowFile) => {
@@ -297,46 +306,45 @@ function ComposeDialog({ channel, onClose, onSend }: {
     };
     const changeCustomer = async (nextCustomerId: string) => {
         if (files.length) {
-            await cancelBatches();
-            files.forEach((file) => { if (file.previewUrl.startsWith("blob:")) URL.revokeObjectURL(file.previewUrl); });
+            await Promise.all(files.map(cancelQueuedWorkflowFile));
             setFiles([]);
-            toast.info("Attachments cleared because the customer changed");
+            toast.info("Attachments cleared. Completed uploads remain in the original customer's files.");
         }
         setCustomerId(nextCustomerId);
         setFollowupId("");
         setTaskId("");
     };
-    return (<Dialog open onOpenChange={(o) => !o && onClose()}>
+    return (<Dialog open onOpenChange={(o) => !o && !sending && !attaching && onClose()}>
       <DialogContent className="max-w-lg gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-3">
           <DialogTitle className="flex items-center gap-2 text-base">
             <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg border", meta.color)}>{meta.icon}</span>
-            Send via {meta.label}
+            {channel === "whatsapp" ? "Send via" : "Prepare"} {meta.label}
           </DialogTitle>
-          <DialogDescription className="text-xs">{meta.desc}. The customer will receive this on their {meta.label.toLowerCase()}.</DialogDescription>
+          <DialogDescription className="text-xs">{channel === "whatsapp" ? "Send through the connected WhatsApp account." : "Save content for sharing separately. This does not send an email or deliver content externally."}</DialogDescription>
         </DialogHeader>
-        <div className="max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4 rd-scroll">
+        <fieldset disabled={submitted || attaching} className="min-w-0 max-h-[60vh] space-y-3 overflow-y-auto px-5 py-4 rd-scroll">
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Customer</label>
-            <select value={customerId} onChange={(e) => void changeCustomer(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
+            <label htmlFor="comm-customer" className="text-[10px] font-semibold uppercase text-muted-foreground">Customer</label>
+            <select id="comm-customer" value={customerId} onChange={(e) => void changeCustomer(e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm">
               {db.customers.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.phone}</option>)}
             </select>
             {customer && <p className="mt-1 text-[10px] text-muted-foreground">To: {customer.whatsapp || customer.phone}</p>}
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Subject</label>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Kitchen design options" className="h-9 text-sm"/>
+            <label htmlFor="comm-subject" className="text-[10px] font-semibold uppercase text-muted-foreground">Subject</label>
+            <Input id="comm-subject" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Kitchen design options" className="h-9 text-sm"/>
           </div>
           <div>
-            <label className="text-[10px] font-semibold uppercase text-muted-foreground">Message</label>
-            <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Type your message…" rows={3} className="text-sm"/>
+            <label htmlFor="comm-body" className="text-[10px] font-semibold uppercase text-muted-foreground">Message</label>
+            <Textarea id="comm-body" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Type your message…" rows={3} className="text-sm"/>
           </div>
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground">Attachments</label>
             <input ref={fileInputRef} type="file" accept={MANAGED_FILE_ACCEPT} multiple className="hidden" onChange={(event) => void queueFiles(event)}/>
             <div className="mt-1 flex items-center gap-2">
               <Button type="button" size="sm" variant="outline" className="h-8 text-xs" onClick={() => fileInputRef.current?.click()}><Paperclip className="mr-1 h-3.5 w-3.5"/> Choose files</Button>
-              <span className="text-[10px] text-muted-foreground">Uploads start immediately and continue after the message dialog closes.</span>
+              <span className="text-[10px] text-muted-foreground">Files upload immediately to this customer, even if you close this dialog. Wait for completion before saving or sending.</span>
             </div>
             {files.length > 0 && <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">{files.map((file) => <div key={file.uploadItemId} className="relative"><FilePreview file={{ fileName: file.fileName, mimeType: file.mimeType, url: file.previewUrl }} compact controls/><button type="button" onClick={() => void removeQueuedFile(file)} aria-label={`Remove ${file.fileName}`} className="absolute right-0 top-0 rounded bg-background/90 p-0.5 text-destructive"><X className="h-3 w-3"/></button></div>)}</div>}
           </div>
@@ -346,15 +354,15 @@ function ComposeDialog({ channel, onClose, onSend }: {
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Link to operations (optional)</p>
             <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground">Follow-up</label>
-                <select value={followupId} onChange={(e) => setFollowupId(e.target.value)} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
+                <label htmlFor="comm-followup" className="text-[10px] font-medium text-muted-foreground">Follow-up</label>
+                <select id="comm-followup" value={followupId} onChange={(e) => setFollowupId(e.target.value)} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
                   <option value="">— None —</option>
                   {customerFollowups.map((f) => <option key={f.id} value={f.id}>{f.title}{f.due_date ? ` · due ${f.due_date}` : ""}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground">Task</label>
-                <select value={taskId} onChange={(e) => setTaskId(e.target.value)} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
+                <label htmlFor="comm-task" className="text-[10px] font-medium text-muted-foreground">Task</label>
+                <select id="comm-task" value={taskId} onChange={(e) => setTaskId(e.target.value)} className="h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
                   <option value="">— None —</option>
                   {customerTasks.map((t) => <option key={t.id} value={t.id}>{t.title}{t.due_date ? ` · due ${t.due_date}` : ""}</option>)}
                 </select>
@@ -362,24 +370,26 @@ function ComposeDialog({ channel, onClose, onSend }: {
             </div>
             <label className="mt-3 flex items-center gap-2 text-xs font-medium text-foreground">
               <input type="checkbox" checked={scheduleNext} onChange={(e) => setScheduleNext(e.target.checked)} className="h-3.5 w-3.5 rounded border-border"/>
-              Schedule next follow-up after sending
+              Schedule next follow-up
             </label>
             {scheduleNext && (<div className="mt-2 grid gap-2 sm:grid-cols-[140px_1fr]">
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground">Due date</label>
-                <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="h-8 text-xs"/>
+                <label htmlFor="comm-due-date" className="text-[10px] font-medium text-muted-foreground">Due date</label>
+                <Input id="comm-due-date" type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} className="h-8 text-xs"/>
               </div>
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground">Purpose</label>
-                <Input value={nextPurpose} onChange={(e) => setNextPurpose(e.target.value)} placeholder={`e.g. Call to confirm ${subject || "options"}`} className="h-8 text-xs"/>
+                <label htmlFor="comm-purpose" className="text-[10px] font-medium text-muted-foreground">Purpose</label>
+                <Input id="comm-purpose" value={nextPurpose} onChange={(e) => setNextPurpose(e.target.value)} placeholder={`e.g. Call to confirm ${subject || "options"}`} className="h-8 text-xs"/>
               </div>
             </div>)}
           </div>
-        </div>
+        </fieldset>
+        {!attachmentsReady && <p role="status" className="px-5 py-2 text-xs text-muted-foreground">Waiting for attachments. Check Activity for upload progress or errors.</p>}
+        {submitted && !sending && <p role="status" className="px-5 py-2 text-xs text-muted-foreground">Retry uses this same message to avoid duplicate delivery. Close and compose a new message to change it.</p>}
         <DialogFooter className="border-t border-border px-5 py-3">
-          <Button variant="outline" size="sm" onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> Cancel</Button>
-          <Button size="sm" onClick={send} disabled={!customerId || !subject || sending}>
-            <Send className="mr-1 h-3.5 w-3.5"/> {sending ? "Sending…" : `Send ${meta.label}`}
+          <Button variant="outline" size="sm" disabled={sending || attaching} onClick={onClose}><X className="mr-1 h-3.5 w-3.5"/> {submitted ? "Close" : "Cancel"}</Button>
+          <Button size="sm" onClick={send} disabled={!customerId || !subject.trim() || sending || attaching || !attachmentsReady || (scheduleNext && !nextDate)}>
+            <Send className="mr-1 h-3.5 w-3.5"/> {sending ? "Saving…" : submitted ? "Retry same message" : channel === "whatsapp" ? "Send WhatsApp" : "Save prepared message"}
           </Button>
         </DialogFooter>
       </DialogContent>

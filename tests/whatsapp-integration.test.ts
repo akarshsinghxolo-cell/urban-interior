@@ -44,7 +44,7 @@ describe("Urban Castle WhatsApp integration", () => {
   test("sends through the provider before committing the canonical communication", async () => {
     const centre = await readFile("src/components/rdash/modules/CommunicationCentreModule.tsx", "utf8");
     const providerIndex = centre.indexOf('fetch("/api/whatsapp/send"');
-    const canonicalIndex = centre.indexOf("sendComm({ ...data, channel: composeChannel, status: \"sent\", id: commSendId })");
+    const canonicalIndex = centre.indexOf('sendComm({ ...data, channel: composeChannel, status: composeChannel === "whatsapp" ? "sent" : "prepared", id: commSendId })');
 
     expect(providerIndex).toBeGreaterThan(-1);
     expect(canonicalIndex).toBeGreaterThan(providerIndex);

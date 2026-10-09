@@ -1,4 +1,4 @@
-import type { Thread, ThreadMessage, ThreadKind, Followup } from "../../types";
+import type { Thread, ThreadMessage, ThreadKind, CommSend } from "../../types";
 import type { ThreadsState } from "../types";
 import type { StoreContext } from "../context";
 import { threadParentExists, BusinessRuleError } from "../../business-rules";
@@ -142,36 +142,8 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
                 }
                 return { db: nextDb };
             });
-            // C4: If this is a user-authored comment on a follow-up thread,
-            // also create a commSend linking them — so the Communication Centre
-            // shows the same activity and the operations loop stays in sync.
-            // Skip system/alert/decision/proof messages and cross-post alerts.
-            if (thread.kind === "followup" && thread.record_id &&
-                (msg.kind === "comment" || (!msg.kind && msg.author !== "System"))) {
-                try {
-                    const followup = get().db.followups.find((row: Followup) => row.id === thread.record_id);
-                    if (followup && followup.customer_id) {
-                        const commId = genId("cs");
-                        const commSend: import("../../types").CommSend = {
-                            id: commId,
-                            channel: "whatsapp",
-                            customer_id: followup.customer_id,
-                            staff_name: msg.author,
-                            subject: `Thread reply: ${thread.title}`,
-                            body: msg.body,
-                            attachment_ids: [],
-                            status: "sent",
-                            sent_at: createdAt,
-                            followup_id: followup.id,
-                            thread_id: threadId,
-                        };
-                        commitState((s: any) => ({ db: { ...s.db, commSends: [commSend, ...s.db.commSends] } }));
-                    }
-                }
-                catch {
-                    // Comm-sync from thread reply is best-effort — never block the reply.
-                }
-            }
+            // Internal comments are not customer deliveries. Only the send
+            // workflow may record an outbound communication.
             return m.id;
         },
 
@@ -180,7 +152,26 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
             if (!customerId)
                 throw new Error("Communication requires a Customer.");
             const id = c.id || genId("cs");
+            const existing = get().db.commSends.find((row: CommSend) => row.id === id);
+            if (existing) {
+                // A retry after an interrupted save must not repeat attachments,
+                // audit entries or the scheduled follow-up.
+                const fields = ["channel", "subject", "body", "followup_id", "task_id", "work_order_id", "quotation_id"] as const;
+                const assetIds = (ids: string[]) => ids.map((attachmentId) => get().db.entityFileAttachments.find((row: any) => row.id === attachmentId)?.file_asset_id).sort();
+                if (existing.customer_id !== customerId || fields.some((key) => existing[key] !== c[key]) ||
+                    JSON.stringify(existing.schedules_next_followup) !== JSON.stringify(c.schedules_next_followup) ||
+                    JSON.stringify(assetIds(existing.attachment_ids || [])) !== JSON.stringify(assetIds(c.source_attachment_ids || []))) {
+                    throw new Error("This communication was already recorded with different content. Start a new message.");
+                }
+                commitState((s: any) => ({ db: s.db }));
+                return;
+            }
+            const actor = get().currentUser();
             const now = nowIso();
+            const followupDueAt = c.schedules_next_followup ? new Date(`${c.schedules_next_followup.due_date}T10:00:00`) : undefined;
+            if (followupDueAt && !Number.isFinite(followupDueAt.getTime())) {
+                throw new Error("Choose a valid date for the next follow-up.");
+            }
             const sourceAttachments = (c.source_attachment_ids || []).map((attachmentId) => {
                 const source = get().db.entityFileAttachments.find((row: any) => row.id === attachmentId);
                 const asset = source && get().db.master.fileAssets.find((row: any) => row.id === source.file_asset_id);
@@ -193,11 +184,11 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
                 id,
                 channel: c.channel,
                 customer_id: customerId,
-                staff_name: c.staff_name,
+                staff_name: actor.name,
                 subject: c.subject,
                 body: c.body,
                 attachment_ids: [],
-                status: c.status || "sent",
+                status: c.status || "prepared",
                 sent_at: now,
                 followup_id: c.followup_id,
                 task_id: c.task_id,
@@ -214,7 +205,7 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
                 caption: source.caption || `Communication attachment · ${c.subject}`,
                 visibility: "customer",
                 customer_shareable: true,
-                created_by: c.staff_name,
+                created_by: actor.name,
             })).filter(Boolean);
             if (communicationAttachmentIds.length) {
                 commitState((s: any) => ({
@@ -225,9 +216,9 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
                 }));
             }
             get().logAudit({
-                actor: c.staff_name,
-                actor_role: "Staff",
-                action: `Sent ${c.channel} "${c.subject}" to ${customerName(get().db, customerId)}`,
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `${send.status === "prepared" ? "Prepared" : send.status === "failed" ? "Failed" : "Sent"} ${c.channel} "${c.subject}" for ${customerName(get().db, customerId)}`,
                 entity_type: "comm",
                 entity_id: id,
                 entity_label: c.subject,
@@ -245,27 +236,22 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
             // If schedules_next_followup is set, create a new follow-up linked
             // to this customer + comm so the operations loop closes. This
             // turns a one-off WhatsApp/email into a tracked next-action.
-            if (c.schedules_next_followup && c.schedules_next_followup.due_date) {
+            if (c.schedules_next_followup && followupDueAt) {
                 const purpose = c.schedules_next_followup.purpose || `Follow up after "${c.subject}"`;
                 const dueDate = c.schedules_next_followup.due_date;
-                try {
-                    get().addFollowup({
-                        title: purpose,
-                        notes: `Auto-scheduled from ${c.channel} communication "${c.subject}" sent on ${now}.`,
-                        status: "scheduled",
-                        priority: "medium",
-                        due_date: dueDate,
-                        due_at: new Date(`${dueDate}T10:00:00`).toISOString(),
-                        assigned_staff_id: get().currentUser().staffId,
-                        customer_id: customerId,
-                        work_order_id: c.work_order_id,
-                        quotation_id: c.quotation_id,
-                        followup_type: "general",
-                    });
-                }
-                catch {
-                    // Follow-up creation should never block the send action.
-                }
+                get().addFollowup({
+                    title: purpose,
+                    notes: `Auto-scheduled from ${c.channel} communication "${c.subject}" (${send.status}) recorded on ${now}.`,
+                    status: "scheduled",
+                    priority: "medium",
+                    due_date: dueDate,
+                    due_at: followupDueAt.toISOString(),
+                    assigned_staff_id: actor.staffId,
+                    customer_id: customerId,
+                    work_order_id: c.work_order_id,
+                    quotation_id: c.quotation_id,
+                    followup_type: "general",
+                });
             }
         },
     };

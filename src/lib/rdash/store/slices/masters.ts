@@ -127,7 +127,7 @@ function dispatchAutomationAction(
                         staff_name: "Control Brain",
                         subject: `Alert: ${rule.name}`,
                         body: message,
-                        status: "sent",
+                        status: "prepared",
                     });
                 }
                 catch {

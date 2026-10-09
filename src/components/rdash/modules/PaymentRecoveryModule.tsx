@@ -172,7 +172,7 @@ export function PaymentRecoveryModule() {
                         staff_name: "Accounts",
                         subject: `Payment reminder · ${(reminderFor.customer_name || "Customer")} · ${formatINR(reminderFor.amount)}`,
                         body: `This is a reminder that payment of ${formatINR(reminderFor.amount)} (milestone: ${reminderFor.milestone_label || "—"}) due on ${formatDate(reminderFor.due_date)} is now ${daysOverdue(reminderFor.due_date)} days overdue. ${reminderNote.trim()}`.trim(),
-                        status: "sent",
+                        status: "prepared",
                     });
                 }
                 catch (err) {
@@ -191,7 +191,7 @@ export function PaymentRecoveryModule() {
                 due_date: new Date().toISOString().slice(0, 10),
                 notes: reminderNote.trim() || undefined,
             } as any);  // STAGE-6-FIX: payment_id not on Task type
-            toast.success(`Reminder task created for ${(reminderFor.customer_name || "Customer")}${reminderFor.customer_id ? " and email sent" : ""}.`);
+            toast.success(`Reminder task created for ${(reminderFor.customer_name || "Customer")}. No email has been sent automatically.`);
             setReminderFor(null);
             setReminderNote("");
         }

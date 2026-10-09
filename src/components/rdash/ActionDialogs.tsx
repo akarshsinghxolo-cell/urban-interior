@@ -394,7 +394,7 @@ function SendMaterialOptionsDialog({ open, onOpenChange, customerId, }: {
             // Don't block the user's share action if logging fails — surface as a warning.
             toast.warning(error instanceof Error ? error.message : "Could not log communication to customer history.");
         }
-        toast.success(`Material options sent via ${channel}`, {
+        toast.info(`Material options prepared for ${channel} — not sent automatically`, {
             description: `${selected.length} options selected${customer ? ` → ${customer.name}` : ""}`,
         });
         onOpenChange(false);

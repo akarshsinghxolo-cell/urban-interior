@@ -67,7 +67,7 @@ export default defineConfig({
     },
     {
       name: "next-dev",
-      command: `./node_modules/.bin/next dev -p ${APP_PORT}`,
+      command: `node node_modules/next/dist/bin/next dev -p ${APP_PORT}`,
       url: `http://127.0.0.1:${APP_PORT}`,
       reuseExistingServer: true,
       timeout: 120_000,
