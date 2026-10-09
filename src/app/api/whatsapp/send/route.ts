@@ -22,10 +22,10 @@ export async function POST(request: NextRequest) {
     const sourceAttachmentIds = Array.isArray(body.sourceAttachmentIds)
       ? body.sourceAttachmentIds.filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
       : undefined;
-    const commSendId = typeof body.commSendId === "string" ? body.commSendId.trim() : undefined;
+    const commSendId = typeof body.commSendId === "string" ? body.commSendId.trim() : "";
 
-    if (!customerId || !subject) {
-      return NextResponse.json({ error: "Customer and subject are required." }, { status: 400 });
+    if (!customerId || !subject || !commSendId) {
+      return NextResponse.json({ error: "Customer, subject, and send identifier are required." }, { status: 400 });
     }
 
     const result = await sendWhatsAppMessage({
@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "WhatsApp message could not be sent.";
-    const status = /not paired|pair/i.test(message) ? 409 : 500;
+    const status = /not paired|pair|already in progress|already reserved|uncertain delivery/i.test(message) ? 409 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

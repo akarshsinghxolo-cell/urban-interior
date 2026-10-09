@@ -528,12 +528,85 @@ async function loadSendableAttachments(sourceAttachmentIds: string[] | undefined
   });
 }
 
+async function reserveOutboundSend(input: {
+  workspaceId: string;
+  commSendId: string;
+  customerId: string;
+  remoteJid: string;
+  subject: string;
+  body?: string;
+  sourceAttachmentIds?: string[];
+}) {
+  const now = new Date().toISOString();
+  const { error } = await adminClient()
+    .from("uc_whatsapp_messages")
+    .insert({
+      workspace_id: input.workspaceId,
+      direction: "outbound",
+      remote_jid: input.remoteJid,
+      customer_id: input.customerId,
+      comm_send_id: input.commSendId,
+      subject: input.subject || null,
+      body: input.body || null,
+      message_type: "text",
+      status: "sending",
+      metadata: {
+        sourceAttachmentIds: input.sourceAttachmentIds || [],
+        attachmentProviderMessageIds: [],
+        transport: "baileys",
+      },
+      updated_at: now,
+    });
+
+  if (!error) return null;
+  if (error.code !== "23505") {
+    throw new Error(`Could not reserve the WhatsApp send: ${error.message}`);
+  }
+
+  const { data: existing, error: existingError } = await adminClient()
+    .from("uc_whatsapp_messages")
+    .select("provider_message_id,remote_jid,status,sent_at,metadata")
+    .eq("workspace_id", input.workspaceId)
+    .eq("direction", "outbound")
+    .eq("comm_send_id", input.commSendId)
+    .maybeSingle();
+  if (existingError || !existing) {
+    throw new Error("This WhatsApp send is already reserved and cannot be sent again.");
+  }
+  if (existing.status === "sent") {
+    return {
+      providerMessageId: existing.provider_message_id || undefined,
+      attachmentProviderMessageIds: Array.isArray(existing.metadata?.attachmentProviderMessageIds)
+        ? existing.metadata.attachmentProviderMessageIds
+        : [],
+      remoteJid: existing.remote_jid,
+      sentAt: existing.sent_at,
+      idempotent: true,
+    };
+  }
+  throw new Error("This WhatsApp send is already in progress or has an uncertain delivery state. It was not sent again.");
+}
+
+async function markOutboundSendFailed(workspaceId: string, commSendId: string, error: unknown): Promise<void> {
+  const message = error instanceof Error ? error.message : "WhatsApp delivery failed.";
+  await adminClient()
+    .from("uc_whatsapp_messages")
+    .update({
+      status: "failed",
+      error_message: message,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("direction", "outbound")
+    .eq("comm_send_id", commSendId);
+}
+
 export async function sendWhatsAppMessage(input: {
   customerId: string;
   subject: string;
   body?: string;
   sourceAttachmentIds?: string[];
-  commSendId?: string;
+  commSendId: string;
 }) {
   if (isWhatsAppQaMode()) throw new Error("WhatsApp sending is disabled in local QA mode.");
   const workspaceId = whatsappWorkspaceId();
@@ -543,6 +616,7 @@ export async function sendWhatsAppMessage(input: {
   if (!recipient) throw new Error("This customer has no WhatsApp or phone number.");
   const dialDigits = indianWhatsAppDialDigits(recipient);
   const remoteJid = `${dialDigits}@s.whatsapp.net`;
+  const attachments = await loadSendableAttachments(input.sourceAttachmentIds, workspaceId);
 
   const { sock, state } = await createUrbanCastleWhatsAppSocket(workspaceId);
   if (!state.creds.registered) {
@@ -550,70 +624,80 @@ export async function sendWhatsAppMessage(input: {
   }
   await waitForSocketOpen(sock);
 
+  const existingSend = await reserveOutboundSend({
+    workspaceId,
+    commSendId: input.commSendId,
+    customerId: input.customerId,
+    remoteJid,
+    subject: input.subject,
+    body: input.body,
+    sourceAttachmentIds: input.sourceAttachmentIds,
+  });
+  if (existingSend) return existingSend;
+
   const parts = [input.subject?.trim(), input.body?.trim()].filter(Boolean);
   const text = parts.join("\n\n") || "Urban Castle";
-  const attachments = await loadSendableAttachments(input.sourceAttachmentIds, workspaceId);
-  const sent = await sock.sendMessage(remoteJid, { text });
-  const providerMessageId = sent?.key?.id || undefined;
-  const attachmentProviderMessageIds: string[] = [];
+  try {
+    const sent = await sock.sendMessage(remoteJid, { text });
+    const providerMessageId = sent?.key?.id || undefined;
+    const attachmentProviderMessageIds: string[] = [];
 
-  for (const attachment of attachments) {
-    let result: any;
-    if (attachment.mimeType.startsWith("image/")) {
-      result = await sock.sendMessage(remoteJid, {
-        image: { url: attachment.url },
-        mimetype: attachment.mimeType,
-        caption: attachment.caption || attachment.fileName,
-      } as any);
-    } else if (attachment.mimeType.startsWith("video/")) {
-      result = await sock.sendMessage(remoteJid, {
-        video: { url: attachment.url },
-        mimetype: attachment.mimeType,
-        caption: attachment.caption || attachment.fileName,
-      } as any);
-    } else if (attachment.mimeType.startsWith("audio/")) {
-      result = await sock.sendMessage(remoteJid, {
-        audio: { url: attachment.url },
-        mimetype: attachment.mimeType,
-      } as any);
-    } else {
-      result = await sock.sendMessage(remoteJid, {
-        document: { url: attachment.url },
-        mimetype: attachment.mimeType,
-        fileName: attachment.fileName,
-        caption: attachment.caption,
-      } as any);
+    for (const attachment of attachments) {
+      let result: any;
+      if (attachment.mimeType.startsWith("image/")) {
+        result = await sock.sendMessage(remoteJid, {
+          image: { url: attachment.url },
+          mimetype: attachment.mimeType,
+          caption: attachment.caption || attachment.fileName,
+        } as any);
+      } else if (attachment.mimeType.startsWith("video/")) {
+        result = await sock.sendMessage(remoteJid, {
+          video: { url: attachment.url },
+          mimetype: attachment.mimeType,
+          caption: attachment.caption || attachment.fileName,
+        } as any);
+      } else if (attachment.mimeType.startsWith("audio/")) {
+        result = await sock.sendMessage(remoteJid, {
+          audio: { url: attachment.url },
+          mimetype: attachment.mimeType,
+        } as any);
+      } else {
+        result = await sock.sendMessage(remoteJid, {
+          document: { url: attachment.url },
+          mimetype: attachment.mimeType,
+          fileName: attachment.fileName,
+          caption: attachment.caption,
+        } as any);
+      }
+      if (result?.key?.id) attachmentProviderMessageIds.push(result.key.id);
     }
-    if (result?.key?.id) attachmentProviderMessageIds.push(result.key.id);
+
+    const now = new Date().toISOString();
+    const { error } = await adminClient()
+      .from("uc_whatsapp_messages")
+      .update({
+        provider_message_id: providerMessageId || null,
+        status: "sent",
+        error_message: null,
+        metadata: {
+          sourceAttachmentIds: input.sourceAttachmentIds || [],
+          attachmentProviderMessageIds,
+          transport: "baileys",
+        },
+        sent_at: now,
+        updated_at: now,
+      })
+      .eq("workspace_id", workspaceId)
+      .eq("direction", "outbound")
+      .eq("comm_send_id", input.commSendId);
+    if (error) throw new Error(`WhatsApp sent, but Urban Castle could not finalize its journal: ${error.message}`);
+
+    await patchAccount({ status: "connected", last_activity_at: now, last_error: null }, workspaceId);
+    return { providerMessageId, attachmentProviderMessageIds, remoteJid, sentAt: now };
+  } catch (error) {
+    await markOutboundSendFailed(workspaceId, input.commSendId, error);
+    throw error;
   }
-
-  const now = new Date().toISOString();
-
-  const { error } = await adminClient()
-    .from("uc_whatsapp_messages")
-    .insert({
-      workspace_id: workspaceId,
-      provider_message_id: providerMessageId || null,
-      direction: "outbound",
-      remote_jid: remoteJid,
-      customer_id: input.customerId,
-      comm_send_id: input.commSendId || null,
-      subject: input.subject || null,
-      body: input.body || null,
-      message_type: "text",
-      status: "sent",
-      metadata: {
-        sourceAttachmentIds: input.sourceAttachmentIds || [],
-        attachmentProviderMessageIds,
-        transport: "baileys",
-      },
-      sent_at: now,
-      updated_at: now,
-    });
-  if (error) throw new Error(`WhatsApp sent, but Urban Castle could not journal the provider message: ${error.message}`);
-
-  await patchAccount({ status: "connected", last_activity_at: now, last_error: null }, workspaceId);
-  return { providerMessageId, attachmentProviderMessageIds, remoteJid, sentAt: now };
 }
 
 export async function disconnectWhatsApp(): Promise<void> {

@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { genId } from "@/lib/rdash/store/helpers";
 const CHANNEL_META: Record<CommChannel, {
     label: string;
     icon: React.ReactNode;
@@ -142,6 +143,7 @@ export function CommunicationCentreModule({ channelFilter }: {
       </div>
 
       {composeOpen && (<ComposeDialog channel={composeChannel} onClose={() => setComposeOpen(false)} onSend={async (data) => {
+                const commSendId = genId("cs");
                 if (composeChannel === "whatsapp") {
                     for (const attachmentId of data.source_attachment_ids || []) {
                         const attachment = db.entityFileAttachments.find((row) => row.id === attachmentId);
@@ -158,6 +160,7 @@ export function CommunicationCentreModule({ channelFilter }: {
                             subject: data.subject,
                             body: data.body,
                             sourceAttachmentIds: data.source_attachment_ids,
+                            commSendId,
                         }),
                     });
                     const payload = await response.json().catch(() => ({})) as { error?: string };
@@ -165,7 +168,7 @@ export function CommunicationCentreModule({ channelFilter }: {
                         throw new Error(payload.error || "WhatsApp could not send this message.");
                     }
                 }
-                sendComm({ ...data, channel: composeChannel, status: "sent" });
+                sendComm({ ...data, channel: composeChannel, status: "sent", id: commSendId });
                 toast.success(`${CHANNEL_META[composeChannel].label} sent to ${db.customers.find((customer) => customer.id === data.customer_id)?.name || "Customer"}`);
                 setComposeOpen(false);
             }}/>)}

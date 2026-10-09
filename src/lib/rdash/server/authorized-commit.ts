@@ -21,6 +21,7 @@ import { contractorRateProjection } from "../contractor-profile";
 import { moduleForCollection } from "../staff-operations";
 import type { ModuleWorkspaceReadScope } from "../workspace-read-scope";
 import { COLLECTIONS_BY_SCOPE } from "./module-scoped-collections";
+import { canonicalizeFinancialDocumentNumbers } from "../financial-document-number";
 import {
   commitWorkspaceOperations,
   getWorkspaceSubset,
@@ -309,6 +310,7 @@ export async function commitAuthorizedPostgresOperations(
     if (current.revision !== revision) throw new Error("CONFLICT");
 
     assertWorkspaceMutationAllowed(user, commitOperations, current.data);
+    commitOperations = canonicalizeFinancialDocumentNumbers(current.data, commitOperations);
     commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
     commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);
     const baseline = normalizeWorkspace(current.data);

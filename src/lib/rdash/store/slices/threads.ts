@@ -179,7 +179,7 @@ export function createThreadsSlice(ctx: StoreContext): ThreadsState {
             const customerId = resolveCustomerIdFromLinks(get().db, c, "Communication");
             if (!customerId)
                 throw new Error("Communication requires a Customer.");
-            const id = genId("cs");
+            const id = c.id || genId("cs");
             const now = nowIso();
             const sourceAttachments = (c.source_attachment_ids || []).map((attachmentId) => {
                 const source = get().db.entityFileAttachments.find((row: any) => row.id === attachmentId);

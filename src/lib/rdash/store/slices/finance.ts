@@ -1,22 +1,9 @@
-// STAGE-3-FIX: Generate a sequence number using the current year and the
-// max existing suffix (not array length, which breaks on delete).
-function nextSequenceNo(prefix: string, collection: { receipt_no?: string; invoice_no?: string }[]): string {
-    const year = new Date().getFullYear();
-    const field = prefix.startsWith("CR") ? "receipt_no" : "invoice_no";
-    let maxSeq = 0;
-    for (const row of collection) {
-        const no = (row as Record<string, string | undefined>)[field];
-        if (!no) continue;
-        const m = no.match(new RegExp(`^${prefix}-\\d{4}-(\\d+)$`));
-        if (m) maxSeq = Math.max(maxSeq, parseInt(m[1], 10));
-    }
-    return `${prefix}-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
-}
 import type { Payment, CustomerInvoice, CustomerReceipt } from "../../types";
 import type { FinanceState } from "../types";
 import type { StoreContext } from "../context";
 import { assertRole, genId, nowIso, today } from "../helpers";
 import { formatINR } from "../../format";
+import { nextFinancialDocumentNumber } from "../../financial-document-number";
 import {
     assertServiceFinanceContext, isPaymentChaseNeeded, upsertPaymentFollowup,
     syncInvoiceWithPayment, assertPaymentMilestoneSequence,
@@ -278,7 +265,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
             }
             const now = nowIso();
             const receiptId = genId("receipt");
-            const receiptNo = nextSequenceNo("CR", state.db.customerReceipts);
+            const receiptNo = nextFinancialDocumentNumber("receipt", state.db.customerReceipts as unknown as Array<Record<string, unknown>>);
             const threadId = invoice.thread_id ||
                 state.openThreadFor("invoice", invoice.id, `${invoice.invoice_no} · Customer receipt`, [actor.name]);
             const receipt: CustomerReceipt = {
@@ -372,41 +359,6 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                     ...(paymentId ? [{ entity_type: "payment", entity_id: paymentId }] : []),
                 ],
             });
-            // H: Auto-pay commissions on invoice settlement. When this receipt
-            // fully settles the invoice AND the invoice's work order has no
-            // remaining receivable (no other open invoices), pay any accrued
-            // commissions linked to that work order. If the receipt is partial
-            // or other invoices remain open, commissions stay accrued.
-            if (nextInvoiceBalance === 0 && invoice.work_order_id) {
-                const afterState = get();
-                const woId = invoice.work_order_id;
-                const woInvoices = afterState.db.invoices.filter((row: any) => row.work_order_id === woId && row.status !== "cancelled");
-                const woReceivable = woInvoices.reduce((sum: number, row: any) => sum + (row.balance_amount || 0), 0);
-                if (woReceivable <= 0) {
-                    const unpaidComms = afterState.db.commissions.filter((c: any) => c.work_order_id === woId && c.status === "accrued");
-                    for (const comm of unpaidComms) {
-                        try {
-                            get().payCommission(comm.id);
-                            get().logAudit({
-                                actor: "System",
-                                action: `Commission ${comm.commission_no || comm.id} auto-paid on invoice settlement (${invoice.invoice_no}) — ${formatINR(comm.amount)} to ${comm.source_partner_name || "partner"}`,
-                                entity_type: "commission",
-                                entity_id: comm.id,
-                                entity_label: comm.commission_no,
-                                kind: "system",
-                                source_module: "finance",
-                                cross_post: [
-                                    { entity_type: "workOrder", entity_id: woId },
-                                    { entity_type: "invoice", entity_id: invoice.id, entity_label: invoice.invoice_no },
-                                ],
-                            });
-                        }
-                        catch (err) {
-                            console.warn("[finance] auto-pay commission failed", err);
-                        }
-                    }
-                }
-            }
             return receiptId;
         },
         recordPaymentPromise: (id, promiseDate) => {
@@ -487,7 +439,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
             const actor = get().currentUser();
             const id = invoice.id || genId("inv");
             const invoiceNo = invoice.invoice_no ||
-                nextSequenceNo("INV", get().db.invoices);
+                nextFinancialDocumentNumber("invoice", get().db.invoices as unknown as Array<Record<string, unknown>>);
             const total = invoice.total_amount ?? invoice.subtotal ?? 0;
             const paid = invoice.paid_amount ?? 0;
             const threadId = get().openThreadFor("invoice", id, `${invoiceNo} · ${invoice.customer_name || "Customer"}`, [actor.name, invoice.customer_name || "Customer"]);
@@ -635,7 +587,7 @@ export function createFinanceSlice(ctx: StoreContext): FinanceState {
                 }));
                 return existing.id;
             }
-            const invoiceNo = nextSequenceNo("INV", get().db.invoices);
+            const invoiceNo = nextFinancialDocumentNumber("invoice", get().db.invoices as unknown as Array<Record<string, unknown>>);
             const id = genId("inv");
             const threadId = get().openThreadFor("invoice", id, `${invoiceNo} · ${payment.customer_name || "Customer"}`, [payment.customer_name || "Customer", "Accounts"]);
             const invoice = buildInvoiceDraftFromPayment(payment, invoiceNo, threadId);

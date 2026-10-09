@@ -53,6 +53,7 @@ export function AttendancePayrollModule() {
     const reopenPayrollPeriod = useRDashStore((s) => s.reopenPayrollPeriod);
     const addSalaryAdjustment = useRDashStore((s) => s.addSalaryAdjustment);
     const setSalaryAdjustmentStatus = useRDashStore((s) => s.setSalaryAdjustmentStatus);
+    const awaitServerSync = useRDashStore((s) => s.awaitServerSync);
     const user = currentUser();
     const isPolicyManager = role === "Owner" || role === "Operations Manager";
     const isPayrollManager = role === "Owner" || role === "Operations Manager" || role === "Accounts / Admin";
@@ -506,26 +507,27 @@ export function AttendancePayrollModule() {
       {isPayrollManager && <PayrollPeriodsSection
         db={db}
         isOwner={isOwner}
-        onGenerate={() => {
+        onGenerate={async () => {
             const now = new Date();
             try {
                 const id = createPayrollPeriod(now.getMonth() + 1, now.getFullYear());
+                await awaitServerSync();
                 toast.success(`Payroll generated (${id})`);
             }
             catch (error) {
                 toast.error(error instanceof Error ? error.message : "Could not generate payroll");
             }
         }}
-        onApprove={(id) => {
-            try { approvePayrollPeriod(id); toast.success("Payroll approved"); }
+        onApprove={async (id) => {
+            try { approvePayrollPeriod(id); await awaitServerSync(); toast.success("Payroll approved"); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Approval blocked"); }
         }}
-        onPay={(id) => {
-            try { payPayrollPeriod(id); toast.success("Payroll marked paid"); }
+        onPay={async (id) => {
+            try { payPayrollPeriod(id); await awaitServerSync(); toast.success("Payroll marked paid"); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Mark-paid blocked"); }
         }}
-        onReopen={(id) => {
-            try { reopenPayrollPeriod(id); toast.success("Payroll reopened"); }
+        onReopen={async (id) => {
+            try { reopenPayrollPeriod(id); await awaitServerSync(); toast.success("Payroll reopened"); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Reopen blocked"); }
         }}
       />}
@@ -534,13 +536,14 @@ export function AttendancePayrollModule() {
       {isPayrollManager && <SalaryAdjustmentsSection
         db={db}
         isOwner={isOwner}
-        onAdd={(staffId, type, amount, reason) => {
-            try { addSalaryAdjustment(staffId, type, amount, reason); toast.success("Adjustment recorded for review"); }
+        onAdd={async (staffId, type, amount, reason) => {
+            try { addSalaryAdjustment(staffId, type, amount, reason); await awaitServerSync(); toast.success("Adjustment recorded for review"); }
             catch (error) { toast.error(error instanceof Error ? error.message : "Could not add adjustment"); }
         }}
-        onReview={(id, status) => {
+        onReview={async (id, status) => {
             try {
               setSalaryAdjustmentStatus(id, status);
+              await awaitServerSync();
               toast.success(status === "approved" ? "Adjustment approved" : "Adjustment rejected");
             } catch (error) {
               toast.error(error instanceof Error ? error.message : "Adjustment review failed");

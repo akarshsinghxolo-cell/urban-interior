@@ -510,6 +510,7 @@ export interface ThreadsState {
     mentions?: import("../types").ThreadMessageMention[];
   }) => string;
   sendComm: (s: {
+    id?: string;
     channel: import("../types").CommChannel; customer_id: string; staff_name: string;
     subject: string; body?: string; source_attachment_ids?: string[];
     status?: import("../types").CommSend["status"];

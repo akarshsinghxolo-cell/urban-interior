@@ -1,6 +1,7 @@
 import type { RDashDatabase } from "../types";
 import { customerNameForJob } from "../customer";
 import { computeWorkOrderPnL, computeSitePnLsFromCostLines } from "./finance-helpers";
+import { latestQuotationRevisions } from "../metrics";
 
 // G: computeJobPnL now delegates to the canonical `computeWorkOrderPnL`
 // helper in finance-helpers.ts. The two other P&L formulas
@@ -59,7 +60,7 @@ export function customerBalance(db: RDashDatabase, customerId: string) {
 }
 
 export function siteFinancials(db: RDashDatabase, siteId: string) {
-    const siteQuotes = db.quotations.filter((quotation) => quotation.site_id === siteId);
+    const siteQuotes = latestQuotationRevisions(db.quotations.filter((quotation) => quotation.site_id === siteId));
     const quoted = siteQuotes
         .filter((quotation) => quotation.status !== "cancelled")
         .reduce((sum, quotation) => sum + quotation.total_amount, 0);

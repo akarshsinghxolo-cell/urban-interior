@@ -4,7 +4,7 @@ import type { RDashDatabase } from "./types";
 import { applyVendorRateAverages } from "./vendor-rate-average";
 import { attachCustomerLabels } from "./customer";
 import { validateBusinessData } from "./business-rules";
-import { diffWorkspaceOperations } from "./workspace-operations";
+import { applyWorkspaceOperations, diffWorkspaceOperations } from "./workspace-operations";
 import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent, workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";
 import { workspaceFoundationRevisionState } from "./workspace-foundation-revision-state";
 import { workspaceReadCache } from "./workspace-read-cache";
@@ -12,6 +12,7 @@ import { deletedWorkspaceOperationVersionKeys, workspaceRowVersionState } from "
 import { invalidateWorkspaceClientCaches } from "./client-auth";
 import { beginWorkspaceOutboxResetBarrier, cancelWorkspaceOutboxResetBarrier, resetWorkspaceOutboxAfterWorkspaceReset } from "../uploads/workspace-outbox";
 import { classifyWorkspaceSaveOutcome } from "./workspace-save-outcome";
+import { applyAcceptedFinancialDocumentNumbers } from "./financial-document-number";
 import { persistWorkspaceTabs, restoreWorkspaceTabs } from "./tab-persistence";
 import { isRegisteredModuleId, resolveRenderer } from "./modules";
 // canonicalModuleId, resolveRenderer moved to slices/ui.ts (Phase 3o)
@@ -160,11 +161,11 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 throw new Error(message);
             }
             if (typeof payload.revision === "number") {
-                const accepted = normalizeWorkspaceSession(snapshot);
+                const acceptedOperations = Array.isArray(payload.patches) ? payload.patches : operations;
+                const accepted = normalizeWorkspaceSession(applyWorkspaceOperations(baseline, acceptedOperations));
                 serverRevisionForQueue = payload.revision;
                 lastAcceptedServerRevision = payload.revision;
                 lastAcceptedServerDb = structuredClone(accepted) as RDashDatabase;
-                const acceptedOperations = Array.isArray(payload.patches) ? payload.patches : operations;
                 const deletedVersionKeys = deletedWorkspaceOperationVersionKeys(acceptedOperations);
                 rowVersionsCache = mergeWorkspaceVersionMap(rowVersionsCache, payload.rowVersions);
                 for (const key of deletedVersionKeys) {
@@ -173,6 +174,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 workspaceRowVersionState.merge(payload.rowVersions);
                 workspaceRowVersionState.remove(deletedVersionKeys);
                 setBase({
+                    db: attachCustomerLabels(applyAcceptedFinancialDocumentNumbers(get().db, acceptedOperations)),
                     serverRevision: payload.revision,
                     workspaceSyncStatus: "saved",
                     workspaceSyncError: null,

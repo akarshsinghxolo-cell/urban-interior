@@ -12,6 +12,67 @@ import type { WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
 import { rowId, rowsFor } from "./rows";
 
+type MutationAction = "create" | "update" | "approve";
+
+function approvalDecision(
+  collection: string,
+  row: Record<string, unknown>,
+  existing: Record<string, unknown>,
+): boolean {
+  const beforeStatus = String(existing.status || "");
+  const afterStatus = String(row.status || "");
+  if (collection === "actions") {
+    return beforeStatus === "pending" && ["approved", "rejected"].includes(afterStatus);
+  }
+  if (collection === "salaryAdjustments" || collection === "leaveRequests") {
+    return ["draft", "requested"].includes(beforeStatus)
+      && ["approved", "rejected"].includes(afterStatus);
+  }
+  if (["contractorPayments", "drawings", "boqs", "purchaseOrders"].includes(collection)) {
+    return beforeStatus !== "approved" && afterStatus === "approved";
+  }
+  if (collection === "vendorBills") {
+    return (!existing.approved_at && Boolean(row.approved_at))
+      || (beforeStatus === "pending_approval" && afterStatus === "draft");
+  }
+  if (collection === "quotations") {
+    return existing.pending_approval === true && row.pending_approval === false;
+  }
+  return false;
+}
+
+function mutationAction(
+  collection: string,
+  row: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+): MutationAction {
+  if (!existing) return "create";
+  if (collection === "payrollPeriods") {
+    const before = String(existing.status || "");
+    const after = String(row.status || "");
+    if (before === "generated" && after === "approved") return "approve";
+    if (["approved", "paid"].includes(before) && after === "generated") {
+      throw new Error("FORBIDDEN:Only the Owner can reopen payroll.");
+    }
+    if (before !== after && !(before === "approved" && after === "paid")) {
+      throw new Error("FORBIDDEN:Invalid payroll status transition.");
+    }
+  }
+  if (collection === "payrollLines") {
+    const before = String(existing.payment_status || "");
+    const after = String(row.payment_status || "");
+    if (before === "pending" && after === "approved") return "approve";
+    if (["approved", "paid"].includes(before) && after === "pending") {
+      throw new Error("FORBIDDEN:Only the Owner can reopen payroll.");
+    }
+    if (before !== after && !(before === "approved" && after === "paid")) {
+      throw new Error("FORBIDDEN:Invalid payroll line status transition.");
+    }
+  }
+  if (approvalDecision(collection, row, existing)) return "approve";
+  return "update";
+}
+
 const threadParentCollection: Record<string, string> = {
   quotation: "quotations",
   workOrder: "workOrders",
@@ -134,7 +195,8 @@ export function assertWorkspaceMutationAllowed(
   const authorizedEntityIds = new Set<string>();
 
   for (const operation of operations.filter((entry) => !["threads", "auditLog"].includes(entry.collection))) {
-    const existingIds = new Set(rowsFor(current, operation.collection).map(rowId));
+    const existingRows = rowsFor(current, operation.collection);
+    const existingById = new Map(existingRows.map((row) => [rowId(row), row]));
 
     if (operation.deleteIds?.length) {
       if (isFieldStaff && operation.collection === "executionLogs") {
@@ -147,7 +209,7 @@ export function assertWorkspaceMutationAllowed(
     }
 
     for (const row of operation.upsert || []) {
-      const action = existingIds.has(rowId(row)) ? "update" : "create";
+      const action = mutationAction(operation.collection, row, existingById.get(rowId(row)));
 
       if (isFieldStaff && operation.collection === "executionLogs") {
         assertFieldExecutionLog(row, user.staffId);
