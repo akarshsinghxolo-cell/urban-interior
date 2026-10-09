@@ -48,7 +48,7 @@ describe("Urban Castle WhatsApp integration", () => {
 
     expect(providerIndex).toBeGreaterThan(-1);
     expect(canonicalIndex).toBeGreaterThan(providerIndex);
-    expect(centre).toContain("const commSendId = genId(\"cs\")");
+    expect(centre).toContain("const [commSendId] = React.useState(() => genId(\"cs\"))");
     expect(centre).toContain("await onSend(payload)");
     expect(centre).toContain("asset.sync_status !== \"uploaded\"");
     expect(centre).toContain("<WhatsAppConnectionPanel");

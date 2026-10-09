@@ -11,6 +11,7 @@ import {
 import type { WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
 import { rowId, rowsFor } from "./rows";
+import { requiredApprovalPolicy } from "../approval-policy";
 
 type MutationAction = "create" | "update" | "approve";
 
@@ -18,9 +19,10 @@ function approvalDecision(
   collection: string,
   row: Record<string, unknown>,
   existing: Record<string, unknown>,
+  current: RDashDatabase,
 ): boolean {
   const beforeStatus = String(existing.status || "");
-  const afterStatus = String(row.status || "");
+  const afterStatus = String(row.status ?? existing.status ?? "");
   if (collection === "actions") {
     return beforeStatus === "pending" && ["approved", "rejected"].includes(afterStatus);
   }
@@ -28,15 +30,78 @@ function approvalDecision(
     return ["draft", "requested"].includes(beforeStatus)
       && ["approved", "rejected"].includes(afterStatus);
   }
-  if (["contractorPayments", "drawings", "boqs", "purchaseOrders"].includes(collection)) {
+  if (["contractorPayments", "drawings", "boqs"].includes(collection)) {
     return beforeStatus !== "approved" && afterStatus === "approved";
+  }
+  if (collection === "purchaseOrders") {
+    const approvedStatuses = ["approved", "sent", "partially_received", "received"];
+    const crossesApprovalBoundary = !approvedStatuses.includes(beforeStatus)
+      && approvedStatuses.includes(afterStatus);
+    return crossesApprovalBoundary && Boolean(requiredApprovalPolicy(
+      current.approvalPolicies,
+      "po_amount",
+      Number(row.total_amount ?? existing.total_amount) || 0,
+    ));
   }
   if (collection === "vendorBills") {
     return (!existing.approved_at && Boolean(row.approved_at))
-      || (beforeStatus === "pending_approval" && afterStatus === "draft");
+      || (beforeStatus === "pending_approval" && afterStatus !== "pending_approval");
   }
   if (collection === "quotations") {
-    return existing.pending_approval === true && row.pending_approval === false;
+    const beforeDiscount = Number(existing.discount_pct) || 0;
+    const afterDiscount = Number(row.discount_pct ?? existing.discount_pct) || 0;
+    const afterPendingApproval = row.pending_approval ?? existing.pending_approval;
+    if (existing.pending_approval === true && afterPendingApproval === false) {
+      return Boolean(requiredApprovalPolicy(
+        current.approvalPolicies,
+        "quotation_discount",
+        afterDiscount,
+      ));
+    }
+    return afterDiscount !== beforeDiscount
+      && afterPendingApproval !== true
+      && Boolean(requiredApprovalPolicy(
+        current.approvalPolicies,
+        "quotation_discount",
+        afterDiscount,
+      ));
+  }
+  return false;
+}
+
+function approvalStateOnCreate(
+  collection: string,
+  row: Record<string, unknown>,
+  current: RDashDatabase,
+): boolean {
+  const status = String(row.status || "");
+  if (collection === "actions") return ["approved", "rejected"].includes(status);
+  if (collection === "salaryAdjustments" || collection === "leaveRequests") {
+    return ["approved", "rejected"].includes(status);
+  }
+  if (["contractorPayments", "drawings", "boqs"].includes(collection)) {
+    return status === "approved";
+  }
+  if (collection === "purchaseOrders") {
+    return ["approved", "sent", "partially_received", "received"].includes(status)
+      && Boolean(requiredApprovalPolicy(
+        current.approvalPolicies,
+        "po_amount",
+        Number(row.total_amount) || 0,
+      ));
+  }
+  if (collection === "vendorBills") {
+    return Boolean(row.approved_at) || ["approved", "partly_paid", "paid"].includes(status);
+  }
+  if (collection === "payrollPeriods") return ["approved", "paid"].includes(status);
+  if (collection === "payrollLines") return ["approved", "paid"].includes(String(row.payment_status || ""));
+  if (collection === "quotations") {
+    return row.pending_approval !== true
+      && Boolean(requiredApprovalPolicy(
+        current.approvalPolicies,
+        "quotation_discount",
+        Number(row.discount_pct) || 0,
+      ));
   }
   return false;
 }
@@ -45,11 +110,12 @@ function mutationAction(
   collection: string,
   row: Record<string, unknown>,
   existing: Record<string, unknown> | undefined,
+  current: RDashDatabase,
 ): MutationAction {
   if (!existing) return "create";
   if (collection === "payrollPeriods") {
     const before = String(existing.status || "");
-    const after = String(row.status || "");
+    const after = String(row.status ?? existing.status ?? "");
     if (before === "generated" && after === "approved") return "approve";
     if (["approved", "paid"].includes(before) && after === "generated") {
       throw new Error("FORBIDDEN:Only the Owner can reopen payroll.");
@@ -60,7 +126,7 @@ function mutationAction(
   }
   if (collection === "payrollLines") {
     const before = String(existing.payment_status || "");
-    const after = String(row.payment_status || "");
+    const after = String(row.payment_status ?? existing.payment_status ?? "");
     if (before === "pending" && after === "approved") return "approve";
     if (["approved", "paid"].includes(before) && after === "pending") {
       throw new Error("FORBIDDEN:Only the Owner can reopen payroll.");
@@ -69,7 +135,7 @@ function mutationAction(
       throw new Error("FORBIDDEN:Invalid payroll line status transition.");
     }
   }
-  if (approvalDecision(collection, row, existing)) return "approve";
+  if (approvalDecision(collection, row, existing, current)) return "approve";
   return "update";
 }
 
@@ -186,8 +252,9 @@ export function assertWorkspaceMutationAllowed(
 ) {
   if (user.role === "Owner") return;
 
+  const database = current || buildSeedDatabase();
   const permissions = normalizeStaffPermissions(
-    (current as unknown as { staffRolePermissions?: StaffPermissionRecord[] })?.staffRolePermissions,
+    (database as unknown as { staffRolePermissions?: StaffPermissionRecord[] }).staffRolePermissions,
   );
   const roleKey = normalizeRoleKey(user.role);
   const isFieldStaff = roleKey === "FIELD_STAFF";
@@ -209,7 +276,8 @@ export function assertWorkspaceMutationAllowed(
     }
 
     for (const row of operation.upsert || []) {
-      const action = mutationAction(operation.collection, row, existingById.get(rowId(row)));
+      const existing = existingById.get(rowId(row));
+      const action = mutationAction(operation.collection, row, existing, database);
 
       if (isFieldStaff && operation.collection === "executionLogs") {
         assertFieldExecutionLog(row, user.staffId);
@@ -222,10 +290,15 @@ export function assertWorkspaceMutationAllowed(
       if (!canRole(permissions, user.role, moduleKey, action)) {
         throw new Error(`FORBIDDEN:${operation.collection}`);
       }
+      if (!existing
+        && approvalStateOnCreate(operation.collection, row, database)
+        && !canRole(permissions, user.role, moduleKey, "approve")) {
+        throw new Error(`FORBIDDEN:${operation.collection}`);
+      }
 
       if (["visits", "attendance", "staffLocationPings", "tasks"].includes(operation.collection)) {
         assertStaffOperationAllowed(
-          current || buildSeedDatabase(),
+          database,
           permissions,
           user.role,
           user.staffId,

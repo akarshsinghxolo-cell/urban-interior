@@ -6,6 +6,7 @@ import { dateFromIso, isAtOrAfterMinutesFromTime, minutesLate, verifyOfficeExitG
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
 import { indianMobileForWrite } from "../../phone-validation";
 import { configuredStaffBaseSalary, daysInPayrollMonth, hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
+import { requiredApprovalPolicy } from "../../approval-policy";
 
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
@@ -313,17 +314,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
         },
 
         requiresApproval: (trigger, amount) => {
-            const policies = get().db.approvalPolicies.filter((p: any) => p.enabled && p.trigger === trigger);
-            for (const p of policies) {
-                const matches = p.operator === ">"
-                    ? amount > p.threshold
-                    : p.operator === ">="
-                        ? amount >= p.threshold
-                        : amount === p.threshold;
-                if (matches)
-                    return p;
-            }
-            return null;
+            return requiredApprovalPolicy(get().db.approvalPolicies, trigger, amount);
         },
 
         toggleAutomationRule: (id) => {

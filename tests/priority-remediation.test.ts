@@ -10,6 +10,21 @@ import type { PayrollPeriod, Quotation } from "@/lib/rdash/types";
 import type { WorkspaceOperation } from "@/lib/rdash/workspace-operations";
 import { testFile } from "./test-file";
 
+function approvalPolicy(trigger: "po_amount" | "quotation_discount", threshold: number) {
+  return {
+    id: `policy-${trigger}`,
+    name: `${trigger} test policy`,
+    trigger,
+    threshold,
+    operator: ">" as const,
+    approver_role: "Owner",
+    approver_id: "staff-owner",
+    enabled: true,
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  };
+}
+
 const user = (role: AuthenticatedUser["role"]): AuthenticatedUser => ({
   userId: `user-${role}`,
   email: `${role.toLowerCase().replaceAll(/\W/g, "-")}@urban.test`,
@@ -53,9 +68,11 @@ describe("priority audit remediation", () => {
   test("server permission rules recognize approval decisions across modules", () => {
     const db = buildSeedDatabase();
     db.staffRolePermissions = createDefaultStaffPermissions();
+    db.approvalPolicies = [approvalPolicy("po_amount", 1_000)];
     db.purchaseOrders = [{
       id: "po-approval",
       status: "pending_approval",
+      total_amount: 2_000,
     } as never];
 
     const ordinaryUpdate: WorkspaceOperation[] = [{
@@ -70,6 +87,48 @@ describe("priority audit remediation", () => {
     expect(() => assertWorkspaceMutationAllowed(user("Procurement Staff"), ordinaryUpdate, db)).not.toThrow();
     expect(() => assertWorkspaceMutationAllowed(user("Procurement Staff"), approval, db)).toThrow("FORBIDDEN:purchaseOrders");
     expect(() => assertWorkspaceMutationAllowed(user("Operations Manager"), approval, db)).not.toThrow();
+  });
+
+  test("server approval rules preserve automatic releases without permitting policy bypasses", () => {
+    const db = buildSeedDatabase();
+    db.staffRolePermissions = createDefaultStaffPermissions();
+    db.approvalPolicies = [
+      approvalPolicy("po_amount", 1_000),
+      approvalPolicy("quotation_discount", 10),
+    ];
+    db.purchaseOrders = [{ id: "po-low", status: "pending_approval", total_amount: 500 } as never];
+    db.quotations = [{ id: "quote-held", status: "draft", discount_pct: 15, pending_approval: true } as never];
+    db.vendorBills = [{ id: "bill-held", status: "pending_approval" } as never];
+    db.payrollPeriods = [{ id: "payroll-generated", status: "generated" } as never];
+
+    expect(() => assertWorkspaceMutationAllowed(user("Procurement Staff"), [{
+      collection: "purchaseOrders",
+      upsert: [{ id: "po-low", status: "approved", total_amount: 500 }],
+    }], db)).not.toThrow();
+    expect(() => assertWorkspaceMutationAllowed(user("Procurement Staff"), [{
+      collection: "purchaseOrders",
+      upsert: [{ id: "po-high", status: "approved", total_amount: 2_000 }],
+    }], db)).toThrow("FORBIDDEN:purchaseOrders");
+    expect(() => assertWorkspaceMutationAllowed(user("Sales / Telecaller"), [{
+      collection: "quotations",
+      upsert: [{ id: "quote-held", status: "draft", discount_pct: 5, pending_approval: false }],
+    }], db)).not.toThrow();
+    expect(() => assertWorkspaceMutationAllowed(user("Sales / Telecaller"), [{
+      collection: "quotations",
+      upsert: [{ id: "quote-held", title: "Updated title only" }],
+    }], db)).not.toThrow();
+    expect(() => assertWorkspaceMutationAllowed(user("Accounts / Admin"), [{
+      collection: "vendorBills",
+      upsert: [{ id: "bill-held", notes: "Updated note only" }],
+    }], db)).not.toThrow();
+    expect(() => assertWorkspaceMutationAllowed(user("Accounts / Admin"), [{
+      collection: "payrollPeriods",
+      upsert: [{ id: "payroll-generated", notes: "Updated note only" }],
+    }], db)).not.toThrow();
+    expect(() => assertWorkspaceMutationAllowed(user("Sales / Telecaller"), [{
+      collection: "quotations",
+      upsert: [{ id: "quote-held", status: "draft", discount_pct: 15, pending_approval: false }],
+    }], db)).toThrow("FORBIDDEN:quotations");
   });
 
   test("public invoice and receipt numbers use one server-canonical allocator", () => {
@@ -157,8 +216,13 @@ describe("priority audit remediation", () => {
     expect(sendFunction.indexOf("reserveOutboundSend({")).toBeGreaterThan(-1);
     expect(sendFunction.indexOf("reserveOutboundSend({")).toBeLessThan(sendFunction.indexOf("sock.sendMessage"));
     expect(sendFunction).toContain('.eq("comm_send_id", input.commSendId)');
+    expect(source).toContain('["sent", "delivered", "read"].includes(existing.status)');
 
     const route = await testFile("src/app/api/whatsapp/send/route.ts").text();
     expect(route).toContain("!customerId || !subject || !commSendId");
+
+    const composer = await testFile("src/components/rdash/modules/CommunicationCentreModule.tsx").text();
+    expect(composer).toContain('const [commSendId] = React.useState(() => genId("cs"))');
+    expect(composer).toContain("const commSendId = data.id");
   });
 });

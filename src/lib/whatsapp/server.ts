@@ -573,7 +573,7 @@ async function reserveOutboundSend(input: {
   if (existingError || !existing) {
     throw new Error("This WhatsApp send is already reserved and cannot be sent again.");
   }
-  if (existing.status === "sent") {
+  if (["sent", "delivered", "read"].includes(existing.status)) {
     return {
       providerMessageId: existing.provider_message_id || undefined,
       attachmentProviderMessageIds: Array.isArray(existing.metadata?.attachmentProviderMessageIds)

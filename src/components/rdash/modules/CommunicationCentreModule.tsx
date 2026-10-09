@@ -143,7 +143,7 @@ export function CommunicationCentreModule({ channelFilter }: {
       </div>
 
       {composeOpen && (<ComposeDialog channel={composeChannel} onClose={() => setComposeOpen(false)} onSend={async (data) => {
-                const commSendId = genId("cs");
+                const commSendId = data.id;
                 if (composeChannel === "whatsapp") {
                     for (const attachmentId of data.source_attachment_ids || []) {
                         const attachment = db.entityFileAttachments.find((row) => row.id === attachmentId);
@@ -178,6 +178,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
     channel: CommChannel;
     onClose: () => void;
     onSend: (data: {
+        id: string;
         customer_id: string;
         staff_name: string;
         subject: string;
@@ -203,6 +204,7 @@ function ComposeDialog({ channel, onClose, onSend }: {
         }
     }, [currentUser]);
     const [customerId, setCustomerId] = React.useState(db.customers[0]?.id || "");
+    const [commSendId] = React.useState(() => genId("cs"));
     const [subject, setSubject] = React.useState("");
     const [body, setBody] = React.useState("");
     const [followupId, setFollowupId] = React.useState("");
@@ -232,10 +234,11 @@ function ComposeDialog({ channel, onClose, onSend }: {
             setSending(true);
             const sourceAttachmentIds = files.map((file) => file.attachmentId);
             const payload: {
-                customer_id: string; staff_name: string; subject: string; body?: string;
+                id: string; customer_id: string; staff_name: string; subject: string; body?: string;
                 source_attachment_ids?: string[]; followup_id?: string; task_id?: string;
                 schedules_next_followup?: { due_date: string; purpose: string };
             } = {
+                id: commSendId,
                 customer_id: customerId,
                 staff_name: staffName,
                 subject: subject || "Untitled",
