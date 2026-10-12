@@ -1100,6 +1100,8 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const period = (state.db.payrollPeriods || []).find((p: PayrollPeriod) => p.id === id);
             if (!period)
                 throw new Error("Payroll period not found.");
+            if (period.status === "paid")
+                throw new Error("Paid payroll cannot be reopened. Preserve the payment and add a salary adjustment in a later unpaid period.");
             if (period.status === "generated" || period.status === "cancelled")
                 throw new Error(`Payroll period is already ${period.status}; cannot reopen.`);
             commitState((s: any) => ({

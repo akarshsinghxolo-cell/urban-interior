@@ -1,21 +1,14 @@
 "use client";
 import * as React from "react";
-import { TrendingUp, TrendingDown, Wallet, ArrowDownCircle, ArrowUpCircle, Calendar, Banknote } from "lucide-react";
+import { Wallet, ArrowDownCircle, ArrowUpCircle, Calendar, Banknote } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { cn } from "@/lib/utils";
 import { formatINRShort, formatINR } from "@/lib/rdash/format";
+import { cashFlowForecast } from "@/lib/rdash/store/finance-helpers";
+import { canRole, normalizeStaffPermissions } from "@/lib/rdash/staff-operations";
 import { indiaDate } from "@/lib/rdash/date";
-import { addDays } from "@/lib/rdash/store/helpers";
 
-interface FlowDay {
-  date: string;
-  label: string;
-  inflow: number;
-  outflow: number;
-  net: number;
-  cumulative: number;
-  isToday: boolean;
-}
+
 
 /**
  * CashFlowForecast — a 14-day rolling cash flow forecast widget.
@@ -25,6 +18,7 @@ interface FlowDay {
  */
 export function CashFlowForecast() {
   const db = useRDashStore((s) => s.db);
+  const role = useRDashStore((s) => s.currentUser().role);
 
   // STAGE-4-FIX: refresh 'today' past midnight
   const [nowTick, setNowTick] = React.useState(() => Date.now());
@@ -32,84 +26,13 @@ export function CashFlowForecast() {
     const id = setInterval(() => setNowTick(Date.now()), 60000);
     return () => clearInterval(id);
   }, []);
-  const { days, totals } = React.useMemo(() => {
-    const today = indiaDate();
-    const days: FlowDay[] = [];
-    let cumulative = 0;
-
-    // Seed cumulative with current cash position (sum of received receipts minus paid vendor/contractor payments)
-    const receivedToDate = db.customerReceipts
-      .filter((r) => new Date(r.received_at) <= new Date(`${today}T23:59:59+05:30`))  // STAGE-3-FIX: IST
-      .reduce((s, r) => s + r.amount, 0);
-    const paidToDate =
-      db.vendorPayments.filter((p) => p.status === "paid" && p.paid_at && new Date(p.paid_at) <= new Date(`${today}T23:59:59+05:30`)).reduce((s, p) => s + p.amount, 0) +
-      db.contractorPayments.filter((p) => p.status === "paid" && p.paid_at && new Date(p.paid_at) <= new Date(`${today}T23:59:59+05:30`)).reduce((s, p) => s + p.amount, 0);
-    cumulative = receivedToDate - paidToDate;
-
-    const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-    for (let i = 0; i < 14; i++) {
-      const dayStr = addDays(today, i);
-      const d = new Date(`${dayStr}T12:00:00+05:30`);
-      const dayEnd = new Date(`${dayStr}T23:59:59+05:30`);  // STAGE-3-FIX: IST (was local/no offset)
-
-      // Inflows: customer receipts expected on this day
-      const inflow = db.customerReceipts
-        .filter((r) => {
-          const dt = new Date(r.received_at);
-          return dt >= new Date(`${dayStr}T00:00:00+05:30`) && dt <= dayEnd;  // STAGE-3-FIX: IST
-        })
-        .reduce((s, r) => s + r.amount, 0) +
-        db.payments
-          .filter((p) => {
-            if (p.status === "received" || p.status === "partial") return 0;
-            return p.due_date === dayStr;
-          })
-          .reduce((s, p) => s + (p.amount - (p.received_amount || 0)), 0);
-
-      // Outflows: vendor + contractor payments due on this day
-      const outflow =
-        db.vendorPayments
-          .filter((p) => p.status !== "paid" && p.status !== "cancelled")
-          .filter((p) => {
-            // Use created_at as proxy due date if no explicit due date
-            const dt = new Date(p.created_at);
-            return dt >= new Date(`${dayStr}T00:00:00+05:30`) && dt <= dayEnd;  // STAGE-3-FIX: IST
-          })
-          .reduce((s, p) => s + p.amount, 0) +
-        db.contractorPayments
-          .filter((p) => p.status !== "paid" && p.status !== "cancelled")
-          .filter((p) => {
-            const dt = new Date(p.created_at);
-            return dt >= new Date(`${dayStr}T00:00:00+05:30`) && dt <= dayEnd;  // STAGE-3-FIX: IST
-          })
-          .reduce((s, p) => s + p.amount, 0);
-
-      const net = inflow - outflow;
-      cumulative += net;
-      days.push({
-        date: dayStr,
-        label: dayLabels[d.getUTCDay()],
-        inflow,
-        outflow,
-        net,
-        cumulative,
-        isToday: i === 0,
-      });
-    }
-
-    const totals = {
-      inflow: days.reduce((s, d) => s + d.inflow, 0),
-      outflow: days.reduce((s, d) => s + d.outflow, 0),
-      net: days.reduce((s, d) => s + d.net, 0),
-      endingBalance: cumulative,
-    };
-    return { days, totals };
-  }, [db.customerReceipts, db.payments, db.vendorPayments, db.contractorPayments, nowTick]);
+  const date = indiaDate(new Date(nowTick));
+  const { days, totals } = React.useMemo(() => cashFlowForecast(db, date), [db, date]);
 
   // Find max absolute value for chart scaling
   const maxAbs = Math.max(...days.map((d) => Math.abs(d.net)), 1);
   const hasData = totals.inflow > 0 || totals.outflow > 0;
+  if (!canRole(normalizeStaffPermissions(db.staffRolePermissions), role, "finance", "view")) return null;
 
   return (
     <section aria-label="Cash flow forecast" className="overflow-hidden rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
@@ -121,7 +44,7 @@ export function CashFlowForecast() {
           </span>
           <div className="min-w-0">
             <h3 className="text-sm font-bold tracking-tight text-foreground">Cash Flow Forecast</h3>
-            <p className="text-[11px] text-muted-foreground">14-day rolling inflow / outflow projection</p>
+            <p className="text-[11px] text-muted-foreground">14-day projection from outstanding bills and collections</p>
           </div>
         </div>
         <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
@@ -129,6 +52,7 @@ export function CashFlowForecast() {
         </span>
       </div>
 
+      <p className="px-4 py-2 text-xs text-muted-foreground">Recorded net is not your bank balance. Includes recorded payments and dated dues; opening funds, unrecorded expenses and undated payroll/commission dues are excluded. Overdue amounts appear today.</p>
       {/* Summary tiles */}
       <div className="grid grid-cols-4 gap-px border-b border-border bg-border">
         <div className="bg-card px-2.5 py-2">
@@ -155,7 +79,7 @@ export function CashFlowForecast() {
         <div className="bg-card px-2.5 py-2">
           <div className="flex items-center gap-1">
             <Calendar className="h-3 w-3 text-primary" />
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">End</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Recorded net</span>
           </div>
           <p className={cn("rd-tabular mt-0.5 text-xs font-bold", totals.endingBalance >= 0 ? "text-primary" : "text-destructive")}>{formatINRShort(totals.endingBalance)}</p>
         </div>

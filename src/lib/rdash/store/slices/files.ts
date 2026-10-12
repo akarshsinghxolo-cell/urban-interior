@@ -258,6 +258,7 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
             file_asset_id: string; entity_type: EntityFileAttachment["entity_type"]; entity_id: string;
         }) => {
             resolveEntityContext(get().db, link.entity_type, link.entity_id, "File attachment");
+            const actor = get().currentUser();
             const timestamp = nowIso();
             const attachmentId = genId("attach");
             const source = get().db.master.fileAssets.find((file: FileAsset) => file.id === link.file_asset_id);
@@ -285,7 +286,7 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
                             caption: link.caption,
                             customer_shareable: link.customer_shareable ?? false,
                             visibility: link.visibility || "internal",
-                            created_by: link.created_by || "Owner",
+                            created_by: actor.name,
                             created_at: timestamp,
                             updated_at: timestamp,
                         },
@@ -293,8 +294,8 @@ export function createFilesSlice(ctx: StoreContext): FilesState {
                 },
             }));
             get().logAudit({
-                actor: link.created_by || "Owner",
-                actor_role: "Owner",
+                actor: actor.name,
+                actor_role: actor.role,
                 action: `Attached existing Drive file ${source.file_name} to ${link.entity_type}`,
                 entity_type: link.entity_type,
                 entity_id: link.entity_id,

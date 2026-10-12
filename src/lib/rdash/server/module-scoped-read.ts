@@ -157,12 +157,14 @@ export function permissionAwareModuleCollections(
   plannedCollections: readonly string[],
 ): string[] {
   const collections = new Set(plannedCollections);
-  if (!CUSTOMER_EXTENSION_MODULES.has(target.moduleId)) return [...collections];
-
   const permissions = normalizeStaffPermissions(
     authorization.data.staffRolePermissions as unknown[],
   );
   const add = (rows: readonly string[]) => rows.forEach((collection) => collections.add(collection));
+  if (target.moduleId === "workdesk" && canRole(permissions, user.role, "finance", "view")) {
+    add(["payrollPeriods", "payrollLines", "commissions"]);
+  }
+  if (!CUSTOMER_EXTENSION_MODULES.has(target.moduleId)) return [...collections];
 
   if (canRole(permissions, user.role, "media", "view")) {
     add(CUSTOMER_MEDIA_COLLECTIONS);

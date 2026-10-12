@@ -157,6 +157,7 @@ const contractorFks: ForeignKeyRule[] = [
     { collection: "contractorBills", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: false, label: "Contractor Bill → Customer" },
     { collection: "contractorBills", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Contractor Bill → Site" },
     { collection: "contractorBills", field: "work_required_id", targetCollection: "workRequired", onDelete: "nullify", nullable: true, label: "Contractor Bill → Work Required" },
+    { collection: "contractorBills", field: "settlement_id", targetCollection: "contractorSettlements", onDelete: "restrict", nullable: true, label: "Final Contractor Bill → Settlement" },
     // ContractorPayment: meaningless without its bill → cascade
     { collection: "contractorPayments", field: "contractor_bill_id", targetCollection: "contractorBills", onDelete: "cascade", nullable: false, label: "Contractor Payment → Contractor Bill" },
     { collection: "contractorPayments", field: "work_order_id", targetCollection: "workOrders", onDelete: "restrict", nullable: false, label: "Contractor Payment → Work Order" },

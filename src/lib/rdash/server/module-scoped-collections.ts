@@ -191,6 +191,10 @@ export const PROCUREMENT_SCOPE_COLLECTIONS = Object.freeze([
   "dispatches",
   "vendorBills",
   "vendorPayments",
+  // Receiving can activate project payment milestones and record delivery exceptions.
+  "payments",
+  "followups",
+  "blocked",
   "tasks",
   "actions",
   "threads",
@@ -211,6 +215,8 @@ export const PROCUREMENT_SCOPE_COLLECTIONS = Object.freeze([
 ] as const);
 
 export const FINANCE_SCOPE_COLLECTIONS = Object.freeze([
+  "payrollPeriods",
+  "payrollLines",
   "customers",
   "sites",
   "areas",

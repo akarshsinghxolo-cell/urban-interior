@@ -27,6 +27,15 @@ const authorization = {
 } as never;
 
 describe("Customer CRM read plan", () => {
+  test("dashboard payroll cash data requires finance permission and never fetches full staff", () => {
+    const target = workspaceReadTargetForModule("workdesk") as never;
+    const base = workspaceModuleReadPlan(target).collections;
+    const owner = permissionAwareModuleCollections({ role: "Owner" }, target, authorization, base);
+    expect(owner).toEqual(expect.arrayContaining(["payrollPeriods", "payrollLines", "commissions"]));
+    expect(owner).not.toContain("master.staff");
+    const sales = permissionAwareModuleCollections({ role: "Sales / Telecaller" }, target, authorization, base);
+    expect(sales).not.toContain("payrollLines");
+  });
   test("every Customer-family screen starts from one canonical CRM contract", () => {
     for (const moduleId of CUSTOMER_MODULES) {
       const plan = workspaceModuleReadPlan(workspaceReadTargetForModule(moduleId));

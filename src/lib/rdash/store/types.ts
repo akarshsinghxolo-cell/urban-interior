@@ -398,7 +398,7 @@ export interface VendorBillsState {
   recordVendorPayment: (billId: string, amount: number, mode: import("../types").PaymentMode | string, reference: string) => string;
   matchVendorBill: (billId: string, params: {
     vendorInvoiceNo?: string; vendorInvoiceDate?: string; invoiceAmount: number;
-    invoiceLines?: import("../types").VendorInvoiceLine[]; matchedBy?: string;
+    invoiceLines?: import("../types").VendorInvoiceLine[];
   }) => { matched: boolean; obstacleId?: string };
   resolveVendorBillMismatch: (billId: string, resolution: "accept_as_is" | "partial_accept" | "return_to_vendor" | "price_adjustment" | "settlement" | "hold_payment", notes: string) => void;
 }
@@ -426,7 +426,7 @@ export interface ContractorsState {
   }) => string;
   settleContractor: (params: {
     workOrderId: string; completedPct: number; reason: string;
-    advancesPaid?: number; materialsIssuedValue?: number; recoveries?: number;
+    materialsIssuedValue?: number; recoveries?: number;
     type?: import("../types").SettlementType; createReplacementJob?: boolean;
   }) => { settlementId: string; replacementJobId?: string };
   createContractorRABill: (workOrderId: string, contractorId: string, amount: number, description: string, progressPct?: number) => string;

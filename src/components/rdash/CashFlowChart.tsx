@@ -3,6 +3,9 @@ import * as React from "react";
 import { TrendingUp, TrendingDown, Wallet } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
 import { formatINR, formatINRShort } from "@/lib/rdash/format";
+import { actualCashEntries, cashFlowDays } from "@/lib/rdash/store/finance-helpers";
+import { indiaDate } from "@/lib/rdash/date";
+import { addDays } from "@/lib/rdash/store/helpers";
 import { cn } from "@/lib/utils";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -40,28 +43,15 @@ function CashFlowTooltip({ active, payload, label }: any) {
 export function CashFlowChart() {
     const db = useRDashStore((s) => s.db);
 
-    const data = React.useMemo(() => {
-        const days: Array<{ date: string; label: string; inflow: number; outflow: number; net: number }> = [];
-        const today = new Date();
-        for (let i = 6; i >= 0; i--) {
-            const d = new Date(today);
-            d.setDate(d.getDate() - i);
-            const dateStr = d.toISOString().slice(0, 10);
-            const label = d.toLocaleDateString("en-IN", { weekday: "short" });
-            const inflow = (db.customerReceipts || [])
-                .filter((r: any) => r.received_at?.slice(0, 10) === dateStr)
-                .reduce((n: number, r: any) => n + (r.amount || 0), 0);
-            const vendorOut = (db.vendorPayments || [])
-                .filter((p: any) => p.paid_date?.slice(0, 10) === dateStr || p.created_at?.slice(0, 10) === dateStr)
-                .reduce((n: number, p: any) => n + (p.amount || 0), 0);
-            const contractorOut = (db.contractorPayments || [])
-                .filter((p: any) => p.paid_date?.slice(0, 10) === dateStr || p.created_at?.slice(0, 10) === dateStr)
-                .reduce((n: number, p: any) => n + (p.amount || 0), 0);
-            const outflow = vendorOut + contractorOut;
-            days.push({ date: dateStr, label, inflow, outflow, net: inflow - outflow });
-        }
-        return days;
-    }, [db]);
+    const openDetail = useRDashStore(s => s.openDetail);
+    const setActiveModule = useRDashStore(s => s.setActiveModule);
+    const [clock, setClock] = React.useState(Date.now);
+    React.useEffect(() => { const timer = setInterval(() => setClock(Date.now()), 60000); return () => clearInterval(timer); }, []);
+    const date = indiaDate(new Date(clock));
+    const entries = React.useMemo(() => actualCashEntries(db), [db]);
+    const start = addDays(date, -6);
+    const recent = entries.filter(e => e.date >= start && e.date <= date);
+    const data = React.useMemo(() => cashFlowDays(entries, start, 7), [entries, start]);
 
     const totalInflow = data.reduce((n, d) => n + d.inflow, 0);
     const totalOutflow = data.reduce((n, d) => n + d.outflow, 0);
@@ -69,14 +59,14 @@ export function CashFlowChart() {
 
     return (
     <div className="rounded-[var(--panel-radius)] border border-border bg-gradient-to-br from-card to-muted/10 p-4 shadow-card">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
             <Wallet className="h-4 w-4"/>
           </span>
           <div>
             <h3 className="text-sm font-bold">7-Day Cash Flow</h3>
-            <p className="text-[10px] text-muted-foreground">Inflows vs outflows · last 7 days</p>
+            <p className="text-[10px] text-muted-foreground">Confirmed receipts, supplier payments, salaries and commissions · IST</p>
           </div>
         </div>
         <div className="flex items-center gap-3 text-xs">
@@ -146,6 +136,16 @@ export function CashFlowChart() {
         </ResponsiveContainer>
       </div>
 
+      <details className="mt-3 text-xs">
+        <summary className="cursor-pointer font-medium">Trace these totals · {recent.length} recorded transactions</summary>
+        <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">
+          {recent.map(entry => <button key={entry.id} type="button" className="flex w-full flex-wrap items-start justify-between gap-2 rounded-md border p-2 text-left" onClick={() => entry.sourceKind ? openDetail(entry.sourceKind, entry.sourceId) : setActiveModule("attendancePayroll")}>
+            <span className="min-w-0 break-words">{entry.date} · {entry.label}<span className="block text-muted-foreground">Ref: {entry.reference || "Not recorded — review source"}</span></span>
+            <span className={entry.direction === "in" ? "text-success" : "text-destructive"}>{entry.direction === "in" ? "+" : "−"}{formatINR(entry.amount)}</span>
+          </button>)}
+        </div>
+        <p className="mt-2 text-muted-foreground">Recorded movements only; not a reconciled cash/bank balance. Opening funds and unrecorded expenses are not included.</p>
+      </details>
       {/* Legend */}
       <div className="mt-2 flex items-center justify-center gap-4 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-success"/>Inflow (receipts)</span>

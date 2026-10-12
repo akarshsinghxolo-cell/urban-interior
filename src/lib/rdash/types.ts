@@ -888,6 +888,7 @@ export interface VendorPayment {
 }
 export interface ContractorBill {
     id: ID;
+    settlement_id?: ID;
     bill_no: string;
     ra_no?: string;
     description?: string;

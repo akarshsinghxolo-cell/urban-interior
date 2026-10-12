@@ -5,6 +5,7 @@ import { useRDashStore, inventoryValuation } from "@/lib/rdash/store";
 import { OperationsWorkspace, type MetricSpec, type QueueSpec, type RecordRow, type FilterChip, } from "../OperationsWorkspace";
 import { formatINR, formatINRShort, formatDate, grnStatusStyle, poStatusStyle, } from "@/lib/rdash/format";
 import type { LineItem, PurchaseOrder } from "@/lib/rdash/types";
+import { receivedQuantities } from "@/lib/rdash/business-rules";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -12,10 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { cancelQueuedWorkflowFile, classifyWorkflowFile, enqueueWorkflowFiles, withLocalPreview, type QueuedWorkflowFile } from "@/lib/uploads/workflow-upload";
-import { useUploadDraft } from "@/lib/uploads/use-upload-draft";
 import { reserveEntityId } from "@/lib/uploads/upload-types";
 import { FilePreview } from "../FilePreview";
-import { attachedFileById, assetPreview } from "@/lib/rdash/file-attachments";
+import { attachedFileById } from "@/lib/rdash/file-attachments";
 import { ManagedFilePicker } from "@/components/rdash/ManagedFilePicker";
 type PendingProof = QueuedWorkflowFile & {
     id: string;
@@ -33,6 +33,7 @@ export function GRNModule() {
     const db = useRDashStore((s) => s.db);
     const openDetail = useRDashStore((s) => s.openDetail);
     const verifyGRNReceipt = useRDashStore((s) => s.verifyGRNReceipt);
+    const awaitServerSync = useRDashStore((s) => s.awaitServerSync);
     const authUser = useRDashStore((s) => s.authUser);
     const [filter, setFilter] = React.useState<"all" | "matched" | "pending" | "verification" | "mismatched">("all");
     const [createOpen, setCreateOpen] = React.useState(false);
@@ -135,10 +136,11 @@ export function GRNModule() {
         contextActions: g.status === "pending_receipt_verification" && ["Owner", "Operations Manager"].includes(authUser?.role || "")
             ? [{
                     label: "Verify receipt & post stock",
-                    onClick: () => {
+                    onClick: async () => {
                         try {
                             verifyGRNReceipt(g.id);
-                            toast.success(`${g.grn_no} verified and stock posted.`);
+                            await awaitServerSync();
+                            toast.success(g.inspection_status === "rejected" ? `${g.grn_no} rejection recorded; no stock posted.` : `${g.grn_no} verified and stock posted.`);
                         }
                         catch (error) {
                             toast.error(error instanceof Error ? error.message : "GRN receipt could not be verified.");
@@ -179,6 +181,7 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
 }) {
     const db = useRDashStore((s) => s.db);
     const fileGRN = useRDashStore((s) => s.fileGRN);
+    const awaitServerSync = useRDashStore((s) => s.awaitServerSync);
     const openDetail = useRDashStore((s) => s.openDetail);
     const authUser = useRDashStore((s) => s.authUser);
     // CV-11: Use the actual signed-in user's name instead of the hardcoded "Ravi Kumar".
@@ -197,10 +200,18 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
     const [receivingProofs, setReceivingProofs] = React.useState<PendingProof[]>([]);
     const [challanProof, setChallanProof] = React.useState<PendingProof | undefined>();
     const [filing, setFiling] = React.useState(false);
+    const [attaching, setAttaching] = React.useState(false);
+    const [submitted, setSubmitted] = React.useState(false);
+    const submission = React.useRef<Parameters<typeof fileGRN>[0] | null>(null);
+    const previewUrls = React.useRef<string[]>([]);
+    React.useEffect(() => () => { previewUrls.current.forEach((url) => URL.revokeObjectURL(url)); }, []);
     const [reservedGrnId, setReservedGrnId] = React.useState("");
-    const { registerBatch, commitBatches } = useUploadDraft(open);
     React.useEffect(() => {
+        previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+        previewUrls.current = [];
         if (open) {
+            submission.current = null;
+            setSubmitted(false);
             setPoId(preselectPOId || "");
             setReservedGrnId(reserveEntityId("grn"));
             setReceivedQtys({});
@@ -215,33 +226,37 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
     }, [open, preselectPOId]);
     const selectedPO: PurchaseOrder | undefined = db.purchaseOrders.find((p) => p.id === poId);
     const items = selectedPO?.items || [];
+    const priorQuantities = receivedQuantities(poId, db.grns);
+    const remaining = (item: LineItem) => Math.max(0, item.quantity - (priorQuantities[item.id] || 0));
     const receivedMap = items.reduce<Record<string, number>>((acc, it) => {
-        acc[it.id] = receivedQtys[it.id] ?? it.quantity;
+        acc[it.id] = receivedQtys[it.id] ?? remaining(it);
         return acc;
     }, {});
-    const mismatched = items.some((it) => (receivedMap[it.id] ?? it.quantity) !== it.quantity);
+    const mismatched = items.some((it) => receivedMap[it.id] !== remaining(it));
+    const attachmentsReady = receivingProofs.length > 0 && Boolean(challanProof) && [...receivingProofs, ...(challanProof ? [challanProof] : [])].every((proof) => {
+        const file = attachedFileById(db, proof.attachmentId);
+        return file?.asset.sync_status === "uploaded" && file.attachment.entity_type === "purchase_order" && file.attachment.entity_id === poId;
+    });
     const captureProofs = async (event: React.ChangeEvent<HTMLInputElement>, target: "receiving" | "challan") => {
         const files = Array.from(event.target.files || []);
         event.currentTarget.value = "";
-        if (!files.length || !reservedGrnId) return;
+        if (!files.length || !selectedPO || attaching || submitted) return;
         try {
+            setAttaching(true);
             if (target === "challan" && challanProof) await cancelQueuedWorkflowFile(challanProof);
             const queued = await enqueueWorkflowFiles({
                 sourceFlow: "grn_form",
-                deferProcessing: true,
                 sourceLabel: target === "receiving" ? "GRN receiving proof" : "GRN delivery challan",
-                targetEntityType: "grn",
-                targetEntityId: reservedGrnId,
+                targetEntityType: "purchase_order",
+                targetEntityId: selectedPO.id,
                 targetLabel: selectedPO ? `GRN · ${selectedPO.po_no}` : "New GRN",
-                purpose: "grn_evidence",
+                purpose: "purchase_order",
                 requiredEvidence: true,
-                attachmentField: target === "receiving" ? "receiving_proof_attachment_ids" : "delivery_challan_attachment_id",
-                attachmentFieldMode: target === "receiving" ? "append" : "set",
                 files: files.map((file) => ({ file, ...classifyWorkflowFile(file), role: target === "receiving" ? "proof" : "delivery", caption: target === "receiving" ? "GRN receiving proof" : `Delivery challan ${challanNo.trim() || "proof"}` })),
             });
-            registerBatch(queued.batchId);
             const captures = queued.files.map((item, index) => {
                 const preview = withLocalPreview(item, files[index]);
+                previewUrls.current.push(preview.previewUrl);
                 return { ...preview, id: item.uploadItemId, file_name: item.fileName, mime_type: item.mimeType, url: preview.previewUrl, captured_at: new Date().toISOString() };
             });
             if (target === "receiving") setReceivingProofs((current) => [...current, ...captures]);
@@ -249,6 +264,8 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
             toast.success(`${captures.length} ${target === "receiving" ? "receiving" : "challan"} file${captures.length === 1 ? "" : "s"} queued`);
         } catch (error) {
             toast.error(error instanceof Error ? error.message : "GRN proof could not be queued");
+        } finally {
+            setAttaching(false);
         }
     };
     const removeReceivingProof = async (proof: PendingProof) => {
@@ -261,7 +278,7 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
         setChallanProof(undefined);
     };
     const onFile = async () => {
-        if (filing)
+        if (filing || attaching)
             return;
         if (!selectedPO) {
             toast.error("Select a PO to file this GRN against.");
@@ -269,6 +286,10 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
         }
         if (!receivingProofs.length) {
             toast.error("Add at least one receiving photo/proof.");
+            return;
+        }
+        if (!attachmentsReady) {
+            toast.error("Wait for the receiving proofs and challan to finish uploading before filing.");
             return;
         }
         if (!challanNo.trim()) {
@@ -279,7 +300,7 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
             toast.error("Describe the shortage, damage, or rejection.");
             return;
         }
-        const grnItems: LineItem[] = items.map((it) => {
+        const grnItems: LineItem[] = items.filter((it) => receivedMap[it.id] > 0).map((it) => {
             const qty = receivedMap[it.id] ?? it.quantity;
             return {
                 id: genItemId("gi"),
@@ -302,7 +323,7 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
         });
         try {
             setFiling(true);
-            const id = fileGRN({
+            const payload = submission.current || {
                 id: reservedGrnId,
                 po_id: selectedPO.id,
                 mismatch_notes: mismatched ? mismatchNotes.trim() || undefined : undefined,
@@ -317,14 +338,19 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 // CV-11: Pass the actual signed-in user's name (procurement.ts ignores this field
                 // and uses actor.name anyway, but we set it for consistency / future-proofing).
                 received_by: receiverName,
-            });
-            commitBatches();
+            };
+            const id = fileGRN(payload);
+            submission.current = payload;
+            setSubmitted(true);
+            setReceivedQtys(receivedMap);
+            await awaitServerSync();
             onOpenChange(false);
             openDetail("grn", id);
             const submittedForVerification = authUser?.role === "Field Staff";
             toast.success(submittedForVerification
                 ? `GRN submitted with ${receivingProofs.length + (challanProof ? 1 : 0)} Google Drive file${receivingProofs.length + (challanProof ? 1 : 0) === 1 ? "" : "s"} — awaiting Operations/Owner verification before stock is posted.`
-                : `GRN filed with ${receivingProofs.length + (challanProof ? 1 : 0)} Google Drive file${receivingProofs.length + (challanProof ? 1 : 0) === 1 ? "" : "s"} — stock updated.`);
+                : inspectionStatus === "rejected" ? "Rejected delivery recorded — no usable stock or payment milestone posted."
+                : `GRN saved with uploaded evidence — stock updated.`);
         }
         catch (error) {
             toast.error(error instanceof Error ? error.message : "GRN could not be filed.");
@@ -333,7 +359,7 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
             setFiling(false);
         }
     };
-    return (<Dialog open={open} onOpenChange={onOpenChange}>
+    return (<Dialog open={open} onOpenChange={(next) => { if (!filing && !attaching) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>File GRN</DialogTitle>
@@ -342,17 +368,17 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
           </p>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
+        <fieldset disabled={filing || attaching || submitted} className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Against PO
             </label>
-            <select value={poId} onChange={(e) => {
+            <select aria-label="Against PO" disabled={receivingProofs.length > 0 || Boolean(challanProof)} value={poId} onChange={(e) => {
             setPoId(e.target.value);
             setReceivedQtys({});
         }} className="h-9 rounded-md border border-input bg-card px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring">
               <option value="">Select a PO…</option>
-              {eligiblePOs.map((p) => (<option key={p.id} value={p.id}>
+              {db.purchaseOrders.filter((p) => eligiblePOs.some((eligible) => eligible.id === p.id) || p.id === poId).map((p) => (<option key={p.id} value={p.id}>
                   {p.po_no} · {p.vendor_name} · {p.work_order_no || "—"}
                 </option>))}
             </select>
@@ -363,14 +389,14 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 <div className="min-w-[520px]">
                 <div className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_0.7fr] gap-2 border-b border-border bg-muted/50 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                   <span>Item</span>
-                  <span className="text-right">Ordered</span>
+                  <span className="text-right">Remaining</span>
                   <span className="text-right">Rate</span>
                   <span className="text-right">Received</span>
                   <span className="text-right">Amount</span>
                 </div>
                 {items.map((it) => {
                 const received = receivedMap[it.id] ?? it.quantity;
-                const isShort = received !== it.quantity;
+                const isShort = received !== remaining(it);
                 return (<div key={it.id} className="grid grid-cols-[1.6fr_0.5fr_0.6fr_0.7fr_0.7fr] gap-2 border-b border-border px-3 py-2 text-xs last:border-0">
                       <div className="min-w-0">
                         <p className="truncate font-medium text-foreground">
@@ -381,12 +407,12 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                           </p>)}
                       </div>
                       <span className="text-right font-mono text-muted-foreground">
-                        {it.quantity}
+                        {remaining(it)}
                       </span>
                       <span className="text-right font-mono text-muted-foreground">
                         {formatINR(it.rate)}
                       </span>
-                      <input type="number" min={0} value={received} onChange={(e) => setReceivedQtys((m) => ({
+                      <input aria-label={`Received quantity: ${it.title}`} type="number" min={0} max={remaining(it)} step="any" value={received} onChange={(e) => setReceivedQtys((m) => ({
                         ...m,
                         [it.id]: Math.max(0, Number(e.target.value) || 0),
                     }))} className={"h-8 w-full rounded border bg-card px-1.5 text-right text-xs font-mono outline-none focus-visible:ring-2 focus-visible:ring-ring " +
@@ -405,14 +431,14 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 <div className="space-y-2">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Receiving photos / proof <span className="text-destructive">*</span></label>
                   <ManagedFilePicker label="Add receiving proofs" accept={MANAGED_FILE_ACCEPT} multiple onPick={(event) => captureProofs(event, "receiving")} className="min-h-8 py-1.5 text-[11px]"/>
-                  <p className="text-[10px] text-muted-foreground">At least one receiving file is required. Uploads start immediately and continue after the GRN dialog closes.</p>
+                  <p className="text-[10px] text-muted-foreground">Upload proofs to this PO first. Completed files stay on the PO if you cancel; filing links the same files to the GRN.</p>
                   {receivingProofs.length > 0 && <div className="grid grid-cols-3 gap-1 sm:grid-cols-4">{receivingProofs.map((proof) => <div key={proof.id} className="relative"><FilePreview file={{ fileName: proof.file_name, mimeType: proof.mime_type, url: proof.url }} compact controls/><button type="button" onClick={() => void removeReceivingProof(proof)} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>)}</div>}
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-semibold uppercase text-muted-foreground">Delivery challan no. & proof <span className="text-destructive">*</span></label>
                   <Input value={challanNo} onChange={(event) => setChallanNo(event.target.value)} placeholder="e.g. DC-8745" className="h-8 text-xs"/>
                   <ManagedFilePicker label="Add challan copy" accept={MANAGED_FILE_ACCEPT} onPick={(event) => captureProofs(event, "challan")} className="min-h-8 py-1.5 text-[11px]"/>
-                  <p className="text-[10px] text-muted-foreground">A challan image, video, or PDF is queued immediately and linked to the GRN.</p>
+                  <p className="text-[10px] text-muted-foreground">The challan must finish uploading before filing.</p>
                   {challanProof && <div className="relative max-w-40"><FilePreview file={{ fileName: challanProof.file_name, mimeType: challanProof.mime_type, url: challanProof.url }} compact controls/><button type="button" onClick={() => void removeChallanProof()} className="absolute right-0 top-0 rounded bg-background/90 px-1 text-[10px] text-destructive">×</button></div>}
                 </div>
                 <div className="space-y-1">
@@ -441,14 +467,15 @@ function FileGRNDialog({ open, onOpenChange, preselectPOId, }: {
                 · received by {receiverName}
               </div>
             </>)}
-        </div>
+        </fieldset>
+        <p role="status" className="text-xs text-muted-foreground">{submitted ? "This receipt has been submitted. Retry confirms the same receipt, without posting stock twice." : attachmentsReady ? "Evidence uploaded. Ready to file." : "Add receiving proofs and a challan, then wait for uploads to complete."}</p>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={filing || attaching} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={onFile} disabled={!selectedPO || filing}>
-            File GRN
+          <Button onClick={onFile} disabled={!selectedPO || filing || attaching || !attachmentsReady}>
+            {filing ? "Saving…" : submitted ? "Retry same GRN" : "File GRN"}
           </Button>
         </DialogFooter>
       </DialogContent>

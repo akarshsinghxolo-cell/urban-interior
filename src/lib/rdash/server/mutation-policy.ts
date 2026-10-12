@@ -12,6 +12,7 @@ import type { WorkspaceOperation } from "../workspace-operations";
 import type { AuthenticatedUser } from "./auth";
 import { rowId, rowsFor } from "./rows";
 import { requiredApprovalPolicy } from "../approval-policy";
+import { vendorBillResolutionAllowsApproval } from "../store/finance-helpers";
 
 type MutationAction = "create" | "update" | "approve";
 
@@ -44,7 +45,8 @@ function approvalDecision(
     ));
   }
   if (collection === "vendorBills") {
-    return (!existing.approved_at && Boolean(row.approved_at))
+    return (!["approved", "partly_paid", "paid"].includes(beforeStatus) && ["approved", "partly_paid", "paid"].includes(afterStatus))
+      || (!existing.approved_at && Boolean(row.approved_at))
       || (beforeStatus === "pending_approval" && afterStatus !== "pending_approval");
   }
   if (collection === "quotations") {
@@ -250,6 +252,36 @@ export function assertWorkspaceMutationAllowed(
   operations: WorkspaceOperation[],
   current?: RDashDatabase,
 ) {
+  // Financial history is immutable even for an Owner; permissions cannot turn a payment into a draft.
+  for (const operation of operations) {
+    const oldRows = rowsFor(current, operation.collection);
+    if (operation.collection === "payrollLines") {
+      for (const row of operation.upsert || []) {
+        if (!oldRows.some(old => rowId(old) === rowId(row) && old.payroll_period_id === row.payroll_period_id) && current?.payrollPeriods?.some(p => p.id === row.payroll_period_id && p.status === "paid"))
+          throw new Error("INVALID:Paid payroll is locked; new lines require a later payroll period.");
+      }
+    }
+    for (const old of oldRows) {
+      const paid = old.status === "paid";
+      const payrollPaid = operation.collection === "payrollLines" && (old.payment_status === "paid" || current?.payrollPeriods?.some(p => p.id === old.payroll_period_id && p.status === "paid"));
+      const locked = operation.collection === "customerReceipts" || payrollPaid ||
+        (paid && ["vendorPayments", "contractorPayments", "payrollPeriods", "commissions"].includes(operation.collection));
+      if (!locked) continue;
+      if (operation.deleteIds?.includes(rowId(old))) throw new Error("INVALID:Recorded payments cannot be deleted. Preserve history and record an adjustment.");
+      const changed = operation.upsert?.find(row => rowId(row) === rowId(old));
+      if (changed && Object.keys({ ...old, ...changed }).some(key => !["updated_at", "thread_id"].includes(key) && JSON.stringify(old[key]) !== JSON.stringify(changed[key])))
+        throw new Error("INVALID:Recorded payment history is locked. Use a separately recorded adjustment.");
+    }
+    if (operation.collection === "vendorBills") {
+      for (const row of operation.upsert || []) {
+        const old = oldRows.find(b => rowId(b) === rowId(row));
+        if (old?.posted_to_cost_at && ["amount", "tax_amount", "total_amount", "invoice_lines", "vendor_id", "po_id", "grn_id", "site_id", "work_order_id"].some(key => JSON.stringify(old[key]) !== JSON.stringify(row[key])))
+          throw new Error("INVALID:Posted vendor invoice amounts and source links cannot be rewritten.");
+        if (["approved", "partly_paid", "paid"].includes(String(row.status)) && !vendorBillResolutionAllowsApproval(row as unknown as import("../types").VendorBill))
+          throw new Error("INVALID:Vendor payment requires a matched invoice or recorded acceptance of the variance.");
+      }
+    }
+  }
   if (user.role === "Owner") return;
 
   const database = current || buildSeedDatabase();
@@ -278,6 +310,22 @@ export function assertWorkspaceMutationAllowed(
     for (const row of operation.upsert || []) {
       const existing = existingById.get(rowId(row));
       const action = mutationAction(operation.collection, row, existing, database);
+      let grnBillingUpdate = false;
+
+      if (operation.collection === "grns" && user.role !== "Operations Manager") {
+        const fieldSubmission = isFieldStaff && !existing && row.status === "pending_receipt_verification" &&
+          Boolean(user.staffId) && row.received_by_staff_id === user.staffId && !row.receipt_verified_at && !row.receipt_verified_by;
+        // Finance may link/match an invoice without changing the physical receipt.
+        const billingKeys = new Set(["bill_id", "status", "updated_at"]);
+        grnBillingUpdate = Boolean(user.role === "Finance" && existing &&
+          ["received_pending_invoice_match", "matched", "mismatched", "closed"].includes(String(existing.status)) &&
+          ["received_pending_invoice_match", "matched", "mismatched", "closed"].includes(String(row.status)) &&
+          [...new Set([...Object.keys(row), ...Object.keys(existing)])].every((key) => billingKeys.has(key) || JSON.stringify(row[key]) === JSON.stringify(existing[key])) &&
+          operations.some((operation) => operation.collection === "vendorBills" && operation.upsert?.some((bill) => bill.grn_id === row.id && bill.po_id === row.po_id)));
+        if (!fieldSubmission && !grnBillingUpdate) {
+          throw new Error("FORBIDDEN:Only Owner or Operations Manager can verify receipts; Field Staff may submit their own pending receipt.");
+        }
+      }
 
       if (isFieldStaff && operation.collection === "executionLogs") {
         assertFieldExecutionLog(row, user.staffId);
@@ -286,7 +334,7 @@ export function assertWorkspaceMutationAllowed(
         continue;
       }
 
-      const moduleKey = moduleForCollection(operation.collection);
+      const moduleKey = moduleForCollection(grnBillingUpdate ? "vendorBills" : operation.collection);
       if (!canRole(permissions, user.role, moduleKey, action)) {
         throw new Error(`FORBIDDEN:${operation.collection}`);
       }

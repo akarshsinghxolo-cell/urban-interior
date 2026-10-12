@@ -85,7 +85,7 @@ export function siteFinancials(db: RDashDatabase, siteId: string) {
         bill.status !== "pending_approval");
     const contractorBills = db.contractorBills.filter((bill) => bill.site_id === siteId && bill.status !== "held");
     const vendorPayable = vendorBills.reduce((sum, bill) => sum + bill.balance_amount, 0);
-    const contractorPayable = contractorBills.reduce((sum, bill) => sum + bill.balance_amount, 0);
+    const contractorPayable = [...new Set(contractorBills.map(b => b.contractor_id))].reduce((sum, id) => sum + contractorOutstanding(db, id, siteId), 0);
     const paidToVendors = db.vendorPayments
         .filter((payment) => payment.site_id === siteId && payment.status === "paid")
         .reduce((sum, payment) => sum + payment.amount, 0);
@@ -124,44 +124,12 @@ export function contractorBids(db: RDashDatabase, contractorId: string) {
     return db.contractorBids.filter((b) => b.contractor_id === contractorId);
 }
 
-/**
- * FIX-CONTRACTOR-BATCH1 / F.4: Single source of truth for a contractor's
- * outstanding (payable) balance.
- *
- * Formula: max(0, total_billed − total_paid − total_settled)
- *   - total_billed  = Σ bill.amount for non-held contractor bills
- *   - total_paid    = Σ payment.amount for paid contractor payments
- *                     (bill.paid_amount is updated only when recordContractorPayment
- *                     runs, so summing paid payments gives the same number but is
- *                     robust against any bill.paid_amount drift.)
- *   - total_settled = Σ settlement.payable_amount for this contractor
- *                     (abandonment / mutual-termination settlements are a
- *                     separate payment path that bypasses RA bills — they
- *                     must be subtracted too or a settled-and-abandoned
- *                     contractor would still show an "outstanding" balance
- *                     equal to the unpaid portion of their old RA bills.)
- *
- * This replaces four divergent inline computations:
- *   - ContractorDetailModule (read dead `c.outstanding` master field → always 0)
- *   - ContractorPerformanceModule (billed − ALL payments, counted pending/approved as paid)
- *   - ContractorPaymentsModule (CV-7 formula: bill balances − committed payments)
- *   - FinanceOverviewModule (sum of bill balances, no committed subtraction)
- *
- * BREAKAGE CHECK: Signature `(db, contractorId) → number` works for all 4
- * call sites — per-contractor modules pass a single id; workspace-level
- * modules sum across `db.master.contractors`.
- */
-export function contractorOutstanding(db: RDashDatabase, contractorId: string): number {
-    const totalBilled = db.contractorBills
-        .filter((b) => b.contractor_id === contractorId && b.status !== "held")
-        .reduce((sum, b) => sum + (b.amount || 0), 0);
-    const totalPaid = db.contractorPayments
-        .filter((p) => p.contractor_id === contractorId && p.status === "paid")
-        .reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalSettled = db.contractorSettlements
-        .filter((s) => s.contractor_id === contractorId)
-        .reduce((sum, s) => sum + (s.payable_amount || 0), 0);
-    return Math.max(0, Math.round((totalBilled - totalPaid - totalSettled) * 100) / 100);
+/** Settlements create a final bill; only recorded payments discharge a bill. */
+export function contractorOutstanding(db: RDashDatabase, contractorId: string, siteId?: string): number {
+    return Math.round(db.contractorBills.filter(b => b.contractor_id === contractorId && b.status !== "held" && (!siteId || b.site_id === siteId)).reduce((sum, bill) => {
+        const paid = db.contractorPayments.filter(p => p.contractor_id === contractorId && p.contractor_bill_id === bill.id && p.status === "paid").reduce((n, p) => n + p.amount, 0);
+        return sum + Math.max(0, bill.amount - paid);
+    }, 0) * 100) / 100;
 }
 
 /**

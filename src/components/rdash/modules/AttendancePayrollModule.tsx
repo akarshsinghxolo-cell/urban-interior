@@ -662,7 +662,8 @@ function PayrollPeriodsSection({ db, isOwner, onGenerate, onApprove, onPay, onRe
                   <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold capitalize", statusTone[p.status] || statusTone.draft)}>{p.status}</span>
                   {p.status === "generated" && isOwner && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onApprove(p.id)}><CheckCircle2 className="mr-1 h-3 w-3"/> Approve</Button>}
                   {p.status === "approved" && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onPay(p.id)}><DollarSign className="mr-1 h-3 w-3"/> Mark paid</Button>}
-                  {(p.status === "approved" || p.status === "paid") && isOwner && <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onReopen(p.id)}>Reopen</Button>}
+                  {p.status === "approved" && isOwner && <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onReopen(p.id)}>Reopen</Button>}
+                  {p.status === "paid" && <span className="text-xs text-muted-foreground">Payment locked · corrections use a later salary adjustment</span>}
                 </div>
               </div>
             </div>);

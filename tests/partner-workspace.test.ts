@@ -56,7 +56,7 @@ describe("partner workspace", () => {
       { id: "approved", contractor_id: contractor.id, status: "approved", amount: 1000, balance_amount: 700 },
       { id: "held", contractor_id: contractor.id, status: "held", amount: 900, balance_amount: 900 },
     ] as typeof db.contractorBills;
-    db.contractorPayments = [{ contractor_id: contractor.id, status: "paid", amount: 300 }] as typeof db.contractorPayments;
+    db.contractorPayments = [{ contractor_id: contractor.id, contractor_bill_id: "approved", status: "paid", amount: 300 }] as typeof db.contractorPayments;
     db.contractorSettlements = [];
     const model = partnerPortfolio(db, "contractor", contractor);
     expect(model.workOrders.map((row) => row.id)).toEqual(["current", "replaced"]);

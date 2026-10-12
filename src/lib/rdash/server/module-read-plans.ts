@@ -150,6 +150,7 @@ export function collectionsForWorkspaceReadTarget(
   target: WorkspaceReadTarget,
 ): readonly string[] {
   const base = runtimeCollectionsForWorkspaceReadTarget(target);
+  if (target.moduleId === "workdesk") return Object.freeze([...new Set([...base, "payrollPeriods", "payrollLines", "commissions"])]);
   if (!isCustomerPermissionExtensionModule(target.moduleId)) return base;
   return Object.freeze([...new Set([
     ...base,

@@ -30,7 +30,8 @@ import {
     assertRole, genId, nowIso, today, userForRole, userForAnyRole, addDays,
 } from "../helpers";
 import { formatINR } from "../../format";
-import { assertWorkOrderRelations, assertAreaBelongsToSite } from "../../business-rules";
+import { assertWorkOrderRelations, assertAreaBelongsToSite, normalizeReceiptItems, receivedQuantities, receiptPostsStock } from "../../business-rules";
+import { attachedFileById } from "../../file-attachments";
 import { eventMatchesPaymentTrigger } from "../finance-helpers";
 import { createDefaultAttendancePolicy } from "../../attendance-policy";
 import { deriveVendorPerformanceEvidenceExport } from "../../performance-reconciliation";
@@ -797,6 +798,22 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             if (actor.role === "Field Staff" && !actor.staffId) {
                 throw new Error("Field Staff GRN submissions require a server-assigned staff identity.");
             }
+            const existing = grn.id && state.db.grns.find((row: GRN) => row.id === grn.id);
+            if (existing) {
+                const identity = (row: Partial<GRN>) => JSON.stringify({
+                    po: row.po_id, challan: row.delivery_challan_no?.trim(), inspection: row.inspection_status,
+                    notes: row.inspection_notes?.trim() || "", shortage: row.damage_shortage_notes?.trim() || "",
+                    mismatch: row.mismatch_notes?.trim() || "", batch: row.batch_serial_details?.trim() || "",
+                    items: row.items?.map((item) => [item.source_item_id, item.quantity]),
+                });
+                const assetIds = (ids: string[]) => ids.map((id) => attachedFileById(state.db, id)?.asset.id).sort();
+                if (identity(existing) !== identity(grn) ||
+                    JSON.stringify(assetIds(existing.receiving_proof_attachment_ids || [])) !== JSON.stringify(assetIds((grn.receiving_files || []).map((file) => file.attachment_id))) ||
+                    attachedFileById(state.db, existing.delivery_challan_attachment_id)?.asset.id !== attachedFileById(state.db, grn.delivery_challan_file?.attachment_id)?.asset.id)
+                    throw new Error("This GRN already exists with different details. Open the existing receipt.");
+                commitState((snapshot: any) => ({ db: snapshot.db }));
+                return existing.id;
+            }
             const po = state.db.purchaseOrders.find((row: any) => row.id === grn.po_id);
             if (!po)
                 throw new Error("Goods Received Note requires a Purchase Order.");
@@ -806,11 +823,11 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 throw new Error("Goods Received Note requires received article lines.");
             const receivingFiles = (grn.receiving_files || []).filter((proof: any) => Boolean(proof.attachment_id));
             if (!receivingFiles.length)
-                throw new Error("At least one receiving photo/proof must be queued before stock can be updated.");
+                throw new Error("At least one uploaded receiving photo/proof is required.");
             if (!grn.delivery_challan_no?.trim())
                 throw new Error("Delivery challan number is required for a GRN.");
             if (!grn.delivery_challan_file?.attachment_id)
-                throw new Error("A delivery challan proof must be queued for the GRN.");
+                throw new Error("An uploaded delivery challan proof is required.");
             if (!grn.inspection_status)
                 throw new Error("Record the receiving inspection outcome before filing the GRN.");
             if (grn.inspection_status !== "accepted" &&
@@ -819,32 +836,18 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                     grn.inspection_notes)?.trim()) {
                 throw new Error("Describe the shortage, damage, or inspection observation before filing an exception GRN.");
             }
-            const priorGRNs = state.db.grns.filter((row: any) => row.po_id === po.id);
-            const alreadyReceived = (orderedId: string) => priorGRNs.reduce((sum: any, note: any) => sum +
-                note.items
-                    .filter((line: any) => line.source_item_id === orderedId)
-                    .reduce((lineSum: any, line: any) => lineSum + line.quantity, 0), 0);
-            const items = grn.items.map((received: any) => {
-                const ordered = po.items.find((item: any) => item.id === received.source_item_id ||
-                    item.article_id === received.article_id);
-                if (!ordered)
-                    throw new Error(`Received article ${received.title} is not on ${po.po_no}.`);
-                const remaining = Math.max(0, ordered.quantity - alreadyReceived(ordered.id));
-                if (!Number.isFinite(received.quantity) ||
-                    received.quantity <= 0 ||
-                    received.quantity > remaining + 0.0001) {
-                    throw new Error(`Received quantity for ${ordered.title} must be between 1 and its remaining PO quantity (${remaining}).`);
-                }
-                return {
-                    ...ordered,
-                    ...received,
-                    rate: ordered.rate,
-                    amount: Math.round(received.quantity * ordered.rate * 100) / 100,
-                    source_kind: "grn" as const,
-                    source_item_id: ordered.id,
-                };
+            const proofSources = [...receivingFiles, grn.delivery_challan_file].map((proof) => {
+                const file = attachedFileById(state.db, proof.attachment_id);
+                if (!file || file.asset.sync_status !== "uploaded" || file.attachment.entity_type !== "purchase_order" || file.attachment.entity_id !== po.id)
+                    throw new Error("Wait for receiving proofs and challan to finish uploading to this Purchase Order.");
+                return file;
             });
+            const received = receivedQuantities(po.id, state.db.grns);
+            const alreadyReceived = (orderedId: string) => received[orderedId] || 0;
+            const items = normalizeReceiptItems(po, grn.items, received);
             const id = grn.id || genId("grn");
+            if (state.db.grns.some((row: GRN) => row.id === id))
+                throw new Error("This GRN already exists. Retry its pending save instead of filing another receipt.");
             const grnNo = nextProcurementNo("GRN", state.db.grns);
             const threadId = state.openThreadFor("grn", id, `${grnNo} · ${po.vendor_name}`, [actor.name, po.vendor_name]);
             const isPhysicalException = grn.inspection_status !== "accepted" ||
@@ -855,7 +858,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                     ? "mismatched"
                     : "received_pending_invoice_match";
             const now = nowIso();
-            const newGRN: GRN = {
+            let newGRN: GRN = {
                 id,
                 grn_no: grnNo,
                 po_id: po.id,
@@ -872,9 +875,9 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 received_by_staff_id: actor.staffId,
                 receipt_verified_by: actor.role === "Field Staff" ? undefined : actor.name,
                 receipt_verified_at: actor.role === "Field Staff" ? undefined : now,
-                receiving_proof_attachment_ids: receivingFiles.map((proof: any) => proof.attachment_id),
+                receiving_proof_attachment_ids: [],
                 delivery_challan_no: grn.delivery_challan_no.trim(),
-                delivery_challan_attachment_id: grn.delivery_challan_file.attachment_id,
+                delivery_challan_attachment_id: undefined,
                 inspection_status: grn.inspection_status,
                 inspection_notes: grn.inspection_notes?.trim() || undefined,
                 damage_shortage_notes: grn.damage_shortage_notes?.trim() || undefined,
@@ -884,15 +887,18 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 created_at: now,
                 updated_at: now,
             };
+            // Create the parent, then reuse the uploaded PO assets through the existing
+            // attachment API. The outer store transaction persists all links together.
+            commitState((snapshot: any) => ({ db: { ...snapshot.db, grns: [newGRN, ...snapshot.db.grns] } }));
+            const proofIds = proofSources.map(({ attachment, asset }) => get().attachFileAsset({
+                file_asset_id: asset.id, entity_type: "grn", entity_id: id,
+                role: attachment.role, caption: attachment.caption, created_by: actor.name,
+            }));
+            if (proofIds.some((proofId) => !proofId)) throw new Error("GRN evidence could not be linked.");
+            newGRN = { ...newGRN, receiving_proof_attachment_ids: proofIds.slice(0, -1), delivery_challan_attachment_id: proofIds.at(-1) };
+            commitState((snapshot: any) => ({ db: { ...snapshot.db, grns: snapshot.db.grns.map((row: GRN) => row.id === id ? { ...newGRN } : row) } }));
+            const receivingProofAttachmentIds = proofIds.slice(0, -1);
             if (actor.role === "Field Staff") {
-                commitState((snapshot: any) => ({
-                    db: {
-                        ...snapshot.db,
-                        grns: [newGRN, ...snapshot.db.grns],
-                    },
-                }));
-                const receivingProofAttachmentIds = receivingFiles.map((proof: any) => proof.attachment_id);
-                const deliveryChallanAttachmentId = grn.delivery_challan_file.attachment_id;
                 get().addThreadReply(threadId, {
                     author: actor.name,
                     role: actor.role,
@@ -923,10 +929,12 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                     .filter((line: any) => line.source_item_id === orderedId)
                     .reduce((sum: any, line: any) => sum + line.quantity, 0);
             const fullyReceived = po.items.every((item: any) => cumulative(item.id) >= item.quantity - 0.0001);
-            const newPOStatus: PurchaseOrder["status"] = fullyReceived
+            const postsStock = receiptPostsStock(newGRN);
+            const newPOStatus: PurchaseOrder["status"] = !postsStock ? po.status : fullyReceived
                 ? "received"
                 : "partially_received";
-            const inventoryRows: InventoryItem[] = items.map((item: any, index: any) => ({
+            const stockItems = postsStock ? items : [];
+            const inventoryRows: InventoryItem[] = stockItems.map((item: any, index: any) => ({
                 id: `inv-${id}-${index + 1}`,
                 article_id: item.article_id,
                 work_required_article_id: item.work_required_article_id,
@@ -946,7 +954,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 created_at: now,
                 updated_at: now,
             }));
-            const movements: StockMovement[] = items.map((item: any, index: any) => ({
+            const movements: StockMovement[] = stockItems.map((item: any, index: any) => ({
                 id: genId("sm"),
                 inventory_id: inventoryRows[index].id,
                 article_id: item.article_id,
@@ -966,7 +974,6 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             commitState((snapshot: any) => ({
                 db: {
                     ...snapshot.db,
-                    grns: [newGRN, ...snapshot.db.grns],
                     inventory: [...inventoryRows, ...snapshot.db.inventory],
                     stockMovements: [...movements, ...snapshot.db.stockMovements],
                     purchaseOrders: snapshot.db.purchaseOrders.map((row: any) => row.id === po.id
@@ -974,14 +981,12 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                             ...row,
                             status: newPOStatus,
                             grn_ids: [...row.grn_ids, id],
-                            actual_delivery: today(),
+                            actual_delivery: postsStock ? today() : row.actual_delivery,
                             updated_at: now,
                         }
                         : row),
                 },
             }));
-            const receivingProofAttachmentIds = receivingFiles.map((proof: any) => proof.attachment_id);
-            const deliveryChallanAttachmentId = grn.delivery_challan_file.attachment_id;
             if (newGRN.status === "mismatched") {
                 get().createBlocked({
                     title: `${grnNo} delivery exception — ${po.vendor_name}`,
@@ -996,12 +1001,13 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             get().addThreadReply(threadId, {
                 author: newGRN.received_by || actor.name,
                 role: actor.role,
-                body: `GRN filed with ${receivingProofAttachmentIds.length} receiving proof(s), challan ${newGRN.delivery_challan_no}, and inspection ${newGRN.inspection_status}. PO cumulative receipt is now ${fullyReceived ? "complete" : "partial"}. Vendor invoice matching is still pending.`,
+                body: `GRN filed with ${receivingProofAttachmentIds.length} receiving proof(s), challan ${newGRN.delivery_challan_no}, and inspection ${newGRN.inspection_status}. ${postsStock ? `PO cumulative receipt is now ${fullyReceived ? "complete" : "partial"}. Vendor invoice matching is still pending.` : "Delivery rejected; no usable stock or payment milestone was posted."}`,
                 kind: "decision",
                 proof_attachment_id: receivingProofAttachmentIds[0],
             });
             get()
-                .db.payments.filter((payment: any) => payment.work_order_id === newGRN.work_order_id &&
+                .db.payments.filter((payment: any) => postsStock && Boolean(newGRN.work_order_id) && payment.work_order_id === newGRN.work_order_id &&
+                payment.status !== "received" && payment.status !== "cancelled" &&
                 payment.schedule_state === "awaiting_event" &&
                 eventMatchesPaymentTrigger(payment.due_event, "material_delivery"))
                 .forEach((payment: any) => get().triggerPaymentMilestone(payment.id, {
@@ -1046,40 +1052,26 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             if (po.status !== "sent" && po.status !== "partially_received") {
                 throw new Error(`${po.po_no} is not awaiting a receivable delivery.`);
             }
-            const priorGRNs = state.db.grns.filter((row: any) => row.po_id === po.id &&
-                row.id !== grn.id &&
-                row.status !== "pending_receipt_verification" &&
-                row.status !== "draft");
-            const alreadyReceived = (orderedId: string) => priorGRNs.reduce((sum: any, note: any) => sum + note.items
-                .filter((line: any) => line.source_item_id === orderedId)
-                .reduce((lineSum: any, line: any) => lineSum + line.quantity, 0), 0);
-            const items = grn.items.map((received: any) => {
-                const ordered = po.items.find((item: any) => item.id === received.source_item_id || item.article_id === received.article_id);
-                if (!ordered)
-                    throw new Error(`Received article ${received.title} is not on ${po.po_no}.`);
-                const remaining = Math.max(0, ordered.quantity - alreadyReceived(ordered.id));
-                if (!Number.isFinite(received.quantity) || received.quantity <= 0 || received.quantity > remaining + 0.0001) {
-                    throw new Error(`Received quantity for ${ordered.title} must be between 1 and its remaining PO quantity (${remaining}).`);
-                }
-                return {
-                    ...ordered,
-                    ...received,
-                    rate: ordered.rate,
-                    amount: Math.round(received.quantity * ordered.rate * 100) / 100,
-                    source_kind: "grn" as const,
-                    source_item_id: ordered.id,
-                };
-            });
+            for (const proofId of [...grn.receiving_proof_attachment_ids, grn.delivery_challan_attachment_id]) {
+                const file = attachedFileById(state.db, proofId);
+                if (!file || file.asset.sync_status !== "uploaded" || file.attachment.entity_type !== "grn" || file.attachment.entity_id !== id)
+                    throw new Error("Receipt verification requires uploaded evidence belonging to this GRN.");
+            }
+            const received = receivedQuantities(po.id, state.db.grns, id);
+            const alreadyReceived = (orderedId: string) => received[orderedId] || 0;
+            const items = normalizeReceiptItems(po, grn.items, received);
             const cumulative = (orderedId: string) => alreadyReceived(orderedId) + items
                 .filter((line: any) => line.source_item_id === orderedId)
                 .reduce((sum: any, line: any) => sum + line.quantity, 0);
             const fullyReceived = po.items.every((item: any) => cumulative(item.id) >= item.quantity - 0.0001);
             const isPhysicalException = grn.inspection_status !== "accepted" || Boolean(grn.mismatch_notes?.trim() || grn.damage_shortage_notes?.trim());
             const verifiedStatus: GRN["status"] = isPhysicalException ? "mismatched" : "received_pending_invoice_match";
-            const newPOStatus: PurchaseOrder["status"] = fullyReceived ? "received" : "partially_received";
+            const postsStock = receiptPostsStock({ ...grn, status: verifiedStatus });
+            const newPOStatus: PurchaseOrder["status"] = !postsStock ? po.status : fullyReceived ? "received" : "partially_received";
             const now = nowIso();
             const threadId = grn.thread_id || state.openThreadFor("grn", grn.id, `${grn.grn_no} · ${po.vendor_name}`, [grn.received_by || "Field Staff", actor.name, po.vendor_name]);
-            const inventoryRows: InventoryItem[] = items.map((item: any, index: any) => ({
+            const stockItems = postsStock ? items : [];
+            const inventoryRows: InventoryItem[] = stockItems.map((item: any, index: any) => ({
                 id: `inv-${grn.id}-${index + 1}`,
                 article_id: item.article_id,
                 // C: Back-fill work_required_article_id from the verified PO line
@@ -1106,7 +1098,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 created_at: now,
                 updated_at: now,
             }));
-            const movements: StockMovement[] = items.map((item: any, index: any) => ({
+            const movements: StockMovement[] = stockItems.map((item: any, index: any) => ({
                 id: genId("sm"),
                 inventory_id: inventoryRows[index].id,
                 article_id: item.article_id,
@@ -1141,7 +1133,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                         ...row,
                         status: newPOStatus,
                         grn_ids: row.grn_ids.includes(grn.id) ? row.grn_ids : [...row.grn_ids, grn.id],
-                        actual_delivery: today(),
+                        actual_delivery: postsStock ? today() : row.actual_delivery,
                         updated_at: now,
                     } : row),
                 },
@@ -1157,11 +1149,12 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             get().addThreadReply(threadId, {
                 author: actor.name,
                 role: actor.role,
-                body: `Receipt verified. ${grn.grn_no} posted ${items.length} item line(s) to stock; PO cumulative receipt is now ${fullyReceived ? "complete" : "partial"}. Vendor invoice matching is still pending.`,
+                body: postsStock ? `Receipt verified. ${grn.grn_no} posted ${items.length} item line(s) to stock; PO cumulative receipt is now ${fullyReceived ? "complete" : "partial"}. Vendor invoice matching is still pending.` : `Rejected delivery verified. ${grn.grn_no} did not post usable stock or trigger payment milestones.`,
                 kind: "decision",
                 proof_attachment_id: grn.receiving_proof_attachment_ids[0],
             });
-            get().db.payments.filter((payment: any) => payment.work_order_id === grn.work_order_id &&
+            get().db.payments.filter((payment: any) => postsStock && Boolean(grn.work_order_id) && payment.work_order_id === grn.work_order_id &&
+                payment.status !== "received" && payment.status !== "cancelled" &&
                 payment.schedule_state === "awaiting_event" &&
                 eventMatchesPaymentTrigger(payment.due_event, "material_delivery")).forEach((payment: any) => get().triggerPaymentMilestone(payment.id, {
                 reason: `${grn.grn_no} delivery receipt verified`,

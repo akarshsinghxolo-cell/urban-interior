@@ -334,6 +334,17 @@ export async function captureWorkspaceCommit(body: BodyInit | null | undefined):
   const operationId = parsed.operationId || makeOperationId();
   const existingItems = await readScopedWorkspaceOutbox();
   const syncingItems = existingItems.filter((item) => item.status === "syncing");
+  // Retrying identical content polls the original operation's receipt. Creating
+  // a second operation here defers the retry behind itself and leaves the form
+  // waiting even after the original save is confirmed.
+  const sameInFlight = syncingItems.find(item =>
+    (!parsed.operationId || item.operationId === parsed.operationId) &&
+    item.revision === parsed.revision &&
+    JSON.stringify(item.operations) === JSON.stringify(parsed.operations) &&
+    JSON.stringify(item.expectedRowVersions) === JSON.stringify(parsed.expectedRowVersions));
+  if (sameInFlight) {
+    return { body: JSON.stringify({ ...parsed, operationId: sameInFlight.operationId }), operationId: sameInFlight.operationId };
+  }
   const previousSame = existingItems.find((item) => item.operationId === operationId);
   const record: WorkspaceCommitOutboxRecord = {
     operationId,

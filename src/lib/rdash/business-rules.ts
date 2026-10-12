@@ -3,12 +3,55 @@ import { resolveCustomerIdFromLinks, type CustomerLinkInput } from "./customer-r
 import { findCustomerIdentityMatches } from "./customer-identity";
 import { assertCustomerRecord, assertWorkRequiredDefinition } from "./customer-domain-rules";
 import { workTypesForSubcategory } from "./work-types";
-import type { FinanceContextLink, ID, LineItem, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
+import type { FinanceContextLink, GRN, ID, LineItem, PurchaseOrder, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
 export class BusinessRuleError extends Error {
     constructor(message: string) {
         super(message);
         this.name = "BusinessRuleError";
     }
+}
+
+/** Only verified, accepted deliveries consume the PO's receivable balance. */
+export function receiptPostsStock(grn: Pick<GRN, "status" | "inspection_status">): boolean {
+    return grn.status !== "draft" && grn.status !== "pending_receipt_verification" && grn.inspection_status !== "rejected";
+}
+
+export function receivedQuantities(poId: ID, grns: GRN[], excludeId?: ID): Record<ID, number> {
+    const quantities: Record<ID, number> = {};
+    for (const grn of grns) {
+        if (grn.po_id !== poId || grn.id === excludeId || !receiptPostsStock(grn)) continue;
+        for (const line of grn.items) {
+            if (line.source_item_id) quantities[line.source_item_id] = (quantities[line.source_item_id] || 0) + line.quantity;
+        }
+    }
+    return quantities;
+}
+
+/** One PO-line identity and quantity rule for filing, verification and server validation. */
+export function normalizeReceiptItems(po: Pick<PurchaseOrder, "po_no" | "items">, receivedItems: LineItem[], alreadyReceived: Record<ID, number>): LineItem[] {
+    if (!receivedItems.length) throw new BusinessRuleError("Goods Received Note requires received article lines.");
+    const seen = new Set<ID>();
+    return receivedItems.map((received) => {
+        const ordered = po.items.find((line) => line.id === received.source_item_id);
+        if (!ordered) throw new BusinessRuleError(`Received line must identify an exact item on ${po.po_no}.`);
+        if (seen.has(ordered.id)) throw new BusinessRuleError(`Duplicate receipt line for ${ordered.title}. Combine its quantities in one line.`);
+        seen.add(ordered.id);
+        const remaining = Math.max(0, ordered.quantity - (alreadyReceived[ordered.id] || 0));
+        if (!Number.isFinite(received.quantity) || received.quantity <= 0 || received.quantity > remaining + 0.0001) {
+            throw new BusinessRuleError(`Received quantity for ${ordered.title} must be greater than zero and no more than the remaining PO quantity (${remaining}).`);
+        }
+        return {
+            ...ordered,
+            id: received.id,
+            quantity: received.quantity,
+            received_qty: received.quantity,
+            ordered_qty: ordered.quantity,
+            status: received.status,
+            amount: Math.round(received.quantity * ordered.rate * 100) / 100,
+            source_kind: "grn",
+            source_item_id: ordered.id,
+        };
+    });
 }
 type ValidationOptions = {
     allowArchived?: boolean;
@@ -571,6 +614,11 @@ export function validateBusinessData(db: RDashDatabase) {
         }
     }));
     db.contractorBills.forEach((bill) => capture(`Contractor Bill ${bill.id}`, () => {
+        if (bill.settlement_id) {
+            const settlement = db.contractorSettlements.find(row => row.id === bill.settlement_id);
+            if (!settlement || settlement.contractor_id !== bill.contractor_id || settlement.work_order_id !== bill.work_order_id || Math.abs(settlement.payable_amount - bill.amount) > 0.01)
+                fail("Contractor Bill", "Final bill must match its settlement, contractor, work order and agreed payable.");
+        }
         const workOrder = db.workOrders.find((row) => row.id === bill.work_order_id);
         if (!workOrder || workOrder.customer_id !== bill.customer_id || workOrder.site_id !== bill.site_id) {
             fail("Contractor Bill", "Customer, Site, and Work Order do not match.");
@@ -606,8 +654,40 @@ export function validateBusinessData(db: RDashDatabase) {
                 fail("GRN", "PO Site and GRN Site do not match.");
             if ((po.work_order_id || grn.work_order_id) && po.work_order_id !== grn.work_order_id)
                 fail("GRN", "PO Work Order and GRN Work Order do not match.");
+            if (grn.status !== "draft") {
+                const canonical = normalizeReceiptItems(po, grn.items, receiptPostsStock(grn) ? receivedQuantities(po.id, db.grns, grn.id) : {});
+                canonical.forEach((line, index) => {
+                    const actual = grn.items[index];
+                    if (line.article_id !== actual.article_id || line.work_required_article_id !== actual.work_required_article_id ||
+                        line.unit_id !== actual.unit_id || line.rate !== actual.rate || Math.abs(line.amount - actual.amount) > 0.01)
+                        fail("GRN", "Received material, unit, rate and amount must match the exact PO line.");
+                });
+            }
         }
         grn.items.forEach((item) => assertLineItemCatalogRelations(db, item, "GRN"));
+    }));
+    db.grns.forEach((grn) => capture(`GRN stock posting ${grn.id}`, () => {
+        const movements = db.stockMovements.filter((row) => row.grn_id === grn.id && row.type === "receipt");
+        const inventory = db.inventory.filter((row) => row.grn_id === grn.id);
+        if (!receiptPostsStock(grn)) {
+            if (movements.length || inventory.length) fail("GRN", "Unverified or rejected receipts cannot create usable inventory.");
+            return;
+        }
+        if (movements.length !== grn.items.length || inventory.length !== grn.items.length)
+            fail("GRN", "Each received line must post stock exactly once.");
+        const unmatched = [...grn.items];
+        const seenInventory = new Set<ID>();
+        for (const movement of movements) {
+            const stock = inventory.find((row) => row.id === movement.inventory_id);
+            if (!stock || seenInventory.has(stock.id) || movement.po_id !== grn.po_id || movement.work_order_id !== grn.work_order_id)
+                fail("GRN", "Receipt stock movement must uniquely reference this delivery and its PO.");
+            seenInventory.add(stock.id);
+            const index = unmatched.findIndex((line) => line.article_id === stock.article_id && line.work_required_article_id === stock.work_required_article_id &&
+                line.unit_id === stock.unit_id && line.rate === stock.rate && line.rate === movement.rate &&
+                Math.abs(line.quantity - movement.quantity) < 0.0001 && Math.abs(line.quantity - (stock.received_qty || 0)) < 0.0001);
+            if (index < 0) fail("GRN", "Receipt stock quantity and value must match its received line.");
+            unmatched.splice(index, 1);
+        }
     }));
     db.dispatches.forEach((dispatch) => capture(`Dispatch ${dispatch.id}`, () => {
         dispatch.items.forEach((item) => assertLineItemCatalogRelations(db, item, "Dispatch"));
@@ -646,6 +726,8 @@ export function validateBusinessData(db: RDashDatabase) {
         if (movement.grn_id) {
             const grn = db.grns.find((row) => row.id === movement.grn_id);
             if (!grn) fail("Stock Movement", "GRN does not exist.");
+            if (movement.type === "receipt" && !receiptPostsStock(grn))
+                fail("Stock Movement", "Unverified or rejected GRNs cannot post usable stock.");
             if (effectiveWorkOrderId && grn.work_order_id && grn.work_order_id !== effectiveWorkOrderId)
                 fail("Stock Movement", "GRN belongs to a different Work Order.");
         }
@@ -661,6 +743,8 @@ export function validateBusinessData(db: RDashDatabase) {
         const grn = db.grns.find((row) => row.id === bill.grn_id);
         if (!po || !grn || po.id !== grn.po_id)
             fail("Vendor Bill", "PO and GRN do not match.");
+        if (grn && !receiptPostsStock(grn))
+            fail("Vendor Bill", "Receipt must be verified and accepted before billing.");
         else {
             if (bill.vendor_id !== po.vendor_id || bill.vendor_id !== grn.vendor_id)
                 fail("Vendor Bill", "Bill, PO, and GRN Vendors do not match.");
@@ -806,6 +890,8 @@ export function validateBusinessData(db: RDashDatabase) {
         assertAttachmentListOwnedBy(task.completion_proof_attachment_ids, "task", task.id, "Task completion proof");
     }));
     db.grns.forEach((grn) => capture(`GRN attachment fields ${grn.id}`, () => {
+        if (grn.status !== "draft" && (!grn.receiving_proof_attachment_ids?.length || !grn.delivery_challan_attachment_id || !grn.delivery_challan_no?.trim() || !grn.inspection_status))
+            fail("GRN", "Receiving proof, delivery challan and inspection outcome are required.");
         assertAttachmentListOwnedBy(grn.receiving_proof_attachment_ids, "grn", grn.id, "GRN receiving proof");
         assertAttachmentOwnedBy(grn.delivery_challan_attachment_id, "grn", grn.id, "GRN delivery challan");
     }));

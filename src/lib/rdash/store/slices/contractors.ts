@@ -22,6 +22,7 @@ import { assertWorkOrderRelations } from "../../business-rules";
 import { advanceSitesStage } from "../../site-lifecycle";
 import { materializePaymentSchedule } from "../finance-helpers";
 import { contractorMasterRecordForCreate, type ContractorProfileRecord } from "../../contractor-profile";
+import { contractorSettlementAmounts } from "../finance-helpers";
 import { deriveContractorPerformanceEvidenceExport } from "../../performance-reconciliation";
 // Commission accrual uses the shared canonical rule lookup: an exact
 // partner/category rule wins, then a partner-wide rule, then the partner's
@@ -547,19 +548,17 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const proof = contractorPaymentProofStatus(state.db, workOrder.id);
             if (!proof.ok)
                 throw new Error(proof.reason);
-            const advances = params.advancesPaid ??
-                state.db.workOrderCostLines
-                    .filter((c: any) => c.work_order_id === workOrder.id &&
-                    c.type === "contractor" &&
-                    c.source_kind === "contractor_payment")
-                    .reduce((n: any, c: any) => n + c.amount, 0);
             const materialsIssued = params.materialsIssuedValue ?? 0;
             const recoveries = params.recoveries ?? 0;
-            const completedPct = Math.max(0, Math.min(100, params.completedPct));
-            const payable = Math.max(0, Math.round((completedPct / 100) * workOrder.value -
-                advances -
-                materialsIssued +
-                recoveries));
+            const completedPct = params.completedPct;
+            const { paid: advances, payable, earned, contractValue } = contractorSettlementAmounts(state.db, workOrder, completedPct, materialsIssued, recoveries);
+            if (earned < advances) throw new Error("Settlement is below recorded payments. Resolve the contractor recovery before closing this work order.");
+            const priorBills = state.db.contractorBills.filter((b: ContractorBill) => b.work_order_id === workOrder.id && b.contractor_id === contractor.id);
+            const priorBillIds = new Set(priorBills.map((b: ContractorBill) => b.id));
+            const priorSettlementIds = new Set(state.db.contractorSettlements.filter(s => s.work_order_id === workOrder.id && s.contractor_id === contractor.id).map(s => s.id));
+            const previousCost = state.db.workOrderCostLines.filter((c: WorkOrderCostLine) =>
+                (c.source_kind === "bill" && priorBillIds.has(c.source_id)) ||
+                (c.source_kind === "settlement" && priorSettlementIds.has(c.source_id))).reduce((n: number, c: WorkOrderCostLine) => n + c.amount, 0);
             const settlementId = genId("sett");
             const settlementNo = `SET-${Date.now().toString(36).toUpperCase()}`;
             const now = nowIso();
@@ -584,7 +583,7 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                     contractor_name: contractor.name,
                     type: params.type || "abandonment",
                     completed_pct: completedPct,
-                    contract_value: workOrder.value,
+                    contract_value: contractValue,
                     advances_paid: advances,
                     materials_issued_value: materialsIssued,
                     recoveries: recoveries,
@@ -598,20 +597,24 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 const costLine: WorkOrderCostLine = {
                     id: genId("jcl"),
                     work_order_id: workOrder.id,
-                    // CV-13: Classify contractor abandonment settlements as "contractor" (not "overhead")
-                    // so the contractor cost KPI in P&L / site financials includes settlement payouts.
-                    // computeJobPnL and siteFinancials (in selectors.ts) sum type "contractor" / "subcontract"
-                    // for contractor cost; the settlement amount is now counted there. The `source_kind`
-                    // remains "settlement" so the cost line's origin is still traceable.
                     type: "contractor",
                     description: `Settlement ${settlementNo} · ${contractor.name} · ${completedPct}% complete`,
-                    amount: payable,
+                    amount: Math.round((earned - previousCost) * 100) / 100,
                     date: today(),
                     source_kind: "settlement",
                     source_id: settlementId,
                     vendor_id: contractor.id,
                     vendor_name: contractor.name,
                     created_at: now,
+                };
+                const finalBill: ContractorBill = {
+                    id: `cbill-${settlementId}`, settlement_id: settlementId, bill_no: `CTB-${settlementNo}`,
+                    description: `Final amount payable under ${settlementNo}; not yet paid`,
+                    customer_id: workOrder.customer_id, site_id: workOrder.site_id, work_order_id: workOrder.id,
+                    contractor_id: contractor.id, contractor_name: contractor.name, amount: payable,
+                    paid_amount: 0, balance_amount: payable, status: "verified", progress_pct: completedPct,
+                    due_date: today(), verified_at: now, verified_by: actor.name, thread_id: threadId,
+                    created_at: now, updated_at: now,
                 };
                 const updatedJobs = s.db.workOrders.map((j: any) => j.id === workOrder.id
                     ? {
@@ -629,6 +632,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
                 return {
                     db: {
                         ...s.db,
+                        contractorBills: [...(payable > 0 ? [finalBill] : []), ...s.db.contractorBills.map((b: ContractorBill) => priorBillIds.has(b.id) && b.status !== "paid" ? { ...b, status: "held" as const, updated_at: now } : b)],
+                        contractorPayments: s.db.contractorPayments.map((p: ContractorPayment) => priorBillIds.has(p.contractor_bill_id) && p.status !== "paid" ? { ...p, status: "cancelled" as const, updated_at: now } : p),
                         contractorSettlements: [
                             newSettlement,
                             ...s.db.contractorSettlements,
@@ -1035,6 +1040,8 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             const payment = get().db.contractorPayments.find((row: any) => row.id === approval.linked_record_id);
             if (!payment)
                 throw new Error("Contractor payment was not found for approval.");
+            if (payment.status !== "pending")
+                throw new Error("Only a pending contractor payment can be approved.");
             const proof = contractorPaymentProofStatus(get().db, payment.work_order_id);
             if (!proof.ok)
                 throw new Error(proof.reason);

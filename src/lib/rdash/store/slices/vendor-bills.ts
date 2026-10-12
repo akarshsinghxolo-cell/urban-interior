@@ -29,8 +29,10 @@ function nextVendorPaymentNo(payments: { payment_no?: string }[]): string {
 import type { VendorBill, WorkOrderCostLine, VendorPayment } from "../../types";
 import type { VendorBillsState } from "../types";
 import type { StoreContext } from "../context";
-import { assertRole, genId, nowIso, today, userForRole, userForAnyRole } from "../helpers";
+import { assertRole, genId, nowIso, today, userForRole } from "../helpers";
+import { vendorBillResolutionAllowsApproval } from "../finance-helpers";
 import { formatINR } from "../../format";
+import { receiptPostsStock } from "../../business-rules";
 
 export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
     const { commitState, get } = ctx;
@@ -39,11 +41,13 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
         addVendorBill: (b) => {
             assertRole(get().currentUser().role, ["Owner", "Finance"], "create vendor invoices");
             const state = get();
-            const financeUser = userForAnyRole(state.db, ["Finance", "Accounts"], "Finance");
+            const financeUser = state.currentUser();
             const po = state.db.purchaseOrders.find((row: any) => row.id === b.po_id);
             const grn = state.db.grns.find((row: any) => row.id === b.grn_id);
             if (!po || !grn || grn.po_id !== po.id)
                 throw new Error("Vendor invoice must be created from one matching PO and GRN.");
+            if (!receiptPostsStock(grn))
+                throw new Error("Receipt must be verified and accepted before vendor billing.");
             if (!b.vendor_invoice_no?.trim())
                 throw new Error("Vendor invoice number is required. A GRN is not a vendor bill.");
             if (!b.invoice_lines?.length)
@@ -166,7 +170,9 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
             // match (the match will run after approval). Otherwise require the
             // 3-way match to be resolved (matched=true, not disputed) before
             // financial approval.
-            if (bill.status !== "pending_approval" && (bill.status === "disputed" || bill.matched !== true))
+            if (!["pending", "pending_approval"].includes(bill.status))
+                throw new Error("Only pending vendor bills can be approved.");
+            if (bill.status !== "pending_approval" && (bill.status === "disputed" || !vendorBillResolutionAllowsApproval(bill)))
                 throw new Error("Resolve the PO–GRN–invoice match before approving this vendor bill.");
             const threadId = bill.thread_id ||
                 get().openThreadFor("vendor_bill", id, `${bill.bill_no} · ${bill.vendor_name}`, [actor.name, bill.vendor_name]);
@@ -174,7 +180,7 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
             const now = nowIso();
             // For pending_approval bills, the 3-way match hasn't run yet — only
             // post the cost line after the match is complete (matched=true).
-            const canPostCost = bill.matched === true && !alreadyPosted;
+            const canPostCost = bill.status !== "pending_approval" && vendorBillResolutionAllowsApproval(bill) && !alreadyPosted;
             const costLine: WorkOrderCostLine | null = canPostCost
                 ? {
                     id: genId("jcl"),
@@ -379,16 +385,21 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
             return id;
         },
         matchVendorBill: (billId, params) => {
+            assertRole(get().currentUser().role, ["Owner", "Finance"], "match vendor invoices");
             const state = get();
-            const financeUser = userForAnyRole(state.db, ["Finance", "Accounts"], "Finance");
-            const matchedBy = params.matchedBy || financeUser.name;
+            const financeUser = state.currentUser();
+            const matchedBy = financeUser.name;
             const bill = state.db.vendorBills.find((row: any) => row.id === billId);
             if (!bill)
                 return { matched: false };
+            if (!["draft", "disputed"].includes(bill.status) || bill.paid_amount > 0 || bill.posted_to_cost_at)
+                throw new Error("Posted or paid vendor invoices cannot be rematched. Preserve the original and record a correction.");
             const po = state.db.purchaseOrders.find((row: any) => row.id === bill.po_id);
             const grn = state.db.grns.find((row: any) => row.id === bill.grn_id);
             if (!po || !grn || grn.po_id !== po.id)
                 return { matched: false };
+            if (!receiptPostsStock(grn))
+                throw new Error("Receipt must be verified and accepted before invoice matching.");
             const invoiceLines = params.invoiceLines?.length
                 ? params.invoiceLines
                 : bill.invoice_lines || [];
@@ -554,14 +565,19 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
             return { matched: fullyMatched, obstacleId };
         },
         resolveVendorBillMismatch: (billId, resolution, notes) => {
+            assertRole(get().currentUser().role, ["Owner", "Finance"], "resolve vendor invoice mismatches");
             const state = get();
             const bill = state.db.vendorBills.find((b: any) => b.id === billId);
             if (!bill || !bill.three_way_match)
                 return;
+            if (bill.status !== "disputed" || bill.paid_amount > 0 || bill.posted_to_cost_at)
+                throw new Error("Only unposted disputed invoices can be resolved.");
+            if (!notes.trim()) throw new Error("Record the agreed resolution and reason.");
+            const acceptsInvoice = resolution === "accept_as_is";
             const updatedMatch: import("../../types").VendorBillMatch = {
                 ...bill.three_way_match,
                 resolution,
-                resolution_notes: notes,
+                resolution_notes: notes.trim(),
             };
             commitState((s: any) => ({
                 db: {
@@ -570,13 +586,13 @@ export function createVendorBillsSlice(ctx: StoreContext): VendorBillsState {
                         ? {
                             ...b,
                             three_way_match: updatedMatch,
-                            status: resolution === "hold_payment" ? "disputed" : "pending",
+                            status: acceptsInvoice ? "pending" : "disputed",
                             updated_at: nowIso(),
                         }
                         : b),
                     blocked: s.db.blocked.map((bl: any) => bill.three_way_match?.obstacle_id &&
                         bl.id === bill.three_way_match.obstacle_id &&
-                        resolution !== "hold_payment"
+                        acceptsInvoice
                         ? { ...bl, resolved: true }
                         : bl),
                 },

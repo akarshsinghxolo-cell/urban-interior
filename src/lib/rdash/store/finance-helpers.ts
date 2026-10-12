@@ -12,8 +12,97 @@ import type {
 } from "../types";
 import { assertFinanceContext } from "../business-rules";
 import { formatINR } from "../format";
-import { businessDate, today, nowIso, genId } from "./helpers";
+import { businessDate, today, nowIso, genId, addDays } from "./helpers";
+import { indiaDate } from "../date";
 import { activeStaffIdForRole } from "../staff-directory";
+
+export interface CashEntry {
+    id: string;
+    date: string;
+    direction: "in" | "out";
+    amount: number;
+    label: string;
+    reference?: string;
+    sourceKind?: "invoice" | "vendorBill" | "workOrder" | "commission";
+    sourceId: string;
+}
+
+/** A read-only projection of original records, never a second editable ledger. */
+export function actualCashEntries(db: RDashDatabase): CashEntry[] {
+    const entries: CashEntry[] = [];
+    const add = (date: string | undefined, entry: Omit<CashEntry, "date">) => {
+        if (date && Number.isFinite(new Date(date).getTime()) && Number.isFinite(entry.amount) && entry.amount > 0)
+            entries.push({ ...entry, date: indiaDate(date), amount: Math.round(entry.amount * 100) / 100 });
+    };
+    db.customerReceipts.forEach(r => add(r.received_at, { id: r.id, direction: "in", amount: r.amount, label: r.receipt_no, reference: r.reference, sourceKind: "invoice", sourceId: r.invoice_id }));
+    db.vendorPayments.filter(p => p.status === "paid").forEach(p => add(p.paid_at, { id: p.id, direction: "out", amount: p.amount, label: `${p.payment_no} · ${p.vendor_name}`, reference: p.reference, sourceKind: "vendorBill", sourceId: p.vendor_bill_id }));
+    db.contractorPayments.filter(p => p.status === "paid").forEach(p => add(p.paid_at, { id: p.id, direction: "out", amount: p.amount, label: `${p.payment_no} · ${p.contractor_name || "Contractor"}`, reference: p.reference, sourceKind: "workOrder", sourceId: p.work_order_id }));
+    db.commissions.filter(c => c.status === "paid").forEach(c => add(c.paid_date, { id: c.id, direction: "out", amount: c.amount, label: `${c.commission_no} · ${c.source_partner_name}`, sourceKind: "commission", sourceId: c.id }));
+    (db.payrollPeriods || []).filter(p => p.status === "paid").forEach(p => {
+        (db.payrollLines || []).filter(l => l.payroll_period_id === p.id && l.payment_status === "paid").forEach(l => add(p.paid_at, {
+            id: l.id, direction: "out", amount: l.net_payable,
+            label: `Salary ${p.month}/${p.year} · ${db.master.staff.find(s => s.id === l.staff_id)?.name || l.staff_id}`,
+            sourceId: p.id,
+        }));
+    });
+    return entries.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+}
+
+export function cashFlowDays(entries: CashEntry[], start: string, count: number) {
+    return Array.from({ length: count }, (_, i) => {
+        const date = addDays(start, i);
+        const rows = entries.filter(e => e.date === date);
+        const inflow = Math.round(rows.filter(e => e.direction === "in").reduce((n, e) => n + e.amount, 0) * 100) / 100;
+        const outflow = Math.round(rows.filter(e => e.direction === "out").reduce((n, e) => n + e.amount, 0) * 100) / 100;
+        return { date, label: new Date(`${date}T12:00:00+05:30`).toLocaleDateString("en-IN", { weekday: "short", timeZone: "Asia/Kolkata" }), inflow, outflow, net: Math.round((inflow - outflow) * 100) / 100 };
+    });
+}
+
+export function cashFlowForecast(db: RDashDatabase, date = today()) {
+    const actual = actualCashEntries(db);
+    const scheduled: CashEntry[] = [];
+    const add = (id: string, due: string | undefined, amount: number, direction: "in" | "out", sourceId: string) => {
+        if (due && amount > 0 && Number.isFinite(amount)) scheduled.push({ id, date: due < date ? date : due, amount, direction, label: id, sourceId });
+    };
+    // Invoice balances are authoritative. Milestones distribute that balance, not additional debt.
+    db.invoices.filter(i => i.status !== "cancelled" && i.balance_amount > 0).forEach(invoice => {
+        let remaining = invoice.balance_amount;
+        db.payments.filter(p => p.invoice_id === invoice.id && !["received", "cancelled"].includes(p.status) && p.schedule_state !== "awaiting_event" && p.due_date)
+            .sort((a, b) => a.due_date!.localeCompare(b.due_date!)).forEach(p => {
+                const amount = Math.min(remaining, Math.max(0, p.amount - (p.received_amount || 0)));
+                add(p.id, p.due_date, amount, "in", invoice.id);
+                remaining -= amount;
+            });
+        add(invoice.id, invoice.due_date, remaining, "in", invoice.id);
+    });
+    db.payments.filter(p => !p.invoice_id && !["received", "cancelled"].includes(p.status) && p.schedule_state !== "awaiting_event")
+        .forEach(p => add(p.id, p.due_date, p.amount - (p.received_amount || 0), "in", p.id));
+    db.vendorBills.filter(b => ["approved", "partly_paid"].includes(b.status)).forEach(b => add(b.id, b.due_date, b.balance_amount, "out", b.id));
+    db.contractorBills.filter(b => ["verified", "approved", "partly_paid"].includes(b.status)).forEach(b => add(b.id, b.due_date, b.balance_amount, "out", b.id));
+    const openingRecordedNet = actual.filter(e => e.date < date).reduce((n, e) => n + (e.direction === "in" ? e.amount : -e.amount), 0);
+    let cumulative = openingRecordedNet;
+    const days = cashFlowDays([...actual, ...scheduled], date, 14).map(day => {
+        cumulative = Math.round((cumulative + day.net) * 100) / 100;
+        return { ...day, cumulative, isToday: day.date === date };
+    });
+    const inflow = days.reduce((n, d) => n + d.inflow, 0);
+    const outflow = days.reduce((n, d) => n + d.outflow, 0);
+    return { days, totals: { inflow, outflow, net: inflow - outflow, endingBalance: cumulative } };
+}
+
+export function vendorBillResolutionAllowsApproval(bill: import("../types").VendorBill): boolean {
+    const match = bill.three_way_match;
+    return Boolean(bill.matched || (match?.resolution === "accept_as_is" && match.resolution_notes?.trim()));
+}
+
+export function contractorSettlementAmounts(db: RDashDatabase, workOrder: WorkOrder, completedPct: number, materials = 0, recoveries = 0) {
+    if (![completedPct, materials, recoveries].every(Number.isFinite) || completedPct < 0 || completedPct > 100 || materials < 0 || recoveries < 0)
+        throw new Error("Enter a completion percentage between 0 and 100 and non-negative deductions.");
+    const contractValue = workOrder.contractor_award_amount && workOrder.contractor_award_amount > 0 ? workOrder.contractor_award_amount : workOrder.value;
+    const paid = db.contractorPayments.filter(p => p.work_order_id === workOrder.id && p.contractor_id === workOrder.contractor_id && p.status === "paid").reduce((n, p) => n + p.amount, 0);
+    const earned = Math.round(Math.max(0, contractValue * completedPct / 100 - materials - recoveries) * 100) / 100;
+    return { contractValue, paid, earned, payable: Math.round(Math.max(0, earned - paid) * 100) / 100, recovery: Math.round(Math.max(0, paid - earned) * 100) / 100 };
+}
 
 function milestoneOrder(payment: Payment): number | null {
     const label = (payment.milestone_label || "").toLowerCase();

@@ -229,6 +229,8 @@ const seedStorageAccounts: StorageAccount[] = [
     { id: "sa-google-drive-backup", label: "Urban Castle — Backup Drive", email: "backup@urbancastle.in", status: "connected", write_enabled: false, priority_order: 2, quota_used_bytes: 1_200_000_000, quota_limit_bytes: 15_000_000_000, switch_threshold_percent: 90, root_folder_id: "root-folder-backup", root_folder_name: "UrbanCastle Backup", web_view_link: "https://drive.google.com/drive/folders/root-folder-backup", notes: "Backup drive — read-only replication. Auto-promoted to write-enabled when primary hits 85% capacity.", created_at: at(-60), updated_at: at(-7) },
 ];
 const fileAssets = [
+    { id: "file-grn-proof", file_name: "QA receiving proof.jpg", mime_type: "image/jpeg", kind: "media" as const, web_view_link: "https://drive.google.com/file/d/qa-grn-proof/view", storage_provider: "google_drive" as const, storage_mode: "external_reference" as const, sync_status: "uploaded" as const, status: "active" as const, created_at: at(-1), updated_at: now() },
+    { id: "file-grn-challan", file_name: "QA delivery challan.pdf", mime_type: "application/pdf", kind: "document" as const, web_view_link: "https://drive.google.com/file/d/qa-grn-challan/view", storage_provider: "google_drive" as const, storage_mode: "external_reference" as const, sync_status: "uploaded" as const, status: "active" as const, created_at: at(-1), updated_at: now() },
     { id: "file-catalogue-gypsum-board", file_name: "Gypsum Board Catalogue.pdf", mime_type: "application/pdf", kind: "catalogue" as const, web_view_link: "https://drive.google.com/file/d/file-catalogue-gypsum-board/view", storage_provider: "google_drive" as const, storage_mode: "external_reference" as const, sync_status: "uploaded" as const, tags: ["catalogue", "gypsum", "vendor"], status: "active" as const, created_at: at(-10), updated_at: now() },
     { id: "file-reference-ceiling-joint", file_name: "Gypsum Ceiling Joint Detail.jpg", mime_type: "image/jpeg", kind: "media" as const, web_view_link: "https://drive.google.com/file/d/file-reference-ceiling-joint/view", storage_provider: "google_drive" as const, storage_mode: "external_reference" as const, sync_status: "uploaded" as const, tags: ["reference", "ceiling", "jointing"], status: "active" as const, created_at: at(-9), updated_at: now() },
     { id: "file-po-das-ceiling", file_name: "PO-2026-601 vendor copy.pdf", mime_type: "application/pdf", kind: "document" as const, web_view_link: "https://drive.google.com/file/d/file-po-das-ceiling/view", storage_provider: "google_drive" as const, storage_mode: "external_reference" as const, sync_status: "uploaded" as const, tags: ["po", "vendor", "ceiling"], status: "active" as const, created_at: at(-5), updated_at: now() },
@@ -243,6 +245,8 @@ const catalogueArticleVendorLinks = [
     { id: "cat-link-gypsum-board", catalogue_id: "cat-gypsum-board", article_id: "article_1", vendor_id: "ven-build", notes: "Main vendor catalogue for gypsum board procurement", status: "active" as const, created_at: at(-10), updated_at: now() },
 ];
 const entityFileAttachments = [
+    { id: "attach-grn-proof", file_asset_id: "file-grn-proof", entity_type: "grn" as const, entity_id: "grn-das-ceiling", entity_label: "GRN-2026-701", role: "proof" as const, visibility: "internal" as const, customer_shareable: false, created_by: "Ravi Kumar", created_at: at(-1), updated_at: now() },
+    { id: "attach-grn-challan", file_asset_id: "file-grn-challan", entity_type: "grn" as const, entity_id: "grn-das-ceiling", entity_label: "GRN-2026-701", role: "delivery" as const, visibility: "internal" as const, customer_shareable: false, created_by: "Ravi Kumar", created_at: at(-1), updated_at: now() },
     { id: "file-link-vendor-build-catalogue", file_asset_id: "file-catalogue-gypsum-board", entity_type: "vendor" as const, entity_id: "ven-build", entity_label: "Build Mart", role: "catalogue" as const, visibility: "internal" as const, customer_shareable: false, created_by: "Owner", created_at: at(-10), updated_at: now() },
     { id: "file-link-po-das-ceiling", file_asset_id: "file-po-das-ceiling", entity_type: "purchase_order" as const, entity_id: "po-das-ceiling", entity_label: "PO-2026-601", role: "document" as const, visibility: "vendor" as const, customer_shareable: false, created_by: "Owner", created_at: at(-5), updated_at: now() },
     { id: "file-link-quote-reference", file_asset_id: "file-reference-ceiling-joint", entity_type: "quotation" as const, entity_id: "quote-das-ceiling", entity_label: "Q-2026-201", role: "other" as const, visibility: "customer" as const, customer_shareable: true, created_by: "Owner", created_at: at(-9), updated_at: now() },
@@ -325,6 +329,16 @@ function buildRawSeedDatabase(): RDashDatabase {
 
 export function buildSeedDatabase(): RDashDatabase {
     const raw = buildRawSeedDatabase();
+    // Complete the local QA receipt fixture with its evidence and original stock
+    // postings. Live records are never manufactured by this seed builder.
+    raw.grns = raw.grns.map((grn) => ({ ...grn, inspection_status: "accepted", delivery_challan_no: "QA-DC-701", receiving_proof_attachment_ids: ["attach-grn-proof"], delivery_challan_attachment_id: "attach-grn-challan" }));
+    raw.stockMovements = raw.inventory.map((item) => ({
+        id: `sm-${item.id}`, inventory_id: item.id, article_id: item.article_id,
+        name: item.name, type: "receipt", quantity: item.received_qty || 0,
+        unit_name: item.unit_name, rate: item.rate, work_order_id: item.work_order_id,
+        grn_id: item.grn_id, po_id: raw.grns.find((grn) => grn.id === item.grn_id)?.po_id,
+        created_at: item.created_at,
+    }));
     const repaired = repairOperationalWorkspace(raw);
     return backfillSeedThreads(repaired);
 }
