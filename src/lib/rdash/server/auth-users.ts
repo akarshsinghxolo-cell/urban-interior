@@ -421,3 +421,36 @@ export async function revokeRoleAssignment(user: AuthenticatedUser, input: { id?
   });
   return synced.assignment;
 }
+
+export async function deleteLoginAccount(user: AuthenticatedUser, input: { id?: string }) {
+  assertOwner(user);
+  const id = String(input.id || "").trim();
+  if (!id) throw new Error("Missing role assignment id.");
+  const admin = getSupabaseAdminClient();
+  const { data: rows, error: lookupError } = await admin
+    .from("uc_user_roles")
+    .select(ROLE_ASSIGNMENT_SELECT)
+    .eq("id", id)
+    .limit(1);
+  if (lookupError) throw new Error(`Could not load the login account: ${lookupError.message}`);
+  const assignment = rows?.[0] as RDashUserRoleStoredRow | undefined;
+  if (!assignment) throw new Error("No login account was found.");
+  if (assignment.user_id === user.userId) {
+    throw new Error("You cannot delete your own login account while signed in.");
+  }
+  if (!assignment.staff_id) throw new Error("The login account is not linked to canonical Staff.");
+
+  const { error: detachError } = await admin.rpc("detach_staff_login_identity", {
+    p_assignment_id: assignment.id,
+    p_user_id: assignment.user_id,
+    p_workspace_id: process.env.UC_WORKSPACE_ID || "default",
+    p_actor: user.email,
+  });
+  if (detachError) throw new Error(`Could not detach the login account: ${detachError.message}`);
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(assignment.user_id);
+  if (deleteError) {
+    throw new Error(`Login access was disabled, but the Auth account could not be deleted: ${deleteError.message}. Retry Delete login.`);
+  }
+  return { deleted: true as const, staffId: assignment.staff_id };
+}

@@ -57,7 +57,7 @@ describe("canonical user access identity", () => {
     expect(approvals).toContain('.eq("status", "active")');
     expect(approvals).toContain('status: "inactive"');
     expect(approvals).toContain("You cannot revoke your own access while signed in.");
-    expect(route).toContain('action?: "approve" | "reject" | "revoke"');
+    expect(route).toContain('action?: "approve" | "reject" | "revoke" | "delete"');
     expect(route).toContain("revokeRoleAssignment(user, body)");
     expect(ui).toContain("Revoke access");
     expect(ui).toContain('action: "revoke"');

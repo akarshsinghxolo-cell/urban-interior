@@ -9,6 +9,7 @@ import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps"
 import { dirtyFormRegistry } from "@/lib/rdash/dirty-form-registry";
 import { indianMobileForWrite, isValidIndianMobile } from "@/lib/rdash/phone-validation";
 import { STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, normalizeRoleKey, roleLabel } from "@/lib/rdash/staff-operations";
+import { today } from "@/lib/rdash/store/helpers";
 import type { AttendancePolicy, Staff, StaffDocument, StaffRoleKey } from "@/lib/rdash/types";
 import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,8 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const registerStaffDocument = useRDashStore((s) => s.registerStaffDocument);
   const updateStaffDocument = useRDashStore((s) => s.updateStaffDocument);
   const removeStaffDocument = useRDashStore((s) => s.removeStaffDocument);
+  const cascadeDeleteRecord = useRDashStore((s) => s.cascadeDeleteRecord);
+  const authUser = useRDashStore((s) => s.authUser);
 
   const staff = staffId ? db.master.staff.find((row) => row.id === staffId) : undefined;
   const baseStaff = React.useMemo(
@@ -110,6 +113,8 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
   const [documentToDelete, setDocumentToDelete] = React.useState<StaffDocument | null>(null);
   const [deletingDocumentId, setDeletingDocumentId] = React.useState<string | null>(null);
   const [documentError, setDocumentError] = React.useState("");
+  const [removeStaffOpen, setRemoveStaffOpen] = React.useState(false);
+  const [removingStaff, setRemovingStaff] = React.useState(false);
   const policy = normalizeAttendancePolicy(draft.attendance_policy);
   const isNew = !staffId;
   const uncertainUpload = documentStage === "error" && Boolean(documentFile) && !pendingDocumentLink;
@@ -129,6 +134,7 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     setPendingDocumentLink(null);
     setDocumentError("");
     setDocumentToDelete(null);
+    setRemoveStaffOpen(false);
   }, [open, staffId]);
 
   const patch = (value: Partial<Staff>) => setDraft((current) => ({ ...current, ...value }));
@@ -384,6 +390,45 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
     }
   };
 
+  const removeStaff = () => {
+    if (!staff || removingStaff) return;
+    if (staff.id === authUser?.staffId) {
+      toast.error("You cannot remove your own Staff profile while signed in.");
+      setRemoveStaffOpen(false);
+      return;
+    }
+    setRemovingStaff(true);
+    try {
+      if (staff.auth_user_id) {
+        updateStaff(staff.id, {
+          status: "exited",
+          exit_date: staff.exit_date || today(),
+        });
+        toast.info("Staff archived. Delete their login in User Approvals to permanently remove sign-in access.");
+      } else {
+        const result = cascadeDeleteRecord("master.staff", staff.id);
+        if (result.success) {
+          toast.success(`Staff "${staff.name}" deleted`);
+        } else {
+          updateStaff(staff.id, {
+            status: "exited",
+            exit_date: staff.exit_date || today(),
+            login_enabled: false,
+          });
+          toast.info("Staff archived because payroll or business history must be preserved.");
+        }
+      }
+      dirtyFormRegistry.markClean(formId);
+      setRemoveStaffOpen(false);
+      onClose();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Staff could not be removed.";
+      toast.error(message.replace(/^INVALID:/, ""));
+    } finally {
+      setRemovingStaff(false);
+    }
+  };
+
   const gpsValue = policy.office_latitude != null && policy.office_longitude != null
     ? `${policy.office_latitude.toFixed(6)}, ${policy.office_longitude.toFixed(6)}`
     : "";
@@ -571,7 +616,28 @@ export function StaffEditDialog({ staffId, open, onClose }: { staffId?: string; 
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <AlertDialog open={removeStaffOpen} onOpenChange={(nextOpen) => { if (!removingStaff) setRemoveStaffOpen(nextOpen); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remove Staff profile?</AlertDialogTitle>
+              <AlertDialogDescription>
+                An unused Staff profile is permanently deleted. If payroll, attendance, login or other business history exists, the profile is archived instead so financial and operational records remain traceable.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <Button type="button" variant="outline" disabled={removingStaff} onClick={() => setRemoveStaffOpen(false)}>Cancel</Button>
+              <Button type="button" variant="destructive" disabled={removingStaff} onClick={removeStaff}>
+                {removingStaff ? "Removing…" : "Remove staff"}
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <DialogFooter className="border-t border-border px-5 py-3">
+          {!isNew && authUser?.role === "Owner" ? (
+            <Button type="button" variant="ghost" size="sm" className="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={documentUploading || Boolean(deletingDocumentId) || staff?.id === authUser.staffId} title={staff?.id === authUser.staffId ? "You cannot remove your own Staff profile while signed in." : "Remove this Staff profile"} onClick={() => setRemoveStaffOpen(true)}>
+              <Trash2 className="mr-1 h-3.5 w-3.5" />Remove staff
+            </Button>
+          ) : null}
           <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
           <Button size="sm" onClick={handleSave} disabled={!draft.name?.trim() || documentUploading || Boolean(pendingDocumentLink) || uncertainUpload || Boolean(deletingDocumentId)}>{isNew ? <UserPlus className="mr-1 h-3.5 w-3.5"/> : <Pencil className="mr-1 h-3.5 w-3.5"/>}{isNew ? "Create staff" : "Save changes"}</Button>
         </DialogFooter>

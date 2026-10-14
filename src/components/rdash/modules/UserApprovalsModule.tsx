@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, ShieldOff, UserCheck, UserX, Users } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,13 +90,15 @@ export function UserApprovalsModule() {
     void loadUsers();
   }, [loadUsers]);
 
-  async function updateUser(input: { id: string; action: "approve" | "reject" | "revoke"; role?: string; displayName?: string; staffId?: string }) {
-    if (input.action === "revoke") {
-      const target = users.find((user) => user.id === input.id);
+  async function updateUser(input: { id: string; action: "approve" | "reject" | "revoke" | "delete"; role?: string; displayName?: string; staffId?: string }) {
+    const target = users.find((user) => user.id === input.id);
+    if (input.action === "revoke" || input.action === "delete") {
       const confirmed = await confirmDialog({
-        title: "Revoke user access?",
-        description: `${target?.display_name || target?.email || "This user"} will lose Urban Castle access immediately. Their Staff record stays in history and can be re-approved through the normal access flow.`,
-        confirmLabel: "Revoke access",
+        title: input.action === "delete" ? "Delete login account?" : "Revoke user access?",
+        description: input.action === "delete"
+          ? `${target?.display_name || target?.email || "This user"} will no longer be able to sign in. Their canonical Staff profile, payroll, attendance and business history remain. This cannot be undone.`
+          : `${target?.display_name || target?.email || "This user"} will lose Urban Castle access immediately. Their Staff record stays in history and can be re-approved through the normal access flow.`,
+        confirmLabel: input.action === "delete" ? "Delete login" : "Revoke access",
         danger: true,
       });
       if (!confirmed) return;
@@ -110,14 +112,17 @@ export function UserApprovalsModule() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const payload = await response.json().catch(() => ({})) as { user?: RDashUserRow; error?: string };
-      if (!response.ok || !payload.user) throw new Error(payload.error || "Could not update user approval.");
+      const payload = await response.json().catch(() => ({})) as { user?: RDashUserRow; deleted?: boolean; error?: string };
+      const completed = input.action === "delete" ? payload.deleted : payload.user;
+      if (!response.ok || !completed) throw new Error(payload.error || "Could not update user approval.");
       toast.success(
         input.action === "approve"
           ? "User approved"
           : input.action === "reject"
             ? "User rejected"
-            : "User access revoked",
+            : input.action === "revoke"
+              ? "User access revoked"
+              : "Login account deleted",
       );
       await loadUsers();
     } catch (cause) {
@@ -210,7 +215,7 @@ export function UserApprovalsModule() {
           <span className="text-[11px] text-muted-foreground">{pending.length} waiting</span>
         </div>
         <div className="divide-y divide-border">
-          {pending.map((user) => <PendingUserRow key={user.id} user={user} busy={busy} onUpdate={updateUser} />)}
+          {pending.map((user) => <PendingUserRow key={user.id} user={user} busy={busy} isSelf={user.email?.toLowerCase() === authUser.email.toLowerCase()} onUpdate={updateUser} />)}
           {pending.length === 0 ? <EmptyState title="No pending users" description="New signup requests will appear here for owner approval." icon={<CheckCircle2 className="h-8 w-8" />} /> : null}
         </div>
       </div>
@@ -250,6 +255,17 @@ export function UserApprovalsModule() {
                     Revoke access
                   </Button>
                 ) : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-full gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
+                  disabled={busy || user.email?.toLowerCase() === authUser.email.toLowerCase()}
+                  title={user.email?.toLowerCase() === authUser.email.toLowerCase() ? "You cannot delete your own login while signed in." : "Permanently delete this login account"}
+                  onClick={() => void updateUser({ id: user.id, action: "delete" })}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete login
+                </Button>
               </div>
             </div>
           ))}
@@ -259,10 +275,11 @@ export function UserApprovalsModule() {
   );
 }
 
-function PendingUserRow({ user, busy, onUpdate }: {
+function PendingUserRow({ user, busy, isSelf, onUpdate }: {
   user: RDashUserRow;
   busy: boolean;
-  onUpdate: (input: { id: string; action: "approve" | "reject" | "revoke"; role?: string; displayName?: string; staffId?: string }) => Promise<void>;
+  isSelf: boolean;
+  onUpdate: (input: { id: string; action: "approve" | "reject" | "revoke" | "delete"; role?: string; displayName?: string; staffId?: string }) => Promise<void>;
 }) {
   const [role, setRole] = React.useState(user.role || "FIELD_STAFF");
   const [displayName, setDisplayName] = React.useState(user.display_name || "");
@@ -287,6 +304,10 @@ function PendingUserRow({ user, busy, onUpdate }: {
       <div className="flex items-center gap-2 lg:justify-end">
         <Button size="sm" disabled={busy} onClick={() => void onUpdate({ id: user.id, action: "approve", role, displayName, staffId })}>Approve</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void onUpdate({ id: user.id, action: "reject" })}>Reject</Button>
+        <Button size="sm" variant="ghost" className="text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={busy || isSelf} title={isSelf ? "You cannot delete your own login while signed in." : "Permanently delete this login account"} onClick={() => void onUpdate({ id: user.id, action: "delete" })}>
+          <Trash2 className="h-3.5 w-3.5" />
+          <span className="sr-only">Delete login</span>
+        </Button>
       </div>
     </div>
   );

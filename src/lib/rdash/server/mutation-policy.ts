@@ -255,6 +255,17 @@ export function assertWorkspaceMutationAllowed(
   // Financial history is immutable even for an Owner; permissions cannot turn a payment into a draft.
   for (const operation of operations) {
     const oldRows = rowsFor(current, operation.collection);
+    if (operation.collection === "master.staff") {
+      for (const id of operation.deleteIds || []) {
+        if (id === user.staffId) {
+          throw new Error("INVALID:You cannot remove your own Staff profile while signed in.");
+        }
+        const staff = oldRows.find((row) => rowId(row) === id);
+        if (staff?.auth_user_id) {
+          throw new Error("INVALID:Delete this Staff member's login account in User Approvals before removing the Staff profile.");
+        }
+      }
+    }
     if (operation.collection === "payrollLines") {
       for (const row of operation.upsert || []) {
         if (!oldRows.some(old => rowId(old) === rowId(row) && old.payroll_period_id === row.payroll_period_id) && current?.payrollPeriods?.some(p => p.id === row.payroll_period_id && p.status === "paid"))

@@ -150,6 +150,18 @@ type RDashSupabaseSchema = {
           workspaceRevision: number;
         };
       };
+      detach_staff_login_identity: {
+        Args: {
+          p_assignment_id: string;
+          p_user_id: string;
+          p_workspace_id: string;
+          p_actor: string;
+        };
+        Returns: {
+          staffId: string;
+          workspaceRevision: number;
+        };
+      };
       uc_bump_workspace_revision: {
         Args: {
           p_workspace_id: string;

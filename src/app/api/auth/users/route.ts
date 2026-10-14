@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import {
   approveRoleAssignment,
+  deleteLoginAccount,
   listRoleAssignments,
   listStaffIdentityDrift,
   rejectRoleAssignment,
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const user = await requireSession(request);
-    const body = await request.json() as { id?: string; action?: "approve" | "reject" | "revoke"; role?: string; displayName?: string; staffId?: string };
+    const body = await request.json() as { id?: string; action?: "approve" | "reject" | "revoke" | "delete"; role?: string; displayName?: string; staffId?: string };
     if (body.action === "approve") {
       const updated = await approveRoleAssignment(user, body);
       return NextResponse.json({ user: updated });
@@ -39,6 +40,10 @@ export async function PATCH(request: NextRequest) {
     if (body.action === "revoke") {
       const updated = await revokeRoleAssignment(user, body);
       return NextResponse.json({ user: updated });
+    }
+    if (body.action === "delete") {
+      const result = await deleteLoginAccount(user, body);
+      return NextResponse.json(result);
     }
     return NextResponse.json({ error: "Unknown user access action." }, { status: 400 });
   } catch (error) {
