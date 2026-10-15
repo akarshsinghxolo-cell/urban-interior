@@ -48,12 +48,12 @@ function scrollToField(id: string) {
 }
 
 function workRequiredDraftIsCanonical(work: CustomerWorkRequiredDraft): boolean {
-  const hasCategory = Boolean(work.categoryId);
-  const hasSubcategories = work.subcategoryIds.length > 0;
-  if (hasCategory !== hasSubcategories) return false;
-  if (!hasCategory && work.workTypeIds.length > 0) return false;
-  if (hasCategory && work.workTypeIds.length === 0) return false;
-  return Boolean(work.title.trim());
+  return Boolean(
+    work.categoryId
+    && work.subcategoryIds.length
+    && work.workTypeIds.length
+    && work.title.trim(),
+  );
 }
 
 export function CustomerSitesDialog({
@@ -238,7 +238,7 @@ export function CustomerSitesDialog({
       if (work.siteId && !includedLiveSiteIds.has(work.siteId)) continue;
       if (!work.title.trim()) { toast.error("Enter a title for every Work Required"); return false; }
       if (!workRequiredDraftIsCanonical(work)) {
-        toast.error("For each Work Required, select a Category, at least one Subcategory, and a Work Type; or leave taxonomy empty for a general scope.");
+        toast.error("For each Work Required, select a Category, at least one Subcategory, at least one Work Type, and a title.");
         return false;
       }
     }
