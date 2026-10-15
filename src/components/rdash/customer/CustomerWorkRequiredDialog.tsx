@@ -47,9 +47,10 @@ export function CustomerWorkRequiredDialog({ open, customerId, site, initialArea
     });
   }, [initialAreaIdsKey, open, site.id, siteAreas]);
 
-  const save = () => {
+  const save = (addAnother = false) => {
     if (!draft.categoryId) return toast.error("Select the primary Work Category.");
     if (!draft.subcategoryIds.length) return toast.error("Select at least one Work Subcategory.");
+    if (!draft.workTypeIds.length) return toast.error("Select at least one Work Type.");
     if (!draft.title.trim()) return toast.error("Work Required title is required.");
     if (!draft.areaIds.length) return toast.error("Select or create at least one covered Area.");
     try {
@@ -68,7 +69,11 @@ export function CustomerWorkRequiredDialog({ open, customerId, site, initialArea
       });
       toast.success(`Work Required created for ${site.name}`);
       onCreated?.(id);
-      onOpenChange(false);
+      if (addAnother) {
+        setDraft({ ...emptyWorkRequiredFormDraft(), areaIds: [...draft.areaIds], priority: draft.priority });
+      } else {
+        onOpenChange(false);
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Work Required could not be created.");
     }
@@ -91,7 +96,8 @@ export function CustomerWorkRequiredDialog({ open, customerId, site, initialArea
         />
         <DialogFooter>
           <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button size="sm" onClick={save}><Plus className="mr-1 h-3.5 w-3.5" />Create Work Required</Button>
+          <Button size="sm" variant="outline" onClick={() => save(true)}><Plus className="mr-1 h-3.5 w-3.5" />Save & add another</Button>
+          <Button size="sm" onClick={() => save(false)}><Plus className="mr-1 h-3.5 w-3.5" />Create Work Required</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

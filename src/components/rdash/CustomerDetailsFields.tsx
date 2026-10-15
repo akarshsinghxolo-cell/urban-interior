@@ -119,10 +119,23 @@ export function CustomerDetailsFields({
           }} placeholder="e.g. Mr. Das" autoFocus={!isEdit} />
         </Field>
         <Field label="Contact number (optional)" htmlFor="customer-phone">
-          <IndianMobileInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({ ...current, phone }))} />
+          <IndianMobileInput id="customer-phone" value={customer.phone} onChange={(phone) => setCustomer((current) => ({
+            ...current,
+            phone,
+            whatsapp: !current.whatsapp || current.whatsapp === current.phone ? phone : current.whatsapp,
+          }))} />
         </Field>
         <Field label="WhatsApp number (optional)" htmlFor="customer-whatsapp">
           <IndianMobileInput id="customer-whatsapp" value={customer.whatsapp} onChange={(whatsapp) => setCustomer((current) => ({ ...current, whatsapp }))} />
+          <label className="mt-1 flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={Boolean(customer.phone) && customer.whatsapp === customer.phone}
+              disabled={!customer.phone}
+              onChange={(event) => setCustomer((current) => ({ ...current, whatsapp: event.target.checked ? current.phone : "" }))}
+            />
+            Same as contact number
+          </label>
         </Field>
         <Field label="Alternate phone (optional)" htmlFor="customer-alternate-phone">
           <IndianMobileInput id="customer-alternate-phone" value={customer.alternatePhone} onChange={(alternatePhone) => setCustomer((current) => ({ ...current, alternatePhone }))} />

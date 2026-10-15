@@ -215,7 +215,7 @@ function CustomerSearchBar({ query, setQuery, onAdd, duplicateControl }: {
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer" aria-label="Search customers" className="h-9 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none ring-ring placeholder:text-muted-foreground focus-visible:ring-2" />
         </div>
-        <Button size="sm" onClick={onAdd} className="gap-1.5"><UserPlus className="h-4 w-4" /><span className="hidden sm:inline">Add</span></Button>
+        <Button size="sm" onClick={onAdd} className="gap-1.5" aria-label="Add customer"><UserPlus className="h-4 w-4" /><span className="hidden sm:inline">Add</span></Button>
         {duplicateControl}
       </div>
     </div>
@@ -243,7 +243,7 @@ function CustomerDuplicateMergeControl() {
       }
     }
     return pairs;
-  }, [db.customers]);
+  }, [db]);
 
   const selectedPair = duplicatePairs.find((pair) => pair.key === pairKey) || duplicatePairs[0];
   const openReview = () => {

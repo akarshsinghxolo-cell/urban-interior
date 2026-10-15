@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Search } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export type MultiTickGroup = {
@@ -13,6 +14,14 @@ export type MultiTickGroup = {
     // several groups render in one panel).
     footer?: (close: () => void) => React.ReactNode;
 };
+
+export function filterMultiTickGroups(groups: MultiTickGroup[], query: string): MultiTickGroup[] {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return groups;
+    return groups
+        .map((group) => ({ ...group, items: group.items.filter((item) => item.name.toLowerCase().includes(normalized)) }))
+        .filter((group) => group.items.length > 0);
+}
 
 // Shared multi-tick dropdown (the subcategory/work-type picker format):
 // trigger shows the first selection plus "+N", the panel keeps native
@@ -29,6 +38,7 @@ export function MultiTickDropdown({
     onToggle,
     footer,
     inline = false,
+    searchable = false,
 }: {
     selected: string[];
     groups: MultiTickGroup[];
@@ -38,13 +48,16 @@ export function MultiTickDropdown({
     onToggle: (id: string) => void;
     footer?: (close: () => void) => React.ReactNode;
     inline?: boolean;
+    searchable?: boolean;
 }) {
     const [open, setOpen] = React.useState(false);
+    const [query, setQuery] = React.useState("");
     const close = React.useCallback(() => setOpen(false), []);
     const firstName = groups.flatMap((group) => group.items).find((item) => selected.includes(item.id))?.name;
+    const visibleGroups = React.useMemo(() => filterMultiTickGroups(groups, query), [groups, query]);
     const options = (
         <div role="group" aria-label={ariaLabel}>
-            {groups.map((group, groupIndex) => (
+            {visibleGroups.map((group, groupIndex) => (
                 <React.Fragment key={group.key}>
                     {groupIndex > 0 ? <div className="h-3" aria-hidden="true" /> : null}
                     {group.items.map((item) => {
@@ -59,10 +72,17 @@ export function MultiTickDropdown({
                     {group.footer ? <div className="mt-0.5 px-1 pb-0.5">{group.footer(close)}</div> : null}
                 </React.Fragment>
             ))}
+            {visibleGroups.length === 0 ? <p className="px-2 py-3 text-center text-xs text-muted-foreground">No matching options</p> : null}
             {footer?.(close)}
         </div>
     );
-    if (inline) return <div className="max-h-56 overflow-y-auto rounded-md border border-border p-1">{options}</div>;
+    const search = searchable ? (
+        <div className="relative mb-1">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} aria-label={`Search ${ariaLabel}`} placeholder={`Search ${ariaLabel.toLowerCase()}`} className="h-8 pl-8 text-xs" />
+        </div>
+    ) : null;
+    if (inline) return <div className="rounded-md border border-border p-1">{search}<div className="max-h-48 overflow-y-auto rd-scroll">{options}</div></div>;
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger
@@ -83,6 +103,7 @@ export function MultiTickDropdown({
                 className="max-h-56 w-[calc(var(--radix-popover-trigger-width)+0px)] overflow-y-auto p-1 rd-scroll"
                 onOpenAutoFocus={(event) => event.preventDefault()}
             >
+                {search}
                 {options}
             </PopoverContent>
         </Popover>

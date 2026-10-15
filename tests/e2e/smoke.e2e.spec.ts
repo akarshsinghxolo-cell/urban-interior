@@ -88,6 +88,39 @@ test.describe("workdesk navigation", () => {
 });
 
 test.describe("customer drawer", () => {
+  test("fast customer entry reuses contact, Areas and work scope on mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openCustomersDeskModule(page);
+    await page.getByRole("button", { name: "Add customer", exact: true }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Add New Customer", exact: true });
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("Contact number (optional)", { exact: true }).fill("9876543210");
+    await expect(dialog.getByLabel("WhatsApp number (optional)", { exact: true })).toHaveValue("9876543210");
+    await expect(dialog.getByRole("checkbox", { name: "Same as contact number", exact: true })).toBeChecked();
+
+    await dialog.getByRole("button", { name: "Add Work Required", exact: true }).click();
+    const firstWork = dialog.locator("article").first();
+    await firstWork.getByRole("button", { name: "Add Area", exact: true }).click();
+    await firstWork.getByRole("checkbox", { name: "Kitchen", exact: true }).check();
+    await firstWork.getByRole("button", { name: "Add selected Areas", exact: true }).click();
+
+    await firstWork.getByLabel("Primary Category", { exact: true }).selectOption({ index: 1 });
+    await expect(firstWork.getByLabel("Search Primary subcategory", { exact: true })).toBeVisible();
+    await firstWork.getByRole("group", { name: "Primary subcategory", exact: true }).getByRole("checkbox").first().check();
+    await expect(firstWork.getByLabel("Search Work types", { exact: true })).toBeVisible();
+    await expect(firstWork.getByRole("textbox", { name: /^Work Required title/ })).not.toHaveValue("");
+    await firstWork.getByLabel("Budget (₹)", { exact: true }).fill("25000");
+
+    await firstWork.getByRole("button", { name: "Copy this requirement", exact: true }).click();
+    await expect(dialog.locator("article")).toHaveCount(2);
+    const copiedWork = dialog.locator("article").nth(1);
+    await expect(copiedWork.getByLabel("Budget (₹)", { exact: true })).toHaveValue("");
+    await expect(copiedWork.getByRole("checkbox", { name: "Include Area Kitchen", exact: true })).toBeChecked();
+    await expectNoHorizontalOverflow(page, "fast customer entry @390px");
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  });
+
   for (const width of [1280, 390]) {
     test(`customer card menu and drawer edit share the customer form at ${width}px`, async ({ page }) => {
       await page.setViewportSize({ width, height: 844 });

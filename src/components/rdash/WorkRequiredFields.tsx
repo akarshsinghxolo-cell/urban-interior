@@ -63,7 +63,7 @@ export function WorkRequiredFields({
   onCreateArea: (area: NewWorkArea) => string;
   onUpdateArea?: (areaId: string, name: string) => void;
   onDeleteArea?: (areaId: string) => void;
-  onAddNext?: () => void;
+  onAddNext?: (mode: "areas" | "copy") => void;
 }) {
   const fieldId = React.useId();
   const categorySelectId = `${fieldId}-category`;
@@ -152,11 +152,15 @@ export function WorkRequiredFields({
   return (
     <div className="grid gap-3">
       <div>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas</span>
-          <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
-            <Plus className="mr-1 h-3 w-3" />{newAreaOpen ? "Close" : "Add Area"}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-1">
+            {areas.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: areas.map((area) => area.id) })}>Select all</Button> : null}
+            {value.areaIds.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: [] })}>Clear</Button> : null}
+            <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
+              <Plus className="mr-1 h-3 w-3" />{newAreaOpen ? "Close" : "Add Area"}
+            </Button>
+          </div>
         </div>
         {newAreaOpen ? (
           <div className="mt-2 rounded-md border border-primary/20 bg-primary/[0.03] p-3">
@@ -186,6 +190,7 @@ export function WorkRequiredFields({
               <div key={area.id} className="flex items-center gap-1 rounded px-1 py-1 text-xs hover:bg-accent/50">
                 <input
                   type="checkbox"
+                  aria-label={`Include Area ${area.name}`}
                   checked={value.areaIds.includes(area.id)}
                   onChange={() => onChange({ areaIds: value.areaIds.includes(area.id) ? value.areaIds.filter((id) => id !== area.id) : [...value.areaIds, area.id] })}
                 />
@@ -197,7 +202,10 @@ export function WorkRequiredFields({
         ) : <p className="mt-1 rounded-md border border-dashed border-warning/40 bg-warning/[0.04] px-3 py-2 text-xs text-muted-foreground">Add an Area here when the work location is known.</p>}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-md border border-border p-3">
+        <p className="text-xs font-semibold">Work selection</p>
+        <p className="mb-3 text-[11px] text-muted-foreground">Choose the category once, then tick every required subcategory and work type.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label htmlFor={categorySelectId} className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Category</label>
           <select
@@ -235,10 +243,13 @@ export function WorkRequiredFields({
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Subcategory</span>
           <div className="mt-1">
             <MultiTickDropdown
+              key={value.categoryId || "no-category"}
               ariaLabel="Primary subcategory"
               selected={value.subcategoryIds}
               groups={subcategories.map((subcategory) => ({ key: subcategory.id, items: [{ id: subcategory.id, name: subcategory.name }] }))}
               disabled={!value.categoryId}
+              inline
+              searchable
               placeholder={value.categoryId ? "Select work subcategories" : "Select category first"}
               onToggle={(subcategoryId) => {
                 const selected = value.subcategoryIds.includes(subcategoryId);
@@ -287,10 +298,10 @@ export function WorkRequiredFields({
             />
           ) : null}
         </div>
-      </div>
+        </div>
 
       {selectedWorkTypes.length ? (
-        <div>
+        <div className="mt-3">
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Types</span>
           <p className="mt-0.5 text-[11px] text-muted-foreground">Grade within each selected subcategory, e.g. Kitchen Cabinets (Modular) · Premium.</p>
           {/* ponytail: same tick-dropdown format as subcategories; each group
@@ -299,11 +310,14 @@ export function WorkRequiredFields({
               auto-ticking the created grade. */}
           <div className="mt-1">
             <MultiTickDropdown
+              key={value.subcategoryIds.join("|")}
               ariaLabel="Work types"
               selected={value.workTypeIds}
               groups={workTypeGroups}
               placeholder="Select work types"
               onToggle={(workTypeId) => toggleWorkType({ id: workTypeId })}
+              inline
+              searchable
             />
           </div>
           {addWorkTypeSubcategoryId && value.subcategoryIds.includes(addWorkTypeSubcategoryId) ? (
@@ -329,6 +343,7 @@ export function WorkRequiredFields({
           ) : null}
         </div>
       ) : null}
+      </div>
 
       <label>
         <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Required title *</span>
@@ -355,7 +370,12 @@ export function WorkRequiredFields({
             <Input type="number" min={0} inputMode="numeric" value={value.budget} onChange={(event) => onChange({ budget: event.target.value })} placeholder="e.g. 150000" className="mt-1 h-9 w-full" />
           </label>
         </div>
-        {onAddNext ? <Button type="button" size="sm" variant="outline" onClick={onAddNext}><Plus className="mr-1 h-3.5 w-3.5" />Add next Work Required</Button> : null}
+        {onAddNext ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={() => onAddNext("areas")}><Plus className="mr-1 h-3.5 w-3.5" />Add another using these Areas</Button>
+            <Button type="button" size="sm" variant="outline" onClick={() => onAddNext("copy")}>Copy this requirement</Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
