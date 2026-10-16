@@ -12,8 +12,6 @@ import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction, AddWorkTypeAction } from "./WorkTaxonomyQuickAdd";
 import { MultiTickDropdown } from "./MultiTickDropdown";
 
-const ADD_CATEGORY_VALUE = "__add_work_category__";
-
 export type WorkRequiredFormDraft = {
   title: string;
   categoryId: string;
@@ -65,8 +63,6 @@ export function WorkRequiredFields({
   onDeleteArea?: (areaId: string) => void;
   onAddNext?: (mode: "areas" | "copy") => void;
 }) {
-  const fieldId = React.useId();
-  const categorySelectId = `${fieldId}-category`;
   const [addCategoryOpen, setAddCategoryOpen] = React.useState(false);
   const [addSubcategoryOpen, setAddSubcategoryOpen] = React.useState(false);
   const [addWorkTypeSubcategoryId, setAddWorkTypeSubcategoryId] = React.useState<string | null>(null);
@@ -207,25 +203,35 @@ export function WorkRequiredFields({
         <p className="mb-3 text-[11px] text-muted-foreground">Choose the category once, then tick every required subcategory and work type.</p>
         <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label htmlFor={categorySelectId} className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Category</label>
-          <select
-            id={categorySelectId}
-            value={value.categoryId}
-            onChange={(event) => {
-              if (event.target.value === ADD_CATEGORY_VALUE) {
-                setAddCategoryOpen(true);
-                return;
-              }
-              setAddCategoryOpen(false);
-              setAddSubcategoryOpen(false);
-              onChange({ categoryId: event.target.value, subcategoryIds: [], workTypeIds: [], title: "" });
-            }}
-            className="mt-1 h-9 w-full rounded-md border border-input bg-card px-2 text-sm"
-          >
-            <option value="">Select work category</option>
-            {db.master.workCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-            <option value={ADD_CATEGORY_VALUE}>+ Add category</option>
-          </select>
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Category</span>
+          <div className="mt-1">
+            <MultiTickDropdown
+              ariaLabel="Primary category"
+              selected={value.categoryId ? [value.categoryId] : []}
+              groups={db.master.workCategories.map((category) => ({ key: category.id, items: [{ id: category.id, name: category.name }] }))}
+              inline
+              searchable
+              placeholder="Select work category"
+              onToggle={(categoryId) => {
+                const nextCategoryId = value.categoryId === categoryId ? "" : categoryId;
+                setAddCategoryOpen(false);
+                setAddSubcategoryOpen(false);
+                onChange({ categoryId: nextCategoryId, subcategoryIds: [], workTypeIds: [], title: "" });
+              }}
+              footer={(close) => (
+                <button
+                  type="button"
+                  className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
+                  onClick={() => {
+                    close();
+                    setAddCategoryOpen(true);
+                  }}
+                >
+                  + Add category
+                </button>
+              )}
+            />
+          </div>
           {addCategoryOpen ? (
             <AddWorkCategoryAction
               key="work-required-add-category"

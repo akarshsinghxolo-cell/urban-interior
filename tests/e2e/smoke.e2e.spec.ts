@@ -105,7 +105,8 @@ test.describe("customer drawer", () => {
     await firstWork.getByRole("checkbox", { name: "Kitchen", exact: true }).check();
     await firstWork.getByRole("button", { name: "Add selected Areas", exact: true }).click();
 
-    await firstWork.getByLabel("Primary Category", { exact: true }).selectOption({ index: 1 });
+    await expect(firstWork.getByLabel("Search Primary category", { exact: true })).toBeVisible();
+    await firstWork.getByRole("group", { name: "Primary category", exact: true }).getByRole("checkbox").first().check();
     await expect(firstWork.getByLabel("Search Primary subcategory", { exact: true })).toBeVisible();
     await firstWork.getByRole("group", { name: "Primary subcategory", exact: true }).getByRole("checkbox").first().check();
     await expect(firstWork.getByLabel("Search Work types", { exact: true })).toBeVisible();
