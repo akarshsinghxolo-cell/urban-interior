@@ -651,8 +651,8 @@ export function createExecutionSlice(ctx: StoreContext): ExecutionState {
             const quotation = workOrder.quotation_ids[0]
                 ? state.db.quotations.find((row: any) => row.id === workOrder.quotation_ids[0])
                 : undefined;
-            // A-1/A-4: Carry over the quotation scope_line's rate, article_id,
-            // work_category_id and quantity into the BOQ. Previously this hard-
+            // A-1/A-4: Carry over the quotation scope line's rate, article_id,
+            // category_id and quantity into the BOQ. Previously this hard-
             // coded `rate = 0` and `amount = 0`, throwing away the negotiated
             // quotation rates and leaving the BOQ "unpriced" forever. The
             // "Sync from quotation" button in BOQModule re-runs this same

@@ -23,6 +23,7 @@ import { advanceSitesStage } from "../../site-lifecycle";
 import { materializePaymentSchedule } from "../finance-helpers";
 import { contractorMasterRecordForCreate, type ContractorProfileRecord } from "../../contractor-profile";
 import { contractorSettlementAmounts } from "../finance-helpers";
+import { workRequiredCategoryIds } from "../../work-types";
 import { deriveContractorPerformanceEvidenceExport } from "../../performance-reconciliation";
 // Commission accrual uses the shared canonical rule lookup: an exact
 // partner/category rule wins, then a partner-wide rule, then the partner's
@@ -1090,8 +1091,10 @@ export function createContractorsSlice(ctx: StoreContext): ContractorsState {
             // Resolve one canonical rule path: exact partner/category first,
             // then the partner-wide rule. If neither exists, use the partner's
             // configured default percentage (and finally the system default).
-            const workCategoryId = state.db.workRequired
-                .find((w: any) => workOrder.work_required_ids.includes(w.id))?.work_category_id;
+            const workCategoryIds = [...new Set<string>(state.db.workRequired
+                .filter((work: any) => workOrder.work_required_ids.includes(work.id))
+                .flatMap((work: any) => workRequiredCategoryIds(state.db.master.workSubcategories, work)))];
+            const workCategoryId = workCategoryIds.length === 1 ? workCategoryIds[0] : undefined;
             const matchedRule = findCommissionRule(state.db, sourcePartnerId, workCategoryId);
             const matchedLabel = matchedRule
                 ? `${matchedRule.applies_to}${matchedRule.category_id ? ` · ${matchedRule.category_id}` : ""} · partner ${matchedRule.source_partner_name || matchedRule.source_partner_id}`

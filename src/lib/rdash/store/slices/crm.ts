@@ -7,7 +7,7 @@ import type { Customer, ID, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
-import { itemOptionPairs, primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
+import { itemOptionPairs, primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredCategoryIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
 import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
@@ -34,7 +34,6 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 customer_id: work.customer_id || "",
                 site_id: work.site_id || "",
                 title: work.title || "New work required",
-                work_category_id: work.work_category_id,
                 work_subcategory_ids: work.work_subcategory_ids || [],
                 work_type_ids: work.work_type_ids || [],
                 area_ids: work.area_ids || [],
@@ -770,7 +769,6 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                         customer_id: workRequired.customer_id,
                         site_id: workRequired.site_id,
                         title: "",
-                        work_category_id: categoryId,
                         work_subcategory_ids: [],
                         work_type_ids: [],
                         area_ids: [],
@@ -789,7 +787,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                     ? siteWorks.find((row: any) => row.id === line.target_work_required_id)
                     : undefined;
                 if (explicit) return explicit;
-                const categoryMatches = siteWorks.filter((row: any) => row.work_category_id && row.work_category_id === line.category_id);
+                const categoryMatches = siteWorks.filter((row: any) => workRequiredCategoryIds(state.db.master.workSubcategories, row).includes(line.category_id));
                 return categoryMatches.find((row: any) => (row.work_subcategory_ids || []).includes(line.subcategory_id))
                     || categoryMatches[0]
                     || (line.category_id ? skeletonFor(line.category_id) : workRequired);

@@ -70,20 +70,20 @@ export function assertCustomerRecord(
   assertCustomerReferrer(db, customer, context);
 }
 
-export function workRequiredHasTaxonomy(work: Pick<WorkRequired, "work_category_id" | "work_subcategory_ids">): boolean {
-  return Boolean(work.work_category_id) && Boolean(work.work_subcategory_ids?.length);
+export function workRequiredHasTaxonomy(work: Pick<WorkRequired, "work_subcategory_ids">): boolean {
+  return Boolean(work.work_subcategory_ids?.length);
 }
 
 /**
  * A Work Required record has exactly two valid shapes:
- * - general scope: no category and no subcategories/work types;
- * - taxonomy scope: category + one or more subcategories, with every work type
+ * - general scope: no subcategories/work types;
+ * - taxonomy scope: one or more subcategories, with every work type
  *   belonging to one of those selected subcategories.
  */
 export function assertWorkRequiredDefinition(
   db: WorkRequiredValidationContext,
   work: Pick<WorkRequired,
-    "title" | "work_category_id" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "customer_id" | "site_id"
+    "title" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "customer_id" | "site_id"
   >,
   context = "Work Required",
   areas: Area[] = db.areas,
@@ -91,28 +91,19 @@ export function assertWorkRequiredDefinition(
   if (!work.title?.trim()) throw new Error(`${context}: title is required.`);
   if (!work.customer_id?.trim()) throw new Error(`${context}: Customer is required.`);
 
-  const categoryId = work.work_category_id?.trim() || "";
   const subcategoryIds = [...new Set((work.work_subcategory_ids || []).filter(Boolean))];
   const workTypeIds = [...new Set((work.work_type_ids || []).filter(Boolean))];
-  const hasCategory = Boolean(categoryId);
   const hasSubcategories = subcategoryIds.length > 0;
 
-  if (hasCategory !== hasSubcategories) {
-    throw new Error(`${context}: choose both a Work Category and at least one Work Subcategory, or leave both empty for a general scope.`);
-  }
-  if (!hasCategory) {
+  if (!hasSubcategories) {
     if (workTypeIds.length) {
-      throw new Error(`${context}: a general scope cannot contain work types without a category/subcategory.`);
+      throw new Error(`${context}: a general scope cannot contain work types without a subcategory.`);
     }
   } else {
-    const category = db.master.workCategories.find((row) => row.id === categoryId);
-    if (!category) throw new Error(`${context}: Work Category "${categoryId}" does not exist.`);
     const subcategories = subcategoryIds.map((id) => {
       const row = db.master.workSubcategories.find((candidate) => candidate.id === id);
       if (!row) throw new Error(`${context}: Work Subcategory "${id}" does not exist.`);
-      if (row.category_id !== category.id) {
-        throw new Error(`${context}: Work Subcategory "${row.name}" belongs to another Work Category.`);
-      }
+      if (!db.master.workCategories.some((category) => category.id === row.category_id)) throw new Error(`${context}: Work Subcategory "${row.name}" has no Work Category.`);
       return row;
     });
     const allowedWorkTypeIds = new Set(resolveWorkTypes(subcategories, workTypeIds).map((row) => row.id));

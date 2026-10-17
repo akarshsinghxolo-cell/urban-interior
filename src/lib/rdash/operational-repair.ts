@@ -60,7 +60,7 @@ function repairLine(db: RDashDatabase, line: LineItem, context: string): LineIte
     article_id: material.article_id,
     work_required_article_id: material.id,
     variant_id: line.variant_id || variant?.id,
-    category_id: work?.work_category_id || db.master.workSubcategories.find((row) => row.id === material.work_required_id)?.category_id || line.category_id,
+    category_id: db.master.workSubcategories.find((row) => row.id === material.work_required_id)?.category_id || line.category_id,
     unit_id: material.unit_id,
     unit_name: unitName(db, material.unit_id, line.unit_name),
   };

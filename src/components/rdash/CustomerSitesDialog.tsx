@@ -49,7 +49,7 @@ function scrollToField(id: string) {
 
 function workRequiredDraftIsCanonical(work: CustomerWorkRequiredDraft): boolean {
   return Boolean(
-    work.categoryId
+    work.categoryIds.length
     && work.subcategoryIds.length
     && work.workTypeIds.length
     && work.title.trim(),

@@ -225,7 +225,7 @@ export function CustomerWorkCaptureDialog({
     const measured = measuredQuantity(measure, dimensions(group), 1);
     return {
       key: draftKey("work"),
-      category_id: workRequired.work_category_id,
+      category_id: db.master.workSubcategories.find((row) => row.id === subcategoryId)?.category_id,
       subcategory_id: subcategoryId,
       work_type_id: subcategoryId ? workTypesFor(subcategoryId)[0]?.id : undefined,
       target_work_required_id: workRequired.id,
@@ -234,7 +234,7 @@ export function CustomerWorkCaptureDialog({
       quantity: measured.quantity > 0 ? String(round(measured.quantity)) : "",
       manualQuantity: false,
     };
-  }, [measureFor, workRequired, workTypesFor]);
+  }, [db.master.workSubcategories, measureFor, workRequired, workTypesFor]);
 
   const updateGroup = (key: string, patch: Partial<AreaGroup>) => setGroups((current) => current.map((group) => {
     if (group.key !== key) return group;

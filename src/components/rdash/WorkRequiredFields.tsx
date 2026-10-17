@@ -14,7 +14,7 @@ import { MultiTickDropdown } from "./MultiTickDropdown";
 
 export type WorkRequiredFormDraft = {
   title: string;
-  categoryId: string;
+  categoryIds: string[];
   subcategoryIds: string[];
   workTypeIds: string[];
   areaIds: string[];
@@ -32,7 +32,7 @@ type NewWorkArea = {
 export function emptyWorkRequiredFormDraft(): WorkRequiredFormDraft {
   return {
     title: "",
-    categoryId: "",
+    categoryIds: [],
     subcategoryIds: [],
     workTypeIds: [],
     areaIds: [],
@@ -64,14 +64,34 @@ export function WorkRequiredFields({
   onAddNext?: (mode: "areas" | "copy") => void;
 }) {
   const [addCategoryOpen, setAddCategoryOpen] = React.useState(false);
-  const [addSubcategoryOpen, setAddSubcategoryOpen] = React.useState(false);
+  const [addSubcategoryCategoryId, setAddSubcategoryCategoryId] = React.useState<string | null>(null);
   const [addWorkTypeSubcategoryId, setAddWorkTypeSubcategoryId] = React.useState<string | null>(null);
   const [newAreaOpen, setNewAreaOpen] = React.useState(false);
   const [newAreaTypes, setNewAreaTypes] = React.useState<Area["area_type"][]>([]);
   const [customAreaTypes, setCustomAreaTypes] = React.useState<Array<{ value: string; label: string }>>([]);
   const [customAreaType, setCustomAreaType] = React.useState("");
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
-  const subcategories = db.master.workSubcategories.filter((row) => row.category_id === value.categoryId);
+  const subcategories = db.master.workSubcategories.filter((row) => value.categoryIds.includes(row.category_id));
+  const subcategoryGroups = value.categoryIds.flatMap((categoryId) => {
+    const category = db.master.workCategories.find((row) => row.id === categoryId);
+    if (!category) return [];
+    return [{
+      key: category.id,
+      items: subcategories.filter((subcategory) => subcategory.category_id === category.id).map((subcategory) => ({ id: subcategory.id, name: `${category.name} · ${subcategory.name}` })),
+      footer: (close: () => void) => (
+        <button
+          type="button"
+          className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
+          onClick={() => {
+            close();
+            setAddSubcategoryCategoryId(category.id);
+          }}
+        >
+          + Add subcategory to {category.name}
+        </button>
+      ),
+    }];
+  });
   const selectedWorkTypes = value.subcategoryIds.flatMap((subcategoryId) => {
     const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
     return subcategory ? workTypesForSubcategory(subcategory).map((workType) => ({ subcategory, workType })) : [];
@@ -200,23 +220,38 @@ export function WorkRequiredFields({
 
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-semibold">Work selection</p>
-        <p className="mb-3 text-[11px] text-muted-foreground">Choose the category once, then tick every required subcategory and work type.</p>
+        <p className="mb-3 text-[11px] text-muted-foreground">Tick every required category, subcategory, and work type.</p>
         <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Category</span>
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Categories</span>
           <div className="mt-1">
             <MultiTickDropdown
-              ariaLabel="Primary category"
-              selected={value.categoryId ? [value.categoryId] : []}
+              ariaLabel="Work categories"
+              selected={value.categoryIds}
               groups={db.master.workCategories.map((category) => ({ key: category.id, items: [{ id: category.id, name: category.name }] }))}
               inline
               searchable
               placeholder="Select work category"
               onToggle={(categoryId) => {
-                const nextCategoryId = value.categoryId === categoryId ? "" : categoryId;
+                const selected = value.categoryIds.includes(categoryId);
+                const categoryIds = selected ? value.categoryIds.filter((id) => id !== categoryId) : [...value.categoryIds, categoryId];
+                const subcategoryIds = value.subcategoryIds.filter((id) => {
+                  const subcategory = db.master.workSubcategories.find((row) => row.id === id);
+                  return Boolean(subcategory && categoryIds.includes(subcategory.category_id));
+                });
+                const workTypeIds = withPrimaryWorkTypeIds(
+                  db.master.workSubcategories,
+                  subcategoryIds,
+                  pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds),
+                );
                 setAddCategoryOpen(false);
-                setAddSubcategoryOpen(false);
-                onChange({ categoryId: nextCategoryId, subcategoryIds: [], workTypeIds: [], title: "" });
+                setAddSubcategoryCategoryId(null);
+                onChange({
+                  categoryIds,
+                  subcategoryIds,
+                  workTypeIds,
+                  title: workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds),
+                });
               }}
               footer={(close) => (
                 <button
@@ -239,59 +274,46 @@ export function WorkRequiredFields({
               onCancelled={() => setAddCategoryOpen(false)}
               onCreated={(categoryId) => {
                 setAddCategoryOpen(false);
-                onChange({ categoryId, subcategoryIds: [], workTypeIds: [], title: "" });
+                onChange({ categoryIds: [...new Set([...value.categoryIds, categoryId])] });
               }}
               className="mt-1"
             />
           ) : null}
         </div>
         <div>
-          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Primary Subcategory</span>
+          <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Subcategories</span>
           <div className="mt-1">
             <MultiTickDropdown
-              key={value.categoryId || "no-category"}
-              ariaLabel="Primary subcategory"
+              key={value.categoryIds.join("|") || "no-category"}
+              ariaLabel="Work subcategories"
               selected={value.subcategoryIds}
-              groups={subcategories.map((subcategory) => ({ key: subcategory.id, items: [{ id: subcategory.id, name: subcategory.name }] }))}
-              disabled={!value.categoryId}
+              groups={subcategoryGroups}
+              disabled={!value.categoryIds.length}
               inline
               searchable
-              placeholder={value.categoryId ? "Select work subcategories" : "Select category first"}
+              placeholder={value.categoryIds.length ? "Select work subcategories" : "Select categories first"}
               onToggle={(subcategoryId) => {
                 const selected = value.subcategoryIds.includes(subcategoryId);
                 const subcategoryIds = selected ? value.subcategoryIds.filter((id) => id !== subcategoryId) : [...value.subcategoryIds, subcategoryId];
-                // Default one work type per subcategory (its first/primary),
-                // remaining grades stay tickable below in the dropdown.
-                const workTypeIds = withPrimaryWorkTypeIds(
-                  db.master.workSubcategories,
-                  subcategoryIds,
-                  pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds),
-                );
+                const retainedWorkTypeIds = pruneWorkTypeIds(db.master.workSubcategories, subcategoryIds, value.workTypeIds);
+                const addedSubcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
+                const addedWorkTypeIds = selected || !addedSubcategory
+                  ? []
+                  : workTypesForSubcategory(addedSubcategory).map((row) => row.id);
+                const workTypeIds = [...new Set([...retainedWorkTypeIds, ...addedWorkTypeIds])];
                 const title = workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds);
                 onChange({ subcategoryIds, workTypeIds, title });
               }}
-              footer={(close) => (
-                <button
-                  type="button"
-                  className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
-                  onClick={() => {
-                    close();
-                    setAddSubcategoryOpen(true);
-                  }}
-                >
-                  + Add subcategory
-                </button>
-              )}
             />
           </div>
-          {addSubcategoryOpen && value.categoryId ? (
+          {addSubcategoryCategoryId && value.categoryIds.includes(addSubcategoryCategoryId) ? (
             <AddWorkSubcategoryAction
-              key={`work-required-add-subcategory-${value.categoryId}`}
-              categoryId={value.categoryId}
+              key={`work-required-add-subcategory-${addSubcategoryCategoryId}`}
+              categoryId={addSubcategoryCategoryId}
               initiallyAdding
-              onCancelled={() => setAddSubcategoryOpen(false)}
+              onCancelled={() => setAddSubcategoryCategoryId(null)}
               onCreated={(subcategoryId) => {
-                setAddSubcategoryOpen(false);
+                setAddSubcategoryCategoryId(null);
                 // The db prop is one render behind the master store here
                 // (AddWorkSubcategoryAction just mutated it) — derive from
                 // the fresh store state so the new subcategory is included.

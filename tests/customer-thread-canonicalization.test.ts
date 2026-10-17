@@ -218,7 +218,6 @@ describe("canonical Customer conversation threads", () => {
         id: work.id,
         site_id: work.site_id,
         title: `${work.title} updated`,
-        work_category_id: work.work_category_id,
         work_subcategory_ids: work.work_subcategory_ids,
         area_ids: work.area_ids,
       }],

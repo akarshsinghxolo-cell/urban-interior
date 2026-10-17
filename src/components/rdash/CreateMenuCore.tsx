@@ -12,7 +12,7 @@ import { notifyCreated, notifyConverted } from "@/lib/rdash/notify";
 import { useRDashStore, type CreateDialogKind, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { VisitType } from "@/lib/rdash/types";
 import { indiaDateTimeInputValue } from "@/lib/rdash/format";
-import { workTypeNamesForIds } from "@/lib/rdash/work-types";
+import { workRequiredCategoryIds, workTypeNamesForIds } from "@/lib/rdash/work-types";
 import { Plus, ListPlus, FilePlus2, MapPinPlus, PhoneCall, Check, } from "lucide-react";
 const CREATE_OPTIONS: {
     kind: CreateDialogKind;
@@ -393,10 +393,10 @@ function CreateDialog({ request, onClose }: {
                     {visitType !== "measurement" && <SelectItem value="none">No linked Work Required</SelectItem>}
                     {db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === visitSiteId).map((work) => {
                         const areaNames = work.area_ids.map((areaId) => db.areas.find((area) => area.id === areaId)?.name).filter(Boolean).join(", ");
-                        const category = db.master.workCategories.find((row) => row.id === work.work_category_id);
+                        const categories = workRequiredCategoryIds(db.master.workSubcategories, work).map((id) => db.master.workCategories.find((row) => row.id === id)?.name).filter(Boolean);
                         const subcategories = (work.work_subcategory_ids || []).map((id) => db.master.workSubcategories.find((row) => row.id === id)?.name).filter(Boolean);
                         const workTypes = workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids);
-                        const scope = [category?.name || work.title, subcategories.join(" / "), workTypes.join(" / ")].filter(Boolean).join(" · ");
+                        const scope = [categories.join(" / ") || work.title, subcategories.join(" / "), workTypes.join(" / ")].filter(Boolean).join(" · ");
                         return <SelectItem key={work.id} value={work.id}>{areaNames || "Site-wide"} → {scope}</SelectItem>;
                     })}
                   </SelectContent>

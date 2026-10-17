@@ -15,7 +15,7 @@ import { testFile } from "./test-file";
 const read = (path: string) => testFile(path).text();
 
 describe("customer domain unification", () => {
-  test("accepts the two canonical Work Required shapes and rejects hybrids", () => {
+  test("accepts general and multi-category taxonomy Work Required shapes", () => {
     const db = structuredClone(buildSeedDatabase());
     const customer = db.customers[0];
 
@@ -23,7 +23,6 @@ describe("customer domain unification", () => {
       customer_id: customer.id,
       site_id: "",
       title: "General interior scope",
-      work_category_id: undefined,
       work_subcategory_ids: [],
       work_type_ids: [],
       area_ids: [],
@@ -31,10 +30,13 @@ describe("customer domain unification", () => {
     expect(() => assertWorkRequiredDefinition(db, general, "Work Required")).not.toThrow();
     expect(workRequiredHasTaxonomy(general)).toBe(false);
 
+    const selected = db.master.workSubcategories.filter((row, index, rows) => rows.findIndex((candidate) => candidate.category_id === row.category_id) === index).slice(0, 2);
     expect(() => assertWorkRequiredDefinition(db, {
       ...general,
-      work_category_id: db.master.workCategories[0]?.id,
-    }, "Work Required")).toThrow(/both a Work Category and at least one Work Subcategory/i);
+      title: "Ceiling and paint",
+      work_subcategory_ids: selected.map((row) => row.id),
+      work_type_ids: selected.map((row) => row.work_types?.[0]?.id).filter((id): id is string => Boolean(id)),
+    }, "Work Required")).not.toThrow();
   });
 
   test("keeps external referrers typed and source-partner projection outside Customer", () => {

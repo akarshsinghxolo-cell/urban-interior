@@ -54,7 +54,7 @@ export function CustomerWorkRequiredDraftSection({
     appendDraft(mode === "copy" ? {
       ...base,
       title: source.title,
-      categoryId: source.categoryId,
+      categoryIds: [...source.categoryIds],
       subcategoryIds: [...source.subcategoryIds],
       workTypeIds: [...source.workTypeIds],
       areaIds: [...source.areaIds],

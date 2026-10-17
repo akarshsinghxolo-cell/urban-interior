@@ -247,21 +247,9 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
         }
     }
 }
-function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_category_id" | "work_subcategory_ids" | "structured_items">, context: string) {
+function assertWorkRequiredCatalogRelations(db: RDashDatabase, work: Pick<WorkRequired, "work_subcategory_ids" | "structured_items">, context: string) {
     const items = work.structured_items || [];
-    const hasCategory = Boolean(work.work_category_id);
-    const hasSubcategory = Boolean(work.work_subcategory_ids?.length);
-    if (hasCategory !== hasSubcategory) {
-        fail(context, "Work Category and exact Work Subcategory / Work Item must be selected together.");
-    }
-    if (hasCategory && hasSubcategory) {
-        const category = assertWorkCategoryId(db, work.work_category_id, context);
-        const subcategories = work.work_subcategory_ids!.map((id) => assertWorkSubcategoryId(db, id, context));
-        const conflicting = subcategories.find((subcategory) => subcategory && category && category.id !== subcategory.category_id);
-        if (category && conflicting) {
-            fail(context, `Work Category "${category.id}" conflicts with Work Subcategory "${conflicting.name}".`);
-        }
-    }
+    for (const id of work.work_subcategory_ids || []) assertWorkSubcategoryId(db, id, context);
     for (const item of items) {
         assertLineItemCatalogRelations(db, item, context);
     }

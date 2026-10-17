@@ -94,7 +94,6 @@ describe("detailed-area seed and reconciliation primitives", () => {
   ] as any;
   const work = {
     id: "wr-railing",
-    work_category_id: "cat-railing",
     work_subcategory_ids: ["sub-glass", "sub-ss"],
     work_type_ids: ["wt-glass-standard", "wt-ss-standard"],
     area_ids: ["area-rooftop"],
@@ -109,6 +108,16 @@ describe("detailed-area seed and reconciliation primitives", () => {
       { subcategory_id: "sub-glass", work_type_id: "wt-glass-standard" },
       { subcategory_id: "sub-ss", work_type_id: "wt-ss-standard" },
     ]);
+  });
+
+  test("splits cross-category work into valid downstream lines", () => {
+    const paint = { id: "sub-paint", category_id: "cat-paint", name: "Interior Paint", unit_id: "sqft", work_types: [{ id: "wt-paint-standard", name: "Standard", unit_id: "sqft" }] } as any;
+    const seeds = seedDetailedAreaLines({
+      siteWorks: [{ ...work, work_subcategory_ids: ["sub-glass", "sub-paint"], work_type_ids: ["wt-glass-standard", "wt-paint-standard"] }],
+      workSubcategories: [...workSubcategories, paint],
+    });
+    expect(seeds.map((seed) => seed.category_id)).toEqual(["cat-railing", "cat-paint"]);
+    expect(seeds.every((seed) => seed.option_pairs === undefined)).toBe(true);
   });
 
   test("reconciliation removes a dropped option without corrupting the remaining declaration", () => {

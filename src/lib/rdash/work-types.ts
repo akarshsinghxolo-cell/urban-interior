@@ -148,6 +148,15 @@ export function workRequiredTitleFromSelection(
     .join(" / ");
 }
 
+/** Categories are derived from the selected subcategories; Work Required never stores a duplicate category list. */
+export function workRequiredCategoryIds(
+  workSubcategories: WorkSubcategory[],
+  work: Pick<WorkRequired, "work_subcategory_ids">,
+): ID[] {
+  const selected = new Set(work.work_subcategory_ids || []);
+  return [...new Set(workSubcategories.filter((row) => selected.has(row.id)).map((row) => row.category_id))];
+}
+
 /**
  * Display title for a saved Work Required row, re-derived from its explicit
  * canonical subcategory / work-type selection. The stored title is used only
@@ -253,7 +262,7 @@ export type RemovedSelection = {
   work_type_id?: string;
 };
 
-type SeedSourceWork = Pick<WorkRequired, "id" | "work_category_id" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "structured_items">;
+type SeedSourceWork = Pick<WorkRequired, "id" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "structured_items">;
 
 const scopeKeyOf = (areaId: string | undefined, subcategoryId: string | undefined, workTypeId: string | undefined) =>
   [areaId || "", subcategoryId || "", workTypeId || ""].join("::");
@@ -532,30 +541,34 @@ export function seedDetailedAreaLines(input: {
       }
     }
     for (const areaId of work.area_ids || []) {
-      // ONE seed per (Work Required × area): the row's planned pairs become
-      // the seed's alternatives — "Toughened Glass · Standard / SS · Standard
-      // / WPC · Standard" — measured ONCE, because the customer takes any one
-      // of them. Already-captured pairs drop out of the option list.
-      const options = planned
-        .map(({ subcategory, workTypeId }) => ({ subcategory_id: subcategory.id, work_type_id: workTypeId }))
-        .filter((pair) => {
-          const key = scopeKeyOf(areaId, pair.subcategory_id, pair.work_type_id);
-          if (captured.has(key) || seen.has(key)) return false;
-          seen.add(key);
-          return true;
+      // Alternatives can share one measured line only inside one category;
+      // cross-category work becomes separate lines so every downstream line
+      // keeps a valid category → subcategory → work-type chain.
+      const byCategory = new Map<string, typeof planned>();
+      for (const row of planned) byCategory.set(row.subcategory.category_id, [...(byCategory.get(row.subcategory.category_id) || []), row]);
+      for (const [categoryId, categoryRows] of byCategory) {
+        const options = categoryRows
+          .map(({ subcategory, workTypeId }) => ({ subcategory_id: subcategory.id, work_type_id: workTypeId }))
+          .filter((pair) => {
+            const key = scopeKeyOf(areaId, pair.subcategory_id, pair.work_type_id);
+            if (captured.has(key) || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        if (!options.length) continue;
+        const primarySubcategory = categoryRows.find((row) => row.subcategory.id === options[0].subcategory_id)?.subcategory;
+        if (!primarySubcategory) continue;
+        seeds.push({
+          work_required_id: work.id,
+          area_id: areaId,
+          category_id: categoryId,
+          subcategory_id: options[0].subcategory_id,
+          work_type_id: options[0].work_type_id,
+          option_pairs: options.length > 1 ? options : undefined,
+          measure: defaultMeasureBasisFor(primarySubcategory.name),
+          walls: 1,
         });
-      if (!options.length) continue;
-      const primarySubcategory = input.workSubcategories.find((row) => row.id === options[0].subcategory_id)!;
-      seeds.push({
-        work_required_id: work.id,
-        area_id: areaId,
-        category_id: work.work_category_id || primarySubcategory.category_id,
-        subcategory_id: options[0].subcategory_id,
-        work_type_id: options[0].work_type_id,
-        option_pairs: options.length > 1 ? options : undefined,
-        measure: defaultMeasureBasisFor(primarySubcategory.name),
-        walls: 1,
-      });
+      }
     }
   }
   return seeds;

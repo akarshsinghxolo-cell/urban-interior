@@ -10,6 +10,7 @@ import { assetPreview } from "@/lib/rdash/file-attachments";
 import { resolveEntityContext, type EntityContext } from "@/lib/rdash/entity-context";
 import { toast } from "sonner";
 import { indianWhatsAppDialDigits, isValidIndianMobile } from "@/lib/rdash/phone-validation";
+import { workRequiredCategoryIds } from "@/lib/rdash/work-types";
 import { Archive, BookOpen, ExternalLink, FilePlus2, Image as ImageIcon, Link2, Paperclip, Pin, Send, Share2, Sparkles, Trash2, } from "lucide-react";
 type Context = {
     customerId?: string;
@@ -85,7 +86,7 @@ function lineItemScope(db: any, context: EntityContext) {
     });
     if (context.entityType === "workRequired") {
         const work = db.workRequired.find((row: any) => row.id === context.entityId);
-        return { articleIds: [], variantIds: [], categoryIds: unique([work?.work_category_id]), subcategoryIds: unique(work?.work_subcategory_ids || []) };
+        return { articleIds: [], variantIds: [], categoryIds: work ? workRequiredCategoryIds(db.master.workSubcategories, work) : [], subcategoryIds: unique(work?.work_subcategory_ids || []) };
     }
     if (context.entityType === "quotation" || context.entityType === "quotation_item") {
         const quotation = db.quotations.find((row: any) => row.id === context.quotationId);

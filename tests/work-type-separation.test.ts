@@ -148,6 +148,9 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
     expect(source).toContain("workTypeIds");
     expect(source).toContain("pruneWorkTypeIds");
     expect(source).toContain("value.workTypeIds.includes(workType.id)");
+    expect(source).toContain("selected={value.categoryIds}");
+    expect(source).toContain("groups={subcategoryGroups}");
+    expect(source).toContain("workTypesForSubcategory(addedSubcategory)");
   });
 
   test("CustomerWorkRequiredDialog is the one create implementation and persists work_type_ids", () => {

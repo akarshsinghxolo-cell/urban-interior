@@ -42,7 +42,7 @@ test("shared Add/Edit Customer form orders Sites then editable Work Required wit
   expectNoTokens(workRequiredFields, ["suggested from this customer"]);
   expectTokens(workRequiredFields, ["+ Add category"]);
   expectTokens(workRequiredFields, ["+ Add subcategory"]);
-  expect(workRequiredFields.indexOf("Covered Areas")).toBeLessThan(workRequiredFields.indexOf("Primary Category"));
+  expect(workRequiredFields.indexOf("Covered Areas")).toBeLessThan(workRequiredFields.indexOf("Work Categories"));
   expectTokens(workRequiredFields, ['site?.name || "this Customer"']);
 
   // Quotation selection/serialization is intentionally Customer-owned. The

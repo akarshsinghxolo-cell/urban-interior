@@ -56,7 +56,7 @@ const areaMutableFields: Array<keyof Area> = [
   "is_archived", "archived_at", "archived_by", "archive_reason",
 ];
 const workRequiredMutableFields: Array<keyof WorkRequired> = [
-  "site_id", "title", "work_category_id", "work_subcategory_ids", "work_type_ids", "area_ids", "description", "priority", "budget",
+  "site_id", "title", "work_subcategory_ids", "work_type_ids", "area_ids", "description", "priority", "budget",
 ];
 
 function defaultId(prefix: "cust" | "site" | "area" | "workRequired"): string {
@@ -218,7 +218,6 @@ function workRequiredRecord(existing: WorkRequired | undefined, input: CustomerW
     customer_id: customer.id,
     site_id: site?.id || "",
     title: String(input.title ?? existing?.title ?? "").trim(),
-    work_category_id: suppliedValue(input, "work_category_id", existing?.work_category_id),
     work_subcategory_ids: uniqueStrings(input.work_subcategory_ids ?? existing?.work_subcategory_ids ?? []),
     work_type_ids: uniqueStrings(input.work_type_ids ?? existing?.work_type_ids ?? []),
     area_ids: uniqueStrings(input.area_ids ?? existing?.area_ids ?? []),
