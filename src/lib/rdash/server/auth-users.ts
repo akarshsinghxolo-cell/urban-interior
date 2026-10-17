@@ -29,29 +29,6 @@ type CanonicalStaffIdentity = {
   role: string;
 };
 
-interface StaffIdentityDriftRow {
-  identity_key: string;
-  role_assignment_id: string | null;
-  user_id: string | null;
-  staff_id: string | null;
-  email: string | null;
-  role: string | null;
-  role_status: string | null;
-  expected_profile_status: string | null;
-  profile_email: string | null;
-  profile_role: string | null;
-  profile_status: string | null;
-  profile_auth_user_id: string | null;
-  master_email: string | null;
-  master_role: string | null;
-  master_status: string | null;
-  master_auth_user_id: string | null;
-  profile_exists: boolean;
-  master_exists: boolean;
-  drift_reasons: string[];
-  is_drifted: boolean;
-}
-
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLE_ASSIGNMENT_SELECT = "id,user_id,staff_id,status,approved_by,approved_at,rejected_at,created_at,updated_at";
 
@@ -309,18 +286,6 @@ export async function listRoleAssignments(user: AuthenticatedUser) {
   return enrichRoleAssignments((data || []) as RDashUserRoleStoredRow[]);
 }
 
-export async function listStaffIdentityDrift(user: AuthenticatedUser) {
-  assertOwner(user);
-  const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
-    .from("staff_identity_drift_report")
-    .select("*")
-    .order("is_drifted", { ascending: false })
-    .order("email", { ascending: true, nullsFirst: false });
-  if (error) throw new Error(`Could not load staff identity drift report: ${error.message}`);
-  return (data || []) as unknown as StaffIdentityDriftRow[];
-}
-
 export async function approveRoleAssignment(user: AuthenticatedUser, input: {
   id?: string;
   role?: string;
@@ -331,28 +296,28 @@ export async function approveRoleAssignment(user: AuthenticatedUser, input: {
   const id = String(input.id || "").trim();
   if (!id) throw new Error("Missing role assignment id.");
   const admin = getSupabaseAdminClient();
-  const role = normalizeRequestedRole(input.role);
-  const { data: pendingRows, error: lookupError } = await admin
+  const { data: approvableRows, error: lookupError } = await admin
     .from("uc_user_roles")
     .select(ROLE_ASSIGNMENT_SELECT)
     .eq("id", id)
-    .eq("status", "pending")
+    .in("status", ["pending", "inactive", "rejected"])
     .limit(1);
   if (lookupError) throw new Error(`Could not load user for approval: ${lookupError.message}`);
-  const pending = pendingRows?.[0] as RDashUserRoleStoredRow | undefined;
-  if (!pending) throw new Error("No pending user approval was found.");
-  const identity = await canonicalIdentityForAssignment(pending);
+  const approvable = approvableRows?.[0] as RDashUserRoleStoredRow | undefined;
+  if (!approvable) throw new Error("No restorable user access record was found.");
+  const identity = await canonicalIdentityForAssignment(approvable);
   const email = validAssignmentEmail(identity.email);
   const displayName = String(input.displayName || identity.displayName || email).trim();
+  const role = normalizeRequestedRole(input.role || identity.role);
   const now = new Date().toISOString();
   const synced = await syncStaffIdentity({
-    assignmentId: pending.id,
-    userId: pending.user_id,
+    assignmentId: approvable.id,
+    userId: approvable.user_id,
     email,
     displayName,
     role,
     status: "active",
-    staffId: String(input.staffId || pending.staff_id || "").trim() || null,
+    staffId: String(input.staffId || approvable.staff_id || "").trim() || null,
     approvedBy: approvedByUuid(user),
     approvedAt: now,
   });
@@ -420,6 +385,28 @@ export async function revokeRoleAssignment(user: AuthenticatedUser, input: { id?
     staffId: active.staff_id,
   });
   return synced.assignment;
+}
+
+export async function setLoginPassword(user: AuthenticatedUser, input: { id?: string; password?: string }) {
+  assertOwner(user);
+  const id = String(input.id || "").trim();
+  const password = String(input.password || "");
+  if (!id) throw new Error("Missing role assignment id.");
+  if (password.length < 8) throw new Error("Temporary password must contain at least 8 characters.");
+
+  const admin = getSupabaseAdminClient();
+  const { data: rows, error: lookupError } = await admin
+    .from("uc_user_roles")
+    .select(ROLE_ASSIGNMENT_SELECT)
+    .eq("id", id)
+    .limit(1);
+  if (lookupError) throw new Error(`Could not load the login account: ${lookupError.message}`);
+  const assignment = rows?.[0] as RDashUserRoleStoredRow | undefined;
+  if (!assignment) throw new Error("No login account was found.");
+
+  const { error } = await admin.auth.admin.updateUserById(assignment.user_id, { password });
+  if (error) throw new Error(`Could not set the temporary password: ${error.message}`);
+  return { updated: true as const };
 }
 
 export async function deleteLoginAccount(user: AuthenticatedUser, input: { id?: string }) {

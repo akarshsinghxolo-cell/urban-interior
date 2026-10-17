@@ -45,29 +45,6 @@ export type StaffRouteBundleRow = {
   createdAt: string;
 };
 
-type StaffIdentityDriftRow = {
-  identity_key: string;
-  role_assignment_id: string | null;
-  user_id: string | null;
-  staff_id: string | null;
-  email: string | null;
-  role: string | null;
-  role_status: string | null;
-  expected_profile_status: string | null;
-  profile_email: string | null;
-  profile_role: string | null;
-  profile_status: string | null;
-  profile_auth_user_id: string | null;
-  master_email: string | null;
-  master_role: string | null;
-  master_status: string | null;
-  master_auth_user_id: string | null;
-  profile_exists: boolean;
-  master_exists: boolean;
-  drift_reasons: string[];
-  is_drifted: boolean;
-};
-
 type RDashSupabaseSchema = {
   public: {
     Tables: {
@@ -102,12 +79,7 @@ type RDashSupabaseSchema = {
         Relationships: [];
       };
     };
-    Views: {
-      staff_identity_drift_report: {
-        Row: StaffIdentityDriftRow;
-        Relationships: [];
-      };
-    };
+    Views: Record<string, never>;
     Functions: {
       commit_workspace_operations: {
         Args: {

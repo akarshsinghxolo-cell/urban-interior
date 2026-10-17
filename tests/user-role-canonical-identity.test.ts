@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 
 const MIGRATION = "supabase/migrations/20260926071412_canonicalize_user_access_identity.sql";
+const REMOVE_DRIFT_MIGRATION = "supabase/migrations/20261017033318_remove_staff_identity_drift_report.sql";
 
 describe("canonical user access identity", () => {
   test("keeps uc_user_roles as approval/link state rather than a second Staff profile", async () => {
@@ -57,10 +58,44 @@ describe("canonical user access identity", () => {
     expect(approvals).toContain('.eq("status", "active")');
     expect(approvals).toContain('status: "inactive"');
     expect(approvals).toContain("You cannot revoke your own access while signed in.");
-    expect(route).toContain('action?: "approve" | "reject" | "revoke" | "delete"');
+    expect(route).toContain('action?: "approve" | "reject" | "revoke" | "password" | "delete"');
     expect(route).toContain("revokeRoleAssignment(user, body)");
     expect(ui).toContain("Revoke access");
     expect(ui).toContain('action: "revoke"');
+  });
+
+  test("restores revoked access through the existing approval path", async () => {
+    const approvals = await testFile("src/lib/rdash/server/auth-users.ts").text();
+    const ui = await testFile("src/components/rdash/modules/UserApprovalsModule.tsx").text();
+
+    expect(approvals).toContain('.in("status", ["pending", "inactive", "rejected"])');
+    expect(ui).toContain("Restore access");
+    expect(ui).toContain('action: "approve"');
+  });
+
+  test("removes the misleading identity-drift surface", async () => {
+    const migration = await testFile(REMOVE_DRIFT_MIGRATION).text();
+    const server = await testFile("src/lib/rdash/server/auth-users.ts").text();
+    const route = await testFile("src/app/api/auth/users/route.ts").text();
+    const ui = await testFile("src/components/rdash/modules/UserApprovalsModule.tsx").text();
+
+    expect(migration).toContain("drop view if exists public.staff_identity_drift_report");
+    expect(server).not.toContain("StaffIdentityDrift");
+    expect(server).not.toContain("staff_identity_drift_report");
+    expect(route).not.toContain("identityDrift");
+    expect(ui.toLowerCase()).not.toContain("identity drift");
+  });
+
+  test("lets an owner set, but never read, a login password", async () => {
+    const server = await testFile("src/lib/rdash/server/auth-users.ts").text();
+    const route = await testFile("src/app/api/auth/users/route.ts").text();
+    const ui = await testFile("src/components/rdash/modules/UserApprovalsModule.tsx").text();
+
+    expect(server).toContain("export async function setLoginPassword");
+    expect(server).toContain("admin.auth.admin.updateUserById(assignment.user_id, { password })");
+    expect(route).toContain("setLoginPassword(user, body)");
+    expect(ui).toContain("Existing passwords are securely hashed and cannot be viewed.");
+    expect(ui).toContain("Set temporary password");
   });
 
   test("login authorization has no independent role-table fallback", async () => {

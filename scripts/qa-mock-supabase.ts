@@ -1028,37 +1028,6 @@ function rpcGetWorkspaceHealthSummary(_args: Row): Response {
   );
 }
 
-function staffIdentityDriftRows(): Row[] {
-  const staffRows = new Map(
-    (tables.get("entity_master_staff") ?? []).map((row) => [String(row.id), row.data as Row]),
-  );
-  return (tables.get("uc_user_roles") ?? []).map((assignment) => {
-    const staffData = assignment.staff_id ? staffRows.get(String(assignment.staff_id)) : undefined;
-    return {
-      identity_key: assignment.staff_id ? String(assignment.staff_id) : `role:${String(assignment.id)}`,
-      role_assignment_id: assignment.id,
-      user_id: assignment.user_id,
-      staff_id: assignment.staff_id,
-      email: staffData?.email ?? null,
-      role: staffData?.role_key ?? null,
-      role_status: assignment.status,
-      expected_profile_status: ["rejected", "inactive"].includes(String(assignment.status)) ? "inactive" : assignment.status,
-      profile_email: staffData?.email ?? null,
-      profile_role: staffData?.role_key ?? null,
-      profile_status: staffData?.status ?? null,
-      profile_auth_user_id: staffData?.auth_user_id ?? null,
-      master_email: staffData?.email ?? null,
-      master_role: staffData?.role_key ?? null,
-      master_status: staffData?.status ?? null,
-      master_auth_user_id: staffData?.auth_user_id ?? null,
-      profile_exists: Boolean(staffData),
-      master_exists: Boolean(staffData),
-      drift_reasons: [],
-      is_drifted: false,
-    };
-  });
-}
-
 /* ------------------------------------------------------------- GoTrue routes */
 
 async function handleAuth(req: Request, url: URL): Promise<Response> {
@@ -1215,13 +1184,6 @@ async function handleRest(req: Request, url: URL): Promise<Response> {
 
   const table = decodeURIComponent(relative);
   if (!table) return postgrestError(404, "PGRST205", "Table name is required");
-
-  if (table === "staff_identity_drift_report") {
-    if (method !== "GET" && method !== "HEAD") {
-      return postgrestError(405, "42501", "staff_identity_drift_report is read-only");
-    }
-    return readRows(req, url, table, staffIdentityDriftRows());
-  }
 
   if (method === "GET" || method === "HEAD") {
     if (!tables.has(table)) {

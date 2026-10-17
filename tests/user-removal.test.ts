@@ -54,6 +54,7 @@ describe("user and Staff removal", () => {
     const route = await testFile("src/app/api/auth/users/route.ts").text();
     const approvals = await testFile("src/components/rdash/modules/UserApprovalsModule.tsx").text();
     const editor = await testFile("src/components/rdash/StaffEditDialog.tsx").text();
+    const schema = await testFile("supabase/schema.sql").text();
 
     expect(migration).toContain("create or replace function public.detach_staff_login_identity");
     expect(migration).toContain("v_staff.data - 'auth_user_id' - 'login_email'");
@@ -63,7 +64,8 @@ describe("user and Staff removal", () => {
     expect(server).toContain("You cannot delete your own login account while signed in.");
     const deletion = server.slice(server.indexOf("export async function deleteLoginAccount"));
     expect(deletion.indexOf('admin.rpc("detach_staff_login_identity"')).toBeLessThan(deletion.indexOf("admin.auth.admin.deleteUser"));
-    expect(route).toContain('action?: "approve" | "reject" | "revoke" | "delete"');
+    expect(schema).toContain("user_id uuid not null references auth.users(id) on delete cascade");
+    expect(route).toContain('action?: "approve" | "reject" | "revoke" | "password" | "delete"');
     expect(route).toContain("deleteLoginAccount(user, body)");
     expect(approvals).toContain("Delete login account?");
     expect(approvals).toContain("payroll, attendance and business history remain");

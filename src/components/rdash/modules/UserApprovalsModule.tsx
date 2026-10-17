@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, CheckCircle2, Clock3, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from "lucide-react";
+import { CheckCircle2, Clock3, KeyRound, ShieldCheck, ShieldOff, Trash2, UserCheck, UserX, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { MetricCard, StatusBadge, EmptyState } from "../primitives";
 import { relativeDay } from "@/lib/rdash/format";
@@ -21,6 +22,16 @@ const ROLE_OPTIONS = [
 ] as const;
 
 type ApprovalStatus = "pending" | "active" | "rejected" | "inactive";
+type UserAccessAction = "approve" | "reject" | "revoke" | "password" | "delete";
+
+interface UserAccessUpdate {
+  id: string;
+  action: UserAccessAction;
+  role?: string;
+  displayName?: string;
+  staffId?: string;
+  password?: string;
+}
 
 interface RDashUserRow {
   id: string;
@@ -37,17 +48,6 @@ interface RDashUserRow {
   updated_at: string;
 }
 
-interface StaffIdentityDriftRow {
-  identity_key: string;
-  email: string | null;
-  role: string | null;
-  role_status: string | null;
-  profile_status: string | null;
-  master_status: string | null;
-  drift_reasons: string[];
-  is_drifted: boolean;
-}
-
 function statusClass(status: ApprovalStatus) {
   if (status === "active") return "bg-success/10 text-success border-success/20";
   if (status === "pending") return "bg-warning/10 text-warning border-warning/20";
@@ -62,7 +62,9 @@ function roleLabel(role: string) {
 export function UserApprovalsModule() {
   const authUser = useRDashStore((state) => state.authUser);
   const [users, setUsers] = React.useState<RDashUserRow[]>([]);
-  const [staffDrift, setStaffDrift] = React.useState<StaffIdentityDriftRow[]>([]);
+  const [passwordUser, setPasswordUser] = React.useState<RDashUserRow | null>(null);
+  const [password, setPassword] = React.useState("");
+  const [passwordConfirmation, setPasswordConfirmation] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState("");
 
@@ -73,12 +75,10 @@ export function UserApprovalsModule() {
       const response = await fetch("/api/auth/users", { cache: "no-store" });
       const payload = await response.json().catch(() => ({})) as {
         users?: RDashUserRow[];
-        staffDrift?: StaffIdentityDriftRow[];
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "Could not load user approvals.");
       setUsers(payload.users || []);
-      setStaffDrift(payload.staffDrift || []);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load user approvals.");
     } finally {
@@ -90,7 +90,7 @@ export function UserApprovalsModule() {
     void loadUsers();
   }, [loadUsers]);
 
-  async function updateUser(input: { id: string; action: "approve" | "reject" | "revoke" | "delete"; role?: string; displayName?: string; staffId?: string }) {
+  async function updateUser(input: UserAccessUpdate) {
     const target = users.find((user) => user.id === input.id);
     if (input.action === "revoke" || input.action === "delete") {
       const confirmed = await confirmDialog({
@@ -112,23 +112,24 @@ export function UserApprovalsModule() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(input),
       });
-      const payload = await response.json().catch(() => ({})) as { user?: RDashUserRow; deleted?: boolean; error?: string };
-      const completed = input.action === "delete" ? payload.deleted : payload.user;
+      const payload = await response.json().catch(() => ({})) as { user?: RDashUserRow; deleted?: boolean; updated?: boolean; error?: string };
+      const completed = input.action === "delete" ? payload.deleted : input.action === "password" ? payload.updated : payload.user;
       if (!response.ok || !completed) throw new Error(payload.error || "Could not update user approval.");
-      toast.success(
-        input.action === "approve"
-          ? "User approved"
-          : input.action === "reject"
-            ? "User rejected"
-            : input.action === "revoke"
-              ? "User access revoked"
-              : "Login account deleted",
-      );
+      const messages: Record<UserAccessAction, string> = {
+        approve: target?.status === "pending" ? "User approved" : "User access restored",
+        reject: "User rejected",
+        revoke: "User access revoked",
+        password: "Temporary password set",
+        delete: "Login account deleted",
+      };
+      toast.success(messages[input.action]);
       await loadUsers();
+      return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not update user approval.";
       setError(message);
       toast.error(message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -137,7 +138,6 @@ export function UserApprovalsModule() {
   const pending = users.filter((user) => user.status === "pending");
   const active = users.filter((user) => user.status === "active");
   const rejected = users.filter((user) => user.status === "rejected");
-  const driftedStaff = staffDrift.filter((row) => row.is_drifted);
 
   if (authUser?.role !== "Owner") {
     return (
@@ -155,59 +155,20 @@ export function UserApprovalsModule() {
           <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><ShieldCheck className="h-5 w-5" /></span>
           <div>
             <h2 className="text-lg font-bold tracking-tight">User Approvals</h2>
-            <p className="text-xs text-muted-foreground">Approve or reject Supabase Auth users before they can enter Urban Castle.</p>
+            <p className="text-xs text-muted-foreground">Approve sign-ups and manage Staff login access.</p>
           </div>
         </div>
         <Button size="sm" variant="outline" onClick={() => void loadUsers()} disabled={busy}>Refresh</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Pending" value={pending.length} tone="warning" icon={<Clock3 className="h-4 w-4" />} />
         <MetricCard label="Active" value={active.length} tone="success" icon={<UserCheck className="h-4 w-4" />} />
         <MetricCard label="Rejected" value={rejected.length} tone="destructive" icon={<UserX className="h-4 w-4" />} />
         <MetricCard label="Total users" value={users.length} tone="primary" icon={<Users className="h-4 w-4" />} />
-        <MetricCard
-          label="Identity drift"
-          value={driftedStaff.length}
-          tone={driftedStaff.length ? "destructive" : "success"}
-          icon={driftedStaff.length ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-        />
       </div>
 
       {error ? <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p> : null}
-
-      <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
-        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
-          <h3 className="text-sm font-semibold">Staff identity drift report</h3>
-          <span className="text-[11px] text-muted-foreground">Canonical Staff · access role</span>
-        </div>
-        {driftedStaff.length === 0 ? (
-          <div className="flex items-center gap-2 px-4 py-4 text-sm text-success">
-            <CheckCircle2 className="h-4 w-4" />
-            All {staffDrift.length} staff identities are synchronized.
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {driftedStaff.map((row) => (
-              <div key={row.identity_key} className="grid gap-2 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-                <div>
-                  <p className="text-sm font-semibold">{row.email || row.identity_key}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {row.role ? roleLabel(row.role) : "No access role"} · role {row.role_status || "missing"} · canonical Staff {row.master_status || row.profile_status || "missing"}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5 lg:justify-end">
-                  {row.drift_reasons.map((reason) => (
-                    <span key={reason} className="rounded-full border border-destructive/25 bg-destructive/[0.06] px-2 py-0.5 text-[10px] font-semibold text-destructive">
-                      {reason.replaceAll("_", " ")}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       <div className="rounded-[var(--panel-radius)] border border-border bg-card shadow-card">
         <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2">
@@ -254,7 +215,32 @@ export function UserApprovalsModule() {
                     <ShieldOff className="h-3.5 w-3.5" />
                     Revoke access
                   </Button>
-                ) : null}
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 w-full gap-1.5 sm:w-auto"
+                    disabled={busy}
+                    onClick={() => void updateUser({ id: user.id, action: "approve", role: user.role, displayName: user.display_name || undefined, staffId: user.staff_id || undefined })}
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Restore access
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 w-full gap-1.5 sm:w-auto"
+                  disabled={busy}
+                  onClick={() => {
+                    setPasswordUser(user);
+                    setPassword("");
+                    setPasswordConfirmation("");
+                  }}
+                >
+                  <KeyRound className="h-3.5 w-3.5" />
+                  Set password
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -271,6 +257,40 @@ export function UserApprovalsModule() {
           ))}
         </div>
       </div>
+
+      <Dialog open={Boolean(passwordUser)} onOpenChange={(open) => { if (!open && !busy) setPasswordUser(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set temporary password</DialogTitle>
+            <DialogDescription>
+              Existing passwords are securely hashed and cannot be viewed. Set a temporary password for {passwordUser?.display_name || passwordUser?.email || "this user"}, then ask them to change it after signing in.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="grid gap-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!passwordUser || password.length < 8 || password !== passwordConfirmation) return;
+              const updated = await updateUser({ id: passwordUser.id, action: "password", password });
+              if (updated) setPasswordUser(null);
+            }}
+          >
+            <label className="grid gap-1 text-xs font-semibold">
+              Temporary password
+              <Input type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} />
+            </label>
+            <label className="grid gap-1 text-xs font-semibold">
+              Confirm temporary password
+              <Input type="password" autoComplete="new-password" minLength={8} value={passwordConfirmation} onChange={(event) => setPasswordConfirmation(event.target.value)} />
+            </label>
+            {passwordConfirmation && password !== passwordConfirmation ? <p role="alert" className="text-xs text-destructive">Passwords do not match.</p> : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={busy} onClick={() => setPasswordUser(null)}>Cancel</Button>
+              <Button type="submit" disabled={busy || password.length < 8 || password !== passwordConfirmation}>Set password</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -279,7 +299,7 @@ function PendingUserRow({ user, busy, isSelf, onUpdate }: {
   user: RDashUserRow;
   busy: boolean;
   isSelf: boolean;
-  onUpdate: (input: { id: string; action: "approve" | "reject" | "revoke" | "delete"; role?: string; displayName?: string; staffId?: string }) => Promise<void>;
+  onUpdate: (input: UserAccessUpdate) => Promise<boolean | undefined>;
 }) {
   const [role, setRole] = React.useState(user.role || "FIELD_STAFF");
   const [displayName, setDisplayName] = React.useState(user.display_name || "");
