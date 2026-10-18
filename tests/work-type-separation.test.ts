@@ -151,6 +151,7 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
     expect(source).toContain("selected={value.categoryIds}");
     expect(source).toContain("groups={subcategoryGroups}");
     expect(source).toContain("workTypesForSubcategory(addedSubcategory)");
+    expect(source).toContain("workTypesForSubcategory(addedSubcategory).slice(0, 1)");
   });
 
   test("CustomerWorkRequiredDialog is the one create implementation and persists work_type_ids", () => {
@@ -230,3 +231,4 @@ describe("contractor and vendor domain separation", () => {
   });
 
 });
+

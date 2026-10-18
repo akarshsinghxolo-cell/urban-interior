@@ -299,7 +299,7 @@ export function WorkRequiredFields({
                 const addedSubcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
                 const addedWorkTypeIds = selected || !addedSubcategory
                   ? []
-                  : workTypesForSubcategory(addedSubcategory).map((row) => row.id);
+                  : workTypesForSubcategory(addedSubcategory).slice(0, 1).map((row) => row.id);
                 const workTypeIds = [...new Set([...retainedWorkTypeIds, ...addedWorkTypeIds])];
                 const title = workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds);
                 onChange({ subcategoryIds, workTypeIds, title });
@@ -408,3 +408,4 @@ export function WorkRequiredFields({
     </div>
   );
 }
+
