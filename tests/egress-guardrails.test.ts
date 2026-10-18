@@ -26,9 +26,11 @@ const rest = await testFile("src/lib/rdash/server/commit-rest.ts").text();
     expect(healthServer).not.toContain("getWorkspaceSubset");
   });
 
-  test("Work & Rate Master edits use targeted validation", () => {
+  test("taxonomy edits use reverse-reference validation", () => {
     expect(targeted).toContain('"master.workSubcategories"');
     expect(targeted).toContain('operation.collection.startsWith("master.")');
+    const eligible = targeted.slice(targeted.indexOf("const TARGETED_COLLECTIONS"), targeted.indexOf("const TARGETED_THREAD_KINDS"));
+    expect(eligible).not.toContain('"master.workSubcategories"');
   });
 
   test("Master Setup excludes unrelated vendor, storage and media collections", () => {

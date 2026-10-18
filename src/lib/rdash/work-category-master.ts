@@ -54,6 +54,56 @@ const unitDefinitions: Array<[
 export function normalizeCatalogName(value: string | undefined) {
     return (value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
+
+export type WorkTaxonomyKind = "category" | "subcategory" | "workType";
+export type WorkTaxonomyReference = { collection: string; count: number };
+
+function containsExactId(value: unknown, targetId: string): boolean {
+    if (value === targetId)
+        return true;
+    if (Array.isArray(value))
+        return value.some((entry) => containsExactId(entry, targetId));
+    if (!value || typeof value !== "object")
+        return false;
+    return Object.values(value).some((entry) => containsExactId(entry, targetId));
+}
+
+function collectionLabel(collection: string) {
+    const name = collection.replace(/^master\./, "").replace(/([a-z])([A-Z])/g, "$1 $2");
+    return name.replace(/^./, (letter) => letter.toUpperCase());
+}
+
+/** Exact-ID reverse references used by Master Setup before permanent deletion. */
+export function workTaxonomyReferences(db: RDashDatabase, kind: WorkTaxonomyKind, targetId: string): WorkTaxonomyReference[] {
+    const collections: Array<[string, unknown[]]> = [];
+    for (const [key, value] of Object.entries(db)) {
+        if (key === "master" || !Array.isArray(value)) continue;
+        collections.push([key, value]);
+    }
+    for (const [key, value] of Object.entries(db.master)) {
+        if (Array.isArray(value)) collections.push([`master.${key}`, value]);
+    }
+
+    return collections.flatMap(([collection, rows]) => {
+        const count = rows.filter((row) => {
+            if (!row || typeof row !== "object") return false;
+            const record = row as Record<string, unknown>;
+            if (kind === "category" && collection === "master.workCategories" && record.id === targetId) return false;
+            if (kind === "subcategory" && collection === "master.workSubcategories" && record.id === targetId) return false;
+            if (kind === "workType" && collection === "master.workSubcategories"
+                && Array.isArray(record.work_types)
+                && record.work_types.some((entry) => entry && typeof entry === "object" && (entry as Record<string, unknown>).id === targetId)) return false;
+            return containsExactId(row, targetId);
+        }).length;
+        return count ? [{ collection: collectionLabel(collection), count }] : [];
+    });
+}
+
+export function workTaxonomyReferenceSummary(references: WorkTaxonomyReference[]): string {
+    const shown = references.slice(0, 4).map((reference) => `${reference.collection} (${reference.count})`);
+    const hidden = references.length - shown.length;
+    return `${shown.join(", ")}${hidden > 0 ? ` and ${hidden} more` : ""}`;
+}
 export function resolveUnitId(value: string | undefined) {
     const normalized = normalizeCatalogName(value).replace(/\./g, "");
     const aliases: Record<string, string> = {

@@ -19,6 +19,7 @@ import {
   measuredQuantity,
   seedDetailedAreaLines,
   WORK_MEASURE_LABELS,
+  isActiveWorkTaxonomy,
   workTypesForSubcategory,
   type RemovedSelection,
   type WorkMeasureBasis,
@@ -551,16 +552,26 @@ export function CustomerWorkCaptureDialog({
   };
 
   const renderLine = (group: AreaGroup, line: DraftLine) => {
-    const subcategories = line.category_id
-      ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id)
-      : [];
-    const workTypes = workTypesFor(line.subcategory_id);
     const pairs = pairsForLine(line);
+    const selectedPairSubcategoryIds = new Set(pairs.map((pair) => pair.subcategory_id));
+    const selectedPairWorkTypeIds = new Set(pairs.map((pair) => pair.work_type_id).filter(Boolean));
+    const category = db.master.workCategories.find((row) => row.id === line.category_id);
+    const canSelectNewSubcategories = isActiveWorkTaxonomy(category);
+    const subcategories = line.category_id
+      ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id
+        && (row.id === line.subcategory_id || selectedPairSubcategoryIds.has(row.id)
+          || (canSelectNewSubcategories && isActiveWorkTaxonomy(row))))
+      : [];
+    const subcategory = db.master.workSubcategories.find((row) => row.id === line.subcategory_id);
+    const canSelectNewWorkTypes = canSelectNewSubcategories && isActiveWorkTaxonomy(subcategory);
+    const workTypes = workTypesFor(line.subcategory_id).filter((row) => row.id === line.work_type_id
+      || selectedPairWorkTypeIds.has(row.id)
+      || (canSelectNewWorkTypes && isActiveWorkTaxonomy(row)));
     const pairKeys = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
-    const candidateOptions = line.category_id
+    const candidateOptions = line.category_id && canSelectNewSubcategories
       ? db.master.workSubcategories
-          .filter((row) => row.category_id === line.category_id)
-          .flatMap((subcategory) => workTypesForSubcategory(subcategory).map((workType) => ({
+          .filter((row) => row.category_id === line.category_id && isActiveWorkTaxonomy(row))
+          .flatMap((subcategory) => workTypesForSubcategory(subcategory).filter(isActiveWorkTaxonomy).map((workType) => ({
             value: `${subcategory.id}::${workType.id}`,
             label: `${subcategory.name} · ${workType.name}`,
           })))
@@ -590,7 +601,7 @@ export function CustomerWorkCaptureDialog({
           <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Category
             <select value={line.category_id || ""} onChange={(event) => updateLine(group.key, line.key, { category_id: event.target.value || undefined, subcategory_id: undefined, work_type_id: undefined, option_pairs: undefined })} className="h-8 rounded-md border border-input bg-card px-2 text-xs font-normal text-foreground">
               <option value="">Select category</option>
-              {db.master.workCategories.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+              {db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || row.id === line.category_id).map((row) => <option key={row.id} value={row.id}>{row.name}{isActiveWorkTaxonomy(row) ? "" : " · Archived"}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-[10px] font-semibold uppercase text-muted-foreground">Subcategory

@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useRDashStore } from "@/lib/rdash/store";
 import { normalizeCatalogName } from "@/lib/rdash/work-category-master";
 import type { WorkCategory, WorkSubcategory, WorkTypeRate } from "@/lib/rdash/types";
-import { createWorkTypeId, defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { createWorkTypeId, defaultWorkTypeId, isActiveWorkTaxonomy, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { cn } from "@/lib/utils";
 
 const newCatalogId = (prefix: string) =>
@@ -112,6 +112,8 @@ export function AddWorkSubcategoryAction({
 
   function save() {
     const clean = name.trim();
+    const category = master.workCategories.find((row) => row.id === categoryId);
+    if (!isActiveWorkTaxonomy(category)) return toast.error("Restore this category before adding a subcategory.");
     if (!clean) return toast.error("Subcategory name is required.");
     if (master.workSubcategories.some((subcategory) =>
       subcategory.category_id === categoryId &&
@@ -200,6 +202,10 @@ export function AddWorkTypeAction({
   function save() {
     const subcategory = master.workSubcategories.find((row) => row.id === subcategoryId);
     if (!subcategory) return toast.error("Select the subcategory first.");
+    const category = master.workCategories.find((row) => row.id === subcategory.category_id);
+    if (!isActiveWorkTaxonomy(category) || !isActiveWorkTaxonomy(subcategory)) {
+      return toast.error("Restore this category and subcategory before adding a work type.");
+    }
     const clean = name.trim();
     if (!clean) return toast.error("Work type name is required.");
     if (workTypesForSubcategory(subcategory).some((row) => normalizeCatalogName(row.name) === normalizeCatalogName(clean))) {

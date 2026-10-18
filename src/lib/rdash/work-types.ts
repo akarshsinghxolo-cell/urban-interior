@@ -2,6 +2,10 @@ import type { Area, ContractorRate, ID, LineItem, MeasurementRevision, Quotation
 
 const DEFAULT_WORK_TYPE_NAME = "Standard";
 
+export function isActiveWorkTaxonomy(row: { status?: "active" | "archived" } | undefined): boolean {
+  return row !== undefined && row.status !== "archived";
+}
+
 function slug(value: string): string {
   return value
     .trim()
@@ -29,6 +33,10 @@ export function workTypesForSubcategory(work: WorkSubcategory): WorkTypeRate[] {
     byId.set(id, {
       id,
       name,
+      status: row.status,
+      archived_at: row.archived_at,
+      archived_by: row.archived_by,
+      archive_reason: row.archive_reason,
       unit_id: String(row.unit_id || work.unit_id || "pcs").trim(),
       notes: String(row.notes || "").trim() || undefined,
       created_at: row.created_at || work.created_at,
@@ -103,7 +111,7 @@ export function pruneWorkTypeIds(
 }
 
 /**
- * Ensure every selected subcategory keeps at least its primary (first) work
+ * Ensure every selected subcategory keeps at least its primary active work
  * type ticked — quotation rates resolve per work type, so a subcategory with
  * zero selected work types would have nothing to quote. Existing selections
  * are preserved in order; missing primaries are appended.
@@ -118,7 +126,10 @@ export function withPrimaryWorkTypeIds(
     const subcategory = workSubcategories.find((row) => row.id === subcategoryId);
     if (!subcategory) continue;
     const rows = workTypesForSubcategory(subcategory);
-    if (!rows.some((row) => selected.includes(row.id))) selected.push(rows[0].id);
+    if (!rows.some((row) => selected.includes(row.id))) {
+      const primary = rows.find(isActiveWorkTaxonomy);
+      if (primary) selected.push(primary.id);
+    }
   }
   return selected;
 }

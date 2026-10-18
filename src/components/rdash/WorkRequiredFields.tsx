@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
-import { pruneWorkTypeIds, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { isActiveWorkTaxonomy, pruneWorkTypeIds, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { useRDashStore } from "@/lib/rdash/store";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction, AddWorkTypeAction } from "./WorkTaxonomyQuickAdd";
@@ -71,14 +71,20 @@ export function WorkRequiredFields({
   const [customAreaTypes, setCustomAreaTypes] = React.useState<Array<{ value: string; label: string }>>([]);
   const [customAreaType, setCustomAreaType] = React.useState("");
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
-  const subcategories = db.master.workSubcategories.filter((row) => value.categoryIds.includes(row.category_id));
+  const categories = db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || value.categoryIds.includes(row.id));
+  const subcategories = db.master.workSubcategories.filter((row) =>
+    value.categoryIds.includes(row.category_id)
+    && (isActiveWorkTaxonomy(row) || value.subcategoryIds.includes(row.id)));
   const subcategoryGroups = value.categoryIds.flatMap((categoryId) => {
     const category = db.master.workCategories.find((row) => row.id === categoryId);
     if (!category) return [];
     return [{
       key: category.id,
-      items: subcategories.filter((subcategory) => subcategory.category_id === category.id).map((subcategory) => ({ id: subcategory.id, name: `${category.name} · ${subcategory.name}` })),
-      footer: (close: () => void) => (
+      items: subcategories
+        .filter((subcategory) => subcategory.category_id === category.id
+          && (value.subcategoryIds.includes(subcategory.id) || isActiveWorkTaxonomy(category)))
+        .map((subcategory) => ({ id: subcategory.id, name: `${category.name} · ${subcategory.name}` })),
+      footer: isActiveWorkTaxonomy(category) ? (close: () => void) => (
         <button
           type="button"
           className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
@@ -89,25 +95,31 @@ export function WorkRequiredFields({
         >
           + Add subcategory to {category.name}
         </button>
-      ),
+      ) : undefined,
     }];
   });
   const selectedWorkTypes = value.subcategoryIds.flatMap((subcategoryId) => {
     const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
-    return subcategory ? workTypesForSubcategory(subcategory).map((workType) => ({ subcategory, workType })) : [];
+    const category = subcategory && db.master.workCategories.find((row) => row.id === subcategory.category_id);
+    const canSelectNewWorkTypes = isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(subcategory);
+    return subcategory ? workTypesForSubcategory(subcategory)
+      .filter((workType) => value.workTypeIds.includes(workType.id) || (canSelectNewWorkTypes && isActiveWorkTaxonomy(workType)))
+      .map((workType) => ({ subcategory, workType })) : [];
   });
   const workTypeGroups = value.subcategoryIds.flatMap((subcategoryId) => {
     const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
     if (!subcategory) return [];
+    const category = db.master.workCategories.find((row) => row.id === subcategory.category_id);
+    const canSelectNewWorkTypes = isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(subcategory);
     return [{
       key: subcategory.id,
-      items: workTypesForSubcategory(subcategory).map((workType) => ({
+      items: workTypesForSubcategory(subcategory).filter((workType) => value.workTypeIds.includes(workType.id) || (canSelectNewWorkTypes && isActiveWorkTaxonomy(workType))).map((workType) => ({
         id: workType.id,
         name: `${subcategory.name} · ${workType.name}`,
       })),
       // Per-group add row: with several subcategories ticked the target of
       // "+ Add work type" is the group it sits in — no ambiguity.
-      footer: (close: () => void) => (
+      footer: canSelectNewWorkTypes ? (close: () => void) => (
         <button
           type="button"
           className="w-full rounded px-2 py-1.5 text-left text-xs font-medium text-primary hover:bg-accent/40"
@@ -119,7 +131,7 @@ export function WorkRequiredFields({
         >
           + Add work type
         </button>
-      ),
+      ) : undefined,
     }];
   });
   const toggleWorkType = (workType: { id: string }) => {
@@ -220,7 +232,10 @@ export function WorkRequiredFields({
 
       <div className="rounded-md border border-border p-3">
         <p className="text-xs font-semibold">Work selection</p>
-        <p className="mb-3 text-[11px] text-muted-foreground">Tick every required category, subcategory, and work type.</p>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-muted-foreground">Tick every required category, subcategory, and work type.</p>
+          <a href="/workspace/masters" className="text-[11px] font-medium text-primary hover:underline">Manage catalogue</a>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Work Categories</span>
@@ -228,7 +243,7 @@ export function WorkRequiredFields({
             <MultiTickDropdown
               ariaLabel="Work categories"
               selected={value.categoryIds}
-              groups={db.master.workCategories.map((category) => ({ key: category.id, items: [{ id: category.id, name: category.name }] }))}
+              groups={categories.map((category) => ({ key: category.id, items: [{ id: category.id, name: `${category.name}${isActiveWorkTaxonomy(category) ? "" : " (Archived)"}` }] }))}
               inline
               searchable
               placeholder="Select work category"
@@ -299,7 +314,7 @@ export function WorkRequiredFields({
                 const addedSubcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
                 const addedWorkTypeIds = selected || !addedSubcategory
                   ? []
-                  : workTypesForSubcategory(addedSubcategory).slice(0, 1).map((row) => row.id);
+                  : workTypesForSubcategory(addedSubcategory).filter(isActiveWorkTaxonomy).slice(0, 1).map((row) => row.id);
                 const workTypeIds = [...new Set([...retainedWorkTypeIds, ...addedWorkTypeIds])];
                 const title = workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds);
                 onChange({ subcategoryIds, workTypeIds, title });
@@ -408,4 +423,3 @@ export function WorkRequiredFields({
     </div>
   );
 }
-

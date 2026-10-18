@@ -1,12 +1,12 @@
 "use client";
 import * as React from "react";
-import { AlertTriangle, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Download, FilePlus2, Layers3, Link2, PackagePlus, Pencil, Plus, Ruler, Search, Settings2, Tags, Trash2, Wrench, } from "lucide-react";
+import { AlertTriangle, Archive, ArchiveRestore, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Download, FilePlus2, Layers3, Link2, PackagePlus, Pencil, Plus, Ruler, Search, Settings2, Tags, Trash2, Wrench, } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
 import type { Article, ArticleVariant, Master, MasterUnit, WorkCategory, WorkRequiredArticle, WorkSubcategory, WorkTypeRate } from "@/lib/rdash/types";
-import { resolveUnitId, catalogCounts, getCatalogIssues, normalizeCatalogName, } from "@/lib/rdash/work-category-master";
-import { createWorkTypeId, defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { resolveUnitId, catalogCounts, getCatalogIssues, normalizeCatalogName, workTaxonomyReferences, workTaxonomyReferenceSummary, } from "@/lib/rdash/work-category-master";
+import { createWorkTypeId, defaultWorkTypeId, isActiveWorkTaxonomy, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { contractorWorkTypeAverages } from "@/lib/rdash/contractor-profile";
 import { confirmDialog } from "../ConfirmDialog";
 import { MetricCard, EmptyState, StatusBadge } from "../primitives";
@@ -124,6 +124,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     const [variantArticleId, setVariantArticleId] = React.useState<string | null>(null);
     const [unitDialogOpen, setUnitDialogOpen] = React.useState(false);
     const [articleDialogOpen, setArticleDialogOpen] = React.useState(false);
+    const [savingTaxonomy, setSavingTaxonomy] = React.useState(false);
     React.useEffect(() => setView(initialView), [initialView]);
     const workByCategory = React.useMemo(() => {
         const map = new Map<string, WorkSubcategory[]>();
@@ -158,6 +159,23 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         });
     }, [master, query, scopesByWork, workByCategory]);
     const updateMaster = React.useCallback((updater: (current: Master) => Master) => mutateMaster(updater), [mutateMaster]);
+    const saveTaxonomyChange = React.useCallback(async (change: () => void, message: string) => {
+        if (savingTaxonomy) return false;
+        setSavingTaxonomy(true);
+        try {
+            change();
+            await useRDashStore.getState().awaitServerSync();
+            toast.success(message);
+            return true;
+        }
+        catch (error) {
+            toast.error(error instanceof Error ? error.message : "Catalogue change could not be saved.");
+            return false;
+        }
+        finally {
+            setSavingTaxonomy(false);
+        }
+    }, [savingTaxonomy]);
     function addCategory(name: string) {
         const clean = name.trim();
         if (!clean)
@@ -182,35 +200,47 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     }
     async function removeCategory(categoryId: string) {
         const category = master.workCategories.find((entry) => entry.id === categoryId);
-        const works = master.workSubcategories.filter((entry) => entry.category_id === categoryId);
         if (!category) return;
+        const references = workTaxonomyReferences(db, "category", categoryId);
+        if (references.length) {
+            toast.error(`${category.name} is still in use. Archive it instead.`, { description: workTaxonomyReferenceSummary(references) });
+            return;
+        }
         const ok = await confirmDialog({
-            title: `Remove ${category.name}`,
-            description: `${works.length} sub categories and their scoped material rows will be removed. Historical transaction labels remain, but stale master links are cleared.`,
-            confirmLabel: "Remove",
+            title: `Delete unused category ${category.name}`,
+            description: "This category has no linked catalogue or business records. This action permanently removes only the category.",
+            confirmLabel: "Delete category",
             danger: true,
         });
         if (!ok) return;
-        const workIds = new Set(works.map((work) => work.id));
-        const scopeIds = new Set(master.subcategoryArticleMap.filter((row) => workIds.has(row.work_required_id)).map((row) => row.id));
-        updateMaster((current) => {
-            const candidateArticleIds = new Set(current.subcategoryArticleMap
-                .filter((row) => scopeIds.has(row.id))
-                .map((row) => row.article_id));
-            const remainingScopes = current.subcategoryArticleMap.filter((row) => !scopeIds.has(row.id));
-            const remainingArticleIds = new Set(remainingScopes.map((row) => row.article_id));
-            const removedArticleIds = new Set([...candidateArticleIds].filter((articleId) => !remainingArticleIds.has(articleId)));
-            return {
-                ...current,
-                workCategories: current.workCategories.filter((entry) => entry.id !== categoryId),
-                workSubcategories: current.workSubcategories.filter((entry) => !workIds.has(entry.id)),
-                subcategoryArticleMap: remainingScopes,
-                vendorRates: current.vendorRates.filter((rate) => !removedArticleIds.has(rate.article_id)),
-                articleVariants: current.articleVariants.filter((variant) => !removedArticleIds.has(variant.article_id)),
-                articles: current.articles.filter((article) => !removedArticleIds.has(article.id)),
-            };
+        await saveTaxonomyChange(() => updateMaster((current) => ({
+            ...current,
+            workCategories: current.workCategories.filter((entry) => entry.id !== categoryId),
+        })), "Unused category deleted.");
+    }
+    async function setCategoryArchived(categoryId: string, archived: boolean) {
+        const category = master.workCategories.find((entry) => entry.id === categoryId);
+        if (!category) return;
+        const ok = await confirmDialog({
+            title: `${archived ? "Archive" : "Restore"} ${category.name}`,
+            description: archived
+                ? "It will disappear from new customer, contractor and vendor selections. Existing records keep their original link and history."
+                : "It will become available for new selections again.",
+            confirmLabel: archived ? "Archive category" : "Restore category",
         });
-        toast.success("Category and dependent catalogue rows removed.");
+        if (!ok) return;
+        const actor = useRDashStore.getState().currentUser().name;
+        await saveTaxonomyChange(() => updateMaster((current) => ({
+            ...current,
+            workCategories: current.workCategories.map((entry) => entry.id === categoryId ? {
+                ...entry,
+                status: archived ? "archived" : "active",
+                archived_at: archived ? iso() : undefined,
+                archived_by: archived ? actor : undefined,
+                archive_reason: archived ? "Archived from Master Setup" : undefined,
+                updated_at: iso(),
+            } : entry),
+        })), `Category ${archived ? "archived" : "restored"}.`);
     }
     function addWorkItem(draft: DraftWork) {
         const clean = draft.name.trim();
@@ -338,59 +368,86 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         const workType = workTypes.find((row) => row.id === workTypeId);
         if (!work || !workType) return;
         if (workTypes.length === 1) return toast.error("A sub category must keep at least one work type. Add a replacement first.");
+        const references = workTaxonomyReferences(db, "workType", workTypeId);
+        if (references.length) {
+            toast.error(`${workType.name} is still in use. Archive it instead.`, { description: workTaxonomyReferenceSummary(references) });
+            return;
+        }
         const ok = await confirmDialog({
-            title: `Delete ${workType.name}`,
-            description: "This work type and its contractor labour-rate entries will be removed. Vendor article data is not affected.",
+            title: `Delete unused work type ${workType.name}`,
+            description: "This work type has no customer, contractor, quotation or other business references.",
             confirmLabel: "Delete work type",
             danger: true,
         });
         if (!ok) return;
-        updateMaster((current) => ({
+        await saveTaxonomyChange(() => updateMaster((current) => ({
             ...current,
             workSubcategories: current.workSubcategories.map((row) => row.id === workId ? {
                 ...normalizeWorkSubcategoryWorkTypes(row),
                 work_types: workTypesForSubcategory(row).filter((entry) => entry.id !== workTypeId),
                 updated_at: iso(),
             } : row),
-            contractors: current.contractors.map((contractor) => ({
-                ...contractor,
-                work_capabilities: contractor.work_capabilities?.map((capability) => capability.subcategory_id === workId ? {
-                    ...capability,
-                    work_type_rates: capability.work_type_rates?.filter((rate) => rate.work_type_id !== workTypeId),
-                } : capability),
-            })),
-            contractorRates: current.contractorRates.filter((rate) => !(rate.work_subcategory_id === workId && rate.work_type_id === workTypeId)),
-        }));
-        toast.success("Work type and linked contractor rates removed.");
+        })), "Unused work type deleted.");
+    }
+    async function setWorkTypeArchived(workId: string, workTypeId: string, archived: boolean) {
+        const work = workFor(master, workId);
+        const workType = work ? workTypesForSubcategory(work).find((entry) => entry.id === workTypeId) : undefined;
+        if (!work || !workType) return;
+        if (archived && workTypesForSubcategory(work).filter(isActiveWorkTaxonomy).length === 1) {
+            return toast.error("A subcategory must keep at least one active work type. Add or restore a replacement first.");
+        }
+        const actor = useRDashStore.getState().currentUser().name;
+        await saveTaxonomyChange(() => updateMaster((current) => ({
+            ...current,
+            workSubcategories: current.workSubcategories.map((row) => row.id === workId ? {
+                ...normalizeWorkSubcategoryWorkTypes(row),
+                work_types: workTypesForSubcategory(row).map((entry) => entry.id === workTypeId ? {
+                    ...entry,
+                    status: archived ? "archived" : "active",
+                    archived_at: archived ? iso() : undefined,
+                    archived_by: archived ? actor : undefined,
+                    archive_reason: archived ? "Archived from Master Setup" : undefined,
+                    updated_at: iso(),
+                } : entry),
+                updated_at: iso(),
+            } : row),
+        })), `Work type ${archived ? "archived" : "restored"}.`);
     }
     async function removeWorkItem(workId: string) {
         const work = workFor(master, workId);
         if (!work) return;
+        const references = workTaxonomyReferences(db, "subcategory", workId);
+        if (references.length) {
+            toast.error(`${work.name} is still in use. Archive it instead.`, { description: workTaxonomyReferenceSummary(references) });
+            return;
+        }
         const ok2 = await confirmDialog({
-            title: `Remove ${work.name}`,
-            description: "Linked scoped materials, linked vendor prices and stale transaction links will be cleared.",
-            confirmLabel: "Remove",
+            title: `Delete unused subcategory ${work.name}`,
+            description: "This subcategory has no scoped materials, capabilities or business references. Other catalogue records will not be removed.",
+            confirmLabel: "Delete subcategory",
             danger: true,
         });
         if (!ok2) return;
-        const scopeIds = new Set(master.subcategoryArticleMap.filter((row) => row.work_required_id === workId).map((row) => row.id));
-        updateMaster((current) => {
-            const candidateArticleIds = new Set(current.subcategoryArticleMap
-                .filter((row) => scopeIds.has(row.id))
-                .map((row) => row.article_id));
-            const remainingScopes = current.subcategoryArticleMap.filter((row) => !scopeIds.has(row.id));
-            const remainingArticleIds = new Set(remainingScopes.map((row) => row.article_id));
-            const removedArticleIds = new Set([...candidateArticleIds].filter((articleId) => !remainingArticleIds.has(articleId)));
-            return {
-                ...current,
-                workSubcategories: current.workSubcategories.filter((item) => item.id !== workId),
-                subcategoryArticleMap: remainingScopes,
-                vendorRates: current.vendorRates.filter((rate) => !removedArticleIds.has(rate.article_id)),
-                articleVariants: current.articleVariants.filter((variant) => !removedArticleIds.has(variant.article_id)),
-                articles: current.articles.filter((article) => !removedArticleIds.has(article.id)),
-            };
-        });
-        toast.success("Sub category and dependent scoped materials removed.");
+        await saveTaxonomyChange(() => updateMaster((current) => ({
+            ...current,
+            workSubcategories: current.workSubcategories.filter((item) => item.id !== workId),
+        })), "Unused subcategory deleted.");
+    }
+    async function setWorkItemArchived(workId: string, archived: boolean) {
+        const work = workFor(master, workId);
+        if (!work) return;
+        const actor = useRDashStore.getState().currentUser().name;
+        await saveTaxonomyChange(() => updateMaster((current) => ({
+            ...current,
+            workSubcategories: current.workSubcategories.map((item) => item.id === workId ? {
+                ...item,
+                status: archived ? "archived" : "active",
+                archived_at: archived ? iso() : undefined,
+                archived_by: archived ? actor : undefined,
+                archive_reason: archived ? "Archived from Master Setup" : undefined,
+                updated_at: iso(),
+            } : item),
+        })), `Subcategory ${archived ? "archived" : "restored"}.`);
     }
     function addScopedMaterial(workId: string, draft: DraftMaterial) {
         const work = workFor(master, workId);
@@ -746,7 +803,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         })}
       </div>
 
-      {view === "catalogue" ? <CatalogueView master={master} query={query} setQuery={setQuery} filteredCategories={filteredCategories} workByCategory={workByCategory} scopesByWork={scopesByWork} variantsByArticle={variantsByArticle} expanded={expanded} setExpanded={setExpanded} updateCategory={updateCategory} removeCategory={removeCategory} setWorkDialogCategoryId={setWorkDialogCategoryId} updateWorkItem={updateWorkItem} addWorkType={addWorkType} updateWorkType={updateWorkType} removeWorkType={removeWorkType} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} updateArticle={updateArticle} removeScope={removeScope} setVariantArticleId={setVariantArticleId} onAddCategory={() => setCategoryDialogOpen(true)}/> : null}
+      {view === "catalogue" ? <CatalogueView master={master} query={query} setQuery={setQuery} filteredCategories={filteredCategories} workByCategory={workByCategory} scopesByWork={scopesByWork} variantsByArticle={variantsByArticle} expanded={expanded} setExpanded={setExpanded} updateCategory={updateCategory} removeCategory={removeCategory} setCategoryArchived={setCategoryArchived} setWorkDialogCategoryId={setWorkDialogCategoryId} updateWorkItem={updateWorkItem} addWorkType={addWorkType} updateWorkType={updateWorkType} removeWorkType={removeWorkType} setWorkTypeArchived={setWorkTypeArchived} removeWorkItem={removeWorkItem} setWorkItemArchived={setWorkItemArchived} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} updateArticle={updateArticle} removeScope={removeScope} setVariantArticleId={setVariantArticleId} onAddCategory={() => setCategoryDialogOpen(true)} saving={savingTaxonomy}/> : null}
       {view === "articles" ? <ArticlesView master={master} query={query} setQuery={setQuery} scopesByWork={scopesByWork} variantsByArticle={variantsByArticle} updateArticle={updateArticle} removeArticle={removeArticle} setVariantArticleId={setVariantArticleId}/> : null}
       {view === "variants" ? <VariantsView master={master} query={query} setQuery={setQuery} variantsByArticle={variantsByArticle} setVariantArticleId={setVariantArticleId}/> : null}
       {view === "units" ? <UnitsView master={master} query={query} setQuery={setQuery} updateUnit={updateUnit} removeUnit={removeUnit}/> : null}
@@ -760,7 +817,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
       <ArticleDialog open={articleDialogOpen} onOpenChange={setArticleDialogOpen} units={master.units} onSave={addArticle}/>
     </div>);
 }
-function CatalogueView({ master, query, setQuery, filteredCategories, workByCategory, scopesByWork, variantsByArticle, expanded, setExpanded, updateCategory, removeCategory, setWorkDialogCategoryId, updateWorkItem, addWorkType, updateWorkType, removeWorkType, removeWorkItem, setMaterialWorkId, updateScope, updateArticle, removeScope, setVariantArticleId, onAddCategory }: {
+function CatalogueView({ master, query, setQuery, filteredCategories, workByCategory, scopesByWork, variantsByArticle, expanded, setExpanded, updateCategory, removeCategory, setCategoryArchived, setWorkDialogCategoryId, updateWorkItem, addWorkType, updateWorkType, removeWorkType, setWorkTypeArchived, removeWorkItem, setWorkItemArchived, setMaterialWorkId, updateScope, updateArticle, removeScope, setVariantArticleId, onAddCategory, saving }: {
     master: Master;
     query: string;
     setQuery: (value: string) => void;
@@ -772,18 +829,22 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
     setExpanded: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
     updateCategory: (id: string, patch: Partial<WorkCategory>) => void;
     removeCategory: (id: string) => void;
+    setCategoryArchived: (id: string, archived: boolean) => void;
     setWorkDialogCategoryId: (id: string) => void;
     updateWorkItem: (id: string, patch: Partial<WorkSubcategory>) => void;
     addWorkType: (workId: string) => void;
     updateWorkType: (workId: string, workTypeId: string, patch: Partial<WorkTypeRate>) => void;
     removeWorkType: (workId: string, workTypeId: string) => void;
+    setWorkTypeArchived: (workId: string, workTypeId: string, archived: boolean) => void;
     removeWorkItem: (id: string) => void;
+    setWorkItemArchived: (id: string, archived: boolean) => void;
     setMaterialWorkId: (id: string) => void;
     updateScope: (id: string, patch: Partial<WorkRequiredArticle>) => void;
     updateArticle: (id: string, patch: Partial<Article>) => void;
     removeScope: (id: string) => void;
     setVariantArticleId: (id: string) => void;
     onAddCategory: () => void;
+    saving: boolean;
 }) {
     const needle = normalizeCatalogName(query);
     const [editingCategoryId, setEditingCategoryId] = React.useState<string | null>(null);
@@ -814,19 +875,20 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
                         }
                         if (event.key === "Escape")
                             setEditingCategoryId(null);
-                    }} className="h-8 max-w-md font-semibold"/>) : (<span className="block truncate text-sm font-bold">{category.name}</span>)}
+                    }} className="h-8 max-w-md font-semibold"/>) : (<span className="flex min-w-0 items-center gap-2"><span className="block truncate text-sm font-bold">{category.name}</span>{!isActiveWorkTaxonomy(category) ? <StatusBadge label="Archived" className="border-muted-foreground/20 bg-muted text-muted-foreground"/> : null}</span>)}
               <span className="text-[10px] text-muted-foreground">{works.length} sub categories - {materialCount} scoped materials</span>
             </span>
           </button>
           <div className="flex w-full items-center gap-1.5 sm:w-auto">
-            <Button size="icon" variant="ghost" aria-label={`Edit ${category.name}`} onClick={() => setEditingCategoryId(category.id)}><Pencil className="h-4 w-4"/></Button>
-            <Button size="sm" variant="outline" className="flex-1 sm:flex-none" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Sub category</Button>
-            <Button size="icon" variant="ghost" aria-label={`Delete ${category.name}`} onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+            <Button size="icon" variant="ghost" disabled={saving || !isActiveWorkTaxonomy(category)} aria-label={`Edit ${category.name}`} onClick={() => setEditingCategoryId(category.id)}><Pencil className="h-4 w-4"/></Button>
+            <Button size="sm" variant="outline" disabled={saving || !isActiveWorkTaxonomy(category)} className="flex-1 sm:flex-none" onClick={() => setWorkDialogCategoryId(category.id)}><Plus className="h-3.5 w-3.5"/> Sub category</Button>
+            <Button size="icon" variant="ghost" disabled={saving} aria-label={`${isActiveWorkTaxonomy(category) ? "Archive" : "Restore"} ${category.name}`} onClick={() => setCategoryArchived(category.id, isActiveWorkTaxonomy(category))}>{isActiveWorkTaxonomy(category) ? <Archive className="h-4 w-4"/> : <ArchiveRestore className="h-4 w-4 text-primary"/>}</Button>
+            <Button size="icon" variant="ghost" disabled={saving} aria-label={`Delete ${category.name}`} onClick={() => removeCategory(category.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
           </div>
         </div>
         {isExpanded ? <div className="p-3">
           <div className="grid gap-3">
-            {works.map((work) => <WorkItemCard key={work.id} master={master} work={work} scopes={scopesByWork.get(work.id) || []} variantsByArticle={variantsByArticle} updateWorkItem={updateWorkItem} addWorkType={addWorkType} updateWorkType={updateWorkType} removeWorkType={removeWorkType} removeWorkItem={removeWorkItem} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} updateArticle={updateArticle} removeScope={removeScope} setVariantArticleId={setVariantArticleId}/>)}
+            {works.map((work) => <WorkItemCard key={work.id} master={master} work={work} parentActive={isActiveWorkTaxonomy(category)} scopes={scopesByWork.get(work.id) || []} variantsByArticle={variantsByArticle} updateWorkItem={updateWorkItem} addWorkType={addWorkType} updateWorkType={updateWorkType} removeWorkType={removeWorkType} setWorkTypeArchived={setWorkTypeArchived} removeWorkItem={removeWorkItem} setWorkItemArchived={setWorkItemArchived} setMaterialWorkId={setMaterialWorkId} updateScope={updateScope} updateArticle={updateArticle} removeScope={removeScope} setVariantArticleId={setVariantArticleId} saving={saving}/>)}
             {works.length === 0 ? <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">No sub categories match this category filter.</div> : null}
           </div>
         </div> : null}
@@ -834,23 +896,28 @@ function CatalogueView({ master, query, setQuery, filteredCategories, workByCate
         })}
   </div>;
 }
-function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem, addWorkType, updateWorkType, removeWorkType, removeWorkItem, setMaterialWorkId, updateScope, updateArticle, removeScope, setVariantArticleId }: {
+function WorkItemCard({ master, work, parentActive, scopes, variantsByArticle, updateWorkItem, addWorkType, updateWorkType, removeWorkType, setWorkTypeArchived, removeWorkItem, setWorkItemArchived, setMaterialWorkId, updateScope, updateArticle, removeScope, setVariantArticleId, saving }: {
     master: Master;
     work: WorkSubcategory;
+    parentActive: boolean;
     scopes: WorkRequiredArticle[];
     variantsByArticle: Map<string, ArticleVariant[]>;
     updateWorkItem: (id: string, patch: Partial<WorkSubcategory>) => void;
     addWorkType: (workId: string) => void;
     updateWorkType: (workId: string, workTypeId: string, patch: Partial<WorkTypeRate>) => void;
     removeWorkType: (workId: string, workTypeId: string) => void;
+    setWorkTypeArchived: (workId: string, workTypeId: string, archived: boolean) => void;
     removeWorkItem: (id: string) => void;
+    setWorkItemArchived: (id: string, archived: boolean) => void;
     setMaterialWorkId: (id: string) => void;
     updateScope: (id: string, patch: Partial<WorkRequiredArticle>) => void;
     updateArticle: (id: string, patch: Partial<Article>) => void;
     removeScope: (id: string) => void;
     setVariantArticleId: (id: string) => void;
+    saving: boolean;
 }) {
     const workTypes = workTypesForSubcategory(work);
+    const editable = parentActive && isActiveWorkTaxonomy(work);
     const [open, setOpen] = React.useState(false);
     const [materialsOpen, setMaterialsOpen] = React.useState(false);
     const [editingName, setEditingName] = React.useState(false);
@@ -872,40 +939,41 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
             }
             if (event.key === "Escape")
                 setEditingName(false);
-        }} className="h-8 max-w-md text-sm font-semibold"/>) : (<span className="block truncate text-sm font-semibold">{work.name}</span>)}
+        }} className="h-8 max-w-md text-sm font-semibold"/>) : (<span className="flex min-w-0 items-center gap-2"><span className="block truncate text-sm font-semibold">{work.name}</span>{!isActiveWorkTaxonomy(work) ? <StatusBadge label="Archived" className="border-muted-foreground/20 bg-muted text-muted-foreground"/> : null}</span>)}
           <span className="text-[10px] text-muted-foreground">{workTypes.length} work type{workTypes.length === 1 ? "" : "s"} · {scopes.length} scoped material{scopes.length === 1 ? "" : "s"}</span>
         </span>
       </button>
       <div className="flex items-center gap-1.5">
-        <Button size="icon" variant="ghost" aria-label={`Rename ${work.name}`} onClick={() => setEditingName(true)}><Pencil className="h-4 w-4"/></Button>
+        <Button size="icon" variant="ghost" disabled={saving || !editable} aria-label={`Rename ${work.name}`} onClick={() => setEditingName(true)}><Pencil className="h-4 w-4"/></Button>
         <StatusBadge label={`${workTypes.length} rate row${workTypes.length === 1 ? "" : "s"}`} className="border-primary/20 bg-primary/10 text-primary"/>
-        <Button size="icon" variant="ghost" aria-label={`Delete ${work.name}`} onClick={() => removeWorkItem(work.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+        <Button size="icon" variant="ghost" disabled={saving} aria-label={`${isActiveWorkTaxonomy(work) ? "Archive" : "Restore"} ${work.name}`} onClick={() => setWorkItemArchived(work.id, isActiveWorkTaxonomy(work))}>{isActiveWorkTaxonomy(work) ? <Archive className="h-4 w-4"/> : <ArchiveRestore className="h-4 w-4 text-primary"/>}</Button>
+        <Button size="icon" variant="ghost" disabled={saving} aria-label={`Delete ${work.name}`} onClick={() => removeWorkItem(work.id)}><Trash2 className="h-4 w-4 text-destructive"/></Button>
       </div>
     </div>
 
     {open ? <>
       <div className="mt-2 overflow-x-auto rounded-lg border border-border">
-        <div className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_40px] gap-2 bg-muted/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span />
+        <div className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_80px] gap-2 bg-muted/40 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <span>Work type</span><span>Execution unit</span><span>Material rate</span><span>Labour rate</span><span>Total rate</span><span>Notes</span><span className="sticky right-0 bg-muted/95 text-right">Actions</span>
         </div>
         {workTypes.map((workType) => {
             const average = contractorWorkTypeAverages(master.contractorRates, work.id, workType.id);
-            return <div key={workType.id} className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_40px] items-center gap-2 border-t border-border px-2.5 py-2">
-              <Input defaultValue={workType.name} aria-label={`Work type for ${work.name}`} onBlur={(event) => event.target.value !== workType.name && updateWorkType(work.id, workType.id, { name: event.target.value })} className="h-8 font-semibold"/>
-              <NativeSelect value={workType.unit_id || work.unit_id || "pcs"} onChange={(event) => updateWorkType(work.id, workType.id, { unit_id: event.target.value })} className="h-8">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect>
+            return <div key={workType.id} className="grid min-w-[980px] grid-cols-[minmax(150px,1.1fr)_minmax(160px,1fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(120px,.8fr)_minmax(190px,1.3fr)_80px] items-center gap-2 border-t border-border px-2.5 py-2">
+              <div className="min-w-0"><Input disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} defaultValue={workType.name} aria-label={`Work type for ${work.name}`} onBlur={(event) => event.target.value !== workType.name && updateWorkType(work.id, workType.id, { name: event.target.value })} className="h-8 font-semibold"/>{!isActiveWorkTaxonomy(workType) ? <span className="mt-1 block text-[9px] font-semibold text-muted-foreground">Archived</span> : null}</div>
+              <NativeSelect disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} value={workType.unit_id || work.unit_id || "pcs"} onChange={(event) => updateWorkType(work.id, workType.id, { unit_id: event.target.value })} className="h-8">{master.units.map((unit) => <option key={unit.id} value={unit.id}>{unitLabel(master, unit.id)}</option>)}</NativeSelect>
               <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average material rate`}>{average.material_rate == null ? "—" : `Rs ${Math.round(average.material_rate).toLocaleString("en-IN")}`}</div>
               <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold" aria-label={`${workType.name} average labour rate`}>{average.labour_rate == null ? "—" : `Rs ${Math.round(average.labour_rate).toLocaleString("en-IN")}`}</div>
               <div className="flex h-8 items-center rounded-md border border-input bg-muted/50 px-3 font-mono text-sm font-bold">{average.total_rate == null ? "—" : `Rs ${Math.round(average.total_rate).toLocaleString("en-IN")}`}</div>
-              <Input defaultValue={workType.notes || ""} placeholder="Work-type note" aria-label={`${workType.name} notes`} onBlur={(event) => event.target.value !== (workType.notes || "") && updateWorkType(work.id, workType.id, { notes: event.target.value })} className="h-8"/>
-              <Button size="icon" variant="ghost" onClick={() => removeWorkType(work.id, workType.id)} aria-label={`Delete ${workType.name}`}><Trash2 className="h-4 w-4 text-destructive"/></Button>
+              <Input disabled={saving || !editable || !isActiveWorkTaxonomy(workType)} defaultValue={workType.notes || ""} placeholder="Work-type note" aria-label={`${workType.name} notes`} onBlur={(event) => event.target.value !== (workType.notes || "") && updateWorkType(work.id, workType.id, { notes: event.target.value })} className="h-8"/>
+              <div className="sticky right-0 flex justify-end bg-background/95"><Button size="icon" variant="ghost" disabled={saving || !editable} onClick={() => setWorkTypeArchived(work.id, workType.id, isActiveWorkTaxonomy(workType))} aria-label={`${isActiveWorkTaxonomy(workType) ? "Archive" : "Restore"} ${workType.name}`}>{isActiveWorkTaxonomy(workType) ? <Archive className="h-4 w-4"/> : <ArchiveRestore className="h-4 w-4 text-primary"/>}</Button><Button size="icon" variant="ghost" disabled={saving} onClick={() => removeWorkType(work.id, workType.id)} aria-label={`Delete ${workType.name}`}><Trash2 className="h-4 w-4 text-destructive"/></Button></div>
             </div>;
         })}
         <div className="border-t border-border p-2">
-          <Button size="sm" variant="outline" className="border-dashed" onClick={() => addWorkType(work.id)}><Plus className="h-3.5 w-3.5"/> Add work type</Button>
+          <Button size="sm" variant="outline" disabled={saving || !editable} className="border-dashed" onClick={() => addWorkType(work.id)}><Plus className="h-3.5 w-3.5"/> Add work type</Button>
         </div>
       </div>
 
-      <div className="mt-2"><Field label="Sub-category notes"><Input defaultValue={work.notes || ""} placeholder="General scope note" onBlur={(event) => event.target.value !== (work.notes || "") && updateWorkItem(work.id, { notes: event.target.value })}/></Field></div>
+      <div className="mt-2"><Field label="Sub-category notes"><Input disabled={saving || !editable} defaultValue={work.notes || ""} placeholder="General scope note" onBlur={(event) => event.target.value !== (work.notes || "") && updateWorkItem(work.id, { notes: event.target.value })}/></Field></div>
 
       <div className="mt-3 overflow-hidden rounded-lg border border-border">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-2.5 py-2">
@@ -913,7 +981,7 @@ function WorkItemCard({ master, work, scopes, variantsByArticle, updateWorkItem,
             {materialsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground"/> : <ChevronRight className="h-4 w-4 text-muted-foreground"/>}
             <span><span className="block text-xs font-semibold">Scoped material articles</span><span className="text-[10px] text-muted-foreground">{scopes.length} materials linked to this sub category</span></span>
           </button>
-          <Button size="sm" variant="outline" onClick={() => setMaterialWorkId(work.id)}><PackagePlus className="h-3.5 w-3.5"/> Link material</Button>
+          <Button size="sm" variant="outline" disabled={saving || !editable} onClick={() => setMaterialWorkId(work.id)}><PackagePlus className="h-3.5 w-3.5"/> Link material</Button>
         </div>
         {materialsOpen ? (scopes.length === 0 ? <p className="px-3 py-4 text-center text-xs text-muted-foreground">No material articles linked yet.</p> : <div className="overflow-x-auto"><table className="min-w-[850px] w-full text-left text-xs"><thead className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground"><tr><th className="px-3 py-2 font-semibold">Material article</th><th className="px-3 py-2 font-semibold">Scoped unit</th><th className="px-3 py-2 font-semibold">Scoped reference rate</th><th className="px-3 py-2 font-semibold">Scope note</th><th className="px-3 py-2 font-semibold">Variants</th><th className="px-3 py-2"></th></tr></thead><tbody>{scopes.map((scope) => {
                     const article = articleFor(master, scope.article_id);

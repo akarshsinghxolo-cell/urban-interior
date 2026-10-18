@@ -16,9 +16,11 @@ describe("deferred egress guardrails", () => {
     expectNoTokens(app, ['toast.warning("Workspace needs attention"']);
   });
 
-  test("catalog upserts are targeted", () => {
+  test("catalog upserts keep reverse-reference validation", () => {
     expect(targeted).toContain('"master.workSubcategories"');
     expect(targeted).toContain('operation.collection.startsWith("master.")');
+    const eligible = targeted.slice(targeted.indexOf("const TARGETED_COLLECTIONS"), targeted.indexOf("const TARGETED_THREAD_KINDS"));
+    expect(eligible).not.toContain('"master.workSubcategories"');
   });
 
   test("egress-heavy responses report byte sizes", () => {

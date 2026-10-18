@@ -71,6 +71,21 @@ describe("Vendor capability taxonomy", () => {
     }).map((row) => row.id)).toEqual(["art-primer"]);
   });
 
+  test("does not offer Articles beneath an archived Category for new capability selection", () => {
+    const archivedMaster: VendorCapabilityTaxonomyMaster = {
+      ...master,
+      workCategories: master.workCategories.map((category) => category.id === "cat-wall"
+        ? { ...category, status: "archived" }
+        : category),
+    };
+    expect(vendorArticlesForTaxonomy(archivedMaster, {
+      selectedCategoryIds: ["cat-wall"], selectedSubcategoryIds: [],
+    })).toEqual([]);
+    expect(vendorArticlesForTaxonomy(archivedMaster, {
+      selectedCategoryIds: [], selectedSubcategoryIds: [],
+    }).map((row) => row.id)).toEqual(["art-primer"]);
+  });
+
   test("labels saved capabilities with their canonical taxonomy path", () => {
     expect(vendorArticleTaxonomyLabels(master, "art-panel")).toEqual({
       categoryName: "Wall Treatments",

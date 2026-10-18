@@ -19,7 +19,7 @@ import { mergeRows, rowsFor, rowId } from "./rows";
 const VENDOR_RATE_COLLECTIONS = new Set(["master.vendorRates", "master.vendorRateHistories"]);
 const TARGETED_COLLECTIONS = new Set([
   "tasks", "followups", "visits", "threads", "auditLog",
-  "master.units", "master.workCategories", "master.workSubcategories",
+  "master.units",
   "master.articles", "master.articleVariants", "master.subcategoryArticleMap",
   "master.workOptionGroups", "master.workOptionValues",
   ...VENDOR_RATE_COLLECTIONS,

@@ -1,4 +1,5 @@
 import type { Article, WorkCategory, WorkRequiredArticle, WorkSubcategory } from "./types";
+import { isActiveWorkTaxonomy } from "./work-types";
 
 export type VendorCapabilityTaxonomyMaster = {
   workCategories: WorkCategory[];
@@ -58,11 +59,15 @@ export function vendorArticlesForTaxonomy(
     limit?: number;
   },
 ): Article[] {
-  const selectedCategories = new Set(options.selectedCategoryIds);
+  const hasCategoryFilter = options.selectedCategoryIds.length > 0;
+  const activeCategoryIds = new Set(master.workCategories.filter(isActiveWorkTaxonomy).map((category) => category.id));
+  const selectedCategories = new Set(options.selectedCategoryIds.filter((id) =>
+    activeCategoryIds.has(id)));
   const hasSubcategoryFilter = options.selectedSubcategoryIds.length > 0;
   const selectedSubcategories = new Set(
     master.workSubcategories
-      .filter((row) => (!selectedCategories.size || selectedCategories.has(row.category_id))
+      .filter((row) => activeCategoryIds.has(row.category_id) && isActiveWorkTaxonomy(row)
+        && (!selectedCategories.size || selectedCategories.has(row.category_id))
         && (!hasSubcategoryFilter || options.selectedSubcategoryIds.includes(row.id)))
       .map((row) => row.id),
   );
@@ -75,9 +80,12 @@ export function vendorArticlesForTaxonomy(
   const excludedArticleIds = new Set(options.excludedArticleIds || []);
   const query = String(options.query || "").trim().toLowerCase();
   return master.articles
+    .filter(() => !hasCategoryFilter || selectedCategories.size > 0)
     .filter((article) => hasSubcategoryFilter
       ? allowedArticleIds.has(article.id)
-      : !selectedCategories.size || selectedCategories.has(article.category_id || "") || allowedArticleIds.has(article.id))
+      : !selectedCategories.size
+        ? !article.category_id || activeCategoryIds.has(article.category_id) || allowedArticleIds.has(article.id)
+        : selectedCategories.has(article.category_id || "") || allowedArticleIds.has(article.id))
     .filter((article) => !excludedArticleIds.has(article.id))
     .filter((article) => article.name.toLowerCase().includes(query))
     .slice(0, options.limit);

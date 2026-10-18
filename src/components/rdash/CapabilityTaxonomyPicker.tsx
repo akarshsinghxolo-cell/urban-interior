@@ -1,6 +1,7 @@
 "use client";
 
 import type { WorkCategory, WorkSubcategory } from "@/lib/rdash/types";
+import { isActiveWorkTaxonomy } from "@/lib/rdash/work-types";
 import { cn } from "@/lib/utils";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction } from "./WorkTaxonomyQuickAdd";
 
@@ -14,9 +15,10 @@ export function CapabilityTaxonomyPicker({ categories, subcategories, categoryId
   onCategory: (id: string) => void;
   onSubcategory: (categoryId: string, id: string) => void;
 }) {
+  const visibleCategories = categories.filter((category) => isActiveWorkTaxonomy(category) || categoryIds.includes(category.id));
   return <div className="min-w-0 space-y-2">
     <div className="flex flex-wrap gap-2" role="group" aria-label="Capability categories">
-      {categories.map((category) => <button
+      {visibleCategories.map((category) => <button
         key={category.id}
         type="button"
         aria-pressed={categoryIds.includes(category.id)}
@@ -24,12 +26,13 @@ export function CapabilityTaxonomyPicker({ categories, subcategories, categoryId
         className={cn("max-w-full rounded-full border px-3 py-1.5 text-left text-xs font-medium break-words", categoryIds.includes(category.id)
           ? "border-primary bg-primary/10 text-primary"
           : "border-border bg-background text-muted-foreground hover:bg-muted")}
-      >{category.name}</button>)}
+      >{category.name}{isActiveWorkTaxonomy(category) ? "" : " · Archived"}</button>)}
     </div>
-    {categories.filter((category) => categoryIds.includes(category.id)).map((category) => <div key={category.id} className="min-w-0 rounded-lg border border-border bg-muted/20 p-2.5">
+    {visibleCategories.filter((category) => categoryIds.includes(category.id)).map((category) => <div key={category.id} className="min-w-0 rounded-lg border border-border bg-muted/20 p-2.5">
       <p className="mb-2 text-xs font-semibold">{category.name} · Select subcategories</p>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${category.name} subcategories`}>
-        {subcategories.filter((row) => row.category_id === category.id).map((row) => <button
+        {subcategories.filter((row) => row.category_id === category.id
+          && (subcategoryIds.includes(row.id) || (isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(row)))).map((row) => <button
           key={row.id}
           type="button"
           aria-pressed={subcategoryIds.includes(row.id)}
@@ -37,9 +40,9 @@ export function CapabilityTaxonomyPicker({ categories, subcategories, categoryId
           className={cn("max-w-full rounded-full border px-2.5 py-1 text-left text-xs break-words", subcategoryIds.includes(row.id)
             ? "border-primary bg-primary text-primary-foreground"
             : "border-border bg-card text-muted-foreground hover:bg-muted")}
-        >{row.name}</button>)}
+        >{row.name}{isActiveWorkTaxonomy(row) ? "" : " · Archived"}</button>)}
       </div>
-      <div className="mt-2"><AddWorkSubcategoryAction categoryId={category.id} /></div>
+      {isActiveWorkTaxonomy(category) ? <div className="mt-2"><AddWorkSubcategoryAction categoryId={category.id} /></div> : null}
     </div>)}
     <AddWorkCategoryAction />
   </div>;

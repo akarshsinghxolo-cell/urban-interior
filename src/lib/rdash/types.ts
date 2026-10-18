@@ -1527,6 +1527,10 @@ export interface MasterUnit {
 export interface WorkCategory {
     id: ID;
     name: string;
+    status?: "active" | "archived";
+    archived_at?: string;
+    archived_by?: string;
+    archive_reason?: string;
     description?: string;
     sort_order?: number;
     created_at?: string;
@@ -1535,6 +1539,10 @@ export interface WorkCategory {
 export interface WorkTypeRate {
     id: ID;
     name: string;
+    status?: "active" | "archived";
+    archived_at?: string;
+    archived_by?: string;
+    archive_reason?: string;
     unit_id?: ID;
     notes?: string;
     created_at?: string;
@@ -1544,6 +1552,10 @@ export interface WorkSubcategory {
     id: ID;
     category_id: ID;
     name: string;
+    status?: "active" | "archived";
+    archived_at?: string;
+    archived_by?: string;
+    archive_reason?: string;
     unit_id?: ID;
     work_types?: WorkTypeRate[];
     notes?: string;

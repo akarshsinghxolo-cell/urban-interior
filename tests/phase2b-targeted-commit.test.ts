@@ -63,6 +63,15 @@ describe("row-targeted commit eligibility", () => {
     ])).toBe(true);
   });
 
+  test("uses authoritative reverse-reference validation for taxonomy writes", () => {
+    expect(canUseTargetedCommit([
+      operation("master.workSubcategories", [{ id: "sub-1", category_id: "cat-1", name: "Painting", work_types: [] }]),
+    ])).toBe(false);
+    expect(canUseTargetedCommit([
+      operation("master.workCategories", [{ id: "cat-1", name: "Paint" }]),
+    ])).toBe(false);
+  });
+
   test("keeps simple entity writes on their smaller row planner", () => {
     expect(canUseTargetedCommit([
       operation("attendance", [{ id: "attendance-1" }]),

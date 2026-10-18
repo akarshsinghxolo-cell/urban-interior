@@ -40,7 +40,7 @@ import {
   type ContractorLifecycleStatus,
   type ContractorProfileRecord,
 } from "@/lib/rdash/contractor-profile";
-import { createWorkTypeId, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { createWorkTypeId, isActiveWorkTaxonomy, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import type { WorkSubcategory } from "@/lib/rdash/types";
 import { FilePreview } from "./FilePreview";
 import { CapabilityTaxonomyPicker } from "./CapabilityTaxonomyPicker";
@@ -612,7 +612,10 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
               <div className="mt-2 space-y-2">
                 {capabilities.map((capability) => {
                   const subcategory = allSubcategories.find((row) => row.id === capability.subcategory_id);
-                  const workTypes = subcategory ? workTypesForSubcategory(subcategory) : [];
+                  const selectedWorkTypeIds = new Set(capability.work_type_rates.map((rate) => rate.work_type_id));
+                  const category = subcategory && allCategories.find((row) => row.id === subcategory.category_id);
+                  const canSelectNewWorkTypes = isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(subcategory);
+                  const workTypes = subcategory ? workTypesForSubcategory(subcategory).filter((row) => selectedWorkTypeIds.has(row.id) || (canSelectNewWorkTypes && isActiveWorkTaxonomy(row))) : [];
                   return (
                     <div key={capability.subcategory_id} role="group" aria-label={`${capability.subcategory_name} capability`} className="rounded border p-2.5">
                       <div className="flex items-center gap-2">
@@ -633,7 +636,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
                             if (selected) removeCapabilityWorkType(subcategory.id, id);
                             else if (workType) addCapabilityWorkTypeRow(subcategory.id, { work_type_id: id, work_type_name: workType.name, unit_id: workType.unit_id || subcategory.unit_id || "pcs", custom: false });
                           }}
-                          footer={() => <button type="button" className="w-full rounded px-2 py-2 text-left text-xs font-medium text-primary" onClick={() => addCapabilityWorkTypeRow(subcategory.id, { work_type_id: `wt-${subcategory.id}-draft-${crypto.randomUUID()}`, work_type_name: "", unit_id: subcategory.unit_id || "pcs", custom: true })}>+ Add work type</button>}
+                          footer={canSelectNewWorkTypes ? () => <button type="button" className="w-full rounded px-2 py-2 text-left text-xs font-medium text-primary" onClick={() => addCapabilityWorkTypeRow(subcategory.id, { work_type_id: `wt-${subcategory.id}-draft-${crypto.randomUUID()}`, work_type_name: "", unit_id: subcategory.unit_id || "pcs", custom: true })}>+ Add work type</button> : undefined}
                         />
                       </div>}
                       <div className="mt-2 rounded-md border">
