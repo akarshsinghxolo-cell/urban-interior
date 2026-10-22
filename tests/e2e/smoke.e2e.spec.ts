@@ -110,11 +110,22 @@ test.describe("customer drawer", () => {
     await expect(dialog.getByPlaceholder("City", { exact: true })).toHaveValue("Gorakhpur");
     await expect(dialog.getByPlaceholder("Search address or landmark", { exact: true })).toHaveCount(0);
 
-    await dialog.locator('input[id^="site-files-"]').setInputFiles({
+    const uploadButton = dialog.getByRole("button", { name: "Add photos or files", exact: true });
+    await expect(uploadButton).toBeVisible();
+    await uploadButton.scrollIntoViewIfNeeded();
+    const scrollBody = dialog.locator(".rd-scroll");
+    const scrollTopBeforeUpload = await scrollBody.evaluate((element) => element.scrollTop);
+    const fileChooserPromise = page.waitForEvent("filechooser");
+    await uploadButton.click();
+    const fileChooser = await fileChooserPromise;
+    await expect.poll(async () => scrollBody.evaluate((element) => element.scrollTop)).toBe(scrollTopBeforeUpload);
+    await expect(uploadButton).toBeFocused();
+    await fileChooser.setFiles({
       name: "site-photo.png",
       mimeType: "image/png",
       buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNosAAAAASUVORK5CYII=", "base64"),
     });
+    await expect.poll(async () => scrollBody.evaluate((element) => element.scrollTop)).toBe(scrollTopBeforeUpload);
     await expect(dialog.getByText("site-photo.png", { exact: true })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(1);
 
