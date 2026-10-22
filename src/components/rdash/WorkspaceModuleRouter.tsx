@@ -66,7 +66,7 @@ const SalesPipelineModule = React.lazy(() => import("./modules/SalesPipelineModu
 const LostClosedReviewModule = React.lazy(() => import("./modules/MiscModules").then((module) => ({ default: module.LostClosedReviewModule })));
 const UnifiedThreadInboxModule = React.lazy(() => import("./modules/UnifiedThreadInboxModule").then((module) => ({ default: module.UnifiedThreadInboxModule })));
 const IntegrityModule = React.lazy(() => import("./modules/IntegrityModule").then((module) => ({ default: module.IntegrityModule })));
-const CustomerRequestsWorkspace = React.lazy(() => import("./modules/CustomerRequestsWorkspace").then((module) => ({ default: module.CustomerRequestsWorkspace })));
+const CustomerWorkRequiredWorkspace = React.lazy(() => import("./modules/CustomerWorkRequiredWorkspace").then((module) => ({ default: module.CustomerWorkRequiredWorkspace })));
 const QuotationWorkspaceModule = React.lazy(() => import("./modules/QuotationWorkspaceModule").then((module) => ({ default: module.QuotationWorkspaceModule })));
 const CommissionsWorkspaceModule = React.lazy(() => import("./modules/CommissionsWorkspaceModule").then((module) => ({ default: module.CommissionsWorkspaceModule })));
 const BusinessApprovalsWorkspace = React.lazy(() => import("./modules/BusinessApprovalsWorkspace").then((module) => ({ default: module.BusinessApprovalsWorkspace })));
@@ -178,8 +178,8 @@ function WorkspaceModuleRouter({ moduleId }: { moduleId: string }) {
 
     switch (route.renderer) {
         case "daily-work": return <DailyWork />;
-        case "customer-desk": return <CustomerDesk view={route.filter?.view === "timeline" ? "timeline" : "default"}/>;
-        case "customer-extras": return <CustomerRequestsWorkspace filterPresets={route.filterPresets} />;
+        case "customer-desk": return <CustomerDesk />;
+        case "customer-work-required": return <CustomerWorkRequiredWorkspace filterPresets={route.filterPresets} />;
         case "site-execution": return <SiteExecutionModule initialTab={route.filter?.tab}/>;
         case "tasks": return <TasksFollowups moduleId={activeModuleId} submoduleFilter={route.filter} filterPresets={route.filterPresets} dataSource={route.dataSource}/>;
         case "quotations": return <QuotationWorkspaceModule filterPresets={route.filterPresets} statusFilter={route.filter?.status} view={route.filter?.view}/>;

@@ -8,7 +8,7 @@ describe("Customer Desk restored-feature contracts", () => {
     const shell = await source("src/components/rdash/modules/CustomerDesk.tsx");
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
     expect(shell).toContain("buildCustomerActions(id, useRDashStore.getState()");
-    expect(shell.match(/actions=\{actionsForCustomer\(customer.id\)\}/g)).toHaveLength(2);
+    expect(shell.match(/actions=\{actionsForCustomer\(customer.id\)\}/g)).toHaveLength(1);
     expect(shell).toContain("editId={customerForm?.editId}");
     expect(portfolio).toContain("Edit customer</Button>");
     expect(portfolio.match(/<CustomerSitesDialog /g)).toHaveLength(1);
@@ -16,12 +16,12 @@ describe("Customer Desk restored-feature contracts", () => {
     expect(portfolio).toContain("expandSiteId={customerForm?.expandSiteId}");
   });
 
-  test("safe route shell never silently selects the first customer", async () => {
+  test("safe route shell opens only the customer explicitly selected from the list", async () => {
     const shell = await source("src/components/rdash/modules/CustomerDesk.tsx");
     expect(shell).toContain("const selected = selectedCustomerId");
     expect(shell).toContain("customer.id === selectedCustomerId");
     expect(shell).not.toContain("|| db.customers[0]");
-    expect(shell).toContain('title="No customer selected"');
+    expect(shell).toContain('openDetail("customer", customer.id, "customerDesk")');
   });
 
   test("safe shell keeps phone optional and headline counters truthful", async () => {
@@ -101,19 +101,18 @@ describe("Customer Desk restored-feature contracts", () => {
     expect(scoped).toContain('canRole(permissions, user.role, "media", "view")');
   });
 
-  test("restored operational timeline includes execution/commercial activity and IST grouping", async () => {
+  test("shared Customer history includes operational, finance and note activity", async () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
-    const start = portfolio.indexOf("function CustomerTimelineView");
+    const historyQueries = await source("src/lib/rdash/customer-desk-queries.ts");
+    const start = portfolio.indexOf("function CustomerHistoryView");
     expect(start).toBeGreaterThanOrEqual(0);
-    const timeline = portfolio.slice(start);
+    const history = portfolio.slice(start);
 
-    expect(timeline).toContain("indiaBusinessDate(entry.ts)");
-    expect(timeline).toContain('kind: "drawing"');
-    expect(timeline).toContain('kind: "executionLog"');
-    expect(timeline).toContain('kind: "po"');
-    expect(timeline).toContain('kind: "grn"');
-    expect(timeline).toContain('kind: "vendorBill"');
-    expect(timeline).toContain('kind: "communication"');
+    expect(history).toContain("indiaBusinessDate(entry.ts)");
+    expect(history).toContain("Add internal note");
+    for (const token of ['kind: "drawing"', 'kind: "execution"', 'kind: "purchase order"', 'kind: "goods receipt"', 'kind: "vendor bill"', 'kind: "communication"', 'kind: "invoice"', 'kind: "money received"']) {
+      expect(historyQueries).toContain(token);
+    }
   });
 
   test("customer referrer search restores vendor and contractor choices without making them unconditional reads", async () => {

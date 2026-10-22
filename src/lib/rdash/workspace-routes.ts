@@ -22,8 +22,7 @@ export interface WorkspaceRouteMatch {
 const ROUTE_DEFINITIONS: readonly WorkspaceRouteDefinition[] = [
   { moduleId: "workdesk", canonicalPath: "/workspace" },
   { moduleId: "customerDesk", canonicalPath: "/workspace/customers" },
-  { moduleId: "customerTimeline", canonicalPath: "/workspace/customers/timeline" },
-  { moduleId: "customerRequests", canonicalPath: "/workspace/customers/requests" },
+  { moduleId: "customerWorkRequired", canonicalPath: "/workspace/customers/work-required" },
   { moduleId: "salesPipeline", canonicalPath: "/workspace/sales" },
   { moduleId: "lostClosedReview", canonicalPath: "/workspace/sales/lost-closed-review" },
   { moduleId: "fieldOperations", canonicalPath: "/workspace/field" },

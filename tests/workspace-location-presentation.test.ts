@@ -91,15 +91,15 @@ describe("workspace location presentation", () => {
         recordId: customer.id,
         customerId: customer.id,
         sourceModule: "customerDesk",
-        customerTab: "activity",
+        customerTab: "history",
         detailTab: "overview",
       }],
       contextHistoryIndex: 0,
     });
 
     expect(location.recordLabel).toBe(customer.name);
-    expect(location.viewLabel).toBe("Activity");
-    expect(location.documentTitle).toBe(`${customer.name} · Activity · Customer Desk | Urban Castle`);
+    expect(location.viewLabel).toBe("History & Notes");
+    expect(location.documentTitle).toBe(`${customer.name} · History & Notes · Customer Desk | Urban Castle`);
   });
 
   test("keeps record labels aligned with existing detail semantics", () => {

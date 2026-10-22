@@ -17,7 +17,8 @@ describe("workspace customer-tab query state", () => {
       "advances",
       "liabilities",
       "visits",
-      "activity",
+      "history",
+      "files",
     ]);
   });
 
@@ -46,6 +47,7 @@ describe("workspace customer-tab query state", () => {
       invalid: true,
     });
     expect(workspaceCustomerTabRequest("tab=unknown").invalid).toBe(true);
+    expect(workspaceCustomerTabRequest("tab=activity").invalid).toBe(true);
     expect(workspaceCustomerTabRequest("tab=sites&tab=tasks").invalid).toBe(true);
   });
 

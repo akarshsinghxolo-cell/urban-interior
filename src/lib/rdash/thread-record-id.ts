@@ -8,6 +8,13 @@ export function customerConversationThreadRecordId(customerId: string): string {
   return `${CUSTOMER_CONVERSATION_THREAD_PREFIX}${id}`;
 }
 
+export function customerIdFromConversationThreadRecordId(recordId: string): string | undefined {
+  const value = String(recordId || "").trim();
+  if (!value.startsWith(CUSTOMER_CONVERSATION_THREAD_PREFIX)) return undefined;
+  const customerId = value.slice(CUSTOMER_CONVERSATION_THREAD_PREFIX.length).trim();
+  return customerId || undefined;
+}
+
 
 /**
  * Thread callers identify their domain parent with the normal entity ID. The

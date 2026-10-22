@@ -30,7 +30,7 @@ import { promptDialog } from "./PromptDialog";
 import { CustomerPortfolioDrawerContent } from "./modules/CustomerDesk";
 import { PartnerDetailContent } from "./modules/PartnerDetailContent";
 import { resolveRenderer } from "@/lib/rdash/modules";
-import { resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
+import { resolveThreadRecordEntityId, resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
 type Tab = "overview" | "thread";
 export function DetailPanel() {
     const detail = useRDashStore((s) => s.detailPanel);
@@ -40,7 +40,7 @@ export function DetailPanel() {
     const [tab, setTab] = React.useState<Tab>("overview");
     const asideRef = React.useRef<HTMLElement | null>(null);
     React.useEffect(() => {
-        setTab((detail.panelTab || "overview") as Tab);
+        setTab(detail.kind === "customer" ? "overview" : (detail.panelTab || "overview") as Tab);
     }, [detail.kind, detail.recordId, detail.panelTab]);
     // Dialog semantics (audit #10): move focus into the panel when it opens and
     // restore it to the invoker when it closes. The panel unmounts on close, so
@@ -87,13 +87,14 @@ export function DetailPanel() {
     }, [closeDetail]);
     if (!detail.kind || !detail.recordId || !findRecord(detail.kind, detail.recordId, db))
         return null;
+    const activeTab: Tab = detail.kind === "customer" ? "overview" : tab;
     return (<>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] animate-in fade-in duration-150" onClick={closeDetail}/>
       <aside ref={asideRef} role="dialog" aria-modal="true" tabIndex={-1} onKeyDown={onAsideKeyDown} aria-label="Record context panel" className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl outline-none animate-in slide-in-from-right duration-200">
-        <PanelHeader tab={tab} setTab={setPanelTab}/>
+        <PanelHeader tab={activeTab} setTab={setPanelTab}/>
         <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden rd-scroll">
-          {tab === "overview" && <OverviewBody kind={detail.kind} id={detail.recordId}/>}
-          {tab === "thread" && <ThreadBody kind={detail.kind} id={detail.recordId}/>}
+          {activeTab === "overview" && <OverviewBody kind={detail.kind} id={detail.recordId}/>}
+          {activeTab === "thread" && <ThreadBody kind={detail.kind} id={detail.recordId}/>}
         </div>
       </aside>
     </>);
@@ -205,10 +206,12 @@ function PanelHeader({ tab, setTab }: {
         label: string;
         icon: React.ReactNode;
         badge?: number;
-    }[] = [
-        { id: "overview", label: "Overview", icon: <FileText className="h-3.5 w-3.5"/> },
-        { id: "thread", label: "Thread", icon: <MessageSquare className="h-3.5 w-3.5"/>, badge: threadCount },
-    ];
+    }[] = detail.kind === "customer"
+        ? [{ id: "overview", label: "Overview", icon: <FileText className="h-3.5 w-3.5"/> }]
+        : [
+            { id: "overview", label: "Overview", icon: <FileText className="h-3.5 w-3.5"/> },
+            { id: "thread", label: "Thread", icon: <MessageSquare className="h-3.5 w-3.5"/>, badge: threadCount },
+        ];
     return (<div className="flex shrink-0 flex-col gap-2 border-b border-border bg-gradient-to-b from-card to-muted/30 px-4 pb-2 pt-3">
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2.5">
@@ -576,7 +579,8 @@ function attachmentOwnerPanelTarget(db: any, entityType?: string, entityId?: str
             const thread = db.threads.find((row: any) => row.messages?.some((message: any) => message.id === entityId));
             if (!thread) return undefined;
             const ownerType = resolveThreadRecordEntityType(db, thread.record_type, thread.record_id);
-            return ownerType ? attachmentOwnerPanelTarget(db, ownerType, thread.record_id) : undefined;
+            const ownerId = resolveThreadRecordEntityId(db, thread.record_type, thread.record_id);
+            return ownerType ? attachmentOwnerPanelTarget(db, ownerType, ownerId) : undefined;
         }
         default:
             return undefined;

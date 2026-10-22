@@ -120,7 +120,7 @@ export function CustomerSatisfaction() {
         </div>
         <button
           type="button"
-          onClick={() => setActiveModule("customerTimeline")}
+          onClick={() => setActiveModule("customerDesk")}
           className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           Customers <ArrowRight className="h-3 w-3" />
@@ -169,7 +169,7 @@ export function CustomerSatisfaction() {
             <button
               key={c.id}
               type="button"
-              onClick={() => setActiveModule("customerTimeline")}
+              onClick={() => setActiveModule("customerDesk")}
               className="group flex w-full items-center gap-3 border-b border-border/60 px-4 py-2 text-left transition-colors last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
             >
               <div className="min-w-0 flex-1">

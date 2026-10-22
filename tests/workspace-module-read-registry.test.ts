@@ -65,29 +65,10 @@ const READ_ATTRIBUTION_ALLOWLIST: Record<string, Record<string, string>> = {
   contractorDetail: {
     "master.vendors": "PartnerWorkspaceModule.tsx union: vendor branch is not rendered by contractorDetail",
   },
-  // CustomerDesk.tsx serves both customerDesk (default view) and
-  // customerTimeline (view="timeline" early-returns before the desk tabs).
-  // The timeline branch itself only reads collections the paged plan covers
-  // (verified): customers, sites, workRequired, workOrders, quotations,
-  // tasks, visits, payments, invoices, customerReceipts, drawings,
-  // executionLogs, boqs, purchaseOrders, grns, vendorBills, commSends,
-  // auditLog + customerProgress's reads.
-  customerTimeline: {
-    "master.catalogues": "shared CustomerDesk.tsx: default-view attachment previews only",
-    "master.referenceMedia": "shared CustomerDesk.tsx: default-view attachment previews only",
-    "master.contractorRates": "shared CustomerDesk.tsx: capture dialog unreachable in timeline view",
-    risks: "shared CustomerDesk.tsx: desk tab content",
-    variationRequests: "shared CustomerDesk.tsx: desk tab content",
-    entityReferenceAssignments: "shared CustomerDesk.tsx: desk tab content",
-    workOrderCostLines: "shared CustomerDesk.tsx: desk tab content",
-    actions: "shared CustomerDesk.tsx: desk tab content",
-    acceptedScopes: "shared CustomerDesk.tsx: desk tab content",
-    contractorBills: "shared CustomerDesk.tsx: desk tab content",
-  },
   // RemainingModules.tsx hosts ApprovalsModule, CashMarginRiskModule,
-  // SiteVisitsModule, CustomerDeskExtrasModule and QuotationExtrasModule;
+  // SiteVisitsModule, CustomerWorkRequiredModule and QuotationExtrasModule;
   // importers of any one are attributed the whole file's reads.
-  customerRequests: {
+  customerWorkRequired: {
     actions: "RemainingModules.tsx union: ApprovalsModule sibling, not rendered here",
     risks: "RemainingModules.tsx union: ApprovalsModule sibling, not rendered here",
   },

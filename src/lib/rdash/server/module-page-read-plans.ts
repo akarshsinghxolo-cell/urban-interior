@@ -10,8 +10,7 @@ import { CUSTOMER_CRM_COLLECTIONS } from "./customer-read-plan";
 const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   // Every Customer-family screen uses the same CRM boundary. The UI may use a
   // subset, but none of these routes can silently pull Finance/Procurement data.
-  customerTimeline: CUSTOMER_CRM_COLLECTIONS,
-  customerRequests: CUSTOMER_CRM_COLLECTIONS,
+  customerWorkRequired: CUSTOMER_CRM_COLLECTIONS,
   salesPipeline: CUSTOMER_CRM_COLLECTIONS,
   lostClosedReview: CUSTOMER_CRM_COLLECTIONS,
   drawings: Object.freeze([
@@ -37,11 +36,6 @@ const MODULE_PAGE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Obj
  * metrics even if a Load-more control existed.
  */
 const MODULE_PAGE_LIMITS: Readonly<Record<string, Readonly<Record<string, number>>>> = Object.freeze({
-  customerTimeline: Object.freeze({
-    executionLogs: 100,
-    commSends: 100,
-    auditLog: 100,
-  }),
 });
 
 /**

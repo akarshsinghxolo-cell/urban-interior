@@ -13,9 +13,11 @@ import {
   Pencil,
   Plus,
   Receipt,
+  Send,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import {
@@ -27,6 +29,7 @@ import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/r
 import { isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
+import { customerHistoryEntries, type CustomerHistoryEntry } from "@/lib/rdash/customer-desk-queries";
 import {
   formatDate,
   formatINR,
@@ -54,21 +57,6 @@ import { RecordPaymentDialog } from "../ActionDialogs";
  * implemented once in Customer-owned canonical components and are launched
  * from here and from the other modules.
  */
-export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
-  const db = useRDashStore((state) => state.db);
-  const selectedCustomerId = useRDashStore((state) => state.selectedCustomerId);
-  const customer = selectedCustomerId
-    ? db.customers.find((row) => row.id === selectedCustomerId)
-    : undefined;
-
-  if (!customer) {
-    return <EmptyState title="No customer selected" description="Pick a customer to open the Customer portfolio." />;
-  }
-
-  if (view === "timeline") return <CustomerTimelineView customerId={customer.id} />;
-  return <CustomerPortfolioDrawerContent customerId={customer.id} />;
-}
-
 export function CustomerPortfolioDrawerContent({ customerId }: { customerId: string }) {
   const db = useRDashStore((state) => state.db);
   const detailPanel = useRDashStore((state) => state.detailPanel);
@@ -150,6 +138,8 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
   ].forEach((row) => relatedEntityIds.add(row.id));
   db.areas.filter((row) => row.site_id && siteIds.has(row.site_id)).forEach((row) => relatedEntityIds.add(row.id));
   const relatedFiles = db.entityFileAttachments.filter((row) => relatedEntityIds.has(row.entity_id));
+  const relatedWorkflowFiles = relatedFiles.filter((row) => row.entity_id !== customerId);
+  const historyEntries = customerHistoryEntries(db, customerId);
 
   const totalAccepted = acceptedScopes.reduce((sum, row) => sum + (row.accepted_value || 0), 0);
   const unlinkedReceipts = receipts.filter((row) => !row.payment_id).reduce((sum, row) => sum + row.amount, 0);
@@ -170,7 +160,8 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
     { key: "advances", label: `Advances (${advances.length})`, icon: <Wallet className="h-3.5 w-3.5" /> },
     { key: "liabilities", label: `Liabilities (${vendorBills.length + contractorApprovals.length})`, icon: <AlertTriangle className="h-3.5 w-3.5" /> },
     { key: "visits", label: `Visits (${visits.length})`, icon: <MapPin className="h-3.5 w-3.5" /> },
-    { key: "activity", label: `Activity (${references.length + relatedFiles.length})`, icon: <Activity className="h-3.5 w-3.5" /> },
+    { key: "history", label: `History & notes (${historyEntries.length})`, icon: <Activity className="h-3.5 w-3.5" /> },
+    { key: "files", label: `Files (${references.length + relatedFiles.length})`, icon: <FileText className="h-3.5 w-3.5" /> },
   ];
 
   return (
@@ -226,7 +217,6 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
                 <MetricCard label="Receivable" value={formatINRShort(totalReceivable)} tone="warning" />
               </div>
             </section>
-            <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" />
             <section>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-bold uppercase text-muted-foreground">Sites</h3><Button size="sm" variant="outline" onClick={() => setCustomerForm({ autoAddSite: true })}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -347,11 +337,13 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
           />
         )}
 
-        {tab === "activity" && (
+        {tab === "history" && <CustomerHistoryView customerId={customerId} entries={historyEntries} />}
+
+        {tab === "files" && (
           <div className="space-y-4">
-            <CustomerTimelineView customerId={customerId} compact />
+            <EntityFilesCard entityType="customer" entityId={customerId} title="Customer documents" manage showEmpty />
             <section><h3 className="mb-2 text-xs font-bold uppercase text-muted-foreground">Reference media & catalogues ({references.length})</h3>{references.length ? <div className="space-y-1">{references.map((row) => <div key={row.id} className="rounded border border-border p-2 text-xs"><p className="font-semibold">{row.entity_label || row.resource_type.replaceAll("_", " ")}</p><p className="text-muted-foreground">{row.resource_type.replaceAll("_", " ")} · {row.purpose.replaceAll("_", " ")} · {row.status}</p></div>)}</div> : <p className="text-xs text-muted-foreground">No linked reference media.</p>}</section>
-            <section><h3 className="mb-2 text-xs font-bold uppercase text-muted-foreground">Files & proofs ({relatedFiles.length})</h3>{relatedFiles.length ? <div className="space-y-1">{relatedFiles.slice(0, 20).map((row) => <div key={row.id} className="rounded border border-border p-2 text-xs"><p className="font-semibold">{row.entity_type.replaceAll("_", " ")} proof / file</p><p className="text-muted-foreground">Attachment {row.file_asset_id}</p></div>)}</div> : <p className="text-xs text-muted-foreground">No Customer-linked files or proofs.</p>}</section>
+            <section><h3 className="mb-2 text-xs font-bold uppercase text-muted-foreground">Linked workflow files & proofs ({relatedWorkflowFiles.length})</h3>{relatedWorkflowFiles.length ? <div className="space-y-1">{relatedWorkflowFiles.map((row) => <div key={row.id} className="rounded border border-border p-2 text-xs"><p className="font-semibold">{row.entity_type.replaceAll("_", " ")} proof / file</p><p className="text-muted-foreground">Attachment {row.file_asset_id}</p></div>)}</div> : <p className="text-xs text-muted-foreground">No files or proofs on related work yet.</p>}</section>
           </div>
         )}
       </div>
@@ -383,42 +375,42 @@ function RecordList({ rows, empty, action }: { rows: ListRow[]; empty: string; a
   return <div className="space-y-2">{action && <div className="flex justify-end">{action}</div>}{rows.length ? rows.map((row) => <button key={row.id} type="button" onClick={row.onOpen} className="flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-left hover:bg-accent/20"><div className="min-w-0"><p className="truncate text-sm font-medium">{row.title}</p>{row.detail && <p className="mt-0.5 text-[11px] text-muted-foreground">{row.detail}</p>}</div>{row.status && <StatusBadge label={row.status.label} className={row.status.className} />}</button>) : <p className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">{empty}</p>}</div>;
 }
 
-type TimelineEntry = { id: string; ts: string; kind: string; title: string; detail?: string };
-
-function CustomerTimelineView({ customerId, compact = false }: { customerId: string; compact?: boolean }) {
+function CustomerHistoryView({ customerId, entries }: { customerId: string; entries: CustomerHistoryEntry[] }) {
   const db = useRDashStore((state) => state.db);
+  const openThreadFor = useRDashStore((state) => state.openThreadFor);
+  const addThreadReply = useRDashStore((state) => state.addThreadReply);
+  const currentUser = useRDashStore((state) => state.currentUser);
+  const [note, setNote] = React.useState("");
   const customer = db.customers.find((row) => row.id === customerId);
   if (!customer) return null;
-  const workOrders = db.workOrders.filter((row) => row.customer_id === customerId);
-  const workOrderIds = new Set(workOrders.map((row) => row.id));
-  const sites = db.sites.filter((row) => row.customer_id === customerId);
-  const siteIds = new Set(sites.map((row) => row.id));
-  const quotations = db.quotations.filter((row) => row.customer_id === customerId);
-  const payments = db.payments.filter((row) => row.customer_id === customerId);
-  const visits = db.visits.filter((row) => row.customer_id === customerId);
-  const tasks = db.tasks.filter((row) => isCustomerLinked(db, row, customerId));
-  const relatedIds = new Set([customerId, ...workOrders.map((row) => row.id), ...sites.map((row) => row.id), ...quotations.map((row) => row.id), ...payments.map((row) => row.id), ...visits.map((row) => row.id), ...tasks.map((row) => row.id)]);
-
-  const entries: TimelineEntry[] = [
-    ...tasks.map((row) => ({ id: `task-${row.id}`, ts: row.updated_at || row.created_at, kind: "task", title: row.title, detail: row.status })),
-    ...quotations.map((row) => ({ id: `quotation-${row.id}`, ts: row.updated_at || row.created_at, kind: "quotation", title: row.quotation_no, detail: row.status })),
-    ...payments.map((row) => ({ id: `payment-${row.id}`, ts: row.updated_at || row.created_at, kind: "payment", title: row.milestone_label || "Payment", detail: formatINR(row.amount) })),
-    ...visits.map((row) => ({ id: `visit-${row.id}`, ts: row.updated_at || row.created_at, kind: "visit", title: row.location_name, detail: row.status })),
-    ...db.drawings.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `drawing-${row.id}`, ts: row.updated_at || row.created_at, kind: "drawing", title: row.title || "Drawing", detail: row.status })),
-    ...db.executionLogs.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `execution-${row.id}`, ts: row.created_at, kind: "executionLog", title: row.log_no || "Execution update", detail: row.work_order_no })),
-    ...db.purchaseOrders.filter((row) => (row.site_id && siteIds.has(row.site_id)) || (row.work_order_id && workOrderIds.has(row.work_order_id))).map((row) => ({ id: `po-${row.id}`, ts: row.updated_at || row.created_at, kind: "po", title: row.po_no, detail: row.status })),
-    ...db.grns.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `grn-${row.id}`, ts: row.updated_at || row.created_at, kind: "grn", title: row.grn_no, detail: row.status })),
-    ...db.vendorBills.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id)).map((row) => ({ id: `vendorBill-${row.id}`, ts: row.updated_at || row.created_at, kind: "vendorBill", title: row.bill_no, detail: row.status })),
-    ...db.commSends.filter((row) => row.customer_id === customerId).map((row) => ({ id: `communication-${row.id}`, ts: row.sent_at, kind: "communication", title: row.subject || row.channel, detail: row.status })),
-    ...db.auditLog.filter((row) => row.entity_id && relatedIds.has(row.entity_id)).map((row) => ({ id: `audit-${row.id}`, ts: row.timestamp, kind: "audit", title: row.action, detail: row.entity_label })),
-  ].filter((entry) => Boolean(entry.ts)).sort((a, b) => b.ts.localeCompare(a.ts));
-
-  const visible = compact ? entries.slice(0, 12) : entries;
-  const groups = new Map<string, TimelineEntry[]>();
-  for (const entry of visible) {
+  const groups = new Map<string, CustomerHistoryEntry[]>();
+  for (const entry of entries) {
     const date = indiaBusinessDate(entry.ts);
     groups.set(date, [...(groups.get(date) || []), entry]);
   }
 
-  return <div className="space-y-3">{[...groups.entries()].map(([date, rows]) => <section key={date}><p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">{date}</p><div className="space-y-1">{rows.map((entry) => <div key={entry.id} className="rounded-md border border-border bg-background px-2.5 py-2"><div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold">{entry.title}</p><span className="text-[10px] uppercase text-muted-foreground">{entry.kind}</span></div>{entry.detail && <p className="mt-0.5 text-[10px] text-muted-foreground">{entry.detail}</p>}</div>)}</div></section>)}{!visible.length && <EmptyState title="No activity yet" description="Customer operational events will appear here." />}</div>;
+  const saveNote = () => {
+    const body = note.trim();
+    if (!body) return;
+    try {
+      const actor = currentUser();
+      const threadId = openThreadFor("generic", customerId, `${customer.name} · Customer notes`, [actor.name]);
+      addThreadReply(threadId, { author: actor.name, role: actor.role, body, kind: "comment" });
+      setNote("");
+      toast.success("Customer note added");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Customer note could not be added.");
+    }
+  };
+
+  return <div className="space-y-3">
+    <section className="rounded-lg border border-border bg-background p-3">
+      <label htmlFor={`customer-note-${customerId}`} className="text-xs font-bold">Add internal note</label>
+      <p className="mt-0.5 text-[10px] text-muted-foreground">Keep team decisions and customer context beside the business history.</p>
+      <Textarea id={`customer-note-${customerId}`} value={note} onChange={(event) => setNote(event.target.value)} placeholder="Write a note for the team…" className="mt-2 min-h-20 text-sm" />
+      <div className="mt-2 flex justify-end"><Button size="sm" disabled={!note.trim()} onClick={saveNote}><Send className="mr-1 h-3.5 w-3.5" />Add note</Button></div>
+    </section>
+    {[...groups.entries()].map(([date, rows]) => <section key={date}><p className="mb-1 text-[10px] font-bold uppercase text-muted-foreground">{date}</p><div className="space-y-1">{rows.map((entry) => <div key={entry.id} className="rounded-md border border-border bg-background px-2.5 py-2"><div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-semibold">{entry.title}</p><span className="text-[10px] uppercase text-muted-foreground">{entry.kind}</span></div>{entry.detail && <p className="mt-0.5 whitespace-pre-wrap text-[10px] text-muted-foreground">{entry.detail}</p>}</div>)}</div></section>)}
+    {!entries.length && <EmptyState title="No history yet" description="Customer business events and team notes will appear here." />}
+  </div>;
 }

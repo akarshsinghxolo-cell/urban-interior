@@ -120,7 +120,8 @@ function workspaceViewLabel(
   const view = detail.kind === "customer"
     ? current?.kind === "customer" ? current.customerTab || "overview" : "overview"
     : detail.panelTab || current?.detailTab || "overview";
-  return view === "overview" ? undefined : titleCase(view);
+  if (view === "overview") return undefined;
+  return view === "history" ? "History & Notes" : titleCase(view);
 }
 
 interface WorkspaceLocationPresentation {

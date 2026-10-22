@@ -55,7 +55,7 @@ export function KeyboardShortcutsHelp() {
             items: [
                 { keys: ["G", "I"], label: "Jump to Thread Inbox", icon: <MessageSquare className="h-3.5 w-3.5"/> },
                 { keys: ["G", "D"], label: "Jump to Daily Work", icon: <Command className="h-3.5 w-3.5"/> },
-                { keys: ["G", "C"], label: "Jump to Customer Timeline" },
+                { keys: ["G", "C"], label: "Jump to Customer Desk" },
                 { keys: ["G", "S"], label: "Jump to Sales Pipeline" },
                 { keys: ["G", "F"], label: "Jump to Field Visits" },
                 { keys: ["G", "P"], label: "Jump to Procurement (GRN)" },

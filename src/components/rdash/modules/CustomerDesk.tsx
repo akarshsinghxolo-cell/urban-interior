@@ -24,8 +24,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { CustomerDesk as HistoricalCustomerDesk } from "./CustomerDeskPortfolio";
-
 export { CustomerPortfolioDrawerContent } from "./CustomerDeskPortfolio";
 
 const LIVE_WORK_ORDER_STATUSES = new Set(["scheduled", "in_progress", "on_hold"]);
@@ -39,7 +37,7 @@ const LIVE_WORK_ORDER_STATUSES = new Set(["scheduled", "in_progress", "on_hold"]
  * pair-locked duplicate merge. Opening a customer still lands in the restored
  * full portfolio drawer.
  */
-export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
+export function CustomerDesk() {
   const db = useRDashStore((state) => state.db);
   const selectedCustomerId = useRDashStore((state) => state.selectedCustomerId);
   const selectCustomer = useRDashStore((state) => state.selectCustomer);
@@ -109,42 +107,6 @@ export function CustomerDesk({ view }: { view?: "default" | "timeline" } = {}) {
       </select>
     </div>
   );
-
-  if (view === "timeline") {
-    if (selected) return <HistoricalCustomerDesk view="timeline" />;
-    return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <div className="flex min-w-0 flex-col gap-3">
-          <CustomerSearchBar query={query} setQuery={setQuery} onAdd={() => setCustomerForm({})} />
-          <SectionHeader title="Customers" count={filtered.length} action={listControls} />
-          <div className="rd-scroll flex max-h-[calc(100vh-280px)] flex-col gap-2 overflow-y-auto pr-1">
-            {filtered.map((customer) => {
-              const progress = customerProgress(db, customer.id);
-              return (
-                <ContextRow key={customer.id} actions={actionsForCustomer(customer.id)} onSelect={() => selectCustomer(customer.id)} className="rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-soft">
-                  <div className="flex items-start gap-3">
-                    <Avatar name={customer.name} size={38} />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2 pr-9">
-                        <p className="truncate text-sm font-bold">{customer.name}</p>
-                        <StatusBadge label={progress.label} className="border-primary/20 bg-primary/10 text-primary" />
-                      </div>
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground"><Phone className="h-3 w-3" /> {customer.phone || "No phone"}</p>
-                    </div>
-                  </div>
-                </ContextRow>
-              );
-            })}
-            {!filtered.length && <EmptyState title="No customers found" description="Adjust the search or add a new customer." />}
-          </div>
-        </div>
-        <div className="min-w-0">
-          <EmptyState title="No customer selected" description="Pick a customer to view the restored activity timeline." />
-        </div>
-        <CustomerSitesDialog open={Boolean(customerForm)} editId={customerForm?.editId} onClose={() => setCustomerForm(null)} onSaved={(id) => selectCustomer(id)} />
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-3">

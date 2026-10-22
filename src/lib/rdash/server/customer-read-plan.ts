@@ -97,8 +97,7 @@ export const CUSTOMER_CONTRACTOR_COLLECTIONS = Object.freeze([
  */
 export const CUSTOMER_PERMISSION_EXTENSION_MODULES = Object.freeze([
   "customerDesk",
-  "customerTimeline",
-  "customerRequests",
+  "customerWorkRequired",
   "salesPipeline",
   "lostClosedReview",
 ] as const);

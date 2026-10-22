@@ -148,7 +148,7 @@ export function RDashApp() {
         const G_MODULE_MAP: Record<string, string> = {
             i: "unifiedThreadInbox",
             d: "workdesk",
-            c: "customerTimeline",
+            c: "customerDesk",
             s: "salesPipeline",
             f: "siteMeasurement",
             p: "grn",

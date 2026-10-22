@@ -52,7 +52,7 @@ export async function dismissOnboardingTourIfPresent(page: Page): Promise<void> 
  * Opens the Customers Desk module through the workspace navigation.
  *
  * The workdesk pulse tile labelled "N Customers" intentionally routes to
- * Customer Timeline (WorkspacePulseStrip), so the reliable path to the DESK
+ * Customer Desk (WorkspacePulseStrip), so the reliable path to the DESK
  * (which hosts the customer cards) is the navigation sidebar: open the nav
  * drawer and click "Customer Desk". Works on desktop and mobile viewports.
  */

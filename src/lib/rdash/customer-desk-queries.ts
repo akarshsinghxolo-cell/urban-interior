@@ -1,4 +1,7 @@
 import type { Customer, RDashDatabase } from "./types";
+import { formatINR } from "./format";
+import { isCustomerLinked } from "./customer-relations";
+import { customerConversationThreadRecordId } from "./thread-record-id";
 import { indianPhoneSearchDigits } from "./phone-validation";
 
 /**
@@ -68,4 +71,79 @@ export function customerLifecycleGaps(db: RDashDatabase, customerId: string): Cu
     if (missingBudget > 0)
         gaps.push({ key: "budget", label: missingBudget === 1 ? "Set budget (1 work item)" : `Set budget (${missingBudget} work items)`, hint: "Budgets power the pipeline value" });
     return gaps;
+}
+
+export type CustomerHistoryEntry = {
+    id: string;
+    ts: string;
+    kind: string;
+    title: string;
+    detail?: string;
+};
+
+/** One customer history source for the profile count, feed and team notes. */
+export function customerHistoryEntries(db: RDashDatabase, customerId: string): CustomerHistoryEntry[] {
+    const customer = db.customers.find((row) => row.id === customerId);
+    if (!customer)
+        return [];
+    const workOrders = db.workOrders.filter((row) => row.customer_id === customerId);
+    const sites = db.sites.filter((row) => row.customer_id === customerId);
+    const quotations = db.quotations.filter((row) => row.customer_id === customerId);
+    const payments = db.payments.filter((row) => row.customer_id === customerId);
+    const invoices = db.invoices.filter((row) => row.customer_id === customerId);
+    const receipts = db.customerReceipts.filter((row) => row.customer_id === customerId);
+    const visits = db.visits.filter((row) => row.customer_id === customerId);
+    const tasks = db.tasks.filter((row) => isCustomerLinked(db, row, customerId));
+    const workOrderIds = new Set(workOrders.map((row) => row.id));
+    const siteIds = new Set(sites.map((row) => row.id));
+    const drawings = db.drawings.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id));
+    const executionLogs = db.executionLogs.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id));
+    const purchaseOrders = db.purchaseOrders.filter((row) => (row.site_id && siteIds.has(row.site_id)) || (row.work_order_id && workOrderIds.has(row.work_order_id)));
+    const grns = db.grns.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id));
+    const vendorBills = db.vendorBills.filter((row) => row.work_order_id && workOrderIds.has(row.work_order_id));
+    const relatedIds = new Set([
+        customerId,
+        ...workOrders.map((row) => row.id),
+        ...sites.map((row) => row.id),
+        ...quotations.map((row) => row.id),
+        ...payments.map((row) => row.id),
+        ...invoices.map((row) => row.id),
+        ...receipts.map((row) => row.id),
+        ...visits.map((row) => row.id),
+        ...tasks.map((row) => row.id),
+        ...drawings.map((row) => row.id),
+        ...executionLogs.map((row) => row.id),
+        ...purchaseOrders.map((row) => row.id),
+        ...grns.map((row) => row.id),
+        ...vendorBills.map((row) => row.id),
+    ]);
+    const customerThreadRecordId = customerConversationThreadRecordId(customerId);
+    const notes = db.threads
+        .filter((thread) => thread.record_id === customerThreadRecordId || relatedIds.has(thread.record_id))
+        .flatMap((thread) => thread.messages
+            .filter((message) => !message.related_audit_id && message.kind !== "system" && !(message.kind === "alert" && message.related_thread_id))
+            .map((message) => ({
+                id: `note-${message.id}`,
+                ts: message.created_at,
+                kind: "note",
+                title: `${message.author_name} · ${message.kind}`,
+                detail: message.body,
+            })));
+
+    return [
+        ...tasks.map((row) => ({ id: `task-${row.id}`, ts: row.updated_at || row.created_at, kind: "task", title: row.title, detail: row.status })),
+        ...quotations.map((row) => ({ id: `quotation-${row.id}`, ts: row.updated_at || row.created_at, kind: "quotation", title: row.quotation_no, detail: row.status })),
+        ...payments.map((row) => ({ id: `payment-${row.id}`, ts: row.updated_at || row.created_at, kind: "money expected", title: row.milestone_label || "Payment milestone", detail: `${formatINR(row.amount)} expected · ${row.status}` })),
+        ...invoices.map((row) => ({ id: `invoice-${row.id}`, ts: row.updated_at || row.created_at, kind: "invoice", title: row.invoice_no, detail: `${formatINR(row.total_amount)} invoiced · ${formatINR(row.paid_amount)} received · ${formatINR(row.balance_amount)} outstanding` })),
+        ...receipts.map((row) => ({ id: `receipt-${row.id}`, ts: row.received_at || row.created_at, kind: "money received", title: row.receipt_no, detail: `${formatINR(row.amount)} received · ${row.mode}${row.reference ? ` · ${row.reference}` : ""}` })),
+        ...visits.map((row) => ({ id: `visit-${row.id}`, ts: row.updated_at || row.created_at, kind: "visit", title: row.location_name, detail: row.status })),
+        ...drawings.map((row) => ({ id: `drawing-${row.id}`, ts: row.updated_at || row.created_at, kind: "drawing", title: row.title || "Drawing", detail: row.status })),
+        ...executionLogs.map((row) => ({ id: `execution-${row.id}`, ts: row.created_at, kind: "execution", title: row.log_no || "Execution update", detail: row.work_order_no })),
+        ...purchaseOrders.map((row) => ({ id: `po-${row.id}`, ts: row.updated_at || row.created_at, kind: "purchase order", title: row.po_no, detail: row.status })),
+        ...grns.map((row) => ({ id: `grn-${row.id}`, ts: row.updated_at || row.created_at, kind: "goods receipt", title: row.grn_no, detail: row.status })),
+        ...vendorBills.map((row) => ({ id: `vendorBill-${row.id}`, ts: row.updated_at || row.created_at, kind: "vendor bill", title: row.bill_no, detail: row.status })),
+        ...db.commSends.filter((row) => row.customer_id === customerId).map((row) => ({ id: `communication-${row.id}`, ts: row.sent_at, kind: "communication", title: row.subject || row.channel, detail: row.status })),
+        ...db.auditLog.filter((row) => row.customer_id === customerId || isCustomerLinked(db, row, customerId)).map((row) => ({ id: `audit-${row.id}`, ts: row.timestamp, kind: "audit", title: row.action, detail: row.entity_label })),
+        ...notes,
+    ].filter((entry) => Boolean(entry.ts)).sort((a, b) => b.ts.localeCompare(a.ts));
 }

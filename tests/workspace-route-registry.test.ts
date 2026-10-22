@@ -60,7 +60,7 @@ describe("workspace route registry", () => {
   });
 
   test("normalizes query strings, hashes, duplicate slashes and trailing slashes", () => {
-    expect(canonicalWorkspacePath("/workspace//customers/?tab=activity#summary")).toBe("/workspace/customers");
+    expect(canonicalWorkspacePath("/workspace//customers/?tab=history#summary")).toBe("/workspace/customers");
     expect(resolveWorkspacePath("workspace/sites/")?.moduleId).toBe("siteExecution");
   });
 

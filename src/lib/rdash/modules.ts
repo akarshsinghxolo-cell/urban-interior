@@ -1,7 +1,7 @@
 export type ModuleRenderer =
   | "daily-work"
   | "customer-desk"
-  | "customer-extras"
+  | "customer-work-required"
   | "site-execution"
   | "tasks"
   | "quotations"
@@ -145,20 +145,11 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           db.blocked.some((blocked) => !blocked.resolved),
         submodules: [
           {
-            id: "customerTimeline",
-            label: "Customer Timeline",
-            renderer: "customer-desk",
+            id: "customerWorkRequired",
+            label: "Work Required",
+            renderer: "customer-work-required",
             dataSource: "customers",
-            filter: { view: "timeline" },
-            hint: "Lifecycle timeline across every customer",
-          },
-          {
-            id: "customerRequests",
-            label: "Customer Requests",
-            renderer: "customer-extras",
-            dataSource: "customers",
-            filter: { sub: "requests" },
-            hint: "Requests, qualification review and pending customer actions",
+            hint: "Customer requirements with All, Active, Won and Lost filters",
           },
         ],
       },

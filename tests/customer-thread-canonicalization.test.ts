@@ -5,6 +5,7 @@ import { createThreadsSlice } from "../src/lib/rdash/store/slices/threads";
 import { createCoreSlice } from "../src/lib/rdash/store/slices/core";
 import { createCrmSlice } from "../src/lib/rdash/store/slices/crm";
 import { customerConversationThreadRecordId } from "../src/lib/rdash/thread-record-id";
+import { resolveThreadRecordEntityId, resolveThreadRecordEntityType } from "../src/lib/rdash/entity-context";
 import type { RDashDatabase } from "../src/lib/rdash/types";
 
 describe("canonical Customer conversation threads", () => {
@@ -14,6 +15,15 @@ describe("canonical Customer conversation threads", () => {
     expect(customer).toBeTruthy();
     expect(threadParentExists(db, "generic", customer.id)).toBe(false);
     expect(threadParentExists(db, "generic", customerConversationThreadRecordId(customer.id))).toBe(true);
+  });
+
+  test("resolves canonical Customer threads back to the real Customer attachment parent", () => {
+    const db = structuredClone(buildSeedDatabase()) as RDashDatabase;
+    const customer = db.customers[0];
+    const recordId = customerConversationThreadRecordId(customer.id);
+
+    expect(resolveThreadRecordEntityType(db, "generic", recordId)).toBe("customer");
+    expect(resolveThreadRecordEntityId(db, "generic", recordId)).toBe(customer.id);
   });
 
   test("openThreadFor stores a Customer parent only with the canonical record ID", () => {

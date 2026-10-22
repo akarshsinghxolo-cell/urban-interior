@@ -222,7 +222,8 @@ test.describe("customer drawer", () => {
       /^Tasks \(\d+\)$/,
       /^Quotations \(\d+\)$/,
       /^Visits \(\d+\)$/,
-      /^Activity \(\d+\)$/,
+      /^History & notes \(\d+\)$/,
+      /^Files \(\d+\)$/,
     ];
     for (const tab of tabs) {
       await clickDrawerTab(page, tab);

@@ -255,7 +255,7 @@ export function WorkspacePulseStrip() {
     | { label: string; icon: React.ReactNode; kind: CreateDialogKind }
     | { label: string; icon: React.ReactNode; navigate: string }
   > = [
-    { label: "Customer", icon: <Users className="h-3.5 w-3.5" />, navigate: "customerTimeline" },
+    { label: "Customer", icon: <Users className="h-3.5 w-3.5" />, navigate: "customerDesk" },
     { label: "Task", icon: <PlusCircle className="h-3.5 w-3.5" />, kind: "task" },
     { label: "Quotation", icon: <FileText className="h-3.5 w-3.5" />, kind: "quotation" },
     { label: "Visit", icon: <CalendarClock className="h-3.5 w-3.5" />, kind: "visit" },
@@ -453,7 +453,7 @@ export function WorkspacePulseStrip() {
           value={db.customers.length}
           icon={<Users className="h-4 w-4" />}
           accent="blue"
-          onClick={() => setActiveModule("customerTimeline")}
+          onClick={() => setActiveModule("customerDesk")}
         />
         <PulseTile
           label="Live Work"

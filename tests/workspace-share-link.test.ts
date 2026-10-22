@@ -68,17 +68,17 @@ describe("canonical workspace record share links", () => {
 
   test("preserves durable customer workspace views", () => {
     expect(canonicalWorkspaceRecordPath(
-      snapshot("customerDesk", "customer", "cust-1", "overview", "activity"),
+      snapshot("customerDesk", "customer", "cust-1", "overview", "history"),
       "/workspace/customers/cust-1",
-      "source=share&tab=activity",
-    )).toBe("/workspace/customers/cust-1?source=share&tab=activity");
+      "source=share&tab=history",
+    )).toBe("/workspace/customers/cust-1?source=share&tab=history");
   });
 
   test("does not carry query state from a different route", () => {
     expect(canonicalWorkspaceRecordPath(
       snapshot("tasks", "task", "task-1", "thread"),
       "/workspace/customers",
-      "source=notification&tab=activity",
+      "source=notification&tab=history",
     )).toBe("/workspace/tasks/task-1?tab=thread");
   });
 

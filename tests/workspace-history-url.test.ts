@@ -143,11 +143,11 @@ describe("workspace history URLs", () => {
 
   test("adds durable customer workspace tabs from the active context entry", () => {
     expect(workspaceHistoryUrl(
-      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "activity"),
+      snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "history"),
       "/workspace/customers/cust-1",
       true,
       "?source=notification",
-    )).toBe("/workspace/customers/cust-1?source=notification&tab=activity");
+    )).toBe("/workspace/customers/cust-1?source=notification&tab=history");
     expect(workspaceHistoryUrl(
       snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "visits"),
       "/workspace/customers/cust-1",
@@ -167,7 +167,7 @@ describe("workspace history URLs", () => {
       snapshot("customerDesk", { kind: "customer", recordId: "cust-1" }, "overview"),
       "/workspace/customers/cust-1",
       true,
-      "?tab=activity&source=share",
+      "?tab=history&source=share",
     )).toBe("/workspace/customers/cust-1?source=share");
   });
 

@@ -9,7 +9,6 @@ import {
   DollarSign,
   FileText,
   Layers,
-  ListChecks,
   MapPin,
   MessageCircle,
   Plus,
@@ -22,13 +21,11 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
-import { isDateOnlyOverdue } from "@/lib/rdash/date";
 import {
   formatDate,
   formatINR,
   formatINRShort,
   relativeDay,
-  taskStatusStyle,
   titleCase,
   visitStatusStyle,
   workRequiredStatusStyle,
@@ -231,57 +228,11 @@ export function SiteVisitsModule() {
   );
 }
 
-export function CustomerDeskExtrasModule({ submodule, filterPresets }: { submodule: string; filterPresets?: import("@/lib/rdash/modules").FilterPreset[] }) {
+export function CustomerWorkRequiredModule({ filterPresets }: { filterPresets?: import("@/lib/rdash/modules").FilterPreset[] }) {
   const db = useRDashStore((state) => state.db);
   const openDetail = useRDashStore((state) => state.openDetail);
 
-  if (submodule === "requests") {
-    return <RequestsView reqs={db.workRequired} customers={db.customers} quotations={db.quotations} workOrders={db.workOrders} openDetail={openDetail} filterPresets={filterPresets} />;
-  }
-  if (submodule === "pendingActionsCust") {
-    const tasks = db.tasks.filter((task) => task.status === "todo" || task.status === "in_progress");
-    return (
-      <div className="flex flex-col gap-5">
-        <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-warning/10 text-warning"><ListChecks className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Pending Actions</h2><p className="text-xs text-muted-foreground">Open tasks across all customers</p></div></div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard label="Open tasks" value={tasks.length} tone="warning" icon={<ListChecks className="h-4 w-4" />} />
-          <MetricCard label="Overdue" value={tasks.filter((task) => isDateOnlyOverdue(task.due_date)).length} tone="destructive" icon={<AlertTriangle className="h-4 w-4" />} />
-          <MetricCard label="In progress" value={tasks.filter((task) => task.status === "in_progress").length} tone="primary" icon={<CheckCircle2 className="h-4 w-4" />} />
-          <MetricCard label="Blocked" value={tasks.filter((task) => task.status === "blocked").length} tone="destructive" icon={<AlertTriangle className="h-4 w-4" />} />
-        </div>
-        <div className="space-y-2">
-          {tasks.map((task) => {
-            const customer = db.customers.find((row) => row.id === task.customer_id);
-            const status = taskStatusStyle(task.status);
-            return <button key={task.id} type="button" onClick={() => openDetail("task", task.id)} className="flex w-full items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card hover:bg-accent/20"><Avatar name={customer?.name || "?"} size={32} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{task.title}</p><p className="text-[10px] text-muted-foreground">{customer?.name} · {staffNameForId(db, task.assigned_staff_id)} · due {relativeDay(task.due_date)}</p></div><StatusBadge label={status.label} className={status.className} /></button>;
-          })}
-        </div>
-      </div>
-    );
-  }
-  if (submodule === "workRequiredReview") {
-    const wonIds = collectWonWorkRequiredIds(db.quotations, db.workOrders);
-    const requests = db.workRequired.filter((row) => isOpenSalesStatus(row.status) && !wonIds.has(row.id));
-    return (
-      <div className="flex flex-col gap-5">
-        <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><ClipboardList className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">WorkRequired Review</h2><p className="text-xs text-muted-foreground">Active workRequired needing qualification and follow-up</p></div></div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <MetricCard label="Active" value={requests.length} tone="primary" icon={<ClipboardList className="h-4 w-4" />} />
-          <MetricCard label="New" value={requests.filter((row) => row.status === "new").length} tone="warning" icon={<AlertTriangle className="h-4 w-4" />} />
-          <MetricCard label="Quoting" value={requests.filter((row) => row.status === "quotation_in_progress" || row.status === "quotation_sent").length} tone="primary" icon={<FileText className="h-4 w-4" />} />
-          <MetricCard label="Value" value={formatINRShort(requests.reduce((sum, row) => sum + (row.budget || 0), 0))} tone="default" icon={<DollarSign className="h-4 w-4" />} />
-        </div>
-        <div className="space-y-2">
-          {requests.map((request) => {
-            const customer = db.customers.find((row) => row.id === request.customer_id);
-            const status = workRequiredStatusStyle(request.status);
-            return <button key={request.id} type="button" onClick={() => customer && openDetail("customer", customer.id)} className="flex w-full items-center gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card hover:bg-accent/20"><Avatar name={customer?.name || "?"} size={32} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{request.title}</p><div className="flex flex-wrap items-center gap-x-2 text-[10px] text-muted-foreground"><span>{customer?.name}</span><span>· {request.source}</span>{request.budget ? <span className="font-mono font-semibold text-foreground/80">· {formatINR(request.budget)}</span> : null}</div></div><StatusBadge label={status.label} className={status.className} /></button>;
-          })}
-        </div>
-      </div>
-    );
-  }
-  return null;
+  return <WorkRequiredView workRequired={db.workRequired} customers={db.customers} quotations={db.quotations} workOrders={db.workOrders} openDetail={openDetail} filterPresets={filterPresets} />;
 }
 
 export function QuotationExtrasModule({ submodule }: { submodule: string }) {
@@ -322,8 +273,8 @@ export function QuotationExtrasModule({ submodule }: { submodule: string }) {
   return null;
 }
 
-function RequestsView({ reqs, customers, quotations, workOrders, openDetail, filterPresets }: {
-  reqs: import("@/lib/rdash/types").WorkRequired[];
+function WorkRequiredView({ workRequired, customers, quotations, workOrders, openDetail, filterPresets }: {
+  workRequired: import("@/lib/rdash/types").WorkRequired[];
   customers: import("@/lib/rdash/types").Customer[];
   quotations: import("@/lib/rdash/types").Quotation[];
   workOrders: import("@/lib/rdash/types").WorkOrder[];
@@ -332,19 +283,19 @@ function RequestsView({ reqs, customers, quotations, workOrders, openDetail, fil
 }) {
   const presets = filterPresets?.length ? filterPresets : [
     { id: "all", label: "All", filter: {} },
-    { id: "active", label: "Active", filter: { req_status: "active" } },
-    { id: "accepted", label: "Won", filter: { req_status: "accepted" } },
-    { id: "lost", label: "Lost", filter: { req_status: "lost" } },
+    { id: "active", label: "Active", filter: { work_status: "active" } },
+    { id: "accepted", label: "Won", filter: { work_status: "accepted" } },
+    { id: "lost", label: "Lost", filter: { work_status: "lost" } },
   ];
   const [presetIndex, setPresetIndex] = React.useState(0);
   const [activeSavedViewId, setActiveSavedViewId] = React.useState<string | null>(null);
   const wonIds = React.useMemo(() => collectWonWorkRequiredIds(quotations, workOrders), [quotations, workOrders]);
-  const metrics = React.useMemo(() => calculateSalesPipelineMetrics(reqs, { wonWorkRequiredIds: wonIds }), [reqs, wonIds]);
+  const metrics = React.useMemo(() => calculateSalesPipelineMetrics(workRequired, { wonWorkRequiredIds: wonIds }), [workRequired, wonIds]);
   const isWon = React.useCallback((row: import("@/lib/rdash/types").WorkRequired) => isWonSalesStatus(row.status) || wonIds.has(row.id), [wonIds]);
   const isActive = React.useCallback((row: import("@/lib/rdash/types").WorkRequired) => isOpenSalesStatus(row.status) && !isWon(row), [isWon]);
-  const activeStatus = presets[presetIndex]?.filter.req_status;
-  const filtered = !activeStatus ? reqs : activeStatus === "active" ? reqs.filter(isActive) : activeStatus === "accepted" ? reqs.filter(isWon) : activeStatus === "lost" ? reqs.filter((row) => row.status === "lost" && !isWon(row)) : reqs.filter((row) => row.status === activeStatus);
-  const countFor = (status: string) => !status ? reqs.length : status === "active" ? metrics.openCount : status === "accepted" ? metrics.wonCount : status === "lost" ? metrics.lostCount : reqs.filter((row) => row.status === status).length;
+  const activeStatus = presets[presetIndex]?.filter.work_status;
+  const filtered = !activeStatus ? workRequired : activeStatus === "active" ? workRequired.filter(isActive) : activeStatus === "accepted" ? workRequired.filter(isWon) : activeStatus === "lost" ? workRequired.filter((row) => row.status === "lost" && !isWon(row)) : workRequired.filter((row) => row.status === activeStatus);
+  const countFor = (status: string) => !status ? workRequired.length : status === "active" ? metrics.openCount : status === "accepted" ? metrics.wonCount : status === "lost" ? metrics.lostCount : workRequired.filter((row) => row.status === status).length;
   const applySavedView = (view: SavedView) => {
     if (view.presetId) {
       const nextIndex = presets.findIndex((preset) => preset.id === view.presetId);
@@ -355,20 +306,20 @@ function RequestsView({ reqs, customers, quotations, workOrders, openDetail, fil
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><ClipboardList className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Requests</h2><p className="text-xs text-muted-foreground">All customer workRequired with status tracking · {filtered.length} shown</p></div></div>
+      <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><ClipboardList className="h-5 w-5" /></span><div><h2 className="text-lg font-bold tracking-tight">Work Required</h2><p className="text-xs text-muted-foreground">Every customer requirement with one shared lifecycle · {filtered.length} shown</p></div></div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><MetricCard label="Total" value={metrics.totalLeads} tone="primary" icon={<ClipboardList className="h-4 w-4" />} /><MetricCard label="Won" value={metrics.wonCount} tone="success" icon={<CheckCircle2 className="h-4 w-4" />} /><MetricCard label="Active" value={metrics.openCount} tone="warning" icon={<AlertTriangle className="h-4 w-4" />} /><MetricCard label="Pipeline value" value={formatINRShort(metrics.pipelineValue)} tone="primary" icon={<DollarSign className="h-4 w-4" />} /></div>
-      <section aria-label="Request status filters" className="flex flex-wrap items-center gap-1.5">
+      <section aria-label="Work Required status filters" className="flex flex-wrap items-center gap-1.5">
         {presets.map((preset, index) => {
           const active = index === presetIndex;
-          return <button key={preset.id} type="button" role="tab" aria-selected={active} onClick={() => { setPresetIndex(index); setActiveSavedViewId(null); }} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", active ? "bg-primary text-primary-foreground shadow-sm" : "border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground hover:shadow-sm")}>{preset.label}<span className={cn("ml-1.5 rounded px-1 text-[10px]", active ? "bg-primary-foreground/20" : "bg-muted")}>{countFor(preset.filter.req_status || "")}</span></button>;
+          return <button key={preset.id} type="button" role="tab" aria-selected={active} onClick={() => { setPresetIndex(index); setActiveSavedViewId(null); }} className={cn("rounded-md px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95", active ? "bg-primary text-primary-foreground shadow-sm" : "border border-border bg-card text-muted-foreground hover:bg-accent hover:text-foreground hover:shadow-sm")}>{preset.label}<span className={cn("ml-1.5 rounded px-1 text-[10px]", active ? "bg-primary-foreground/20" : "bg-muted")}>{countFor(preset.filter.work_status || "")}</span></button>;
         })}
       </section>
-      <SavedViewsBar workspaceKey="requests" presets={presets} currentPresetId={presets[presetIndex]?.id} currentSearch="" currentExtra={activeStatus ? { req_status: activeStatus } : undefined} onApply={applySavedView} activeSavedViewId={activeSavedViewId} />
+      <SavedViewsBar workspaceKey="work-required" presets={presets} currentPresetId={presets[presetIndex]?.id} currentSearch="" currentExtra={activeStatus ? { work_status: activeStatus } : undefined} onApply={applySavedView} activeSavedViewId={activeSavedViewId} />
       <div className="rd-stagger grid gap-3 lg:grid-cols-2">
-        {filtered.length === 0 ? <div className="col-span-full rounded-[var(--panel-radius)] border border-dashed border-border bg-gradient-to-b from-muted/30 to-transparent px-4 py-10 text-center text-sm text-muted-foreground">No requests match this filter.</div> : filtered.map((request) => {
-          const customer = customers.find((row) => row.id === request.customer_id);
-          const status = workRequiredStatusStyle(request.status);
-          return <button key={request.id} type="button" onClick={() => customer && openDetail("customer", customer.id)} className="group flex items-start gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:-translate-y-0.5 hover:bg-gradient-to-br hover:from-card hover:to-accent/30 hover:shadow-soft"><Avatar name={customer?.name || "?"} size={36} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{request.title}</p><p className="truncate text-[11px] text-muted-foreground">{customer?.name} · {request.source}</p><div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">{request.budget ? <span className="font-mono font-semibold text-foreground/80">{formatINR(request.budget)}</span> : null}<span>· {relativeDay(request.created_at)}</span></div></div><StatusBadge label={status.label} className={status.className} /></button>;
+        {filtered.length === 0 ? <div className="col-span-full rounded-[var(--panel-radius)] border border-dashed border-border bg-gradient-to-b from-muted/30 to-transparent px-4 py-10 text-center text-sm text-muted-foreground">No work requirements match this filter.</div> : filtered.map((work) => {
+          const customer = customers.find((row) => row.id === work.customer_id);
+          const status = workRequiredStatusStyle(work.status);
+          return <button key={work.id} type="button" onClick={() => customer && openDetail("customer", customer.id)} className="group flex items-start gap-3 rounded-[var(--panel-radius)] border border-border bg-card p-3 text-left shadow-card transition-all hover:-translate-y-0.5 hover:bg-gradient-to-br hover:from-card hover:to-accent/30 hover:shadow-soft"><Avatar name={customer?.name || "?"} size={36} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{work.title}</p><p className="truncate text-[11px] text-muted-foreground">{customer?.name} · {work.source}</p><div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">{work.budget ? <span className="font-mono font-semibold text-foreground/80">{formatINR(work.budget)}</span> : null}<span>· {relativeDay(work.created_at)}</span></div></div><StatusBadge label={status.label} className={status.className} /></button>;
         })}
       </div>
     </div>

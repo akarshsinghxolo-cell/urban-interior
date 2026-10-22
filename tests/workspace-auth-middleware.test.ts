@@ -10,7 +10,7 @@ const origin = "https://urban-castle.vercel.app";
 
 describe("workspace auth middleware", () => {
   test("captures an unauthenticated workspace destination before sign-in", () => {
-    const response = middleware(new NextRequest(`${origin}/workspace/customers?tab=activity`));
+    const response = middleware(new NextRequest(`${origin}/workspace/customers?tab=history`));
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toBe(`${origin}/signin`);
     const cookie = response.headers.get("set-cookie") || "";

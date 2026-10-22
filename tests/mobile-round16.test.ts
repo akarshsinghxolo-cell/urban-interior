@@ -57,13 +57,6 @@ describe("Mobile round 16 — restored Customer Desk", () => {
     expect(portfolio).toContain('key: "liabilities"');
   });
 
-  test("Customer Timeline selector keeps minmax tracks and shrinkable content", async () => {
-    const desk = await source("src/components/rdash/modules/CustomerDesk.tsx");
-    expectTokens(desk, ["grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"]);
-    expectTokens(desk, ['<div className="flex min-w-0 flex-col gap-3">']);
-    expectTokens(desk, ['<div className="min-w-0">']);
-  });
-
   test("canonical Customer capture preserves the requested phone bottom-sheet layout", async () => {
     const capture = await source("src/components/rdash/customer/CustomerWorkCaptureDialog.tsx");
     expect(capture).toContain("flex items-end justify-center");

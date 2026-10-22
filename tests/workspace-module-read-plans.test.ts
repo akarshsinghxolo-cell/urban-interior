@@ -47,8 +47,7 @@ const EXACT_MODULES = [
   "controlBrainWorkflows",
   "dataImport",
   "systemSettings",
-  "customerTimeline",
-  "customerRequests",
+  "customerWorkRequired",
   "salesPipeline",
   "lostClosedReview",
   "drawings",
@@ -108,10 +107,6 @@ describe("exact module workspace read plans", () => {
     const rates = workspaceModuleReadPlan(workspaceReadTargetForModule("vendorRates"));
     expect(rates.limitsByCollection?.["master.vendorRateHistories"]).toBe(100);
 
-    const customerTimeline = workspaceModuleReadPlan(workspaceReadTargetForModule("customerTimeline"));
-    expect(customerTimeline.limitsByCollection?.executionLogs).toBe(100);
-    expect(customerTimeline.limitsByCollection?.commSends).toBe(100);
-    expect(customerTimeline.limitsByCollection?.auditLog).toBe(100);
   });
 
   test("does not truncate primary arrays that currently drive total counters", () => {

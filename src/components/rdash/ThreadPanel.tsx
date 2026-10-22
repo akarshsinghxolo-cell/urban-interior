@@ -19,7 +19,7 @@ import { FilePreview, fileKind, managedPreviewUrl, managedOpenUrl } from "./File
 import type { FilePreviewSource } from "./FilePreview";
 import { attachedPreview, attachedFileById, assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
 import { renderMentions, MENTION_ENTITY_TYPES, buildMentionableEntities, filterMentionableEntities, type MentionableEntity } from "@/lib/rdash/mentions";
-import { resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
+import { resolveThreadRecordEntityId, resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
 export function ThreadView({ threadId }: {
     threadId: string;
 }) {
@@ -63,7 +63,8 @@ export function ThreadView({ threadId }: {
     }
     const user = currentUser();
     const entityType = resolveThreadRecordEntityType(db, thread.record_type, thread.record_id) || "general";
-    const existingFiles = entityFiles(db, entityType, thread.record_id);
+    const entityId = resolveThreadRecordEntityId(db, thread.record_type, thread.record_id);
+    const existingFiles = entityFiles(db, entityType, entityId);
     const onSend = () => {
         if (!reply.trim() && !pickedAttachmentIds.length)
             return;
@@ -112,17 +113,17 @@ export function ThreadView({ threadId }: {
                 sourceFlow: "thread_attachment",
                 sourceLabel: thread.title || "Thread attachment",
                 targetEntityType: entityType,
-                targetEntityId: thread.record_id,
+                targetEntityId: entityId,
                 targetLabel: thread.title,
                 purpose: uploadPurposeForEntity(entityType),
                 files: files.map((file) => ({ file, ...classifyWorkflowFile(file), role: classifyWorkflowFile(file).role === "photo" ? "proof" : classifyWorkflowFile(file).role, caption: "Thread attachment" })),
             });
+            // The managed attachment is created after upload; the queued ID cannot pass attachment validation yet.
             queued.files.forEach((item) => addReply(thread.id, {
                 author: user.name,
                 role: user.role,
                 body: `Attachment queued: ${item.fileName}`,
                 kind: "proof",
-                proof_attachment_id: item.attachmentId,
                 parent_message_id: replyParentId,
             }));
             setReplyParentId(undefined);

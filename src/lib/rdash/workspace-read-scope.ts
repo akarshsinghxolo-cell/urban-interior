@@ -42,8 +42,7 @@ function buildModuleScopeMap(): Map<string, ModuleWorkspaceReadScope> {
   const map = new Map<string, ModuleWorkspaceReadScope>();
   [
     "customerDesk",
-    "customerTimeline",
-    "customerRequests",
+    "customerWorkRequired",
     "salesPipeline",
     "lostClosedReview",
   ].forEach((id) => map.set(id, "customer"));

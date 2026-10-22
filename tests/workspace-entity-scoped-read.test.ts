@@ -16,7 +16,7 @@ import {
 
 describe("row-scoped workspace targets", () => {
   test("retains concrete Customer and Site IDs only for supported detail routes", () => {
-    const customer = workspaceReadTargetForPath("/workspace/customers/cust-123?tab=activity");
+    const customer = workspaceReadTargetForPath("/workspace/customers/cust-123?tab=history");
     expect(customer).toMatchObject({
       scope: "customer",
       moduleId: "customerDesk",

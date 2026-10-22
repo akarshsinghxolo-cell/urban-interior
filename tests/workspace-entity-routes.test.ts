@@ -67,9 +67,9 @@ describe("workspace entity routes", () => {
   });
 
   test("gives exact module and submodule routes precedence", () => {
-    const customerTimeline = resolveWorkspaceLocation("/workspace/customers/timeline");
-    expect(isWorkspaceEntityLocation(customerTimeline)).toBe(false);
-    expect(customerTimeline?.moduleId).toBe("customerTimeline");
+    const workRequired = resolveWorkspaceLocation("/workspace/customers/work-required");
+    expect(isWorkspaceEntityLocation(workRequired)).toBe(false);
+    expect(workRequired?.moduleId).toBe("customerWorkRequired");
 
     const contractorRates = resolveWorkspaceLocation("/workspace/contractors/rates");
     expect(isWorkspaceEntityLocation(contractorRates)).toBe(false);

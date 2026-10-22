@@ -10,7 +10,8 @@ const CUSTOMER_TABS = new Set<ContextCustomerTab>([
   "advances",
   "liabilities",
   "visits",
-  "activity",
+  "history",
+  "files",
 ]);
 
 interface WorkspaceCustomerTabRequest {

@@ -1,4 +1,5 @@
 import type { FileAttachmentEntityType, ID, RDashDatabase } from "./types";
+import { customerIdFromConversationThreadRecordId } from "./thread-record-id";
 type EntityOwnerKind = "customer" | "vendor" | "contractor" | "system";
 const entityTypes: readonly FileAttachmentEntityType[] = [
     "customer", "site", "room", "workRequired", "measurement_revision", "quotation", "quotation_item", "accepted_scope",
@@ -314,6 +315,8 @@ export function resolveThreadRecordEntityType(db: RDashDatabase, recordType: str
     if (recordType === "settlement" && has(db.contractorSettlements)) return "contractor_settlement";
     if (recordType === "bid") return has(db.contractorBids) ? "contractor_bid" : has(db.contractorBills) ? "contractor_bill" : has(db.contractorPayments) ? "contractor_payment" : undefined;
     if (recordType === "generic") {
+        const customerId = customerIdFromConversationThreadRecordId(recordId);
+        if (customerId && db.customers.some((row) => row.id === customerId)) return "customer";
         const candidates: Array<[FileAttachmentEntityType, Array<{ id: ID }>]> = [
             ["customer", db.customers], ["room", db.areas], ["measurement_revision", db.measurementRevisions], ["accepted_scope", db.acceptedScopes], ["boq", db.boqs],
             ["variation_request", db.variationRequests], ["vendor_rfq", db.vendorRfqs], ["vendor_bid", db.vendorBids], ["stock_movement", db.stockMovements],
@@ -322,6 +325,11 @@ export function resolveThreadRecordEntityType(db: RDashDatabase, recordType: str
         return candidates.find(([, rows]) => rows.some((row) => row.id === recordId))?.[0];
     }
     return undefined;
+}
+export function resolveThreadRecordEntityId(db: RDashDatabase, recordType: string, recordId: ID): ID {
+    return resolveThreadRecordEntityType(db, recordType, recordId) === "customer"
+        ? customerIdFromConversationThreadRecordId(recordId) || recordId
+        : recordId;
 }
 export function resolveEntityContext(db: RDashDatabase, entityType: FileAttachmentEntityType, entityId: ID, source = "Entity context"): EntityContext {
     switch (entityType) {
@@ -677,7 +685,8 @@ export function resolveEntityContext(db: RDashDatabase, entityType: FileAttachme
             if (!thread) missing(source, "Thread Message", entityId);
             const mapped = resolveThreadRecordEntityType(db, thread.record_type, thread.record_id);
             if (!mapped) throw new Error(`${source}: Thread Message belongs to an unsupported thread target.`);
-            return { ...resolveEntityContext(db, mapped, thread.record_id, source), entityType, entityId, driveBucket: "Threads" };
+            const recordId = resolveThreadRecordEntityId(db, thread.record_type, thread.record_id);
+            return { ...resolveEntityContext(db, mapped, recordId, source), entityType, entityId, driveBucket: "Threads" };
         }
         case "blocked": {
             const blocked = requireRow(db.blocked, entityId, "Obstacle", source);
