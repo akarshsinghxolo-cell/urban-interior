@@ -286,16 +286,16 @@ export function CustomerSitesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && requestClose()}>
-      <DialogContent className="max-h-[94vh] max-w-4xl gap-0 overflow-hidden p-0">
-        <form className="min-w-0" onSubmit={(event) => { event.preventDefault(); void saveAndClose(); }}>
-          <DialogHeader className="border-b border-border px-5 py-3">
+      <DialogContent className="h-[92dvh] max-h-[92dvh] max-w-4xl gap-0 overflow-hidden p-0 sm:h-[min(92dvh,56rem)]">
+        <form className="flex h-full min-h-0 min-w-0 flex-col" onSubmit={(event) => { event.preventDefault(); void saveAndClose(); }}>
+          <DialogHeader className="shrink-0 border-b border-border px-5 py-3">
             <DialogTitle className="flex items-center gap-2 text-base">
               {isEdit ? <Pencil className="h-4 w-4 text-primary" /> : <UserPlus className="h-4 w-4 text-primary" />}
               {isEdit ? "Edit Customer and Sites" : "Add New Customer"}
             </DialogTitle>
             <DialogDescription className="text-xs">Save customer identity and optional Sites, Areas, and Work Required in one workflow.</DialogDescription>
           </DialogHeader>
-          <div className="max-h-[75vh] space-y-5 overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll">
             <CustomerDetailsFields db={db} customer={customer} setCustomer={setCustomer} isEdit={isEdit} customerId={editId} duplicateMatches={duplicateMatches} sameNameMatches={sameNameMatches} sameNameAcknowledged={sameNameAcknowledged} setSameNameAcknowledged={setSameNameAcknowledged} openExistingCustomer={openExistingCustomer} />
             {isEdit && editId ? <EntityFilesCard entityType="customer" entityId={editId} title="Customer documents" manage showEmpty hiddenAttachmentIds={detachAttachmentIds} registerBatch={registerBatch} onDetach={(attachmentId) => setDetachAttachmentIds((current) => [...new Set([...current, attachmentId])])} /> : null}
             <section className="space-y-3 border-t border-border pt-4">
@@ -308,7 +308,7 @@ export function CustomerSitesDialog({
             </section>
             <CustomerWorkRequiredDraftSection db={db} customerId={editId} customerName={customer.name} sites={sites} areas={areas} setAreas={setAreas} workRequired={workRequired} setWorkRequired={setWorkRequired} />
           </div>
-          <DialogFooter className="border-t border-border px-5 py-3">
+          <DialogFooter className="shrink-0 border-t border-border px-5 py-3">
             <Button type="button" variant="outline" size="sm" onClick={requestClose}><X className="mr-1 h-3.5 w-3.5" />Cancel</Button>
             <Button type="submit" size="sm" disabled={!dirty || saving || !formIsValid}>{saving ? "Saving and confirming…" : isEdit ? <><Pencil className="mr-1 h-3.5 w-3.5" />Save changes</> : <><Plus className="mr-1 h-3.5 w-3.5" />Create customer</>}</Button>
           </DialogFooter>

@@ -16,8 +16,9 @@ describe("Mobile round 16 — drawer / dialog overflow fixes", () => {
 
   test("CustomerSitesDialog body hides horizontal overflow and the form can shrink as a grid item", async () => {
     const dialog = await source("src/components/rdash/CustomerSitesDialog.tsx");
-    expectTokens(dialog, ['className="max-h-[75vh] space-y-5 overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll"']);
-    expectTokens(dialog, ['<form className="min-w-0" onSubmit=']);
+    expectTokens(dialog, ['className="min-h-0 flex-1 space-y-5 overflow-y-auto overflow-x-hidden px-5 py-4 rd-scroll"']);
+    expectTokens(dialog, ['<form className="flex h-full min-h-0 min-w-0 flex-col" onSubmit=']);
+    expectTokens(dialog, ['<DialogFooter className="shrink-0 border-t border-border px-5 py-3">']);
   });
 
   test("CustomerSiteDraftCard header button no longer contributes nowrap min-content", async () => {

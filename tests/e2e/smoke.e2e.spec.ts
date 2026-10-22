@@ -88,6 +88,44 @@ test.describe("workdesk navigation", () => {
 });
 
 test.describe("customer drawer", () => {
+  test("Site coordinate search fills the address and photo selection keeps the editor stable", async ({ page }) => {
+    await page.route("**/api/location/reverse?*", async (route) => {
+      await route.fulfill({
+        json: {
+          display_name: "Gorakhpur, Uttar Pradesh, 273001, India",
+          address: { city: "Gorakhpur", suburb: "Civil Lines" },
+        },
+      });
+    });
+    await openCustomersDeskModule(page);
+    await page.getByRole("button", { name: "Add customer", exact: true }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Add New Customer", exact: true });
+    await dialog.getByRole("button", { name: "Add Site", exact: true }).click();
+    const coordinates = dialog.getByPlaceholder("GPS coordinates: 26.739800, 83.371200", { exact: true });
+    await coordinates.fill("26.719749, 83.383718");
+    await dialog.getByRole("button", { name: "Find address from coordinates", exact: true }).click();
+    await expect(dialog.getByPlaceholder("Full Site address", { exact: true })).toHaveValue("Gorakhpur, Uttar Pradesh, 273001, India");
+    await expect(dialog.getByPlaceholder("Locality / area", { exact: true })).toHaveValue("Civil Lines");
+    await expect(dialog.getByPlaceholder("City", { exact: true })).toHaveValue("Gorakhpur");
+    await expect(dialog.getByPlaceholder("Search address or landmark", { exact: true })).toHaveCount(0);
+
+    await dialog.locator('input[id^="site-files-"]').setInputFiles({
+      name: "site-photo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNosAAAAASUVORK5CYII=", "base64"),
+    });
+    await expect(dialog.getByText("site-photo.png", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+
+    const dialogBox = await dialog.boundingBox();
+    const saveBox = await dialog.getByRole("button", { name: "Create customer", exact: true }).boundingBox();
+    expect(dialogBox).not.toBeNull();
+    expect(saveBox).not.toBeNull();
+    if (!dialogBox || !saveBox) throw new Error("Customer editor layout could not be measured");
+    expect((dialogBox.y + dialogBox.height) - (saveBox.y + saveBox.height)).toBeLessThan(48);
+  });
+
   test("fast customer entry reuses contact, Areas and work scope on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openCustomersDeskModule(page);

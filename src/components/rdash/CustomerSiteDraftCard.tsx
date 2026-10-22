@@ -11,7 +11,7 @@ import { FilePreview } from "./FilePreview";
 import { cn } from "@/lib/utils";
 import type { RDashDatabase, Site } from "@/lib/rdash/types";
 import { coordinateInputError, formatCoordinatePair, parseCoordinatePair } from "@/lib/rdash/coordinates";
-import { reverseGeocodeWithNominatim, searchAddressWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
+import { reverseGeocodeWithNominatim, addressCity, addressLocality } from "@/lib/rdash/location-search";
 import { captureDeviceGps, deviceGpsErrorMessage } from "@/lib/rdash/device-gps";
 import { MANAGED_FILE_ACCEPT } from "@/lib/rdash/file-assets";
 import { assetPreview, entityFiles } from "@/lib/rdash/file-attachments";
@@ -49,15 +49,12 @@ export function CustomerSiteDraftCard({
   onDetachExisting: (attachmentId: string) => void;
 }) {
   const [gpsLoading, setGpsLoading] = React.useState(false);
-  const gpsSequenceRef = React.useRef(0);
-  const [locationSearch, setLocationSearch] = React.useState(draft.address);
-  const [searchingLocation, setSearchingLocation] = React.useState(false);
-  const [searchResults, setSearchResults] = React.useState<Array<{
-    display_name: string;
-    lat: string;
-    lon: string;
-    address?: Record<string, string>;
-  }>>([]);
+  const [reverseLookupLoading, setReverseLookupLoading] = React.useState(false);
+  const locationSequenceRef = React.useRef(0);
+  const draftRef = React.useRef(draft);
+
+  React.useEffect(() => { draftRef.current = draft; }, [draft]);
+  React.useEffect(() => () => { locationSequenceRef.current += 1; }, []);
 
   const existingFiles = React.useMemo(
     () => draft.existing ? entityFiles(db, "site", draft.id) : [],
@@ -72,6 +69,7 @@ export function CustomerSiteDraftCard({
   });
 
   const updateCoordinates = (value: string) => {
+    locationSequenceRef.current += 1;
     const parsed = parseCoordinatePair(value);
     if (!parsed) {
       onChange({ coordinateInput: value, latitude: undefined, longitude: undefined, mapUrl: "" });
@@ -85,76 +83,75 @@ export function CustomerSiteDraftCard({
     });
   };
 
-  // Capture coordinates, then autofill only the fields the user left empty —
-  // a slow reverse lookup must never clobber text they typed meanwhile, and
-  // a newer capture must discard stale lookup results (sequence guard).
+  const fillAddressFromCoordinates = async (
+    latitude: number,
+    longitude: number,
+    sequence: number,
+    preserveEnteredAddress: boolean,
+  ) => {
+    const data = await reverseGeocodeWithNominatim(latitude, longitude);
+    if (sequence !== locationSequenceRef.current) return false;
+    const current = draftRef.current;
+    const patch: Partial<SiteDraft> = {};
+    const city = addressCity(data?.address);
+    const locality = addressLocality(data?.address);
+    if (data?.display_name && (!preserveEnteredAddress || !current.address.trim())) patch.address = data.display_name;
+    if (city && (!preserveEnteredAddress || !current.city.trim())) patch.city = city;
+    if (locality && (!preserveEnteredAddress || !current.locality.trim())) patch.locality = locality;
+    if (Object.keys(patch).length === 0) return false;
+    onChange(patch);
+    return true;
+  };
+
+  // Capture coordinates and use the same reverse lookup as the coordinate
+  // Search button. Slow results cannot overwrite newer coordinates or text.
   const captureGps = async () => {
-    const sequence = ++gpsSequenceRef.current;
+    const sequence = ++locationSequenceRef.current;
     setGpsLoading(true);
-    const fillable = {
-      address: !draft.address.trim(),
-      city: !draft.city.trim(),
-      locality: !draft.locality.trim(),
-    };
-    const searchBeforeCapture = locationSearch;
     try {
       const capture = await captureDeviceGps({ mode: "master-location" });
-      if (sequence !== gpsSequenceRef.current) return;
+      if (sequence !== locationSequenceRef.current) return;
       applyCoordinates(capture.latitude, capture.longitude);
       toast.success(`GPS captured · ±${Math.round(capture.accuracy_m)} m`);
       try {
-        const data = await reverseGeocodeWithNominatim(capture.latitude, capture.longitude);
-        if (sequence !== gpsSequenceRef.current) return;
-        const patch: Partial<SiteDraft> = {};
-        if (fillable.address && data?.display_name) patch.address = data.display_name;
-        if (fillable.city) { const city = addressCity(data?.address); if (city) patch.city = city; }
-        if (fillable.locality) { const locality = addressLocality(data?.address); if (locality) patch.locality = locality; }
-        if (Object.keys(patch).length > 0) {
-          onChange(patch);
-          toast.success("Address details autofilled from GPS");
-        }
-        const displayName = data?.display_name;
-        if (displayName) setLocationSearch((current) => (current === searchBeforeCapture ? displayName : current));
+        const filled = await fillAddressFromCoordinates(capture.latitude, capture.longitude, sequence, true);
+        if (filled) toast.success("Address details autofilled from GPS");
       } catch (lookupError) {
-        if (sequence === gpsSequenceRef.current) {
+        if (sequence === locationSequenceRef.current) {
           toast.error(lookupError instanceof Error && lookupError.message ? lookupError.message : "Address autofill failed. Coordinates were kept.");
         }
       }
     } catch (gpsError) {
-      if (sequence === gpsSequenceRef.current) {
+      if (sequence === locationSequenceRef.current) {
         toast.error(deviceGpsErrorMessage(gpsError));
       }
     } finally {
-      if (sequence === gpsSequenceRef.current) setGpsLoading(false);
+      setGpsLoading(false);
     }
   };
 
-  const searchAddress = async () => {
-    if (locationSearch.trim().length < 3) return toast.error("Enter at least 3 characters to search for a location");
+  const findAddressFromCoordinates = async () => {
+    const parsed = parseCoordinatePair(draft.coordinateInput);
+    const inputError = coordinateInputError(draft.coordinateInput);
+    if (!parsed || inputError) {
+      toast.error(inputError || "Enter latitude and longitude before searching");
+      return;
+    }
+    const sequence = ++locationSequenceRef.current;
+    applyCoordinates(parsed.latitude, parsed.longitude);
     try {
-      setSearchingLocation(true);
-      const rows = await searchAddressWithNominatim(locationSearch.trim());
-      setSearchResults(Array.isArray(rows) ? rows : []);
+      setReverseLookupLoading(true);
+      const filled = await fillAddressFromCoordinates(parsed.latitude, parsed.longitude, sequence, false);
+      if (sequence !== locationSequenceRef.current) return;
+      if (filled) toast.success("Site address filled from coordinates");
+      else toast.error("No address was found for these coordinates");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Location search failed");
+      if (sequence === locationSequenceRef.current) {
+        toast.error(error instanceof Error ? error.message : "Address lookup failed. Coordinates were kept.");
+      }
     } finally {
-      setSearchingLocation(false);
+      setReverseLookupLoading(false);
     }
-  };
-
-  const selectLocation = (result: { display_name: string; lat: string; lon: string; address?: Record<string, string> }) => {
-    const latitude = Number(result.lat);
-    const longitude = Number(result.lon);
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
-    applyCoordinates(latitude, longitude);
-    const address = result.address || {};
-    onChange({
-      address: result.display_name,
-      city: address.city || address.town || address.village || draft.city,
-      locality: address.suburb || address.neighbourhood || draft.locality,
-    });
-    setLocationSearch(result.display_name);
-    setSearchResults([]);
   };
 
   const addPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,7 +161,7 @@ export function CustomerSiteDraftCard({
     try {
       const queued = await enqueueWorkflowFiles({
         sourceFlow: "customer_sites_form",
-      deferProcessing: true,
+        deferProcessing: true,
         sourceLabel: draft.existing ? "Edit Customer Site" : "Add Customer Site",
         targetEntityType: "site",
         targetEntityId: draft.id,
@@ -272,35 +269,37 @@ export function CustomerSiteDraftCard({
               </Button>
             </div>
             <div className="space-y-2">
-              <Input id={`site-coordinates-${draft.id}`} value={draft.coordinateInput} onChange={(event) => updateCoordinates(event.target.value)} placeholder="GPS coordinates: 26.739800, 83.371200" aria-invalid={Boolean(coordinateInputError(draft.coordinateInput))} />
-              <p className={cn("text-[10px]", coordinateInputError(draft.coordinateInput) ? "text-destructive" : "text-muted-foreground")}>
-                {coordinateInputError(draft.coordinateInput) || "Capture GPS, search an address, paste coordinates, or click the map."}
-              </p>
               <div className="flex gap-2">
-                <Input value={locationSearch} onChange={(event) => setLocationSearch(event.target.value)} onKeyDown={(event) => {
-                  if (event.key === "Enter") { event.preventDefault(); void searchAddress(); }
-                }} placeholder="Search address or landmark" />
-                <Button type="button" size="sm" variant="outline" onClick={() => void searchAddress()} disabled={searchingLocation}>
-                  <Search className="mr-1 h-3.5 w-3.5" />{searchingLocation ? "Searching…" : "Search"}
+                <Input
+                  id={`site-coordinates-${draft.id}`}
+                  className="min-w-0 flex-1"
+                  value={draft.coordinateInput}
+                  onChange={(event) => updateCoordinates(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") { event.preventDefault(); void findAddressFromCoordinates(); }
+                  }}
+                  placeholder="GPS coordinates: 26.739800, 83.371200"
+                  aria-label={`Coordinates for ${draft.name || `Site ${index + 1}`}`}
+                  aria-invalid={Boolean(coordinateInputError(draft.coordinateInput))}
+                />
+                <Button type="button" size="sm" variant="outline" className="shrink-0" onClick={() => void findAddressFromCoordinates()} disabled={reverseLookupLoading || gpsLoading} aria-label="Find address from coordinates">
+                  <Search className="mr-1 h-3.5 w-3.5" />{reverseLookupLoading ? "Searching…" : "Search"}
                 </Button>
               </div>
-              {searchResults.length > 0 && (
-                <div className="max-h-36 overflow-y-auto rounded-md border border-border bg-card">
-                  {searchResults.map((result) => (
-                    <button key={`${result.lat}-${result.lon}`} type="button" onClick={() => selectLocation(result)} className="block w-full border-b border-border px-2 py-1.5 text-left text-[11px] hover:bg-accent/40 last:border-0">
-                      {result.display_name}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <p className={cn("text-[10px]", coordinateInputError(draft.coordinateInput) ? "text-destructive" : "text-muted-foreground")}>
+                {coordinateInputError(draft.coordinateInput) || "Capture GPS, paste coordinates, or click the map, then Search to fill the address."}
+              </p>
               <MapView
                 title="Site pin placement"
                 points={draft.latitude != null && draft.longitude != null ? [{ id: draft.id, label: draft.name || "Site pin", latitude: draft.latitude, longitude: draft.longitude, status: "scheduled" }] : []}
                 fallbackCenter={{ latitude: 26.7606, longitude: 83.3732, label: "Map centre" }}
-                onMapClick={({ latitude, longitude }) => applyCoordinates(latitude, longitude)}
+                onMapClick={({ latitude, longitude }) => {
+                  locationSequenceRef.current += 1;
+                  applyCoordinates(latitude, longitude);
+                }}
                 className="h-48 min-h-[12rem]"
               />
-              <Input value={draft.address} onChange={(event) => onChange({ address: event.target.value })} placeholder="Full Site address" />
+              <Input value={draft.address} onChange={(event) => onChange({ address: event.target.value })} placeholder="Full Site address" aria-label={`Full address for ${draft.name || `Site ${index + 1}`}`} />
               <div className="grid gap-2 sm:grid-cols-2">
                 <Input value={draft.locality} onChange={(event) => onChange({ locality: event.target.value })} placeholder="Locality / area" />
                 <Input value={draft.city} onChange={(event) => onChange({ city: event.target.value })} placeholder="City" />
@@ -311,7 +310,7 @@ export function CustomerSiteDraftCard({
 
           <div>
             <label className="text-[10px] font-semibold uppercase text-muted-foreground" htmlFor={`site-files-${draft.id}`}>Site photos and files</label>
-            <ManagedFilePicker label="Add photos or files" accept={MANAGED_FILE_ACCEPT} multiple fileCount={existingFiles.length + draft.pendingPhotos.length} onPick={addPhotos} className="mt-1" />
+            <ManagedFilePicker id={`site-files-${draft.id}`} label="Add photos or files" accept={MANAGED_FILE_ACCEPT} multiple fileCount={existingFiles.length + draft.pendingPhotos.length} onPick={addPhotos} className="mt-1" />
             {(existingFiles.length > 0 || draft.pendingPhotos.length > 0) && (
               <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                 {existingFiles.map(({ attachment, asset }) => (
@@ -322,7 +321,7 @@ export function CustomerSiteDraftCard({
                 ))}
                 {draft.pendingPhotos.map((photo) => (
                   <div key={photo.id} className="group relative">
-                    <FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls />
+                    <FilePreview file={{ fileName: photo.file_name, mimeType: photo.mime_type, url: photo.url }} compact controls interactive={false} />
                     <button type="button" onClick={() => void removePending(photo)} className="absolute right-0 top-0 rounded-full bg-background/90 p-0.5 text-destructive opacity-0 group-hover:opacity-100 focus-visible:opacity-100" aria-label={`Remove ${photo.file_name}`}><X className="h-3 w-3" /></button>
                   </div>
                 ))}

@@ -7,6 +7,7 @@ const types = readFileSync("src/lib/rdash/store/types.ts", "utf8");
 const customerDesk = readFileSync("src/components/rdash/modules/CustomerDesk.tsx", "utf8");
 const dataImport = readFileSync("src/components/rdash/modules/DataImportModule.tsx", "utf8");
 const customerSitesDialog = readFileSync("src/components/rdash/CustomerSitesDialog.tsx", "utf8");
+const customerSiteDraftCard = readFileSync("src/components/rdash/CustomerSiteDraftCard.tsx", "utf8");
 const customerDetailsFields = readFileSync("src/components/rdash/CustomerDetailsFields.tsx", "utf8");
 const workRequiredFields = readFileSync("src/components/rdash/WorkRequiredFields.tsx", "utf8");
 const createMenu = readFileSync("src/components/rdash/CreateMenu.tsx", "utf8");
@@ -27,6 +28,20 @@ test("Customer/Site dialog retains canonical sync and dirty-form protection", ()
   expect(customerSitesDialog.includes("initializedKeyRef")).toBe(true);
   expect(customerSitesDialog.includes("dirtyFormRegistry.requestNavigation")).toBe(true);
   expect(customerSitesDialog.indexOf("await awaitServerSync();")).toBeLessThan(customerSitesDialog.indexOf("commitBatches();"));
+});
+
+test("Site coordinates use one reverse-geocode action and queued photos do not create nested dialogs", () => {
+  expectTokens(customerSiteDraftCard, [
+    "findAddressFromCoordinates",
+    'aria-label="Find address from coordinates"',
+    "reverseGeocodeWithNominatim",
+    "interactive={false}",
+  ]);
+  expectNoTokens(customerSiteDraftCard, [
+    "searchAddressWithNominatim",
+    "Search address or landmark",
+    "searchResults",
+  ]);
 });
 
 test("shared Add/Edit Customer form orders Sites then editable Work Required without customer interests", () => {
