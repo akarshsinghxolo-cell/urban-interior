@@ -1,6 +1,7 @@
 import { expectNoTokens, expectTokens } from "./helpers/source-contract";
 import { expect, test } from "vitest";
 import { readFileSync } from "node:fs";
+import { emptyCustomerDraft, fingerprint, newSiteDraft } from "@/components/rdash/customer-sites-form-model";
 
 const crm = readFileSync("src/lib/rdash/store/slices/crm.ts", "utf8");
 const types = readFileSync("src/lib/rdash/store/types.ts", "utf8");
@@ -28,6 +29,14 @@ test("Customer/Site dialog retains canonical sync and dirty-form protection", ()
   expect(customerSitesDialog.includes("initializedKeyRef")).toBe(true);
   expect(customerSitesDialog.includes("dirtyFormRegistry.requestNavigation")).toBe(true);
   expect(customerSitesDialog.indexOf("await awaitServerSync();")).toBeLessThan(customerSitesDialog.indexOf("commitBatches();"));
+});
+
+test("expanding a Site card is presentation state, not an unsaved business change", () => {
+  const customer = emptyCustomerDraft();
+  const site = newSiteDraft("Example Customer");
+  const collapsed = fingerprint(customer, [{ ...site, expanded: false }], [], false);
+  const expanded = fingerprint(customer, [{ ...site, expanded: true }], [], false);
+  expect(expanded).toBe(collapsed);
 });
 
 test("Site coordinates use one reverse-geocode action and queued photos do not create nested dialogs", () => {
