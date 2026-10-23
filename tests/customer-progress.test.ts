@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
-import { customerProgress, customerSitePlusCode } from "../src/lib/rdash/customer-progress";
+import { customerProgress, customerRapidoHref, customerSiteLocalPlusCode, customerSitePlusCode } from "../src/lib/rdash/customer-progress";
 import type { RDashDatabase, WorkRequiredStatus } from "../src/lib/rdash/types";
 
 function databaseWithWorkRequired(status: WorkRequiredStatus): RDashDatabase {
@@ -47,7 +47,23 @@ const LADDER: WorkRequiredStatus[] = [
 describe("customerProgress Work Required ladder", () => {
   test("creates the same Plus Code Google Maps shows for Site coordinates", () => {
     expect(customerSitePlusCode(26.7197493, 83.3837182)).toBe("7MR5P99M+VFW");
+    expect(customerSiteLocalPlusCode(26.7197493, 83.3837182)).toBe("P99M+VFW");
     expect(customerSitePlusCode(undefined, 83.3837182)).toBeUndefined();
+  });
+
+  test("builds Rapido's route with resolvable pickup and drop Plus Codes", () => {
+    expect(customerRapidoHref(
+      { latitude: 26.7201, longitude: 83.3762, city: "Gorakhpur" },
+      { latitude: 26.7197493, longitude: 83.3837182, city: "Gorakhpur" },
+    )).toMatch(/^https:\/\/m\.rapido\.bike\/unup-home\/seo\/.+\/.+\?version=v3$/);
+    expect(customerRapidoHref(
+      { latitude: 26.7201, longitude: 83.3762, city: "Gorakhpur" },
+      { latitude: 26.7197493, longitude: 83.3837182, city: "Gorakhpur" },
+    )).toContain("P99M%2BVFW%20Gorakhpur%2CGorakhpur");
+    expect(customerRapidoHref(
+      { latitude: undefined, longitude: undefined, city: "Gorakhpur" },
+      { latitude: 26.7197493, longitude: 83.3837182, city: "Gorakhpur" },
+    )).toBeUndefined();
   });
 
   test("labels an untouched lead New enquiry at 8 percent", () => {

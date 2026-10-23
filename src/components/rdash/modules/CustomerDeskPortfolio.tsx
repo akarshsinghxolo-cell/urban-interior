@@ -26,7 +26,7 @@ import {
   siteFinancials,
   type ContextCustomerTab,
 } from "@/lib/rdash/store";
-import { customerMapHref, customerProgress, customerSitePlusCode, customerWhatsappHref } from "@/lib/rdash/customer-progress";
+import { customerMapHref, customerProgress, customerRapidoHref, customerSiteLocalPlusCode, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
@@ -68,6 +68,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
   const openActionDialog = useRDashStore((state) => state.openActionDialog);
   const openDetail = useRDashStore((state) => state.openDetail);
   const setActiveModule = useRDashStore((state) => state.setActiveModule);
+  const currentUser = useRDashStore((state) => state.currentUser);
 
   const customer = db.customers.find((row) => row.id === customerId);
   const currentContextEntry = contextHistory[contextHistoryIndex];
@@ -98,22 +99,27 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
     href: customerMapHref([site.address, site.locality, site.city].filter(Boolean).join(", "), site.latitude, site.longitude)
       || (/^https?:\/\//i.test(site.map_url || "") ? site.map_url : undefined),
   })).filter((site) => site.href);
+  const currentStaffId = currentUser().staffId;
+  const hasOfficeGps = (row: (typeof db.master.staff)[number]) =>
+    row.attendance_policy?.office_latitude != null && row.attendance_policy?.office_longitude != null;
+  const officeStaff = db.master.staff.find((row) => row.id === currentStaffId && hasOfficeGps(row))
+    || db.master.staff.find(hasOfficeGps);
+  const office = officeStaff?.attendance_policy;
   const rapidoDestinations = sites.map((site) => ({
     id: site.id,
     name: site.name,
-    plusCode: customerSitePlusCode(site.latitude, site.longitude),
-  })).filter((site): site is typeof site & { plusCode: string } => Boolean(site.plusCode));
-
-  const copyRapidoDestination = (plusCode: string) => {
-    const copy = navigator.clipboard?.writeText(plusCode);
-    if (!copy) {
-      toast.error(`Could not copy automatically. Enter ${plusCode} in Rapido's drop location.`);
-      return;
-    }
-    void copy
-      .then(() => toast.success(`${plusCode} copied. Paste it into Rapido's drop location.`))
-      .catch(() => toast.error(`Could not copy automatically. Enter ${plusCode} in Rapido's drop location.`));
-  };
+    plusCode: customerSiteLocalPlusCode(site.latitude, site.longitude),
+    href: office ? customerRapidoHref({
+      latitude: office.office_latitude,
+      longitude: office.office_longitude,
+      city: officeStaff?.city || site.city,
+    }, {
+      latitude: site.latitude,
+      longitude: site.longitude,
+      city: site.city || officeStaff?.city,
+    }) : undefined,
+  })).filter((site): site is typeof site & { plusCode: string; href: string } => Boolean(site.plusCode && site.href));
+  const sitesWithRapidoLocation = sites.filter((site) => customerSiteLocalPlusCode(site.latitude, site.longitude)).length;
   const siteIds = new Set(sites.map((row) => row.id));
   const workRequired = db.workRequired.filter((row) => row.customer_id === customerId || (row.site_id ? siteIds.has(row.site_id) : false));
   const quotations = db.quotations.filter((row) => row.customer_id === customerId);
@@ -207,14 +213,17 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
             {siteDirections.map((site) => <DropdownMenuItem key={site.id} asChild><a href={site.href} target="_blank" rel="noreferrer" className="whitespace-normal break-words">{site.name}</a></DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>}
-        {rapidoDestinations.length > 0 && <DropdownMenu>
+        {sitesWithRapidoLocation > 0 && <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><Bike className="mr-1 h-3.5 w-3.5" />Book Rapido</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-w-[calc(100vw-2rem)]">
             {rapidoDestinations.map((site) => <DropdownMenuItem key={site.id} asChild>
-              <a href="https://m.rapido.bike/home" target="_blank" rel="noreferrer" onClick={() => copyRapidoDestination(site.plusCode)} className="whitespace-normal break-words">
+              <a href={site.href} target="_blank" rel="noreferrer" className="whitespace-normal break-words">
                 {site.name} · {site.plusCode}
               </a>
             </DropdownMenuItem>)}
+            {!rapidoDestinations.length && <DropdownMenuItem disabled className="whitespace-normal text-xs">
+              Configure your Office GPS under HR &amp; Staff to prefill Rapido pickup and drop.
+            </DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>}
         <Button size="sm" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5" />Create quotation</Button>

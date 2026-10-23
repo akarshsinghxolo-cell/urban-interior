@@ -166,6 +166,33 @@ export function customerSitePlusCode(latitude?: number, longitude?: number) {
     return `${code.slice(0, 8)}+${code.slice(8)}`;
 }
 
+/** Local Plus Code format used by Rapido's address search (for example P99M+VFW). */
+export function customerSiteLocalPlusCode(latitude?: number, longitude?: number) {
+    const globalCode = customerSitePlusCode(latitude, longitude);
+    return globalCode ? globalCode.slice(4) : undefined;
+}
+
+type RapidoLocation = {
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+};
+
+function rapidoLocationSearch(location: RapidoLocation) {
+    const plusCode = customerSiteLocalPlusCode(location.latitude, location.longitude);
+    const city = location.city?.trim();
+    if (!plusCode || !city) return undefined;
+    return `${plusCode} ${city},${city}`;
+}
+
+/** Rapido's public SEO route resolves both Plus Codes before showing fare options. */
+export function customerRapidoHref(pickup: RapidoLocation, drop: RapidoLocation) {
+    const pickupSearch = rapidoLocationSearch(pickup);
+    const dropSearch = rapidoLocationSearch(drop);
+    if (!pickupSearch || !dropSearch) return undefined;
+    return `https://m.rapido.bike/unup-home/seo/${encodeURIComponent(pickupSearch)}/${encodeURIComponent(dropSearch)}?version=v3`;
+}
+
 export function customerWhatsappHref(phone?: string) {
     if (!isValidIndianMobile(phone, { allowEmpty: false })) return undefined;
     return `https://wa.me/${indianWhatsAppDialDigits(phone)}`;
