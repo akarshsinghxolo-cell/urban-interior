@@ -125,7 +125,7 @@ export function canonicalContractorCapabilities(
       subcategory_name: subcategory?.name || normalized.subcategory_name || previous?.subcategory_name,
       work_type_rates: Array.from(rates.values()).map((rate) => ({
         ...rate,
-        work_type_name: rate.work_type_name || catalog.get(rate.work_type_id)?.name,
+        work_type_name: catalog.get(rate.work_type_id)?.name || rate.work_type_name,
         unit_id: rate.unit_id || catalog.get(rate.work_type_id)?.unit_id || subcategory?.unit_id,
       })),
     });
@@ -221,7 +221,7 @@ export function contractorRateProjection(
       const previous = existing.find((rate) => rate.contractor_id === contractorId
         && rate.work_subcategory_id === capability.subcategory_id && rate.work_type_id === workTypeRate.work_type_id);
       const catalogRow = catalog.get(workTypeRate.work_type_id);
-      const workTypeName = workTypeRate.work_type_name || catalogRow?.name || "Work type";
+      const workTypeName = catalogRow?.name || workTypeRate.work_type_name || "Work type";
       const materialRate = workTypeRate.material_rate;
       const labourRate = workTypeRate.labour_rate;
       return [{
@@ -231,7 +231,7 @@ export function contractorRateProjection(
         rate: (materialRate || 0) + (labourRate || 0),
         unit_id: workTypeRate.unit_id || catalogRow?.unit_id || subcategory?.unit_id || previous?.unit_id,
         work_subcategory_id: capability.subcategory_id,
-        work_subcategory_name: capability.subcategory_name || subcategory?.name || previous?.work_subcategory_name,
+        work_subcategory_name: subcategory?.name || capability.subcategory_name || previous?.work_subcategory_name,
         work_type_id: workTypeRate.work_type_id,
         work_type_name: workTypeName,
         material_rate: materialRate,

@@ -19,6 +19,7 @@ import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { MapView } from "../MapView";
 import type { SalaryAdjustment } from "@/lib/rdash/types";
 import { hasStaffSalaryConfiguration } from "@/lib/rdash/payroll";
+import { canonicalAttendanceRecords } from "@/lib/rdash/attendance-records";
 function ymd(value: Date) {
     return value.toISOString().slice(0, 10);
 }
@@ -134,11 +135,12 @@ export function AttendancePayrollModule() {
         });
     }, [weekOffset]);
     const assignedVisits = React.useMemo(() => db.visits.filter((visit) => visit.assigned_staff_id === user.staffId && ["scheduled", "en_route", "checked_in"].includes(visit.status)), [db.visits, user.staffId]);
-    const todayRecord = React.useMemo(() => db.attendance.find((record) => record.staff_id === user.staffId && record.date === ymd(new Date())), [db.attendance, user.staffId]);
+    const attendance = React.useMemo(() => canonicalAttendanceRecords(db.attendance), [db.attendance]);
+    const todayRecord = React.useMemo(() => attendance.find((record) => record.staff_id === user.staffId && record.date === ymd(new Date())), [attendance, user.staffId]);
     const staffWithAttendance = React.useMemo(() => {
         const month = currentMonthKey();
         return activeStaff.map((staff) => {
-            const records = db.attendance.filter((record) => record.staff_id === staff.id);
+            const records = attendance.filter((record) => record.staff_id === staff.id);
             const monthRecords = records.filter((record) => record.date.startsWith(month));
             const weekRecords = weekDays.map((date) => records.find((record) => record.date === ymd(date)));
             const presentDays = monthRecords.filter((record) => record.status === "present").length;
@@ -159,7 +161,7 @@ export function AttendancePayrollModule() {
             }
             return { ...staff, records, weekRecords, presentDays, halfDays, absentDays, totalMinutes, monthlySalary, earnedThisMonth };
         });
-    }, [activeStaff, db.attendance, weekDays, computeStaffSalary]);
+    }, [activeStaff, attendance, weekDays, computeStaffSalary]);
     React.useEffect(() => {
         if (staffWithAttendance.some((staff) => staff.id === mobileAttendanceStaffId)) return;
         setMobileAttendanceStaffId(
@@ -170,8 +172,8 @@ export function AttendancePayrollModule() {
     }, [mobileAttendanceStaffId, staffWithAttendance, user.staffId]);
     const mobileAttendanceStaff = staffWithAttendance.find((staff) => staff.id === mobileAttendanceStaffId) || staffWithAttendance[0];
 
-    const totalPresent = db.attendance.filter((record) => record.status === "present" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
-    const totalAbsent = db.attendance.filter((record) => record.status === "absent" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
+    const totalPresent = attendance.filter((record) => record.status === "present" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
+    const totalAbsent = attendance.filter((record) => record.status === "absent" && record.date === ymd(new Date()) && activeStaffIds.has(record.staff_id)).length;
     const totalPayroll = staffWithAttendance.reduce((sum, staff) => sum + staff.monthlySalary, 0);
     const totalEarned = staffWithAttendance.reduce((sum, staff) => sum + staff.earnedThisMonth, 0);
     const capturePosition = async (action: "check-in" | "check-out" | "office", callback: (position: GeolocationPosition) => void) => {

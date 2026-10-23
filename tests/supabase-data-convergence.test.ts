@@ -21,7 +21,7 @@ describe("Supabase persistence convergence", () => {
     expectTokens(authorized, ["function sanitizeWorkspaceOperations("]);
     expectTokens(authorized, ["delete safe.temporary_password;"]);
     expectTokens(authorized, ["delete safe.force_password_change;"]);
-    expectTokens(authorized, ["let commitOperations = sanitizeWorkspaceOperations(operations);"]);
+    expectTokens(authorized, ["let commitOperations = canonicalizeQuotationOperations(sanitizeWorkspaceOperations(operations));"]);
   });
 
   test("routes Staff login changes to User Approvals", async () => {

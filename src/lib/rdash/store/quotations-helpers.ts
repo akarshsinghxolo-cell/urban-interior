@@ -10,7 +10,7 @@
  * Pure functions only — no state, no `commitState`, no `get()`.
  */
 import type {
-    RDashDatabase, Quotation, PaymentTerm, TaxConfig,
+    AcceptedScope, QuotationCoverage, RDashDatabase, Quotation, PaymentTerm, TaxConfig,
 } from "../types";
 import { today, addDays } from "./helpers";
 
@@ -44,6 +44,16 @@ export function coverageAcceptedValue(quotation: Quotation, coverage: import("..
         return !line.area_id || coverage.area_ids.includes(line.area_id);
     });
     return (Math.round(matchingLines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100);
+}
+
+export function acceptedScopeOverlapsCoverage(
+    scope: Pick<AcceptedScope, "work_required_id" | "area_ids" | "status">,
+    coverage: Pick<QuotationCoverage, "work_required_id" | "area_ids">,
+): boolean {
+    if (scope.status === "cancelled" || scope.work_required_id !== coverage.work_required_id) return false;
+    if (!scope.area_ids.length || !coverage.area_ids.length) return true;
+    const scopeAreas = new Set(scope.area_ids);
+    return coverage.area_ids.some((areaId) => scopeAreas.has(areaId));
 }
 
 /**

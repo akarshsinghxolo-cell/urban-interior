@@ -317,7 +317,10 @@ export function prepareWorkspaceData(db: Partial<RDashDatabase>): RDashDatabase 
         executionLogs: safe(db.executionLogs),
         entityFileAttachments: safe(db.entityFileAttachments),
         entityReferenceAssignments: safe(db.entityReferenceAssignments),
-        quotations: safe(db.quotations).map((quote) => ({ ...quote, scope_lines: safe(quote.scope_lines).map((item) => repairLineItem(item, master)), items: quote.items?.map((item) => repairLineItem(item, master)) })),
+        quotations: safe(db.quotations).map((quote) => {
+            const scopeLines = safe(quote.scope_lines?.length ? quote.scope_lines : quote.items).map((item) => repairLineItem(item, master));
+            return { ...quote, scope_lines: scopeLines, items: scopeLines };
+        }),
         boqs: safe(db.boqs).map((boq) => ({ ...boq, items: safe(boq.items).map((item) => repairLineItem(item, master)) })),
         purchaseOrders: safe(db.purchaseOrders).map((po) => ({ ...po, items: safe(po.items).map((item) => repairLineItem(item, master)) })),
         grns: safe(db.grns).map((grn) => ({ ...grn, items: safe(grn.items).map((item) => repairLineItem(item, master)) })),
@@ -348,8 +351,11 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
         categoryNames.add(key);
     });
     const workNames = new Set<string>();
+    const workNamesAcrossCategories = new Map<string, WorkSubcategory[]>();
     master.workSubcategories.forEach((item) => {
-        const key = `${item.category_id}:${normalizeCatalogName(item.name)}`;
+        const normalizedWorkName = normalizeCatalogName(item.name);
+        const key = `${item.category_id}:${normalizedWorkName}`;
+        workNamesAcrossCategories.set(normalizedWorkName, [...(workNamesAcrossCategories.get(normalizedWorkName) || []), item]);
         if (!categories.has(item.category_id))
             issues.push({ severity: "error", message: `Submodule ${item.name} has no valid category.` });
         if (!item.unit_id || !units.has(item.unit_id))
@@ -369,6 +375,11 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
             issues.push({ severity: "error", message: `Duplicate submodule in one category: ${item.name}.` });
         workNames.add(key);
     });
+    for (const rows of workNamesAcrossCategories.values()) {
+        if (rows.length < 2 || new Set(rows.map((row) => row.category_id)).size < 2) continue;
+        const categoryLabels = [...new Set(rows.map((row) => master.workCategories.find((category) => category.id === row.category_id)?.name || row.category_id))];
+        issues.push({ severity: "warning", message: `Review shared service identity: ${rows[0].name} appears under ${categoryLabels.join(" and ")}. Merge only if the business meaning and rates are the same.` });
+    }
     const articleNames = new Set<string>();
     master.articles.forEach((article) => {
         const key = article.normalized_name || normalizeCatalogName(article.name);

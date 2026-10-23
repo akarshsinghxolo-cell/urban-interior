@@ -21,6 +21,7 @@ import { STAFF_MODULES, STAFF_ROLE_KEYS, STAFF_ROLE_LABELS, type StaffPermission
 import { latestQuotationRevisions } from "@/lib/rdash/metrics";
 import { resolveArticleRateConfig } from "@/lib/rdash/article-rate-config";
 import { configuredStaffBaseSalary } from "@/lib/rdash/payroll";
+import { workTypesForSubcategory } from "@/lib/rdash/work-types";
 export function MastersModule({ submodule }: {
     submodule: string;
 }) {
@@ -347,7 +348,9 @@ export function MastersModule({ submodule }: {
             })}
           {isContractor && db.master.contractorRates.map((r) => {
                 const c = db.master.contractors.find((x) => x.id === r.contractor_id);
-                return <div key={r.id} className="grid grid-cols-[minmax(0,1.4fr)_1fr_1fr_1fr] items-center gap-3 border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20"><div><p className="font-medium">{r.work_subcategory_name || r.trade}</p><p className="text-[11px] text-muted-foreground">{c?.name} · {r.work_type_name || "Work type"} · {r.unit_id}</p></div><span className="font-mono text-xs">Material {r.material_rate == null ? "—" : formatINR(r.material_rate)}</span><span className="font-mono text-xs">Labour {r.labour_rate == null ? "—" : formatINR(r.labour_rate)}</span><span className="font-mono font-bold">Total {formatINR((r.material_rate || 0) + (r.labour_rate || 0))}</span></div>;
+                const subcategory = db.master.workSubcategories.find((row) => row.id === r.work_subcategory_id);
+                const workType = subcategory ? workTypesForSubcategory(subcategory).find((row) => row.id === r.work_type_id) : undefined;
+                return <div key={r.id} className="grid grid-cols-[minmax(0,1.4fr)_1fr_1fr_1fr] items-center gap-3 border-b border-border px-4 py-2.5 text-sm last:border-0 hover:bg-accent/20"><div><p className="font-medium">{subcategory?.name || r.work_subcategory_name || r.trade}</p><p className="text-[11px] text-muted-foreground">{c?.name} · {workType?.name || r.work_type_name || "Work type"} · {r.unit_id}</p></div><span className="font-mono text-xs">Material {r.material_rate == null ? "—" : formatINR(r.material_rate)}</span><span className="font-mono text-xs">Labour {r.labour_rate == null ? "—" : formatINR(r.labour_rate)}</span><span className="font-mono font-bold">Total {formatINR((r.material_rate || 0) + (r.labour_rate || 0))}</span></div>;
             })}
           {isCommission && db.master.commissionRules.map((r) => {
                 const categoryName = r.category_id ? categoryById.get(r.category_id)?.name : undefined;

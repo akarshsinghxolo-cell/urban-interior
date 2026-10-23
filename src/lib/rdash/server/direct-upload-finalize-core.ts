@@ -410,7 +410,18 @@ export async function reportDirectUploadProgress(input: {
 }
 
 export async function listPendingDirectUploads() {
-  const { data, error } = await getSupabaseAdminClient().from("uc_upload_items").select("*")
+  const admin = getSupabaseAdminClient();
+  const now = nowIso();
+  const { error: expiryError } = await admin.from("uc_upload_items").update({
+    status: "failed_permanent",
+    last_error_code: "SESSION_EXPIRED",
+    last_error_message: "The upload session expired. Select the file again to restart the upload.",
+    session_uri: null,
+    updated_at: now,
+  }).in("status", ["queued", "uploading", "paused", "failed_retryable"])
+    .lt("session_expires_at", now);
+  if (expiryError) throw new Error(expiryError.message);
+  const { data, error } = await admin.from("uc_upload_items").select("*")
     .neq("status", "completed")
     .neq("status", "cancelled")
     .order("created_at", { ascending: true });

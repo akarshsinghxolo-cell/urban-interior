@@ -94,6 +94,24 @@ function canonicalizeVendorRateOperations(
   return diffWorkspaceOperations(current, canonical);
 }
 
+function canonicalizeQuotationOperations(operations: WorkspaceOperation[]): WorkspaceOperation[] {
+  return operations.map((operation) => {
+    if (operation.collection !== "quotations") return operation;
+    return {
+      ...operation,
+      upsert: operation.upsert?.map((row) => {
+        const scopeLines = Array.isArray(row.scope_lines)
+          ? row.scope_lines
+          : Array.isArray(row.items)
+            ? row.items
+            : [];
+        const { items: _compatibilityItems, ...canonical } = row;
+        return { ...canonical, scope_lines: scopeLines };
+      }),
+    };
+  });
+}
+
 function assertCanonicalThreadOperations(operations: WorkspaceOperation[]): void {
   for (const operation of operations) {
     if (operation.collection !== "threads") continue;
@@ -284,7 +302,7 @@ export async function commitAuthorizedPostgresOperations(
   expectedRowVersions?: Record<string, number>,
 ): Promise<CommitResult> {
   const startedAt = Date.now();
-  let commitOperations = sanitizeWorkspaceOperations(operations);
+  let commitOperations = canonicalizeQuotationOperations(sanitizeWorkspaceOperations(operations));
   let mode: CommitMode = "domain-targeted";
   let queryCount: number | undefined;
   let loadMs = 0;

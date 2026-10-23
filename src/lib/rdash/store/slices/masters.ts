@@ -7,6 +7,7 @@ import { genId, nowIso, assertRole, businessDate } from "../helpers";
 import { indianMobileForWrite } from "../../phone-validation";
 import { configuredStaffBaseSalary, daysInPayrollMonth, hasStaffSalaryConfiguration, summarizeSalaryAdjustments } from "../../payroll";
 import { requiredApprovalPolicy } from "../../approval-policy";
+import { canonicalAttendanceRecords } from "../../attendance-records";
 
 /**
  * B: Find the best-matching commission rule for a (sourcePartnerId, workCategoryId) pair.
@@ -519,7 +520,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 throw new Error("Automatic attendance check-in is disabled by policy. Use the manual button.");
             }
             const date = dateFromIso(timestamp);
-            const existing = state.db.attendance.find((row: AttendanceRecord) => row.staff_id === staff.id && row.date === date);
+            const existing = canonicalAttendanceRecords(state.db.attendance).find((row) => row.staff_id === staff.id && row.date === date);
             if (existing?.check_in)
                 throw new Error("Attendance check-in is already recorded for this staff member today.");
             if (existing?.auto_generated && existing.status === "absent")
@@ -595,7 +596,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             if (actionSource === "auto_geofence" && (!policy.auto_geofence_enabled || !policy.auto_check_out_enabled)) {
                 throw new Error("Automatic attendance check-out is disabled by policy. Use the manual button.");
             }
-            const record = state.db.attendance.find((row: AttendanceRecord) => row.staff_id === targetStaffId && row.date === dateFromIso(timestamp));
+            const record = canonicalAttendanceRecords(state.db.attendance).find((row) => row.staff_id === targetStaffId && row.date === dateFromIso(timestamp));
             if (!record?.check_in || record.status === "absent")
                 throw new Error("A verified attendance check-in is required before check-out.");
             if (record.check_out)
@@ -646,7 +647,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                 action: `${actionSource === "auto_geofence" ? "Automatic geofence" : "Manual"} attendance check-out (${workMinutes} minutes)`,
                 entity_type: "attendance",
                 entity_id: record.id,
-                entity_label: record.staff_name,
+                entity_label: state.db.master.staff.find((row: any) => row.id === targetStaffId)?.name || targetStaffId,
                 kind: "update",
             });
         },
@@ -750,7 +751,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
                     ? Math.round((baseSalary / daysInMonth) * 100) / 100
                     : 0;
             // Filter attendance records for this staff + month (yearMonth = "YYYY-MM").
-            const records = state.db.attendance.filter((r: any) =>
+            const records = canonicalAttendanceRecords(state.db.attendance).filter((r) =>
                 r.staff_id === staffId && r.date.startsWith(yearMonth));
             const policy = staff.attendance_policy;
             const lateGrace = policy?.late_grace_minutes || 0;

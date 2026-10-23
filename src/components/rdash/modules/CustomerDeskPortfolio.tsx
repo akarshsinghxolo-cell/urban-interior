@@ -31,6 +31,7 @@ import { isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-val
 import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
 import { customerHistoryEntries, type CustomerHistoryEntry } from "@/lib/rdash/customer-desk-queries";
+import { acceptedScopeOverlapsCoverage } from "@/lib/rdash/store/quotations-helpers";
 import {
   formatDate,
   formatINR,
@@ -138,7 +139,11 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
   const advanceReceived = db.customerReceipts
     .filter((row) => row.payment_id && advanceIds.has(row.payment_id))
     .reduce((sum, row) => sum + row.amount, 0);
-  const acceptedScopes = db.acceptedScopes.filter((row) => row.customer_id === customerId);
+  const acceptedScopes = db.acceptedScopes.filter((row) => row.customer_id === customerId && row.status !== "cancelled");
+  const overlappingAcceptedScopeIds = new Set(acceptedScopes.flatMap((scope, index) =>
+    acceptedScopes.slice(index + 1)
+      .filter((other) => other.quotation_id !== scope.quotation_id && acceptedScopeOverlapsCoverage(scope, other))
+      .flatMap((other) => [scope.id, other.id])));
   const vendorBills = db.vendorBills.filter((bill) => {
     if (bill.status === "paid") return false;
     const po = bill.po_id ? db.purchaseOrders.find((row) => row.id === bill.po_id) : undefined;
@@ -252,6 +257,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
                 <MetricCard label="Invoiced" value={formatINRShort(totalInvoiced)} tone="default" />
                 <MetricCard label="Receivable" value={formatINRShort(totalReceivable)} tone="warning" />
               </div>
+              {overlappingAcceptedScopeIds.size > 0 && <div role="alert" className="mt-2 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/5 p-2.5 text-xs text-foreground"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning"/><span><strong>Commercial review required:</strong> {overlappingAcceptedScopeIds.size} active accepted scope(s) overlap across different quotations. The Accepted total keeps the stored values visible but should not be relied on until the earlier or replacement scope is cancelled.</span></div>}
             </section>
             <section>
               <div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-bold uppercase text-muted-foreground">Sites</h3><Button size="sm" variant="outline" onClick={() => setCustomerForm({ autoAddSite: true })}><Plus className="mr-1 h-3.5 w-3.5" />Add site</Button></div>

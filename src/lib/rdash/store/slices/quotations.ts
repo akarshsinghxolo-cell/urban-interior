@@ -1,13 +1,8 @@
-// STAGE-3-FIX: Generate quotation number using current year + max suffix.
-function nextQuotationNo(quotations: { quotation_no?: string }[]): string {
+// The record id supplies the uniqueness; browser-visible rows are not a safe sequence source.
+function nextQuotationNo(id: string): string {
     const year = new Date().getFullYear();
-    let maxSeq = 0;
-    for (const quotation of quotations) {
-        if (!quotation.quotation_no) continue;
-        const match = quotation.quotation_no.match(/^Q-\d{4}-(\d+)$/);
-        if (match) maxSeq = Math.max(maxSeq, Number.parseInt(match[1], 10));
-    }
-    return `Q-${year}-${String(maxSeq + 1).padStart(3, "0")}`;
+    const suffix = id.replace(/[^a-z0-9]/gi, "").slice(-8).toUpperCase();
+    return `Q-${year}-${suffix}`;
 }
 /**
  * Quotations slice — quotation master records, items, milestones, acceptance,
@@ -40,7 +35,7 @@ import { assertQuotationRelations, assertWorkOrderRelations } from "../../busine
 import { cascadeDelete } from "../../integrity/cascade";
 import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
-import { canPermanentlyDeleteQuotation, coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
+import { acceptedScopeOverlapsCoverage, canPermanentlyDeleteQuotation, coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
 import { groupedQuotationScopeLines } from "../../work-types";
 import {
     assertWorkOrderStatusTransition,
@@ -142,12 +137,13 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 }
             }
             const effectivePatch: Partial<Quotation> = { ...patch, ...discountPatch };
+            const canonicalLines = patch.scope_lines ?? patch.items ?? before.scope_lines;
             const candidate = {
                 ...before,
                 ...effectivePatch,
                 coverage: patch.coverage || before.coverage,
-                scope_lines: patch.scope_lines || before.scope_lines,
-                items: patch.items || before.items,
+                scope_lines: canonicalLines,
+                items: canonicalLines,
             };
             assertQuotationRelations(get().db, candidate, "Quotation");
             const threadId = before.thread_id ||
@@ -162,8 +158,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             ...quote,
                             ...effectivePatch,
                             coverage: patch.coverage || quote.coverage,
-                            scope_lines: patch.scope_lines || quote.scope_lines,
-                            items: patch.items || quote.items,
+                            scope_lines: canonicalLines,
+                            items: canonicalLines,
                             thread_id: quote.thread_id || threadId,
                             updated_at: changedAt,
                         }
@@ -281,7 +277,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
 
                 const id = genId("quot");
                 const now = nowIso();
-                const quoteNo = nextQuotationNo(state.db.quotations);
+                const quoteNo = nextQuotationNo(id);
                 const designer = userForRole(state.db, "Designer");
                 const customerName = customer.name || "Customer";
                 const defaults = resolveQuotationDefaults(state.db);
@@ -406,7 +402,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const designer = userForRole(state.db, "Designer");
             const id = genId("quot");
             const now = nowIso();
-            const quoteNo = nextQuotationNo(state.db.quotations);
+            const quoteNo = nextQuotationNo(id);
             const customer = q.customer_id
                 ? state.db.customers.find((p: any) => p.id === q.customer_id)
                 : undefined;
@@ -811,7 +807,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             if (linkedScopes.some((scope: any) => scope.work_order_id))
                 throw new Error("A quotation scope already belongs to a Work Order. Create a controlled variation/change order instead.");
             const newId = genId("quote");
-            const newNo = `${original.quotation_no}-R${original.revision_no + 1}`;
+            const newNo = `${original.quotation_no}-R${original.revision_no + 1}-${newId.replace(/[^a-z0-9]/gi, "").slice(-5).toUpperCase()}`;
             const held = new Set(heldItemIds);
             const newItems: QuotationItem[] = original.scope_lines.map((item: any) => ({
                 ...item,
@@ -935,7 +931,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const heldItemIds = options?.heldItemIds || [];
             const held = new Set(heldItemIds);
             const newId = genId("quote");
-            const newNo = `${original.quotation_no}-R${original.revision_no + 1}`;
+            const newNo = `${original.quotation_no}-R${original.revision_no + 1}-${newId.replace(/[^a-z0-9]/gi, "").slice(-5).toUpperCase()}`;
             const newItems: QuotationItem[] = original.scope_lines.map((item: any) => ({
                 ...item,
                 id: genId("qline"),
@@ -1083,6 +1079,15 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const selectedCoverage = quotation.coverage.filter((coverage: any) => requestedIds.includes(coverage.id));
             if (selectedCoverage.length !== requestedIds.length)
                 throw new Error("One or more selected quotation scopes no longer exist.");
+            const overlappingScope = state.db.acceptedScopes.find((scope: any) =>
+                scope.quotation_id !== quotation.id &&
+                scope.customer_id === quotation.customer_id &&
+                scope.site_id === quotation.site_id &&
+                selectedCoverage.some((coverage: any) => acceptedScopeOverlapsCoverage(scope, coverage)));
+            if (overlappingScope) {
+                const earlierQuotation = state.db.quotations.find((row: any) => row.id === overlappingScope.quotation_id);
+                throw new Error(`This work is already active under ${earlierQuotation?.quotation_no || "another quotation"}. Cancel or supersede that accepted scope before accepting a replacement.`);
+            }
             const existingScopeWorkIds = new Set(state.db.acceptedScopes
                 .filter((scope: any) => scope.quotation_id === quotation.id &&
                 scope.status !== "cancelled")

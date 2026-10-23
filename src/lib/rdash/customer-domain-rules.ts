@@ -83,7 +83,7 @@ export function workRequiredHasTaxonomy(work: Pick<WorkRequired, "work_subcatego
 export function assertWorkRequiredDefinition(
   db: WorkRequiredValidationContext,
   work: Pick<WorkRequired,
-    "title" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "customer_id" | "site_id"
+    "title" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "customer_id" | "site_id" | "structured_items"
   >,
   context = "Work Required",
   areas: Area[] = db.areas,
@@ -100,6 +100,9 @@ export function assertWorkRequiredDefinition(
       throw new Error(`${context}: a general scope cannot contain work types without a subcategory.`);
     }
   } else {
+    if (!workTypeIds.length) {
+      throw new Error(`${context}: select at least one Work Type for the selected Work Subcategories.`);
+    }
     const subcategories = subcategoryIds.map((id) => {
       const row = db.master.workSubcategories.find((candidate) => candidate.id === id);
       if (!row) throw new Error(`${context}: Work Subcategory "${id}" does not exist.`);
@@ -110,6 +113,19 @@ export function assertWorkRequiredDefinition(
     const invalidWorkTypeId = workTypeIds.find((id) => !allowedWorkTypeIds.has(id));
     if (invalidWorkTypeId) {
       throw new Error(`${context}: work type "${invalidWorkTypeId}" does not belong to the selected Work Subcategories.`);
+    }
+  }
+
+  for (const item of work.structured_items || []) {
+    const pairs = item.option_pairs?.length
+      ? item.option_pairs
+      : item.subcategory_id
+        ? [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }]
+        : [];
+    for (const pair of pairs) {
+      if (!subcategoryIds.includes(pair.subcategory_id) || (pair.work_type_id && !workTypeIds.includes(pair.work_type_id))) {
+        throw new Error(`${context}: detailed work still uses an unticked Work Subcategory or Work Type. Remove or replace that detailed option before changing the selection.`);
+      }
     }
   }
 
