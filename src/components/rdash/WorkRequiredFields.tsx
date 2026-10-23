@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Area, Priority, RDashDatabase, Site } from "@/lib/rdash/types";
-import { isActiveWorkTaxonomy, pruneWorkTypeIds, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
+import { isActiveWorkTaxonomy, pruneWorkTypeIds, subcategoriesWithSelectedWorkTypes, withPrimaryWorkTypeIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "@/lib/rdash/work-types";
 import { useRDashStore } from "@/lib/rdash/store";
 import { AREA_TYPES } from "./customer-sites-form-model";
 import { AddWorkCategoryAction, AddWorkSubcategoryAction, AddWorkTypeAction } from "./WorkTaxonomyQuickAdd";
@@ -139,11 +139,22 @@ export function WorkRequiredFields({
     const workTypeIds = selected
       ? value.workTypeIds.filter((id) => id !== workType.id)
       : [...value.workTypeIds, workType.id];
+    const subcategoryIds = selected
+      ? subcategoriesWithSelectedWorkTypes(db.master.workSubcategories, value.subcategoryIds, workTypeIds)
+      : value.subcategoryIds;
+    const retainedCategoryIds = new Set(db.master.workSubcategories
+      .filter((subcategory) => subcategoryIds.includes(subcategory.id))
+      .map((subcategory) => subcategory.category_id));
+    const categoryIds = selected
+      ? value.categoryIds.filter((categoryId) => retainedCategoryIds.has(categoryId))
+      : value.categoryIds;
     // The title IS the selection (quotation line label): re-derive on every
     // work-type change so the quotation always quotes what is ticked.
     onChange({
+      categoryIds,
+      subcategoryIds,
       workTypeIds,
-      title: workRequiredTitleFromSelection(db.master.workSubcategories, value.subcategoryIds, workTypeIds),
+      title: workRequiredTitleFromSelection(db.master.workSubcategories, subcategoryIds, workTypeIds),
     });
   };
   const areaTypeOptions = [

@@ -63,9 +63,9 @@ export function MultiTickDropdown({
                     {group.items.map((item) => {
                         const ticked = selected.includes(item.id);
                         return (
-                            <label key={item.id} className="flex min-h-9 cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
-                                <input type="checkbox" disabled={disabled} checked={ticked} onChange={() => onToggle(item.id)} />
-                                <span className="min-w-0 truncate" title={item.name}>{item.name}</span>
+                            <label key={item.id} className="flex min-h-9 cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/40">
+                                <input className="mt-0.5 shrink-0" type="checkbox" disabled={disabled} checked={ticked} onChange={() => onToggle(item.id)} />
+                                <span className="min-w-0 whitespace-normal break-words leading-4" title={item.name}>{item.name}</span>
                             </label>
                         );
                     })}

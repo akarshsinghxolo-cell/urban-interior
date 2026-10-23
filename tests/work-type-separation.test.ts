@@ -8,6 +8,7 @@ import {
   pruneWorkTypeIds,
   resolveWorkTypes,
   seedDetailedAreaLines,
+  subcategoriesWithSelectedWorkTypes,
   workTypeNamesForIds,
   workTypesForSubcategory,
 } from "../src/lib/rdash/work-types";
@@ -139,6 +140,25 @@ describe("work-type master", () => {
       .toEqual(["wt-sub-kitchen-premium"]);
     expect(pruneWorkTypeIds(subcategories, [], ["wt-sub-kitchen-premium"])).toEqual([]);
   });
+
+  test("removes parent subcategories after their last selected work type is unticked", () => {
+    const subcategories = [
+      { id: "sub-kitchen", category_id: "cat-wood", name: "Kitchen", work_types: [
+        { id: "wt-kitchen-standard", name: "Standard" },
+        { id: "wt-kitchen-premium", name: "Premium" },
+      ] },
+      { id: "sub-paint", category_id: "cat-paint", name: "Paint", work_types: [
+        { id: "wt-paint-standard", name: "Standard" },
+      ] },
+    ];
+
+    expect(subcategoriesWithSelectedWorkTypes(
+      subcategories,
+      ["sub-kitchen", "sub-paint"],
+      ["wt-kitchen-premium"],
+    )).toEqual(["sub-kitchen"]);
+    expect(subcategoriesWithSelectedWorkTypes(subcategories, ["sub-kitchen"], [])).toEqual([]);
+  });
 });
 
 describe("work types in the canonical Customer-owned site/work paths", () => {
@@ -152,6 +172,8 @@ describe("work types in the canonical Customer-owned site/work paths", () => {
     expect(source).toContain("groups={subcategoryGroups}");
     expect(source).toContain("workTypesForSubcategory(addedSubcategory)");
     expect(source).toContain("workTypesForSubcategory(addedSubcategory).filter(isActiveWorkTaxonomy).slice(0, 1)");
+    expect(source).toContain("subcategoriesWithSelectedWorkTypes");
+    expect(source).toContain("retainedCategoryIds");
   });
 
   test("CustomerWorkRequiredDialog is the one create implementation and persists work_type_ids", () => {

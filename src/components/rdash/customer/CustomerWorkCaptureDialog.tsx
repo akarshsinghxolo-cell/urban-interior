@@ -646,19 +646,26 @@ export function CustomerWorkCaptureDialog({
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {pairs.map((pair, index) => {
                 const rate = rateFor(pair.subcategory_id, pair.work_type_id);
-                return <span key={`${pair.subcategory_id}::${pair.work_type_id || ""}`} className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]", index === 0 ? "border-primary/40 bg-primary/[0.06]" : "border-border bg-card")}>
+                return <span key={`${pair.subcategory_id}::${pair.work_type_id || ""}`} className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]", index === 0 ? "border-success/40 bg-success/10 text-success" : "border-warning/40 bg-warning/10 text-warning")}>
                   <span>{labelPair(pair)}{rate ? ` · ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"}` : ""}</span>
                   {pairs.length > 1 && <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-destructive" onClick={() => removeAlternative(group.key, line.key, index)} aria-label={`Remove option ${labelPair(pair)}`}><X className="h-2.5 w-2.5" /></button>}
                 </span>;
               })}
             </div>
-            {candidateOptions.length > 0 && <select defaultValue="" onChange={(event) => {
-              if (event.target.value) addAlternative(group.key, line.key, event.target.value);
-              event.currentTarget.value = "";
-            }} className="mt-2 h-8 w-full rounded-md border border-input bg-card px-2 text-xs">
-              <option value="">＋ Add subcategory / work type alternative</option>
-              {candidateOptions.map((candidate) => <option key={candidate.value} value={candidate.value}>{candidate.label}</option>)}
-            </select>}
+            {candidateOptions.length > 0 && <div className="mt-2">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Add another option</p>
+              <div className="mt-1 grid gap-1.5 sm:grid-cols-2">
+                {candidateOptions.map((candidate) => <button
+                  key={candidate.value}
+                  type="button"
+                  aria-label={`Add alternative ${candidate.label}`}
+                  onClick={() => addAlternative(group.key, line.key, candidate.value)}
+                  className="rounded-md border border-warning/30 bg-warning/[0.04] px-2 py-1.5 text-left text-[11px] leading-4 text-foreground hover:bg-warning/10"
+                >
+                  {candidate.label}
+                </button>)}
+              </div>
+            </div>}
           </div>
         )}
 

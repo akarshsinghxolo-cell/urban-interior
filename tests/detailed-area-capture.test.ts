@@ -43,6 +43,11 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).toContain("addAlternative");
     expect(capture).toContain("removeAlternative");
     expect(capture).toContain("itemScopeKeys");
+    expect(capture).toContain("border-success/40 bg-success/10 text-success");
+    expect(capture).toContain("border-warning/40 bg-warning/10 text-warning");
+    expect(capture).toContain("Add another option");
+    expect(capture).toContain("Add alternative ${candidate.label}");
+    expect(capture).not.toContain("＋ Add subcategory / work type alternative");
   });
 
   test("Site Execution launches Customer workflows and cannot build a second Area or quotation path", async () => {

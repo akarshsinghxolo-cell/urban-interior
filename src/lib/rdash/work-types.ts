@@ -110,6 +110,19 @@ export function pruneWorkTypeIds(
   return (workTypeIds || []).filter((id) => valid.has(String(id)));
 }
 
+/** Keep only selected subcategories that still contain a selected work type. */
+export function subcategoriesWithSelectedWorkTypes(
+  workSubcategories: WorkSubcategory[],
+  subcategoryIds: ID[],
+  workTypeIds: ID[] | undefined,
+): ID[] {
+  const selectedWorkTypeIds = new Set((workTypeIds || []).map(String));
+  return subcategoryIds.filter((subcategoryId) => {
+    const subcategory = workSubcategories.find((row) => row.id === subcategoryId);
+    return Boolean(subcategory && workTypesForSubcategory(subcategory).some((workType) => selectedWorkTypeIds.has(workType.id)));
+  });
+}
+
 /**
  * Ensure every selected subcategory keeps at least its primary active work
  * type ticked — quotation rates resolve per work type, so a subcategory with
