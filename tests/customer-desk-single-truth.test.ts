@@ -115,6 +115,15 @@ describe("Customer Desk restored-feature contracts", () => {
     }
   });
 
+  test("Rapido handoff copies the selected Site Plus Code and opens the booking page", async () => {
+    const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
+    expect(portfolio).toContain("customerSitePlusCode(site.latitude, site.longitude)");
+    expect(portfolio).toContain("Book Rapido");
+    expect(portfolio).toContain("https://m.rapido.bike/home");
+    expect(portfolio).toContain("navigator.clipboard?.writeText(plusCode)");
+    expect(portfolio.indexOf("Book Rapido")).toBeGreaterThan(portfolio.indexOf("Directions</Button>"));
+  });
+
   test("customer referrer search restores vendor and contractor choices without making them unconditional reads", async () => {
     const fields = await source("src/components/rdash/CustomerDetailsFields.tsx");
     expect(fields).toContain("db.master.contractors");

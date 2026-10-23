@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Activity,
   AlertTriangle,
+  Bike,
   Building,
   FileText,
   ListChecks,
@@ -25,7 +26,7 @@ import {
   siteFinancials,
   type ContextCustomerTab,
 } from "@/lib/rdash/store";
-import { customerMapHref, customerProgress, customerWhatsappHref } from "@/lib/rdash/customer-progress";
+import { customerMapHref, customerProgress, customerSitePlusCode, customerWhatsappHref } from "@/lib/rdash/customer-progress";
 import { isValidIndianMobile, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
 import { isCustomerLinked } from "@/lib/rdash/customer-relations";
@@ -97,6 +98,22 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
     href: customerMapHref([site.address, site.locality, site.city].filter(Boolean).join(", "), site.latitude, site.longitude)
       || (/^https?:\/\//i.test(site.map_url || "") ? site.map_url : undefined),
   })).filter((site) => site.href);
+  const rapidoDestinations = sites.map((site) => ({
+    id: site.id,
+    name: site.name,
+    plusCode: customerSitePlusCode(site.latitude, site.longitude),
+  })).filter((site): site is typeof site & { plusCode: string } => Boolean(site.plusCode));
+
+  const copyRapidoDestination = (plusCode: string) => {
+    const copy = navigator.clipboard?.writeText(plusCode);
+    if (!copy) {
+      toast.error(`Could not copy automatically. Enter ${plusCode} in Rapido's drop location.`);
+      return;
+    }
+    void copy
+      .then(() => toast.success(`${plusCode} copied. Paste it into Rapido's drop location.`))
+      .catch(() => toast.error(`Could not copy automatically. Enter ${plusCode} in Rapido's drop location.`));
+  };
   const siteIds = new Set(sites.map((row) => row.id));
   const workRequired = db.workRequired.filter((row) => row.customer_id === customerId || (row.site_id ? siteIds.has(row.site_id) : false));
   const quotations = db.quotations.filter((row) => row.customer_id === customerId);
@@ -188,6 +205,16 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
           <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><MapPin className="mr-1 h-3.5 w-3.5" />Directions</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-w-[calc(100vw-2rem)]">
             {siteDirections.map((site) => <DropdownMenuItem key={site.id} asChild><a href={site.href} target="_blank" rel="noreferrer" className="whitespace-normal break-words">{site.name}</a></DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>}
+        {rapidoDestinations.length > 0 && <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><Bike className="mr-1 h-3.5 w-3.5" />Book Rapido</Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="max-w-[calc(100vw-2rem)]">
+            {rapidoDestinations.map((site) => <DropdownMenuItem key={site.id} asChild>
+              <a href="https://m.rapido.bike/home" target="_blank" rel="noreferrer" onClick={() => copyRapidoDestination(site.plusCode)} className="whitespace-normal break-words">
+                {site.name} · {site.plusCode}
+              </a>
+            </DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>}
         <Button size="sm" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5" />Create quotation</Button>

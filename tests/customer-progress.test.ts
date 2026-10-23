@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
-import { customerProgress } from "../src/lib/rdash/customer-progress";
+import { customerProgress, customerSitePlusCode } from "../src/lib/rdash/customer-progress";
 import type { RDashDatabase, WorkRequiredStatus } from "../src/lib/rdash/types";
 
 function databaseWithWorkRequired(status: WorkRequiredStatus): RDashDatabase {
@@ -45,6 +45,11 @@ const LADDER: WorkRequiredStatus[] = [
 ];
 
 describe("customerProgress Work Required ladder", () => {
+  test("creates the same Plus Code Google Maps shows for Site coordinates", () => {
+    expect(customerSitePlusCode(26.7197493, 83.3837182)).toBe("7MR5P99M+VFW");
+    expect(customerSitePlusCode(undefined, 83.3837182)).toBeUndefined();
+  });
+
   test("labels an untouched lead New enquiry at 8 percent", () => {
     const progress = customerProgress(databaseWithWorkRequired("new"), "customer-progress");
     expect(progress.label).toBe("New enquiry");

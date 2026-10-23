@@ -17,6 +17,7 @@ import {
   itemOptionPairs,
   itemScopeKeys,
   measuredQuantity,
+  promoteOptionPair,
   seedDetailedAreaLines,
   WORK_MEASURE_LABELS,
   isActiveWorkTaxonomy,
@@ -418,6 +419,29 @@ export function CustomerWorkCaptureDialog({
     };
   }));
 
+  const makeAlternativePrimary = (groupKey: string, lineKey: string, index: number) => setGroups((current) => current.map((group) => {
+    if (group.key !== groupKey) return group;
+    return {
+      ...group,
+      lines: group.lines.map((line) => {
+        if (line.key !== lineKey) return line;
+        const pairs = promoteOptionPair(pairsForLine(line), index);
+        const primary = pairs[0];
+        if (!primary) return line;
+        const measure = measureFor(primary.subcategory_id);
+        const measured = measuredQuantity(measure, dimensions(group), line.walls);
+        return {
+          ...line,
+          subcategory_id: primary.subcategory_id,
+          work_type_id: primary.work_type_id,
+          option_pairs: pairs.length > 1 ? pairs : undefined,
+          measure,
+          quantity: line.manualQuantity ? line.quantity : measured.quantity > 0 ? String(round(measured.quantity)) : "",
+        };
+      }),
+    };
+  }));
+
   const groupIssue = (group: AreaGroup) => {
     if (!group.create_area) return undefined;
     if (!group.area_name.trim()) return "Name this new Area.";
@@ -646,8 +670,9 @@ export function CustomerWorkCaptureDialog({
             <div className="mt-1.5 flex flex-wrap gap-1.5">
               {pairs.map((pair, index) => {
                 const rate = rateFor(pair.subcategory_id, pair.work_type_id);
+                const label = labelPair(pair);
                 return <span key={`${pair.subcategory_id}::${pair.work_type_id || ""}`} className={cn("inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]", index === 0 ? "border-success/40 bg-success/10 text-success" : "border-warning/40 bg-warning/10 text-warning")}>
-                  <span>{labelPair(pair)}{rate ? ` · ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"}` : ""}</span>
+                  <button type="button" className="text-left" onClick={() => makeAlternativePrimary(group.key, line.key, index)} aria-label={`Make ${label} primary`} aria-pressed={index === 0}>{label}{rate ? ` · ≈ ${formatINR(rate)}/${line.measure === "length" ? "rft" : "sqft"}` : ""}</button>
                   {pairs.length > 1 && <button type="button" className="rounded p-0.5 text-muted-foreground hover:text-destructive" onClick={() => removeAlternative(group.key, line.key, index)} aria-label={`Remove option ${labelPair(pair)}`}><X className="h-2.5 w-2.5" /></button>}
                 </span>;
               })}

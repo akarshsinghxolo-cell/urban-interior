@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { testFile } from "./test-file";
 import {
   reconcileWorkRequiredSelection,
+  promoteOptionPair,
   seedDetailedAreaLines,
 } from "../src/lib/rdash/work-types";
 
@@ -45,9 +46,17 @@ describe("canonical Customer site / Area / Work Required workflow", () => {
     expect(capture).toContain("itemScopeKeys");
     expect(capture).toContain("border-success/40 bg-success/10 text-success");
     expect(capture).toContain("border-warning/40 bg-warning/10 text-warning");
+    expect(capture).toContain("makeAlternativePrimary");
+    expect(capture).toContain("Make ${label} primary");
     expect(capture).toContain("Add another option");
     expect(capture).toContain("Add alternative ${candidate.label}");
     expect(capture).not.toContain("＋ Add subcategory / work type alternative");
+  });
+
+  test("selecting an alternative promotes it without losing the other choices", () => {
+    const pairs = [{ subcategory_id: "pvc" }, { subcategory_id: "pop" }, { subcategory_id: "gypsum" }];
+    expect(promoteOptionPair(pairs, 2).map((pair) => pair.subcategory_id)).toEqual(["gypsum", "pvc", "pop"]);
+    expect(promoteOptionPair(pairs, 0)).toBe(pairs);
   });
 
   test("Site Execution launches Customer workflows and cannot build a second Area or quotation path", async () => {

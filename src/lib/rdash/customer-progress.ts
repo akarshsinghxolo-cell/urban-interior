@@ -137,6 +137,35 @@ export function customerMapHref(address?: string, latitude?: number, longitude?:
     return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : undefined;
 }
 
+const PLUS_CODE_ALPHABET = "23456789CFGHJMPQRVWX";
+const PLUS_CODE_PAIR_RESOLUTIONS = [20, 1, 0.05, 0.0025, 0.000125];
+
+/** Google Plus Code (Open Location Code) for a saved Site coordinate. */
+export function customerSitePlusCode(latitude?: number, longitude?: number) {
+    if (latitude == null || longitude == null || !Number.isFinite(latitude) || !Number.isFinite(longitude)
+        || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
+
+    let lat = Math.min(latitude, 90);
+    let lon = ((longitude + 180) % 360 + 360) % 360 - 180;
+    if (lat === 90) lat -= 0.000125;
+    lat += 90;
+    lon += 180;
+
+    let code = "";
+    for (const resolution of PLUS_CODE_PAIR_RESOLUTIONS) {
+        const latDigit = Math.floor(lat / resolution);
+        const lonDigit = Math.floor(lon / resolution);
+        code += PLUS_CODE_ALPHABET[latDigit] + PLUS_CODE_ALPHABET[lonDigit];
+        lat -= latDigit * resolution;
+        lon -= lonDigit * resolution;
+    }
+
+    const row = Math.floor(lat / (0.000125 / 5));
+    const column = Math.floor(lon / (0.000125 / 4));
+    code += PLUS_CODE_ALPHABET[row * 4 + column];
+    return `${code.slice(0, 8)}+${code.slice(8)}`;
+}
+
 export function customerWhatsappHref(phone?: string) {
     if (!isValidIndianMobile(phone, { allowEmpty: false })) return undefined;
     return `https://wa.me/${indianWhatsAppDialDigits(phone)}`;

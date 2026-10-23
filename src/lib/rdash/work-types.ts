@@ -299,6 +299,11 @@ export function itemOptionPairs(item: Pick<LineItem, "subcategory_id" | "work_ty
   return [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }];
 }
 
+export function promoteOptionPair<T>(pairs: T[], index: number): T[] {
+  if (index <= 0 || index >= pairs.length) return pairs;
+  return [pairs[index], ...pairs.slice(0, index), ...pairs.slice(index + 1)];
+}
+
 /** Scope keys of every pair an item covers — the single dedup master shared
  *  by the store, the capture dialog and the reconciliation, so a merged
  *  alternatives item suppresses seeding each of its options exactly like the
