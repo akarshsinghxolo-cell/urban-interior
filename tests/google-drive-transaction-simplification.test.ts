@@ -163,19 +163,24 @@ describe("Google Drive transaction simplification", () => {
     expectTokens(attachments, ["url: asset.web_view_link"]);
   });
 
-  test("keeps one Drive account UI path that becomes cards on mobile", async () => {
+  test("keeps account controls and diagnostics in one per-Drive card", async () => {
     const manager = await readFile("src/components/rdash/modules/GoogleDriveManagerCoreModule.tsx", "utf8");
-    expectTokens(manager, [
-      "Account configuration",
-      "File management",
-      'className="hidden bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground md:table-header-group"',
-      'className="grid gap-3 p-3 md:table-row-group md:p-0"',
+    const diagnostics = await readFile("src/components/rdash/modules/DriveSecurityDiagnosticsPanel.tsx", "utf8");
+    expectTokens(manager, ["File management", "activeFileCountByAccount", "DriveSecurityDiagnosticsPanel"]);
+    expectNoTokens(manager, ["Account configuration", "<Capacity account={account}"]);
+    expectTokens(diagnostics, [
+      'data-testid="drive-account-controls"',
+      "Upload destination",
       "Storage capacity",
-      "Priority & status",
+      "Priority",
+      "Status",
       "Account actions",
+      "Refresh quota",
+      "Reconnect",
+      "Disable",
+      "Open Drive",
       "% used",
     ]);
-    expectNoTokens(manager, ['<h3 className="text-sm font-bold">Drive Accounts</h3>']);
   });
 
   test("removes the local-file provider from the active routes, validation, and shared contract", async () => {

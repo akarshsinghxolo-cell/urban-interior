@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock3,
   Copy,
+  ExternalLink,
   Fingerprint,
   HardDrive,
   KeyRound,
@@ -18,7 +19,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { accountIsAtSwitchThreshold } from "@/lib/rdash/storage";
 import { useRDashStore } from "@/lib/rdash/store";
+import type { StorageAccount } from "@/lib/rdash/types";
 import { cn } from "@/lib/utils";
 
 type AccessTokenDiagnostics = {
@@ -89,6 +93,18 @@ type SecurityDiagnostics = {
   drives: DriveDiagnostics[];
 };
 
+type DriveSecurityDiagnosticsPanelProps = {
+  accounts: StorageAccount[];
+  activeFileCountByAccount: Record<string, number>;
+  writeDestinationId?: string;
+  credentialIds: ReadonlySet<string>;
+  working: boolean;
+  onActivate: (accountId: string) => void;
+  onRefresh: (accountId: string) => void;
+  onConnect: (label: string, accountId: string) => void;
+  onUpdate: (accountId: string, patch: Partial<StorageAccount>) => void;
+};
+
 function formatDate(value: string | null) {
   if (!value) return "Not available";
   const parsed = new Date(value);
@@ -123,7 +139,35 @@ function StatusPill({ state }: { state: AccessTokenDiagnostics["state"] }) {
   );
 }
 
-export function DriveSecurityDiagnosticsPanel() {
+function StorageCapacity({ account }: { account: StorageAccount }) {
+  const used = account.quota_used_bytes || 0;
+  const limit = account.quota_limit_bytes || 0;
+  const percent = limit > 0 ? Math.round((used / limit) * 100) : 0;
+
+  return (
+    <div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn("h-full rounded-full", percent > 85 ? "bg-destructive" : percent > 60 ? "bg-warning" : "bg-success")}
+          style={{ width: `${Math.min(100, percent)}%` }}
+        />
+      </div>
+      <p className="mt-1 font-mono text-[10px] text-muted-foreground">{formatBytes(used)} / {formatBytes(limit)} · {percent}% used</p>
+    </div>
+  );
+}
+
+export function DriveSecurityDiagnosticsPanel({
+  accounts,
+  activeFileCountByAccount,
+  writeDestinationId,
+  credentialIds,
+  working,
+  onActivate,
+  onRefresh,
+  onConnect,
+  onUpdate,
+}: DriveSecurityDiagnosticsPanelProps) {
   const role = useRDashStore((state) => state.authUser?.role || "Unauthenticated");
   const [data, setData] = React.useState<SecurityDiagnostics | null>(null);
   const [loading, setLoading] = React.useState(false);
@@ -228,19 +272,69 @@ export function DriveSecurityDiagnosticsPanel() {
                 <span className="text-[10px] text-muted-foreground">Checked {formatDate(data.generatedAt)}</span>
               </div>
 
-              {data.drives.map((drive) => (
-                <article key={drive.storageAccountId} className="min-w-0 rounded-xl border border-border bg-background p-4">
+              {data.drives.map((drive) => {
+                const account = accounts.find((candidate) => candidate.id === drive.storageAccountId);
+                const isUploadDestination = writeDestinationId === drive.storageAccountId;
+
+                return (
+                <article key={drive.storageAccountId} className={cn("min-w-0 rounded-xl border border-border bg-background p-4", isUploadDestination && "border-primary/35 bg-primary/[0.02]")}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-0 items-start gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><HardDrive className="h-4 w-4" /></span>
                       <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2"><h5 className="text-sm font-bold">{drive.label}</h5><span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{drive.status.replaceAll("_", " ")}</span></div>
+                        <div className="flex flex-wrap items-center gap-2"><h5 className="text-sm font-bold">{drive.label}</h5><span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">{(account?.status || drive.status).replaceAll("_", " ")}</span></div>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">{drive.email || "Google email unavailable"}</p>
                         <p className="mt-0.5 break-all font-mono text-[10px] text-muted-foreground">Storage account: {drive.storageAccountId}</p>
                       </div>
                     </div>
                     <StatusPill state={drive.accessToken.state} />
                   </div>
+
+                  {account ? (
+                    <div data-testid="drive-account-controls" className="mt-4 grid gap-3 rounded-lg border border-primary/20 bg-card p-3 lg:grid-cols-[minmax(150px,0.8fr)_minmax(180px,1fr)_minmax(210px,1fr)_minmax(250px,1.35fr)]">
+                      <div className="min-w-0">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Upload destination</p>
+                        {isUploadDestination ? (
+                          <span className="inline-flex min-h-8 items-center gap-1 rounded-full bg-primary/10 px-2.5 text-xs font-bold text-primary"><CheckCircle2 className="h-3.5 w-3.5" />Active for uploads</span>
+                        ) : (
+                          <Button size="sm" variant="outline" onClick={() => onActivate(account.id)}>Use for uploads</Button>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Storage capacity</p>
+                        <StorageCapacity account={account} />
+                        <p className="mt-1 text-[10px] text-muted-foreground">{activeFileCountByAccount[account.id] || 0} active file(s) linked here</p>
+                      </div>
+
+                      <div className="grid min-w-0 grid-cols-2 gap-2">
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Priority</span>
+                          <Input aria-label={account.label + " priority order"} type="number" min={1} className="h-8" value={account.priority_order} onChange={(event) => onUpdate(account.id, { priority_order: Math.max(1, Number(event.target.value) || 1) })} />
+                        </label>
+                        <label className="grid min-w-0 gap-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Status</span>
+                          <select aria-label={account.label + " connection status"} value={account.status} onChange={(event) => onUpdate(account.id, { status: event.target.value as StorageAccount["status"], write_enabled: event.target.value === "connected" })} className="h-8 min-w-0 rounded-md border border-input bg-card px-2 text-xs outline-none focus:border-ring focus:ring-2 focus:ring-ring/20">
+                            <option value="connected">Connected</option>
+                            <option value="paused">Standby</option>
+                            <option value="reconnect_required">Reconnect required</option>
+                            <option value="disabled">Disabled</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Account actions</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Button size="sm" variant="outline" disabled={working || !credentialIds.has(account.id)} onClick={() => onRefresh(account.id)}><RefreshCw className="mr-1 h-3.5 w-3.5" />Refresh quota</Button>
+                          <Button size="sm" variant="outline" disabled={working} onClick={() => onConnect(account.label, account.id)}><KeyRound className="mr-1 h-3.5 w-3.5" />{credentialIds.has(account.id) ? "Reconnect same account" : "Authorize account"}</Button>
+                          <Button size="sm" variant="ghost" onClick={() => onUpdate(account.id, { status: "disabled", write_enabled: false })}>Disable</Button>
+                          {account.web_view_link ? <Button size="sm" variant="ghost" aria-label={"Open " + account.label + " in Google Drive"} onClick={() => window.open(account.web_view_link, "_blank", "noopener,noreferrer")}><ExternalLink className="mr-1 h-3.5 w-3.5" />Open Drive</Button> : null}
+                        </div>
+                        <p className="mt-2 text-[10px] leading-4 text-muted-foreground">{accountIsAtSwitchThreshold(account) ? "Threshold reached; new uploads route onward." : "Existing files remain available if another Drive becomes active."}</p>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-lg border border-border bg-card p-3">
@@ -325,7 +419,8 @@ export function DriveSecurityDiagnosticsPanel() {
                     )}
                   </div>
                 </article>
-              ))}
+                );
+              })}
 
               {!data.drives.length ? <div className="rounded-lg border border-dashed border-border p-6 text-center text-xs text-muted-foreground">No Drive slots are configured in this workspace.</div> : null}
             </div>
