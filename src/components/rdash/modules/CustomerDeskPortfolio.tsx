@@ -105,21 +105,24 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
   const officeStaff = db.master.staff.find((row) => row.id === currentStaffId && hasOfficeGps(row))
     || db.master.staff.find(hasOfficeGps);
   const office = officeStaff?.attendance_policy;
+  const rapidoPickup = office ? {
+    latitude: office.office_latitude,
+    longitude: office.office_longitude,
+    city: officeStaff?.city || "Gorakhpur",
+  } : {
+    query: "Urban Interior & Decor Taramandal Gorakhpur",
+    city: "Gorakhpur",
+  };
   const rapidoDestinations = sites.map((site) => ({
     id: site.id,
     name: site.name,
     plusCode: customerSiteLocalPlusCode(site.latitude, site.longitude),
-    href: office ? customerRapidoHref({
-      latitude: office.office_latitude,
-      longitude: office.office_longitude,
-      city: officeStaff?.city || site.city,
-    }, {
+    href: customerRapidoHref(rapidoPickup, {
       latitude: site.latitude,
       longitude: site.longitude,
       city: site.city || officeStaff?.city,
-    }) : undefined,
+    }),
   })).filter((site): site is typeof site & { plusCode: string; href: string } => Boolean(site.plusCode && site.href));
-  const sitesWithRapidoLocation = sites.filter((site) => customerSiteLocalPlusCode(site.latitude, site.longitude)).length;
   const siteIds = new Set(sites.map((row) => row.id));
   const workRequired = db.workRequired.filter((row) => row.customer_id === customerId || (row.site_id ? siteIds.has(row.site_id) : false));
   const quotations = db.quotations.filter((row) => row.customer_id === customerId);
@@ -213,7 +216,7 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
             {siteDirections.map((site) => <DropdownMenuItem key={site.id} asChild><a href={site.href} target="_blank" rel="noreferrer" className="whitespace-normal break-words">{site.name}</a></DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>}
-        {sitesWithRapidoLocation > 0 && <DropdownMenu>
+        {rapidoDestinations.length > 0 && <DropdownMenu>
           <DropdownMenuTrigger asChild><Button size="sm" variant="outline"><Bike className="mr-1 h-3.5 w-3.5" />Book Rapido</Button></DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-w-[calc(100vw-2rem)]">
             {rapidoDestinations.map((site) => <DropdownMenuItem key={site.id} asChild>
@@ -221,9 +224,6 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
                 {site.name} · {site.plusCode}
               </a>
             </DropdownMenuItem>)}
-            {!rapidoDestinations.length && <DropdownMenuItem disabled className="whitespace-normal text-xs">
-              Configure your Office GPS under HR &amp; Staff to prefill Rapido pickup and drop.
-            </DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>}
         <Button size="sm" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><FileText className="mr-1 h-3.5 w-3.5" />Create quotation</Button>

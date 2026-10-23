@@ -117,11 +117,11 @@ describe("Customer Desk restored-feature contracts", () => {
 
   test("Rapido handoff opens the verified route with the office and selected Site Plus Codes", async () => {
     const portfolio = await source("src/components/rdash/modules/CustomerDeskPortfolio.tsx");
-    expect(portfolio).toContain("customerRapidoHref({");
+    expect(portfolio).toContain("customerRapidoHref(rapidoPickup, {");
     expect(portfolio).toContain("customerSiteLocalPlusCode(site.latitude, site.longitude)");
     expect(portfolio).toContain("Book Rapido");
     expect(portfolio).toContain("href={site.href}");
-    expect(portfolio).toContain("Configure your Office GPS under HR &amp; Staff");
+    expect(portfolio).toContain('query: "Urban Interior & Decor Taramandal Gorakhpur"');
     expect(portfolio).not.toContain("navigator.clipboard?.writeText(plusCode)");
     expect(portfolio.indexOf("Book Rapido")).toBeGreaterThan(portfolio.indexOf("Directions</Button>"));
   });

@@ -176,13 +176,15 @@ type RapidoLocation = {
     latitude?: number;
     longitude?: number;
     city?: string;
+    query?: string;
 };
 
 function rapidoLocationSearch(location: RapidoLocation) {
     const plusCode = customerSiteLocalPlusCode(location.latitude, location.longitude);
     const city = location.city?.trim();
-    if (!plusCode || !city) return undefined;
-    return `${plusCode} ${city},${city}`;
+    const query = location.query?.replaceAll(",", " ").trim();
+    if (!city || (!plusCode && !query)) return undefined;
+    return `${plusCode ? `${plusCode} ${city}` : query},${city}`;
 }
 
 /** Rapido's public SEO route resolves both Plus Codes before showing fare options. */

@@ -64,6 +64,10 @@ describe("customerProgress Work Required ladder", () => {
       { latitude: undefined, longitude: undefined, city: "Gorakhpur" },
       { latitude: 26.7197493, longitude: 83.3837182, city: "Gorakhpur" },
     )).toBeUndefined();
+    expect(customerRapidoHref(
+      { query: "Urban Interior & Decor Taramandal Gorakhpur", city: "Gorakhpur" },
+      { latitude: 26.7197493, longitude: 83.3837182, city: "Gorakhpur" },
+    )).toContain("Urban%20Interior%20%26%20Decor%20Taramandal%20Gorakhpur%2CGorakhpur");
   });
 
   test("labels an untouched lead New enquiry at 8 percent", () => {
