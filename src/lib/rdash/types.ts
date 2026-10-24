@@ -421,6 +421,7 @@ export type TaskStatus = "todo" | "in_progress" | "blocked" | "review" | "comple
 type TaskScope = "general" | "site" | "client" | "office";
 export interface Task {
     id: ID;
+    source_followup_id?: ID;
     customer_id?: ID;
     work_required_id?: ID;
     work_order_id?: ID;

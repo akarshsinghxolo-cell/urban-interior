@@ -72,6 +72,10 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
 
     return {
         addTask: (t) => {
+            if (t.source_followup_id) {
+                const existing = get().db.tasks.find((task: Task) => task.source_followup_id === t.source_followup_id && !["completed", "cancelled"].includes(task.status));
+                if (existing) return existing.id;
+            }
             const customerId = resolveCustomerIdFromLinks(get().db, t, "Task");
             const id = genId("task");
             const assigneeName = staffNameForId(get().db, t.assigned_staff_id, "Owner");
@@ -81,6 +85,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             commitState((s: any) => {
                 const task: Task = {
                     id,
+                    source_followup_id: t.source_followup_id,
                     title: t.title || "New task",
                     description: t.description || "",
                     status: t.status || "todo",
@@ -91,6 +96,7 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     quotation_id: t.quotation_id,
                     po_id: t.po_id,
                     visit_id: t.visit_id,
+                    payment_id: t.payment_id,
                     site_id: t.site_id,
                     assigned_staff_id: t.assigned_staff_id,
                     due_date: t.due_date || today(),
@@ -239,6 +245,8 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
             const task = state.db.tasks.find((row: any) => row.id === id);
             if (!task)
                 throw new Error("Task not found.");
+            if (task.source_followup_id && state.db.followups.some((row: Followup) => row.id === task.source_followup_id && !["completed", "closed"].includes(row.status)))
+                throw new Error("Record an outcome or reschedule the linked Follow-up to resolve this recovery task.");
             if (isBusinessDecisionTask(task))
                 throw new Error("This system Task closes only when its linked approval, verification, report, or payment workflow is completed.");
             if (task.status === "completed")
@@ -668,6 +676,9 @@ export function createTasksSlice(ctx: StoreContext): TasksState {
                     quotation_id: followup.quotation_id,
                     task_scope: "client",
                     task_type: "followup_recovery",
+                    source_followup_id: followup.id,
+                    payment_id: followup.payment_id,
+                    visit_id: followup.visit_id,
                     assigned_staff_id: followup.assigned_staff_id,
                     due_date: businessDate(now),
                     auto_generated: true,

@@ -1,5 +1,6 @@
 "use client";
 import { create } from "zustand";
+import { reconcileFollowupRecovery } from "./followup-recovery";
 import type { RDashDatabase } from "./types";
 import { applyVendorRateAverages } from "./vendor-rate-average";
 import { attachCustomerLabels } from "./customer";
@@ -200,7 +201,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                     activeWorkspaceTransaction!.baselineDb = structuredClone(state.db) as RDashDatabase;
                 }
                 activeWorkspaceTransaction!.dirty = true;
-                const averagedDb = applyVendorRateAverages(state.db, next.db);
+                const averagedDb = reconcileFollowupRecovery(applyVendorRateAverages(state.db, next.db));
                 return { ...next, db: attachCustomerLabels(averagedDb) };
             });
             return;
@@ -211,7 +212,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             maybePersistTabs(state, next);
             if (!next.db)
                 return next;
-            const db = attachCustomerLabels(applyVendorRateAverages(state.db, next.db));
+            const db = attachCustomerLabels(reconcileFollowupRecovery(applyVendorRateAverages(state.db, next.db)));
             // Validate but don't block — log issues instead of throwing.
             // Throwing inside setBase can leave the Zustand state inconsistent
             // and cause the UI to hang (setSaving(false) in finally blocks

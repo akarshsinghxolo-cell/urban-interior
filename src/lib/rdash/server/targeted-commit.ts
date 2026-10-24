@@ -7,6 +7,8 @@ import type { RDashDatabase, Thread, ThreadKind } from "../types";
 import { applyWorkspaceOperations, diffWorkspaceOperations, type WorkspaceOperation } from "../workspace-operations";
 import { applyVendorRateAverages } from "../vendor-rate-average";
 import { canonicalizeVendorRateMaster } from "../vendor-rate";
+import { reconcileFollowupRecovery, validateFollowupRecovery } from "../followup-recovery";
+import { getRestWorkspaceBySelectors } from "./entity-scoped-rest";
 import type { AuthenticatedUser } from "./auth";
 import { assertWorkspaceMutationAllowed } from "./mutation-policy";
 import {
@@ -114,6 +116,7 @@ function collectDirectDependencies(
   addId(plan, "payments", row.payment_id);
   addId(plan, "invoices", row.invoice_id);
   addId(plan, "tasks", row.linked_task_id);
+  addId(plan, "followups", row.source_followup_id);
 
   if (row.linked_record_type === "contractor_payment") {
     addId(plan, "contractorPayments", row.linked_record_id);
@@ -432,6 +435,16 @@ export async function prepareTargetedCommit(
   let current = await getWorkspaceSubset(toWorkspaceReadPlan(firstPlan));
   if (current.revision !== expectedRevision) throw new Error("CONFLICT");
 
+  const followupIds = operations.filter((op) => op.collection === "followups")
+    .flatMap((op) => (op.upsert || []).map((row) => String(row.id)));
+  if (followupIds.length) {
+    const linked = await getRestWorkspaceBySelectors({
+      jsonFieldValuesByCollection: { tasks: { source_followup_id: followupIds } },
+    });
+    if (linked.revision !== expectedRevision) throw new Error("CONFLICT");
+    current = mergeSubset(current, linked);
+  }
+
   for (let round = 0; round < MAX_DEPENDENCY_ROUNDS; round += 1) {
     const nextPlan = dependenciesFromLoadedData(current.data, operations);
     removeAttempted(nextPlan, attemptedRows, loadedFullCollections);
@@ -447,8 +460,9 @@ export async function prepareTargetedCommit(
 
   assertWorkspaceMutationAllowed(user, operations, current.data);
   const rawCandidate = applyWorkspaceOperations(current.data, operations);
+  validateFollowupRecovery(current.data, rawCandidate, operations.filter((op) => op.collection === "tasks").flatMap((op) => (op.upsert || []).map((row) => String(row.id))));
   const canonicalRates = { ...rawCandidate, master: canonicalizeVendorRateMaster(rawCandidate.master) };
-  const canonicalCandidate = applyVendorRateAverages(current.data, canonicalRates);
+  const canonicalCandidate = reconcileFollowupRecovery(applyVendorRateAverages(current.data, canonicalRates));
   const preparedOperations = diffWorkspaceOperations(current.data, canonicalCandidate);
   validateTouchedRows(canonicalCandidate, preparedOperations);
   const validatedAt = Date.now();

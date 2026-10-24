@@ -402,6 +402,7 @@ const unenforcedFks: ForeignKeyRule[] = [
     { collection: "visits", field: "report_thread_message_id", targetCollection: "threadMessages", onDelete: "nullify", nullable: true, label: "Visit → Report Thread Message" },
     // Task — blocked item link
     { collection: "tasks", field: "blocked_item_id", targetCollection: "blocked", onDelete: "nullify", nullable: true, label: "Task → Blocked Item" },
+    { collection: "tasks", field: "source_followup_id", targetCollection: "followups", onDelete: "restrict", nullable: true, label: "Recovery Task → Follow-up" },
     // Followup — next followup chain
     { collection: "followups", field: "next_followup_id", targetCollection: "followups", onDelete: "nullify", nullable: true, label: "Follow-up → Next Follow-up" },
     // Payment — milestone term link

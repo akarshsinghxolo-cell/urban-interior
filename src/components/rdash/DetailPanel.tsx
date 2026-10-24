@@ -2110,6 +2110,7 @@ function TaskOverview({ t }: {
 }) {
     const db = useRDashStore((s) => s.db);
     const completeTask = useRDashStore((s) => s.completeTask);
+    const openDetail = useRDashStore((s) => s.openDetail);
     const blockTask = useRDashStore((s) => s.blockTask);
     const [notes, setNotes] = React.useState("");
     return (<div className="h-full overflow-y-auto p-4 rd-scroll">
@@ -2127,7 +2128,8 @@ function TaskOverview({ t }: {
       </div>
       {t.description && <p className="mt-3 text-sm text-foreground/80">{t.description}</p>}
       <EntityFilesCard entityType="task" entityId={t.id} title="Task files & completion proof" manage showEmpty />
-      {(t.status === "todo" || t.status === "in_progress") && (<div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
+      {t.source_followup_id && <Button className="mt-4" size="sm" variant="outline" onClick={() => openDetail("followup", t.source_followup_id!)}>Open source follow-up · record outcome or reschedule</Button>}
+      {!t.source_followup_id && (t.status === "todo" || t.status === "in_progress") && (<div className="mt-4 rounded-lg border border-border bg-muted/20 p-3">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Completion record</p>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What was done? Add task-specific proof above when needed." className="mb-2 text-sm" rows={3}/>
           <div className="flex gap-2">

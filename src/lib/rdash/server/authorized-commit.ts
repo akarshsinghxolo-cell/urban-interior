@@ -4,6 +4,7 @@ import { attachCustomerLabels } from "../customer";
 import { canonicalizeCustomerRow } from "../customer-record";
 import { prepareWorkspaceData } from "../work-category-master";
 import { repairOperationalWorkspace } from "../operational-repair";
+import { reconcileFollowupRecovery, validateFollowupRecovery } from "../followup-recovery";
 import {
   applyWorkspaceOperations,
   diffWorkspaceOperations,
@@ -332,7 +333,10 @@ export async function commitAuthorizedPostgresOperations(
     commitOperations = canonicalizeVendorRateOperations(current.data, commitOperations);
     commitOperations = canonicalizeContractorRateOperations(current.data, commitOperations);
     const baseline = normalizeWorkspace(current.data);
-    const rawCandidate = applyWorkspaceOperations(current.data, commitOperations);
+    const submitted = applyWorkspaceOperations(current.data, commitOperations);
+    validateFollowupRecovery(current.data, submitted, commitOperations.filter((op) => op.collection === "tasks").flatMap((op) => (op.upsert || []).map((row) => String(row.id))));
+    const rawCandidate = reconcileFollowupRecovery(submitted);
+    commitOperations = diffWorkspaceOperations(current.data, rawCandidate);
     const candidate = normalizeWorkspace(rawCandidate);
     const issues = introducedIntegrityIssues(
       validateBusinessData(baseline),
