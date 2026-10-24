@@ -44,7 +44,10 @@ export function CustomerQuotationDialog({ request, onClose }: {
 
   const [customerId, setCustomerId] = React.useState(initialCustomerId);
   const [siteId, setSiteId] = React.useState(initialSiteId);
-  const [workRequiredIds, setWorkRequiredIds] = React.useState<string[]>(request.workRequiredId ? [request.workRequiredId] : []);
+  const initialSelection: Record<string, string[]> = initialWorkRequired ? { [initialWorkRequired.id]: initialWorkRequired.area_ids } : {};
+  const [selectedAreas, setSelectedAreas] = React.useState(initialSelection);
+  const workRequiredIds = Object.keys(selectedAreas);
+  const [grouping, setGrouping] = React.useState<"work" | "area">(request.quotationGrouping || "work");
   const [title, setTitle] = React.useState(initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""));
   const [initialValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
   const [validUntil, setValidUntil] = React.useState(initialValidUntil);
@@ -52,12 +55,13 @@ export function CustomerQuotationDialog({ request, onClose }: {
   const initialForm = {
     customerId: initialCustomerId,
     siteId: initialSiteId,
-    workRequiredIds: request.workRequiredId ? [request.workRequiredId] : [],
+    selectedAreas: initialSelection,
+    grouping: request.quotationGrouping || "work",
     title: initialWorkRequired?.title || (initialCustomer ? `${initialCustomer.name}${initialSite ? ` · ${initialSite.name}` : ""}` : ""),
     validUntil: initialValidUntil,
   };
   const formId = `quotation:new:${request.customerId || "customer"}:${request.siteId || "no-site"}`;
-  const dirty = JSON.stringify({ customerId, siteId, workRequiredIds, title, validUntil }) !== JSON.stringify(initialForm);
+  const dirty = JSON.stringify({ customerId, siteId, selectedAreas, grouping, title, validUntil }) !== JSON.stringify(initialForm);
 
   const customerSites = React.useMemo(
     () => db.sites.filter((site) => site.customer_id === customerId && !site.is_archived),
@@ -74,12 +78,20 @@ export function CustomerQuotationDialog({ request, onClose }: {
     return customer ? `${customer.name}${site ? ` · ${site.name}` : ""}` : "";
   };
 
-  const toggleWorkRequired = (workId: string) => {
-    const ids = workRequiredIds.includes(workId)
-      ? workRequiredIds.filter((id) => id !== workId)
-      : [...workRequiredIds, workId];
-    setWorkRequiredIds(ids);
-    setTitle(ids.map((id) => matchingWorkRequired.find((work) => work.id === id)?.title).filter(Boolean).join(" / ") || defaultTitle());
+  const changeSelection = (works: WorkRequired[], areaId?: string) => {
+    const included = works.every((work) => areaId ? selectedAreas[work.id]?.includes(areaId) :
+      selectedAreas[work.id] && work.area_ids.every((id) => selectedAreas[work.id].includes(id)));
+    const next = { ...selectedAreas };
+    for (const work of works) {
+      if (areaId) {
+        const ids = included ? (next[work.id] || []).filter((id) => id !== areaId) : [...new Set([...(next[work.id] || []), areaId])];
+        if (ids.length) next[work.id] = ids;
+        else delete next[work.id];
+      } else if (included) delete next[work.id];
+      else next[work.id] = [...work.area_ids];
+    }
+    setSelectedAreas(next);
+    setTitle([...new Set(Object.keys(next).map((id) => matchingWorkRequired.find((work) => work.id === id)?.title).filter(Boolean))].join(" / ") || defaultTitle());
   };
 
   const workRequiredLabel = (work: WorkRequired) => [
@@ -89,6 +101,18 @@ export function CustomerQuotationDialog({ request, onClose }: {
       .join(" + "),
     ...workTypeNamesForIds(db.master.workSubcategories, work.work_type_ids),
   ].filter(Boolean).join(" · ") || work.title;
+
+  // Group the display only: coverage continues to reference the original work records.
+  const workGroups = new Map<string, WorkRequired[]>();
+  for (const work of matchingWorkRequired) {
+    const label = workRequiredLabel(work);
+    workGroups.set(label, [...(workGroups.get(label) || []), work]);
+  }
+  const areaName = (areaId: string) => db.areas.find((area) => area.id === areaId)?.name || "Unknown area";
+  const roomIds = [...new Set(matchingWorkRequired.flatMap((work) => work.area_ids))];
+  const chipClass = (included: boolean) => `min-h-8 rounded-md border px-2 py-1 text-left text-xs whitespace-normal ${included
+    ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+    : "border-border bg-muted text-muted-foreground"}`;
 
   const handleSubmit = (): boolean => {
     if (!customerId) {
@@ -113,6 +137,14 @@ export function CustomerQuotationDialog({ request, onClose }: {
       if (selectedWorkRequired.length !== workRequiredIds.length) {
         throw new Error("One or more selected Work Required records no longer match this Customer and Site");
       }
+      if (matchingWorkRequired.length && !selectedWorkRequired.length) {
+        throw new Error("Select at least one work item or room to include in this quotation.");
+      }
+      selectedWorkRequired = selectedWorkRequired.map((work) => {
+        const areaIds = selectedAreas[work.id];
+        if (areaIds.some((id) => !work.area_ids.includes(id))) throw new Error("A selected room is no longer linked to this work item.");
+        return { ...work, area_ids: areaIds };
+      });
 
       // A site quotation always has one canonical Work Required relationship.
       // If the user has not created scope yet, create the same general-scope
@@ -144,16 +176,15 @@ export function CustomerQuotationDialog({ request, onClose }: {
         selectedWorkRequired = [created || fallback];
       }
 
-      // One active commercial path per Work Required. Site Execution used to
-      // implement this check separately; it now belongs to the Customer-owned
-      // canonical quotation workflow and therefore applies from every module.
+      // Rooms can be quoted separately; only overlapping work/room coverage
+      // should lead back to an existing quotation.
       const alreadyCovered = selectedWorkRequired.flatMap((work) => {
-        const quotation = activeQuotationForWork(db, work.id);
+        const quotation = activeQuotationForWork(db, work.id, work.area_ids);
         return quotation ? [{ work, quotation }] : [];
       });
       if (alreadyCovered.length) {
         if (alreadyCovered.length === 1 && selectedWorkRequired.length === 1) {
-          toast.info(`${alreadyCovered[0].quotation.quotation_no} already covers this Work Required.`);
+          toast.info(`${alreadyCovered[0].quotation.quotation_no} already covers some or all of the selected rooms for this work.`);
           openDetail("quotation", alreadyCovered[0].quotation.id);
           dirtyFormRegistry.markClean(formId);
           onClose();
@@ -231,6 +262,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
         title: quotationTitle,
         valid_until: validUntil,
         status: "draft",
+        grouping,
       });
 
       addRecentCreated({ id, kind: "quotation", label: quotationTitle });
@@ -265,13 +297,13 @@ export function CustomerQuotationDialog({ request, onClose }: {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary"><FilePlus2 className="h-5 w-5" /></span>
             <div>
-              <DialogTitle className="text-base">New quotation</DialogTitle>
-              <DialogDescription className="text-xs">Canonical Customer quotation workflow</DialogDescription>
+              <DialogTitle className="text-base">{grouping === "area" ? "Area/room wise quotation" : "Work wise quotation"}</DialogTitle>
+              <DialogDescription className="text-xs">Choose the work and rooms to include. Green rooms are included; grey rooms are excluded.</DialogDescription>
             </div>
           </div>
         </DialogHeader>
@@ -285,7 +317,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
                 const customer = db.customers.find((row) => row.id === value);
                 setCustomerId(value);
                 setSiteId(nextSite?.id || "");
-                setWorkRequiredIds([]);
+                setSelectedAreas({});
                 setTitle(customer ? `${customer.name}${nextSite ? ` · ${nextSite.name}` : ""}` : "");
               }}>
                 <SelectTrigger><SelectValue placeholder="Select customer…" /></SelectTrigger>
@@ -306,7 +338,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
                   const customer = db.customers.find((row) => row.id === customerId);
                   const site = customerSites.find((row) => row.id === nextSiteId);
                   setSiteId(nextSiteId);
-                  setWorkRequiredIds([]);
+                  setSelectedAreas({});
                   setTitle(customer ? `${customer.name}${site ? ` · ${site.name}` : ""}` : "");
                 }}
                 disabled={!customerId}
@@ -320,14 +352,47 @@ export function CustomerQuotationDialog({ request, onClose }: {
             </Field>
           </div>
 
-          <Field label="Work Required (optional)">
-            <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border border-input bg-card p-2">
-              {matchingWorkRequired.length ? matchingWorkRequired.map((work) => (
-                <label key={work.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-accent/40">
-                  <input type="checkbox" checked={workRequiredIds.includes(work.id)} onChange={() => toggleWorkRequired(work.id)} />
-                  <span>{workRequiredLabel(work)}</span>
-                </label>
-              )) : <p className="px-1 py-1 text-xs text-muted-foreground">{customerId ? "No Work Required for this selection" : "Select a customer first"}</p>}
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Quotation layout">
+            <Button type="button" size="sm" variant={grouping === "work" ? "default" : "outline"} aria-pressed={grouping === "work"} onClick={() => setGrouping("work")}>Work wise</Button>
+            <Button type="button" size="sm" variant={grouping === "area" ? "default" : "outline"} aria-pressed={grouping === "area"} onClick={() => setGrouping("area")}>Area/room wise</Button>
+          </div>
+          <Field label={grouping === "area" ? "Rooms and required work" : "Work Required and rooms"}>
+            <div className="max-h-72 space-y-3 overflow-y-auto rounded-md border border-input bg-card p-3">
+              {grouping === "work" ? [...workGroups].map(([label, works]) => {
+                const areas = [...new Set(works.flatMap((work) => work.area_ids))];
+                const included = works.every((work) => selectedAreas[work.id] && work.area_ids.every((id) => selectedAreas[work.id].includes(id)));
+                return <section key={label} aria-label={label} className="space-y-2 rounded-md border border-border p-2">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm font-medium">
+                    <input type="checkbox" className="mt-1 shrink-0" checked={included} onChange={() => changeSelection(works)} />
+                    <span className="min-w-0 whitespace-normal break-words">{label}</span>
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {areas.map((areaId) => {
+                      const linkedWorks = works.filter((work) => work.area_ids.includes(areaId));
+                      const selected = linkedWorks.every((work) => selectedAreas[work.id]?.includes(areaId));
+                      return <button key={areaId} type="button" aria-pressed={selected} className={chipClass(selected)} onClick={() => changeSelection(linkedWorks, areaId)}>{areaName(areaId)}</button>;
+                    })}
+                    {works.some((work) => !work.area_ids.length) && <button type="button" className={chipClass(works.filter((work) => !work.area_ids.length).every((work) => Boolean(selectedAreas[work.id])))} aria-pressed={works.filter((work) => !work.area_ids.length).every((work) => Boolean(selectedAreas[work.id]))} onClick={() => changeSelection(works.filter((work) => !work.area_ids.length))}>No room assigned</button>}
+                  </div>
+                </section>;
+              }) : [...roomIds, ...(matchingWorkRequired.some((work) => !work.area_ids.length) ? [""] : [])].map((areaId) => {
+                const works = matchingWorkRequired.filter((work) => areaId ? work.area_ids.includes(areaId) : !work.area_ids.length);
+                const included = works.every((work) => areaId ? selectedAreas[work.id]?.includes(areaId) : Boolean(selectedAreas[work.id]));
+                return <section key={areaId} aria-label={areaId ? areaName(areaId) : "No room assigned"} className="space-y-2 rounded-md border border-border p-2">
+                  <button type="button" aria-pressed={included} className={`${chipClass(included)} font-semibold`} onClick={() => changeSelection(works, areaId || undefined)}>{areaId ? areaName(areaId) : "No room assigned"}</button>
+                  <div className="space-y-2">
+                    {[...workGroups].map(([label, group]) => {
+                      const linked = group.filter((work) => works.includes(work));
+                      if (!linked.length) return null;
+                      const selected = linked.every((work) => areaId ? selectedAreas[work.id]?.includes(areaId) : Boolean(selectedAreas[work.id]));
+                      return <label key={label} className="flex cursor-pointer items-start gap-2 text-xs">
+                        <input type="checkbox" className="mt-0.5 shrink-0" checked={selected} onChange={() => changeSelection(linked, areaId || undefined)} /><span>{label}</span>
+                      </label>;
+                    })}
+                  </div>
+                </section>;
+              })}
+              {!matchingWorkRequired.length && <p className="text-xs text-muted-foreground">{customerId ? "No Work Required for this selection" : "Select a customer first"}</p>}
             </div>
             {customerId && !siteId && <p className="mt-1 text-[11px] text-muted-foreground">Customer-level Work Required can be included now and remains unlinked coverage until a Site exists.</p>}
             {customerId && siteId && matchingWorkRequired.length === 0 && <p className="mt-1 text-[11px] text-muted-foreground">A General scope will be created on this Site when you submit.</p>}
@@ -346,17 +411,18 @@ export function CustomerQuotationDialog({ request, onClose }: {
 
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={requestClose}>Cancel</Button>
-          <Button size="sm" onClick={handleSubmit} disabled={submitting} className="gap-1.5"><Check className="h-4 w-4" />Create quotation</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={submitting || (matchingWorkRequired.length > 0 && !workRequiredIds.length)} className="gap-1.5"><Check className="h-4 w-4" />Create quotation</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-export function activeQuotationForWork(db: Pick<RDashDatabase, "quotations">, workRequiredId: string) {
+export function activeQuotationForWork(db: Pick<RDashDatabase, "quotations">, workRequiredId: string, areaIds?: string[]) {
   return db.quotations.find((quotation) =>
     quotation.status !== "cancelled" &&
-    quotation.coverage.some((coverage) => coverage.work_required_id === workRequiredId),
+    quotation.coverage.some((coverage) => coverage.work_required_id === workRequiredId &&
+      (!areaIds?.length || !coverage.area_ids.length || coverage.area_ids.some((id) => areaIds.includes(id)))),
   );
 }
 

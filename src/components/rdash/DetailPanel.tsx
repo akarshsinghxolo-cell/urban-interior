@@ -1160,7 +1160,9 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
 
       {items.length === 0 ? (<div className="px-3 py-6 text-center text-xs text-muted-foreground">
           No line items yet. Click "Add item" to build the quotation.
-        </div>) : (items.map((it) => (<div key={it.id} className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
+        </div>) : (items.map((it, itemIndex) => (<React.Fragment key={it.id}>
+          {quotation?.grouping === "area" && (itemIndex === 0 || items[itemIndex - 1].area_id !== it.area_id) && <h3 className="border-b border-border bg-muted/50 px-3 py-2 text-sm font-semibold">{it.area_chips?.[0]?.area_name || it.area_name || "No room assigned"}</h3>}
+          <div className="group grid grid-cols-[2.75rem_2.75rem_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-border px-3 py-1.5 text-xs last:border-0 hover:bg-accent/20 sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr]">
             {(() => {
                 // Annotation A: merged alternatives render ONE removable box per
                 // (subcategory · work type), stacked. Pair 0 (highlighted)
@@ -1256,7 +1258,7 @@ function QuotationLineItemEditor({ quotationId, items, articles, }: {
                 <Trash2 className="h-3.5 w-3.5"/>
               </button>
             </div>
-          </div>)))}
+          </div></React.Fragment>)))}
 
       <div className="flex items-center justify-between gap-2 bg-muted/30 px-3 py-2 text-xs font-bold sm:grid sm:grid-cols-[1.6fr_0.6fr_0.5fr_1.1fr_0.6fr_0.3fr] sm:gap-2">
         <span>Subtotal</span>

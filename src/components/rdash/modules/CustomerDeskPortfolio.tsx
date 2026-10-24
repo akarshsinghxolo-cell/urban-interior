@@ -316,7 +316,10 @@ export function CustomerPortfolioDrawerContent({ customerId }: { customerId: str
 
         {tab === "quotations" && (
           <RecordList
-            action={<Button size="sm" variant="outline" onClick={() => openCreateDialog({ kind: "quotation", customerId })}><Plus className="mr-1 h-3 w-3" />Add quotation</Button>}
+            action={<div className="flex flex-wrap justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => openCreateDialog({ kind: "quotation", customerId, quotationGrouping: "work" })}><Plus className="mr-1 h-3 w-3" />Work wise quotation</Button>
+              <Button size="sm" variant="outline" onClick={() => openCreateDialog({ kind: "quotation", customerId, quotationGrouping: "area" })}><Plus className="mr-1 h-3 w-3" />Add quotation Area/room wise</Button>
+            </div>}
             empty="No Customer quotations."
             rows={quotations.map((quotation) => ({
               id: quotation.id,

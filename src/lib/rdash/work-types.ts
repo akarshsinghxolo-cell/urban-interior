@@ -494,9 +494,22 @@ export function groupedQuotationScopeLines(input: {
   areas: Array<Pick<Area, "id" | "name">>;
   coveredWork: Array<Pick<WorkRequired, "id" | "title" | "work_subcategory_ids" | "work_type_ids" | "area_ids" | "structured_items">>;
   newId: (work: Pick<WorkRequired, "id">) => ID;
+  coverage?: Array<Pick<QuotationCoverage, "work_required_id" | "area_ids">>;
+  grouping?: "work" | "area";
 }): LineItem[] {
   const lines: LineItem[] = [];
-  for (const work of input.coveredWork) {
+  const scopedWork = input.coveredWork.flatMap((work) => {
+    const coverage = input.coverage?.filter((entry) => entry.work_required_id === work.id);
+    if (coverage && !coverage.length) return [];
+    const areaIds = coverage ? [...new Set(coverage.flatMap((entry) => entry.area_ids))] : work.area_ids;
+    const scoped = { ...work, area_ids: areaIds, structured_items: (work.structured_items || []).filter((item) =>
+      !coverage || (item.area_id ? areaIds.includes(item.area_id) : !areaIds.length),
+    ) };
+    return input.grouping === "area" && areaIds.length
+      ? areaIds.map((areaId) => ({ ...scoped, area_ids: [areaId], structured_items: scoped.structured_items.filter((item) => item.area_id === areaId) }))
+      : [scoped];
+  });
+  for (const work of scopedWork) {
     const items = (work.structured_items || []).filter((item) => Number.isFinite(item.quantity));
     if (!items.length) continue;
     const byArea = new Map<string, LineItem[]>();
@@ -529,12 +542,16 @@ export function groupedQuotationScopeLines(input: {
       id: input.newId(work),
       work_required_id: work.id,
       source_item_id: primary.id,
-      title,
+      title: input.grouping === "area" ? `${chips[0]?.area_name || "No room assigned"} — ${title}` : title,
       area_chips: chips,
       quantity,
       rate: quantity ? Math.round((amount / quantity) * 100) / 100 : primary.rate || 0,
       amount,
     });
+  }
+  if (input.grouping === "area") {
+    const order = new Map(input.areas.map((area, index) => [area.id, index]));
+    lines.sort((a, b) => (order.get(a.area_id || "") ?? input.areas.length) - (order.get(b.area_id || "") ?? input.areas.length));
   }
   return lines;
 }

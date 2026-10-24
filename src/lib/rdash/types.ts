@@ -220,6 +220,7 @@ export interface Quotation {
     readonly customer_name?: string;
     site_id: ID;
     title: string;
+    grouping?: "work" | "area";
     status: QuotationStatus;
     revision_no: number;
     parent_quotation_id?: ID;

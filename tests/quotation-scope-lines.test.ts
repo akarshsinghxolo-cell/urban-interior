@@ -88,6 +88,31 @@ describe("groupedQuotationScopeLines (quotation decision rows + removable area c
     expect(lines[0].rate).toBe(12);
   });
 
+  test("only selected coverage rooms contribute quantities and money, without changing Work Required", () => {
+    const original = JSON.stringify(floorWork);
+    const lines = groupedQuotationScopeLines({ workSubcategories, areas, coveredWork: [floorWork, railingWork],
+      coverage: [{ work_required_id: floorWork.id, area_ids: ["area-guest"] }], newId: () => "partial" });
+    expect(lines).toHaveLength(1);
+    expect(lines[0].area_chips).toEqual([{ area_id: "area-guest", area_name: "Guest room", quantity: 144 }]);
+    expect(lines[0].quantity).toBe(144);
+    expect(lines[0].amount).toBe(1728);
+    expect(lines[0].area_id).toBe("area-guest");
+    expect(JSON.stringify(floorWork)).toBe(original);
+  });
+
+  test("area-wise lines retain room prices and group all work by room", () => {
+    const otherWork = { ...railingWork, area_ids: ["area-guest"], structured_items: [{ ...railingWork.structured_items[0], area_id: "area-guest", quantity: 10, rate: 8, amount: 80 }] };
+    let id = 0;
+    const lines = groupedQuotationScopeLines({ workSubcategories, areas, coveredWork: [floorWork, otherWork], grouping: "area",
+      coverage: [{ work_required_id: floorWork.id, area_ids: floorWork.area_ids }, { work_required_id: otherWork.id, area_ids: otherWork.area_ids }], newId: () => `room-${++id}` });
+    expect(lines.map((line) => line.area_id)).toEqual(["area-guest", "area-guest", "area-lobby"]);
+    expect(lines.map((line) => line.amount)).toEqual([1728, 80, 240]);
+    expect(lines.every((line) => line.area_chips?.length === 1)).toBe(true);
+    expect(lines[0].title).toMatch(/^Guest room — /);
+    expect(new Set(lines.map((line) => line.id)).size).toBe(3);
+    expect(lines.reduce((sum, line) => sum + line.amount, 0)).toBe(2048);
+  });
+
   test("removing a chip re-derives the quantity; the last chip removes the line (editor contract)", () => {
     const lines = groupedQuotationScopeLines({
       workSubcategories,

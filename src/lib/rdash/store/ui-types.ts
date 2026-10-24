@@ -57,6 +57,7 @@ export interface CreateDialogRequest {
     customerId?: string;
     siteId?: string;
     workRequiredId?: string;
+    quotationGrouping?: "work" | "area";
     visitType?: VisitType;
 }
 

@@ -66,6 +66,7 @@ export function createUISlice(ctx: StoreContext): UIActions {
                 customerId: request.customerId,
                 siteId: request.siteId,
                 workRequiredId: request.workRequiredId,
+                quotationGrouping: request.quotationGrouping,
                 visitType: request.visitType,
             },
         }),
