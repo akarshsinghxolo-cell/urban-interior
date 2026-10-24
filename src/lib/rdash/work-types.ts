@@ -2,6 +2,11 @@ import type { Area, ContractorRate, ID, LineItem, MeasurementRevision, Quotation
 
 const DEFAULT_WORK_TYPE_NAME = "Standard";
 
+/** category_id remains the default display path; all paths share one service. */
+export function workSubcategoryCategoryIds(row: Pick<WorkSubcategory, "category_id" | "category_ids">): ID[] {
+  return [...new Set([row.category_id, ...(row.category_ids || [])].filter(Boolean))];
+}
+
 export function isActiveWorkTaxonomy(row: { status?: "active" | "archived" } | undefined): boolean {
   return row !== undefined && row.status !== "archived";
 }
@@ -178,7 +183,7 @@ export function workRequiredCategoryIds(
   work: Pick<WorkRequired, "work_subcategory_ids">,
 ): ID[] {
   const selected = new Set(work.work_subcategory_ids || []);
-  return [...new Set(workSubcategories.filter((row) => selected.has(row.id)).map((row) => row.category_id))];
+  return [...new Set(workSubcategories.filter((row) => selected.has(row.id)).flatMap(workSubcategoryCategoryIds))];
 }
 
 /**

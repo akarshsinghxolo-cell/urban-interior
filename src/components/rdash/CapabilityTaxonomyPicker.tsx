@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import type { WorkCategory, WorkSubcategory } from "@/lib/rdash/types";
 import { isActiveWorkTaxonomy } from "@/lib/rdash/work-types";
@@ -31,7 +32,7 @@ export function CapabilityTaxonomyPicker({ categories, subcategories, categoryId
     {visibleCategories.filter((category) => categoryIds.includes(category.id)).map((category) => <div key={category.id} className="min-w-0 rounded-lg border border-border bg-muted/20 p-2.5">
       <p className="mb-2 text-xs font-semibold">{category.name} · Select subcategories</p>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label={`${category.name} subcategories`}>
-        {subcategories.filter((row) => row.category_id === category.id
+        {subcategories.filter((row) => workSubcategoryCategoryIds(row).includes(category.id)
           && (subcategoryIds.includes(row.id) || (isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(row)))).map((row) => <button
           key={row.id}
           type="button"

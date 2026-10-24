@@ -3,7 +3,7 @@ import { normalizeCustomerRow } from "./customer-record";
 import sourceCategories from "@/data/work-category-master.json";
 import { normalizeStorageMaster } from "./storage";
 import type { Article, ArticleVariant, LineItem, Master, MasterUnit, RDashDatabase, VendorRate, WorkCategory, WorkRequiredArticle, WorkSubcategory, } from "./types";
-import { defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory } from "./work-types";
+import { defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory, workSubcategoryCategoryIds } from "./work-types";
 export const WORK_CATALOG_VERSION = "1.0.0";
 type CatalogMaterial = {
     n: string;
@@ -143,9 +143,15 @@ export function buildWorkCategoryCatalog(): CatalogCore {
     const articleByName = new Map<string, Article>();
     raw.forEach((category) => {
         category.items.forEach((item) => {
+            // These two catalogue identities were explicitly confirmed as shared services.
+            const sharedCategoryNames = item.name === "Texture Paint (Exterior)"
+                ? ["Paint Work", "Facade & Exterior Cladding"]
+                : item.name === "Glazing Work" ? ["Facade & Exterior Cladding", "Glass Work"] : [];
+            if (sharedCategoryNames.length && workSubcategories.some((row) => row.name === item.name)) return;
             const subcategory: WorkSubcategory = {
                 id: item.id,
                 category_id: category.id,
+                ...(sharedCategoryNames.length ? { category_ids: workCategories.filter((row) => sharedCategoryNames.includes(row.name)).map((row) => row.id) } : {}),
                 name: item.name,
                 unit_id: ensureUnit(item.unit),
                 work_types: [{
@@ -354,9 +360,9 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
     const workNamesAcrossCategories = new Map<string, WorkSubcategory[]>();
     master.workSubcategories.forEach((item) => {
         const normalizedWorkName = normalizeCatalogName(item.name);
-        const key = `${item.category_id}:${normalizedWorkName}`;
+        const keys = workSubcategoryCategoryIds(item).map((id) => `${id}:${normalizedWorkName}`);
         workNamesAcrossCategories.set(normalizedWorkName, [...(workNamesAcrossCategories.get(normalizedWorkName) || []), item]);
-        if (!categories.has(item.category_id))
+        if (workSubcategoryCategoryIds(item).some((id) => !categories.has(id)))
             issues.push({ severity: "error", message: `Submodule ${item.name} has no valid category.` });
         if (!item.unit_id || !units.has(item.unit_id))
             issues.push({ severity: "error", message: `Submodule ${item.name} has an invalid unit.` });
@@ -371,9 +377,9 @@ export function getCatalogIssues(master: Master): CatalogIssue[] {
                 issues.push({ severity: "error", message: `Work type ${workType.name} in ${item.name} has an invalid unit.` });
             workTypeNames.add(workTypeName);
         }
-        if (workNames.has(key))
+        if (keys.some((key) => workNames.has(key)))
             issues.push({ severity: "error", message: `Duplicate submodule in one category: ${item.name}.` });
-        workNames.add(key);
+        keys.forEach((key) => workNames.add(key));
     });
     for (const rows of workNamesAcrossCategories.values()) {
         if (rows.length < 2 || new Set(rows.map((row) => row.category_id)).size < 2) continue;

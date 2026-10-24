@@ -130,6 +130,7 @@ function collectDirectDependencies(
 
   if (collection === "master.workSubcategories") {
     addId(plan, "master.workCategories", row.category_id);
+    addIds(plan, "master.workCategories", row.category_ids);
     addId(plan, "master.units", row.unit_id);
   } else if (collection === "master.articles") {
     addId(plan, "master.workCategories", row.category_id);
@@ -387,6 +388,7 @@ function validateTouchedRows(database: RDashDatabase, operations: WorkspaceOpera
           const exists = (collection: string, value: unknown) => !value || rowsFor(database, collection).some((candidate) => rowId(candidate) === String(value));
           if (operation.collection === "master.workSubcategories") {
             if (!exists("master.workCategories", row.category_id)) throw new Error("Work sub-category category does not exist.");
+            if (Array.isArray(row.category_ids) && row.category_ids.some((id) => !exists("master.workCategories", id))) throw new Error("Work sub-category category does not exist.");
             if (!exists("master.units", row.unit_id)) throw new Error("Work sub-category unit does not exist.");
           } else if (operation.collection === "master.articles") {
             if (!exists("master.workCategories", row.category_id)) throw new Error("Article category does not exist.");

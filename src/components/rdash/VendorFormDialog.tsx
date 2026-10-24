@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import * as React from "react";
 import { Navigation, Plus, Star, Trash2, X } from "lucide-react";
@@ -311,7 +312,7 @@ export function VendorFormDialog({ open, onClose, onSaved, editId }: VendorFormD
     const removing = taxonomyCategoryIds.includes(categoryId);
     if (removing) {
       const childSubcategoryIds = new Set(
-        db.master.workSubcategories.filter((row) => row.category_id === categoryId).map((row) => row.id),
+        db.master.workSubcategories.filter((row) => workSubcategoryCategoryIds(row).includes(categoryId)).map((row) => row.id),
       );
       setTaxonomySubcategoryIds((selected) => selected.filter((id) => !childSubcategoryIds.has(id)));
     }

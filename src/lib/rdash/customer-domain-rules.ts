@@ -5,7 +5,7 @@ import {
   referrerExists,
   type CustomerReferrerLookup,
 } from "./customer-referrer";
-import { resolveWorkTypes } from "./work-types";
+import { resolveWorkTypes, workSubcategoryCategoryIds } from "./work-types";
 import type { Area, Customer, Master, Site, WorkRequired } from "./types";
 
 export type WorkRequiredValidationContext = {
@@ -106,7 +106,7 @@ export function assertWorkRequiredDefinition(
     const subcategories = subcategoryIds.map((id) => {
       const row = db.master.workSubcategories.find((candidate) => candidate.id === id);
       if (!row) throw new Error(`${context}: Work Subcategory "${id}" does not exist.`);
-      if (!db.master.workCategories.some((category) => category.id === row.category_id)) throw new Error(`${context}: Work Subcategory "${row.name}" has no Work Category.`);
+      if (workSubcategoryCategoryIds(row).some((id) => !db.master.workCategories.some((category) => category.id === id))) throw new Error(`${context}: Work Subcategory "${row.name}" has an invalid Work Category.`);
       return row;
     });
     const allowedWorkTypeIds = new Set(resolveWorkTypes(subcategories, workTypeIds).map((row) => row.id));

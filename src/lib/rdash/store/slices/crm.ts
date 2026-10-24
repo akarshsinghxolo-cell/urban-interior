@@ -7,7 +7,7 @@ import type { Customer, ID, Site, Area, LineItem } from "../../types";
 import type { CrmState } from "../types";
 import type { StoreContext } from "../context";
 import { advanceWorkRequiredLifecycleStatus, evaluateWorkRequiredTransition } from "../../work-required-lifecycle";
-import { itemOptionPairs, primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredCategoryIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
+import { workSubcategoryCategoryIds, itemOptionPairs, primaryWorkType, reconcileWorkRequiredSelection, withPrimaryWorkTypeIds, workRequiredCategoryIds, workRequiredTitleFromSelection, workTypesForSubcategory } from "../../work-types";
 import { contractorWorkTypeAverages } from "../../contractor-profile";
 import { assertRole, genId, nowIso } from "../helpers";
 import {
@@ -809,7 +809,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 }
                 const category = assertWorkCategoryId(state.db, line.category_id, context)!;
                 const subcategory = assertWorkSubcategoryId(state.db, line.subcategory_id, context)!;
-                if (subcategory.category_id !== category.id) {
+                if (!workSubcategoryCategoryIds(subcategory).includes(category.id)) {
                     throw new Error(`${context}: line ${index + 1} has a Subcategory outside its selected Category.`);
                 }
                 const workType = line.work_type_id
@@ -826,7 +826,7 @@ export function createCrmSlice(ctx: StoreContext): CrmState {
                 const optionPairs: Array<{ subcategory_id: ID; work_type_id?: ID }> = [];
                 for (const pair of optionPairsRaw) {
                     const pairSubcategory = assertWorkSubcategoryId(state.db, pair.subcategory_id, context)!;
-                    if (pairSubcategory.category_id !== category.id) {
+                    if (!workSubcategoryCategoryIds(pairSubcategory).includes(category.id)) {
                         throw new Error(`${context}: line ${index + 1} has an option outside its selected Category.`);
                     }
                     const pairWorkType = pair.work_type_id

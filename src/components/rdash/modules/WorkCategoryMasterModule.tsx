@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 import * as React from "react";
 import { AlertTriangle, Archive, ArchiveRestore, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Download, FilePlus2, Layers3, Link2, PackagePlus, Pencil, Plus, Ruler, Search, Settings2, Tags, Trash2, Wrench, } from "lucide-react";
 import { toast } from "sonner";
@@ -128,7 +129,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     React.useEffect(() => setView(initialView), [initialView]);
     const workByCategory = React.useMemo(() => {
         const map = new Map<string, WorkSubcategory[]>();
-        master.workSubcategories.forEach((item) => map.set(item.category_id, [...(map.get(item.category_id) || []), item]));
+        master.workSubcategories.forEach((item) => workSubcategoryCategoryIds(item).forEach((categoryId) => map.set(categoryId, [...(map.get(categoryId) || []), item])));
         return map;
     }, [master.workSubcategories]);
     const scopesByWork = React.useMemo(() => {
@@ -246,7 +247,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         const clean = draft.name.trim();
         if (!clean || !draft.categoryId)
             return toast.error("Sub category name and category are required.");
-        if (master.workSubcategories.some((item) => item.category_id === draft.categoryId && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
+        if (master.workSubcategories.some((item) => workSubcategoryCategoryIds(item).includes(draft.categoryId) && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
             return toast.error("This category already has a sub category with this name.");
         }
         const now = iso();
@@ -280,7 +281,7 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         const clean = patch.name === undefined ? undefined : patch.name.trim();
         if (clean !== undefined && !clean)
             return toast.error("Sub category name is required.");
-        if (clean && master.workSubcategories.some((item) => item.id !== workId && item.category_id === existing.category_id && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
+        if (clean && master.workSubcategories.some((item) => item.id !== workId && workSubcategoryCategoryIds(item).some((id) => workSubcategoryCategoryIds(existing).includes(id)) && normalizeCatalogName(item.name) === normalizeCatalogName(clean))) {
             return toast.error("Duplicate sub category in the same category.");
         }
         updateMaster((current) => ({

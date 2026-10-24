@@ -35,7 +35,7 @@ export const STORAGE_STATE = resolve(process.cwd(), "test-results", ".auth", "ow
 mkdirSync(resolve(process.cwd(), "test-results", ".auth"), { recursive: true });
 
 const sharedUse = {
-  baseURL: `http://127.0.0.1:${APP_PORT}`,
+  baseURL: `http://localhost:${APP_PORT}`,
   viewport: { width: 1280, height: 800 },
   // `next dev` compiles lazily; give every step and navigation generous budgets.
   actionTimeout: 20_000,
@@ -68,7 +68,7 @@ export default defineConfig({
     {
       name: "next-dev",
       command: `node node_modules/next/dist/bin/next dev -p ${APP_PORT}`,
-      url: `http://127.0.0.1:${APP_PORT}`,
+      url: `http://localhost:${APP_PORT}`,
       reuseExistingServer: true,
       timeout: 120_000,
       env: {

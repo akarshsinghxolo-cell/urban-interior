@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import * as React from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -73,7 +74,7 @@ export function WorkRequiredFields({
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
   const categories = db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || value.categoryIds.includes(row.id));
   const subcategories = db.master.workSubcategories.filter((row) =>
-    value.categoryIds.includes(row.category_id)
+    workSubcategoryCategoryIds(row).some((id) => value.categoryIds.includes(id))
     && (isActiveWorkTaxonomy(row) || value.subcategoryIds.includes(row.id)));
   const subcategoryGroups = value.categoryIds.flatMap((categoryId) => {
     const category = db.master.workCategories.find((row) => row.id === categoryId);
@@ -81,7 +82,7 @@ export function WorkRequiredFields({
     return [{
       key: category.id,
       items: subcategories
-        .filter((subcategory) => subcategory.category_id === category.id
+        .filter((subcategory) => workSubcategoryCategoryIds(subcategory).includes(category.id)
           && (value.subcategoryIds.includes(subcategory.id) || isActiveWorkTaxonomy(category)))
         .map((subcategory) => ({ id: subcategory.id, name: `${category.name} · ${subcategory.name}` })),
       footer: isActiveWorkTaxonomy(category) ? (close: () => void) => (
@@ -100,7 +101,7 @@ export function WorkRequiredFields({
   });
   const selectedWorkTypes = value.subcategoryIds.flatMap((subcategoryId) => {
     const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
-    const category = subcategory && db.master.workCategories.find((row) => row.id === subcategory.category_id);
+    const category = subcategory && db.master.workCategories.find((row) => workSubcategoryCategoryIds(subcategory).includes(row.id) && value.categoryIds.includes(row.id) && isActiveWorkTaxonomy(row));
     const canSelectNewWorkTypes = isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(subcategory);
     return subcategory ? workTypesForSubcategory(subcategory)
       .filter((workType) => value.workTypeIds.includes(workType.id) || (canSelectNewWorkTypes && isActiveWorkTaxonomy(workType)))
@@ -109,7 +110,7 @@ export function WorkRequiredFields({
   const workTypeGroups = value.subcategoryIds.flatMap((subcategoryId) => {
     const subcategory = db.master.workSubcategories.find((row) => row.id === subcategoryId);
     if (!subcategory) return [];
-    const category = db.master.workCategories.find((row) => row.id === subcategory.category_id);
+    const category = db.master.workCategories.find((row) => workSubcategoryCategoryIds(subcategory).includes(row.id) && value.categoryIds.includes(row.id) && isActiveWorkTaxonomy(row));
     const canSelectNewWorkTypes = isActiveWorkTaxonomy(category) && isActiveWorkTaxonomy(subcategory);
     return [{
       key: subcategory.id,
@@ -144,7 +145,7 @@ export function WorkRequiredFields({
       : value.subcategoryIds;
     const retainedCategoryIds = new Set(db.master.workSubcategories
       .filter((subcategory) => subcategoryIds.includes(subcategory.id))
-      .map((subcategory) => subcategory.category_id));
+      .flatMap(workSubcategoryCategoryIds));
     const categoryIds = selected
       ? value.categoryIds.filter((categoryId) => retainedCategoryIds.has(categoryId))
       : value.categoryIds;
@@ -263,7 +264,7 @@ export function WorkRequiredFields({
                 const categoryIds = selected ? value.categoryIds.filter((id) => id !== categoryId) : [...value.categoryIds, categoryId];
                 const subcategoryIds = value.subcategoryIds.filter((id) => {
                   const subcategory = db.master.workSubcategories.find((row) => row.id === id);
-                  return Boolean(subcategory && categoryIds.includes(subcategory.category_id));
+                  return Boolean(subcategory && workSubcategoryCategoryIds(subcategory).some((id) => categoryIds.includes(id)));
                 });
                 const workTypeIds = withPrimaryWorkTypeIds(
                   db.master.workSubcategories,

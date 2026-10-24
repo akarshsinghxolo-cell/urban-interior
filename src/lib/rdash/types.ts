@@ -1552,6 +1552,8 @@ export interface WorkTypeRate {
 export interface WorkSubcategory {
     id: ID;
     category_id: ID;
+    /** One service may be offered through several category paths. */
+    category_ids?: ID[];
     name: string;
     status?: "active" | "archived";
     archived_at?: string;

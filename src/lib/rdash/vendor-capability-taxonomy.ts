@@ -1,5 +1,5 @@
 import type { Article, WorkCategory, WorkRequiredArticle, WorkSubcategory } from "./types";
-import { isActiveWorkTaxonomy } from "./work-types";
+import { workSubcategoryCategoryIds, isActiveWorkTaxonomy } from "./work-types";
 
 export type VendorCapabilityTaxonomyMaster = {
   workCategories: WorkCategory[];
@@ -40,7 +40,7 @@ export function deriveVendorCapabilityTaxonomySelection(
   const categoryIds = unique([
     ...master.workSubcategories
       .filter((row) => subcategoryIds.includes(row.id))
-      .map((row) => row.category_id),
+      .flatMap(workSubcategoryCategoryIds),
     ...master.articles
       .filter((row) => selectedArticleIds.has(row.id))
       .map((row) => row.category_id || ""),
@@ -66,8 +66,8 @@ export function vendorArticlesForTaxonomy(
   const hasSubcategoryFilter = options.selectedSubcategoryIds.length > 0;
   const selectedSubcategories = new Set(
     master.workSubcategories
-      .filter((row) => activeCategoryIds.has(row.category_id) && isActiveWorkTaxonomy(row)
-        && (!selectedCategories.size || selectedCategories.has(row.category_id))
+      .filter((row) => workSubcategoryCategoryIds(row).some((id) => activeCategoryIds.has(id)) && isActiveWorkTaxonomy(row)
+        && (!selectedCategories.size || workSubcategoryCategoryIds(row).some((id) => selectedCategories.has(id)))
         && (!hasSubcategoryFilter || options.selectedSubcategoryIds.includes(row.id)))
       .map((row) => row.id),
   );

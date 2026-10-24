@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import * as React from "react";
 import { Navigation, Pencil, Plus, Search, X } from "lucide-react";
@@ -289,7 +290,7 @@ export function ContractorFormDialog({ open, onClose, onSaved, editId }: Contrac
     setCapabilities(capabilitiesToDraft(normalized.work_capabilities || [], allSubcategories));
     setSelectedCategoryIds([...new Set(allSubcategories
       .filter((subcategory) => normalized.work_capabilities?.some((row) => row.subcategory_id === subcategory.id))
-      .map((subcategory) => subcategory.category_id))]);
+      .flatMap(workSubcategoryCategoryIds))]);
     setContractorPhoto(
       normalized.photo_attachment_id
         ? { attachment_id: String(normalized.photo_attachment_id) }

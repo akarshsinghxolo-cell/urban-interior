@@ -1,5 +1,6 @@
 import type { ArticleVariant, LineItem, RDashDatabase, WorkRequired } from "./types";
 import { attachCustomerLabels } from "./customer";
+import { workSubcategoryCategoryIds } from "./work-types";
 import { prepareWorkspaceData, normalizeCatalogName } from "./work-category-master";
 
 const timestamp = "2026-07-08T00:00:00.000Z";
@@ -55,12 +56,14 @@ function repairLine(db: RDashDatabase, line: LineItem, context: string): LineIte
   if (!material) return line;
   const article = db.master.articles.find((row) => row.id === material.article_id);
   const variant = scopedVariantForMaterial(db, material.id);
+  const subcategory = db.master.workSubcategories.find((row) => row.id === material.work_required_id);
   const repaired: LineItem = {
     ...line,
     article_id: material.article_id,
     work_required_article_id: material.id,
     variant_id: line.variant_id || variant?.id,
-    category_id: db.master.workSubcategories.find((row) => row.id === material.work_required_id)?.category_id || line.category_id,
+    category_id: subcategory && line.category_id && workSubcategoryCategoryIds(subcategory).includes(line.category_id)
+      ? line.category_id : subcategory?.category_id || line.category_id,
     unit_id: material.unit_id,
     unit_name: unitName(db, material.unit_id, line.unit_name),
   };

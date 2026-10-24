@@ -1,0 +1,31 @@
+import { expect, test } from "@playwright/test";
+
+test("shared service has one capability and price through both category paths", async ({ page }) => {
+  const name = `QA shared exterior service ${Date.now()}`;
+  await page.goto("/workspace/contractors");
+  await page.getByRole("button", { name: "Add contractor", exact: true }).click();
+  let dialog = page.getByRole("dialog", { name: "Add New Contractor", exact: true });
+  await dialog.getByPlaceholder("Contractor / firm name", { exact: true }).fill(name);
+  await dialog.getByLabel("Primary number", { exact: true }).fill(`90000${String(Date.now()).slice(-5)}`);
+  await dialog.getByPlaceholder("City", { exact: true }).fill("Gorakhpur");
+  await dialog.getByRole("button", { name: "Paint Work", exact: true }).click();
+  await dialog.getByRole("button", { name: "Facade & Exterior Cladding", exact: true }).click();
+  const options = dialog.getByRole("button", { name: "Texture Paint (Exterior)", exact: true });
+  await expect(options).toHaveCount(2);
+  await options.first().click();
+  await expect(options.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(options.last()).toHaveAttribute("aria-pressed", "true");
+  const types = dialog.getByRole("group", { name: "Work types for Texture Paint (Exterior)", exact: true });
+  await expect(types).toHaveCount(1);
+  await types.getByRole("checkbox", { name: "Standard", exact: true }).check();
+  await dialog.getByLabel("Standard material rate", { exact: true }).fill("120");
+  const save = page.waitForResponse((res) => res.url().includes("/api/operations/commit") && res.request().method() === "POST");
+  await dialog.getByRole("button", { name: "Create contractor", exact: true }).click();
+  expect((await save).status()).toBe(200);
+  await expect(dialog).toHaveCount(0);
+  await page.reload();
+  await page.getByTestId("partner-profile").getByRole("button", { name: "Edit profile", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Edit Contractor", exact: true });
+  await expect(dialog.getByRole("button", { name: "Texture Paint (Exterior)", exact: true })).toHaveCount(2);
+  await expect(dialog.getByLabel("Standard material rate", { exact: true })).toHaveValue("120");
+});

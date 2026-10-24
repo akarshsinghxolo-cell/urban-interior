@@ -2,7 +2,7 @@
 import { resolveCustomerIdFromLinks, type CustomerLinkInput } from "./customer-relations";
 import { findCustomerIdentityMatches } from "./customer-identity";
 import { assertCustomerRecord, assertWorkRequiredDefinition } from "./customer-domain-rules";
-import { workTypesForSubcategory } from "./work-types";
+import { workSubcategoryCategoryIds, workTypesForSubcategory } from "./work-types";
 import type { FinanceContextLink, GRN, ID, LineItem, PurchaseOrder, Quotation, RDashDatabase, WorkOrder, WorkRequired, Visit, ThreadKind, } from "./types";
 export class BusinessRuleError extends Error {
     constructor(message: string) {
@@ -176,13 +176,17 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
     // Any-one-of alternatives: every option pair must exist in the catalog —
     // its subcategory under the line's category, its work type under that
     // subcategory. A pair shares the line's measurement; it never brings one.
-    for (const pair of item.option_pairs || []) {
+    const cataloguePairs = [
+        ...(item.subcategory_id ? [{ subcategory_id: item.subcategory_id, work_type_id: item.work_type_id }] : []),
+        ...(item.option_pairs || []),
+    ];
+    for (const pair of cataloguePairs) {
         const pairSubcategory = db.master.workSubcategories.find((row) => row.id === pair.subcategory_id);
         if (!pairSubcategory) {
             fail(context, `Line "${item.title}" references a missing option Work Subcategory.`);
             continue;
         }
-        if (category && pairSubcategory.category_id !== category.id) {
+        if (category && !workSubcategoryCategoryIds(pairSubcategory).includes(category.id)) {
             fail(context, `Line "${item.title}" option "${pairSubcategory.name}" conflicts with its Work Category.`);
         }
         if (pair.work_type_id && !workTypesForSubcategory(pairSubcategory).some((row) => row.id === pair.work_type_id)) {
@@ -207,7 +211,7 @@ export function assertLineItemCatalogRelations(db: RDashDatabase, item: LineItem
         if (!subcategory) {
             fail(context, `Line "${item.title}" material context has no Work Subcategory.`);
         }
-        if (category && subcategory && category.id !== subcategory.category_id) {
+        if (category && subcategory && !workSubcategoryCategoryIds(subcategory).includes(category.id)) {
             fail(context, `Line "${item.title}" Work Category conflicts with its material catalog context.`);
         }
         if (item.work_required_id) {

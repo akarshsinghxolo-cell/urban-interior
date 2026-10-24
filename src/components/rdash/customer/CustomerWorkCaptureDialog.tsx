@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import * as React from "react";
 import { CheckCircle2, ChevronDown, ListChecks, Pencil, Plus, Trash2, Undo2, X } from "lucide-react";
@@ -582,7 +583,7 @@ export function CustomerWorkCaptureDialog({
     const category = db.master.workCategories.find((row) => row.id === line.category_id);
     const canSelectNewSubcategories = isActiveWorkTaxonomy(category);
     const subcategories = line.category_id
-      ? db.master.workSubcategories.filter((row) => row.category_id === line.category_id
+      ? db.master.workSubcategories.filter((row) => workSubcategoryCategoryIds(row).includes(line.category_id!)
         && (row.id === line.subcategory_id || selectedPairSubcategoryIds.has(row.id)
           || (canSelectNewSubcategories && isActiveWorkTaxonomy(row))))
       : [];
@@ -594,7 +595,7 @@ export function CustomerWorkCaptureDialog({
     const pairKeys = new Set(pairs.map((pair) => `${pair.subcategory_id}::${pair.work_type_id || ""}`));
     const candidateOptions = line.category_id && canSelectNewSubcategories
       ? db.master.workSubcategories
-          .filter((row) => row.category_id === line.category_id && isActiveWorkTaxonomy(row))
+          .filter((row) => workSubcategoryCategoryIds(row).includes(line.category_id!) && isActiveWorkTaxonomy(row))
           .flatMap((subcategory) => workTypesForSubcategory(subcategory).filter(isActiveWorkTaxonomy).map((workType) => ({
             value: `${subcategory.id}::${workType.id}`,
             label: `${subcategory.name} · ${workType.name}`,

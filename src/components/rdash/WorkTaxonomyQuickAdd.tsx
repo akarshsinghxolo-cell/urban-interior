@@ -1,4 +1,5 @@
 "use client";
+import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import * as React from "react";
 import { Check, Plus, X } from "lucide-react";
@@ -116,7 +117,7 @@ export function AddWorkSubcategoryAction({
     if (!isActiveWorkTaxonomy(category)) return toast.error("Restore this category before adding a subcategory.");
     if (!clean) return toast.error("Subcategory name is required.");
     if (master.workSubcategories.some((subcategory) =>
-      subcategory.category_id === categoryId &&
+      workSubcategoryCategoryIds(subcategory).includes(categoryId) &&
       normalizeCatalogName(subcategory.name) === normalizeCatalogName(clean))) {
       return toast.error("This category already has a subcategory with this name.");
     }
@@ -202,7 +203,7 @@ export function AddWorkTypeAction({
   function save() {
     const subcategory = master.workSubcategories.find((row) => row.id === subcategoryId);
     if (!subcategory) return toast.error("Select the subcategory first.");
-    const category = master.workCategories.find((row) => row.id === subcategory.category_id);
+    const category = master.workCategories.find((row) => workSubcategoryCategoryIds(subcategory).includes(row.id) && isActiveWorkTaxonomy(row));
     if (!isActiveWorkTaxonomy(category) || !isActiveWorkTaxonomy(subcategory)) {
       return toast.error("Restore this category and subcategory before adding a work type.");
     }

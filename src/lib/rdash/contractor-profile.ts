@@ -1,5 +1,5 @@
 import type { RDashDatabase, WorkSubcategory } from "./types";
-import { workTypesForSubcategory } from "./work-types";
+import { workSubcategoryCategoryIds, workTypesForSubcategory } from "./work-types";
 import { isValidIndianMobile, sanitizeIndianMobile } from "./phone-validation";
 
 export type ContractorLifecycleStatus = "onboarding" | "active" | "on_hold" | "blacklisted" | "inactive";
@@ -201,7 +201,7 @@ export function contractorMasterRecordForCreate(input: ContractorProfileRecord, 
 }
 
 export function derivedContractorCategoryNames(db: Pick<RDashDatabase, "master">, capabilities: ContractorCapability[]): string[] {
-  const categoryIds = new Set(capabilities.map((capability) => db.master.workSubcategories.find((row) => row.id === capability.subcategory_id)?.category_id).filter(Boolean));
+  const categoryIds = new Set(capabilities.flatMap((capability) => { const subcategory = db.master.workSubcategories.find((row) => row.id === capability.subcategory_id); return subcategory ? workSubcategoryCategoryIds(subcategory) : []; }));
   return db.master.workCategories.filter((category) => categoryIds.has(category.id)).map((category) => category.name);
 }
 
