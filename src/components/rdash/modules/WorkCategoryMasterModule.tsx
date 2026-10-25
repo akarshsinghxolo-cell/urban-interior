@@ -115,6 +115,7 @@ function NativeSelect(props: React.ComponentProps<"select">) {
 export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
     const db = useRDashStore((s) => s.db);
     const mutateMaster = useRDashStore((s) => s.mutateMaster);
+    const forceDeleteWorkType = useRDashStore((s) => s.forceDeleteWorkType);
     const master = db.master;
     const [view, setView] = React.useState<WorkCategoryMasterView>(initialView);
     const [query, setQuery] = React.useState("");
@@ -369,26 +370,39 @@ export function WorkCategoryMasterModule({ initialView = "catalogue" }: Props) {
         const workType = workTypes.find((row) => row.id === workTypeId);
         if (!work || !workType) return;
         if (workTypes.length === 1) return toast.error("A sub category must keep at least one work type. Add a replacement first.");
+        const workTypeIndex = workTypes.findIndex((row) => row.id === workTypeId);
+        const replacementOrder = [...workTypes.slice(workTypeIndex + 1), ...workTypes.slice(0, workTypeIndex)];
+        const replacement = replacementOrder.find(isActiveWorkTaxonomy) || replacementOrder[0];
+        if (!replacement) return toast.error("Add a replacement work type before deleting this one.");
         const references = workTaxonomyReferences(db, "workType", workTypeId);
-        if (references.length) {
-            toast.error(`${workType.name} is still in use. Archive it instead.`, { description: workTaxonomyReferenceSummary(references) });
-            return;
-        }
         const ok = await confirmDialog({
-            title: `Delete unused work type ${workType.name}`,
-            description: "This work type has no customer, contractor, quotation or other business references.",
-            confirmLabel: "Delete work type",
+            title: references.length ? `Force delete ${workType.name}` : `Delete unused work type ${workType.name}`,
+            description: references.length
+                ? `${workTaxonomyReferenceSummary(references)} will be moved to ${replacement.name}. The old work type will then be permanently deleted.`
+                : "This work type has no customer, contractor, quotation or other business references.",
+            confirmLabel: references.length ? `Move to ${replacement.name} and delete` : "Delete work type",
             danger: true,
         });
         if (!ok) return;
-        await saveTaxonomyChange(() => updateMaster((current) => ({
-            ...current,
-            workSubcategories: current.workSubcategories.map((row) => row.id === workId ? {
-                ...normalizeWorkSubcategoryWorkTypes(row),
-                work_types: workTypesForSubcategory(row).filter((entry) => entry.id !== workTypeId),
-                updated_at: iso(),
-            } : row),
-        })), "Unused work type deleted.");
+        const saved = await saveTaxonomyChange(() => forceDeleteWorkType(workId, workTypeId, replacement.id), references.length
+            ? `${workType.name} references moved to ${replacement.name}; old work type deleted.`
+            : "Unused work type deleted.");
+        if (saved && references.length) {
+            const actor = useRDashStore.getState().currentUser();
+            useRDashStore.getState().logAudit({
+                actor: actor.name,
+                actor_role: actor.role,
+                action: `Force deleted work type ${work.name} · ${workType.name}`,
+                entity_type: "workSubcategory",
+                entity_id: workId,
+                entity_label: work.name,
+                kind: "delete",
+                source_module: "masters",
+                reason: `References reassigned to ${replacement.name}`,
+                before: { work_type_id: workType.id, work_type_name: workType.name },
+                after: { work_type_id: replacement.id, work_type_name: replacement.name },
+            });
+        }
     }
     async function setWorkTypeArchived(workId: string, workTypeId: string, archived: boolean) {
         const work = workFor(master, workId);

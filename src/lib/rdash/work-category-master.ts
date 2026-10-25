@@ -3,7 +3,7 @@ import { normalizeCustomerRow } from "./customer-record";
 import sourceCategories from "@/data/work-category-master.json";
 import { normalizeStorageMaster } from "./storage";
 import type { Article, ArticleVariant, LineItem, Master, MasterUnit, RDashDatabase, VendorRate, WorkCategory, WorkRequiredArticle, WorkSubcategory, } from "./types";
-import { defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workTypesForSubcategory, workSubcategoryCategoryIds } from "./work-types";
+import { defaultWorkTypeId, normalizeWorkSubcategoryWorkTypes, workRequiredTitleFromSelection, workTypesForSubcategory, workSubcategoryCategoryIds } from "./work-types";
 export const WORK_CATALOG_VERSION = "1.0.0";
 type CatalogMaterial = {
     n: string;
@@ -85,6 +85,7 @@ export function workTaxonomyReferences(db: RDashDatabase, kind: WorkTaxonomyKind
     }
 
     return collections.flatMap(([collection, rows]) => {
+        if (kind === "workType" && collection === "auditLog") return [];
         const count = rows.filter((row) => {
             if (!row || typeof row !== "object") return false;
             const record = row as Record<string, unknown>;
@@ -103,6 +104,92 @@ export function workTaxonomyReferenceSummary(references: WorkTaxonomyReference[]
     const shown = references.slice(0, 4).map((reference) => `${reference.collection} (${reference.count})`);
     const hidden = references.length - shown.length;
     return `${shown.join(", ")}${hidden > 0 ? ` and ${hidden} more` : ""}`;
+}
+
+function replaceWorkTypeReference(value: unknown, sourceId: string, replacementId: string, sourceName: string, replacementName: string, key?: string): unknown {
+    if (value === sourceId) return replacementId;
+    if (Array.isArray(value)) {
+        const replaced = value.map((entry) => replaceWorkTypeReference(entry, sourceId, replacementId, sourceName, replacementName));
+        if (key === "work_type_ids") return [...new Set(replaced)];
+        if (key === "option_pairs") {
+            const seen = new Set<string>();
+            return replaced.filter((entry) => {
+                if (!entry || typeof entry !== "object") return true;
+                const pair = entry as Record<string, unknown>;
+                const pairKey = `${String(pair.subcategory_id || "")}::${String(pair.work_type_id || "")}`;
+                if (seen.has(pairKey)) return false;
+                seen.add(pairKey);
+                return true;
+            });
+        }
+        return replaced;
+    }
+    if (!value || typeof value !== "object") return value;
+    const source = value as Record<string, unknown>;
+    const replaced = Object.fromEntries(Object.entries(source).map(([entryKey, entryValue]) => [
+        entryKey,
+        replaceWorkTypeReference(entryValue, sourceId, replacementId, sourceName, replacementName, entryKey),
+    ]));
+    if (source.work_type_id === sourceId) {
+        if (typeof source.work_type_name === "string") replaced.work_type_name = replacementName;
+        if (typeof source.title === "string") replaced.title = source.title.replaceAll(sourceName, replacementName);
+        if (typeof source.trade === "string") replaced.trade = source.trade.replaceAll(sourceName, replacementName);
+    }
+    return replaced;
+}
+
+/** Reassign every exact work-type reference before permanently removing its catalogue definition. */
+export function forceDeleteWorkType(db: RDashDatabase, workId: string, sourceId: string, replacementId: string): { db: RDashDatabase; movedReferences: number } {
+    const work = db.master.workSubcategories.find((row) => row.id === workId);
+    const source = work && workTypesForSubcategory(work).find((row) => row.id === sourceId);
+    const replacement = work && workTypesForSubcategory(work).find((row) => row.id === replacementId);
+    if (!work || !source || !replacement || sourceId === replacementId) throw new Error("A valid replacement work type from the same subcategory is required.");
+
+    const now = new Date().toISOString();
+    const movedReferences = workTaxonomyReferences(db, "workType", sourceId).reduce((sum, row) => sum + row.count, 0);
+    const next = replaceWorkTypeReference(db, sourceId, replacementId, source.name, replacement.name) as RDashDatabase;
+    next.auditLog = db.auditLog;
+    next.master.workSubcategories = db.master.workSubcategories.map((row) => row.id === workId ? {
+        ...(replaceWorkTypeReference(row, sourceId, replacementId, source.name, replacement.name) as WorkSubcategory),
+        work_types: workTypesForSubcategory(row).filter((entry) => entry.id !== sourceId),
+        updated_at: now,
+    } : replaceWorkTypeReference(row, sourceId, replacementId, source.name, replacement.name) as WorkSubcategory);
+    next.workRequired = next.workRequired.map((row, index) => {
+        if (!(db.workRequired[index]?.work_type_ids || []).includes(sourceId)) return row;
+        return {
+            ...row,
+            work_type_ids: [...new Set(row.work_type_ids || [])],
+            title: workRequiredTitleFromSelection(next.master.workSubcategories, row.work_subcategory_ids || [], row.work_type_ids) || row.title,
+            updated_at: now,
+        };
+    });
+    const existingContractorRateKeys = new Set(db.master.contractorRates
+        .filter((rate) => rate.work_type_id === replacementId)
+        .map((rate) => `${rate.contractor_id}::${rate.work_subcategory_id || ""}`));
+    next.master.contractorRates = next.master.contractorRates
+        .filter((rate, index) => db.master.contractorRates[index]?.work_type_id !== sourceId
+            || !existingContractorRateKeys.has(`${rate.contractor_id}::${rate.work_subcategory_id || ""}`))
+        .filter((rate, index, rows) => index === rows.findIndex((candidate) =>
+            candidate.contractor_id === rate.contractor_id
+            && candidate.work_subcategory_id === rate.work_subcategory_id
+            && candidate.work_type_id === rate.work_type_id));
+    next.master.contractors = next.master.contractors.map((contractor) => {
+        const original = db.master.contractors.find((row) => row.id === contractor.id);
+        return {
+            ...contractor,
+            work_capabilities: contractor.work_capabilities?.map((capability) => {
+                const originalRates = original?.work_capabilities?.find((row) => row.subcategory_id === capability.subcategory_id)?.work_type_rates || [];
+                const replacementExists = originalRates.some((row) => row.work_type_id === replacementId);
+                return {
+                    ...capability,
+                    work_type_rates: capability.work_type_rates
+                        ?.filter((_rate, index) => originalRates[index]?.work_type_id !== sourceId || !replacementExists)
+                        .filter((rate, index, rows) => index === rows.findIndex((candidate) => candidate.work_type_id === rate.work_type_id)),
+                };
+            }),
+        };
+    });
+    return { db: next, movedReferences };
 }
 export function resolveUnitId(value: string | undefined) {
     const normalized = normalizeCatalogName(value).replace(/\./g, "");

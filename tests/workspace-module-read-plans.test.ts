@@ -78,7 +78,6 @@ describe("exact module workspace read plans", () => {
       "profitability",
       "mediaCommunication",
       "hrStaff",
-      "masterSetup",
       "reportsDesk",
       "integrity",
     ]) {
@@ -110,6 +109,14 @@ describe("exact module workspace read plans", () => {
   });
 
   test("does not truncate primary arrays that currently drive total counters", () => {
+    const masters = workspaceModuleReadPlan(workspaceReadTargetForModule("masterSetup"));
+    expect(masters.strategy).toBe("module");
+    expect(masters.collections).toEqual(expect.arrayContaining([
+      "workRequired", "quotations", "boqs", "purchaseOrders", "grns", "dispatches",
+      "master.workSubcategories", "master.contractors", "master.contractorRates",
+    ]));
+    expect(masters.limitsByCollection?.workRequired).toBeUndefined();
+
     const drawings = workspaceModuleReadPlan(workspaceReadTargetForModule("drawings"));
     expect(drawings.limitsByCollection?.drawings).toBeUndefined();
     expect(drawings.limitsByCollection?.customers).toBeUndefined();

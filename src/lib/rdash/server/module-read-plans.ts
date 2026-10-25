@@ -25,6 +25,12 @@ const SCOPE_HISTORY_LIMITS = Object.freeze({
 } as const);
 
 const EXACT_MODULE_COLLECTIONS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  masterSetup: Object.freeze([
+    "workRequired", "quotations", "boqs", "purchaseOrders", "grns", "dispatches", "auditLog",
+    "master.units", "master.workCategories", "master.workSubcategories", "master.articles",
+    "master.articleVariants", "master.subcategoryArticleMap", "master.workOptionGroups",
+    "master.workOptionValues", "master.contractors", "master.contractorRates",
+  ]),
   vendors: Object.freeze([
     "customers", "sites", "workOrders", "boqs", "vendorRfqs", "vendorBids", "purchaseOrders", "grns",
     "vendorBills", "vendorPayments", "tasks", "actions", "threads", "auditLog", "entityFileAttachments",

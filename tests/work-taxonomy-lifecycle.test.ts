@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
-import { workTaxonomyReferences } from "../src/lib/rdash/work-category-master";
+import { forceDeleteWorkType, workTaxonomyReferences } from "../src/lib/rdash/work-category-master";
 import { isActiveWorkTaxonomy, withPrimaryWorkTypeIds, workTypesForSubcategory } from "../src/lib/rdash/work-types";
 
 describe("work taxonomy lifecycle", () => {
@@ -48,5 +48,44 @@ describe("work taxonomy lifecycle", () => {
     expect(workTaxonomyReferences(db, "category", category.id).some((row) => row.collection === "Work Subcategories")).toBe(true);
     expect(workTaxonomyReferences(db, "subcategory", subcategory.id).some((row) => row.collection === "Work Required")).toBe(true);
     expect(workTaxonomyReferences(db, "workType", workType.id).some((row) => row.collection === "Work Required")).toBe(true);
+  });
+
+  test("force deletion moves every exact reference to the next work type", () => {
+    const db = buildSeedDatabase();
+    const subcategory = db.master.workSubcategories.find((row) => workTypesForSubcategory(row).length > 0)!;
+    const replacement = workTypesForSubcategory(subcategory)[0];
+    const removed = { ...replacement, id: "wt-remove", name: "Remove me" };
+    subcategory.work_types = [replacement, removed];
+    const work = db.workRequired[0];
+    work.work_subcategory_ids = [subcategory.id];
+    work.work_type_ids = [replacement.id, removed.id];
+    work.structured_items = [{
+      id: "line-force-delete", title: "Remove me", quantity: 1, rate: 1, amount: 1,
+      subcategory_id: subcategory.id, work_type_id: removed.id,
+      option_pairs: [{ subcategory_id: subcategory.id, work_type_id: removed.id }],
+    }];
+    db.master.contractorRates.push({
+      id: "rate-force-delete", contractor_id: "contractor-force-delete", trade: "Remove me", rate: 1,
+      work_subcategory_id: subcategory.id, work_type_id: removed.id, work_type_name: removed.name,
+    });
+    db.auditLog.push({
+      id: "audit-force-delete", actor: "Owner", action: "Selected Remove me", entity_type: "workSubcategory",
+      entity_id: subcategory.id, kind: "update", after: { work_type_id: removed.id }, timestamp: new Date().toISOString(),
+    });
+    db.master.contractorRates.push({
+      id: "rate-keep-replacement", contractor_id: "contractor-force-delete", trade: "Keep replacement", rate: 99,
+      work_subcategory_id: subcategory.id, work_type_id: replacement.id, work_type_name: replacement.name,
+    });
+
+    const result = forceDeleteWorkType(db, subcategory.id, removed.id, replacement.id);
+
+    expect(result.movedReferences).toBeGreaterThan(0);
+    expect(workTaxonomyReferences(result.db, "workType", removed.id)).toEqual([]);
+    expect(workTypesForSubcategory(result.db.master.workSubcategories.find((row) => row.id === subcategory.id)!)).not.toContainEqual(expect.objectContaining({ id: removed.id }));
+    expect(result.db.workRequired[0].work_type_ids).toEqual([replacement.id]);
+    expect(result.db.workRequired[0].structured_items?.[0]).toMatchObject({ work_type_id: replacement.id, title: "Standard" });
+    expect(result.db.auditLog.find((row) => row.id === "audit-force-delete")?.after).toEqual({ work_type_id: removed.id });
+    expect(result.db.master.contractorRates.find((row) => row.id === "rate-force-delete")).toBeUndefined();
+    expect(result.db.master.contractorRates.find((row) => row.id === "rate-keep-replacement")).toMatchObject({ work_type_id: replacement.id, rate: 99 });
   });
 });

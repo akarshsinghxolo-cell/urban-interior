@@ -50,6 +50,7 @@ export interface CoreState {
   canReleaseContractorPayment: (workOrderId: string) => GuardResult;
   resetDatabase: (confirmation: string) => Promise<void>;
   mutateMaster: (updater: (master: Master) => Master) => void;
+  forceDeleteWorkType: (workId: string, sourceId: string, replacementId: string) => number;
   upsertStaffRolePermission: (row: StaffRolePermission) => void;
   updateStaffRolePermission: (id: string, patch: Partial<Omit<StaffRolePermission, "id" | "role_key" | "module_key">>) => void;
   removeStaffRolePermission: (id: string) => void;

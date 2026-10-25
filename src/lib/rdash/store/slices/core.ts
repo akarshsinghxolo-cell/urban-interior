@@ -30,7 +30,7 @@ import type { CoreState } from "../types";
 import type { StoreContext } from "../context";
 import type { StaffLocationPing } from "../../staff-location";
 import { mergeStaffLocationPings } from "../../staff-location";
-import { prepareWorkspaceData } from "../../work-category-master";
+import { forceDeleteWorkType, prepareWorkspaceData } from "../../work-category-master";
 import { threadParentExists, validateBusinessData } from "../../business-rules";
 import { genId, nowIso, contractorPaymentProofStatus } from "../helpers";
 import { mapEntityTypeToThreadKind } from "../../entity-thread-map";
@@ -49,6 +49,7 @@ type CoreSliceActions = Pick<CoreState,
     | "currentUser"
     | "canReleaseContractorPayment"
     | "mutateMaster"
+    | "forceDeleteWorkType"
     | "upsertStaffRolePermission"
     | "updateStaffRolePermission"
     | "removeStaffRolePermission"
@@ -92,6 +93,11 @@ export function createCoreSlice(ctx: StoreContext): CoreSliceActions {
         mutateMaster: (updater: (master: Master) => Master) => commitState((s: any) => ({
             db: prepareWorkspaceData({ ...s.db, master: updater(s.db.master) }),
         })),
+        forceDeleteWorkType: (workId, sourceId, replacementId) => {
+            const result = forceDeleteWorkType(get().db, workId, sourceId, replacementId);
+            commitState({ db: prepareWorkspaceData(result.db) });
+            return result.movedReferences;
+        },
         upsertStaffRolePermission: (row: StaffRolePermission) => commitState((s: any) => {
             const current = ((s.db as any).staffRolePermissions || []) as StaffRolePermission[];
             const now = nowIso();
