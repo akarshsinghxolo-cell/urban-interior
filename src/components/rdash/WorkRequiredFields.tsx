@@ -2,7 +2,7 @@
 import { workSubcategoryCategoryIds } from "@/lib/rdash/work-types";
 
 import * as React from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { LockKeyhole, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,6 +48,7 @@ export function WorkRequiredFields({
   site,
   areas,
   value,
+  lockedAreaIds = [],
   onChange,
   onCreateArea,
   onUpdateArea,
@@ -58,6 +59,8 @@ export function WorkRequiredFields({
   site?: Pick<Site, "id" | "name">;
   areas: Array<Pick<Area, "id" | "name"> & { area_type?: Area["area_type"]; areaType?: Area["area_type"] }>;
   value: WorkRequiredFormDraft;
+  /** Areas already committed by an active quotation for this work selection. */
+  lockedAreaIds?: string[];
   onChange: (patch: Partial<WorkRequiredFormDraft>) => void;
   onCreateArea: (area: NewWorkArea) => string;
   onUpdateArea?: (areaId: string, name: string) => void;
@@ -72,6 +75,8 @@ export function WorkRequiredFields({
   const [customAreaTypes, setCustomAreaTypes] = React.useState<Array<{ value: string; label: string }>>([]);
   const [customAreaType, setCustomAreaType] = React.useState("");
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
+  const lockedAreas = new Set(lockedAreaIds);
+  const effectiveAreaIds = new Set([...value.areaIds, ...lockedAreaIds]);
   const categories = db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || value.categoryIds.includes(row.id));
   const subcategories = db.master.workSubcategories.filter((row) =>
     workSubcategoryCategoryIds(row).some((id) => value.categoryIds.includes(id))
@@ -196,7 +201,7 @@ export function WorkRequiredFields({
           <span className="text-[10px] font-semibold uppercase text-muted-foreground">Covered Areas</span>
           <div className="flex flex-wrap justify-end gap-1">
             {areas.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: areas.map((area) => area.id) })}>Select all</Button> : null}
-            {value.areaIds.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: [] })}>Clear</Button> : null}
+            {value.areaIds.length ? <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => onChange({ areaIds: [] })}>Clear editable</Button> : null}
             <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => setNewAreaOpen((current) => !current)}>
               <Plus className="mr-1 h-3 w-3" />{newAreaOpen ? "Close" : "Add Area"}
             </Button>
@@ -224,6 +229,7 @@ export function WorkRequiredFields({
             </div>
           </div>
         ) : null}
+        {lockedAreaIds.length ? <p className="mt-1 flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-300"><LockKeyhole className="h-3 w-3" />Quoted Areas stay selected here because quotations and customer work use the same coverage.</p> : null}
         {areas.length ? (
           <div className="mt-1 grid max-h-44 grid-cols-1 gap-1.5 overflow-y-auto rounded-md border border-border p-2 sm:grid-cols-2">
             {areas.map((area) => (
@@ -231,7 +237,9 @@ export function WorkRequiredFields({
                 <input
                   type="checkbox"
                   aria-label={`Include Area ${area.name}`}
-                  checked={value.areaIds.includes(area.id)}
+                  checked={effectiveAreaIds.has(area.id)}
+                  disabled={lockedAreas.has(area.id)}
+                  title={lockedAreas.has(area.id) ? "Included in an active quotation" : undefined}
                   onChange={() => onChange({ areaIds: value.areaIds.includes(area.id) ? value.areaIds.filter((id) => id !== area.id) : [...value.areaIds, area.id] })}
                 />
                 <Input id={`area-name-${area.id}`} value={area.name} onChange={(event) => onUpdateArea?.(area.id, event.target.value)} readOnly={!onUpdateArea} className="h-7 min-w-0 text-xs" aria-label={`Area name ${area.name}`} />

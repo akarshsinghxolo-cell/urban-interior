@@ -16,6 +16,23 @@ import {
   type SiteDraft,
 } from "./customer-sites-form-model";
 
+export function quotationCoveredAreaIdsForDraft(
+  db: Pick<RDashDatabase, "workRequired" | "quotations">,
+  customerId: string | undefined,
+  draft: Pick<CustomerWorkRequiredDraft, "siteId" | "workTypeIds">,
+): string[] {
+  const relatedWorkIds = new Set(db.workRequired
+    .filter((work) => work.customer_id === customerId
+      && work.site_id === draft.siteId
+      && (work.work_type_ids || []).some((workTypeId) => draft.workTypeIds.includes(workTypeId)))
+    .map((work) => work.id));
+  return [...new Set(db.quotations
+    .filter((quotation) => quotation.status !== "cancelled")
+    .flatMap((quotation) => quotation.coverage || [])
+    .filter((coverage) => relatedWorkIds.has(coverage.work_required_id))
+    .flatMap((coverage) => coverage.area_ids || []))];
+}
+
 export function CustomerWorkRequiredDraftSection({
   db,
   customerId,
@@ -118,6 +135,7 @@ export function CustomerWorkRequiredDraftSection({
       {visibleWorkRequired.map((draft, index) => {
         const site = liveSites.find((row) => row.id === draft.siteId);
         const siteAreas = areas.filter((area) => area.siteId === (site?.id || "") && !area.archiveRequested);
+        const quotationCoveredAreaIds = quotationCoveredAreaIdsForDraft(db, customerId, draft);
         const selectedAreaNames = siteAreas.filter((area) => draft.areaIds.includes(area.id)).map((area) => area.name).filter(Boolean);
         const displayNumber = draft.existing ? index + 1 : Math.max(existingCount, visibleWorkRequired.filter((row) => row.existing).length) + visibleWorkRequired.slice(0, index + 1).filter((row) => !row.existing).length;
         const expanded = expandedIds.has(draft.id);
@@ -169,6 +187,7 @@ export function CustomerWorkRequiredDraftSection({
               site={site}
               areas={siteAreas}
               value={draft}
+              lockedAreaIds={quotationCoveredAreaIds}
               onChange={(patch) => updateWorkRequired(draft.id, patch)}
               onCreateArea={({ name, areaType, notes }) => {
                 const area = { ...newAreaDraft(site?.id || ""), name, areaType, notes };
