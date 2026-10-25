@@ -1,3 +1,4 @@
+import { isSharedCollection } from "../shared-domain-storage";
 import { getSupabaseAdminClient } from "../../supabase/server";
 import {
   CURRENT_STAFF_RUNTIME_FIELDS,
@@ -86,6 +87,7 @@ async function projectedRows(
     .select(projectionSelect(fields))
     .eq("workspace_id", workspaceId);
 
+  if (isSharedCollection(collection)) query = query.eq("collection", collection);
   if (ids?.length) query = query.in("id", [...ids]);
   const { data, error } = await query;
   if (error) {
