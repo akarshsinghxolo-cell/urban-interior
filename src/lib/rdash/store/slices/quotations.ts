@@ -1,8 +1,28 @@
-// The record id supplies the uniqueness; browser-visible rows are not a safe sequence source.
-function nextQuotationNo(id: string): string {
-    const year = new Date().getFullYear();
-    const suffix = id.replace(/[^a-z0-9]/gi, "").slice(-8).toUpperCase();
-    return `Q-${year}-${suffix}`;
+export function nextQuotationNo(
+    quotations: Array<Pick<Quotation, "quotation_no" | "created_at">>,
+    createdAt: string,
+    referenceName: string,
+): string {
+    const businessDate = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+    }).format(new Date(createdAt));
+    const [year, month, day] = businessDate.split("-");
+    const dateCode = `${day}-${month}-${year.slice(-2)}`;
+    const reference = referenceName
+        .trim()
+        .split(/\s+/)
+        .map((part) => part.replace(/[^a-z0-9]/gi, ""))
+        .find(Boolean) || "Site";
+    const displayReference = `${reference.charAt(0).toUpperCase()}${reference.slice(1)}`;
+    const serialPattern = new RegExp(`^Q-${dateCode.replace(/-/g, "\\-")}-[^-]+-(\\d{4})(?:-R.*)?$`, "i");
+    const nextSerial = quotations.reduce((highest, quotation) => {
+        const match = quotation.quotation_no.match(serialPattern);
+        return match ? Math.max(highest, Number(match[1])) : highest;
+    }, 0) + 1;
+    return `Q-${dateCode}-${displayReference}-${String(nextSerial).padStart(4, "0")}`;
 }
 /**
  * Quotations slice — quotation master records, items, milestones, acceptance,
@@ -277,9 +297,9 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
 
                 const id = genId("quot");
                 const now = nowIso();
-                const quoteNo = nextQuotationNo(id);
                 const designer = userForRole(state.db, "Designer");
                 const customerName = customer.name || "Customer";
+                const quoteNo = nextQuotationNo(state.db.quotations, now, customerName);
                 const defaults = resolveQuotationDefaults(state.db);
                 const validUntil = q.valid_until || defaults.valid_until;
                 const paymentTerms = q.payment_terms && q.payment_terms.length
@@ -403,7 +423,6 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const designer = userForRole(state.db, "Designer");
             const id = genId("quot");
             const now = nowIso();
-            const quoteNo = nextQuotationNo(id);
             const customer = q.customer_id
                 ? state.db.customers.find((p: any) => p.id === q.customer_id)
                 : undefined;
@@ -421,6 +440,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 items: q.items,
             }, "Quotation");
             const site = state.db.sites.find((row: any) => row.id === siteId && row.customer_id === q.customer_id)!;
+            const quoteNo = nextQuotationNo(state.db.quotations, now, site.name || customerName);
             const coverage = explicitCoverage.filter((entry: any) => {
                 const work = state.db.workRequired.find((row: any) => row.id === entry.work_required_id);
                 return Boolean(work && work.customer_id === q.customer_id && work.site_id === siteId);
@@ -811,7 +831,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             if (linkedScopes.some((scope: any) => scope.work_order_id))
                 throw new Error("A quotation scope already belongs to a Work Order. Create a controlled variation/change order instead.");
             const newId = genId("quote");
-            const newNo = `${original.quotation_no}-R${original.revision_no + 1}-${newId.replace(/[^a-z0-9]/gi, "").slice(-5).toUpperCase()}`;
+            const newNo = `${original.quotation_no}-R${original.revision_no + 1}`;
             const held = new Set(heldItemIds);
             const newItems: QuotationItem[] = original.scope_lines.map((item: any) => ({
                 ...item,
@@ -935,7 +955,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const heldItemIds = options?.heldItemIds || [];
             const held = new Set(heldItemIds);
             const newId = genId("quote");
-            const newNo = `${original.quotation_no}-R${original.revision_no + 1}-${newId.replace(/[^a-z0-9]/gi, "").slice(-5).toUpperCase()}`;
+            const newNo = `${original.quotation_no}-R${original.revision_no + 1}`;
             const newItems: QuotationItem[] = original.scope_lines.map((item: any) => ({
                 ...item,
                 id: genId("qline"),

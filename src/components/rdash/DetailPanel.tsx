@@ -883,34 +883,33 @@ function QuotationOverview({ q }: {
             toast.error(error instanceof Error ? error.message : "Could not delete quotation");
         }
     };
-    return (<div className="h-full overflow-y-auto p-4 rd-scroll">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Avatar name={(q.customer_name || "Customer")} size={42}/>
-          <div>
-            <p className="text-base font-bold">{(q.customer_name || "Customer")}</p>
-            <p className="text-xs text-muted-foreground">{q.quotation_no} · Rev {q.revision_no}{q.parent_quotation_id ? ` · revision of ${db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || ""}` : ""}</p>
+    return (<div className="h-full overflow-y-auto bg-muted/30 p-3 rd-scroll print:bg-white print:p-0">
+      <article className="overflow-hidden rounded-xl border border-border bg-background shadow-sm print:border-0 print:shadow-none">
+        <header className="bg-slate-950 px-4 py-4 text-white dark:bg-slate-900">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-sm font-black tracking-tight">UC</span><div><p className="text-sm font-bold tracking-wide">Urban Castle</p><p className="text-[10px] text-slate-300">Interior design · execution · project delivery</p></div></div>
+            <div className="text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-300">Quotation</p><p className="mt-1 font-mono text-xs font-bold">{q.quotation_no}</p><div className="mt-1 flex justify-end"><StatusBadge label={st.label} className={st.className}/></div></div>
           </div>
-        </div>
-        <StatusBadge label={st.label} className={st.className}/>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <Field label="Total value" value={formatINR(q.total_amount)} mono/>
-        <Field label="Valid until" value={formatDate(q.valid_until)}/>
-        <Field label="Subtotal" value={formatINR(q.subtotal)} mono/>
-        <Field label="Tax (18%)" value={formatINR(q.tax_amount)} mono/>
-        {site && <Field label="Site" value={site.name}/>}
-      </div>
-      <div className="mt-4">
-        <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Line items</p>
-          {isEditable && <span className="text-[10px] text-muted-foreground">Draft · editable</span>}
-        </div>
+        </header>
+        <div className="space-y-5 p-4">
+          <section className="grid gap-3 rounded-lg border border-border bg-card p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+            <div className="flex min-w-0 items-start gap-3"><Avatar name={(q.customer_name || "Customer")} size={42}/><div className="min-w-0"><p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Prepared for</p><p className="truncate text-base font-bold">{q.customer_name || "Customer"}</p><p className="mt-0.5 text-xs text-muted-foreground">{site?.name || "Customer-level quotation"}</p></div></div>
+            <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:border-l sm:border-border sm:pl-3"><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Issued</dt><dd className="mt-0.5 font-medium">{formatDate(q.created_at)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Valid until</dt><dd className="mt-0.5 font-medium">{formatDate(q.valid_until)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Revision</dt><dd className="mt-0.5 font-medium">{q.revision_no}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Scope lines</dt><dd className="mt-0.5 font-medium">{q.scope_lines.length}</dd></div></dl>
+          </section>
+          <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 text-base font-bold text-foreground">{q.title}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
+      <section className="overflow-hidden rounded-lg border border-border">
+        <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2"><div><p className="text-xs font-bold">Scope & pricing</p><p className="text-[10px] text-muted-foreground">Room-wise measured quantities and agreed rates</p></div>{isEditable && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Draft · editable</span>}</div>
         {isEditable ? (<QuotationLineItemEditor quotationId={q.id} items={q.scope_lines} articles={db.master.articles}/>) : (<LineItemTable items={q.scope_lines}/>)}
-      </div>
-      <div className="mt-4">
+      </section>
+      <section className="ml-auto grid max-w-sm grid-cols-[1fr_auto] gap-x-8 gap-y-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">
+        <span className="text-muted-foreground">Subtotal</span><span className="text-right font-mono font-medium">{formatINR(q.subtotal)}</span>
+        <span className="text-muted-foreground">Tax {q.tax_config?.rate != null ? `(${q.tax_config.rate}%)` : ""}</span><span className="text-right font-mono font-medium">{formatINR(q.tax_amount)}</span>
+        {Boolean(q.discount_pct) && <><span className="text-muted-foreground">Discount ({q.discount_pct}%)</span><span className="text-right font-mono font-medium">Included</span></>}
+        <span className="border-t border-border pt-2 text-sm font-bold">Total quotation value</span><span className="border-t border-border pt-2 text-right font-mono text-base font-black text-primary">{formatINR(q.total_amount)}</span>
+      </section>
+      <section>
         <div className="mb-2 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Payment milestones</p>
+          <div><p className="text-xs font-bold">Payment schedule</p><p className="text-[10px] text-muted-foreground">Milestones form part of this commercial proposal</p></div>
           {isEditable && <span className="text-[10px] text-muted-foreground">{q.payment_terms.reduce((n, pt) => n + pt.percentage, 0)}% allocated</span>}
         </div>
         {isEditable ? (<QuotationMilestoneEditor quotationId={q.id} milestones={q.payment_terms} totalAmount={q.total_amount}/>) : (<div className="flex flex-wrap gap-2">
@@ -918,9 +917,12 @@ function QuotationOverview({ q }: {
                 {pt.label} {pt.percentage}% · {pt.due_event.replace(/_/g, " ")}
               </span>))}
           </div>)}
-      </div>
+      </section>
+      {q.terms_and_conditions && <section className="rounded-lg border border-border bg-card p-3"><p className="text-xs font-bold">Terms & conditions</p><p className="mt-1 whitespace-pre-line text-[11px] leading-relaxed text-muted-foreground">{q.terms_and_conditions}</p></section>}
       <EntityFilesCard entityType="quotation" entityId={q.id} title="Quotation files & approvals" manage showEmpty />
-      <div className="mt-5 flex flex-wrap gap-2">
+      </div>
+      </article>
+      <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-border bg-background p-3 shadow-sm no-print">
         {q.status === "draft" && (<Button size="sm" onClick={() => { updateQuotation(q.id, { status: "sent" }); toast.success("Quotation sent to customer"); }}>
             <Send className="mr-1.5 h-3.5 w-3.5"/> Mark as Sent
           </Button>)}

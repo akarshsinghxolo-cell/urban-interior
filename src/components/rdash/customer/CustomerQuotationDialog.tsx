@@ -14,6 +14,7 @@ import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { useRDashStore, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { RDashDatabase, WorkRequired } from "@/lib/rdash/types";
 import { workTypeNamesForIds } from "@/lib/rdash/work-types";
+import { quotationMeasuredLine } from "@/lib/rdash/quotation-measurement";
 import {
   CustomerAreaDimensionsFields,
   positiveDimension,
@@ -550,7 +551,26 @@ function QuotationMeasurementDialog({ siteId, workIds, initialAreaId, onClose, o
         savedAreaId = addArea({ site_id: site.id, name: name.trim(), area_type: "other", length, width, height, unit, notes: notes.trim() || undefined, stage: "measured" });
       }
       for (const work of works) {
-        if (!work.area_ids.includes(savedAreaId)) updateWorkRequired(work.id, { area_ids: [...work.area_ids, savedAreaId] });
+        const area = db.areas.find((row) => row.id === savedAreaId) || {
+          id: savedAreaId,
+          name: name.trim(),
+        };
+        const alreadyCaptured = (work.structured_items || []).some((item) => item.area_id === savedAreaId);
+        const structuredItems = alreadyCaptured
+          ? work.structured_items || []
+          : [...(work.structured_items || []), quotationMeasuredLine({
+              work,
+              area,
+              siteName: site.name,
+              dimensions: { length, breadth: width, height: height || 0 },
+              workSubcategories: db.master.workSubcategories,
+              contractorRates: db.master.contractorRates,
+              id: `req-line-${crypto.randomUUID()}`,
+            })];
+        updateWorkRequired(work.id, {
+          area_ids: work.area_ids.includes(savedAreaId) ? work.area_ids : [...work.area_ids, savedAreaId],
+          structured_items: structuredItems,
+        });
         addMeasurementRevision({
           site_id: site.id,
           area_id: savedAreaId,
