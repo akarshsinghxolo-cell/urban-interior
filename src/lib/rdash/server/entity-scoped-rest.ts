@@ -1,3 +1,4 @@
+import { isSharedCollection } from "../shared-domain-storage";
 import { getSupabaseAdminClient } from "../../supabase/server";
 import { COLLECTION_TO_TABLE, emptyWorkspaceData, putCollectionRows, readRevision, type RestEntityRow } from "./commit-rest";
 import type { WorkspaceSubset } from "./workspace";
@@ -113,6 +114,8 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
       .from(table)
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
+
+    if (isSharedCollection(spec.collection)) query = query.eq("collection", spec.collection);
 
     if (!spec.full) {
       const filters: string[] = [];

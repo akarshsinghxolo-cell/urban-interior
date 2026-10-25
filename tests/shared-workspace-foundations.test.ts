@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
 import { COLLECTION_TO_TABLE, emptyWorkspaceData, putCollectionRows } from "../src/lib/rdash/server/commit-rest";
+import { SHARED_DOMAIN_COLLECTIONS, isSharedCollection } from "../src/lib/rdash/shared-domain-storage";
 import { isValidWorkspaceDelta, type WorkspaceDeltaPayload } from "../src/lib/rdash/workspace-delta";
 import { normalizeWorkspacePath, resolveWorkspacePath } from "../src/lib/rdash/workspace-routes";
 import { resolveWorkspaceLocation } from "../src/lib/rdash/workspace-entity-routes";
@@ -16,8 +17,11 @@ describe("shared workspace foundations", () => {
       "leaveRequests", "payrollLines", "payrollPeriods", "salaryAdjustments", "staffDocuments", "staffRolePermissions",
     ];
     expect(Object.keys(COLLECTION_TO_TABLE).sort()).toEqual(names.sort());
-    expect(new Set(Object.values(COLLECTION_TO_TABLE)).size).toBe(names.length);
-    for (const name of names) expect(COLLECTION_TO_TABLE[name]).toBe(`entity_${name.replace(".", "_")}`);
+    const sharedCount = Object.values(SHARED_DOMAIN_COLLECTIONS).flat().length;
+    expect(new Set(Object.values(COLLECTION_TO_TABLE)).size).toBe(names.length - sharedCount + Object.keys(SHARED_DOMAIN_COLLECTIONS).length);
+    for (const name of names.filter((name) => !isSharedCollection(name))) {
+      expect(COLLECTION_TO_TABLE[name]).toBe(`entity_${name.replace(".", "_")}`);
+    }
     expect(COLLECTION_TO_TABLE["master.notACollection"]).toBeUndefined();
     expect(COLLECTION_TO_TABLE["uc_user_roles"]).toBeUndefined();
   });

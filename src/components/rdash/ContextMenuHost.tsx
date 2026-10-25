@@ -33,7 +33,11 @@ export function ContextRow({ children, actions, className, onSelect, onOpenConte
     const items = (<>
       {safeActions.map((action, index) => (<React.Fragment key={index}>
           {action.separatorBefore && <ContextMenuSeparator />}
-          <ContextMenuItem disabled={action.disabled} onClick={action.onClick} className={cn("flex items-center gap-2 text-xs", action.danger && "text-destructive focus:text-destructive")}>
+          <ContextMenuItem disabled={action.disabled} onClick={action.onClick} onPointerUp={(event) => {
+              // A repositioned popup can appear under the opening right-click.
+              // Releasing that button must not activate an unrelated action.
+              if (event.button === 2) event.preventDefault();
+          }} className={cn("flex items-center gap-2 text-xs", action.danger && "text-destructive focus:text-destructive")}>
             {action.icon && <span className="text-muted-foreground">{action.icon}</span>}
             {action.label}
           </ContextMenuItem>

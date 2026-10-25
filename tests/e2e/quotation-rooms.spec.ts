@@ -56,7 +56,7 @@ test("room selections control saved coverage and prices in both quotation layout
   await dialog.getByRole("button", { name: "Create quotation", exact: true }).click();
   expect((await saved).status()).toBe(200);
   await expect(dialog).toHaveCount(0);
-  const quotes = async () => (await (await request.get(`${base}/entity_quotations`)).json()).map((row: any) => row.data).filter((quote: any) => quote.customer_id === customerId);
+  const quotes = async () => (await (await request.get(`${base}/entity_commercial_documents?collection=eq.quotations`)).json()).map((row: any) => row.data).filter((quote: any) => quote.customer_id === customerId);
   let persisted = await quotes();
   expect(persisted).toHaveLength(1);
   expect(persisted[0].grouping).toBe("work");
