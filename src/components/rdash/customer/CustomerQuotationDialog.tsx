@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { CalendarClock, Check, FilePlus2 } from "lucide-react";
+import { CalendarClock, Check, FilePlus2, Plus, Ruler } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +14,13 @@ import { useDirtyFormRegistration } from "@/lib/rdash/use-dirty-form-guard";
 import { useRDashStore, type CreateDialogRequest } from "@/lib/rdash/store";
 import type { RDashDatabase, WorkRequired } from "@/lib/rdash/types";
 import { workTypeNamesForIds } from "@/lib/rdash/work-types";
+import {
+  CustomerAreaDimensionsFields,
+  positiveDimension,
+  type CustomerAreaDimensionsDraft,
+} from "./CustomerAreaDimensionsFields";
+
+type MeasurementRequest = { workIds: string[]; areaId?: string };
 
 /**
  * Canonical quotation workflow for the whole app.
@@ -52,6 +59,7 @@ export function CustomerQuotationDialog({ request, onClose }: {
   const [initialValidUntil] = React.useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
   const [validUntil, setValidUntil] = React.useState(initialValidUntil);
   const [submitting, setSubmitting] = React.useState(false);
+  const [measurementRequest, setMeasurementRequest] = React.useState<MeasurementRequest | null>(null);
   const initialForm = {
     customerId: initialCustomerId,
     siteId: initialSiteId,
@@ -70,6 +78,10 @@ export function CustomerQuotationDialog({ request, onClose }: {
   const matchingWorkRequired = React.useMemo(
     () => db.workRequired.filter((work) => work.customer_id === customerId && work.site_id === siteId),
     [customerId, db.workRequired, siteId],
+  );
+  const siteAreas = React.useMemo(
+    () => db.areas.filter((area) => area.site_id === siteId && !area.is_archived),
+    [db.areas, siteId],
   );
 
   const defaultTitle = () => {
@@ -200,17 +212,15 @@ export function CustomerQuotationDialog({ request, onClose }: {
       if (site) {
         for (const work of selectedWorkRequired) {
           const verified = verifiedMeasurementRevisionIds(db, site.id, work);
-          const measuredAreaIds = new Set(
-            db.measurementRevisions
-              .filter((revision) => verified.includes(revision.id))
-              .map((revision) => revision.area_id),
-          );
-          const missingAreas = work.area_ids.filter((areaId) => !measuredAreaIds.has(areaId));
+          const missingAreas = unverifiedAreaIdsForWork(db, site.id, work);
           if (missingAreas.length) {
-            const names = missingAreas
-              .map((areaId) => db.areas.find((area) => area.id === areaId)?.name || areaId)
-              .join(", ");
-            throw new Error(`Complete a verified Measurement Visit for ${names} before preparing this quotation.`);
+            const group = workGroups.get(workRequiredLabel(work)) || [work];
+            setMeasurementRequest({
+              workIds: group.filter((entry) => selectedAreas[entry.id]?.includes(missingAreas[0])).map((entry) => entry.id),
+              areaId: missingAreas[0],
+            });
+            toast.info(`Add the verified measurement for ${areaName(missingAreas[0])} to continue.`);
+            return false;
           }
           verifiedByWork.set(work.id, verified);
         }
@@ -296,7 +306,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
   }, [onClose]);
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
+    <>
+      <Dialog open onOpenChange={(open) => { if (!open) requestClose(); }}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2.5">
@@ -360,6 +371,8 @@ export function CustomerQuotationDialog({ request, onClose }: {
             <div className="max-h-72 space-y-3 overflow-y-auto rounded-md border border-input bg-card p-3">
               {grouping === "work" ? [...workGroups].map(([label, works]) => {
                 const areas = [...new Set(works.flatMap((work) => work.area_ids))];
+                const otherAreas = siteAreas.filter((area) => !areas.includes(area.id));
+                const targetWorkIds = works[0] ? [works[0].id] : [];
                 const included = works.every((work) => selectedAreas[work.id] && work.area_ids.every((id) => selectedAreas[work.id].includes(id)));
                 return <section key={label} aria-label={label} className="space-y-2 rounded-md border border-border p-2">
                   <label className="flex cursor-pointer items-start gap-2 text-sm font-medium">
@@ -374,6 +387,13 @@ export function CustomerQuotationDialog({ request, onClose }: {
                     })}
                     {works.some((work) => !work.area_ids.length) && <button type="button" className={chipClass(works.filter((work) => !work.area_ids.length).every((work) => Boolean(selectedAreas[work.id])))} aria-pressed={works.filter((work) => !work.area_ids.length).every((work) => Boolean(selectedAreas[work.id]))} onClick={() => changeSelection(works.filter((work) => !work.area_ids.length))}>No room assigned</button>}
                   </div>
+                  {siteId && <div className="border-t border-dashed border-border pt-2">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Add another area and measurement</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {otherAreas.map((area) => <Button key={area.id} type="button" size="sm" variant="outline" className="min-h-8 h-auto whitespace-normal border-amber-500/30 bg-amber-500/[0.07] px-2 py-1 text-left text-xs text-amber-800 dark:text-amber-300" onClick={() => setMeasurementRequest({ workIds: targetWorkIds, areaId: area.id })}>{area.name}</Button>)}
+                      <Button type="button" size="sm" variant="outline" className="min-h-8 h-auto px-2 py-1 text-xs" onClick={() => setMeasurementRequest({ workIds: targetWorkIds })}><Plus className="mr-1 h-3.5 w-3.5" />New area</Button>
+                    </div>
+                  </div>}
                 </section>;
               }) : [...roomIds, ...(matchingWorkRequired.some((work) => !work.area_ids.length) ? [""] : [])].map((areaId) => {
                 const works = matchingWorkRequired.filter((work) => areaId ? work.area_ids.includes(areaId) : !work.area_ids.length);
@@ -414,7 +434,22 @@ export function CustomerQuotationDialog({ request, onClose }: {
           <Button size="sm" onClick={handleSubmit} disabled={submitting || (matchingWorkRequired.length > 0 && !workRequiredIds.length)} className="gap-1.5"><Check className="h-4 w-4" />Create quotation</Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      {measurementRequest && siteId && <QuotationMeasurementDialog
+        siteId={siteId}
+        workIds={measurementRequest.workIds}
+        initialAreaId={measurementRequest.areaId}
+        onClose={() => setMeasurementRequest(null)}
+        onSaved={(areaId, workIds) => {
+          setSelectedAreas((current) => {
+            const next = { ...current };
+            for (const workId of workIds) next[workId] = [...new Set([...(next[workId] || []), areaId])];
+            return next;
+          });
+          setMeasurementRequest(null);
+        }}
+      />}
+    </>
   );
 }
 
@@ -440,6 +475,127 @@ export function verifiedMeasurementRevisionIds(
       allowedAreas.has(revision.area_id),
     )
     .map((revision) => revision.id);
+}
+
+export function unverifiedAreaIdsForWork(
+  db: Pick<RDashDatabase, "measurementRevisions">,
+  siteId: string,
+  work: Pick<WorkRequired, "id" | "area_ids">,
+): string[] {
+  const measured = new Set(
+    db.measurementRevisions
+      .filter((revision) => revision.site_id === siteId && revision.work_required_id === work.id && revision.status === "verified")
+      .map((revision) => revision.area_id),
+  );
+  return work.area_ids.filter((areaId) => !measured.has(areaId));
+}
+
+function QuotationMeasurementDialog({ siteId, workIds, initialAreaId, onClose, onSaved }: {
+  siteId: string;
+  workIds: string[];
+  initialAreaId?: string;
+  onClose: () => void;
+  onSaved: (areaId: string, workIds: string[]) => void;
+}) {
+  const db = useRDashStore((state) => state.db);
+  const addArea = useRDashStore((state) => state.addArea);
+  const updateArea = useRDashStore((state) => state.updateArea);
+  const updateWorkRequired = useRDashStore((state) => state.updateWorkRequired);
+  const addMeasurementRevision = useRDashStore((state) => state.addMeasurementRevision);
+  const currentUser = useRDashStore((state) => state.currentUser);
+  const site = db.sites.find((row) => row.id === siteId && !row.is_archived);
+  const works = workIds.map((id) => db.workRequired.find((row) => row.id === id && row.site_id === siteId)).filter((work): work is WorkRequired => Boolean(work));
+  const existingAreas = db.areas.filter((area) => area.site_id === siteId && !area.is_archived);
+  const initialArea = existingAreas.find((area) => area.id === initialAreaId);
+  const [areaId, setAreaId] = React.useState(initialArea?.id || "__new__");
+  const [name, setName] = React.useState(initialArea?.name || "");
+  const [dimensions, setDimensions] = React.useState<CustomerAreaDimensionsDraft>({
+    length: initialArea?.length ? String(initialArea.length) : "",
+    breadth: initialArea?.width ? String(initialArea.width) : "",
+    height: initialArea?.height ? String(initialArea.height) : "",
+  });
+  const [unit, setUnit] = React.useState<"ft" | "m">(initialArea?.unit || "ft");
+  const [notes, setNotes] = React.useState(initialArea?.notes || "");
+  const [saving, setSaving] = React.useState(false);
+
+  const chooseArea = (value: string) => {
+    setAreaId(value);
+    const area = existingAreas.find((row) => row.id === value);
+    setName(area?.name || "");
+    setDimensions({
+      length: area?.length ? String(area.length) : "",
+      breadth: area?.width ? String(area.width) : "",
+      height: area?.height ? String(area.height) : "",
+    });
+    setUnit(area?.unit || "ft");
+    setNotes(area?.notes || "");
+  };
+
+  const save = () => {
+    if (!site || !works.length || works.length !== workIds.length) return toast.error("The selected Site or Work Required is no longer available.");
+    const length = positiveDimension(dimensions.length);
+    const width = positiveDimension(dimensions.breadth);
+    const height = positiveDimension(dimensions.height);
+    if (!name.trim()) return toast.error("Enter the area name.");
+    if (!length || !width) return toast.error("Enter a positive length and breadth.");
+
+    setSaving(true);
+    try {
+      let savedAreaId = areaId === "__new__" ? "" : areaId;
+      const duplicate = existingAreas.find((area) => area.name.trim().toLowerCase() === name.trim().toLowerCase() && area.id !== savedAreaId);
+      if (duplicate) throw new Error(`Area “${duplicate.name}” already exists. Select it instead of creating a duplicate.`);
+      if (savedAreaId) {
+        updateArea(savedAreaId, { name: name.trim(), length, width, height, unit, notes: notes.trim() || undefined, stage: "measured" });
+      } else {
+        savedAreaId = addArea({ site_id: site.id, name: name.trim(), area_type: "other", length, width, height, unit, notes: notes.trim() || undefined, stage: "measured" });
+      }
+      for (const work of works) {
+        if (!work.area_ids.includes(savedAreaId)) updateWorkRequired(work.id, { area_ids: [...work.area_ids, savedAreaId] });
+        addMeasurementRevision({
+          site_id: site.id,
+          area_id: savedAreaId,
+          work_required_id: work.id,
+          length,
+          width,
+          height,
+          unit,
+          notes: notes.trim() || "Verified while preparing quotation",
+          captured_by: currentUser().name,
+          status: "verified",
+        });
+      }
+      toast.success(`${name.trim()} measured and added to this quotation.`);
+      onSaved(savedAreaId, works.map((work) => work.id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not save the verified measurement.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <DialogContent className="sm:max-w-xl">
+      <DialogHeader>
+        <div className="flex items-start gap-2.5"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"><Ruler className="h-5 w-5" /></span><div><DialogTitle className="text-base">Add verified area measurement</DialogTitle><DialogDescription className="text-xs">Stay in the quotation and add or measure a room for {works.map((work) => work.title).join(" / ") || "this work"}.</DialogDescription></div></div>
+      </DialogHeader>
+      <div className="rd-scroll max-h-[65vh] space-y-4 overflow-y-auto py-2">
+        <Field label="Area / room">
+          <Select value={areaId} onValueChange={chooseArea}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="__new__">＋ New area / room</SelectItem>{existingAreas.map((area) => <SelectItem key={area.id} value={area.id}>{area.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </Field>
+        <Field label="Area name"><Input value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. 2nd Bedroom near hall" autoFocus /></Field>
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+          <CustomerAreaDimensionsFields value={dimensions} onChange={setDimensions} />
+          <Field label="Unit"><select value={unit} onChange={(event) => setUnit(event.target.value as "ft" | "m")} className="h-10 rounded-md border border-input bg-card px-3 text-sm"><option value="ft">feet</option><option value="m">metres</option></select></Field>
+        </div>
+        <Field label="Measurement notes"><Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Optional site notes" /></Field>
+        <p className="rounded-md border border-dashed border-primary/30 bg-primary/[0.04] px-3 py-2 text-[11px] text-muted-foreground">Saving creates the verified measurement revision required by quotation coverage and links this area to the selected work.</p>
+      </div>
+      <DialogFooter className="gap-2"><Button type="button" size="sm" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button><Button type="button" size="sm" onClick={save} disabled={saving}><Check className="mr-1 h-3.5 w-3.5" />{saving ? "Saving…" : "Save measurement"}</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
