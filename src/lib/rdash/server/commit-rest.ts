@@ -10,9 +10,7 @@
  * in the same transaction.
  */
 import { getSupabaseAdminClient } from "../../supabase/server";
-import { type WorkspaceOperation } from "../workspace-operations";
-import { COLLECTION_TO_TABLE, isSharedCollection } from "../shared-domain-storage";
-export { COLLECTION_TO_TABLE } from "../shared-domain-storage";
+import { topLevelCollections, masterCollections, type WorkspaceOperation } from "../workspace-operations";
 import type { RDashDatabase } from "../types";
 import { WORK_CATALOG_VERSION } from "../work-category-master";
 import type { WorkspacePagination } from "./workspace";
@@ -24,6 +22,14 @@ const DEFAULT_COLLECTION_LIMITS: Record<string, number> = {
   commSends: 100,
   "master.vendorRateHistories": 100,
 };
+
+// Storage names come from the same allowlist used by workspace diffs.
+export const COLLECTION_TO_TABLE: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries([
+    ...topLevelCollections.map(String),
+    ...masterCollections.map((key) => `master.${key}`),
+  ].map((collection) => [collection, `entity_${collection.replace(".", "_")}`])),
+);
 
 function tableFor(collection: string): string | null {
   return COLLECTION_TO_TABLE[collection] || null;
@@ -153,8 +159,6 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
       .select("id,revision,data")
       .eq("workspace_id", workspaceId);
 
-    if (isSharedCollection(collection)) query = query.eq("collection", collection);
-
     if (!isFullCollection) {
       query = query.in("id", rowsByCollection.get(collection) || []);
     } else if (configuredLimit) {
@@ -218,9 +222,10 @@ export async function getRestWorkspace(): Promise<{
   const readCollection = async (collection: string): Promise<{ collection: string; rows: RestEntityRow[] }> => {
     const table = tableFor(collection);
     if (!table) return { collection, rows: [] };
-    let query = admin.from(table).select("id,revision,data").eq("workspace_id", workspaceId);
-    if (isSharedCollection(collection)) query = query.eq("collection", collection);
-    const { data, error } = await query;
+    const { data, error } = await admin
+      .from(table)
+      .select("id,revision,data")
+      .eq("workspace_id", workspaceId);
     if (error) {
       throw new Error(`Could not read workspace collection ${collection}: ${error.message}`);
     }

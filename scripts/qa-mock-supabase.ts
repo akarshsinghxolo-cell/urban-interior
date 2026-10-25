@@ -35,7 +35,7 @@
  */
 
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
-import { COLLECTION_TO_TABLE, isSharedCollection } from "../src/lib/rdash/shared-domain-storage";
+import { COLLECTION_TO_TABLE } from "../src/lib/rdash/server/commit-rest";
 
 const PORT = Number(process.env.QA_MOCK_PORT || 3210);
 const HOST = "127.0.0.1";
@@ -193,7 +193,6 @@ function seedDatabase(): void {
       const row: Row = {
         id: String(data.id ?? deterministicUuid(`${table}:${rows.length}`)),
         workspace_id: WORKSPACE_ID,
-        ...(isSharedCollection(collection) ? { collection } : {}),
         revision: 1,
         updated_at: typeof data.updated_at === "string" ? data.updated_at : seededAt,
         updated_by: null,
@@ -203,7 +202,7 @@ function seedDatabase(): void {
       rows.push(row);
       seedRowCount += 1;
     }
-    tables.set(table, [...(tables.get(table) || []), ...rows]);
+    tables.set(table, rows);
   }
 
   // Bind QA emails to seeded staff records exactly the way
@@ -701,7 +700,7 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
   for (const raw of rawOperations as Row[]) {
     const table = String(raw.table || "");
     const collection = String(raw.collection || "");
-    if (!table || !collection || COLLECTION_TO_TABLE[collection] !== table || !tables.has(table)) {
+    if (!table || !collection || !/^entity_[A-Za-z0-9_]+$/.test(table) || !tables.has(table)) {
       return postgrestError(400, "22023", "INVALID_COLLECTION");
     }
     const upsert = Array.isArray(raw.upsert) ? (raw.upsert as Row[]) : [];
@@ -718,22 +717,22 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
     const keyed = expectedRowVersions[`${collection}:${rowId}`];
     return keyed !== undefined ? Number(keyed) : null;
   };
-  const actualRevisionOf = (table: string, collection: string, rowId: string): number | null => {
-    const row = (tables.get(table) ?? []).find((candidate) => candidate.id === rowId && candidate.workspace_id === workspaceId && (!isSharedCollection(collection) || candidate.collection === collection));
+  const actualRevisionOf = (table: string, rowId: string): number | null => {
+    const row = (tables.get(table) ?? []).find((candidate) => candidate.id === rowId);
     return row ? Number(row.revision ?? 0) : null;
   };
   for (const op of operations) {
     for (const rowData of op.upsert) {
       const rowId = String(rowData.id);
       const expected = expectedFor(op.collection, rowId);
-      const actual = actualRevisionOf(op.table, op.collection, rowId);
+      const actual = actualRevisionOf(op.table, rowId);
       if (expected !== null && actual !== expected) {
         return postgrestError(409, "40001", `ROW_CONFLICT:${op.collection}:${rowId}`);
       }
     }
     for (const rowId of op.deleteIds) {
       const expected = expectedFor(op.collection, rowId);
-      const actual = actualRevisionOf(op.table, op.collection, rowId);
+      const actual = actualRevisionOf(op.table, rowId);
       if (expected !== null && actual !== expected) {
         return postgrestError(409, "40001", `ROW_CONFLICT:${op.collection}:${rowId}`);
       }
@@ -746,7 +745,7 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
     const op = operations[i];
     const rows = tables.get(op.table)!;
     for (const rowId of op.deleteIds) {
-      const index = rows.findIndex((candidate) => candidate.id === rowId && candidate.workspace_id === workspaceId && (!isSharedCollection(op.collection) || candidate.collection === op.collection));
+      const index = rows.findIndex((candidate) => candidate.id === rowId);
       if (index >= 0) {
         rows.splice(index, 1);
         deleted += 1;
@@ -761,14 +760,13 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
     const rows = tables.get(op.table)!;
     for (const rowData of op.upsert) {
       const rowId = String(rowData.id);
-      const existing = rows.find((candidate) => candidate.id === rowId && candidate.workspace_id === workspaceId && (!isSharedCollection(op.collection) || candidate.collection === op.collection));
+      const existing = rows.find((candidate) => candidate.id === rowId);
       const nextRevision = existing ? Number(existing.revision ?? 0) + 1 : 0;
       const stored: Row = existing
         ? { ...existing, data: clone(rowData), revision: nextRevision, updated_at: nowIso() }
         : {
             id: rowId,
             workspace_id: workspaceId,
-            ...(isSharedCollection(op.collection) ? { collection: op.collection } : {}),
             revision: nextRevision,
             updated_at: nowIso(),
             updated_by: null,
@@ -918,9 +916,8 @@ function rpcGetAuthUserByEmail(args: Row): Response {
   return jsonResponse(user ? goTrueUser(user, nowIso()) : null, 200);
 }
 
-const rowsWithData = (collection: string): Row[] =>
-  (tables.get(COLLECTION_TO_TABLE[collection]) ?? [])
-    .filter((row) => !isSharedCollection(collection) || row.collection === collection)
+const rowsWithData = (table: string): Row[] =>
+  (tables.get(table) ?? [])
     .map((row) => (row.data && typeof row.data === "object" ? (row.data as Row) : {}))
     .filter(Boolean);
 
@@ -930,27 +927,27 @@ function rpcGetWorkspaceHealthSummary(_args: Row): Response {
   const num = (value: unknown): number => (typeof value === "number" ? value : Number(value) || 0);
   const statusOf = (row: Row) => String(row.status || "").toLowerCase();
 
-  const tasks = rowsWithData("tasks");
+  const tasks = rowsWithData("entity_tasks");
   const openTasks = tasks.filter((task) => !["done", "completed", "cancelled", "archived"].includes(statusOf(task)));
   const dueOf = (task: Row) => String(task.due_date || task.due || task.dueDate || "").slice(0, 10);
   const overdueTasks = openTasks.filter((task) => dueOf(task) && dueOf(task) < today).length;
   const dueTodayTasks = openTasks.filter((task) => dueOf(task) === today).length;
 
   const openSet = new Set(["pending", "open", "scheduled", "due", "in_progress", "active", "new"]);
-  const quotations = rowsWithData("quotations").filter((q) =>
+  const quotations = rowsWithData("entity_quotations").filter((q) =>
     ["sent", "approved", "accepted"].includes(statusOf(q)));
-  const purchaseOrders = rowsWithData("purchaseOrders");
+  const purchaseOrders = rowsWithData("entity_purchaseOrders");
   const directAwardPos = purchaseOrders.filter(
     (po) => po.procurement_type === "direct_award" || po.direct_award === true || po.source_type === "direct_award",
   );
-  const variationRequests = rowsWithData("variationRequests");
-  const payments = rowsWithData("payments");
-  const invoices = rowsWithData("invoices").filter((invoice) => statusOf(invoice) === "overdue");
-  const vendorBills = rowsWithData("vendorBills").filter((bill) =>
+  const variationRequests = rowsWithData("entity_variationRequests");
+  const payments = rowsWithData("entity_payments");
+  const invoices = rowsWithData("entity_invoices").filter((invoice) => statusOf(invoice) === "overdue");
+  const vendorBills = rowsWithData("entity_vendorBills").filter((bill) =>
     ["open", "pending", "approved"].includes(statusOf(bill)));
 
   const totalReceived = payments.reduce((sum, p) => sum + num(p.amount), 0);
-  const totalPaidOut = [...rowsWithData("vendorPayments"), ...rowsWithData("contractorPayments")]
+  const totalPaidOut = [...rowsWithData("entity_vendorPayments"), ...rowsWithData("entity_contractorPayments")]
     .reduce((sum, p) => sum + num(p.amount), 0);
   const monthRevenue = payments
     .filter((p) => String(p.date || p.created_at || "").slice(0, 7) === month)
@@ -964,7 +961,7 @@ function rpcGetWorkspaceHealthSummary(_args: Row): Response {
     revenueSeries.push({ date: day, value });
   }
 
-  const recentActivity = rowsWithData("auditLog").slice(0, 8).map((entry) => ({
+  const recentActivity = rowsWithData("entity_auditLog").slice(0, 8).map((entry) => ({
     id: String(entry.id || ""),
     action: String(entry.action || ""),
     kind: String(entry.kind || "update"),
@@ -996,13 +993,13 @@ function rpcGetWorkspaceHealthSummary(_args: Row): Response {
         openTasks: openTasks.length,
         overdueTasks,
         dueTodayTasks,
-        activeFollowups: rowsWithData("followups").filter((row) => openSet.has(statusOf(row))).length,
-        pendingApprovals: rowsWithData("actions").filter((row) => statusOf(row) === "pending").length,
-        unresolvedBlocked: rowsWithData("blocked").filter((row) => !["resolved", "closed"].includes(statusOf(row))).length,
-        openRisks: rowsWithData("risks").filter((row) => !["closed", "mitigated"].includes(statusOf(row))).length,
-        activeWorkOrders: rowsWithData("workOrders").filter((row) =>
+        activeFollowups: rowsWithData("entity_followups").filter((row) => openSet.has(statusOf(row))).length,
+        pendingApprovals: rowsWithData("entity_actions").filter((row) => statusOf(row) === "pending").length,
+        unresolvedBlocked: rowsWithData("entity_blocked").filter((row) => !["resolved", "closed"].includes(statusOf(row))).length,
+        openRisks: rowsWithData("entity_risks").filter((row) => !["closed", "mitigated"].includes(statusOf(row))).length,
+        activeWorkOrders: rowsWithData("entity_workOrders").filter((row) =>
           ["confirmed", "in_progress", "active"].includes(statusOf(row))).length,
-        activeVisits: rowsWithData("visits").filter((row) => ["scheduled", "checked_in"].includes(statusOf(row))).length,
+        activeVisits: rowsWithData("entity_visits").filter((row) => ["scheduled", "checked_in"].includes(statusOf(row))).length,
       },
       commercial: {
         pipelineValue: quotations.reduce((sum, q) => sum + num(q.total ?? q.total_amount ?? q.amount), 0),
