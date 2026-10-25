@@ -25,11 +25,12 @@ type PendingUploadWorkspaceCommit = {
 
 const uploadCommitContext = new AsyncLocalStorage<PendingUploadWorkspaceCommit>();
 
-const TABLE_TO_COLLECTION: Record<string, string> = {
-  entity_master_storageFolderInstances: "master.storageFolderInstances",
-  entity_master_fileAssets: "master.fileAssets",
-  entity_entityFileAttachments: "entityFileAttachments",
-};
+const UPLOAD_COLLECTIONS = new Set([
+  "master.storageFolderTemplates",
+  "master.storageFolderInstances",
+  "master.fileAssets",
+  "entityFileAttachments",
+]);
 
 const ENTITY_COLLECTIONS: Partial<Record<FileAttachmentEntityType, string>> = {
   customer: "customers",
@@ -100,15 +101,14 @@ function mergeUpsert(operations: Map<string, WorkspaceOperation>, collection: st
 }
 
 export async function upsertEntityRow(
-  table: string,
+  collection: string,
   id: string,
   data: unknown,
   user: AuthenticatedUser,
 ): Promise<void> {
   void user;
-  const collection = TABLE_TO_COLLECTION[table];
-  if (!collection) throw new Error(`Upload finalization is not configured for ${table}.`);
-  if (!data || typeof data !== "object") throw new Error(`Upload finalization received invalid data for ${table}.`);
+  if (!UPLOAD_COLLECTIONS.has(collection)) throw new Error(`Upload finalization is not configured for ${collection}.`);
+  if (!data || typeof data !== "object") throw new Error(`Upload finalization received invalid data for ${collection}.`);
 
   const pending = pendingCommit();
   pending.upserts = [

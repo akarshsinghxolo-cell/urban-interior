@@ -10,10 +10,11 @@ test("room selections control saved coverage and prices in both quotation layout
   const living = `living-${suffix}`;
   const now = new Date().toISOString();
   const insert = async (table: string, rows: Array<Record<string, unknown>>) => {
-    const response = await request.post(`${base}/entity_${table}`, { data: rows.map((data) => ({ id: data.id, workspace_id: "default", revision: 1, updated_at: now, data })) });
+    const shared = table === "measurementRevisions";
+    const response = await request.post(`${base}/${shared ? "entity_site_records" : `entity_${table}`}`, { data: rows.map((data) => ({ ...(shared ? { collection: table } : {}), id: data.id, workspace_id: "default", revision: 1, updated_at: now, data })) });
     expect(response.ok()).toBe(true);
   };
-  const masters = await (await request.get(`${base}/entity_master_workSubcategories`)).json();
+  const masters = await (await request.get(`${base}/entity_work_definitions?collection=eq.master.workSubcategories`)).json();
   const subcategories = ["fc2_tv", "fc_gyp"].map((id) => masters.find((row: any) => row.id === id).data);
   const works = subcategories.map((sub: any, index: number) => {
     const id = `work-quote-rooms-${index}-${suffix}`;

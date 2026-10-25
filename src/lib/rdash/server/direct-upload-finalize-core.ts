@@ -2,6 +2,7 @@ import type { AuthenticatedUser } from "./auth";
 import { getDirectUploadWorkspace } from "./direct-upload-workspace";
 import { getWorkspaceSubset } from "./workspace";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { COLLECTION_TO_TABLE } from "../shared-domain-storage";
 import { getGoogleDriveAccessToken } from "./google-drive";
 import { resolveAttachmentEntityLabel, resolveEntityContext } from "../entity-context";
 import type { EntityFileAttachment, FileAsset, FileAttachmentEntityType, StorageFolderInstance, StorageFolderTemplate } from "../types";
@@ -139,8 +140,8 @@ async function registeredResult(
   input: FinalizeUploadRequest,
 ): Promise<FinalizedUploadResult | null> {
   const [{ data: assetRow, error: assetError }, { data: attachmentRow, error: attachmentError }] = await Promise.all([
-    admin.from("entity_master_fileAssets").select("data").eq("id", String(item.file_asset_id)).maybeSingle(),
-    admin.from("entity_entityFileAttachments").select("data").eq("id", String(item.attachment_id)).maybeSingle(),
+    admin.from(COLLECTION_TO_TABLE["master.fileAssets"]).select("data").eq("workspace_id", String(item.workspace_id)).eq("id", String(item.file_asset_id)).maybeSingle(),
+    admin.from(COLLECTION_TO_TABLE.entityFileAttachments).select("data").eq("workspace_id", String(item.workspace_id)).eq("collection", "entityFileAttachments").eq("id", String(item.attachment_id)).maybeSingle(),
   ]);
   if (assetError) throw new Error(assetError.message);
   if (attachmentError) throw new Error(attachmentError.message);
@@ -308,11 +309,11 @@ export async function finalizeDirectUpload(user: AuthenticatedUser, input: Final
 
   await withUploadCommitContext(async () => {
     if (storageTemplate) {
-      await upsertEntityRow("entity_master_storageFolderTemplates", storageTemplate.id, storageTemplate, user);
+      await upsertEntityRow("master.storageFolderTemplates", storageTemplate.id, storageTemplate, user);
     }
-    await upsertEntityRow("entity_master_storageFolderInstances", folderInstance.id, folderInstance, user);
-    await upsertEntityRow("entity_master_fileAssets", asset.id, asset, user);
-    await upsertEntityRow("entity_entityFileAttachments", attachment.id, attachment, user);
+    await upsertEntityRow("master.storageFolderInstances", folderInstance.id, folderInstance, user);
+    await upsertEntityRow("master.fileAssets", asset.id, asset, user);
+    await upsertEntityRow("entityFileAttachments", attachment.id, attachment, user);
     await updateAttachmentField(
       user,
       serverTargetType,

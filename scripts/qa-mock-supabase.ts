@@ -89,6 +89,8 @@ const STATIC_AUX_TABLES = [
 
 /** Canonical entity_* tables from the workspace collection registry. */
 const CANONICAL_ENTITY_TABLES = new Set(Object.values(COLLECTION_TO_TABLE));
+const SHARED_ENTITY_TABLES = new Set(Object.entries(COLLECTION_TO_TABLE)
+  .filter(([collection]) => isSharedCollection(collection)).map(([, table]) => table));
 
 let seedRowCount = 0;
 
@@ -1208,7 +1210,7 @@ async function handleRest(req: Request, url: URL): Promise<Response> {
     const allowedColumns = columnsParam
       ? columnsParam.split(",").map((column) => column.trim().replace(/^"|"$/g, "")).filter(Boolean)
       : null;
-    const conflictColumns = (url.searchParams.get("on_conflict") || "id")
+    const conflictColumns = (url.searchParams.get("on_conflict") || (SHARED_ENTITY_TABLES.has(table) ? "collection,id" : "id"))
       .split(",")
       .map((column) => column.trim().replace(/^"|"$/g, ""))
       .filter(Boolean);
@@ -1225,6 +1227,9 @@ async function handleRest(req: Request, url: URL): Promise<Response> {
         return postgrestError(400, "PGRST102", "Insert payload must be a JSON object");
       }
       const payload = cleanPayload(raw, table, allowedColumns);
+      if (SHARED_ENTITY_TABLES.has(table) && COLLECTION_TO_TABLE[String(payload.collection)] !== table) {
+        return postgrestError(400, "23514", "Shared storage requires a valid collection discriminator");
+      }
       const existing = findRow(table, conflictColumns, payload);
       if (existing && !prefer.mergeDuplicates && !prefer.ignoreDuplicates) {
         return postgrestError(409, "23505", `duplicate key value violates unique constraint "${table}_pkey"`);

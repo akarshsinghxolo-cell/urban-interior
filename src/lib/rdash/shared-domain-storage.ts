@@ -12,12 +12,15 @@ export const SHARED_DOMAIN_COLLECTIONS = {
     "vendorBids",
     "contractorBids",
     "purchaseOrders",
-    "contractorSettlements"
+    "contractorSettlements",
+    "grns",
+    "dispatches"
   ],
   "financial_documents": [
     "invoices",
     "vendorBills",
-    "contractorBills"
+    "contractorBills",
+    "payrollPeriods"
   ],
   "money_movements": [
     "customerReceipts",
@@ -33,7 +36,10 @@ export const SHARED_DOMAIN_COLLECTIONS = {
   "workflow_controls": [
     "actions",
     "risks",
-    "blocked"
+    "blocked",
+    "tasks",
+    "followups",
+    "visits"
   ],
   "reference_libraries": [
     "master.catalogues",
@@ -43,12 +49,45 @@ export const SHARED_DOMAIN_COLLECTIONS = {
   "rate_cards": [
     "master.vendorRates",
     "master.contractorRates",
-    "master.customerRateSuggestions"
+    "master.customerRateSuggestions",
+    "master.vendorRateHistories"
   ],
   "policy_rules": [
     "approvalPolicies",
     "automationRules",
-    "master.commissionRules"
+    "master.commissionRules",
+    "recurringTasks"
+  ],
+  "work_definitions": [
+    "master.workCategories",
+    "master.workSubcategories",
+    "master.workOptionGroups",
+    "master.workOptionValues"
+  ],
+  "site_records": [
+    "measurementRevisions",
+    "drawings",
+    "executionLogs",
+    "variationRequests"
+  ],
+  "catalogue_items": [
+    "master.articles",
+    "master.articleVariants"
+  ],
+  "resource_links": [
+    "entityFileAttachments",
+    "entityReferenceAssignments"
+  ],
+  "staff_records": [
+    "attendance",
+    "payrollLines",
+    "leaveRequests",
+    "salaryAdjustments",
+    "staffDocuments"
+  ],
+  "storage_structure": [
+    "master.storageFolderTemplates",
+    "master.storageFolderInstances"
   ]
 } as const;
 

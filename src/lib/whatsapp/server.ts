@@ -8,6 +8,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { COLLECTION_TO_TABLE } from "@/lib/rdash/shared-domain-storage";
 import { indianWhatsAppDialDigits, sanitizeIndianMobile } from "@/lib/rdash/phone-validation";
 
 export type WhatsAppConnectionStatus =
@@ -491,9 +492,10 @@ async function loadSendableAttachments(sourceAttachmentIds: string[] | undefined
   if (!ids.length) return [] as Array<{ url: string; mimeType: string; fileName: string; caption?: string }>;
 
   const { data: attachmentRows, error: attachmentError } = await adminClient()
-    .from("entity_entityFileAttachments")
+    .from(COLLECTION_TO_TABLE.entityFileAttachments)
     .select("id,data")
     .eq("workspace_id", workspaceId)
+    .eq("collection", "entityFileAttachments")
     .in("id", ids);
   if (attachmentError) throw new Error(`Could not load WhatsApp attachments: ${attachmentError.message}`);
 

@@ -106,7 +106,7 @@ describe("Google Drive transaction simplification", () => {
     expect(persistence).not.toContain("getSupabaseAdminClient");
     expectTokens(finalizer, ["uploadPurposeAllowedForEntity(serverTargetType, serverPurpose)"]);
     expectTokens(finalizer, ["existingFolderInstance?.template_id || `canonical-${serverPurpose}`"]);
-    expect(finalizer).toContain('upsertEntityRow("entity_master_storageFolderTemplates"');
+    expect(finalizer).toContain('upsertEntityRow("master.storageFolderTemplates"');
     expectTokens(finalizer, ["withUploadCommitContext(async () =>"]);
     expectTokens(finalizer, ["await bumpWorkspaceRevision()"]);
   });
