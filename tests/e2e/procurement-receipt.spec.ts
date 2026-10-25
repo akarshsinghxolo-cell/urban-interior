@@ -19,7 +19,9 @@ test("GRN uses remaining PO quantities and uploads to the existing PO before fil
         target = route.request().postDataJSON();
         await route.fulfill({ status: 503, json: { error: "QA upload paused", code: "NETWORK_ERROR" } });
     });
-    await dialog.getByLabel("Add receiving proofs").setInputFiles({ name: "qa-delivery.jpg", mimeType: "image/jpeg", buffer: Buffer.from("QA receiving evidence") });
+    const fileChooser = page.waitForEvent("filechooser");
+    await dialog.getByRole("button", { name: "Add receiving proofs", exact: true }).click();
+    await (await fileChooser).setFiles({ name: "qa-delivery.jpg", mimeType: "image/jpeg", buffer: Buffer.from("QA receiving evidence") });
     await expect.poll(() => target).toBeTruthy();
     expect(target).toMatchObject({ targetEntityType: "purchase_order", targetEntityId: "po-das-ceiling", purpose: "purchase_order" });
     await expect(dialog.getByLabel("Against PO", { exact: true })).toBeDisabled();

@@ -154,10 +154,10 @@ test.describe("customer drawer", () => {
     await firstWork.getByRole("checkbox", { name: "Kitchen", exact: true }).check();
     await firstWork.getByRole("button", { name: "Add selected Areas", exact: true }).click();
 
-    await expect(firstWork.getByLabel("Search Primary category", { exact: true })).toBeVisible();
-    await firstWork.getByRole("group", { name: "Primary category", exact: true }).getByRole("checkbox").first().check();
-    await expect(firstWork.getByLabel("Search Primary subcategory", { exact: true })).toBeVisible();
-    await firstWork.getByRole("group", { name: "Primary subcategory", exact: true }).getByRole("checkbox").first().check();
+    await expect(firstWork.getByLabel("Search Work categories", { exact: true })).toBeVisible();
+    await firstWork.getByRole("group", { name: "Work categories", exact: true }).getByRole("checkbox").first().check();
+    await expect(firstWork.getByLabel("Search Work subcategories", { exact: true })).toBeVisible();
+    await firstWork.getByRole("group", { name: "Work subcategories", exact: true }).getByRole("checkbox").first().check();
     await expect(firstWork.getByLabel("Search Work types", { exact: true })).toBeVisible();
     await expect(firstWork.getByRole("textbox", { name: /^Work Required title/ })).not.toHaveValue("");
     await firstWork.getByLabel("Budget (₹)", { exact: true }).fill("25000");
@@ -183,7 +183,8 @@ test.describe("customer drawer", () => {
       await expect(recordDrawer(page)).not.toBeVisible();
       if (width === 1280) {
         await page.keyboard.press("Escape");
-        await card.click({ button: "right" });
+        await expect(page.getByRole("menu")).toHaveCount(0);
+        await card.getByText("Aarav Mehta", { exact: true }).click({ button: "right" });
       }
       await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Edit Customer and Sites", exact: true });
@@ -238,7 +239,7 @@ test.describe("customer drawer", () => {
     await expect(drawer.getByRole("button", { name: "Add collection milestone", exact: true })).toHaveCount(2);
 
     for (const [action, title] of [
-      ["Create quotation", "New quotation"],
+      ["Create quotation", "Work wise quotation"],
       ["Schedule visit", "Schedule visit"],
       ["Add collection milestone", "Create Collection Milestone"],
     ]) {
