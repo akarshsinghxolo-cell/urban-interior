@@ -6,31 +6,11 @@
 // PURE function — does not mutate the store. The caller commits the result.
 // ============================================================================
 
-import type { RDashDatabase, Master, RepairResult, IntegrityIssue } from "../types";
+import type { RDashDatabase, RepairResult, IntegrityIssue } from "../types";
 import { checkWorkspaceIntegrity } from "./checker";
 import { repairOperationalWorkspace } from "../operational-repair";
 
-type GenericRow = { id: string } & Record<string, unknown>;
-
-function resolveCollection(db: RDashDatabase, name: string): GenericRow[] {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        const arr = db.master?.[key];
-        return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-    }
-    const key = name as keyof RDashDatabase;
-    const arr = db[key];
-    return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-}
-
-function replaceCollection(db: RDashDatabase, name: string, rows: GenericRow[]): RDashDatabase {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        return { ...db, master: { ...db.master, [key]: rows } };
-    }
-    const key = name as keyof RDashDatabase;
-    return { ...db, [key]: rows };
-}
+import { resolveReferenceCollection as resolveCollection, replaceReferenceCollection as replaceCollection, referenceField, replaceReferenceField } from "./reference-access";
 
 /**
  * Repair auto-fixable integrity issues.
@@ -109,10 +89,11 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
         if (issue.rule.onDelete === "nullify") {
             if (issue.rule.isArray) {
                 // Remove the dangling id from the array.
-                const arr = Array.isArray(target[issue.field]) ? (target[issue.field] as unknown[]) : [];
-                const filtered = arr.filter((v) => typeof v !== "string" || v !== issue.targetId);
+                const arr = Array.isArray(referenceField(target, issue.field)) ? referenceField(target, issue.field) as unknown[] : [];
+                const missingIds = new Set(group.map((entry) => entry.targetId));
+                const filtered = arr.filter((v) => typeof v !== "string" || !missingIds.has(v));
                 const idx = rows.findIndex((row) => row.id === issue.recordId);
-                const nextRows = [...rows.slice(0, idx), { ...target, [issue.field]: filtered }, ...rows.slice(idx + 1)];
+                const nextRows = [...rows.slice(0, idx), replaceReferenceField(target, issue.field, filtered), ...rows.slice(idx + 1)];
                 db = replaceCollection(db, issue.collection, nextRows);
                 details.push({
                     collection: issue.collection,
@@ -122,7 +103,7 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
                 repaired++;
             } else if (issue.rule.nullable) {
                 const idx = rows.findIndex((row) => row.id === issue.recordId);
-                const nextRows = [...rows.slice(0, idx), { ...target, [issue.field]: undefined }, ...rows.slice(idx + 1)];
+                const nextRows = [...rows.slice(0, idx), replaceReferenceField(target, issue.field, undefined), ...rows.slice(idx + 1)];
                 db = replaceCollection(db, issue.collection, nextRows);
                 details.push({
                     collection: issue.collection,

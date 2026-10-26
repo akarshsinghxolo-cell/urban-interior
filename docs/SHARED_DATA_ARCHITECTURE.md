@@ -45,6 +45,8 @@ Payment schedules remain obligations, financial documents remain bills, and mone
 
 ## Integrity and access
 
+The follow-up [foreign-key audit](SHARED_FOREIGN_KEY_AUDIT.md) covers all 80 logical collections and the existing database graph. Apply `shared_domain_foreign_keys` after expansion: it validates all 229 persisted scalar relationships with workspace/type scope, upgrades 38 ID-only FKs and preserves journalled deletion semantics. It also fixes nested and embedded reference checking, Staff assignment metadata and array cleanup.
+
 The expansion redirects 28 affected foreign keys, preserving their original workspace, party/job, deferral and deletion semantics. Typed compound foreign keys ensure that a dispatch cannot satisfy a GRN reference and an action cannot satisfy a recovery-task follow-up reference. Attendance uniqueness stays confined to attendance, rather than blocking payroll rows with the same staff/date.
 
 Staff assignment and history-normalization triggers move with their original logical kinds. Work-category and subcategory history guards remain active. Taxonomy reference scans now exclude only the current typed definition; another kind with the same ID still counts as a reference. Contractor-rate projection and dashboard SQL use collection-filtered canonical reads.
@@ -55,7 +57,7 @@ New shared tables have RLS enabled, no browser-role grants, and service-role acc
 
 `shared_domain_expansion` takes the workspace revision lock and source-table locks in one transaction, copies complete row envelopes, and compares source/destination rows in both directions before removing any table. No source table is dropped with CASCADE. No compatibility views, dual writes, archive tables or duplicate business records remain.
 
-`supabase/rollback/shared_domain_expansion.sql` reverses this expansion using the **current shared rows**, including writes made after release. It restores original source tables, constraints, indexes, policies, triggers and functions. Coordinate it with the matching application rollback. To return all the way to the original 94-table model, reverse this expansion first, then use the earlier `shared_domain_tables.sql` rollback.
+`supabase/rollback/shared_domain_expansion.sql` reverses this expansion using the **current shared rows**, including writes made after release. It restores original source tables, constraints, indexes, policies, triggers and functions. Reverse `supabase/rollback/shared_domain_foreign_keys.sql` first, then coordinate expansion rollback with the matching application rollback. To return all the way to the original 94-table model, reverse this expansion first, then use the earlier `shared_domain_tables.sql` rollback.
 
 The provider folder-claim registry remains separate from workspace folder templates/instances. Its 48 provider claim/hierarchy rows and the 13 application folder instances represent different records and concurrency states. Combining them would require a provider workflow redesign. Credentials, authentication keys, upload jobs, revision journals and audit history retain their specific access and retention boundaries.
 

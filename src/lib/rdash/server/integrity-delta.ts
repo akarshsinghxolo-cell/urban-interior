@@ -1,3 +1,4 @@
+import { EMBEDDED_REFERENCE_PARENTS } from "../integrity/reference-access";
 import { checkWorkspaceIntegrity } from "../integrity/checker";
 import type { IntegrityIssue, RDashDatabase } from "../types";
 
@@ -46,7 +47,8 @@ export function introducedFkIntegrityIssues(
 ): string[] {
   const loaded = new Set(fullCollections);
   const evaluable = (issue: IntegrityIssue) =>
-    loaded.has(issue.rule.collection) && loaded.has(issue.rule.targetCollection);
+    loaded.has(EMBEDDED_REFERENCE_PARENTS[issue.rule.collection] || issue.rule.collection)
+    && loaded.has(EMBEDDED_REFERENCE_PARENTS[issue.rule.targetCollection] || issue.rule.targetCollection);
   const issueMessages = (db: RDashDatabase) =>
     checkWorkspaceIntegrity(db).issues.filter(evaluable).map((issue) => issue.message);
   return introducedIntegrityIssues(issueMessages(baseline), issueMessages(candidate));

@@ -104,6 +104,9 @@ BEGIN
     ('approvalPolicies','valid-policy','shared-domain-test','{"id":"valid-policy","approver_id":"test-domain-staff"}'),
     ('automationRules','unrelated-rule','shared-domain-test','{"id":"unrelated-rule","assigned_staff_id":"not-a-staff-assignment"}');
 
+  INSERT INTO public.entity_master_units(id,workspace_id,data) VALUES
+    ('test-unit','shared-domain-test','{"id":"test-unit","name":"Test unit","symbol":"tu"}');
+
   -- Contractor capabilities still own their rates. Only their projection is
   -- stored in the shared rate-card table, in the same atomic commit.
   result := public.commit_workspace_operations('shared-domain-test', 3, '[

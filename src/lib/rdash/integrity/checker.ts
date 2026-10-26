@@ -7,23 +7,10 @@
 // for the seed workspace (~600 records, 723KB).
 // ============================================================================
 
-import type { RDashDatabase, Master, IntegrityIssue, IntegrityReport, DuplicateIdConflict } from "../types";
+import type { RDashDatabase, IntegrityIssue, IntegrityReport, DuplicateIdConflict } from "../types";
 import { FOREIGN_KEYS, type ForeignKeyRule } from "./fk-registry";
 
-type GenericRow = { id: string } & Record<string, unknown>;
-
-/** Resolve a collection name (e.g. "customers" or "master.vendors") to the
- *  actual array of records in the database. Returns [] for unknown names. */
-function resolveCollection(db: RDashDatabase, name: string): GenericRow[] {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        const arr = db.master?.[key];
-        return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-    }
-    const key = name as keyof RDashDatabase;
-    const arr = db[key];
-    return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-}
+import { resolveReferenceCollection as resolveCollection, referenceField, type ReferenceRow as GenericRow } from "./reference-access";
 
 /** Build a Set<string> of every id in the given collection. O(N). */
 function buildIdSet(rows: GenericRow[]): Set<string> {
@@ -91,7 +78,7 @@ function buildIssue(
         targetId,
         message,
         rule,
-        autoFixable: isAutoFixable(rule),
+        autoFixable: Boolean(targetId) && isAutoFixable(rule),
     };
 }
 
@@ -140,7 +127,7 @@ export function checkWorkspaceIntegrity(db: RDashDatabase): IntegrityReport {
         if (!parentIds) continue; // target collection missing from db — treat as empty
 
         for (const row of childRows) {
-            const value = row[rule.field];
+            const value = referenceField(row, rule.field);
             if (rule.isArray) {
                 const ids = Array.isArray(value) ? (value as unknown[]) : [];
                 for (const idRaw of ids) {
