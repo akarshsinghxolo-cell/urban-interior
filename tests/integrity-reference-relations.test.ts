@@ -79,4 +79,18 @@ describe("canonical references through shared tables and embedded records", () =
       collection: "master.articleVariants", recordId: "missing-required-parent", field: "article_id", autoFixable: false,
     }));
   });
+
+  test("repair retains an incomplete rate and its history for manual resolution", () => {
+    for (const articleId of ["", "unknown-article"]) {
+      const db = buildSeedDatabase();
+      const rate = { ...db.master.vendorRates[0], id: "incomplete-rate", article_id: articleId };
+      const history = { ...db.master.vendorRateHistories[0], id: "incomplete-rate-history", vendor_rate_id: rate.id };
+      db.master.vendorRates.push(rate);
+      db.master.vendorRateHistories.push(history);
+      const repaired = repairIntegrityIssues(db);
+      expect(repaired.db.master.vendorRates).toContainEqual(rate);
+      expect(repaired.db.master.vendorRateHistories).toContainEqual(history);
+      expect(repaired.result.skippedDetails).toContainEqual(expect.objectContaining({ collection: "master.vendorRates", id: rate.id }));
+    }
+  });
 });

@@ -196,7 +196,12 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
     // This repairs article variants, vendor rates, inventory, work costs,
     // quotation totals — the "operational" repairs that don't fit the FK
     // registry model. It also normalizes the master catalogue.
-    db = repairOperationalWorkspace(db);
+    // Operational normalization can discard incomplete rates and their history.
+    // Unknown required parents need manual resolution, so do not run that pass
+    // while those records are still present. Explicit safe FK repairs above
+    // remain available and are reported independently.
+    const manualReferenceIssues = report.issues.some((issue) => !issue.autoFixable);
+    if (!manualReferenceIssues) db = repairOperationalWorkspace(db);
 
     return {
         db,
