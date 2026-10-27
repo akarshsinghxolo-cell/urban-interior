@@ -47,6 +47,15 @@ describe("shared domain migrations against PostgreSQL", () => {
       expect(await foreignKeyFingerprints(db)).toEqual(originalFingerprints);
 
       await db.exec(migration("_shared_domain_foreign_keys.sql"));
+      const hardeningFingerprints = await foreignKeyFingerprints(db);
+      await db.exec(migration("_shared_domain_index_cleanup.sql"));
+      expect(await foreignKeyFingerprints(db)).toEqual(hardeningFingerprints);
+      expect((await db.query("SELECT to_regclass('public.s2_1ce0b1450d6833b31a0c9a70') AS redundant")).rows)
+        .toEqual([{ redundant: null }]);
+      await db.exec(sql("supabase/rollback/shared_domain_index_cleanup.sql"));
+      expect((await db.query("SELECT to_regclass('public.s2_1ce0b1450d6833b31a0c9a70') IS NOT NULL AS restored")).rows)
+        .toEqual([{ restored: true }]);
+      await db.exec(migration("_shared_domain_index_cleanup.sql"));
       const hardened = await databaseReferences(db);
       const registeredScalars = FOREIGN_KEYS.filter((rule) => !rule.isArray && rule.onDelete !== "ignore"
         && COLLECTION_TO_TABLE[rule.collection] && COLLECTION_TO_TABLE[rule.targetCollection]);
@@ -83,6 +92,7 @@ describe("shared domain migrations against PostgreSQL", () => {
 
       await db.exec(migration("_shared_domain_expansion.sql"));
       await db.exec(migration("_shared_domain_foreign_keys.sql"));
+      await db.exec(migration("_shared_domain_index_cleanup.sql"));
       expect((await db.query(`SELECT id FROM entity_storage_structure WHERE collection='master.storageFolderTemplates' AND id='post-release-template'`)).rows).toHaveLength(1);
     } finally {
       await db.close();

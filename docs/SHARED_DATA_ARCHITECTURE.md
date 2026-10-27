@@ -1,6 +1,6 @@
 # Shared data architecture
 
-Audited 25 October 2026 against GitHub `main` at `e130bc8a7054b17b10143cb3729f13bf5cd208a3` and Supabase project `urban-interior` (`smfqwexofoqqrrhbzwmx`). Before this expansion, production had 73 public tables and the first shared-domain migration was already applied.
+Released 27 October 2026 to Supabase project `urban-interior` (`smfqwexofoqqrrhbzwmx`) and `urban-castle.vercel.app`. PR #239 was merged as `e60dbab03088c167b8ebdf69d516dc56e73786f0`; the matching application build `4d727f1` was promoted after the database cutover. Production now has **52 public tables and 251 validated public/private FKs**. Before this expansion, production had 73 public tables and the first shared-domain migration was already applied.
 
 ## Storage model
 
@@ -45,7 +45,7 @@ Payment schedules remain obligations, financial documents remain bills, and mone
 
 ## Integrity and access
 
-The follow-up [foreign-key audit](SHARED_FOREIGN_KEY_AUDIT.md) covers all 80 logical collections and the existing database graph. Apply `shared_domain_foreign_keys` after expansion: it validates all 229 persisted scalar relationships with workspace/type scope, upgrades 38 ID-only FKs and preserves journalled deletion semantics. It also fixes nested and embedded reference checking, Staff assignment metadata and array cleanup.
+The [foreign-key audit](SHARED_FOREIGN_KEY_AUDIT.md) covers all 80 logical collections, all 257 Integrity-module rules and the existing database graph. `shared_domain_foreign_keys` was applied after expansion: it validates all 229 persisted scalar relationships with workspace/type scope, upgrades 38 ID-only FKs and preserves journalled deletion semantics. It also fixes nested and embedded reference checking, Staff assignment metadata and array cleanup.
 
 The expansion redirects 28 affected foreign keys, preserving their original workspace, party/job, deferral and deletion semantics. Typed compound foreign keys ensure that a dispatch cannot satisfy a GRN reference and an action cannot satisfy a recovery-task follow-up reference. Attendance uniqueness stays confined to attendance, rather than blocking payroll rows with the same staff/date.
 
@@ -65,8 +65,11 @@ All application business tables remain in `public`. The contact uniqueness helpe
 
 ## Verification
 
-- Restored the exact live catalogue: 234 constraints, 423 indexes, 27 functions and 14 triggers, plus 2,430 business record envelopes. Authentication accounts and provider credential payloads were not copied.
+- Restored the live catalogue and all 2,441 business record envelopes for the final release rehearsal. Authentication accounts and provider credential payloads were not copied.
 - Rehearsed 73 -> 52 -> 73 -> 52 tables, comparing every copied row envelope and the dashboard aggregates. Rollback also preserves a new write made after migration.
-- Ran both SQL regression packs: CAS/journal atomicity, forged collection rejection, same-ID kind isolation, workflow/follow-up type and workspace links, staff triggers, attendance uniqueness, taxonomy history, payroll aggregate isolation, GRN/bill relationships, RLS and grants, approval guards and contractor-rate projection.
+- Ran all three SQL regression packs locally and against production inside rolled-back transactions: CAS/journal atomicity, forged collection rejection, same-ID kind isolation, workflow/follow-up type and workspace links, staff triggers, attendance uniqueness, taxonomy history, payroll aggregate isolation, GRN/bill relationships, RLS and grants, approval guards and contractor-rate projection.
 - Application read regressions cover every shared domain, including workspace/kind isolation and SQL/TypeScript registry agreement.
-- Production release must pair the application with the migration. Build and check a staged deployment, apply the database migration, then promote the matching application. Confirm table counts, complete row parity, advisors and runtime health before reporting release complete.
+- Compared the complete corrected pre-cutover and post-cutover envelopes: 2,441 before and after, zero missing, added or changed records. Finance, commercial and operations aggregates were unchanged. All 4,379 populated references passed the complete application scan.
+- Application CI passed 969 unit/PostgreSQL tests and 47 browser tests for the released PR head. The production browser reached the expected sign-in screen; private production UI verification requires a signed-in session.
+- Production migration history records expansion as `20261027103848` and FK hardening as `20261027103854` (MCP execution versions differ from the source file timestamps). Do not replay the files just because those timestamps differ.
+- Release checks found a redundant commercial-document index and an explicit 30-second upload-route limit. The guarded `shared_domain_index_cleanup` removes only the index with no dependencies, retains every FK and supports standalone reversal/full consolidation rollback. Upload actions now have a bounded 300-second invocation budget. The timed-out upload recovered through the existing retry path without recreating its file registry rows.

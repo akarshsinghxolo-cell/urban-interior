@@ -17,7 +17,9 @@ import type {
 } from "@/lib/uploads/upload-types";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+// Drive verification, folder claims and registration can exceed 30 seconds.
+// Keep the existing resumable/idempotent retry path within a bounded invocation.
+export const maxDuration = 300;
 
 type Context = { params: Promise<{ action: string }> };
 
