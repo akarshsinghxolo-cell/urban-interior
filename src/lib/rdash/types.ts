@@ -171,6 +171,8 @@ export interface LineItem {
     rate_last_changed_at?: string;
     rate_basis?: "budget" | "vendor_bid" | "po" | "actual";
     amount: number;
+    /** Optional quotation-only work columns (for example Demolition or Civil Work). */
+    extra_amounts?: Record<ID, number>;
     tax_rate?: number;
     status?: string;
     held?: boolean;
@@ -205,6 +207,10 @@ export interface LineItem {
     floor_ceiling_area?: number;
 }
 export type QuotationItem = LineItem;
+export interface QuotationExtraColumn {
+    id: ID;
+    label: string;
+}
 export interface QuotationCoverage {
     id: ID;
     work_required_id: ID;
@@ -242,6 +248,8 @@ export interface Quotation {
     };
     coverage: QuotationCoverage[];
     scope_lines: QuotationItem[];
+    /** User-defined monetary columns shown room-wise in the quotation. */
+    extra_columns?: QuotationExtraColumn[];
     items?: QuotationItem[];
     thread_id?: ID;
 // --- 3. Quotation domain ---
@@ -2184,3 +2192,4 @@ export interface RepairResult {
     skipped: number;
     skippedDetails: Array<{ collection: string; id: string; reason: string }>;
 }
+

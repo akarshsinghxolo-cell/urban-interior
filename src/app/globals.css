@@ -320,9 +320,56 @@
   .rd-stagger > *:nth-child(8) { animation-delay: 280ms; }
 
   @media print {
-    .no-print, header, footer, aside, [class*="fixed"] { display: none !important; }
+    @page { size: A4 landscape; margin: 10mm; }
+    .no-print,
+    body:not(.printing-quotation) header,
+    body:not(.printing-quotation) footer,
+    body:not(.printing-quotation) aside,
+    body:not(.printing-quotation) [class*="fixed"] { display: none !important; }
     main { overflow: visible !important; }
     body { background: white !important; }
+
+    body.printing-quotation * { visibility: hidden !important; }
+    body.printing-quotation .quotation-print-surface,
+    body.printing-quotation .quotation-print-surface * { visibility: visible !important; }
+    body.printing-quotation .quotation-print-surface {
+      display: block !important;
+      position: absolute !important;
+      inset: 0 auto auto 0 !important;
+      width: 100% !important;
+      max-width: none !important;
+      height: auto !important;
+      overflow: visible !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      background: white !important;
+    }
+    body.printing-quotation .quotation-print-surface > header { display: none !important; }
+    body.printing-quotation .quotation-print-surface > div { overflow: visible !important; }
+    body.printing-quotation .quotation-print-document {
+      width: 100% !important;
+      color: #0f172a !important;
+      background: white !important;
+      font-size: 9pt;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body.printing-quotation .quotation-letterhead {
+      display: block !important;
+      background: #020617 !important;
+      color: white !important;
+    }
+    body.printing-quotation .quotation-print-document > div { padding: 8mm !important; }
+    body.printing-quotation .quotation-print-document section,
+    body.printing-quotation .quotation-print-document dl,
+    body.printing-quotation .quotation-print-document tfoot,
+    body.printing-quotation .quotation-signatures { break-inside: avoid; }
+    body.printing-quotation .quotation-table thead { display: table-header-group; }
+    body.printing-quotation .quotation-table tr { break-inside: avoid; }
+    body.printing-quotation .quotation-footer {
+      display: flex !important;
+      break-inside: avoid;
+    }
   }
 
   @keyframes rd-shimmer {
@@ -716,3 +763,4 @@
 
 /* Dark-mode tweak: ensure pulse strip stays vivid */
 .dark .rd-pulse-strip { box-shadow: 0 10px 30px -10px hsl(218 84% 24% / 0.5); }
+

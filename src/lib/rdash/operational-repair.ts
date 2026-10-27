@@ -2,6 +2,7 @@ import type { ArticleVariant, LineItem, RDashDatabase, WorkRequired } from "./ty
 import { attachCustomerLabels } from "./customer";
 import { workSubcategoryCategoryIds } from "./work-types";
 import { prepareWorkspaceData, normalizeCatalogName } from "./work-category-master";
+import { quotationLineAmount } from "./quotation-extra-columns";
 
 const timestamp = "2026-07-08T00:00:00.000Z";
 
@@ -68,8 +69,10 @@ function repairLine(db: RDashDatabase, line: LineItem, context: string): LineIte
     unit_name: unitName(db, material.unit_id, line.unit_name),
   };
   if (!repaired.title && article?.name) repaired.title = article.name;
-  if (!repaired.amount || Math.abs(repaired.amount - repaired.quantity * repaired.rate) > 1) {
-    repaired.amount = Math.round((Number(repaired.quantity || 0) * Number(repaired.rate || 0)) * 100) / 100;
+  const expectedAmount = context === "quotation" ? quotationLineAmount(repaired)
+    : Math.round((Number(repaired.quantity || 0) * Number(repaired.rate || 0)) * 100) / 100;
+  if (!repaired.amount || Math.abs(repaired.amount - expectedAmount) > 1) {
+    repaired.amount = expectedAmount;
   }
   repaired.source_kind = repaired.source_kind || (context as LineItem["source_kind"]);
   return repaired;

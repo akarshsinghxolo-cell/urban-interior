@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { areaDependencySummary } from "@/lib/rdash/business-rules";
 import { buildQuotationShareText, shareQuotationText } from "@/lib/rdash/quotation-share";
 import { canPermanentlyDeleteQuotation } from "@/lib/rdash/store/quotations-helpers";
+import { withoutQuotationExtraColumn } from "@/lib/rdash/quotation-extra-columns";
 import { confirmDialog } from "./ConfirmDialog";
 import { MapView, type MapPoint } from "./MapView";
 import { visitToMapPoints } from "./visitMap";
@@ -90,7 +91,7 @@ export function DetailPanel() {
     const activeTab: Tab = detail.kind === "customer" ? "overview" : tab;
     return (<>
       <div className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[1px] animate-in fade-in duration-150" onClick={closeDetail}/>
-      <aside ref={asideRef} role="dialog" aria-modal="true" tabIndex={-1} onKeyDown={onAsideKeyDown} aria-label="Record context panel" className="fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl outline-none animate-in slide-in-from-right duration-200">
+      <aside ref={asideRef} role="dialog" aria-modal="true" tabIndex={-1} onKeyDown={onAsideKeyDown} aria-label="Record context panel" className={cn("fixed right-0 top-0 z-50 flex h-dvh w-full max-w-[640px] flex-col border-l border-border bg-card shadow-2xl outline-none animate-in slide-in-from-right duration-200", detail.kind === "quotation" && activeTab === "overview" && "quotation-print-surface")}>
         <PanelHeader tab={activeTab} setTab={setPanelTab}/>
         <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden rd-scroll">
           {activeTab === "overview" && <OverviewBody kind={detail.kind} id={detail.recordId}/>}
@@ -831,6 +832,46 @@ function QuotationOverview({ q }: {
     const [renegotiateReason, setRenegotiateReason] = React.useState("");
     const [renegotiateHeldIds, setRenegotiateHeldIds] = React.useState<Set<string>>(new Set());
     const site = q.site_id ? db.sites.find((s) => s.id === q.site_id) : undefined;
+    const addExtraColumn = async () => {
+        const label = await promptDialog({
+            title: "Add quotation work column",
+            description: "Create a room-wise amount column such as Demolition Work or Civil Work.",
+            label: "Column name",
+            placeholder: "e.g. Demolition Work",
+            required: true,
+            confirmLabel: "Add column",
+            validate: (value) => (q.extra_columns || []).some((column) => column.label.toLowerCase() === value.trim().toLowerCase()) ? "This column already exists." : null,
+        });
+        if (!label?.trim()) return;
+        updateQuotation(q.id, {
+            extra_columns: [...(q.extra_columns || []), { id: `qcol-${Date.now().toString(36)}`, label: label.trim() }],
+        });
+        toast.success(`${label.trim()} column added`);
+    };
+    const removeExtraColumn = async (column: import("@/lib/rdash/types").QuotationExtraColumn) => {
+        const ok = await confirmDialog({
+            title: `Remove ${column.label}?`,
+            description: "The values entered in this quotation column will also be removed.",
+            confirmLabel: "Remove column",
+            danger: true,
+        });
+        if (!ok) return;
+        const scopeLines = withoutQuotationExtraColumn(q.scope_lines, column.id);
+        updateQuotation(q.id, {
+            extra_columns: (q.extra_columns || []).filter((entry) => entry.id !== column.id),
+            scope_lines: scopeLines,
+            items: scopeLines,
+        });
+        toast.success(`${column.label} column removed`);
+    };
+    const printQuotation = () => {
+        document.body.classList.add("printing-quotation");
+        const cleanup = () => document.body.classList.remove("printing-quotation");
+        window.addEventListener("afterprint", cleanup, { once: true });
+        toast.info("Opening A4 quotation…");
+        window.setTimeout(() => window.print(), 200);
+        window.setTimeout(cleanup, 30_000);
+    };
     const handleCreateRevision = () => {
         let newId = "";
         try {
@@ -884,8 +925,8 @@ function QuotationOverview({ q }: {
         }
     };
     return (<div className="h-full overflow-y-auto bg-muted/30 p-3 rd-scroll print:bg-white print:p-0">
-      <article className="overflow-hidden rounded-xl border border-border bg-background shadow-sm print:border-0 print:shadow-none">
-        <header className="bg-slate-950 px-4 py-4 text-white dark:bg-slate-900">
+      <article className="quotation-print-document overflow-hidden rounded-xl border border-border bg-background shadow-sm print:border-0 print:shadow-none">
+        <header className="quotation-letterhead bg-slate-950 px-4 py-4 text-white dark:bg-slate-900">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-sm font-black tracking-tight">UC</span><div><p className="text-sm font-bold tracking-wide">Urban Castle</p><p className="text-[10px] text-slate-300">Interior design · execution · project delivery</p></div></div>
             <div className="text-right"><p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-300">Quotation</p><p className="mt-1 font-mono text-xs font-bold">{q.quotation_no}</p><div className="mt-1 flex justify-end"><StatusBadge label={st.label} className={st.className}/></div></div>
@@ -897,9 +938,11 @@ function QuotationOverview({ q }: {
             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs sm:border-l sm:border-border sm:pl-3"><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Issued</dt><dd className="mt-0.5 font-medium">{formatDate(q.created_at)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Valid until</dt><dd className="mt-0.5 font-medium">{formatDate(q.valid_until)}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Revision</dt><dd className="mt-0.5 font-medium">{q.revision_no}</dd></div><div><dt className="text-[10px] uppercase tracking-wide text-muted-foreground">Scope lines</dt><dd className="mt-0.5 font-medium">{q.scope_lines.length}</dd></div></dl>
           </section>
           <section><p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project proposal</p><h2 className="mt-1 text-base font-bold text-foreground">{q.title}</h2>{q.parent_quotation_id && <p className="mt-1 text-[11px] text-muted-foreground">Revision of {db.quotations.find((x) => x.id === q.parent_quotation_id)?.quotation_no || "earlier quotation"}</p>}</section>
-      <section className="overflow-hidden rounded-lg border border-border">
-        <div className="flex items-center justify-between border-b border-border bg-muted/40 px-3 py-2"><div><p className="text-xs font-bold">Scope & pricing</p><p className="text-[10px] text-muted-foreground">Room-wise measured quantities and agreed rates</p></div>{isEditable && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Draft · editable</span>}</div>
-        {isEditable ? (<QuotationLineItemEditor quotationId={q.id} items={q.scope_lines} articles={db.master.articles}/>) : (<LineItemTable items={q.scope_lines}/>)}
+      <section className="quotation-scope-section overflow-hidden rounded-lg border border-border">
+        <div className="flex items-center justify-between gap-2 border-b border-border bg-muted/40 px-3 py-2"><div><p className="text-xs font-bold">Scope & pricing</p><p className="text-[10px] text-muted-foreground">Room-wise measured quantities and agreed rates</p></div><div className="no-print flex items-center gap-2">{isEditable && <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => void addExtraColumn()}><Plus className="mr-1 h-3 w-3"/>Add work column</Button>}{isEditable && <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">Draft · editable</span>}</div></div>
+        {isEditable ? <div className="no-print"><QuotationLineItemEditor quotationId={q.id} items={q.scope_lines} articles={db.master.articles}/></div> : null}
+        <div className={isEditable ? "hidden print:block" : "block"}><QuotationScopeTable quotation={q}/></div>
+        {isEditable && (q.extra_columns || []).length ? <QuotationExtraWorkEditor quotation={q} onRemoveColumn={removeExtraColumn}/> : null}
       </section>
       <section className="ml-auto grid max-w-sm grid-cols-[1fr_auto] gap-x-8 gap-y-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">
         <span className="text-muted-foreground">Subtotal</span><span className="text-right font-mono font-medium">{formatINR(q.subtotal)}</span>
@@ -912,15 +955,21 @@ function QuotationOverview({ q }: {
           <div><p className="text-xs font-bold">Payment schedule</p><p className="text-[10px] text-muted-foreground">Milestones form part of this commercial proposal</p></div>
           {isEditable && <span className="text-[10px] text-muted-foreground">{q.payment_terms.reduce((n, pt) => n + pt.percentage, 0)}% allocated</span>}
         </div>
-        {isEditable ? (<QuotationMilestoneEditor quotationId={q.id} milestones={q.payment_terms} totalAmount={q.total_amount}/>) : (<div className="flex flex-wrap gap-2">
+        {isEditable ? (<div className="no-print"><QuotationMilestoneEditor quotationId={q.id} milestones={q.payment_terms} totalAmount={q.total_amount}/></div>) : (<div className="no-print flex flex-wrap gap-2">
             {q.payment_terms.map((pt) => (<span key={pt.id} className="rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs">
                 {pt.label} {pt.percentage}% · {pt.due_event.replace(/_/g, " ")}
               </span>))}
           </div>)}
+        <QuotationPaymentSchedulePrint quotation={q}/>
       </section>
       {q.terms_and_conditions && <section className="rounded-lg border border-border bg-card p-3"><p className="text-xs font-bold">Terms & conditions</p><p className="mt-1 whitespace-pre-line text-[11px] leading-relaxed text-muted-foreground">{q.terms_and_conditions}</p></section>}
-      <EntityFilesCard entityType="quotation" entityId={q.id} title="Quotation files & approvals" manage showEmpty />
+      <div className="no-print"><EntityFilesCard entityType="quotation" entityId={q.id} title="Quotation files & approvals" manage showEmpty /></div>
+      <section className="quotation-signatures hidden grid-cols-2 gap-12 pt-8 text-xs print:grid">
+        <div className="border-t border-slate-400 pt-2"><p className="font-semibold">For Urban Castle</p><p className="mt-1 text-slate-500">Authorized signatory</p></div>
+        <div className="border-t border-slate-400 pt-2"><p className="font-semibold">Accepted by {q.customer_name || "Customer"}</p><p className="mt-1 text-slate-500">Signature and date</p></div>
+      </section>
       </div>
+      <footer className="quotation-footer hidden items-center justify-between border-t border-slate-300 px-4 py-2 text-[9px] text-slate-500 print:flex"><span>Urban Castle · Interior design · execution · project delivery</span><span>{q.quotation_no}</span></footer>
       </article>
       <div className="mt-3 flex flex-wrap gap-2 rounded-lg border border-border bg-background p-3 shadow-sm no-print">
         {q.status === "draft" && (<Button size="sm" onClick={() => { updateQuotation(q.id, { status: "sent" }); toast.success("Quotation sent to customer"); }}>
@@ -944,7 +993,7 @@ function QuotationOverview({ q }: {
         {q.status !== "draft" && q.status !== "cancelled" && q.work_order_ids.length > 0 && (<Button size="sm" variant="outline" onClick={() => setRenegotiateOpen((v) => !v)}>
             <RefreshCw className="mr-1.5 h-3.5 w-3.5"/> Renegotiate / Variation
           </Button>)}
-        <Button size="sm" variant="outline" onClick={() => { toast.info("Opening print view…"); setTimeout(() => window.print(), 300); }} className="no-print">
+        <Button size="sm" variant="outline" onClick={printQuotation} className="no-print">
           <Download className="mr-1.5 h-3.5 w-3.5"/> Print / PDF
         </Button>
         <Button size="sm" variant="outline" className="no-print" onClick={async () => {
@@ -1025,6 +1074,81 @@ function QuotationOverview({ q }: {
         </div>)}
     </div>);
 }
+function quotationLineAreaLabel(line: import("@/lib/rdash/types").LineItem): string {
+    if (line.area_chips?.length) return line.area_chips.map((chip) => chip.area_name).join(", ");
+    return line.area_name || "General";
+}
+
+function QuotationScopeTable({ quotation }: { quotation: import("@/lib/rdash/types").Quotation }) {
+    const columns = quotation.extra_columns || [];
+    return <div className="overflow-x-auto">
+      <table className="quotation-table w-full border-collapse text-left text-xs">
+        <thead><tr className="bg-slate-100 text-[10px] uppercase tracking-wide text-slate-600">
+          <th className="px-3 py-2 font-semibold">Item</th>
+          <th className="px-2 py-2 font-semibold">Area / room</th>
+          <th className="px-2 py-2 text-right font-semibold">Qty</th>
+          <th className="px-2 py-2 text-right font-semibold">Rate</th>
+          {columns.map((column) => <th key={column.id} className="max-w-28 px-2 py-2 text-right font-semibold">{column.label}</th>)}
+          <th className="px-3 py-2 text-right font-semibold">Line total</th>
+        </tr></thead>
+        <tbody>{quotation.scope_lines.map((line) => <tr key={line.id} className="border-t border-slate-200 align-top">
+          <td className="px-3 py-2 font-medium text-slate-900">{line.title}<div className="mt-0.5 text-[9px] font-normal text-slate-500">{line.unit_name || ""}</div></td>
+          <td className="px-2 py-2 text-slate-600">{quotationLineAreaLabel(line)}</td>
+          <td className="px-2 py-2 text-right font-mono">{line.quantity}</td>
+          <td className="px-2 py-2 text-right font-mono">{formatINR(line.rate)}</td>
+          {columns.map((column) => <td key={column.id} className="px-2 py-2 text-right font-mono">{line.extra_amounts?.[column.id] ? formatINR(line.extra_amounts[column.id]) : "—"}</td>)}
+          <td className="px-3 py-2 text-right font-mono font-semibold">{formatINR(line.amount)}</td>
+        </tr>)}</tbody>
+        <tfoot><tr className="border-t-2 border-slate-300 bg-slate-50 font-semibold">
+          <td className="px-3 py-2" colSpan={4}>Scope subtotal</td>
+          {columns.map((column) => <td key={column.id} className="px-2 py-2 text-right font-mono">{formatINR(quotation.scope_lines.reduce((sum, line) => sum + (line.extra_amounts?.[column.id] || 0), 0))}</td>)}
+          <td className="px-3 py-2 text-right font-mono">{formatINR(quotation.subtotal)}</td>
+        </tr></tfoot>
+      </table>
+    </div>;
+}
+
+function QuotationExtraWorkEditor({ quotation, onRemoveColumn }: {
+    quotation: import("@/lib/rdash/types").Quotation;
+    onRemoveColumn: (column: import("@/lib/rdash/types").QuotationExtraColumn) => Promise<void>;
+}) {
+    const updateQuotationItem = useRDashStore((state) => state.updateQuotationItem);
+    const columns = quotation.extra_columns || [];
+    return <div className="no-print border-t border-border bg-muted/10 p-3">
+      <div className="mb-2"><p className="text-xs font-bold">Additional work by room</p><p className="text-[10px] text-muted-foreground">Enter an amount for each optional work column. These amounts are included in the line and quotation totals.</p></div>
+      <div className="overflow-x-auto rounded-md border border-border bg-background">
+        <table className="w-full min-w-max border-collapse text-xs">
+          <thead><tr className="bg-muted/50 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <th className="min-w-40 px-3 py-2 text-left">Area / room</th>
+            {columns.map((column) => <th key={column.id} className="min-w-32 px-2 py-2 text-right"><span className="inline-flex items-center gap-1">{column.label}<button type="button" onClick={() => void onRemoveColumn(column)} className="rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label={`Remove ${column.label} column`}><X className="h-3 w-3"/></button></span></th>)}
+            <th className="min-w-24 px-3 py-2 text-right">Line total</th>
+          </tr></thead>
+          <tbody>{quotation.scope_lines.map((line) => <tr key={line.id} className="border-t border-border">
+            <td className="px-3 py-2"><p className="font-medium">{quotationLineAreaLabel(line)}</p><p className="max-w-48 truncate text-[10px] text-muted-foreground">{line.title}</p></td>
+            {columns.map((column) => <td key={column.id} className="px-2 py-1.5"><div className="flex items-center rounded border border-border bg-card px-1.5 py-1 font-mono focus-within:border-primary"><span className="mr-1 text-[10px] text-muted-foreground">₹</span><input type="number" min="0" step="1" defaultValue={line.extra_amounts?.[column.id] || ""} placeholder="0" aria-label={`${column.label} amount for ${quotationLineAreaLabel(line)}`} onBlur={(event) => {
+                const parsed = event.currentTarget.value.trim() === "" ? 0 : Number(event.currentTarget.value);
+                if (!Number.isFinite(parsed) || parsed < 0) {
+                    toast.error("Enter a valid amount of zero or more");
+                    event.currentTarget.value = String(line.extra_amounts?.[column.id] || "");
+                    return;
+                }
+                if (parsed === (line.extra_amounts?.[column.id] || 0)) return;
+                updateQuotationItem(quotation.id, line.id, { extra_amounts: { ...(line.extra_amounts || {}), [column.id]: parsed } });
+              }} className="w-20 bg-transparent text-right outline-none"/></div></td>)}
+            <td className="px-3 py-2 text-right font-mono font-semibold">{formatINR(line.amount)}</td>
+          </tr>)}</tbody>
+          <tfoot><tr className="border-t border-border bg-muted/30 font-semibold"><td className="px-3 py-2">Column totals</td>{columns.map((column) => <td key={column.id} className="px-2 py-2 text-right font-mono">{formatINR(quotation.scope_lines.reduce((sum, line) => sum + (line.extra_amounts?.[column.id] || 0), 0))}</td>)}<td className="px-3 py-2 text-right font-mono text-primary">{formatINR(quotation.subtotal)}</td></tr></tfoot>
+        </table>
+      </div>
+    </div>;
+}
+
+function QuotationPaymentSchedulePrint({ quotation }: { quotation: import("@/lib/rdash/types").Quotation }) {
+    return <div className="hidden print:block">
+      {quotation.payment_terms.length ? <table className="w-full border-collapse text-xs"><thead><tr className="border-y border-slate-300 bg-slate-50 text-[10px] uppercase text-slate-600"><th className="px-2 py-1.5 text-left">Milestone</th><th className="px-2 py-1.5 text-right">Share</th><th className="px-2 py-1.5 text-left">Due event</th><th className="px-2 py-1.5 text-right">Amount</th></tr></thead><tbody>{quotation.payment_terms.map((term) => <tr key={term.id} className="border-b border-slate-200"><td className="px-2 py-1.5 font-medium">{term.label}</td><td className="px-2 py-1.5 text-right">{term.percentage}%</td><td className="px-2 py-1.5">{titleCase(term.due_event.replaceAll("_", " "))}</td><td className="px-2 py-1.5 text-right font-mono">{formatINR((quotation.total_amount * term.percentage) / 100)}</td></tr>)}</tbody></table> : <p className="rounded border border-slate-300 px-3 py-2 text-xs text-slate-600">Payment milestones will be agreed before commencement.</p>}
+    </div>;
+}
+
 function QuotationLineItemEditor({ quotationId, items, articles, }: {
     quotationId: string;
     items: import("@/lib/rdash/types").LineItem[];
@@ -2832,3 +2956,4 @@ function InventoryOverview({ inv }: {
       <EntityFilesCard entityType="inventory" entityId={inv.id} title="Inventory evidence" manage showEmpty />
     </div>);
 }
+
