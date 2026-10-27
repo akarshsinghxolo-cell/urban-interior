@@ -8,6 +8,7 @@
 
 import type { RDashDatabase, RepairResult, IntegrityIssue } from "../types";
 import { checkWorkspaceIntegrity } from "./checker";
+import { cascadeDelete } from "./cascade";
 import { repairOperationalWorkspace } from "../operational-repair";
 
 import { resolveReferenceCollection as resolveCollection, replaceReferenceCollection as replaceCollection, referenceField, replaceReferenceField } from "./reference-access";
@@ -42,6 +43,9 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
     // ── 1. Run the checker to find all auto-fixable issues ───────────
     const report = checkWorkspaceIntegrity(db);
     const autoFixable = report.issues.filter((issue) => issue.autoFixable);
+    const recordKey = (collection: string, id: string) => JSON.stringify([collection, id]);
+    const manualRecords = new Set(report.issues.filter((issue) => !issue.autoFixable)
+        .map((issue) => recordKey(issue.collection, issue.recordId)));
 
     // Group issues by (collection, recordId, field) so we apply at most one
     // fix per (record, field) pair. Within a group, prefer the first issue.
@@ -73,16 +77,30 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
         }
 
         if (issue.rule.onDelete === "cascade") {
-            // Parent is gone and child has no purpose → remove the child.
-            const idx = rows.findIndex((row) => row.id === issue.recordId);
-            const nextRows = [...rows.slice(0, idx), ...rows.slice(idx + 1)];
-            db = replaceCollection(db, issue.collection, nextRows);
-            details.push({
-                collection: issue.collection,
-                id: issue.recordId,
-                action: `cascade-removed orphan (parent ${issue.targetCollection} "${issue.targetId}" is missing)`,
-            });
-            repaired++;
+            // Use the same restrict/cascade/nullify walk as an explicit delete.
+            // Removing only this row would strand its own children and embedded links.
+            const deletion = cascadeDelete(db, issue.collection, issue.recordId);
+            const manual = deletion.result.deleted.find((entry) => manualRecords.has(recordKey(entry.collection, entry.id)));
+            if (manualRecords.has(recordKey(issue.collection, issue.recordId)) || manual || !deletion.result.success) {
+                skipped++;
+                skippedDetails.push({
+                    collection: issue.collection,
+                    id: issue.recordId,
+                    reason: manual || manualRecords.has(recordKey(issue.collection, issue.recordId))
+                        ? "Cascade would remove a record requiring manual reference repair."
+                        : deletion.result.blocked[0]?.reason || "Dependent records require manual resolution before removal.",
+                });
+                continue;
+            }
+            db = deletion.db;
+            for (const entry of deletion.result.deleted) {
+                details.push({ collection: entry.collection, id: entry.id, action: `cascade-removed orphan or dependent (parent ${issue.targetCollection} "${issue.targetId}" is missing)` });
+                repaired++;
+            }
+            for (const entry of deletion.result.nullified) {
+                details.push({ collection: entry.collection, id: entry.id, action: `cleared dependent reference ${entry.field} during orphan removal` });
+                repaired++;
+            }
             continue;
         }
 
@@ -200,7 +218,7 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
     // Unknown required parents need manual resolution, so do not run that pass
     // while those records are still present. Explicit safe FK repairs above
     // remain available and are reported independently.
-    const manualReferenceIssues = report.issues.some((issue) => !issue.autoFixable);
+    const manualReferenceIssues = skipped > 0 || report.issues.some((issue) => !issue.autoFixable);
     if (!manualReferenceIssues) db = repairOperationalWorkspace(db);
 
     return {

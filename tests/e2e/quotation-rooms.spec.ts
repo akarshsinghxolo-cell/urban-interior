@@ -87,4 +87,21 @@ test("room selections control saved coverage and prices in both quotation layout
   await openCustomerQuotations();
   await page.getByRole("button", { name: new RegExp(roomQuote.quotation_no) }).click();
   await expect(page.getByRole("heading", { name: "Living Room", exact: true })).toBeVisible();
+
+  // Disabled quoted checkboxes must stay in the submitted data as well as the UI.
+  await openCustomerQuotations();
+  await page.getByRole("button", { name: "Edit customer", exact: true }).click();
+  const customerForm = page.getByRole("dialog", { name: "Edit Customer and Sites", exact: true });
+  await customerForm.getByRole("button", { name: "Edit Work Required 1", exact: true }).click();
+  const clear = customerForm.getByRole("button", { name: "Clear editable", exact: true });
+  await clear.click();
+  await expect(customerForm.getByRole("checkbox", { name: "Include Area Bedroom", exact: true })).toBeChecked();
+  await expect(customerForm.getByRole("checkbox", { name: "Include Area Bedroom", exact: true })).toBeDisabled();
+  await customerForm.getByLabel("Customer notes", { exact: true }).fill("Quoted coverage remains canonical after clearing editable areas.");
+  saved = page.waitForResponse((response) => response.url().includes("/api/operations/commit") && response.request().method() === "POST");
+  await customerForm.getByRole("button", { name: "Save changes", exact: true }).click();
+  expect((await saved).status()).toBe(200);
+  await expect(customerForm).toHaveCount(0);
+  const workRows = await (await request.get(`${base}/entity_workRequired?id=eq.${works[0].id}`)).json();
+  expect(workRows[0].data.area_ids.sort()).toEqual([bedroom, living].sort());
 });

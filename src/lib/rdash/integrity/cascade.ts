@@ -173,6 +173,7 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
     ctx.visited.add(key);
 
     if (ctx.depth > ctx.maxDepth) {
+        ctx.result.success = false;
         ctx.result.blocked.push({
             collection,
             id,

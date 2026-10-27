@@ -34,6 +34,19 @@ Release order: apply `shared_domain_expansion`, then `shared_domain_foreign_keys
 
 The baseline advisors report an existing leaked-password-protection warning and unused-index/RLS-without-policy information. New shared storage remains server-only. This audit does not change account authentication settings.
 
+## Six-commit re-audit, 27 October 2026
+
+Reviewed the six commits ending at `5969dcb`: `fc5160b`, `849c657`, `e130bc8`, `fa43428`, `47cfee3`, and `5969dcb`. This includes release holds/cutover, customer quotation coverage, all changed table mappings, upload callers, the FK migration and rollback, and the checker/cascade/repair paths. Some defects predated this range but were exposed by its expanded relationship handling.
+
+| Priority | Verified problem | Correction |
+| --- | --- | --- |
+| High | Automatic orphan repair deleted only the orphan row. Its own children could become orphans; BOQ deletion bypassed an RFQ restrict link, and a row with a second manual-repair issue could be erased. | Use the dependency-aware cascade planner, retain restricted/manual records (including affected descendants), report skipped removals, and suppress operational normalization after a blocked repair. |
+| High | FK delta validation matched only human-readable issue text. Fixing one row could hide an identical broken link newly added to a different row, including embedded-message references. | Match collection, record ID, field, target collection and target ID, retaining multiset counts and readable errors. |
+| Medium | The cascade depth guard recorded a block without changing `success`; document deletion could continue after skipping embedded children. | Mark the whole operation unsuccessful and return the original database. |
+| Medium | Quoted areas appeared checked and disabled, but **Clear editable** sent an empty area selection to the form. A save could drop the supposedly locked IDs and fail relation validation. | Retain locked IDs in every area-selection update, with a browser save/readback regression. |
+
+Added seven focused integrity regression cases; all 952 unit/PostgreSQL tests pass locally. The migration test rechecks the complete original 97-FK graph, all 229 registered scalar relationships, scope/kind isolation, current-row rollback and reapplication. No migration edits, production writes, table additions or table removals are part of this follow-up. A fresh read confirms production still has 73 public tables and 97 public/private FKs; the PR continues to target 52 public tables after the coordinated cutover.
+
 ## Complete relationship matrix
 
 SQL coverage below applies to nonempty references and always includes workspace; shared parents include their collection kind. Deletion policies are application policies executed through the journalled transaction path.

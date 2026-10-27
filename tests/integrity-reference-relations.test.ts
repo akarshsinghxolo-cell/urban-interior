@@ -93,4 +93,58 @@ describe("canonical references through shared tables and embedded records", () =
       expect(repaired.result.skippedDetails).toContainEqual(expect.objectContaining({ collection: "master.vendorRates", id: rate.id }));
     }
   });
+
+  test("a cascade depth limit aborts the whole deletion, including embedded rows", () => {
+    const db = buildSeedDatabase();
+    const thread = db.threads.find((row) => row.messages.length > 0);
+    if (!thread) throw new Error("Seed must include a thread message");
+    const deletion = cascadeDelete(db, "threads", thread.id, { maxDepth: 0 });
+    expect(deletion.result.success).toBe(false);
+    expect(deletion.result.blocked.some((entry) => entry.reason.includes("Max cascade depth"))).toBe(true);
+    expect(deletion.db).toBe(db);
+  });
+
+  test("orphan repair preserves a BOQ while an RFQ restricts its deletion", () => {
+    const db = buildSeedDatabase();
+    const boq = db.boqs[0];
+    boq.work_order_id = "missing-work-order";
+    expect(db.vendorRfqs.some((rfq) => rfq.boq_id === boq.id)).toBe(true);
+    const repaired = repairIntegrityIssues(db);
+    expect(repaired.db.boqs).toContainEqual(boq);
+    expect(repaired.result.skippedDetails).toContainEqual(expect.objectContaining({ collection: "boqs", id: boq.id }));
+  });
+
+  test("orphan repair cascades dependent rate history rather than leaving a new orphan", () => {
+    const db = buildSeedDatabase();
+    const now = "2026-10-27T00:00:00.000Z";
+    const rate = { id: "orphan-rate", vendor_id: "missing-vendor", article_id: db.master.articles[0].id, quoted_rate: 10, status: "active" as const, created_at: now, updated_at: now };
+    const history = { id: "orphan-rate-history", vendor_rate_id: rate.id, vendor_id: db.master.vendors[0].id, article_id: rate.article_id, new_rate: 10, source_type: "MANUAL" as const, status: "active" as const, effective_from: now, created_at: now };
+    db.master.vendorRates.push(rate);
+    db.master.vendorRateHistories.push(history);
+    const repaired = repairIntegrityIssues(db);
+    expect(repaired.db.master.vendorRates.some((row) => row.id === rate.id)).toBe(false);
+    expect(repaired.db.master.vendorRateHistories.some((row) => row.id === history.id)).toBe(false);
+  });
+
+  test("an automatic cascade cannot erase a record that also needs manual repair", () => {
+    const db = buildSeedDatabase();
+    const variant = { ...db.master.articleVariants[0], id: "manual-variant", article_id: "missing-article", unit_id: "missing-unit" };
+    db.master.articleVariants.push(variant);
+    const repaired = repairIntegrityIssues(db);
+    expect(repaired.db.master.articleVariants).toContainEqual(variant);
+    expect(repaired.result.skippedDetails).toContainEqual(expect.objectContaining({ collection: "master.articleVariants", id: variant.id }));
+  });
+
+  test("orphan removal also preserves descendants requiring manual repair", () => {
+    const db = buildSeedDatabase();
+    const now = "2026-10-27T00:00:00.000Z";
+    const rate = { id: "manual-child-rate", vendor_id: "missing-vendor", article_id: db.master.articles[0].id, quoted_rate: 10, status: "active" as const, created_at: now, updated_at: now };
+    const history = { id: "manual-child-history", vendor_rate_id: rate.id, vendor_id: db.master.vendors[0].id, article_id: "missing-article", new_rate: 10, source_type: "MANUAL" as const, status: "active" as const, effective_from: now, created_at: now };
+    db.master.vendorRates.push(rate);
+    db.master.vendorRateHistories.push(history);
+    const repaired = repairIntegrityIssues(db);
+    expect(repaired.db.master.vendorRates).toContainEqual(rate);
+    expect(repaired.db.master.vendorRateHistories).toContainEqual(history);
+    expect(repaired.result.skippedDetails).toContainEqual(expect.objectContaining({ collection: "master.vendorRates", id: rate.id }));
+  });
 });
