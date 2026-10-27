@@ -14,6 +14,7 @@
 import type { RDashDatabase, CascadeResult } from "../types";
 import { fksTargetingCollection } from "./fk-registry";
 import { validateBusinessData } from "../business-rules";
+import { customerConversationThreadRecordId } from "../thread-record-id";
 
 import { resolveReferenceCollection as resolveCollection, replaceReferenceCollection as replaceCollection, referenceField, replaceReferenceField, type ReferenceRow as GenericRow } from "./reference-access";
 
@@ -33,6 +34,7 @@ const APPROVAL_LINK_TYPE_BY_COLLECTION: Record<string, string> = {
     purchaseOrders: "po",
     payments: "payment",
     contractorPayments: "contractor_payment",
+    vendorBills: "vendor_bill",
 };
 
 function labelForRow(row: GenericRow): string | undefined {
@@ -147,7 +149,8 @@ function nullifyNestedDrawingLinks(ctx: CascadeContext, drawingId: string): void
 function deletePolymorphicDependents(ctx: CascadeContext, collection: string, id: string): void {
     if (collection !== "threads") {
         const kinds = THREAD_KINDS_BY_COLLECTION[collection] || [];
-        const threads = ctx.db.threads.filter((thread) => thread.record_id === id && kinds.includes(thread.kind));
+        const recordId = collection === "customers" ? customerConversationThreadRecordId(id) : id;
+        const threads = ctx.db.threads.filter((thread) => thread.record_id === recordId && kinds.includes(thread.kind));
         for (const thread of threads) {
             ctx.depth += 1;
             try { deleteRecursive(ctx, "threads", thread.id, thread.title); } finally { ctx.depth -= 1; }

@@ -10,6 +10,26 @@ const migration = (suffix: string) => sql(`supabase/migrations/${readdirSync("su
 const key = (rule: { collection: string; field: string; targetCollection: string }) => `${rule.collection}.${rule.field}->${rule.targetCollection}`;
 
 describe("shared domain migrations against PostgreSQL", () => {
+  test("normalizes legacy customer thread links without losing messages or journal entries", async () => {
+    const db = new PGlite();
+    try {
+      await db.exec(sql("tests/fixtures/shared-domain-before-expansion.sql"));
+      await db.exec(`INSERT INTO entity_customers(id,workspace_id,data) VALUES ('thread-customer','default','{"id":"thread-customer","name":"Thread Customer"}');
+        INSERT INTO entity_workspace_revision(id,workspace_id,revision) VALUES ('default','default',0);
+        INSERT INTO entity_threads(id,workspace_id,data)
+          SELECT 'thread-' || n,'default',jsonb_build_object('id','thread-' || n,'kind','generic','record_type','generic','record_id','thread-customer',
+            'messages',jsonb_build_array(jsonb_build_object('id','message-' || n,'thread_id','thread-' || n,'body','Preserved message')))
+          FROM generate_series(1,12) n;`);
+      await db.exec(sql("supabase/maintenance/canonicalize_customer_thread_links.sql"));
+      const result = await db.query<{ count: number; messages: number; revision: number }>(`SELECT count(*)::integer AS count,
+        sum(jsonb_array_length(data->'messages'))::integer AS messages,min(revision)::integer AS revision FROM entity_threads
+        WHERE data->>'record_id'='customer-conversation:thread-customer'`);
+      expect(result.rows).toEqual([{ count: 12, messages: 12, revision: 1 }]);
+      expect((await db.query("SELECT * FROM entity_workspace_change_batches WHERE workspace_id='default'")).rows).toHaveLength(1);
+      expect((await db.query<{ revision: number }>("SELECT revision FROM entity_workspace_revision WHERE id='default'")).rows[0].revision).toBe(1);
+    } finally { await db.close(); }
+  }, 30_000);
+
   test("preserves every existing FK and enforces every registered scalar relationship", async () => {
     const db = new PGlite();
     try {

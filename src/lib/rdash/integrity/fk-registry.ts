@@ -459,8 +459,8 @@ const unenforcedFks: ForeignKeyRule[] = [
     { collection: "threadMessages", field: "related_audit_id", targetCollection: "auditLog", onDelete: "nullify", nullable: true, label: "Thread Message → Related Audit" },
     // ThreadMessageAttachment — file attachment link
     { collection: "threadMessageAttachments", field: "entity_file_attachment_id", targetCollection: "entityFileAttachments", onDelete: "nullify", nullable: true, label: "Thread Message Attachment → File Attachment" },
-    // CommSend — attachment IDs (polymorphic, ignored)
-    { collection: "commSends", field: "attachment_ids", targetCollection: "polymorphic", onDelete: "ignore", nullable: true, isArray: true, label: "Communication → Attachments (polymorphic)", note: "Each ID references an entityFileAttachments row." },
+    // Communication attachment IDs have one canonical parent collection.
+    { collection: "commSends", field: "attachment_ids", targetCollection: "entityFileAttachments", onDelete: "nullify", nullable: true, isArray: true, label: "Communication → Attachments" },
     // Site — source partner. Customer referrers use the canonical typed identity guard.
     { collection: "sites", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "nullify", nullable: true, label: "Site → Source Partner" },
     // Quotation — parent / superseded chain

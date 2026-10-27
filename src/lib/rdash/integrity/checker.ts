@@ -9,6 +9,7 @@
 
 import type { RDashDatabase, IntegrityIssue, IntegrityReport, DuplicateIdConflict } from "../types";
 import { FOREIGN_KEYS, type ForeignKeyRule } from "./fk-registry";
+import { inspectPolymorphicReference } from "./polymorphic-references";
 
 import { resolveReferenceCollection as resolveCollection, referenceField, type ReferenceRow as GenericRow } from "./reference-access";
 
@@ -116,9 +117,23 @@ export function checkWorkspaceIntegrity(db: RDashDatabase): IntegrityReport {
 
     // ── 2. Walk every FK rule and scan the source collection ──────────
     for (const rule of FOREIGN_KEYS) {
-        // Polymorphic FKs cannot be checked generically — validateBusinessData
-        // handles them via dedicated assert* functions.
+        // Resolve type/kind-specific parents instead of silently omitting them.
+        // These issues require manual resolution; history is never auto-deleted.
         if (rule.onDelete === "ignore" || rule.targetCollection === "polymorphic") {
+            for (const row of resolveCollection(db, rule.collection)) {
+                const value = referenceField(row, rule.field);
+                const id = typeof value === "string" ? value : "";
+                if (!id && rule.nullable) continue;
+                const resolved = id ? inspectPolymorphicReference(db, rule, row, id)
+                    : { checked: true, problem: `${rule.field} is required but missing.` };
+                if (!resolved.checked) continue;
+                totalReferences++;
+                if (resolved.problem) {
+                    const resolvedRule = resolved.targetCollection ? { ...rule, targetCollection: resolved.targetCollection } : rule;
+                    issues.push(buildIssue(resolvedRule, row, id, `${rule.collection}.${rule.field}: ${resolved.problem}`));
+                    byCollection[rule.collection] = (byCollection[rule.collection] || 0) + 1;
+                }
+            }
             continue;
         }
         const childRows = resolveCollection(db, rule.collection);

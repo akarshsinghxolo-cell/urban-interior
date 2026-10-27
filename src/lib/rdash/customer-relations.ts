@@ -38,11 +38,14 @@ function linkedRecordEntityType(recordType?: string): FileAttachmentEntityType |
         return "payment";
     if (recordType === "contractor_payment")
         return "contractor_payment";
+    if (recordType === "vendor_bill")
+        return "vendor_bill";
     return undefined;
 }
 function linkedRecordCustomerId(db: RDashDatabase, recordId: ID, recordType: string | undefined, context: string): ID | undefined {
     const entityType = linkedRecordEntityType(recordType);
-    return entityType ? entityCustomerId(db, entityType, recordId, context) : undefined;
+    if (!entityType) throw new Error(`${context}: unsupported linked record type "${recordType || ""}".`);
+    return entityCustomerId(db, entityType, recordId, context);
 }
 export function resolveCustomerIdFromLinks(db: RDashDatabase, input: CustomerLinkInput, context: string): ID | undefined {
     const candidates: Array<{

@@ -48,6 +48,16 @@ Reviewed the six commits ending at `5969dcb`: `fc5160b`, `849c657`, `e130bc8`, `
 
 Added seven focused integrity regression cases and one pricing-repair regression. All 956 unit/PostgreSQL tests pass locally after integrating the newer `main` commit `92e9f54` without overwriting its quotation printing or extra-column features. Typecheck passes and changed files add no lint warnings. The migration test rechecks the complete original 97-FK graph, all 229 registered scalar relationships, scope/kind isolation, current-row rollback and reapplication. No migration edits, production writes, table additions or table removals are part of this follow-up. A fresh read confirms production still has 73 public tables and 97 public/private FKs; the PR continues to target 52 public tables after the coordinated cutover.
 
+## Annotation A: complete Integrity-module audit before release
+
+The dashboard reads the same `FOREIGN_KEYS` registry reviewed here: all **257 rules** were evaluated, including the rules previously marked `ignore`. There are 229 persisted scalar rules covered by the new workspace/type-scoped database constraints, 14 array rules, seven embedded/operational rules, and seven polymorphic/provenance rules. Historical cost-source IDs and general library contexts deliberately do not manufacture live parent records.
+
+The broader scan found 12 legacy Customer conversation links. Their Customers still exist; their raw record IDs needed the canonical `customer-conversation:` prefix. The one-time maintenance script corrected only those 12 parent fields through the existing CAS/journal transaction. Every thread ID and all 46 messages in the affected threads were retained, and workspace revision advanced to 521. Across the workspace, all 235 threads and 1,021 messages remain present. The saved pre-cutover checkpoint contains all 2,441 business row envelopes.
+
+The checker now resolves thread, task/approval, file-owner and reference-resource parents instead of silently excluding them. Invalid polymorphic references require manual resolution rather than automatic deletion of history. Communication attachments are a normal array relationship to `entityFileAttachments` with safe nullification; vendor-bill approval links are resolved explicitly. Customer cascade deletion uses the canonical conversation identity. Row-targeted server reads now consume the registry for their parent dependencies, including canonical Staff assignments, and resolve typed linked records before validation.
+
+A fresh complete scan after the link correction evaluated **4,379 references** across all 2,441 records: zero reference issues, zero duplicate IDs and zero business-validator failures. PostgreSQL regression coverage verifies that the correction preserves thread payloads and journals exactly one atomic batch. The table-consolidation and FK migration files are unchanged by this follow-up; the target remains 52 public tables.
+
 ## Complete relationship matrix
 
 SQL coverage below applies to nonempty references and always includes workspace; shared parents include their collection kind. Deletion policies are application policies executed through the journalled transaction path.
@@ -291,7 +301,7 @@ SQL coverage below applies to nonempty references and always includes workspace;
 | `threadMessages` | `related_thread_id` | `threads` | Embedded document reference | nullify |
 | `threadMessages` | `related_audit_id` | `auditLog` | Embedded document reference | nullify |
 | `threadMessageAttachments` | `entity_file_attachment_id` | `entityFileAttachments` | Embedded document reference | nullify |
-| `commSends` | `attachment_ids` | `polymorphic` | Typed business guard | ignore |
+| `commSends` | `attachment_ids` | `entityFileAttachments` | Application array reference | nullify |
 | `sites` | `source_partner_id` | `master.sourcePartners` | Scoped database FK | nullify |
 | `quotations` | `parent_quotation_id` | `quotations` | Scoped database FK | nullify |
 | `quotations` | `superseded_by_quotation_id` | `quotations` | Scoped database FK | nullify |
