@@ -7,23 +7,11 @@
 // for the seed workspace (~600 records, 723KB).
 // ============================================================================
 
-import type { RDashDatabase, Master, IntegrityIssue, IntegrityReport, DuplicateIdConflict } from "../types";
+import type { RDashDatabase, IntegrityIssue, IntegrityReport, DuplicateIdConflict } from "../types";
 import { FOREIGN_KEYS, type ForeignKeyRule } from "./fk-registry";
+import { inspectPolymorphicReference } from "./polymorphic-references";
 
-type GenericRow = { id: string } & Record<string, unknown>;
-
-/** Resolve a collection name (e.g. "customers" or "master.vendors") to the
- *  actual array of records in the database. Returns [] for unknown names. */
-function resolveCollection(db: RDashDatabase, name: string): GenericRow[] {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        const arr = db.master?.[key];
-        return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-    }
-    const key = name as keyof RDashDatabase;
-    const arr = db[key];
-    return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-}
+import { resolveReferenceCollection as resolveCollection, referenceField, type ReferenceRow as GenericRow } from "./reference-access";
 
 /** Build a Set<string> of every id in the given collection. O(N). */
 function buildIdSet(rows: GenericRow[]): Set<string> {
@@ -91,7 +79,7 @@ function buildIssue(
         targetId,
         message,
         rule,
-        autoFixable: isAutoFixable(rule),
+        autoFixable: Boolean(targetId) && isAutoFixable(rule),
     };
 }
 
@@ -129,9 +117,23 @@ export function checkWorkspaceIntegrity(db: RDashDatabase): IntegrityReport {
 
     // ── 2. Walk every FK rule and scan the source collection ──────────
     for (const rule of FOREIGN_KEYS) {
-        // Polymorphic FKs cannot be checked generically — validateBusinessData
-        // handles them via dedicated assert* functions.
+        // Resolve type/kind-specific parents instead of silently omitting them.
+        // These issues require manual resolution; history is never auto-deleted.
         if (rule.onDelete === "ignore" || rule.targetCollection === "polymorphic") {
+            for (const row of resolveCollection(db, rule.collection)) {
+                const value = referenceField(row, rule.field);
+                const id = typeof value === "string" ? value : "";
+                if (!id && rule.nullable) continue;
+                const resolved = id ? inspectPolymorphicReference(db, rule, row, id)
+                    : { checked: true, problem: `${rule.field} is required but missing.` };
+                if (!resolved.checked) continue;
+                totalReferences++;
+                if (resolved.problem) {
+                    const resolvedRule = resolved.targetCollection ? { ...rule, targetCollection: resolved.targetCollection } : rule;
+                    issues.push(buildIssue(resolvedRule, row, id, `${rule.collection}.${rule.field}: ${resolved.problem}`));
+                    byCollection[rule.collection] = (byCollection[rule.collection] || 0) + 1;
+                }
+            }
             continue;
         }
         const childRows = resolveCollection(db, rule.collection);
@@ -140,7 +142,7 @@ export function checkWorkspaceIntegrity(db: RDashDatabase): IntegrityReport {
         if (!parentIds) continue; // target collection missing from db — treat as empty
 
         for (const row of childRows) {
-            const value = row[rule.field];
+            const value = referenceField(row, rule.field);
             if (rule.isArray) {
                 const ids = Array.isArray(value) ? (value as unknown[]) : [];
                 for (const idRaw of ids) {

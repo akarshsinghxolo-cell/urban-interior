@@ -11,11 +11,12 @@
 // intentional cycles, but defensive depth limiting is cheap insurance.
 // ============================================================================
 
-import type { RDashDatabase, Master, CascadeResult } from "../types";
+import type { RDashDatabase, CascadeResult } from "../types";
 import { fksTargetingCollection } from "./fk-registry";
 import { validateBusinessData } from "../business-rules";
+import { customerConversationThreadRecordId } from "../thread-record-id";
 
-type GenericRow = { id: string } & Record<string, unknown>;
+import { resolveReferenceCollection as resolveCollection, replaceReferenceCollection as replaceCollection, referenceField, replaceReferenceField, type ReferenceRow as GenericRow } from "./reference-access";
 
 const THREAD_KINDS_BY_COLLECTION: Record<string, string[]> = {
     customers: ["generic"], sites: ["site"], areas: ["generic"], workRequired: ["workRequired"], measurementRevisions: ["generic"],
@@ -33,27 +34,8 @@ const APPROVAL_LINK_TYPE_BY_COLLECTION: Record<string, string> = {
     purchaseOrders: "po",
     payments: "payment",
     contractorPayments: "contractor_payment",
+    vendorBills: "vendor_bill",
 };
-
-function resolveCollection(db: RDashDatabase, name: string): GenericRow[] {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        const arr = db.master?.[key];
-        return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-    }
-    const key = name as keyof RDashDatabase;
-    const arr = db[key];
-    return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-}
-
-function replaceCollection(db: RDashDatabase, name: string, rows: GenericRow[]): RDashDatabase {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        return { ...db, master: { ...db.master, [key]: rows } };
-    }
-    const key = name as keyof RDashDatabase;
-    return { ...db, [key]: rows };
-}
 
 function labelForRow(row: GenericRow): string | undefined {
     const labelFields = ["name", "title", "label", "quotation_no", "work_order_no", "po_no", "grn_no", "bill_no", "payment_no", "rfq_no", "bid_no", "settlement_no", "variation_no", "log_no", "drawing_no", "receipt_no", "invoice_no", "commission_no"];
@@ -105,7 +87,7 @@ function removeRow(db: RDashDatabase, collection: string, id: string): RDashData
 }
 
 /** Nullify a single field on a single row (immutably). */
-function nullifyField(db: RDashDatabase, collection: string, id: string, field: string, isArray: boolean): RDashDatabase | null {
+function nullifyField(db: RDashDatabase, collection: string, id: string, field: string, isArray: boolean, parentId: string): RDashDatabase | null {
     const rows = resolveCollection(db, collection);
     const idx = rows.findIndex((row) => row.id === id);
     if (idx === -1) return null;
@@ -114,11 +96,11 @@ function nullifyField(db: RDashDatabase, collection: string, id: string, field: 
     if (isArray) {
         // For array fields, remove the dangling id from the array (the rest
         // of the array might still reference valid rows).
-        const arr = Array.isArray(target[field]) ? (target[field] as unknown[]) : [];
-        const filtered = arr.filter((v) => typeof v !== "string" || v !== id);
-        updatedRow = { ...target, [field]: filtered };
+        const arr = Array.isArray(referenceField(target, field)) ? referenceField(target, field) as unknown[] : [];
+        const filtered = arr.filter((v) => typeof v !== "string" || v !== parentId);
+        updatedRow = replaceReferenceField(target, field, filtered);
     } else {
-        updatedRow = { ...target, [field]: undefined };
+        updatedRow = replaceReferenceField(target, field, undefined);
     }
     const nextRows = [...rows.slice(0, idx), updatedRow, ...rows.slice(idx + 1)];
     return replaceCollection(db, collection, nextRows);
@@ -167,7 +149,8 @@ function nullifyNestedDrawingLinks(ctx: CascadeContext, drawingId: string): void
 function deletePolymorphicDependents(ctx: CascadeContext, collection: string, id: string): void {
     if (collection !== "threads") {
         const kinds = THREAD_KINDS_BY_COLLECTION[collection] || [];
-        const threads = ctx.db.threads.filter((thread) => thread.record_id === id && kinds.includes(thread.kind));
+        const recordId = collection === "customers" ? customerConversationThreadRecordId(id) : id;
+        const threads = ctx.db.threads.filter((thread) => thread.record_id === recordId && kinds.includes(thread.kind));
         for (const thread of threads) {
             ctx.depth += 1;
             try { deleteRecursive(ctx, "threads", thread.id, thread.title); } finally { ctx.depth -= 1; }
@@ -193,6 +176,7 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
     ctx.visited.add(key);
 
     if (ctx.depth > ctx.maxDepth) {
+        ctx.result.success = false;
         ctx.result.blocked.push({
             collection,
             id,
@@ -209,6 +193,18 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
         return;
     }
 
+    // Deleting a document also removes its embedded records and cleans their links.
+    const parent = resolveCollection(ctx.db, collection).find((row) => row.id === id);
+    const embedded = collection === "threads" ? ["threadMessages", "messages"]
+        : collection === "boqs" ? ["boqItems", "items"]
+        : collection === "threadMessages" ? ["threadMessageAttachments", "attachments"] : null;
+    if (embedded && parent) {
+        for (const child of (Array.isArray(parent[embedded[1]]) ? parent[embedded[1]] : []) as GenericRow[]) {
+            ctx.depth += 1;
+            try { deleteRecursive(ctx, embedded[0], child.id); } finally { ctx.depth -= 1; }
+            if (!ctx.result.success) return;
+        }
+    }
     if (blockNestedHistoryReference(ctx, collection, id)) return;
     if (collection === "drawings") nullifyNestedDrawingLinks(ctx, id);
 
@@ -222,7 +218,7 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
         // via this rule's field.
         const childRows = resolveCollection(ctx.db, rule.collection);
         const referencing = childRows.filter((row) => {
-            const value = row[rule.field];
+            const value = referenceField(row, rule.field);
             if (rule.isArray) {
                 return Array.isArray(value) && (value as unknown[]).some((v) => typeof v === "string" && v === id);
             }
@@ -243,7 +239,7 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
                     return;
                 }
                 case "nullify": {
-                    const updated = nullifyField(ctx.db, rule.collection, String(child.id), rule.field, Boolean(rule.isArray));
+                    const updated = nullifyField(ctx.db, rule.collection, String(child.id), rule.field, Boolean(rule.isArray), id);
                     if (updated) {
                         ctx.db = updated;
                         ctx.result.nullified.push({
@@ -291,6 +287,7 @@ function deleteRecursive(ctx: CascadeContext, collection: string, id: string, la
     // deleted here because one Drive file may be shared by multiple entities;
     // unreferenced managed-file cleanup is handled separately.
     const ATTACHMENT_ENTITY_TYPES_BY_COLLECTION: Record<string, string[]> = {
+        threadMessages: ["thread_message"], boqItems: ["boq_item"],
         customers: ["customer"], sites: ["site"], areas: ["room"], workRequired: ["workRequired"], measurementRevisions: ["measurement_revision"],
         quotations: ["quotation"], acceptedScopes: ["accepted_scope"], workOrders: ["workOrder"], boqs: ["boq"], variationRequests: ["variation_request"],
         vendorRfqs: ["vendor_rfq"], vendorBids: ["vendor_bid"], purchaseOrders: ["purchase_order"], grns: ["grn"], stockMovements: ["stock_movement"],

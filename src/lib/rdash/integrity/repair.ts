@@ -6,31 +6,12 @@
 // PURE function — does not mutate the store. The caller commits the result.
 // ============================================================================
 
-import type { RDashDatabase, Master, RepairResult, IntegrityIssue } from "../types";
+import type { RDashDatabase, RepairResult, IntegrityIssue } from "../types";
 import { checkWorkspaceIntegrity } from "./checker";
+import { cascadeDelete } from "./cascade";
 import { repairOperationalWorkspace } from "../operational-repair";
 
-type GenericRow = { id: string } & Record<string, unknown>;
-
-function resolveCollection(db: RDashDatabase, name: string): GenericRow[] {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        const arr = db.master?.[key];
-        return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-    }
-    const key = name as keyof RDashDatabase;
-    const arr = db[key];
-    return Array.isArray(arr) ? (arr as unknown as GenericRow[]) : [];
-}
-
-function replaceCollection(db: RDashDatabase, name: string, rows: GenericRow[]): RDashDatabase {
-    if (name.startsWith("master.")) {
-        const key = name.slice("master.".length) as keyof Master;
-        return { ...db, master: { ...db.master, [key]: rows } };
-    }
-    const key = name as keyof RDashDatabase;
-    return { ...db, [key]: rows };
-}
+import { resolveReferenceCollection as resolveCollection, replaceReferenceCollection as replaceCollection, referenceField, replaceReferenceField } from "./reference-access";
 
 /**
  * Repair auto-fixable integrity issues.
@@ -62,6 +43,9 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
     // ── 1. Run the checker to find all auto-fixable issues ───────────
     const report = checkWorkspaceIntegrity(db);
     const autoFixable = report.issues.filter((issue) => issue.autoFixable);
+    const recordKey = (collection: string, id: string) => JSON.stringify([collection, id]);
+    const manualRecords = new Set(report.issues.filter((issue) => !issue.autoFixable)
+        .map((issue) => recordKey(issue.collection, issue.recordId)));
 
     // Group issues by (collection, recordId, field) so we apply at most one
     // fix per (record, field) pair. Within a group, prefer the first issue.
@@ -93,26 +77,41 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
         }
 
         if (issue.rule.onDelete === "cascade") {
-            // Parent is gone and child has no purpose → remove the child.
-            const idx = rows.findIndex((row) => row.id === issue.recordId);
-            const nextRows = [...rows.slice(0, idx), ...rows.slice(idx + 1)];
-            db = replaceCollection(db, issue.collection, nextRows);
-            details.push({
-                collection: issue.collection,
-                id: issue.recordId,
-                action: `cascade-removed orphan (parent ${issue.targetCollection} "${issue.targetId}" is missing)`,
-            });
-            repaired++;
+            // Use the same restrict/cascade/nullify walk as an explicit delete.
+            // Removing only this row would strand its own children and embedded links.
+            const deletion = cascadeDelete(db, issue.collection, issue.recordId);
+            const manual = deletion.result.deleted.find((entry) => manualRecords.has(recordKey(entry.collection, entry.id)));
+            if (manualRecords.has(recordKey(issue.collection, issue.recordId)) || manual || !deletion.result.success) {
+                skipped++;
+                skippedDetails.push({
+                    collection: issue.collection,
+                    id: issue.recordId,
+                    reason: manual || manualRecords.has(recordKey(issue.collection, issue.recordId))
+                        ? "Cascade would remove a record requiring manual reference repair."
+                        : deletion.result.blocked[0]?.reason || "Dependent records require manual resolution before removal.",
+                });
+                continue;
+            }
+            db = deletion.db;
+            for (const entry of deletion.result.deleted) {
+                details.push({ collection: entry.collection, id: entry.id, action: `cascade-removed orphan or dependent (parent ${issue.targetCollection} "${issue.targetId}" is missing)` });
+                repaired++;
+            }
+            for (const entry of deletion.result.nullified) {
+                details.push({ collection: entry.collection, id: entry.id, action: `cleared dependent reference ${entry.field} during orphan removal` });
+                repaired++;
+            }
             continue;
         }
 
         if (issue.rule.onDelete === "nullify") {
             if (issue.rule.isArray) {
                 // Remove the dangling id from the array.
-                const arr = Array.isArray(target[issue.field]) ? (target[issue.field] as unknown[]) : [];
-                const filtered = arr.filter((v) => typeof v !== "string" || v !== issue.targetId);
+                const arr = Array.isArray(referenceField(target, issue.field)) ? referenceField(target, issue.field) as unknown[] : [];
+                const missingIds = new Set(group.map((entry) => entry.targetId));
+                const filtered = arr.filter((v) => typeof v !== "string" || !missingIds.has(v));
                 const idx = rows.findIndex((row) => row.id === issue.recordId);
-                const nextRows = [...rows.slice(0, idx), { ...target, [issue.field]: filtered }, ...rows.slice(idx + 1)];
+                const nextRows = [...rows.slice(0, idx), replaceReferenceField(target, issue.field, filtered), ...rows.slice(idx + 1)];
                 db = replaceCollection(db, issue.collection, nextRows);
                 details.push({
                     collection: issue.collection,
@@ -122,7 +121,7 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
                 repaired++;
             } else if (issue.rule.nullable) {
                 const idx = rows.findIndex((row) => row.id === issue.recordId);
-                const nextRows = [...rows.slice(0, idx), { ...target, [issue.field]: undefined }, ...rows.slice(idx + 1)];
+                const nextRows = [...rows.slice(0, idx), replaceReferenceField(target, issue.field, undefined), ...rows.slice(idx + 1)];
                 db = replaceCollection(db, issue.collection, nextRows);
                 details.push({
                     collection: issue.collection,
@@ -215,7 +214,12 @@ export function repairIntegrityIssues(inputDb: RDashDatabase): { db: RDashDataba
     // This repairs article variants, vendor rates, inventory, work costs,
     // quotation totals — the "operational" repairs that don't fit the FK
     // registry model. It also normalizes the master catalogue.
-    db = repairOperationalWorkspace(db);
+    // Operational normalization can discard incomplete rates and their history.
+    // Unknown required parents need manual resolution, so do not run that pass
+    // while those records are still present. Explicit safe FK repairs above
+    // remain available and are reported independently.
+    const manualReferenceIssues = skipped > 0 || report.issues.some((issue) => !issue.autoFixable);
+    if (!manualReferenceIssues) db = repairOperationalWorkspace(db);
 
     return {
         db,

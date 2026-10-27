@@ -204,7 +204,7 @@ const visitFks: ForeignKeyRule[] = [
     { collection: "visits", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Visit → Site" },
     { collection: "visits", field: "work_required_id", targetCollection: "workRequired", onDelete: "nullify", nullable: true, label: "Visit → Work Required" },
     { collection: "visits", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Visit → Work Order" },
-    { collection: "visits", field: "staff_id", targetCollection: "master.staff", onDelete: "nullify", nullable: true, label: "Visit → Staff (when assigned to staff)" },
+    { collection: "visits", field: "assigned_staff_id", targetCollection: "master.staff", onDelete: "restrict", nullable: true, label: "Visit → Assigned Staff" },
     { collection: "visits", field: "contractor_id", targetCollection: "master.contractors", onDelete: "nullify", nullable: true, label: "Visit → Contractor" },
     { collection: "visits", field: "vendor_id", targetCollection: "master.vendors", onDelete: "nullify", nullable: true, label: "Visit → Vendor" },
 ];
@@ -214,6 +214,8 @@ const visitFks: ForeignKeyRule[] = [
 // validateBusinessData; only customer_id checked here
 // ─────────────────────────────────────────────────────────────────────────
 const taskDomainFks: ForeignKeyRule[] = [
+    { collection: "tasks", field: "assigned_staff_id", targetCollection: "master.staff", onDelete: "restrict", nullable: true, label: "Task → Assigned Staff" },
+    { collection: "followups", field: "assigned_staff_id", targetCollection: "master.staff", onDelete: "restrict", nullable: true, label: "Follow-up → Assigned Staff" },
     { collection: "tasks", field: "customer_id", targetCollection: "customers", onDelete: "restrict", nullable: true, label: "Task → Customer" },
     { collection: "tasks", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Task → Work Order" },
     { collection: "tasks", field: "quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Task → Quotation" },
@@ -336,6 +338,35 @@ const fileAttachmentFks: ForeignKeyRule[] = [
 // Master-collection FKs (rates, variants, storage, catalogues)
 // ─────────────────────────────────────────────────────────────────────────
 const masterFks: ForeignKeyRule[] = [
+    // Canonical master and resource links used by the consolidated domains.
+    { collection: "master.workSubcategories", field: "unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: true, label: "Work Subcategory → Unit" },
+    { collection: "master.workSubcategories", field: "work_required_article_ids", targetCollection: "master.subcategoryArticleMap", onDelete: "nullify", nullable: true, isArray: true, label: "Work Subcategory → Materials" },
+    { collection: "master.articles", field: "category_id", targetCollection: "master.workCategories", onDelete: "restrict", nullable: true, label: "Article → Category" },
+    { collection: "master.articles", field: "unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: true, label: "Article → Unit" },
+    { collection: "master.articles", field: "default_unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: true, label: "Article → Default Unit" },
+    { collection: "master.articles", field: "variant_ids", targetCollection: "master.articleVariants", onDelete: "nullify", nullable: true, isArray: true, label: "Article → Variants" },
+    { collection: "master.articleVariants", field: "unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: true, label: "Article Variant → Unit" },
+    { collection: "master.subcategoryArticleMap", field: "unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: false, label: "Scoped Material → Unit" },
+    { collection: "master.vendorRates", field: "variant_id", targetCollection: "master.articleVariants", onDelete: "restrict", nullable: true, label: "Vendor Rate → Variant" },
+    { collection: "master.vendorRateHistories", field: "variant_id", targetCollection: "master.articleVariants", onDelete: "restrict", nullable: true, label: "Rate History → Variant" },
+    { collection: "master.vendorRateHistories", field: "unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: true, label: "Rate History → Unit" },
+    { collection: "master.contractorRates", field: "unit_id", targetCollection: "master.units", onDelete: "restrict", nullable: true, label: "Contractor Rate → Unit" },
+    { collection: "master.catalogueArticleVendorLinks", field: "variant_id", targetCollection: "master.articleVariants", onDelete: "nullify", nullable: true, label: "Catalogue Link → Variant" },
+    { collection: "master.pinterestBoards", field: "variant_id", targetCollection: "master.articleVariants", onDelete: "nullify", nullable: true, label: "Pinterest Board → Variant" },
+    { collection: "master.referenceMedia", field: "variant_id", targetCollection: "master.articleVariants", onDelete: "nullify", nullable: true, label: "Reference Media → Variant" },
+    { collection: "master.referenceMedia", field: "drive_asset_id", targetCollection: "master.fileAssets", onDelete: "nullify", nullable: true, label: "Reference Media → File Asset" },
+    { collection: "master.staff", field: "reporting_manager_id", targetCollection: "master.staff", onDelete: "nullify", nullable: true, label: "Staff → Reporting Manager" },
+    { collection: "approvalPolicies", field: "approver_id", targetCollection: "master.staff", onDelete: "restrict", nullable: true, label: "Approval Policy → Approver" },
+    { collection: "entityReferenceAssignments", field: "work_required_id", targetCollection: "workRequired", onDelete: "nullify", nullable: true, label: "Reference Assignment → Work Required" },
+    { collection: "entityReferenceAssignments", field: "quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Reference Assignment → Quotation" },
+    { collection: "entityReferenceAssignments", field: "work_order_id", targetCollection: "workOrders", onDelete: "nullify", nullable: true, label: "Reference Assignment → Work Order" },
+    { collection: "entityReferenceAssignments", field: "site_id", targetCollection: "sites", onDelete: "nullify", nullable: true, label: "Reference Assignment → Site" },
+    { collection: "entityReferenceAssignments", field: "area_id", targetCollection: "areas", onDelete: "nullify", nullable: true, label: "Reference Assignment → Area" },
+    { collection: "entityReferenceAssignments", field: "article_id", targetCollection: "master.articles", onDelete: "nullify", nullable: true, label: "Reference Assignment → Article" },
+    { collection: "entityReferenceAssignments", field: "variant_id", targetCollection: "master.articleVariants", onDelete: "nullify", nullable: true, label: "Reference Assignment → Variant" },
+    { collection: "entityReferenceAssignments", field: "vendor_id", targetCollection: "master.vendors", onDelete: "nullify", nullable: true, label: "Reference Assignment → Vendor" },
+    { collection: "master.workSubcategories", field: "category_id", targetCollection: "master.workCategories", onDelete: "restrict", nullable: false, label: "Work Subcategory → Category" },
+    { collection: "master.workSubcategories", field: "category_ids", targetCollection: "master.workCategories", onDelete: "restrict", nullable: true, isArray: true, label: "Shared Service → Categories" },
     // VendorRate: cascade when vendor deleted (rates have no value without vendor)
     { collection: "master.vendorRates", field: "vendor_id", targetCollection: "master.vendors", onDelete: "cascade", nullable: false, label: "Vendor Rate → Vendor" },
     { collection: "master.vendorRates", field: "work_required_article_id", targetCollection: "master.subcategoryArticleMap", onDelete: "cascade", nullable: true, label: "Vendor Rate → Scoped Material" },
@@ -344,7 +375,7 @@ const masterFks: ForeignKeyRule[] = [
     { collection: "master.vendorRateHistories", field: "vendor_rate_id", targetCollection: "master.vendorRates", onDelete: "cascade", nullable: true, label: "Rate History → Vendor Rate" },
     { collection: "master.vendorRateHistories", field: "vendor_id", targetCollection: "master.vendors", onDelete: "cascade", nullable: false, label: "Rate History → Vendor" },
     { collection: "master.vendorRateHistories", field: "article_id", targetCollection: "master.articles", onDelete: "restrict", nullable: false, label: "Rate History → Article" },
-    { collection: "master.vendorRateHistories", field: "work_required_article_id", targetCollection: "master.subcategoryArticleMap", onDelete: "cascade", nullable: false, label: "Rate History → Scoped Material" },
+    { collection: "master.vendorRateHistories", field: "work_required_article_id", targetCollection: "master.subcategoryArticleMap", onDelete: "cascade", nullable: true, label: "Rate History → Scoped Material" },
     // ContractorRate: cascade when contractor deleted
     { collection: "master.contractorRates", field: "contractor_id", targetCollection: "master.contractors", onDelete: "cascade", nullable: false, label: "Contractor Rate → Contractor" },
     // ArticleVariant: cascade when article deleted
@@ -363,8 +394,8 @@ const masterFks: ForeignKeyRule[] = [
     { collection: "master.catalogueArticleVendorLinks", field: "catalogue_id", targetCollection: "master.catalogues", onDelete: "cascade", nullable: false, label: "Catalogue Link → Catalogue" },
     { collection: "master.catalogueArticleVendorLinks", field: "article_id", targetCollection: "master.articles", onDelete: "cascade", nullable: false, label: "Catalogue Link → Article" },
     { collection: "master.catalogueArticleVendorLinks", field: "vendor_id", targetCollection: "master.vendors", onDelete: "cascade", nullable: true, label: "Catalogue Link → Vendor" },
-    // CommissionRule: source partner nullable
-    { collection: "master.commissionRules", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "nullify", nullable: false, label: "Commission Rule → Source Partner" },
+    // CommissionRule: its source partner must remain available
+    { collection: "master.commissionRules", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "restrict", nullable: false, label: "Commission Rule → Source Partner" },
     { collection: "master.commissionRules", field: "category_id", targetCollection: "master.workCategories", onDelete: "nullify", nullable: true, label: "Commission Rule → Category" },
     // PinterestBoard: optional category/subcategory/article
     { collection: "master.pinterestBoards", field: "category_id", targetCollection: "master.workCategories", onDelete: "nullify", nullable: true, label: "Pinterest Board → Category" },
@@ -412,7 +443,7 @@ const unenforcedFks: ForeignKeyRule[] = [
     { collection: "workOrders", field: "abandoned_contractor_id", targetCollection: "master.contractors", onDelete: "nullify", nullable: true, label: "Work Order → Abandoned Contractor" },
     // Drawing — parent drawing + derived BOQ items
     { collection: "drawings", field: "parent_drawing_id", targetCollection: "drawings", onDelete: "nullify", nullable: true, label: "Drawing → Parent Drawing" },
-    { collection: "drawings", field: "derived_boq_item_ids", targetCollection: "boqs", onDelete: "nullify", nullable: true, isArray: true, label: "Drawing → Derived BOQ Items" },
+    { collection: "drawings", field: "derived_boq_item_ids", targetCollection: "boqItems", onDelete: "nullify", nullable: true, isArray: true, label: "Drawing → Derived BOQ Items" },
     // GRN — obstacle + bill links
     { collection: "grns", field: "obstacle_id", targetCollection: "blocked", onDelete: "nullify", nullable: true, label: "GRN → Obstacle" },
     { collection: "grns", field: "bill_id", targetCollection: "vendorBills", onDelete: "nullify", nullable: true, label: "GRN → Vendor Bill" },
@@ -428,10 +459,9 @@ const unenforcedFks: ForeignKeyRule[] = [
     { collection: "threadMessages", field: "related_audit_id", targetCollection: "auditLog", onDelete: "nullify", nullable: true, label: "Thread Message → Related Audit" },
     // ThreadMessageAttachment — file attachment link
     { collection: "threadMessageAttachments", field: "entity_file_attachment_id", targetCollection: "entityFileAttachments", onDelete: "nullify", nullable: true, label: "Thread Message Attachment → File Attachment" },
-    // CommSend — attachment IDs (polymorphic, ignored)
-    { collection: "commSends", field: "attachment_ids", targetCollection: "polymorphic", onDelete: "ignore", nullable: true, isArray: true, label: "Communication → Attachments (polymorphic)", note: "Each ID references an entityFileAttachments row." },
-    // Customer / Site — source partner
-    { collection: "customers", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "nullify", nullable: true, label: "Customer → Source Partner" },
+    // Communication attachment IDs have one canonical parent collection.
+    { collection: "commSends", field: "attachment_ids", targetCollection: "entityFileAttachments", onDelete: "nullify", nullable: true, isArray: true, label: "Communication → Attachments" },
+    // Site — source partner. Customer referrers use the canonical typed identity guard.
     { collection: "sites", field: "source_partner_id", targetCollection: "master.sourcePartners", onDelete: "nullify", nullable: true, label: "Site → Source Partner" },
     // Quotation — parent / superseded chain
     { collection: "quotations", field: "parent_quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Quotation → Parent Quotation" },
@@ -454,7 +484,7 @@ const unenforcedFks: ForeignKeyRule[] = [
     // E.4.10: Blocked → Quotation (mark quotation as blocked)
     { collection: "blocked", field: "linked_quotation_id", targetCollection: "quotations", onDelete: "nullify", nullable: true, label: "Obstacle → Quotation" },
     // E.4.11: VariationRequest → BOQ items
-    { collection: "variationRequests", field: "affected_boq_item_ids", targetCollection: "boqs", onDelete: "nullify", nullable: true, isArray: true, label: "Variation → Affected BOQ Items" },
+    { collection: "variationRequests", field: "affected_boq_item_ids", targetCollection: "boqItems", onDelete: "nullify", nullable: true, isArray: true, label: "Variation → Affected BOQ Items" },
     // E.4.7: AuditLog → Customer (denormalized for efficient querying)
     { collection: "auditLog", field: "customer_id", targetCollection: "customers", onDelete: "nullify", nullable: true, label: "Audit Log → Customer" },
     // E.4.9: FileAsset → Customer/Site (typed links for file lookup)

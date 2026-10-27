@@ -17,6 +17,9 @@ import {
   type WorkspaceSubset,
 } from "./workspace";
 import { mergeRows, rowsFor, rowId } from "./rows";
+import { FOREIGN_KEYS } from "../integrity/fk-registry";
+import { referenceField } from "../integrity/reference-access";
+import { COLLECTION_TO_TABLE } from "../shared-domain-storage";
 
 const VENDOR_RATE_COLLECTIONS = new Set(["master.vendorRates", "master.vendorRateHistories"]);
 const TARGETED_COLLECTIONS = new Set([
@@ -102,6 +105,14 @@ function collectDirectDependencies(
   collection: string,
   row: Record<string, unknown>,
 ): void {
+  // Read canonical FK dependencies from the same registry as Integrity.
+  // Embedded/polymorphic targets use their explicit owner/type handling below.
+  for (const rule of FOREIGN_KEYS) {
+    if (rule.collection !== collection || rule.onDelete === "ignore" || !COLLECTION_TO_TABLE[rule.targetCollection]) continue;
+    const value = referenceField({ ...row, id: String(row.id || "") }, rule.field);
+    if (rule.isArray) addIds(plan, rule.targetCollection, value);
+    else addId(plan, rule.targetCollection, value);
+  }
   addId(plan, "customers", row.customer_id);
   addId(plan, "sites", row.site_id);
   addId(plan, "areas", row.area_id);
@@ -118,12 +129,14 @@ function collectDirectDependencies(
   addId(plan, "tasks", row.linked_task_id);
   addId(plan, "followups", row.source_followup_id);
 
-  if (row.linked_record_type === "contractor_payment") {
-    addId(plan, "contractorPayments", row.linked_record_id);
-  }
+  const linkedCollections: Readonly<Record<string, string>> = {
+    quotation: "quotations", po: "purchaseOrders", payment: "payments", contractor_payment: "contractorPayments", vendor_bill: "vendorBills",
+  };
+  const linkedCollection = linkedCollections[String(row.linked_record_type)];
+  if (linkedCollection) addId(plan, linkedCollection, row.linked_record_id);
 
   if (collection === "visits") {
-    addId(plan, "master.staff", row.staff_id);
+    addId(plan, "master.staff", row.assigned_staff_id);
     addId(plan, "master.vendors", row.vendor_id);
     addId(plan, "master.contractors", row.contractor_id);
   }

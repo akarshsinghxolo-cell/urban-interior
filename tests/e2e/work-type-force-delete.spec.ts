@@ -10,9 +10,10 @@ test("used work type can be moved to the next type and force deleted", async ({ 
   const workRequiredId = `required-force-delete-${suffix}`;
   const customerRows = await (await request.get(`${base}/entity_customers?limit=1`)).json();
   const siteRows = await (await request.get(`${base}/entity_sites?limit=1`)).json();
-  const categoryRows = await (await request.get(`${base}/entity_master_workCategories?limit=1`)).json();
+  const categoryRows = await (await request.get(`${base}/entity_work_definitions?collection=eq.master.workCategories&limit=1`)).json();
   const insert = async (table: string, data: Record<string, unknown>) => {
-    const response = await request.post(`${base}/${table}`, { data: { id: data.id, workspace_id: "default", revision: 1, updated_at: now, data } });
+    const shared = table === "entity_master_workSubcategories";
+    const response = await request.post(`${base}/${shared ? "entity_work_definitions" : table}`, { data: { ...(shared ? { collection: "master.workSubcategories" } : {}), id: data.id, workspace_id: "default", revision: 1, updated_at: now, data } });
     expect(response.ok()).toBe(true);
   };
   await insert("entity_master_workSubcategories", {

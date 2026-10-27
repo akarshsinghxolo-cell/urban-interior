@@ -24,6 +24,7 @@ import { useRDashStore } from "@/lib/rdash/store";
 import type { IntegrityIssue, CascadeResult, ForeignKeyRule } from "@/lib/rdash/types";
 import { FOREIGN_KEYS, parentCollections, childCollections } from "@/lib/rdash/integrity/fk-registry";
 import { cascadeDelete } from "@/lib/rdash/integrity/cascade";
+import { masterCollections, topLevelCollections } from "@/lib/rdash/workspace-operations";
 import { MetricCard, EmptyState } from "../primitives";
 import { HealthDashboardWidget } from "../HealthDashboardWidget";
 import { confirmDialog } from "../ConfirmDialog";
@@ -907,10 +908,10 @@ export function IntegrityModule() {
                     <CollapsibleContent>
                         <CardContent className="border-t border-border pt-3 text-[11px] leading-relaxed text-muted-foreground">
                             <p>
-                                <strong className="text-foreground">Scope.</strong> The checker scans every collection in the FK registry (56 top-level + 25 master) and verifies each FK reference resolves to a real parent record. Polymorphic references (tasks/followups/actions <code>linked_record_id</code>, threads <code>record_id</code>, entity-file-attachments <code>entity_id</code>) are skipped here — <code>validateBusinessData</code> covers them via dedicated <code>assert*</code> functions.
+                                <strong className="text-foreground">Scope.</strong> The checker scans the FK registry across {topLevelCollections.length} top-level and {masterCollections.length} master collections, including embedded records. Thread, approval, file-owner and reference-resource links are checked using their type or kind. Historical cost-source identifiers and general library contexts are retained without inventing parent records.
                             </p>
                             <p className="mt-2">
-                                <strong className="text-foreground">Policies.</strong> <code>cascade</code> = child is deleted with parent. <code>restrict</code> = parent cannot be deleted while children exist (the cascade-delete aborts). <code>nullify</code> = child survives; the FK field is cleared. <code>ignore</code> = polymorphic; not enforced by this layer.
+                                <strong className="text-foreground">Policies.</strong> <code>cascade</code> = child is deleted with parent. <code>restrict</code> = parent cannot be deleted while children exist (the cascade-delete aborts). <code>nullify</code> = child survives; the FK field is cleared. <code>ignore</code> = no automatic deletion or repair; live polymorphic parents are still checked, while historical source identifiers are retained.
                             </p>
                             <p className="mt-2">
                                 <strong className="text-foreground">Severity.</strong> <span className="text-destructive">Critical</span> = a non-nullable FK references a missing parent (data is broken). <span className="text-warning">Warning</span> = a nullable FK references a missing parent (degraded but usable). <span className="text-primary">Info</span> = informational.

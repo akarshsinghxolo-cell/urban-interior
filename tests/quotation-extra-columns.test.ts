@@ -6,6 +6,8 @@ import {
   withoutQuotationExtraColumn,
 } from "../src/lib/rdash/quotation-extra-columns";
 import type { LineItem } from "../src/lib/rdash/types";
+import { buildSeedDatabase } from "../src/lib/rdash/seed";
+import { repairOperationalWorkspace } from "../src/lib/rdash/operational-repair";
 
 const line = (patch: Partial<LineItem> = {}): LineItem => ({
   id: "line-1",
@@ -40,6 +42,20 @@ describe("quotation additional work columns", () => {
 
   test("ignores invalid or negative custom amounts", () => {
     expect(quotationExtraAmount(line({ extra_amounts: { valid: 50, negative: -5, invalid: Number.NaN } }))).toBe(50);
+  });
+
+  test("operational repair preserves additional work in line, quotation and tax totals", () => {
+    const db = buildSeedDatabase();
+    const quote = db.quotations[0];
+    quote.extra_columns = [{ id: "demolition", label: "Demolition Work" }];
+    quote.scope_lines[0] = { ...quote.scope_lines[0], extra_amounts: { demolition: 250 }, tax_rate: 18 };
+    quote.scope_lines[0].amount = quotationLineAmount(quote.scope_lines[0]);
+    const expectedLine = quote.scope_lines[0].amount;
+    const expectedTotals = quotationTotals(quote.scope_lines);
+    const repaired = repairOperationalWorkspace(db).quotations.find((row) => row.id === quote.id);
+    expect(repaired?.scope_lines[0].extra_amounts).toEqual({ demolition: 250 });
+    expect(repaired?.scope_lines[0].amount).toBe(expectedLine);
+    expect(repaired).toMatchObject(expectedTotals);
   });
 });
 

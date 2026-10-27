@@ -111,4 +111,20 @@ describe("introducedFkIntegrityIssues", () => {
     });
     expect(introducedFkIntegrityIssues(baseline, candidate, FULL_DOMAIN)).toEqual([]);
   });
+
+  test("fixing one orphan cannot hide the same invalid reference on another record", () => {
+    const baseline = db({ dispatches: [{ id: "existing", site_id: "site-ghost" }] });
+    const candidate = db({ dispatches: [{ id: "existing" }, { id: "new", site_id: "site-ghost" }] });
+    expect(introducedFkIntegrityIssues(baseline, candidate, FULL_DOMAIN)).toEqual([
+      'dispatches.site_id references missing sites "site-ghost".',
+    ]);
+  });
+
+  test("embedded-parent deltas retain the identity of the referencing record", () => {
+    const baseline = db({ visits: [{ id: "existing", customer_id: "customer", checkout_thread_message_id: "ghost" }], customers: [{ id: "customer" }] });
+    const candidate = db({ visits: [{ id: "existing", customer_id: "customer" }, { id: "new", customer_id: "customer", checkout_thread_message_id: "ghost" }], customers: [{ id: "customer" }] });
+    expect(introducedFkIntegrityIssues(baseline, candidate, ["visits", "threads", "customers"])).toEqual([
+      'visits.checkout_thread_message_id references missing threadMessages "ghost".',
+    ]);
+  });
 });

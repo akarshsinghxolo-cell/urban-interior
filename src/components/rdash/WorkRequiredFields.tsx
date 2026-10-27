@@ -49,7 +49,7 @@ export function WorkRequiredFields({
   areas,
   value,
   lockedAreaIds = [],
-  onChange,
+  onChange: onDraftChange,
   onCreateArea,
   onUpdateArea,
   onDeleteArea,
@@ -77,6 +77,9 @@ export function WorkRequiredFields({
   const [newAreaNotes, setNewAreaNotes] = React.useState("");
   const lockedAreas = new Set(lockedAreaIds);
   const effectiveAreaIds = new Set([...value.areaIds, ...lockedAreaIds]);
+  const onChange = (patch: Partial<WorkRequiredFormDraft>) => onDraftChange(patch.areaIds
+    ? { ...patch, areaIds: [...new Set([...patch.areaIds, ...lockedAreaIds])] }
+    : patch);
   const categories = db.master.workCategories.filter((row) => isActiveWorkTaxonomy(row) || value.categoryIds.includes(row.id));
   const subcategories = db.master.workSubcategories.filter((row) =>
     workSubcategoryCategoryIds(row).some((id) => value.categoryIds.includes(id))

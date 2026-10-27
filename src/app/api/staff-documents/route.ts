@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/rdash/server/auth";
 import { getSupabaseAdminClient } from "@/lib/supabase/server";
+import { COLLECTION_TO_TABLE } from "@/lib/rdash/shared-domain-storage";
 
 export const runtime = "nodejs";
 
@@ -188,9 +189,10 @@ export async function DELETE(request: NextRequest) {
       }
       const admin = getSupabaseAdminClient();
       const { data: existingDocument, error: readError } = await admin
-        .from("entity_staffDocuments")
+        .from(COLLECTION_TO_TABLE.staffDocuments)
         .select("id")
         .eq("workspace_id", workspaceId())
+        .eq("collection", "staffDocuments")
         .contains("data", { file_asset_id: assetId })
         .limit(1);
       if (readError) throw readError;

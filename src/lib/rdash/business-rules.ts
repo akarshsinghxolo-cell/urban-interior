@@ -907,6 +907,11 @@ export function validateBusinessData(db: RDashDatabase) {
     }));
     db.entityReferenceAssignments.forEach((assignment) => capture(`Reference assignment ${assignment.id}`, () => {
         assertCustomerRelation(db, assignment, "Reference assignment");
+        const resources = assignment.resource_type === "catalogue" ? db.master.catalogues
+            : assignment.resource_type === "pinterest_board" ? db.master.pinterestBoards
+            : assignment.resource_type === "reference_media" ? db.master.referenceMedia : [];
+        if (!resources.some((resource) => resource.id === assignment.resource_id))
+            fail("Reference assignment", "references a missing or unsupported resource.");
         if (assignment.site_id)
             assertSiteExists(db, assignment.site_id, "Reference assignment", { allowArchived: true });
         if (assignment.area_id) {

@@ -1,70 +1,72 @@
 # Shared data architecture
 
-Audited 25 October 2026 against GitHub `main` at `c14417d7afeeb76cfc8454ad6fa306ca32f19c1f`, Vercel project `urban-castle`, and Supabase project `urban-interior` (`smfqwexofoqqrrhbzwmx`). Vercel's configured Supabase URL matches this project.
+Audited 25 October 2026 against GitHub `main` at `e130bc8a7054b17b10143cb3729f13bf5cd208a3` and Supabase project `urban-interior` (`smfqwexofoqqrrhbzwmx`). Before this expansion, production had 73 public tables and the first shared-domain migration was already applied.
 
-## Result
+## Storage model
 
-The database had 94 public tables: 80 revisioned business collections and 14 infrastructure tables. Twenty-nine business tables now share eight domain tables. The result is **73 public tables**, a reduction of **21 tables (22.3%)**. There are still 80 logical business collections, so permissions, workflows and financial meanings remain explicit. Existing modules keep their public routes and collection contracts.
+The first consolidation reduced 94 public tables to 73. This expansion moves 27 remaining business tables into six new and five existing typed domain stores, reducing **73 to 52 public tables**. That is 21 fewer tables in this expansion (28.8%), and 42 fewer than the original 94 (44.7%). All **80 logical collections** retain their IDs, validation, authorization, revision keys, routes and workflows. The app has 38 physical business stores and 14 infrastructure tables.
 
-| Shared physical table | Logical collections |
+| Shared table | Logical collections |
 | --- | --- |
-| `entity_commercial_documents` | quotations, boqs, vendorRfqs, vendorBids, contractorBids, purchaseOrders, contractorSettlements |
-| `entity_financial_documents` | invoices, vendorBills, contractorBills |
+| `entity_commercial_documents` | quotations, boqs, vendorRfqs, vendorBids, contractorBids, purchaseOrders, contractorSettlements, grns, dispatches |
+| `entity_financial_documents` | invoices, vendorBills, contractorBills, payrollPeriods |
 | `entity_money_movements` | customerReceipts, vendorPayments, contractorPayments |
 | `entity_commercial_settings` | commercialTerms, paymentTermTemplates, taxConfigs, validityConfigs |
-| `entity_workflow_controls` | actions, risks, blocked |
+| `entity_workflow_controls` | actions, risks, blocked, tasks, followups, visits |
 | `entity_reference_libraries` | master.catalogues, master.pinterestBoards, master.referenceMedia |
-| `entity_rate_cards` | master.vendorRates, master.contractorRates, master.customerRateSuggestions |
-| `entity_policy_rules` | approvalPolicies, automationRules, master.commissionRules |
+| `entity_rate_cards` | master.vendorRates, master.contractorRates, master.customerRateSuggestions, master.vendorRateHistories |
+| `entity_policy_rules` | approvalPolicies, automationRules, master.commissionRules, recurringTasks |
+| `entity_work_definitions` | master.workCategories, master.workSubcategories, master.workOptionGroups, master.workOptionValues |
+| `entity_catalogue_items` | master.articles, master.articleVariants |
+| `entity_site_records` | measurementRevisions, drawings, executionLogs, variationRequests |
+| `entity_resource_links` | entityFileAttachments, entityReferenceAssignments |
+| `entity_staff_records` | attendance, payrollLines, leaveRequests, salaryAdjustments, staffDocuments |
+| `entity_storage_structure` | master.storageFolderTemplates, master.storageFolderInstances |
 
-The registry in `src/lib/rdash/shared-domain-storage.ts` is the application source for physical storage names. Every shared-table read filters by both `workspace_id` and `collection`. PostgreSQL uses the same allowlist for atomic writes. A client cannot label one collection's storage as another collection.
+`src/lib/rdash/shared-domain-storage.ts` owns the physical mapping. Every shared-table read includes workspace and collection filters. PostgreSQL has the same explicit collection-to-table allowlist for atomic commits. Shared primary keys include collection; the same ID in two kinds remains two independent records.
 
-## Shared ownership across modules
+## Canonical ownership across modules
 
-The audit found that the app already has one canonical Customer, Site, Article, Variant, Unit and Work taxonomy source. Their records remain shared by reference; this change does not create copies or alternative masters.
-
-| Business truth | Canonical owner | Consumers |
+| Business truth | Owner | Consumers |
 | --- | --- | --- |
-| Customer identity and contact details | `customers` | Customer Desk, Work Required, quotations, execution, finance, communications |
-| Site and measured area identity | `sites`, `areas`, `measurementRevisions` | Customer Desk, Work Required, quotations, visits, execution |
-| Article identity, units, conversion and GST | `master.articles`, `master.articleVariants`, `master.units` | Master Setup, material selection, vendor rates, purchasing, quotations |
-| Work categories, subcategories, work types and option IDs | Existing shared Work masters | Master Setup, Work Required, quotations, BOQ, contractor capabilities, execution |
-| Vendor price offers | `master.vendorRates` in the shared rate-card table | Vendor module, procurement, rate comparison and costing |
-| Contractor capabilities and agreed rates | `master.contractors.work_capabilities` | Contractor module and generated `master.contractorRates` projection |
-| Invoice or bill balance | One logical financial document in the shared document table | Finance, vendor/contractor screens, Customer Desk, dashboards |
-| Recorded receipt or payment | One logical cash movement in the shared money-movement table | Finance, party screens, customer/site summaries, dashboards |
-| File bytes and attachment links | Existing File Asset and attachment records | All modules viewing the same attachment |
+| Customer identity and contact details | customers | Customer Desk, Work Required, quotations, execution, finance, communications |
+| Site, area and measurement identity | sites, areas, measurementRevisions | Customer Desk, Work Required, quotations, visits, execution |
+| Work categories, subcategories, options and work-type IDs | shared work definitions | Master Setup, Work Required, quotations, BOQs, contractor capabilities, execution |
+| Article identity, variants, units, conversion and GST | shared catalogue items; master.units | Master Setup, material selection, vendor rates, purchasing, quotations |
+| Vendor rate and its history | shared rate cards | Vendor module, procurement, comparisons, costing |
+| Contractor capabilities and agreed rates | master.contractors.work_capabilities | Contractor module and transactional contractorRates projection |
+| Invoice/bill balance and recorded cash | financial documents and money movements | Finance, party screens, Customer Desk, dashboards |
+| File bytes and contextual links | master.fileAssets and shared resource links | Module attachments, uploads, media library, WhatsApp attachments |
+| Staff identity and operational history | master.staff and shared staff records | Staff, attendance, leave, payroll, protected document access |
 
-Changing a live master record continues to reach consumers through its existing ID and the shared session/delta store. Navigation revalidates cached modules, and shared Master changes use the foundation delta stream. This refactor preserves those mechanisms. It does not introduce continuous cross-session polling or claim that every open browser changes instantly without a refresh/navigation.
+Modules use authoritative IDs rather than new module-specific copies of masters. Existing foundation deltas, scoped reads and navigation revalidation propagate live master changes through the shared workspace store. This expansion preserves those mechanisms; it does not add continuous cross-session polling. Embedded historical labels and independently entered overrides are not automatically rewritten.
 
-Shared storage does **not** imply shared meaning: a payment schedule is an obligation; an invoice is a bill; a receipt is actual cash. Issued quotation revisions, agreed prices, tax snapshots and paid history remain explicit historical records. Master edits must not silently rewrite agreed commercial history or independently entered overrides.
+Payment schedules remain obligations, financial documents remain bills, and money movements remain actual cash. Payroll periods share physical document storage while retaining a separate collection; customer/vendor dashboard totals do not include payroll. Issued quotation revisions, agreed rates, tax snapshots and paid history retain their historical values.
 
-## Why remaining tables stay separate
+## Integrity and access
 
-Work Required, accepted scopes, work orders and measured areas represent different lifecycle records. Article masters and operational transactions also have different owners and integrity rules. Identity, encrypted Google Drive credentials, WhatsApp authentication keys, upload sessions, revision journals and financial audit history have distinct security or retention requirements. Combining them would lower a count without removing duplicated business truth.
+The follow-up [foreign-key audit](SHARED_FOREIGN_KEY_AUDIT.md) covers all 80 logical collections and the existing database graph. Apply `shared_domain_foreign_keys` after expansion: it validates all 229 persisted scalar relationships with workspace/type scope, upgrades 38 ID-only FKs and preserves journalled deletion semantics. It also fixes nested and embedded reference checking, Staff assignment metadata and array cleanup.
 
-All application business storage remains in the existing `public` schema. The private customer-contact uniqueness helper stays in `private`. Supabase-managed `auth`, `storage`, `realtime`, extension and migration schemas are platform infrastructure and are not module duplicates.
+The expansion redirects 28 affected foreign keys, preserving their original workspace, party/job, deferral and deletion semantics. Typed compound foreign keys ensure that a dispatch cannot satisfy a GRN reference and an action cannot satisfy a recovery-task follow-up reference. Attendance uniqueness stays confined to attendance, rather than blocking payroll rows with the same staff/date.
 
-The change reduces table proliferation. It does not, by itself, promise fewer requests, less egress, fewer logical records, or automatic synchronization of every embedded JSON field. Scoped reads and shared-ID resolvers still determine those behaviors.
+Staff assignment and history-normalization triggers move with their original logical kinds. Work-category and subcategory history guards remain active. Taxonomy reference scans now exclude only the current typed definition; another kind with the same ID still counts as a reference. Contractor-rate projection and dashboard SQL use collection-filtered canonical reads.
 
-## Migration and security
+New shared tables have RLS enabled, no browser-role grants, and service-role access through the existing authorized server APIs. Staff-document and WhatsApp attachment reads explicitly scope workspace and kind. Upload staging uses logical collection names, including folder templates, so physical storage changes cannot split the upload journal.
 
-The migration runs in one transaction, takes the workspace revision lock before locking source tables, copies the complete row envelope and JSON, and compares each copied collection in both directions before removing any source table. Every source ID, workspace, revision, timestamp, author and payload is retained. Source tables are removed without `CASCADE`; no compatibility views or dual-write layer remain.
+## Migration and rollback
 
-Foreign keys are redirected using explicit kind discriminators, including workspace and compound party/job relationships. Thus a contractor bill cannot satisfy a customer-receipt invoice reference even if its ID matches. Existing unique document-number indexes, checks and query indexes are retained with collection scope. Remapped foreign keys receive indexes.
+`shared_domain_expansion` takes the workspace revision lock and source-table locks in one transaction, copies complete row envelopes, and compares source/destination rows in both directions before removing any table. No source table is dropped with CASCADE. No compatibility views, dual writes, archive tables or duplicate business records remain.
 
-Shared tables have RLS enabled, no browser-role grants, and service-role access only, matching the current server-mediated data path. Existing logical module authorization, validation and row-version keys continue to apply. The approval-rule Staff guard is attached only to approval-policy rows. Contractor rate projections are generated in the same transaction as contractor capability writes.
+`supabase/rollback/shared_domain_expansion.sql` reverses this expansion using the **current shared rows**, including writes made after release. It restores original source tables, constraints, indexes, policies, triggers and functions. Reverse `supabase/rollback/shared_domain_foreign_keys.sql` first, then coordinate expansion rollback with the matching application rollback. To return all the way to the original 94-table model, reverse this expansion first, then use the earlier `shared_domain_tables.sql` rollback.
 
-The paired script under `supabase/rollback/shared_domain_tables.sql` restores the original physical tables from the **current** shared rows, retaining writes made after release. It restores original functions, constraints, indexes, policies and the moved trigger. Application rollback must be coordinated with database rollback.
+The provider folder-claim registry remains separate from workspace folder templates/instances. Its 48 provider claim/hierarchy rows and the 13 application folder instances represent different records and concurrency states. Combining them would require a provider workflow redesign. Credentials, authentication keys, upload jobs, revision journals and audit history retain their specific access and retention boundaries.
 
-## Validation
+All application business tables remain in `public`. The contact uniqueness helper remains in `private`. Supabase-managed auth, storage, realtime, vault, extensions and migration schemas are platform infrastructure and are not duplicate application modules.
 
-- Recreated the live table definitions, 242 constraints, 394 indexes, 26 functions and 14 triggers in local PostgreSQL via PGlite.
-- Restored 111 relevant persisted business records, including all 29 records in the affected tables and their required parent records. Sensitive authentication and provider credentials were not copied.
-- Applied the migration: 94 to 73 public tables; every migrated row envelope matched.
-- Compared dashboard aggregates before and after: unchanged.
-- Ran SQL regressions for same-ID kind isolation, row CAS, atomic journaling, forged collection/table rejection, financial kind/workspace foreign keys, RLS/grants, approval Staff validation, contractor rate projections and dashboard receipts.
-- Rehearsed rollback: all 94 public tables and every copied record/revision restored; migration reapplied successfully.
-- Added application read regressions for every shared domain, including cross-workspace isolation and TypeScript/SQL registry agreement.
+## Verification
 
-Production release must pair this application commit with the database migration. An old application build cannot use the removed tables. Stage and check the new build before the database cutover, then promote it and confirm table counts, SQL checks and runtime logs. The rollback script is intentionally outside the automatic migrations directory.
+- Restored the exact live catalogue: 234 constraints, 423 indexes, 27 functions and 14 triggers, plus 2,430 business record envelopes. Authentication accounts and provider credential payloads were not copied.
+- Rehearsed 73 -> 52 -> 73 -> 52 tables, comparing every copied row envelope and the dashboard aggregates. Rollback also preserves a new write made after migration.
+- Ran both SQL regression packs: CAS/journal atomicity, forged collection rejection, same-ID kind isolation, workflow/follow-up type and workspace links, staff triggers, attendance uniqueness, taxonomy history, payroll aggregate isolation, GRN/bill relationships, RLS and grants, approval guards and contractor-rate projection.
+- Application read regressions cover every shared domain, including workspace/kind isolation and SQL/TypeScript registry agreement.
+- Production release must pair the application with the migration. Build and check a staged deployment, apply the database migration, then promote the matching application. Confirm table counts, complete row parity, advisors and runtime health before reporting release complete.
