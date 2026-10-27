@@ -57,6 +57,7 @@ import { advanceSitesStage } from "../../site-lifecycle";
 import { findOpenLinkedFollowup } from "../finance-helpers";
 import { acceptedScopeOverlapsCoverage, canPermanentlyDeleteQuotation, coverageAcceptedValue, quotationAcceptanceWarnings, resolveQuotationDefaults } from "../quotations-helpers";
 import { groupedQuotationScopeLines } from "../../work-types";
+import { quotationLineAmount, quotationTotals } from "../../quotation-extra-columns";
 import {
     assertWorkOrderStatusTransition,
     workRequiredStatusAfterQuotationAcceptance,
@@ -156,8 +157,9 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     };
                 }
             }
-            const effectivePatch: Partial<Quotation> = { ...patch, ...discountPatch };
             const canonicalLines = patch.scope_lines ?? patch.items ?? before.scope_lines;
+            const totalsPatch = patch.scope_lines || patch.items ? quotationTotals(canonicalLines) : {};
+            const effectivePatch: Partial<Quotation> = { ...patch, ...discountPatch, ...totalsPatch };
             const candidate = {
                 ...before,
                 ...effectivePatch,
@@ -354,6 +356,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     approval_reason: approvalReason,
                     coverage: [],
                     scope_lines: starterItems,
+                    extra_columns: q.extra_columns || [],
                     items: starterItems,
                     thread_id: threadId,
                     work_order_ids: [],
@@ -522,6 +525,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 approval_reason: approvalReason,
                 coverage,
                 scope_lines: starterItems,
+                extra_columns: q.extra_columns || [],
                 items: starterItems,
                 thread_id: threadId,
                 work_order_ids: [],
@@ -619,6 +623,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 unit_name: item.unit_name,
                 rate,
                 amount: Math.round(quantity * rate * 100) / 100,
+                extra_amounts: item.extra_amounts,
                 tax_rate: item.tax_rate,
                 status: "active",
                 source_kind: "quotation",
@@ -626,8 +631,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             };
             const scopeLines = [...quotation.scope_lines, newItem];
             assertQuotationRelations(get().db, { ...quotation, scope_lines: scopeLines, items: scopeLines }, "Quotation");
-            const subtotal = scopeLines.reduce((total: any, line: any) => total + line.amount, 0);
-            const taxAmount = Math.round(scopeLines.reduce((total: any, line: any) => total + (line.amount * (line.tax_rate || 0)) / 100, 0) * 100) / 100;
+            newItem.amount = quotationLineAmount(newItem);
+            const totals = quotationTotals(scopeLines);
             commitState((state: any) => ({
                 db: {
                     ...state.db,
@@ -636,9 +641,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             ...row,
                             scope_lines: scopeLines,
                             items: scopeLines,
-                            subtotal,
-                            tax_amount: taxAmount,
-                            total_amount: subtotal + taxAmount,
+                            ...totals,
                             updated_at: nowIso(),
                         }
                         : row),
@@ -655,15 +658,14 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                 if (item.id !== itemId)
                     return item;
                 const next = { ...item, ...patch };
-                if (patch.quantity !== undefined || patch.rate !== undefined)
-                    next.amount = Math.round(next.quantity * next.rate * 100) / 100;
+                if (patch.quantity !== undefined || patch.rate !== undefined || patch.extra_amounts !== undefined)
+                    next.amount = quotationLineAmount(next);
                 return next;
             });
             if (!scopeLines.some((item: any) => item.id === itemId))
                 throw new Error("Quotation line not found.");
             assertQuotationRelations(get().db, { ...quotation, scope_lines: scopeLines, items: scopeLines }, "Quotation");
-            const subtotal = scopeLines.reduce((total: any, line: any) => total + line.amount, 0);
-            const taxAmount = Math.round(scopeLines.reduce((total: any, line: any) => total + (line.amount * (line.tax_rate || 0)) / 100, 0) * 100) / 100;
+            const totals = quotationTotals(scopeLines);
             commitState((state: any) => ({
                 db: {
                     ...state.db,
@@ -672,16 +674,14 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             ...row,
                             scope_lines: scopeLines,
                             items: scopeLines,
-                            subtotal,
-                            tax_amount: taxAmount,
-                            total_amount: subtotal + taxAmount,
+                            ...totals,
                             updated_at: nowIso(),
                         }
                         : row),
                 },
             }));
             // Audit log for financial edits — records who changed what, when
-            if (existingItem && (patch.quantity !== undefined || patch.rate !== undefined || patch.title !== undefined)) {
+            if (existingItem && (patch.quantity !== undefined || patch.rate !== undefined || patch.title !== undefined || patch.extra_amounts !== undefined)) {
                 const actor = get().currentUser();
                 const changes: any[] = [];
                 if (patch.title !== undefined && patch.title !== existingItem.title)
@@ -690,6 +690,8 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                     changes.push({ id: `ch-${Date.now()}-q`, field: "quantity", before: existingItem.quantity, after: patch.quantity });
                 if (patch.rate !== undefined && patch.rate !== existingItem.rate)
                     changes.push({ id: `ch-${Date.now()}-r`, field: "rate", before: existingItem.rate, after: patch.rate });
+                if (patch.extra_amounts !== undefined)
+                    changes.push({ id: `ch-${Date.now()}-x`, field: "additional work", before: existingItem.extra_amounts || {}, after: patch.extra_amounts });
                 if (changes.length > 0) {
                     get().logAudit({
                         actor: actor.name,
@@ -714,8 +716,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
             const scopeLines = quotation.scope_lines.filter((item: any) => item.id !== itemId);
             if (scopeLines.length === quotation.scope_lines.length)
                 throw new Error("Quotation line not found.");
-            const subtotal = scopeLines.reduce((sum: any, item: any) => sum + item.amount, 0);
-            const taxAmount = Math.round(scopeLines.reduce((sum: any, item: any) => sum + (item.amount * (item.tax_rate || 0)) / 100, 0));
+            const totals = quotationTotals(scopeLines);
             commitState((state: any) => ({
                 db: {
                     ...state.db,
@@ -724,9 +725,7 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
                             ...row,
                             scope_lines: scopeLines,
                             items: scopeLines,
-                            subtotal,
-                            tax_amount: taxAmount,
-                            total_amount: subtotal + taxAmount,
+                            ...totals,
                             updated_at: nowIso(),
                         }
                         : row),
@@ -1339,3 +1338,4 @@ export function createQuotationsSlice(ctx: StoreContext): QuotationsState {
         },
     };
 }
+
