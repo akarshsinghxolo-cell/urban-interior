@@ -24,6 +24,7 @@ const DEFAULT_COLLECTION_LIMITS: Record<string, number> = {
   commSends: 100,
   "master.vendorRateHistories": 100,
 };
+const AUTHORITATIVE_READ_PAGE_SIZE = 500;
 
 function tableFor(collection: string): string | null {
   return COLLECTION_TO_TABLE[collection] || null;
@@ -218,13 +219,31 @@ export async function getRestWorkspace(): Promise<{
   const readCollection = async (collection: string): Promise<{ collection: string; rows: RestEntityRow[] }> => {
     const table = tableFor(collection);
     if (!table) return { collection, rows: [] };
-    let query = admin.from(table).select("id,revision,data").eq("workspace_id", workspaceId);
-    if (isSharedCollection(collection)) query = query.eq("collection", collection);
-    const { data, error } = await query;
-    if (error) {
-      throw new Error(`Could not read workspace collection ${collection}: ${error.message}`);
+    const rows: RestEntityRow[] = [];
+    let offset = 0;
+
+    // PostgREST projects commonly cap a response at 1,000 rows. Integrity,
+    // reset and diagnostic callers need an authoritative snapshot, so page
+    // deterministically until the collection is exhausted.
+    while (true) {
+      let query = admin.from(table)
+        .select("id,revision,data")
+        .eq("workspace_id", workspaceId);
+      if (isSharedCollection(collection)) query = query.eq("collection", collection);
+      query = query
+        .order("id", { ascending: true })
+        .range(offset, offset + AUTHORITATIVE_READ_PAGE_SIZE - 1);
+
+      const { data, error } = await query;
+      if (error) {
+        throw new Error(`Could not read workspace collection ${collection}: ${error.message}`);
+      }
+      const page = (data || []) as RestEntityRow[];
+      rows.push(...page);
+      if (page.length < AUTHORITATIVE_READ_PAGE_SIZE) break;
+      offset += page.length;
     }
-    return { collection, rows: (data || []) as RestEntityRow[] };
+    return { collection, rows };
   };
 
   const results = await Promise.all(Object.keys(COLLECTION_TO_TABLE).map(readCollection));

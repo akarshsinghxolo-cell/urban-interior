@@ -2,7 +2,7 @@
 // /api/integrity — workspace integrity API
 // ============================================================================
 // GET  → returns the current IntegrityReport (compute fresh on each call)
-// POST → body { action: "repair" | "cascade-delete", collection?, id?, softDelete? }
+// POST → body { action: "repair" | "cascade-preview" | "cascade-delete", collection?, id?, softDelete? }
 //        - "repair"          : runs repairIntegrityIssues, commits, returns { result, report }
 //        - "cascade-delete"  : runs cascadeDelete, commits, returns { result, report }
 //
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
             );
         }
         const body = (await request.json().catch(() => ({}))) as {
-            action?: "repair" | "cascade-delete";
+            action?: "repair" | "cascade-preview" | "cascade-delete";
             collection?: string;
             id?: string;
             softDelete?: boolean;
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (body.action === "cascade-delete") {
+        if (body.action === "cascade-preview" || body.action === "cascade-delete") {
             if (!body.collection || !body.id) {
                 return NextResponse.json(
                     { error: "collection and id are required for cascade-delete." },
@@ -93,6 +93,12 @@ export async function POST(request: NextRequest) {
                 softDelete: body.softDelete,
                 maxDepth: body.maxDepth,
             });
+            if (body.action === "cascade-preview") {
+                return NextResponse.json(
+                    { result, report: checkWorkspaceIntegrity(ws.data) } as { result: CascadeResult; report: IntegrityReport },
+                    { headers: { "Cache-Control": "no-store" } },
+                );
+            }
             if (!result.success) {
                 // Blocked by restrict — return the result without committing.
                 const report = checkWorkspaceIntegrity(ws.data);
@@ -122,7 +128,7 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json(
-            { error: "Unknown action. Expected 'repair' or 'cascade-delete'." },
+            { error: "Unknown action. Expected 'repair', 'cascade-preview', or 'cascade-delete'." },
             { status: 400, headers: { "Cache-Control": "no-store" } },
         );
     } catch (error) {

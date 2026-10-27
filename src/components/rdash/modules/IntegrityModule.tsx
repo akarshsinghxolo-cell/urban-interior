@@ -11,9 +11,9 @@
 //      then confirm to execute the real cascade delete
 //   6. FK registry browser — collapsible tree of every FK in the data model
 //
-// All mutations go through the store actions (runIntegrityCheck /
-// repairIntegrityNow / cascadeDeleteRecord), which wrap in
-// runWorkspaceTransaction so they roll back if validateBusinessData throws.
+// Checks and mutations go through /api/integrity so they always use the full
+// Supabase workspace. The browser intentionally holds a scoped snapshot and
+// must never be treated as authoritative for cross-module integrity work.
 // ============================================================================
 
 "use client";
@@ -21,10 +21,8 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
-import type { IntegrityIssue, CascadeResult, ForeignKeyRule } from "@/lib/rdash/types";
+import type { IntegrityIssue, IntegrityReport, CascadeResult, ForeignKeyRule, RepairResult } from "@/lib/rdash/types";
 import { FOREIGN_KEYS, parentCollections, childCollections } from "@/lib/rdash/integrity/fk-registry";
-import { cascadeDelete } from "@/lib/rdash/integrity/cascade";
-import { masterCollections, topLevelCollections } from "@/lib/rdash/workspace-operations";
 import { MetricCard, EmptyState } from "../primitives";
 import { HealthDashboardWidget } from "../HealthDashboardWidget";
 import { confirmDialog } from "../ConfirmDialog";
@@ -192,12 +190,11 @@ function PolicyBadge({ policy }: { policy: ForeignKeyRule["onDelete"] }) {
 
 export function IntegrityModule() {
     const db = useRDashStore((s) => s.db);
-    const report = useRDashStore((s) => s.integrityReport);
-    const runIntegrityCheck = useRDashStore((s) => s.runIntegrityCheck);
-    const repairIntegrityNow = useRDashStore((s) => s.repairIntegrityNow);
-    const cascadeDeleteRecord = useRDashStore((s) => s.cascadeDeleteRecord);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const openDetail = useRDashStore((s) => s.openDetail);
+
+    const [report, setReport] = React.useState<IntegrityReport | null>(null);
+    const [checkRunning, setCheckRunning] = React.useState(false);
 
     const [severityFilter, setSeverityFilter] = React.useState<string>("all");
     const [collectionFilter, setCollectionFilter] = React.useState<string>("all");
@@ -273,18 +270,35 @@ export function IntegrityModule() {
         }));
     }, [db, cascadeCollection]);
 
-    const handleRunCheck = () => {
+    const loadAuthoritativeReport = React.useCallback(async (notify = true) => {
+        setCheckRunning(true);
         try {
-            const r = runIntegrityCheck();
-            toast.success("Integrity check complete", {
-                description: `${r.issues.length} issues found · health ${r.healthScore}`,
-            });
+            const response = await fetch("/api/integrity", { cache: "no-store" });
+            const payload = await response.json() as IntegrityReport & { error?: string };
+            if (!response.ok) throw new Error(payload.error || "Could not read the authoritative integrity report.");
+            setReport(payload);
+            if (notify) {
+                toast.success("Integrity check complete", {
+                    description: `${payload.issues.length} issues found · health ${payload.healthScore}`,
+                });
+            }
+            return payload;
         } catch (error) {
             toast.error("Integrity check failed", {
                 description: error instanceof Error ? error.message : undefined,
             });
+            return null;
+        } finally {
+            setCheckRunning(false);
         }
-    };
+    }, []);
+
+    React.useEffect(() => {
+        const id = window.setTimeout(() => void loadAuthoritativeReport(false), 0);
+        return () => window.clearTimeout(id);
+    }, [loadAuthoritativeReport]);
+
+    const handleRunCheck = () => void loadAuthoritativeReport(true);
 
     const handleRepair = async () => {
         if (!report) {
@@ -313,7 +327,17 @@ export function IntegrityModule() {
         });
         if (!ok) return;
         try {
-            const result = repairIntegrityNow();
+            const response = await fetch("/api/integrity", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "repair" }),
+            });
+            const payload = await response.json() as { result?: RepairResult; report?: IntegrityReport; error?: string };
+            if (!response.ok || !payload.result || !payload.report) {
+                throw new Error(payload.error || "The authoritative integrity repair failed.");
+            }
+            const result = payload.result;
+            setReport(payload.report);
             toast.success("Auto-repair complete", {
                 description: `${result.repaired} fixed, ${result.skipped} skipped`,
                 duration: 5000,
@@ -349,20 +373,32 @@ export function IntegrityModule() {
         toast.success(`Exported ${report.issues.length} issues to CSV`);
     };
 
-    const handleCascadePreview = () => {
+    const handleCascadePreview = async () => {
         if (!cascadeRecordId) {
             toast.error("Pick a record first");
             return;
         }
+        setCascadeRunning(true);
         try {
-            const result = cascadeDelete(db, cascadeCollection, cascadeRecordId, {
-                softDelete: cascadeSoftDelete,
-            }).result;
-            setCascadePreview(result);
+            const response = await fetch("/api/integrity", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "cascade-preview",
+                    collection: cascadeCollection,
+                    id: cascadeRecordId,
+                    softDelete: cascadeSoftDelete,
+                }),
+            });
+            const payload = await response.json() as { result?: CascadeResult; error?: string };
+            if (!response.ok || !payload.result) throw new Error(payload.error || "Cascade preview failed.");
+            setCascadePreview(payload.result);
         } catch (error) {
             toast.error("Cascade preview failed", {
                 description: error instanceof Error ? error.message : undefined,
             });
+        } finally {
+            setCascadeRunning(false);
         }
     };
 
@@ -380,7 +416,20 @@ export function IntegrityModule() {
         if (!ok) return;
         setCascadeRunning(true);
         try {
-            const result = cascadeDeleteRecord(cascadeCollection, cascadeRecordId, { softDelete: cascadeSoftDelete });
+            const response = await fetch("/api/integrity", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "cascade-delete",
+                    collection: cascadeCollection,
+                    id: cascadeRecordId,
+                    softDelete: cascadeSoftDelete,
+                }),
+            });
+            const payload = await response.json() as { result?: CascadeResult; report?: IntegrityReport; error?: string };
+            if (!payload.result) throw new Error(payload.error || "Cascade-delete failed.");
+            const result = payload.result;
+            if (payload.report) setReport(payload.report);
             if (!result.success) {
                 const blockedCount = result.blocked.length;
                 toast.error("Cascade-delete blocked", {
@@ -388,6 +437,7 @@ export function IntegrityModule() {
                     duration: 8000,
                 });
             } else {
+                if (!response.ok) throw new Error(payload.error || "Cascade-delete failed.");
                 toast.success("Cascade-delete complete", {
                     description: `${result.deleted.length} deleted, ${result.nullified.length} nullified${result.softDeleted.length ? `, ${result.softDeleted.length} soft-deleted` : ""}`,
                     duration: 5000,
@@ -464,8 +514,8 @@ export function IntegrityModule() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={handleRunCheck}>
-                        <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Run check
+                    <Button size="sm" variant="outline" onClick={handleRunCheck} disabled={checkRunning}>
+                        <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", checkRunning && "animate-spin")} /> Run check
                     </Button>
                     <Button size="sm" variant="outline" onClick={handleRepair}>
                         <Wrench className="mr-1.5 h-3.5 w-3.5" /> Auto-repair
@@ -476,7 +526,10 @@ export function IntegrityModule() {
                 </div>
             </div>
 
-            <HealthDashboardWidget />
+            <HealthDashboardWidget
+                authoritativeReport={report}
+                onAuthoritativeRefresh={async () => { await loadAuthoritativeReport(false); }}
+            />
 
             {/* Integrity-only metrics not duplicated by the shared health dashboard */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -743,7 +796,7 @@ export function IntegrityModule() {
                             Soft-delete (set <code className="font-mono">is_archived</code> instead of removing — only for sites/areas/customers)
                         </label>
                         <div className="flex items-center gap-2">
-                            <Button size="sm" variant="outline" onClick={handleCascadePreview} disabled={!cascadeRecordId}>
+                            <Button size="sm" variant="outline" onClick={handleCascadePreview} disabled={!cascadeRecordId || cascadeRunning}>
                                 <Search className="mr-1.5 h-3.5 w-3.5" /> Dry-run preview
                             </Button>
                             <Button
@@ -908,10 +961,10 @@ export function IntegrityModule() {
                     <CollapsibleContent>
                         <CardContent className="border-t border-border pt-3 text-[11px] leading-relaxed text-muted-foreground">
                             <p>
-                                <strong className="text-foreground">Scope.</strong> The checker scans the FK registry across {topLevelCollections.length} top-level and {masterCollections.length} master collections, including embedded records. Thread, approval, file-owner and reference-resource links are checked using their type or kind. Historical cost-source identifiers and general library contexts are retained without inventing parent records.
+                                <strong className="text-foreground">Scope.</strong> The checker scans every collection in the FK registry (56 top-level + 25 master) and verifies each FK reference resolves to a real parent record. Polymorphic references (tasks/followups/actions <code>linked_record_id</code>, threads <code>record_id</code>, entity-file-attachments <code>entity_id</code>) are skipped here — <code>validateBusinessData</code> covers them via dedicated <code>assert*</code> functions.
                             </p>
                             <p className="mt-2">
-                                <strong className="text-foreground">Policies.</strong> <code>cascade</code> = child is deleted with parent. <code>restrict</code> = parent cannot be deleted while children exist (the cascade-delete aborts). <code>nullify</code> = child survives; the FK field is cleared. <code>ignore</code> = no automatic deletion or repair; live polymorphic parents are still checked, while historical source identifiers are retained.
+                                <strong className="text-foreground">Policies.</strong> <code>cascade</code> = child is deleted with parent. <code>restrict</code> = parent cannot be deleted while children exist (the cascade-delete aborts). <code>nullify</code> = child survives; the FK field is cleared. <code>ignore</code> = polymorphic; not enforced by this layer.
                             </p>
                             <p className="mt-2">
                                 <strong className="text-foreground">Severity.</strong> <span className="text-destructive">Critical</span> = a non-nullable FK references a missing parent (data is broken). <span className="text-warning">Warning</span> = a nullable FK references a missing parent (degraded but usable). <span className="text-primary">Info</span> = informational.

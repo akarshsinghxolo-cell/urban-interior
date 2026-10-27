@@ -4,12 +4,13 @@ import { cn } from "@/lib/utils";
 import { AnimatedHealthRing, AnimatedCounter } from "./AnimatedHealthRing";
 import {
   ShieldCheck, AlertTriangle, FileText, Users, Wrench,
-  TrendingUp, TrendingDown, Wallet, CalendarClock, Activity,
+  TrendingUp, Wallet, CalendarClock, Activity,
 } from "lucide-react";
 import { formatINRShort } from "@/lib/rdash/format";
 import { useRDashStore } from "@/lib/rdash/store";
 import { resolveRenderer } from "@/lib/rdash/modules";
 import { indiaDate, isDateOnlyOverdue } from "@/lib/rdash/date";
+import type { IntegrityReport } from "@/lib/rdash/types";
 
 /**
  * HealthDashboardWidget — a premium health overview card with:
@@ -30,23 +31,32 @@ interface HealthMetric {
   format?: "number" | "currency";
 }
 
-export function HealthDashboardWidget() {
+type HealthDashboardWidgetProps = {
+  authoritativeReport?: IntegrityReport | null;
+  onAuthoritativeRefresh?: () => Promise<void> | void;
+};
+
+export function HealthDashboardWidget({
+  authoritativeReport,
+  onAuthoritativeRefresh,
+}: HealthDashboardWidgetProps = {}) {
   const db = useRDashStore((s) => s.db);
   const activeModuleId = useRDashStore((s) => s.activeModuleId);
   const isActive = resolveRenderer(activeModuleId).renderer === "integrity";
   const [refreshing, setRefreshing] = React.useState(false);
-  const [lastFetchedAt, setLastFetchedAt] = React.useState(Date.now());
 
   // CRON-2: Wire to real integrity report from the store (was static 100)
-  const integrityReport = useRDashStore((s) => s.integrityReport);
+  const cachedIntegrityReport = useRDashStore((s) => s.integrityReport);
   const runIntegrityCheck = useRDashStore((s) => s.runIntegrityCheck);
+  const usesAuthoritativeReport = authoritativeReport !== undefined;
+  const integrityReport = usesAuthoritativeReport ? authoritativeReport : cachedIntegrityReport;
 
   // Run integrity check on mount + when db changes (debounced via useMemo deps)
   React.useEffect(() => {
-    if (!isActive) return;
+    if (!isActive || usesAuthoritativeReport) return;
     const id = window.setTimeout(() => runIntegrityCheck(), 300);
     return () => window.clearTimeout(id);
-  }, [db, isActive, runIntegrityCheck]);
+  }, [db, isActive, runIntegrityCheck, usesAuthoritativeReport]);
 
   // Derive metrics from the live store + real integrity report
   const metrics = React.useMemo(() => {
@@ -91,7 +101,6 @@ export function HealthDashboardWidget() {
   }, [db, integrityReport]);
 
   const healthBadge = metrics.integrityScore >= 90 ? "healthy" : metrics.integrityScore >= 70 ? "watch" : "attention";
-  const badgeColor = healthBadge === "healthy" ? "text-success" : healthBadge === "watch" ? "text-warning" : "text-destructive";
   const BadgeIcon = healthBadge === "healthy" ? ShieldCheck : healthBadge === "watch" ? Activity : AlertTriangle;
 
   const tileMetrics: HealthMetric[] = [
@@ -114,11 +123,14 @@ export function HealthDashboardWidget() {
     destructive: "bg-destructive/10 text-destructive border-destructive/20",
   };
 
-  const refresh = () => {
+  const refresh = async () => {
     setRefreshing(true);
-    runIntegrityCheck();
-    setLastFetchedAt(Date.now());
-    setTimeout(() => setRefreshing(false), 500);
+    try {
+      if (onAuthoritativeRefresh) await onAuthoritativeRefresh();
+      else runIntegrityCheck();
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   return (
@@ -213,8 +225,8 @@ export function HealthDashboardWidget() {
 
       {/* Footer */}
       <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
-        <span>Auto-refreshes every 60s</span>
-        <span>Updated {Math.floor((Date.now() - lastFetchedAt) / 1000)}s ago</span>
+        <span>{usesAuthoritativeReport ? "Full Supabase snapshot" : "Scoped workspace snapshot"}</span>
+        <span>{refreshing ? "Refreshing…" : "Current"}</span>
       </div>
     </div>
   );
