@@ -15,6 +15,7 @@ import { persistSavedViews } from "../../saved-views-storage";
 import { contextDetailPanel, detailRecordCustomerId, detailRecordExists, isEntityInspectorKind, workspaceOverlayIsValid } from "../../detail-navigation";
 
 const MAX_MODULE_HISTORY_ENTRIES = 100;
+const MAX_OPEN_MODULE_TABS = 5;
 
 function ensureModuleTab(state: { tabs: WorkspaceTab[] }, moduleId: string) {
     const resolved = resolveRenderer(moduleId);
@@ -27,7 +28,7 @@ function ensureModuleTab(state: { tabs: WorkspaceTab[] }, moduleId: string) {
     };
     const tabs = existing
         ? state.tabs.map((entry) => entry.id === existing.id ? { ...entry, label: resolved.label, icon: resolved.icon } : entry)
-        : [...state.tabs, tab];
+        : [...state.tabs, tab].slice(-MAX_OPEN_MODULE_TABS);
     return { tab, tabs, resolved };
 }
 
@@ -470,9 +471,9 @@ export function createUISlice(ctx: StoreContext): UIActions {
         },
         /**
          * I: Set a deep-link filter for the Reports module. Any module can call
-         * this + setActiveModule("salesReport" | "jobPnlReport" | ...) to deep-
-         * link into a specific report with a pre-applied customer/work-order/
-         * vendor filter. ReportsModule reads `reportFilter` and applies it.
+         * this + setActiveModule("reportsDesk") to open Reports with a
+         * pre-applied report and customer/work-order/vendor/staff filter.
+         * ReportsModule reads `reportFilter` and applies it locally.
          */
         setReportFilter: (filter) => commitState({ reportFilter: filter }),
         clearReportFilter: () => commitState({ reportFilter: null }),

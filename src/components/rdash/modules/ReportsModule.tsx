@@ -2,11 +2,11 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { calculateQuotationMetrics, calculateSalesPipelineMetrics, collectWonWorkRequiredIds, isWonSalesStatus } from "@/lib/rdash/metrics";
-import { useRDashStore, computeJobPnL, allJobPnLs, vendorBalance, customerBalance } from "@/lib/rdash/store";
+import { useRDashStore, computeJobPnL, allJobPnLs, vendorBalance } from "@/lib/rdash/store";
 import type { RDashDatabase } from "@/lib/rdash/types";
-import { MetricCard, StatusBadge, Avatar, EmptyState } from "../primitives";
-import { formatINR, formatINRShort, formatDate, relativeDay, titleCase, quotationStatusStyle, paymentStatusStyle, jobStatusStyle, } from "@/lib/rdash/format";
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, Users, Package, Clock, Target, MapPin, CheckCircle2, AlertTriangle, Download, FileText, Calendar as CalendarIcon, } from "lucide-react";
+import { MetricCard, StatusBadge, Avatar } from "../primitives";
+import { formatINR, formatINRShort, formatDate, titleCase } from "@/lib/rdash/format";
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, Users, Package, Clock, Target, MapPin, CheckCircle2, AlertTriangle, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { staffNameForId } from "@/lib/rdash/staff-directory";
@@ -66,25 +66,6 @@ function monthlyReceived(db: RDashDatabase, n: number) {
         })
             .reduce((sum, receipt) => sum + receipt.amount, 0);
         return { ...month, value };
-    });
-}
-function monthlyReceivedVsPending(db: RDashDatabase, n: number) {
-    const months = lastNMonths(n);
-    return months.map((month) => {
-        const received = db.customerReceipts
-            .filter((receipt) => {
-            const date = new Date(receipt.received_at);
-            return date.getFullYear() === month.year && date.getMonth() === month.monthIdx;
-        })
-            .reduce((sum, receipt) => sum + receipt.amount, 0);
-        const pending = db.payments
-            .filter((payment) => payment.status === "pending" || payment.status === "overdue" || payment.status === "partial")
-            .filter((payment) => {
-            const date = new Date(payment.due_date);
-            return date.getFullYear() === month.year && date.getMonth() === month.monthIdx;
-        })
-            .reduce((sum, payment) => sum + paymentOutstanding(payment), 0);
-        return { ...month, received, pending, total: received + pending };
     });
 }
 function DonutStat({ label, value, total, color }: {
@@ -216,11 +197,18 @@ function applyReportFilter(db: RDashDatabase, filter: ReportFilter): RDashDataba
 export function ReportsModule({ reportId }: {
     reportId?: string;
 }) {
+    return <ReportsModuleContent key={reportId || "reportsDesk"} reportId={reportId}/>;
+}
+
+function ReportsModuleContent({ reportId }: {
+    reportId?: string;
+}) {
     const db = useRDashStore((s) => s.db);
     const reportFilter = useRDashStore((s) => s.reportFilter);
     const clearReportFilter = useRDashStore((s) => s.clearReportFilter);
-    // I: If reportFilter carries a different reportId, prefer it (inbound deep-link).
-    const id = reportFilter?.reportId || reportId || "reportsDesk";
+    const [selectedReportId, setSelectedReportId] = React.useState(reportId || "reportsDesk");
+    // If reportFilter carries a different reportId, prefer it (inbound deep-link).
+    const id = reportFilter?.reportId || selectedReportId;
     // I: Show a banner when an inbound filter is active so users know the
     // report is scoped + can clear it to see all data.
     const filterCustomer = reportFilter?.customerId ? db.customers.find((c) => c.id === reportFilter.customerId) : undefined;
@@ -241,7 +229,7 @@ export function ReportsModule({ reportId }: {
             case "agingReportRep": return <AgingReport db={db} filter={reportFilter}/>;
             case "visitCompliance": return <VisitComplianceReport db={db} filter={reportFilter}/>;
             case "taskThroughput": return <TaskThroughputReport db={db} filter={reportFilter}/>;
-            default: return <ReportsOverview db={db}/>;
+            default: return <ReportsOverview db={db} onSelectReport={setSelectedReportId}/>;
         }
     };
     const exportCsv = () => {
@@ -275,6 +263,56 @@ export function ReportsModule({ reportId }: {
                 fdb.quotations.forEach((q) => rows.push([q.quotation_no, (q.customer_name || "Customer"), String(q.subtotal || 0), String(q.tax_amount || 0), String(q.total_amount), q.status]));
                 break;
             }
+            case "staffProductivity": {
+                rows.push(["Staff", "Role", "Tasks", "Tasks completed", "Task completion %", "Visits", "Visits completed", "Visit completion %"]);
+                fdb.master.staff.forEach((staff) => {
+                    const tasks = fdb.tasks.filter((task) => task.assigned_staff_id === staff.id);
+                    const completedTasks = tasks.filter((task) => task.status === "completed").length;
+                    const visits = fdb.visits.filter((visit) => visit.assigned_staff_id === staff.id);
+                    const completedVisits = visits.filter((visit) => visit.status === "completed").length;
+                    rows.push([
+                        staff.name,
+                        staff.role,
+                        String(tasks.length),
+                        String(completedTasks),
+                        String(tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0),
+                        String(visits.length),
+                        String(completedVisits),
+                        String(visits.length ? Math.round((completedVisits / visits.length) * 100) : 0),
+                    ]);
+                });
+                break;
+            }
+            case "quotationConversion": {
+                const metrics = calculateQuotationMetrics(fdb.quotations);
+                rows.push(["Status", "Quotations", "Value"]);
+                (["draft", "sent", "accepted", "rejected", "expired", "cancelled"] as const).forEach((status) => {
+                    const quotations = metrics.current.filter((quotation) => quotation.status === status);
+                    rows.push([titleCase(status), String(quotations.length), String(quotations.reduce((sum, quotation) => sum + quotation.total_amount, 0))]);
+                });
+                break;
+            }
+            case "leadSourceReport": {
+                const wonIds = collectWonWorkRequiredIds(fdb.quotations, fdb.workOrders);
+                const sources = new Map<string, { leads: number; won: number; budget: number }>();
+                fdb.workRequired.forEach((work) => {
+                    const source = work.source || "Unknown";
+                    const value = sources.get(source) || { leads: 0, won: 0, budget: 0 };
+                    value.leads += 1;
+                    value.budget += work.budget || 0;
+                    if (isWonSalesStatus(work.status) || wonIds.has(work.id)) value.won += 1;
+                    sources.set(source, value);
+                });
+                rows.push(["Source", "Leads", "Won", "Win rate %", "Budget value"]);
+                Array.from(sources.entries()).forEach(([source, value]) => rows.push([
+                    source,
+                    String(value.leads),
+                    String(value.won),
+                    String(value.leads ? Math.round((value.won / value.leads) * 100) : 0),
+                    String(value.budget),
+                ]));
+                break;
+            }
             case "agingReportRep": {
                 const unpaid = fdb.payments.filter((p) => p.status === "pending" || p.status === "overdue");
                 rows.push(["Payment ID", "Customer", "Amount", "Status", "Due Date", "Days Overdue"]);
@@ -284,10 +322,34 @@ export function ReportsModule({ reportId }: {
                 });
                 break;
             }
+            case "visitCompliance": {
+                rows.push(["Visit", "Location", "Assigned to", "Scheduled", "Status", "Report filed"]);
+                fdb.visits.forEach((visit) => rows.push([
+                    titleCase(visit.visit_type),
+                    visit.location_name,
+                    staffNameForId(fdb, visit.assigned_staff_id),
+                    visit.scheduled_at,
+                    titleCase(visit.status),
+                    visit.report_filed ? "Yes" : "No",
+                ]));
+                break;
+            }
+            case "taskThroughput": {
+                rows.push(["Task", "Assigned to", "Priority", "Status", "Due date", "Auto-generated"]);
+                fdb.tasks.forEach((task) => rows.push([
+                    task.title,
+                    staffNameForId(fdb, task.assigned_staff_id),
+                    titleCase(task.priority),
+                    titleCase(task.status),
+                    task.due_date,
+                    task.auto_generated ? "Yes" : "No",
+                ]));
+                break;
+            }
             default: {
                 rows.push(["Report", titleFor(id)]);
                 rows.push(["Generated", new Date().toISOString()]);
-                rows.push(["Note", "Detailed CSV export available for Sales, Collection, WorkOrder P&L, Vendor Exposure, Tax, and Aging reports."]);
+                rows.push(["Note", "Open a detailed report before exporting."]);
             }
         }
         const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -337,6 +399,54 @@ export function ReportsModule({ reportId }: {
                 fdb.quotations.forEach((q) => dataRows.push([q.quotation_no, (q.customer_name || "Customer"), formatINR(q.subtotal || 0), formatINR(q.tax_amount || 0), formatINR(q.total_amount), titleCase(q.status)]));
                 break;
             }
+            case "staffProductivity": {
+                headers.push("Staff", "Role", "Tasks", "Task completion", "Visits", "Visit completion");
+                fdb.master.staff.forEach((staff) => {
+                    const tasks = fdb.tasks.filter((task) => task.assigned_staff_id === staff.id);
+                    const completedTasks = tasks.filter((task) => task.status === "completed").length;
+                    const visits = fdb.visits.filter((visit) => visit.assigned_staff_id === staff.id);
+                    const completedVisits = visits.filter((visit) => visit.status === "completed").length;
+                    dataRows.push([
+                        staff.name,
+                        staff.role,
+                        String(tasks.length),
+                        `${completedTasks}/${tasks.length} (${tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0}%)`,
+                        String(visits.length),
+                        `${completedVisits}/${visits.length} (${visits.length ? Math.round((completedVisits / visits.length) * 100) : 0}%)`,
+                    ]);
+                });
+                break;
+            }
+            case "quotationConversion": {
+                const metrics = calculateQuotationMetrics(fdb.quotations);
+                headers.push("Status", "Quotations", "Value");
+                (["draft", "sent", "accepted", "rejected", "expired", "cancelled"] as const).forEach((status) => {
+                    const quotations = metrics.current.filter((quotation) => quotation.status === status);
+                    dataRows.push([titleCase(status), String(quotations.length), formatINR(quotations.reduce((sum, quotation) => sum + quotation.total_amount, 0))]);
+                });
+                break;
+            }
+            case "leadSourceReport": {
+                const wonIds = collectWonWorkRequiredIds(fdb.quotations, fdb.workOrders);
+                const sources = new Map<string, { leads: number; won: number; budget: number }>();
+                fdb.workRequired.forEach((work) => {
+                    const source = work.source || "Unknown";
+                    const value = sources.get(source) || { leads: 0, won: 0, budget: 0 };
+                    value.leads += 1;
+                    value.budget += work.budget || 0;
+                    if (isWonSalesStatus(work.status) || wonIds.has(work.id)) value.won += 1;
+                    sources.set(source, value);
+                });
+                headers.push("Source", "Leads", "Won", "Win rate", "Budget value");
+                Array.from(sources.entries()).forEach(([source, value]) => dataRows.push([
+                    source,
+                    String(value.leads),
+                    String(value.won),
+                    `${value.leads ? Math.round((value.won / value.leads) * 100) : 0}%`,
+                    formatINR(value.budget),
+                ]));
+                break;
+            }
             case "agingReportRep": {
                 const unpaid = fdb.payments.filter((p) => p.status === "pending" || p.status === "overdue");
                 headers.push("Payment ID", "Customer", "Amount", "Status", "Due Date", "Days Overdue");
@@ -346,9 +456,33 @@ export function ReportsModule({ reportId }: {
                 });
                 break;
             }
+            case "visitCompliance": {
+                headers.push("Visit", "Location", "Assigned to", "Scheduled", "Status", "Report filed");
+                fdb.visits.forEach((visit) => dataRows.push([
+                    titleCase(visit.visit_type),
+                    visit.location_name,
+                    staffNameForId(fdb, visit.assigned_staff_id),
+                    formatDate(visit.scheduled_at),
+                    titleCase(visit.status),
+                    visit.report_filed ? "Yes" : "No",
+                ]));
+                break;
+            }
+            case "taskThroughput": {
+                headers.push("Task", "Assigned to", "Priority", "Status", "Due date", "Auto-generated");
+                fdb.tasks.forEach((task) => dataRows.push([
+                    task.title,
+                    staffNameForId(fdb, task.assigned_staff_id),
+                    titleCase(task.priority),
+                    titleCase(task.status),
+                    formatDate(task.due_date),
+                    task.auto_generated ? "Yes" : "No",
+                ]));
+                break;
+            }
             default: {
                 headers.push("Report", "Generated", "Note");
-                dataRows.push([title, generated, "Detailed PDF export is available for Sales, Collection, WorkOrder P&L, Vendor Exposure, Tax, and Aging reports."]);
+                dataRows.push([title, generated, "Open a detailed report before exporting."]);
             }
         }
         const esc = (s: string) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -448,6 +582,11 @@ export function ReportsModule({ reportId }: {
           </div>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
+          {id !== "reportsDesk" && (
+            <Button variant="ghost" size="sm" onClick={() => { clearReportFilter(); setSelectedReportId("reportsDesk"); }} className="shrink-0 whitespace-nowrap">
+              All reports
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportPdf} className="shrink-0 whitespace-nowrap">
             <FileText className="mr-1.5 h-3.5 w-3.5"/> Export PDF
           </Button>
@@ -506,8 +645,9 @@ function subtitleFor(id: string) {
     };
     return map[id] || "Business insights and exports";
 }
-function ReportsOverview({ db }: {
+function ReportsOverview({ db, onSelectReport }: {
     db: RDashDatabase;
+    onSelectReport: (reportId: string) => void;
 }) {
     const totalRevenue = db.customerReceipts.reduce((n, receipt) => n + receipt.amount, 0);
     const quotationMetrics = calculateQuotationMetrics(db.quotations);
@@ -567,7 +707,7 @@ function ReportsOverview({ db }: {
             const I = Icon as React.ComponentType<{
                 className?: string;
             }>;
-            return (<button key={id as string} type="button" onClick={() => useRDashStore.getState().setActiveModule(id as string)} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-left text-xs font-medium transition-all hover:border-primary/30 hover:bg-accent/40 hover:shadow-sm">
+            return (<button key={id as string} type="button" onClick={() => onSelectReport(id as string)} className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-left text-xs font-medium transition-all hover:border-primary/30 hover:bg-accent/40 hover:shadow-sm">
                 <I className="h-4 w-4 text-primary"/>
                 {label as string}
               </button>);
@@ -740,7 +880,6 @@ function VendorExposureReport({ db: dbRaw, filter }: {
     const db = applyReportFilter(dbRaw, filter);
     const vendors = db.master.vendors.map((v) => {
         const bal = vendorBalance(db, v.id);
-        const bills = db.vendorBills.filter((b) => b.vendor_id === v.id);
         return { ...v, outstanding: bal.outstanding, billCount: bal.bills, unpaid: bal.unpaid, onTimePct: v.on_time_pct || 0, reliability: v.reliability_score || 0 };
     }).sort((a, b) => b.outstanding - a.outstanding);
     const maxOutstanding = Math.max(...vendors.map((v) => v.outstanding), 1);
