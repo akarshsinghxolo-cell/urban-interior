@@ -102,6 +102,6 @@ test("room selections control saved coverage and prices in both quotation layout
   await customerForm.getByRole("button", { name: "Save changes", exact: true }).click();
   expect((await saved).status()).toBe(200);
   await expect(customerForm).toHaveCount(0);
-  const workRows = await (await request.get(`${base}/entity_workRequired?id=eq.${works[0].id}`)).json();
+  const workRows = await (await request.get(`${base}/entity_project_work?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
   expect(workRows[0].data.area_ids.sort()).toEqual([bedroom, living].sort());
 });

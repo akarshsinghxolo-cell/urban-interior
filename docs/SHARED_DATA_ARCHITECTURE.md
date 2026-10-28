@@ -1,6 +1,20 @@
 # Shared data architecture
 
-Released 27 October 2026 to Supabase project `urban-interior` (`smfqwexofoqqrrhbzwmx`) and `urban-castle.vercel.app`. PR #239 was merged as `e60dbab03088c167b8ebdf69d516dc56e73786f0`; the matching application build `4d727f1` was promoted after the database cutover. Production now has **52 public tables and 251 validated public/private FKs**. Before this expansion, production had 73 public tables and the first shared-domain migration was already applied.
+## Connected storage revision, 28 October 2026
+
+The next migration pair, `shared_domain_connections` and `shared_business_keys`, extends the PR #239 baseline from **52 to 47 public tables**, with **254 validated public/private FKs**. All 80 logical collections remain distinct. The resulting design uses 33 physical business stores and 14 infrastructure tables. See [connected schema verification](CONNECTED_SCHEMA_VERIFICATION.md) for the exact mapping, integrity checks and release/rollback procedure.
+
+| Shared store | Additional logical collections |
+| --- | --- |
+| `entity_project_work` (new) | workRequired, acceptedScopes, workOrders |
+| `entity_financial_documents` | payments (schedules), commissions |
+| `entity_resource_links` | master.catalogueArticleVendorLinks |
+
+Project records retain their separate stages, IDs and history. Three compound FKs additionally require their Site to belong to their Customer. Native uniqueness covers canonical Article names, per-Article variant names, scoped material pairs and active Vendor rate identities. Application errors explain these rules without database identifiers. Issued documents and historical snapshots retain their stored values.
+
+## PR #239 baseline
+
+Released 27 October 2026 to Supabase project `urban-interior` (`smfqwexofoqqrrhbzwmx`) and `urban-castle.vercel.app`. PR #239 was merged as `e60dbab03088c167b8ebdf69d516dc56e73786f0`; the matching application build `4d727f1` was promoted after the database cutover. That release reached **52 public tables and 251 validated public/private FKs**. Before this expansion, production had 73 public tables and the first shared-domain migration was already applied.
 
 ## Storage model
 

@@ -70,7 +70,13 @@ describe("shared domain migrations against PostgreSQL", () => {
             WHERE position<=array_length(fk.conkey,1) ORDER BY attribute)
             = ARRAY(SELECT attribute FROM unnest(fk.conkey) attribute ORDER BY attribute))`);
       expect(unindexed.rows).toEqual([]);
-      expect(await collectionMapping(db)).toEqual(COLLECTION_TO_TABLE);
+      // This historical test stops at the phase-two schema. The connections
+      // regression below verifies the current mapping after the next migration.
+      expect(await collectionMapping(db)).toEqual({ ...COLLECTION_TO_TABLE,
+        workRequired: "entity_workRequired", acceptedScopes: "entity_acceptedScopes", workOrders: "entity_workOrders",
+        payments: "entity_payments", commissions: "entity_commissions",
+        "master.catalogueArticleVendorLinks": "entity_master_catalogueArticleVendorLinks",
+      });
       const count = await db.query<{ count: number }>("SELECT count(*)::integer AS count FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r'");
       expect(count.rows[0].count).toBe(52);
 

@@ -12,8 +12,9 @@ test("used work type can be moved to the next type and force deleted", async ({ 
   const siteRows = await (await request.get(`${base}/entity_sites?limit=1`)).json();
   const categoryRows = await (await request.get(`${base}/entity_work_definitions?collection=eq.master.workCategories&limit=1`)).json();
   const insert = async (table: string, data: Record<string, unknown>) => {
-    const shared = table === "entity_master_workSubcategories";
-    const response = await request.post(`${base}/${shared ? "entity_work_definitions" : table}`, { data: { ...(shared ? { collection: "master.workSubcategories" } : {}), id: data.id, workspace_id: "default", revision: 1, updated_at: now, data } });
+    const collection = table === "entity_master_workSubcategories" ? "master.workSubcategories" : "workRequired";
+    const physicalTable = collection === "master.workSubcategories" ? "entity_work_definitions" : "entity_project_work";
+    const response = await request.post(`${base}/${physicalTable}`, { data: { collection, id: data.id, workspace_id: "default", revision: 1, updated_at: now, data } });
     expect(response.ok()).toBe(true);
   };
   await insert("entity_master_workSubcategories", {
@@ -53,7 +54,7 @@ test("used work type can be moved to the next type and force deleted", async ({ 
   expect((await saved).status()).toBe(200);
   await expect(page.getByRole("button", { name: "Delete Hehsh", exact: true })).toHaveCount(0);
 
-  const persisted = await (await request.get(`${base}/entity_workRequired?id=eq.${workRequiredId}`)).json();
+  const persisted = await (await request.get(`${base}/entity_project_work?collection=eq.workRequired&id=eq.${workRequiredId}`)).json();
   expect(persisted[0].data.work_type_ids).toEqual([replacementId]);
   await page.reload();
   await page.getByPlaceholder("Search category, sub category, material or note...").fill(`QA Force Delete ${suffix}`);

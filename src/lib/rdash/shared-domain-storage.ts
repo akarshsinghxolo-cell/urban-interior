@@ -5,6 +5,11 @@ import { masterCollections, topLevelCollections } from "./workspace-operations";
  * Customer, Article, Unit and Work taxonomy continue to be single shared masters.
  */
 export const SHARED_DOMAIN_COLLECTIONS = {
+  "project_work": [
+    "workRequired",
+    "acceptedScopes",
+    "workOrders"
+  ],
   "commercial_documents": [
     "quotations",
     "boqs",
@@ -20,7 +25,9 @@ export const SHARED_DOMAIN_COLLECTIONS = {
     "invoices",
     "vendorBills",
     "contractorBills",
-    "payrollPeriods"
+    "payrollPeriods",
+    "payments",
+    "commissions"
   ],
   "money_movements": [
     "customerReceipts",
@@ -76,7 +83,8 @@ export const SHARED_DOMAIN_COLLECTIONS = {
   ],
   "resource_links": [
     "entityFileAttachments",
-    "entityReferenceAssignments"
+    "entityReferenceAssignments",
+    "master.catalogueArticleVendorLinks"
   ],
   "staff_records": [
     "attendance",
