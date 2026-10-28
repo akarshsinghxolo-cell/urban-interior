@@ -64,6 +64,14 @@ test("connects shared project/finance/resource records, preserves all FKs and re
       { collection: "workRequired", table: "entity_project_work", upsert: [{ ...work, title: "Updated requirement" }] },
     ]), JSON.stringify({ [`workRequired:${sharedId}`]: 0 })]);
     expect((await db.query<{ data: typeof order }>("SELECT data FROM entity_project_work WHERE collection='workOrders' AND id=$1", [sharedId])).rows[0].data.title).toBe("Original order");
+    // Exercise the actual generated columns used by entity-scoped REST reads;
+    // the QA mock cannot prove that a physical SQL column exists.
+    const customerRows = await db.query<{ title: string }>(`SELECT data->>'title' title FROM entity_project_work
+      WHERE workspace_id='connections-review' AND collection='workRequired' AND customer_id_gen='post-customer'`);
+    const siteRows = await db.query<{ title: string }>(`SELECT data->>'title' title FROM entity_project_work
+      WHERE workspace_id='connections-review' AND collection='workOrders' AND site_id_gen='post-site'`);
+    expect(customerRows.rows).toEqual([{ title: "Updated requirement" }]);
+    expect(siteRows.rows).toEqual([{ title: "Original order" }]);
     await db.exec(`INSERT INTO entity_catalogue_items(collection,id,workspace_id,data) VALUES
       ('master.articles','race-original','connections-review','{"id":"race-original","name":"Shared material"}');`);
     const beforeRejectedSave = await snapshot(db);

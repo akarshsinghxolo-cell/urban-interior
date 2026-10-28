@@ -15,7 +15,7 @@ Six source tables move into one new and two existing typed stores, reducing publ
 | commissions | entity_commissions | entity_financial_documents |
 | master.catalogueArticleVendorLinks | entity_master_catalogueArticleVendorLinks | entity_resource_links |
 
-The `collection` discriminator is mandatory for reads, writes, CAS checks and deletion. The SQL and TypeScript allowlists agree on every collection. Existing pending client operations carry logical collection names; the server derives their current physical table. A stale client cannot choose a physical table or overwrite another kind with the same ID.
+The `collection` discriminator is mandatory for reads, writes, CAS checks and deletion. The SQL and TypeScript allowlists agree on every collection. Indexed canonical `customer_id_gen` and `site_id_gen` columns preserve entity-scoped REST reads; PostgreSQL tests execute those selectors against the actual schema. Existing pending client operations carry logical collection names; the server derives their current physical table. A stale client cannot choose a physical table or overwrite another kind with the same ID.
 
 Payment schedules remain obligations; invoices remain documents; receipts/payments remain cash movements; commissions retain their own lifecycle. Shared storage does not combine their amounts or states. All dashboard SQL retains kind predicates.
 

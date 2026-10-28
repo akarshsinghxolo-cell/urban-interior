@@ -14,7 +14,7 @@ LOCK TABLE public."entity_acceptedScopes", public."entity_commSends", public."en
 
 DO $$ BEGIN IF (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r')<>52 THEN RAISE EXCEPTION 'Expected 52 public tables before shared-domain connections'; END IF; END $$;
 
-CREATE TABLE public.entity_project_work (collection text NOT NULL, id text NOT NULL, workspace_id text DEFAULT 'default' NOT NULL, revision bigint DEFAULT 0 NOT NULL, updated_at timestamptz DEFAULT now() NOT NULL, updated_by text, data jsonb NOT NULL, PRIMARY KEY(collection,id));
+CREATE TABLE public.entity_project_work (collection text NOT NULL, id text NOT NULL, workspace_id text DEFAULT 'default' NOT NULL, revision bigint DEFAULT 0 NOT NULL, updated_at timestamptz DEFAULT now() NOT NULL, updated_by text, data jsonb NOT NULL, customer_id_gen text GENERATED ALWAYS AS (NULLIF(data->>'customer_id','')) STORED, site_id_gen text GENERATED ALWAYS AS (NULLIF(data->>'site_id','')) STORED, PRIMARY KEY(collection,id));
 
 ALTER TABLE public.entity_project_work ENABLE ROW LEVEL SECURITY;
 
@@ -35,6 +35,10 @@ ALTER TABLE public."entity_resource_links" ADD CONSTRAINT "entity_resource_links
 ALTER TABLE public.entity_project_work ADD CONSTRAINT entity_project_work_collection_check CHECK (collection IN ('workRequired','acceptedScopes','workOrders'));
 
 CREATE UNIQUE INDEX entity_project_work_workspace_identity ON public.entity_project_work (collection,workspace_id,id);
+
+CREATE INDEX entity_project_work_customer_lookup ON public.entity_project_work (workspace_id,customer_id_gen,collection,id);
+
+CREATE INDEX entity_project_work_site_lookup ON public.entity_project_work (workspace_id,site_id_gen,collection,id);
 
 ALTER TABLE public."entity_project_work" ADD COLUMN "s3_2aaddbfe67bdafd733ff86e1" text GENERATED ALWAYS AS (CASE WHEN collection='workRequired' THEN (NULLIF((data ->> 'customer_id'::text), ''::text)) ELSE NULL::text END) STORED;
 
