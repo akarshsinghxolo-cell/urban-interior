@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { COLLECTION_TO_TABLE, isSharedCollection } from "../../src/lib/rdash/shared-domain-storage";
 
 test("room selections control saved coverage and prices in both quotation layouts", async ({ page, request }) => {
   // Seed only the local, in-memory QA backend; all quotation saves use the real UI/API.
@@ -9,9 +10,10 @@ test("room selections control saved coverage and prices in both quotation layout
   const bedroom = `bedroom-${suffix}`;
   const living = `living-${suffix}`;
   const now = new Date().toISOString();
-  const insert = async (table: string, rows: Array<Record<string, unknown>>) => {
-    const shared = table === "measurementRevisions";
-    const response = await request.post(`${base}/${shared ? "entity_site_records" : `entity_${table}`}`, { data: rows.map((data) => ({ ...(shared ? { collection: table } : {}), id: data.id, workspace_id: "default", revision: 1, updated_at: now, data })) });
+  const insert = async (collection: string, rows: Array<Record<string, unknown>>) => {
+    const table = COLLECTION_TO_TABLE[collection];
+    expect(table).toBeTruthy();
+    const response = await request.post(`${base}/${table}`, { data: rows.map((data) => ({ ...(isSharedCollection(collection) ? { collection } : {}), id: data.id, workspace_id: "default", revision: 1, updated_at: now, data })) });
     expect(response.ok()).toBe(true);
   };
   const masters = await (await request.get(`${base}/entity_work_definitions?collection=eq.master.workSubcategories`)).json();
@@ -102,6 +104,6 @@ test("room selections control saved coverage and prices in both quotation layout
   await customerForm.getByRole("button", { name: "Save changes", exact: true }).click();
   expect((await saved).status()).toBe(200);
   await expect(customerForm).toHaveCount(0);
-  const workRows = await (await request.get(`${base}/entity_project_work?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
+  const workRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
   expect(workRows[0].data.area_ids.sort()).toEqual([bedroom, living].sort());
 });
