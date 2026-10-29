@@ -98,6 +98,8 @@ export interface FilterPreset {
 export interface Submodule {
   id: string;
   label: string;
+  /** Keep deep links/search available without crowding the primary sidebar. */
+  showInSidebar?: boolean;
   renderer?: ModuleRenderer;
   dataSource?: DataSource;
   filter?: Record<string, string>;
@@ -114,7 +116,6 @@ export interface ModuleDef {
   dataSource?: DataSource;
   filter?: Record<string, string>;
   submodules: Submodule[];
-  activePredicate?: (db: import("./types").RDashDatabase) => boolean;
 }
 
 interface ModuleGroup {
@@ -137,12 +138,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         icon: "🧭",
         renderer: "customer-desk",
         dataSource: "customers",
-        activePredicate: (db) =>
-          db.customers.length > 0 ||
-          db.tasks.some(
-            (task) => task.task_scope === "client" && task.status !== "completed",
-          ) ||
-          db.blocked.some((blocked) => !blocked.resolved),
         submodules: [
           {
             id: "customerWorkRequired",
@@ -159,20 +154,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         description: "Cross-site action queue, approvals, follow-ups and operational health",
         icon: "🗂️",
         renderer: "daily-work",
-        activePredicate: (db) =>
-          db.tasks.some((task) =>
-            task.status === "todo" ||
-            task.status === "in_progress" ||
-            task.status === "review",
-          ) ||
-          db.actions.some((action) => action.status === "pending") ||
-          db.blocked.some((blocked) => !blocked.resolved) ||
-          db.visits.some((visit) =>
-            visit.status === "scheduled" || visit.status === "en_route",
-          ) ||
-          db.followups.some((followup) =>
-            followup.status === "pending" || followup.status === "missed",
-          ),
         submodules: [
           {
             id: "unifiedThreadInbox",
@@ -233,12 +214,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           "Site-first operating workspace: areas, work required, quotation, contractor award, work order, BOQ and procurement",
         icon: "🏗️",
         renderer: "site-execution",
-        activePredicate: (db) =>
-          db.workOrders.some(
-            (workOrder) =>
-              workOrder.status === "in_progress" ||
-              workOrder.status === "scheduled",
-          ),
         dataSource: "workOrders",
         submodules: [
           {
@@ -275,13 +250,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         icon: "📍",
         renderer: "site-visits",
         dataSource: "visits",
-        activePredicate: (db) =>
-          db.visits.some(
-            (visit) =>
-              visit.status === "scheduled" ||
-              visit.status === "en_route" ||
-              visit.status === "checked_in",
-          ),
         submodules: [
           {
             id: "siteMeasurement",
@@ -318,16 +286,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           "Vendor RFQ, bidding, purchase orders, BOQ control, GRN, stock issue and inventory",
         icon: "📦",
         renderer: "procurement",
-        activePredicate: (db) =>
-          db.purchaseOrders.some(
-            (purchaseOrder) =>
-              purchaseOrder.status === "draft" ||
-              purchaseOrder.status === "pending_approval" ||
-              purchaseOrder.status === "sent",
-          ) ||
-          db.grns.length > 0 ||
-          db.inventory.length > 0 ||
-          db.vendorBills.length > 0,
         dataSource: "purchaseOrders",
         submodules: [
           {
@@ -365,7 +323,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         icon: "👷",
         renderer: "contractor-workspace",
         dataSource: "contractors",
-        activePredicate: (db) => db.master.contractors.length > 0,
         submodules: [
           {
             id: "contractorRates",
@@ -385,7 +342,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         icon: "🏢",
         renderer: "vendor-performance",
         dataSource: "vendors",
-        activePredicate: (db) => db.master.vendors.length > 0,
         submodules: [
           {
             id: "vendorRates",
@@ -408,17 +364,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           "Customer collections, partner payables, unified profitability, commissions and GST",
         icon: "💳",
         renderer: "finance-overview",
-        activePredicate: (db) =>
-          db.quotations.some((quotation) => quotation.status === "accepted") ||
-          db.commissions.some(
-            (commission) =>
-              commission.status === "accrued" ||
-              commission.status === "payable",
-          ) ||
-          db.payments.some(
-            (payment) =>
-              payment.status === "pending" || payment.status === "overdue",
-          ),
         dataSource: "payments",
         submodules: [
           {
@@ -514,8 +459,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
         icon: "🧑‍💼",
         renderer: "staff-board",
         dataSource: "staff",
-        activePredicate: (db) =>
-          db.master.staff.some((staff) => staff.status === "active"),
         submodules: [
           {
             id: "attendancePayroll",
@@ -545,9 +488,6 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           "Work categories, articles, rates, units and catalogue configuration",
         icon: "🧱",
         renderer: "masters",
-        activePredicate: (db) =>
-          db.master.articles.length > 0 ||
-          db.master.contractors.length > 0,
         dataSource: "master-categories",
         submodules: [
           {
@@ -573,13 +513,12 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           "Grouped sales, collections, operations, profitability, exposure and tax reporting",
         icon: "📊",
         renderer: "reports-v2",
-        activePredicate: (db) =>
-          db.customers.length > 0 || db.workOrders.length > 0,
         dataSource: "none",
         submodules: [
           {
             id: "salesAnalytics",
             label: "Sales Analytics",
+            showInSidebar: false,
             renderer: "report-family",
             dataSource: "quotations",
             filter: { family: "sales" },
@@ -587,6 +526,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           {
             id: "collectionAnalytics",
             label: "Collections Analytics",
+            showInSidebar: false,
             renderer: "report-family",
             dataSource: "payments",
             filter: { family: "collections" },
@@ -594,6 +534,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           {
             id: "operationsAnalytics",
             label: "Operations & Staff Analytics",
+            showInSidebar: false,
             renderer: "report-family",
             dataSource: "staff",
             filter: { family: "operations" },
@@ -601,6 +542,7 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           {
             id: "financialAnalytics",
             label: "Profitability, Exposure & Tax",
+            showInSidebar: false,
             renderer: "report-family",
             dataSource: "workOrders",
             filter: { family: "financial" },
@@ -644,24 +586,28 @@ export const MODULE_GROUPS: ModuleGroup[] = [
           {
             id: "auditLog",
             label: "Audit Log",
+            showInSidebar: false,
             renderer: "audit-log",
             dataSource: "none",
           },
           {
             id: "dataImport",
             label: "Data Import",
+            showInSidebar: false,
             renderer: "data-import",
             dataSource: "none",
           },
           {
             id: "dataExport",
             label: "Data Export",
+            showInSidebar: false,
             renderer: "data-export",
             dataSource: "none",
           },
           {
             id: "integrity",
             label: "Workspace Data Integrity",
+            showInSidebar: false,
             renderer: "integrity",
             dataSource: "none",
             hint: "Referential integrity, orphan detection, cascade-delete and repair",

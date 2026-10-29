@@ -700,6 +700,23 @@ export function IntegrityModule() {
                 </CardContent>
             </Card>
 
+            <Collapsible>
+                <Card>
+                    <CollapsibleTrigger asChild>
+                        <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+                            <span>
+                                <span className="flex items-center gap-2 text-sm font-semibold">
+                                    <Database className="h-4 w-4 text-primary" /> Advanced maintenance
+                                </span>
+                                <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                                    Duplicate-ID diagnostics, cascade-delete preview and the relationship registry
+                                </span>
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        </button>
+                    </CollapsibleTrigger>
+                </Card>
+                <CollapsibleContent className="space-y-4 pt-4">
             {/* Duplicate IDs + Cascade-delete preview — 2-col grid on desktop */}
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {/* Duplicate IDs panel */}
@@ -981,6 +998,8 @@ export function IntegrityModule() {
                         </CardContent>
                     </CollapsibleContent>
                 </Card>
+            </Collapsible>
+                </CollapsibleContent>
             </Collapsible>
         </div>
     );

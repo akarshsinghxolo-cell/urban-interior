@@ -218,7 +218,7 @@ function SidebarContent({ collapsed, onMobileClose }: { collapsed?: boolean; onM
         return canRole(permissions, role, permissionModule, "view");
     }, [isFieldStaff, permissions, role]);
     const modules = React.useMemo(() => ALL_MODULES
-        .map((module) => ({ ...module, submodules: module.submodules.filter((submodule) => canSeeRoute(submodule)) }))
+        .map((module) => ({ ...module, submodules: module.submodules.filter((submodule) => submodule.showInSidebar !== false && canSeeRoute(submodule)) }))
         .filter((module) => canSeeRoute(module) || module.submodules.length > 0)
         .filter((module) => moduleMatches(module, moduleSearch.trim())), [canSeeRoute, moduleSearch]);
     const exceptionCount = React.useMemo(() => {
