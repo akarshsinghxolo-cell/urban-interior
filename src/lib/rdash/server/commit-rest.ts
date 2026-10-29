@@ -12,6 +12,7 @@
 import { getSupabaseAdminClient } from "../../supabase/server";
 import { type WorkspaceOperation } from "../workspace-operations";
 import { COLLECTION_TO_TABLE, isSharedCollection } from "../shared-domain-storage";
+import { databaseBusinessRuleMessage } from "./workspace-db-error";
 export { COLLECTION_TO_TABLE } from "../shared-domain-storage";
 import type { RDashDatabase } from "../types";
 import { WORK_CATALOG_VERSION } from "../work-category-master";
@@ -307,6 +308,8 @@ export async function commitRestOperations(
 
   if (error) {
     const message = `${error.message || ""} ${error.details || ""}`;
+    const businessRuleMessage = databaseBusinessRuleMessage(error);
+    if (businessRuleMessage) throw new Error(`INVALID:${businessRuleMessage}`);
     if (message.includes("WORKSPACE_CONFLICT") || message.includes("ROW_CONFLICT")) {
       throw new Error("CONFLICT");
     }

@@ -70,7 +70,7 @@ describe("shared domain persistence", () => {
   });
 
   test("SQL writes and TypeScript reads agree on every canonical collection", () => {
-    const file = readdirSync("supabase/migrations").find((name) => name.endsWith("_shared_domain_expansion.sql"));
+    const file = readdirSync("supabase/migrations").find((name) => name.endsWith("_shared_domain_connections.sql"));
     if (!file) throw new Error("Shared-domain migration is missing");
     const sql = readFileSync(`supabase/migrations/${file}`, "utf8");
     for (const [collection, table] of Object.entries(COLLECTION_TO_TABLE)) {
