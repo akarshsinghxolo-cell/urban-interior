@@ -30,11 +30,11 @@ import {
   workspaceOutboxStore,
 } from "@/lib/uploads/workspace-outbox";
 
-// Delta polling is intentionally opt-in. Every run invokes a Vercel Function and
-// reads Supabase revision/journal rows, so Free/Hobby deployments remain quiet
-// unless an operator explicitly enables cross-session background synchronization.
-const DELTA_SYNC_ENABLED = process.env.NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1";
-const DELTA_POLL_INTERVAL_MS = 15 * 60_000;
+// Keep open sessions consistent through the existing authenticated revision journal.
+// Hidden/offline sessions, dirty forms and pending saves never accept remote state.
+// Operators can explicitly disable background reads when necessary.
+const DELTA_SYNC_ENABLED = process.env.NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0";
+const DELTA_POLL_INTERVAL_MS = 60_000;
 const DELTA_EVENT_DEBOUNCE_MS = 750;
 const MAX_DELTA_PAGES_PER_RUN = 5;
 

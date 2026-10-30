@@ -50,6 +50,16 @@ export function vendorBalance(db: RDashDatabase, vendorId: string) {
     };
 }
 
+/** One read-only projection for vendor screens and all export formats. */
+export function vendorExposureRows(db: RDashDatabase) {
+    return db.master.vendors.map(vendor => {
+        const balance = vendorBalance(db, vendor.id);
+        return { ...vendor, outstanding: balance.outstanding, billCount: balance.bills,
+            unpaid: balance.unpaid, onTimePct: vendor.on_time_pct || 0,
+            reliability: vendor.reliability_score || 0 };
+    }).sort((a, b) => b.outstanding - a.outstanding);
+}
+
 export function customerBalance(db: RDashDatabase, customerId: string) {
     const invoices = db.invoices.filter((invoice) => invoice.customer_id === customerId && invoice.status !== "cancelled");
     const receivable = invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0);

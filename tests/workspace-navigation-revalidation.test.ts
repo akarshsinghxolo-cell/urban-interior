@@ -182,10 +182,10 @@ describe("workspace navigation freshness", () => {
     expect(result.deletedRowIds).toEqual({});
   });
 
-  test("aggressive polling remains disabled", async () => {
+  test("idle session refresh is bounded to one minute", async () => {
     const source = await read("src/components/urban-castle/WorkspaceDeltaSync.tsx");
-    expectTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"']);
-    expectTokens(source, ["DELTA_POLL_INTERVAL_MS = 15 * 60_000"]);
+    expectTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"']);
+    expectTokens(source, ["DELTA_POLL_INTERVAL_MS = 60_000"]);
     expectNoTokens(source, ["DELTA_POLL_INTERVAL_MS = 30_000"]);
   });
 });

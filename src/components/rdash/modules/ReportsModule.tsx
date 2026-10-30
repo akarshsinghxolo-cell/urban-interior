@@ -1,8 +1,10 @@
 "use client";
+
+import { vendorExposureRows } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { calculateQuotationMetrics, calculateSalesPipelineMetrics, collectWonWorkRequiredIds, isWonSalesStatus } from "@/lib/rdash/metrics";
-import { useRDashStore, computeJobPnL, allJobPnLs, vendorBalance } from "@/lib/rdash/store";
+import { useRDashStore, computeJobPnL, allJobPnLs } from "@/lib/rdash/store";
 import type { RDashDatabase } from "@/lib/rdash/types";
 import { MetricCard, StatusBadge, Avatar } from "../primitives";
 import { formatINR, formatINRShort, formatDate, titleCase } from "@/lib/rdash/format";
@@ -255,7 +257,7 @@ function ReportsModuleContent({ reportId }: {
             }
             case "vendorExposureReport": {
                 rows.push(["Vendor", "Category", "City", "Outstanding", "On-time %"]);
-                fdb.master.vendors.forEach((v) => rows.push([v.name, v.category || "", v.city || "", String(v.outstanding || 0), `${v.on_time_pct || 0}%`]));
+                vendorExposureRows(fdb).forEach((v) => rows.push([v.name, v.category || "", v.city || "", String(v.outstanding || 0), `${v.on_time_pct || 0}%`]));
                 break;
             }
             case "taxReport": {
@@ -391,7 +393,7 @@ function ReportsModuleContent({ reportId }: {
             }
             case "vendorExposureReport": {
                 headers.push("Vendor", "Category", "City", "Outstanding", "On-time %");
-                fdb.master.vendors.forEach((v) => dataRows.push([v.name, v.category || "—", v.city || "—", formatINR(v.outstanding || 0), `${v.on_time_pct || 0}%`]));
+                vendorExposureRows(fdb).forEach((v) => dataRows.push([v.name, v.category || "—", v.city || "—", formatINR(v.outstanding || 0), `${v.on_time_pct || 0}%`]));
                 break;
             }
             case "taxReport": {
@@ -878,10 +880,7 @@ function VendorExposureReport({ db: dbRaw, filter }: {
     filter?: { customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string; reportId?: string } | null;
 }) {
     const db = applyReportFilter(dbRaw, filter);
-    const vendors = db.master.vendors.map((v) => {
-        const bal = vendorBalance(db, v.id);
-        return { ...v, outstanding: bal.outstanding, billCount: bal.bills, unpaid: bal.unpaid, onTimePct: v.on_time_pct || 0, reliability: v.reliability_score || 0 };
-    }).sort((a, b) => b.outstanding - a.outstanding);
+    const vendors = vendorExposureRows(db);
     const maxOutstanding = Math.max(...vendors.map((v) => v.outstanding), 1);
     return (<div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
