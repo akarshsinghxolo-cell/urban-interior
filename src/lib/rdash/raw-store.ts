@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { reconcileFollowupRecovery } from "./followup-recovery";
 import type { RDashDatabase } from "./types";
 import { applyVendorRateAverages } from "./vendor-rate-average";
-import { attachCustomerLabels } from "./customer";
+import { attachWorkspaceDerivedFields } from "./canonical-master-data";
 import { validateBusinessData } from "./business-rules";
 import { applyWorkspaceOperations, diffWorkspaceOperations } from "./workspace-operations";
 import { createEmptyWorkspaceDatabase, mergeWorkspaceSnapshot, mergeWorkspaceVersionMap, normalizeWorkspaceSession, workspaceHydrationRevisionIsCurrent, workspaceSnapshotRemovedRowVersionKeys } from "./workspace-session-merge";
@@ -175,7 +175,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 workspaceRowVersionState.merge(payload.rowVersions);
                 workspaceRowVersionState.remove(deletedVersionKeys);
                 setBase({
-                    db: attachCustomerLabels(applyAcceptedFinancialDocumentNumbers(get().db, acceptedOperations)),
+                    db: attachWorkspaceDerivedFields(applyAcceptedFinancialDocumentNumbers(get().db, acceptedOperations)),
                     serverRevision: payload.revision,
                     workspaceSyncStatus: "saved",
                     workspaceSyncError: null,
@@ -202,7 +202,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
                 }
                 activeWorkspaceTransaction!.dirty = true;
                 const averagedDb = reconcileFollowupRecovery(applyVendorRateAverages(state.db, next.db));
-                return { ...next, db: attachCustomerLabels(averagedDb) };
+                return { ...next, db: attachWorkspaceDerivedFields(averagedDb) };
             });
             return;
         }
@@ -212,7 +212,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
             maybePersistTabs(state, next);
             if (!next.db)
                 return next;
-            const db = attachCustomerLabels(reconcileFollowupRecovery(applyVendorRateAverages(state.db, next.db)));
+            const db = attachWorkspaceDerivedFields(reconcileFollowupRecovery(applyVendorRateAverages(state.db, next.db)));
             // Validate but don't block — log issues instead of throwing.
             // Throwing inside setBase can leave the Zustand state inconsistent
             // and cause the UI to hang (setSaving(false) in finally blocks
@@ -257,7 +257,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         // lock before the async Promise resolves, defeating the fix).
         const finishSync = () => {
             if (transaction.dirty) {
-                const finalDb = attachCustomerLabels(get().db);
+                const finalDb = attachWorkspaceDerivedFields(get().db);
                 const dataIssues = validateBusinessData(finalDb);
                 if (dataIssues.length) {
                     console.warn(`[runWorkspaceTransaction:${name}] Data integrity warning:`, dataIssues[0]);
@@ -269,7 +269,7 @@ export const useRDashStore = create<RDashState>()((setBase, get) => {
         const handleError = (error: unknown) => {
             if (transaction.baselineDb) {
                 setBase({
-                    db: attachCustomerLabels(transaction.baselineDb),
+                    db: attachWorkspaceDerivedFields(transaction.baselineDb),
                     workspaceSyncStatus: "error",
                     workspaceSyncError: error instanceof Error
                         ? `${name} was rolled back: ${error.message}`

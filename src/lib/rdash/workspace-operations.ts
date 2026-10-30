@@ -1,3 +1,4 @@
+import { canonicalMasterRow } from "./canonical-master-data";
 import type { Master, RDashDatabase } from "./types";
 
 export type WorkspaceOperation = {
@@ -29,8 +30,9 @@ function asRows(value: unknown): Array<Record<string, unknown>> {
 }
 
 function diffRows(collection: string, before: unknown, after: unknown): WorkspaceOperation | null {
+  if (collection === "master.contractorRates") return null;
   const oldRows = asRows(before);
-  const newRows = asRows(after);
+  const newRows = asRows(after).map(row => canonicalMasterRow(collection, row));
   const oldById = new Map(oldRows.map((row) => [String(row.id), row]));
   const newById = new Map(newRows.map((row) => [String(row.id), row]));
   const upsert = newRows.filter((row) => JSON.stringify(oldById.get(String(row.id))) !== JSON.stringify(row));

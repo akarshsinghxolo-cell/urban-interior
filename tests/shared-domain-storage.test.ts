@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
-import { COLLECTION_TO_TABLE, SHARED_DOMAIN_COLLECTIONS } from "../src/lib/rdash/shared-domain-storage";
+import { COLLECTION_TO_TABLE, PERSISTED_COLLECTION_TO_TABLE, SHARED_DOMAIN_COLLECTIONS } from "../src/lib/rdash/shared-domain-storage";
 
 const fixture = vi.hoisted(() => ({
   tables: new Map<string, Array<Record<string, unknown>>>(),
@@ -73,7 +73,7 @@ describe("shared domain persistence", () => {
     const file = readdirSync("supabase/migrations").find((name) => name.endsWith("_shared_domain_connections.sql"));
     if (!file) throw new Error("Shared-domain migration is missing");
     const sql = readFileSync(`supabase/migrations/${file}`, "utf8");
-    for (const [collection, table] of Object.entries(COLLECTION_TO_TABLE)) {
+    for (const [collection, table] of Object.entries(PERSISTED_COLLECTION_TO_TABLE)) {
       expect(sql).toContain(`WHEN '${collection}' THEN '${table}'`);
     }
   });

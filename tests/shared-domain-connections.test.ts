@@ -1,7 +1,7 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFileSync, readdirSync } from "node:fs";
 import { expect, test } from "vitest";
-import { COLLECTION_TO_TABLE } from "../src/lib/rdash/shared-domain-storage";
+import { PERSISTED_COLLECTION_TO_TABLE as COLLECTION_TO_TABLE } from "../src/lib/rdash/shared-domain-storage";
 import { FOREIGN_KEYS } from "../src/lib/rdash/integrity/fk-registry";
 import { databaseBusinessRuleMessage } from "../src/lib/rdash/server/workspace-db-error";
 import { collectionMapping, constraints, databaseReferences, foreignKeyFingerprints } from "./support/postgres-reference-audit";

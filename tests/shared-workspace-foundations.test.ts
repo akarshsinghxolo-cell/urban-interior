@@ -18,7 +18,7 @@ describe("shared workspace foundations", () => {
     ];
     expect(Object.keys(COLLECTION_TO_TABLE).sort()).toEqual(names.sort());
     const sharedCount = Object.values(SHARED_DOMAIN_COLLECTIONS).flat().length;
-    expect(new Set(Object.values(COLLECTION_TO_TABLE)).size).toBe(names.length - sharedCount + Object.keys(SHARED_DOMAIN_COLLECTIONS).length);
+    expect(new Set(Object.values(COLLECTION_TO_TABLE)).size).toBe(names.length - sharedCount + Object.keys(SHARED_DOMAIN_COLLECTIONS).length + 1);
     for (const name of names.filter((name) => !isSharedCollection(name))) {
       expect(COLLECTION_TO_TABLE[name]).toBe(`entity_${name.replace(".", "_")}`);
     }

@@ -1,4 +1,4 @@
-import { attachCustomerLabels } from "./customer";
+import { attachWorkspaceDerivedFields } from "./canonical-master-data";
 import type { RDashDatabase } from "./types";
 import {
   WORK_CATALOG_VERSION,
@@ -155,7 +155,7 @@ export function createEmptyWorkspaceDatabase(): RDashDatabase {
 
 /** Pure deterministic hydration normalization: never creates business records. */
 export function normalizeWorkspaceSession(input: RDashDatabase): RDashDatabase {
-  const normalized = attachCustomerLabels(
+  const normalized = attachWorkspaceDerivedFields(
     prepareWorkspaceData(structuredClone(input) as RDashDatabase),
   );
   return normalized;
