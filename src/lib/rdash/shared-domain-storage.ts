@@ -102,7 +102,7 @@ export const SHARED_DOMAIN_COLLECTIONS = {
 const sharedTables = Object.fromEntries(Object.entries(SHARED_DOMAIN_COLLECTIONS)
   .flatMap(([domain, collections]) => collections.map((collection) => [collection, `entity_${domain}`])));
 
-export const COLLECTION_TO_TABLE: Readonly<Record<string, string>> = Object.freeze(
+export const PERSISTED_COLLECTION_TO_TABLE: Readonly<Record<string, string>> = Object.freeze(
   Object.fromEntries([
     ...topLevelCollections.map(String),
     ...masterCollections.map((key) => `master.${key}`),
@@ -112,3 +112,9 @@ export const COLLECTION_TO_TABLE: Readonly<Record<string, string>> = Object.free
 export function isSharedCollection(collection: string): boolean {
   return Object.hasOwn(sharedTables, collection);
 }
+
+/** Virtual read models have one stored parent source and no independently writable rows. */
+export const COLLECTION_TO_TABLE: Readonly<Record<string, string>> = Object.freeze({
+  ...PERSISTED_COLLECTION_TO_TABLE,
+  "master.contractorRates": "entity_contractor_rate_read",
+});

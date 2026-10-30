@@ -170,6 +170,10 @@ export function aggregateWorkspaceChangeBatches(input: {
         });
       }
     }
+    if ((!allowedCollections || allowedCollections.has("master.contractorRates")) && parsedOperations.some(op =>
+      ["master.contractors", "master.workSubcategories"].includes(op.collection) && (op.upsert.length || op.deleteIds.length))) {
+      return emptyDelta(afterRevision, currentRevision, currentRevision, baselineRevision, { requiresFullReload: true, reason: "projection_changed" });
+    }
     const operations = allowedCollections
       ? parsedOperations.filter((operation) => allowedCollections.has(operation.collection))
       : parsedOperations;

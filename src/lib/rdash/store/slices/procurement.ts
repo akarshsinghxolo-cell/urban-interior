@@ -105,7 +105,6 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 locality: v.locality,
                 address: v.address,
                 category: v.category,
-                outstanding: 0,
                 reliability_score: v.reliability_score,
                 on_time_pct: v.on_time_pct,
                 latitude: v.latitude,

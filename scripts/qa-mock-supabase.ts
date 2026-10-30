@@ -35,6 +35,8 @@
  */
 
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
+import { contractorRateProjection } from "../src/lib/rdash/contractor-profile";
+import { canonicalMasterRow } from "../src/lib/rdash/canonical-master-data";
 import { COLLECTION_TO_TABLE, isSharedCollection } from "../src/lib/rdash/shared-domain-storage";
 
 const PORT = Number(process.env.QA_MOCK_PORT || 3210);
@@ -552,8 +554,16 @@ function rowsResponse(rows: Row[], url: URL, req: Request, offset: number, total
 
 /* --------------------------------------------------------- PostgREST: reads */
 
+function virtualContractorRateRows(): Row[] {
+  const definitions = (tables.get("entity_work_definitions") || []).filter(r => r.collection === "master.workSubcategories");
+  return (tables.get("entity_master_contractors") || []).flatMap(parent => {
+    const db = { master: { workSubcategories: definitions.filter(r => r.workspace_id === parent.workspace_id).map(r => r.data), contractorRates: [] } } as never;
+    return contractorRateProjection(db, parent.data as never).map(data => ({ ...parent, collection: "master.contractorRates", id: data.id, data }));
+  });
+}
+
 function readRows(req: Request, url: URL, table: string, source?: Row[]): Response {
-  const rows = source ?? tables.get(table) ?? [];
+  const rows = source ?? (table === "entity_contractor_rate_read" ? virtualContractorRateRows() : tables.get(table) ?? []);
   const filters = [...parseQueryFilters(url), ...parseOrFilters(url)];
   const matched = rows.filter((row) => filters.every((filter) => rowMatchesFilter(row, filter)));
   const total = matched.length;
@@ -706,7 +716,11 @@ function rpcCommitWorkspaceOperations(args: Row): Response {
     if (!table || !collection || COLLECTION_TO_TABLE[collection] !== table || !tables.has(table)) {
       return postgrestError(400, "22023", "INVALID_COLLECTION");
     }
-    const upsert = Array.isArray(raw.upsert) ? (raw.upsert as Row[]) : [];
+    if (collection === "master.contractorRates") {
+      if (!(rawOperations as Row[]).some(op => op.collection === "master.contractors")) return postgrestError(400, "22023", "CONTRACTOR_RATES_READ_ONLY");
+      continue;
+    }
+    const upsert = Array.isArray(raw.upsert) ? (raw.upsert as Row[]).map(row => canonicalMasterRow(collection, row)) : [];
     const deleteIds = Array.isArray(raw.deleteIds) ? raw.deleteIds.map((id) => String(id)) : [];
     for (const rowData of upsert) {
       const rowId = String(rowData?.id || "").trim();
@@ -921,7 +935,7 @@ function rpcGetAuthUserByEmail(args: Row): Response {
 }
 
 const rowsWithData = (collection: string): Row[] =>
-  (tables.get(COLLECTION_TO_TABLE[collection]) ?? [])
+  (collection === "master.contractorRates" ? virtualContractorRateRows() : tables.get(COLLECTION_TO_TABLE[collection]) ?? [])
     .filter((row) => !isSharedCollection(collection) || row.collection === collection)
     .map((row) => (row.data && typeof row.data === "object" ? (row.data as Row) : {}))
     .filter(Boolean);
@@ -1201,6 +1215,8 @@ async function handleRest(req: Request, url: URL): Promise<Response> {
     }
     return readRows(req, url, table);
   }
+
+  if (["POST", "PATCH", "DELETE"].includes(method) && table === "entity_contractor_rate_read") return postgrestError(403, "42501", "Virtual rates are read-only");
 
   if (method === "POST") {
     const body = await req.json().catch(() => null);

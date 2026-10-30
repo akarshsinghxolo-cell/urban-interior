@@ -1,3 +1,4 @@
+import { canonicalMasterRow } from "../canonical-master-data";
 import type { AuditLogEntry, RDashDatabase } from "../types";
 import { validateBusinessData } from "../business-rules";
 import { attachCustomerLabels } from "../customer";
@@ -302,6 +303,8 @@ export async function commitAuthorizedPostgresOperations(
   _expectedRevisions?: Record<string, number>,
   expectedRowVersions?: Record<string, number>,
 ): Promise<CommitResult> {
+  operations = operations.filter(op => op.collection !== "master.contractorRates" || operations.some(other => other.collection === "master.contractors"))
+    .map(op => ({ ...op, ...(op.upsert ? { upsert: op.upsert.map(row => canonicalMasterRow(op.collection, row)) } : {}) }));
   const startedAt = Date.now();
   let commitOperations = canonicalizeQuotationOperations(sanitizeWorkspaceOperations(operations));
   let mode: CommitMode = "domain-targeted";

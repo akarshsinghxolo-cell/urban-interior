@@ -72,7 +72,7 @@ test("rates-only drift commit converges to zero operations against matching capa
     rateRow.rate = 999;
     rateRow.material_rate = 999;
     const operations: WorkspaceOperation[] = diffWorkspaceOperations(current, drifted);
-    expect(operations.map((op) => op.collection)).toEqual(["master.contractorRates"]);
+    expect(operations).toEqual([]);
 
     // Server canonicalizer algorithm (mirrors canonicalizeContractorRateOperations):
     const rateOps = operations.filter((op) => op.collection === "master.contractorRates");
@@ -113,6 +113,5 @@ test("rates-only commit after a capability edit re-projects the new rates", () =
     expect(premium.material_rate).toBe(450);
     expect(premium.rate).toBe(550);
     const canonicalOps = diffWorkspaceOperations(serverState, { ...serverState, master: { ...(serverState.master as unknown as MasterPatch), contractorRates: rates } } as unknown as RDashDatabase);
-    expect(canonicalOps.map((op) => op.collection)).toEqual(["master.contractorRates"]);
-    expect(canonicalOps[0].upsert?.some((row) => (row as { rate?: number }).rate === 550)).toBe(true);
+    expect(canonicalOps).toEqual([]); // A changed projection is not a second editable record.
 });

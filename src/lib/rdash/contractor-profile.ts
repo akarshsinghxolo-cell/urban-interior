@@ -63,7 +63,7 @@ type ContractorDuplicateConflict = { id: string; name: string; reasons: string[]
 
 const CONTRACTOR_PROFILE_KEYS = new Set<keyof ContractorProfileRecord>([
   "id", "name", "legal_name", "phone", "alternate_phone", "city", "locality", "address",
-  "trade", "rating", "active_jobs", "outstanding", "reliability_score", "on_time_pct", "past_jobs_count", "specializations",
+  "trade", "rating", "reliability_score", "on_time_pct", "past_jobs_count", "specializations",
   "latitude", "longitude", "photo_attachment_id", "business_card_attachment_id", "reliability_rating", "politeness_rating",
   "worker_count_range", "deadline_commitment", "source_partner_id", "source_partner_name", "status", "categories",
   "work_capabilities", "available_workers", "service_radius_km", "notes", "compliance_documents", "duplicate_of_id",
@@ -187,8 +187,6 @@ export function contractorMasterRecordForCreate(input: ContractorProfileRecord, 
     ...canonicalInput,
     id,
     name: String(input.name || "New contractor"),
-    active_jobs: Number.isFinite(Number(input.active_jobs)) ? Number(input.active_jobs) : 0,
-    outstanding: Number.isFinite(Number(input.outstanding)) ? Number(input.outstanding) : 0,
     past_jobs_count: Number.isFinite(Number(input.past_jobs_count)) ? Number(input.past_jobs_count) : 0,
     specializations: Array.isArray(input.specializations) ? input.specializations : [],
     work_capabilities: Array.isArray(input.work_capabilities) ? input.work_capabilities : [],

@@ -1,5 +1,5 @@
 import type { ArticleVariant, LineItem, RDashDatabase, WorkRequired } from "./types";
-import { attachCustomerLabels } from "./customer";
+import { attachWorkspaceDerivedFields } from "./canonical-master-data";
 import { workSubcategoryCategoryIds } from "./work-types";
 import { prepareWorkspaceData, normalizeCatalogName } from "./work-category-master";
 import { quotationLineAmount } from "./quotation-extra-columns";
@@ -189,7 +189,7 @@ function repairInventoryAndMovements(db: RDashDatabase) {
 }
 
 export function repairOperationalWorkspace(input: RDashDatabase): RDashDatabase {
-  const db = attachCustomerLabels(prepareWorkspaceData(structuredClone(input) as RDashDatabase));
+  const db = attachWorkspaceDerivedFields(prepareWorkspaceData(structuredClone(input) as RDashDatabase));
   seedArticleVariants(db);
   ensureVendorRateCoverage(db);
   repairQuotationTotals(db);
@@ -203,5 +203,5 @@ export function repairOperationalWorkspace(input: RDashDatabase): RDashDatabase 
   db.grns = db.grns.map((grn) => ({ ...grn, items: grn.items.map((line) => repairLine(db, line, "grn")) }));
   db.dispatches = db.dispatches.map((dispatch) => ({ ...dispatch, items: dispatch.items.map((line) => repairLine(db, line, "inventory")) }));
   repairInventoryAndMovements(db);
-  return attachCustomerLabels(prepareWorkspaceData(db));
+  return attachWorkspaceDerivedFields(prepareWorkspaceData(db));
 }

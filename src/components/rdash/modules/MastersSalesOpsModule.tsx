@@ -1,4 +1,5 @@
 "use client";
+import { vendorExposureRows, contractorExposureRows } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore, type SavedView } from "@/lib/rdash/store";
@@ -69,7 +70,7 @@ export function MastersModule({ submodule }: {
     </div>);
     if (effectiveSubmodule === "vendors" || effectiveSubmodule === "vendorExposure") {
         const isExposure = submodule === "vendorExposure";
-        const allVendors = db.master.vendors;
+        const allVendors = vendorExposureRows(db);
         const vendors = (isExposure
             ? [...allVendors].sort((a, b) => (b.outstanding || 0) - (a.outstanding || 0))
             : allVendors.filter((v) => !q || v.name.toLowerCase().includes(q.toLowerCase()) || (v.city || "").toLowerCase().includes(q.toLowerCase())));
@@ -219,7 +220,7 @@ export function MastersModule({ submodule }: {
       </div>);
     }
     if (effectiveSubmodule === "contractors") {
-        const contractors = db.master.contractors;
+        const contractors = contractorExposureRows(db);
         return (<div className="flex flex-col gap-5">
         {renderContractorsTabToggle()}
         <MastersHeader icon={<HardHat className="h-5 w-5"/>} title="Contractors" desc="Trade crews with ratings, active workOrders and outstanding" count={contractors.length} q={q} setQ={setQ}/>

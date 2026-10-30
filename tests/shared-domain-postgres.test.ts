@@ -2,7 +2,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import { FOREIGN_KEYS } from "../src/lib/rdash/integrity/fk-registry";
-import { COLLECTION_TO_TABLE } from "../src/lib/rdash/shared-domain-storage";
+import { PERSISTED_COLLECTION_TO_TABLE as COLLECTION_TO_TABLE } from "../src/lib/rdash/shared-domain-storage";
 import { collectionMapping, constraints, databaseReferences, foreignKeyFingerprints } from "./support/postgres-reference-audit";
 
 const sql = (path: string) => readFileSync(path, "utf8");
