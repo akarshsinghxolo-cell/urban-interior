@@ -14,6 +14,7 @@ import { assertFinanceContext } from "../business-rules";
 import { formatINR } from "../format";
 import { businessDate, today, nowIso, genId, addDays } from "./helpers";
 import { indiaDate } from "../date";
+import { isRecognizedInvoice, isOpenInvoice, invoiceFinancialSummary } from "../financial-projections";
 import { activeStaffIdForRole } from "../staff-directory";
 
 export interface CashEntry {
@@ -62,10 +63,11 @@ export function cashFlowForecast(db: RDashDatabase, date = today()) {
     const actual = actualCashEntries(db);
     const scheduled: CashEntry[] = [];
     const add = (id: string, due: string | undefined, amount: number, direction: "in" | "out", sourceId: string) => {
-        if (due && amount > 0 && Number.isFinite(amount)) scheduled.push({ id, date: due < date ? date : due, amount, direction, label: id, sourceId });
+        const day = due ? indiaDate(due) : "";
+        if (day && amount > 0 && Number.isFinite(amount)) scheduled.push({ id, date: day < date ? date : day, amount, direction, label: id, sourceId });
     };
     // Invoice balances are authoritative. Milestones distribute that balance, not additional debt.
-    db.invoices.filter(i => i.status !== "cancelled" && i.balance_amount > 0).forEach(invoice => {
+    db.invoices.filter(i => isOpenInvoice(i)).forEach(invoice => {
         let remaining = invoice.balance_amount;
         db.payments.filter(p => p.invoice_id === invoice.id && !["received", "cancelled"].includes(p.status) && p.schedule_state !== "awaiting_event" && p.due_date)
             .sort((a, b) => a.due_date!.localeCompare(b.due_date!)).forEach(p => {
@@ -78,7 +80,7 @@ export function cashFlowForecast(db: RDashDatabase, date = today()) {
     db.payments.filter(p => !p.invoice_id && !["received", "cancelled"].includes(p.status) && p.schedule_state !== "awaiting_event")
         .forEach(p => add(p.id, p.due_date, p.amount - (p.received_amount || 0), "in", p.id));
     db.vendorBills.filter(b => ["approved", "partly_paid"].includes(b.status)).forEach(b => add(b.id, b.due_date, b.balance_amount, "out", b.id));
-    db.contractorBills.filter(b => ["verified", "approved", "partly_paid"].includes(b.status)).forEach(b => add(b.id, b.due_date, b.balance_amount, "out", b.id));
+    db.contractorBills.forEach(b => add(b.id, b.due_date, contractorBillOutstanding(db, b), "out", b.id));
     const openingRecordedNet = actual.filter(e => e.date < date).reduce((n, e) => n + (e.direction === "in" ? e.amount : -e.amount), 0);
     let cumulative = openingRecordedNet;
     const days = cashFlowDays([...actual, ...scheduled], date, 14).map(day => {
@@ -88,6 +90,14 @@ export function cashFlowForecast(db: RDashDatabase, date = today()) {
     const inflow = days.reduce((n, d) => n + d.inflow, 0);
     const outflow = days.reduce((n, d) => n + d.outflow, 0);
     return { days, totals: { inflow, outflow, net: inflow - outflow, endingBalance: cumulative } };
+}
+
+/** Only verified liabilities count; payment requests do not discharge a bill. */
+export function contractorBillOutstanding(db: RDashDatabase, bill: RDashDatabase["contractorBills"][number]) {
+    if (!["verified", "approved", "partly_paid", "paid"].includes(bill.status)) return 0;
+    const paid = db.contractorPayments.filter(payment => payment.contractor_id === bill.contractor_id &&
+        payment.contractor_bill_id === bill.id && payment.status === "paid").reduce((sum, payment) => sum + payment.amount, 0);
+    return Math.max(0, bill.amount - paid);
 }
 
 export function vendorBillResolutionAllowsApproval(bill: import("../types").VendorBill): boolean {
@@ -443,12 +453,12 @@ export function computeWorkOrderPnL(db: RDashDatabase, workOrderId: string): Wor
         line.type === "settlement")
         .reduce((sum, line) => sum + line.amount, 0);
     const totalCost = material + labour + contractor + overhead;
-    const invoices = db.invoices.filter((invoice) => invoice.work_order_id === workOrderId && invoice.status !== "cancelled");
+    const invoices = db.invoices.filter((invoice) => invoice.work_order_id === workOrderId && isRecognizedInvoice(invoice));
     const invoiced = invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0);
     const collected = db.customerReceipts
         .filter((receipt) => receipt.work_order_id === workOrderId)
         .reduce((sum, receipt) => sum + receipt.amount, 0);
-    const receivable = invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0);
+    const receivable = invoiceFinancialSummary(invoices).receivable;
     const grossMargin = workOrder.value - totalCost;
     return {
         work_order_id: workOrder.id,
@@ -481,13 +491,13 @@ export function computeSitePnLsFromCostLines(db: RDashDatabase, siteId: string) 
     const acceptedValue = db.acceptedScopes
         .filter((scope) => scope.site_id === siteId && scope.status !== "cancelled")
         .reduce((sum, scope) => sum + scope.accepted_value, 0);
-    const invoices = db.invoices.filter((invoice) => invoice.site_id === siteId && invoice.status !== "cancelled");
+    const invoices = db.invoices.filter((invoice) => invoice.site_id === siteId && isRecognizedInvoice(invoice));
     const receipts = db.customerReceipts.filter((receipt) => receipt.site_id === siteId);
     return {
         accepted_value: acceptedValue,
         invoiced: invoices.reduce((sum, invoice) => sum + invoice.total_amount, 0),
         collected: receipts.reduce((sum, receipt) => sum + receipt.amount, 0),
-        receivable: invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0),
+        receivable: invoiceFinancialSummary(invoices).receivable,
         material_cost: workOrderPnLs.reduce((sum, p) => sum + p.material_cost, 0),
         contractor_cost: workOrderPnLs.reduce((sum, p) => sum + p.contractor_cost, 0),
         labour_cost: workOrderPnLs.reduce((sum, p) => sum + p.labour_cost, 0),

@@ -16,6 +16,7 @@ import { databaseBusinessRuleMessage } from "./workspace-db-error";
 export { COLLECTION_TO_TABLE } from "../shared-domain-storage";
 import type { RDashDatabase } from "../types";
 import { WORK_CATALOG_VERSION } from "../work-category-master";
+import { readCompletePages } from "./complete-read";
 import type { WorkspacePagination } from "./workspace";
 
 const workspaceId = process.env.UC_WORKSPACE_ID || "default";
@@ -151,22 +152,23 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
       : undefined;
     const offset = configuredLimit ? normalizedOffset(plan.offsetsByCollection?.[collection]) : 0;
 
-    let query = admin.from(table)
-      .select("id,revision,data")
-      .eq("workspace_id", workspaceId);
-
-    if (isSharedCollection(collection)) query = query.eq("collection", collection);
-
-    if (!isFullCollection) {
-      query = query.in("id", rowsByCollection.get(collection) || []);
-    } else if (configuredLimit) {
-      // Fetch one extra row instead of issuing a COUNT query. That tells the
-      // client whether a next page exists while keeping database/egress work bounded.
-      query = query
-        .order("revision", { ascending: false })
-        .order("id", { ascending: true })
-        .range(offset, offset + configuredLimit);
+    const buildQuery = (count = false) => {
+      let query = admin.from(table)
+        .select("id,revision,data", count ? { count: "exact" } : undefined)
+        .eq("workspace_id", workspaceId);
+      if (isSharedCollection(collection)) query = query.eq("collection", collection);
+      if (!isFullCollection) query = query.in("id", rowsByCollection.get(collection) || []);
+      return query;
+    };
+    if (!configuredLimit) {
+      const complete = await readCompletePages<RestEntityRow>(`targeted collection ${collection}`,
+        (from, to, count) => buildQuery(count).order("id", { ascending: true }).range(from, to).overrideTypes<RestEntityRow[], { merge: false }>());
+      return { collection, ...complete, pagination: undefined };
     }
+    const query = buildQuery()
+      .order("revision", { ascending: false })
+      .order("id", { ascending: true })
+      .range(offset, offset + configuredLimit);
 
     const { data, error } = await query;
     if (error) throw new Error(`Could not read targeted collection ${collection}: ${error.message}`);
@@ -176,6 +178,7 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
     return {
       collection,
       rows,
+      queryCount: 1,
       pagination: configuredLimit
         ? {
             offset,
@@ -203,7 +206,7 @@ export async function getRestWorkspaceSubset(plan: RestWorkspaceReadPlan): Promi
     updatedAt: revisionState.updatedAt,
     data,
     rowVersions,
-    queryCount: 1 + requestedCollections.length,
+    queryCount: 1 + results.reduce((sum, result) => sum + result.queryCount, 0),
     ...(Object.keys(pagination).length ? { pagination } : {}),
   };
 }

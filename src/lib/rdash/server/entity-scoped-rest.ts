@@ -1,3 +1,4 @@
+import { readCompletePages } from "./complete-read";
 import { isSharedCollection } from "../shared-domain-storage";
 import { getSupabaseAdminClient } from "../../supabase/server";
 import { COLLECTION_TO_TABLE, emptyWorkspaceData, putCollectionRows, readRevision, type RestEntityRow } from "./commit-rest";
@@ -110,28 +111,22 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
 
   const results = await Promise.all(queries.map(async (spec) => {
     const table = tableFor(spec.collection);
-    let query = admin
-      .from(table)
-      .select("id,revision,data")
-      .eq("workspace_id", workspaceId);
-
-    if (isSharedCollection(spec.collection)) query = query.eq("collection", spec.collection);
-
-    if (!spec.full) {
-      const filters: string[] = [];
-      if (spec.ids.length) filters.push(inExpression("id", spec.ids));
-      for (const [field, values] of Object.entries(spec.jsonFields)) {
-        const selector = selectorColumn(spec.collection, field);
-        filters.push(inExpression(selector.column, values));
+    const complete = await readCompletePages<RestEntityRow>(`entity-scoped collection ${spec.collection}`, (from, to, count) => {
+      let query = admin.from(table)
+        .select("id,revision,data", count ? { count: "exact" } : undefined)
+        .eq("workspace_id", workspaceId);
+      if (isSharedCollection(spec.collection)) query = query.eq("collection", spec.collection);
+      if (!spec.full) {
+        const filters: string[] = [];
+        if (spec.ids.length) filters.push(inExpression("id", spec.ids));
+        for (const [field, values] of Object.entries(spec.jsonFields)) {
+          filters.push(inExpression(selectorColumn(spec.collection, field).column, values));
+        }
+        query = query.or(filters.join(","));
       }
-      query = query.or(filters.join(","));
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      throw new Error(`Could not read entity-scoped collection ${spec.collection}: ${error.message}`);
-    }
-    return { collection: spec.collection, rows: (data || []) as RestEntityRow[] };
+      return query.order("id", { ascending: true }).range(from, to).overrideTypes<RestEntityRow[], { merge: false }>();
+    });
+    return { collection: spec.collection, ...complete };
   }));
 
   const data = emptyWorkspaceData();
@@ -145,6 +140,6 @@ export async function getRestWorkspaceBySelectors(plan: EntityScopedReadPlan): P
     updatedAt: revisionState.updatedAt,
     data,
     rowVersions,
-    queryCount: 1 + queries.length,
+    queryCount: 1 + results.reduce((sum, result) => sum + result.queryCount, 0),
   };
 }

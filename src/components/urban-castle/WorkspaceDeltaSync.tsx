@@ -193,10 +193,11 @@ export function WorkspaceDeltaSync(): null {
             },
           });
           if (response.status === 401) await redirectToSignin();
+          if (response.status === 403) { window.location.reload(); return; }
           if (!response.ok) throw new Error(`Delta request failed with ${response.status}.`);
 
           const delta = await response.json() as WorkspaceDeltaPayload;
-          if (delta.requiresFullReload && delta.reason === "client_ahead") {
+          if (delta.requiresFullReload && (delta.reason === "client_ahead" || delta.reason === "permissions_changed")) {
             window.location.reload();
             return;
           }
