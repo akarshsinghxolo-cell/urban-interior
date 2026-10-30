@@ -1,3 +1,4 @@
+import { canonicalDispatchItems } from "../../dispatch-stock";
 // STAGE-3-FIX: Generate procurement numbers using current year + max suffix.
 function nextProcurementNo(prefix: string, collection: { rfq_no?: string; po_no?: string; grn_no?: string; dispatch_no?: string }[]): string {
     const year = new Date().getFullYear();
@@ -1181,18 +1182,20 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
             }
         },
         issueDispatch: (d) => {
-            const fieldUser = userForRole(get().db, "Field Staff");
+            const state = get();
+            const items = canonicalDispatchItems(state.db, d.work_order_id || "", d.site_id, d.items || []);
+            const workOrder = state.db.workOrders.find(row => row.id === d.work_order_id)!;
+            const fieldUser = state.currentUser();
             const id = genId("disp");
             const dispNo = nextProcurementNo("DISP", get().db.dispatches);
             const threadId = get().openThreadFor("dispatch", id, `${dispNo} · site issue`, [fieldUser.name]);
-            const items = d.items || [];
             const newDisp: SiteDispatch = {
                 id,
                 dispatch_no: dispNo,
                 work_order_id: d.work_order_id || "",
                 work_order_no: d.work_order_no || "",
-                site_id: d.site_id,
-                site_address: d.site_address,
+                site_id: workOrder.site_id,
+                site_address: d.site_address || workOrder.site_address,
                 status: "issued",
                 items,
                 issued_at: nowIso(),
@@ -1213,7 +1216,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                             inventory: s.db.inventory.map((i: any) => i.id === inv.id
                                 ? {
                                     ...i,
-                                    quantity: Math.max(0, i.quantity - di.quantity),
+                                    quantity: i.quantity - di.quantity,
                                     issued_qty: (i.issued_qty || 0) + di.quantity,
                                     updated_at: nowIso(),
                                 }
@@ -1225,6 +1228,8 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                     id: genId("sm"),
                     inventory_id: di.source_item_id || "",
                     article_id: di.article_id,
+                    work_required_article_id: di.work_required_article_id,
+                    unit_id: di.unit_id,
                     name: di.title,
                     type: "issue",
                     quantity: -di.quantity,

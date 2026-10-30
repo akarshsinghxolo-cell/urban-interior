@@ -1,11 +1,12 @@
 "use client";
 import * as React from "react";
 import { TrendingUp, Building2, ArrowDownRight, ArrowUpRight, Wallet, Receipt } from "lucide-react";
-import { useRDashStore } from "@/lib/rdash/store";
-import { formatINR, formatINRShort, formatDate } from "@/lib/rdash/format";
+import { siteFinancials, useRDashStore } from "@/lib/rdash/store";
+import { formatINR, formatINRShort } from "@/lib/rdash/format";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { computeWorkOrderPnL } from "@/lib/rdash/store/finance-helpers";
+import type { RDashDatabase } from "@/lib/rdash/types";
 
 interface SitePnL {
     site_id: string;
@@ -34,68 +35,28 @@ interface SitePnL {
     work_order_count: number;
 }
 
-function computeSitePnLs(db: any): SitePnL[] {
-    const sites = db.sites || [];
-    const customers = db.customers || [];
-    const allWorkOrders = db.workOrders || [];
-    const allQuotations = db.quotations || [];
-    const allAcceptedScopes = db.acceptedScopes || [];
-    const allPOs = db.purchaseOrders || [];
-    const allVendorBills = db.vendorBills || [];
-    const allContractorBills = db.contractorBills || [];
-    const allVendorPayments = db.vendorPayments || [];
-    const allContractorPayments = db.contractorPayments || [];
-    return sites.map((site: any) => {
-        const customer = customers.find((c: any) => c.id === site.customer_id);
-        const siteWorkOrders = allWorkOrders.filter((wo: any) => wo.site_id === site.id);
-        const woIds = new Set(siteWorkOrders.map((wo: any) => wo.id));
-        const siteQuotations = allQuotations.filter((q: any) => q.site_id === site.id);
-        const siteScopes = allAcceptedScopes.filter((s: any) => s.site_id === site.id);
-        const sitePOs = allPOs.filter((po: any) => po.site_id === site.id);
-        const siteVendorBills = allVendorBills.filter((b: any) => b.site_id === site.id || (b.po_id && sitePOs.some((po: any) => po.id === b.po_id)));
-        const siteContractorBills = allContractorBills.filter((b: any) => b.site_id === site.id || (b.work_order_id && woIds.has(b.work_order_id)));
-        const totalQuotedValue = siteQuotations.reduce((n: number, q: any) => n + (q.total_amount || 0), 0);
-        const acceptedValue = siteScopes.reduce((n: number, s: any) => n + (s.accepted_value || 0), 0);
-        // G: roll up per-work-order P&L via the canonical computeWorkOrderPnL
-        // helper so this view agrees with JobPnLModule and FinanceOverview.
-        const woPnLs = siteWorkOrders
-            .map((wo: any) => computeWorkOrderPnL(db, wo.id))
-            .filter((p: any): p is NonNullable<typeof p> => Boolean(p));
-        const invoicedAmount = woPnLs.reduce((n: number, p: any) => n + (p.invoiced || 0), 0);
-        const amountReceived = woPnLs.reduce((n: number, p: any) => n + (p.collected || 0), 0);
-        const amountSpent = woPnLs.reduce((n: number, p: any) => n + (p.total_cost || 0), 0);
-        // PO value + contractor award totals are still derived from raw records
-        // (they are not part of the P&L formula — they are commitment indicators).
-        const totalPoValue = sitePOs.reduce((n: number, po: any) => n + (po.total_amount || 0), 0);
-        const contractorAwardTotal = siteWorkOrders.reduce((n: number, wo: any) => n + (wo.contractor_award_amount || 0), 0);
-        const vendorBillTotal = siteVendorBills.reduce((n: number, b: any) => n + (b.total_amount || b.amount || 0), 0);
-        const contractorBillTotal = siteContractorBills.reduce((n: number, b: any) => n + (b.amount || 0), 0);
-        const outstandingReceivable = Math.max(0, acceptedValue - amountReceived);
-        const vendorPaidTotal = allVendorPayments.filter((vp: any) => siteVendorBills.some((b: any) => b.id === vp.vendor_bill_id)).reduce((n: number, vp: any) => n + (vp.amount || 0), 0);
-        const contractorPaidTotal = allContractorPayments.filter((cp: any) => siteContractorBills.some((b: any) => b.id === cp.contractor_bill_id)).reduce((n: number, cp: any) => n + (cp.amount || 0), 0);
-        const outstandingPayable = Math.max(0, vendorBillTotal + contractorBillTotal - vendorPaidTotal - contractorPaidTotal);
-        const margin = acceptedValue - amountSpent;
-        const marginPct = acceptedValue > 0 ? Math.round((margin / acceptedValue) * 10000) / 100 : 0;
+export function computeSitePnLs(db: RDashDatabase): SitePnL[] {
+    return db.sites.map(site => {
+        const financials = siteFinancials(db, site.id);
+        const workOrders = db.workOrders.filter(work => work.site_id === site.id);
         return {
-            site_id: site.id,
-            site_name: site.name,
-            customer_name: customer?.name || "—",
-            site_type: site.site_type || "other",
-            stage: site.stage || "unknown",
-            total_quoted_value: totalQuotedValue,
-            accepted_value: acceptedValue,
-            invoiced_amount: invoicedAmount,
-            amount_received: amountReceived,
-            total_po_value: totalPoValue,
-            contractor_award_total: contractorAwardTotal,
-            vendor_bill_total: vendorBillTotal,
-            contractor_bill_total: contractorBillTotal,
-            amount_spent: amountSpent,
-            outstanding_receivable: outstandingReceivable,
-            outstanding_payable: outstandingPayable,
-            margin,
-            margin_pct: marginPct,
-            work_order_count: siteWorkOrders.length,
+            site_id: site.id, site_name: site.name,
+            customer_name: db.customers.find(customer => customer.id === site.customer_id)?.name || "—",
+            site_type: site.site_type || "other", stage: site.stage || "unknown",
+            total_quoted_value: financials.quoted, accepted_value: financials.contracted,
+            invoiced_amount: financials.invoiced, amount_received: financials.collected,
+            total_po_value: db.purchaseOrders.filter(po => po.site_id === site.id && po.status !== "cancelled")
+                .reduce((sum, po) => sum + po.total_amount, 0),
+            contractor_award_total: workOrders.reduce((sum, work) => sum + (work.contractor_award_amount || 0), 0),
+            vendor_bill_total: db.vendorBills.filter(bill => bill.site_id === site.id && ["approved", "partly_paid", "paid"].includes(bill.status))
+                .reduce((sum, bill) => sum + (bill.total_amount || bill.amount || 0), 0),
+            contractor_bill_total: db.contractorBills.filter(bill => bill.site_id === site.id && bill.status !== "held")
+                .reduce((sum, bill) => sum + bill.amount, 0),
+            amount_spent: financials.totalCost, outstanding_receivable: financials.receivable,
+            outstanding_payable: financials.vendorPayable + financials.contractorPayable,
+            margin: financials.grossMargin,
+            margin_pct: financials.contracted ? Math.round(financials.grossMargin / financials.contracted * 10000) / 100 : 0,
+            work_order_count: workOrders.length,
         };
     });
 }

@@ -106,7 +106,7 @@ describe("entity-scoped collection policy", () => {
     expectTokens(source, ["slice(0, 500)"]);
     expect(source).toContain("query.or(filters.join");
     expect(source).toContain("quotePostgrestValue");
-    expectTokens(source, ["queryCount: 1 + queries.length"]);
+    expectTokens(source, ["queryCount: 1 + results.reduce"]);
   });
 
   test("entity reader is always on, revision-safe, and uses canonical Customer thread IDs", async () => {

@@ -1,4 +1,5 @@
 "use client";
+import { invoiceAgingRows } from "@/lib/rdash/financial-projections";
 import * as React from "react";
 import { Ban, BellOff, CheckCircle2, ChevronRight, Flame, ListTodo, MapPin, PhoneCall, Plus, ShieldAlert, TrendingUp, FileText, Target, Briefcase, CalendarClock, AlertCircle, Package, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
@@ -695,7 +696,7 @@ export function DailyWork() {
       <section aria-label="Workspace KPIs" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         <MetricCard label="Active WOs" value={db.workOrders.filter((w) => w.status === "in_progress" || w.status === "scheduled").length} hint="In progress + scheduled" tone="primary" icon={<Briefcase className="h-4 w-4"/>} onClick={() => setActiveModule("siteExecution")}/>
         <MetricCard label="Pending approvals" value={approvals.length} hint="PO + payment + variation" tone="success" icon={<CheckCircle2 className="h-4 w-4"/>} onClick={() => setActiveModule("approvals")}/>
-        <MetricCard label="Overdue invoices" value={formatINRShort(db.invoices.filter((i) => i.status === "overdue" || (i.status === "issued" && i.due_date && isDateOnlyOverdue(i.due_date))).reduce((s, i) => s + i.total_amount, 0))} hint="Total value" tone="destructive" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("payments")}/>
+        <MetricCard label="Overdue invoices" value={formatINRShort(invoiceAgingRows(db.invoices).filter(i => i.daysOverdue > 0).reduce((s, i) => s + i.balance_amount, 0))} hint="Remaining balance" tone="destructive" icon={<FileText className="h-4 w-4"/>} onClick={() => setActiveModule("payments")}/>
         <MetricCard label="Today's visits" value={db.visits.filter((visit) => visit.scheduled_at && indiaDate(visit.scheduled_at) === indiaDate()).length} hint="Scheduled today" tone="primary" icon={<MapPin className="h-4 w-4"/>} onClick={() => setActiveModule("fieldOperations")}/>
         <MetricCard label="Follow-ups due" value={db.followups.filter((f) => f.due_date === indiaDate() && (f.status === "pending" || f.status === "scheduled")).length} hint="Due today" tone="warning" icon={<PhoneCall className="h-4 w-4"/>} onClick={() => setActiveModule("tasks")}/>
         <MetricCard label="Low-stock items" value={db.inventory.filter((i) => typeof i.min_qty === "number" && i.quantity <= (i.min_qty || 0)).length} hint="At/below min" tone="destructive" icon={<Package className="h-4 w-4"/>} onClick={() => setActiveModule("inventory")}/>
@@ -854,14 +855,13 @@ function TodayOverdueInvoicesPanel() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const setActiveModule = useRDashStore((s) => s.setActiveModule);
     const records: QueueRecord[] = React.useMemo(() => {
-        const overdue = db.invoices.filter((i) => i.status === "overdue" ||
-            (i.status === "issued" && i.due_date && isDateOnlyOverdue(i.due_date)));
+        const overdue = invoiceAgingRows(db.invoices).filter(i => i.daysOverdue > 0);
         return overdue.map((i) => {
             const customer = db.customers.find((c) => c.id === i.customer_id);
             const wo = db.workOrders.find((w) => w.id === i.work_order_id);
             return {
                 id: i.id,
-                title: `${i.invoice_no} · ${formatINRShort(i.total_amount)}`,
+                title: `${i.invoice_no} · ${formatINRShort(i.balance_amount)}`,
                 subtitle: wo?.work_order_no,
                 customerName: customer?.name,
                 status: { label: i.status, className: "bg-destructive/10 text-destructive border-destructive/20" },
@@ -873,7 +873,7 @@ function TodayOverdueInvoicesPanel() {
     }, [db, openDetail]);
     const totalOverdue = records.reduce((sum, r) => {
         const inv = db.invoices.find((i) => i.id === r.id);
-        return sum + (inv?.total_amount || 0);
+        return sum + (inv?.balance_amount || 0);
     }, 0);
     return <QueueSection title={`Today's overdue invoices${totalOverdue > 0 ? ` · ${formatINRShort(totalOverdue)}` : ""}`} icon={<ShieldAlert className="h-4 w-4 text-destructive"/>} records={records} columns={3} emptyTone="danger" emptyTitle="No overdue invoices" emptyDescription="Invoices past their due date will appear here so the operations team can chase them." collapsible={true} defaultCollapsed={false} emptyAction={<EmptyCta label="Open Collections" onClick={() => setActiveModule("payments")}/>}/>;
 }
