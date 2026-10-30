@@ -224,5 +224,95 @@ end;
 $function$;
 
 
+CREATE OR REPLACE FUNCTION public.uc_contractor_rate_projection_rows(p_workspace_id text, p_contractor jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v_rows jsonb := '[]'::jsonb;
+  v_capability jsonb;
+  v_work_type_rate jsonb;
+  v_contractor_id text := nullif(btrim(coalesce(p_contractor ->> 'id', '')), '');
+  v_subcategory_id text;
+  v_subcategory_name text;
+  v_work_type_id text;
+  v_work_type_name text;
+  v_unit_id text;
+  v_material jsonb;
+  v_labour jsonb;
+  v_total numeric;
+begin
+  if v_contractor_id is null then return v_rows; end if;
+
+  for v_capability in
+    select value from jsonb_array_elements(
+      case when jsonb_typeof(p_contractor -> 'work_capabilities') = 'array'
+        then p_contractor -> 'work_capabilities' else '[]'::jsonb end
+    )
+  loop
+    v_subcategory_id := nullif(btrim(coalesce(v_capability ->> 'subcategory_id', '')), '');
+    if v_subcategory_id is null then continue; end if;
+    v_subcategory_name := nullif(btrim(coalesce(v_capability ->> 'subcategory_name', '')), '');
+
+    for v_work_type_rate in
+      select value from jsonb_array_elements(
+        case when jsonb_typeof(v_capability -> 'work_type_rates') = 'array'
+          then v_capability -> 'work_type_rates' else '[]'::jsonb end
+      )
+    loop
+      v_work_type_id := nullif(btrim(coalesce(v_work_type_rate ->> 'work_type_id', '')), '');
+      v_work_type_name := nullif(btrim(coalesce(v_work_type_rate ->> 'work_type_name', '')), '');
+      v_material := nullif(v_work_type_rate -> 'material_rate', 'null'::jsonb);
+      v_labour := nullif(v_work_type_rate -> 'labour_rate', 'null'::jsonb);
+      if v_work_type_id is null or v_work_type_name is null or (v_material is null and v_labour is null) then continue; end if;
+
+      v_unit_id := coalesce(
+        nullif(btrim(v_work_type_rate ->> 'unit_id'), ''),
+        (
+          select nullif(btrim(work_type.value ->> 'unit_id'), '')
+            from (SELECT * FROM public."entity_work_definitions" WHERE collection='master.workSubcategories') subcategory
+            cross join lateral jsonb_array_elements(
+              case when jsonb_typeof(subcategory.data -> 'work_types') = 'array'
+                then subcategory.data -> 'work_types' else '[]'::jsonb end
+            ) as work_type(value)
+           where subcategory.workspace_id = p_workspace_id
+             and subcategory.id = v_subcategory_id
+             and work_type.value ->> 'id' = v_work_type_id
+           limit 1
+        ),
+        (
+          select nullif(btrim(subcategory.data ->> 'unit_id'), '')
+            from (SELECT * FROM public."entity_work_definitions" WHERE collection='master.workSubcategories') subcategory
+           where subcategory.workspace_id = p_workspace_id
+             and subcategory.id = v_subcategory_id
+           limit 1
+        )
+      );
+      v_total := coalesce((v_material #>> '{}')::numeric, 0) + coalesce((v_labour #>> '{}')::numeric, 0);
+
+      v_rows := v_rows || jsonb_build_array(jsonb_strip_nulls(jsonb_build_object(
+        'id', 'crate-' || v_contractor_id || '-' || v_subcategory_id || '-' || v_work_type_id,
+        'contractor_id', v_contractor_id,
+        'trade', coalesce(v_subcategory_name, 'Contractor rate') || ' · ' || v_work_type_name,
+        'rate', v_total,
+        'unit_id', v_unit_id,
+        'work_subcategory_id', v_subcategory_id,
+        'work_subcategory_name', v_subcategory_name,
+        'work_type_id', v_work_type_id,
+        'work_type_name', v_work_type_name,
+        'material_rate', v_material,
+        'labour_rate', v_labour,
+        'notes', nullif(btrim(v_work_type_rate ->> 'notes'), '')
+      )));
+    end loop;
+  end loop;
+
+  return v_rows;
+end;
+$function$;
+
+
 NOTIFY pgrst,'reload schema';
 COMMIT;

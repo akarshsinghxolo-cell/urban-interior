@@ -38,7 +38,7 @@ identity merges and does not grant access across workspaces or staff roles.
 
 Migration `canonical_partner_sources` removes separately materialized Contractor
 rate rows from `entity_rate_cards` only after bidirectional equality against
-`entity_contractor_rate_read`. At rehearsal, 17 rows matched exactly. The view has
+`entity_contractor_rate_read`. At rehearsal, 17 rows matched exactly on IDs, units, rates and other business facts. Two stale descriptive labels are refreshed from canonical work taxonomy. The view has
 no storage and derives the same IDs/data from current Contractor capabilities.
 It is `security_invoker`, with no browser-role grants and service-role SELECT only.
 
@@ -70,7 +70,7 @@ checkpoint revision and current projection equality under locks.
 
 Rehearsal restored current 15 Contractors, eight Vendors, 17 units, 83 work
 definitions and 17 rate rows. Only redundant summary fields were removed; every
-rate read fact was identical. Forward migration, rollback and reapplication passed.
+rate ID, unit and financial fact was identical; two descriptive labels now follow taxonomy. Forward migration, rollback and reapplication passed.
 PostgreSQL regressions cover forged rows, obsolete counter writes, invalid units,
 unit deletion, typed workspace isolation, canonical journals and post-cutover edits.
 Client tests cover virtual-write exclusion, derived hydration and delta invalidation.
