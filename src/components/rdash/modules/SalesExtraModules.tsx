@@ -1,4 +1,5 @@
 "use client";
+import { commissionSummary } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
@@ -14,9 +15,7 @@ export function SourceReferralModule() {
         return db.master.sourcePartners.map((sp) => {
             const customers = db.customers.filter((p) => p.referrer_type === "source_partner" && p.referrer_id === sp.id);
             const commissions = db.commissions.filter((c) => c.source_partner_id === sp.id);
-            const totalCommission = commissions.reduce((n, c) => n + c.amount, 0);
-            const paidCommission = commissions.filter((c) => c.status === "paid").reduce((n, c) => n + c.amount, 0);
-            const outstanding = totalCommission - paidCommission;
+            const { total: totalCommission, paidAmount: paidCommission, outstanding } = commissionSummary(commissions);
             return { ...sp, customerCount: customers.length, customers, totalCommission, paidCommission, outstanding, commissionCount: commissions.length };
         });
     }, [db.master.sourcePartners, db.customers, db.commissions]);

@@ -1,4 +1,5 @@
 "use client";
+import { vendorExposureRows, contractorExposureRows } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useRDashStore } from "@/lib/rdash/store";
@@ -101,7 +102,7 @@ export function DataExportModule() {
                 icon: Building2,
                 count: db.master.vendors.length,
                 headers: ["Name", "Category", "City", "Phone", "Outstanding", "On-time %", "Reliability"],
-                rows: db.master.vendors.map((v) => [v.name, v.category || "", v.city || "", v.phone || "", String(v.outstanding || 0), `${v.on_time_pct || 0}%`, String(v.reliability_score || 0)]),
+                rows: vendorExposureRows(db).map((v) => [v.name, v.category || "", v.city || "", v.phone || "", String(v.outstanding || 0), `${v.on_time_pct || 0}%`, String(v.reliability_score || 0)]),
             },
             {
                 id: "contractors",
@@ -110,7 +111,7 @@ export function DataExportModule() {
                 icon: HardHat,
                 count: db.master.contractors.length,
                 headers: ["Name", "Trade", "City", "Phone", "Rating", "Active Work Orders", "Outstanding"],
-                rows: db.master.contractors.map((c) => [c.name, c.trade || "", c.city || "", c.phone || "", String(c.rating || ""), String(c.active_jobs || 0), String(c.outstanding || 0)]),
+                rows: contractorExposureRows(db).map((c) => [c.name, c.trade || "", c.city || "", c.phone || "", String(c.rating || ""), String(c.active_jobs || 0), String(c.outstanding || 0)]),
             },
             {
                 id: "staff",

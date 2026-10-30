@@ -1,4 +1,5 @@
 "use client";
+import { commissionSummary } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { HandCoins, MoreHorizontal, IndianRupee, CheckCircle2, Users, Calendar, } from "lucide-react";
 import { useRDashStore } from "@/lib/rdash/store";
@@ -13,9 +14,7 @@ export function CommissionsModule() {
     const openDetail = useRDashStore((s) => s.openDetail);
     const [filter, setFilter] = React.useState<string>("all");
     const commissions = db.commissions;
-    const accrued = commissions.filter((c) => c.status === "accrued" || c.status === "payable");
-    const paid = commissions.filter((c) => c.status === "paid");
-    const outstanding = accrued.reduce((n, c) => n + c.amount, 0);
+    const { accrued, paid, outstanding } = commissionSummary(commissions);
     const metrics: MetricSpec[] = [
         {
             label: "Total commissions",

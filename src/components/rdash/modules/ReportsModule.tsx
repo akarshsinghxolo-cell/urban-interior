@@ -1,5 +1,7 @@
 "use client";
 
+import { applyReportFilter } from "@/lib/rdash/report-scope";
+import { agingInvoiceRows, sharedReportExport } from "@/lib/rdash/report-data";
 import { vendorExposureRows, taxReportProjection } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
@@ -127,75 +129,7 @@ function ReportCard({ title, subtitle, icon, children, action }: {
  *    that vendor.
  *  - staffId: filter tasks, visits, attendance, pings to that staff.
  */
-type ReportFilter = { customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string; reportId?: string } | null | undefined;
-function applyReportFilter(db: RDashDatabase, filter: ReportFilter): RDashDatabase {
-    if (!filter) return db;
-    const hasFilter = !!(filter.customerId || filter.workOrderId || filter.vendorId || filter.staffId);
-    if (!hasFilter) return db;
-    // Resolve customerId from workOrderId if only workOrderId is set, so we
-    // can filter customer-scoped collections consistently.
-    let customerId = filter.customerId;
-    if (!customerId && filter.workOrderId) {
-        const wo = db.workOrders.find((w) => w.id === filter.workOrderId);
-        if (wo) customerId = wo.customer_id;
-    }
-    // Resolve workOrderIds from customerId if only customerId is set, so
-    // work-order-scoped collections (POs/GRNs/bills) are also filtered.
-    const workOrderIds = new Set<string>();
-    if (customerId) {
-        db.workOrders.filter((w) => w.customer_id === customerId).forEach((w) => workOrderIds.add(w.id));
-    }
-    if (filter.workOrderId) workOrderIds.add(filter.workOrderId);
-    return {
-        ...db,
-        customers: filter.customerId ? db.customers.filter((c) => c.id === filter.customerId) : db.customers,
-        sites: customerId ? db.sites.filter((s) => s.customer_id === customerId) : db.sites,
-        workOrders: customerId || filter.workOrderId
-            ? db.workOrders.filter((w) => (!customerId || w.customer_id === customerId) && (!filter.workOrderId || w.id === filter.workOrderId))
-            : db.workOrders,
-        quotations: customerId || filter.workOrderId
-            ? db.quotations.filter((q) => (!customerId || q.customer_id === customerId) && (!filter.workOrderId || (q.work_order_ids || []).includes(filter.workOrderId)))
-            : db.quotations,
-        payments: customerId || filter.workOrderId
-            ? db.payments.filter((p) => (!customerId || p.customer_id === customerId) && (!filter.workOrderId || p.work_order_id === filter.workOrderId))
-            : db.payments,
-        invoices: customerId || filter.workOrderId
-            ? db.invoices.filter((i) => (!customerId || i.customer_id === customerId) && (!filter.workOrderId || i.work_order_id === filter.workOrderId))
-            : db.invoices,
-        customerReceipts: customerId || filter.workOrderId
-            ? db.customerReceipts.filter((r) => (!customerId || r.customer_id === customerId) && (!filter.workOrderId || r.work_order_id === filter.workOrderId))
-            : db.customerReceipts,
-        visits: customerId || filter.workOrderId || filter.staffId
-            ? db.visits.filter((v) => (!customerId || v.customer_id === customerId) && (!filter.workOrderId || v.work_order_id === filter.workOrderId) && (!filter.staffId || v.assigned_staff_id === filter.staffId))
-            : db.visits,
-        tasks: customerId || filter.workOrderId || filter.staffId
-            ? db.tasks.filter((t) => (!customerId || t.customer_id === customerId) && (!filter.workOrderId || t.work_order_id === filter.workOrderId) && (!filter.staffId || t.assigned_staff_id === filter.staffId))
-            : db.tasks,
-        followups: customerId || filter.staffId
-            ? db.followups.filter((f) => (!customerId || f.customer_id === customerId) && (!filter.staffId || f.assigned_staff_id === filter.staffId))
-            : db.followups,
-        purchaseOrders: filter.workOrderId || filter.vendorId
-            ? db.purchaseOrders.filter((p) => (!filter.workOrderId || p.work_order_id === filter.workOrderId) && (!filter.vendorId || p.vendor_id === filter.vendorId))
-            : db.purchaseOrders,
-        grns: filter.workOrderId || filter.vendorId
-            ? db.grns.filter((g) => (!filter.workOrderId || g.work_order_id === filter.workOrderId) && (!filter.vendorId || g.vendor_id === filter.vendorId))
-            : db.grns,
-        vendorBills: filter.workOrderId || filter.vendorId
-            ? db.vendorBills.filter((b) => (!filter.workOrderId || b.work_order_id === filter.workOrderId) && (!filter.vendorId || b.vendor_id === filter.vendorId))
-            : db.vendorBills,
-        vendorPayments: filter.workOrderId || filter.vendorId
-            ? db.vendorPayments.filter((p) => (!filter.workOrderId || p.work_order_id === filter.workOrderId) && (!filter.vendorId || p.vendor_id === filter.vendorId))
-            : db.vendorPayments,
-        vendorRfqs: filter.workOrderId
-            ? db.vendorRfqs.filter((r) => r.work_order_id === filter.workOrderId)
-            : db.vendorRfqs,
-        master: filter.vendorId
-            ? { ...db.master, vendors: db.master.vendors.filter((v) => v.id === filter.vendorId) }
-            : filter.staffId
-                ? { ...db.master, staff: db.master.staff.filter((s) => s.id === filter.staffId) }
-                : db.master,
-    };
-}
+
 export function ReportsModule({ reportId }: {
     reportId?: string;
 }) {
@@ -246,13 +180,15 @@ function ReportsModuleContent({ reportId }: {
                 break;
             }
             case "collectionReport": {
-                rows.push(["Payment No", "Customer", "Milestone", "Amount", "Status", "Due Date", "Received Date"]);
-                fdb.payments.forEach((p) => rows.push([p.id, (p.customer_name || "Customer"), p.milestone_label || "", String(p.amount), p.status, p.due_date || "", p.received_date || ""]));
+                const projection = sharedReportExport(fdb, "collectionReport");
+                rows.push(projection.headers);
+                rows.push(...projection.rows);
                 break;
             }
             case "jobPnlReport": {
-                rows.push(["WorkOrder No", "Customer", "Title", "Status", "Value", "Progress"]);
-                fdb.workOrders.forEach((j) => rows.push([j.work_order_no, (j.customer_name || "Customer"), j.title, j.status, String(j.value), `${j.progress}%`]));
+                const projection = sharedReportExport(fdb, "jobPnlReport");
+                rows.push(projection.headers);
+                rows.push(...projection.rows);
                 break;
             }
             case "vendorExposureReport": {
@@ -316,12 +252,9 @@ function ReportsModuleContent({ reportId }: {
                 break;
             }
             case "agingReportRep": {
-                const unpaid = fdb.payments.filter((p) => p.status === "pending" || p.status === "overdue");
-                rows.push(["Payment ID", "Customer", "Amount", "Status", "Due Date", "Days Overdue"]);
-                unpaid.forEach((p) => {
-                    const days = p.due_date ? Math.floor((Date.now() - new Date(p.due_date).getTime()) / 86400000) : 0;
-                    rows.push([p.id, (p.customer_name || "Customer"), String(p.amount), p.status, p.due_date || "", String(Math.max(0, days))]);
-                });
+                const projection = sharedReportExport(fdb, "agingReportRep");
+                rows.push(projection.headers);
+                rows.push(...projection.rows);
                 break;
             }
             case "visitCompliance": {
@@ -382,13 +315,15 @@ function ReportsModuleContent({ reportId }: {
                 break;
             }
             case "collectionReport": {
-                headers.push("Payment No", "Customer", "Milestone", "Amount", "Status", "Due Date", "Received");
-                fdb.payments.forEach((p) => dataRows.push([p.id.slice(-6).toUpperCase(), (p.customer_name || "Customer"), p.milestone_label || "—", formatINR(p.amount), titleCase(p.status), p.due_date ? formatDate(p.due_date) : "—", p.received_date ? formatDate(p.received_date) : "—"]));
+                const projection = sharedReportExport(fdb, "collectionReport");
+                headers.push(...projection.headers);
+                dataRows.push(...projection.rows);
                 break;
             }
             case "jobPnlReport": {
-                headers.push("WorkOrder No", "Customer", "Title", "Status", "Value", "Progress");
-                fdb.workOrders.forEach((j) => dataRows.push([j.work_order_no, (j.customer_name || "Customer"), j.title, titleCase(j.status), formatINR(j.value), `${j.progress}%`]));
+                const projection = sharedReportExport(fdb, "jobPnlReport");
+                headers.push(...projection.headers);
+                dataRows.push(...projection.rows);
                 break;
             }
             case "vendorExposureReport": {
@@ -450,12 +385,9 @@ function ReportsModuleContent({ reportId }: {
                 break;
             }
             case "agingReportRep": {
-                const unpaid = fdb.payments.filter((p) => p.status === "pending" || p.status === "overdue");
-                headers.push("Payment ID", "Customer", "Amount", "Status", "Due Date", "Days Overdue");
-                unpaid.forEach((p) => {
-                    const days = p.due_date ? Math.floor((Date.now() - new Date(p.due_date).getTime()) / 86400000) : 0;
-                    dataRows.push([p.id.slice(-6).toUpperCase(), (p.customer_name || "Customer"), formatINR(p.amount), titleCase(p.status), p.due_date ? formatDate(p.due_date) : "—", String(Math.max(0, days))]);
-                });
+                const projection = sharedReportExport(fdb, "agingReportRep");
+                headers.push(...projection.headers);
+                dataRows.push(...projection.rows);
                 break;
             }
             case "visitCompliance": {
@@ -1090,17 +1022,16 @@ function AgingReport({ db: dbRaw, filter }: {
     filter?: { customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string; reportId?: string } | null;
 }) {
     const db = applyReportFilter(dbRaw, filter);
-    const now = Date.now();
     const buckets = [
         { label: "Current (not due)", min: -Infinity, max: 0, color: "bg-success" },
         { label: "1–7 days overdue", min: 0, max: 7, color: "bg-warning" },
         { label: "8–30 days overdue", min: 7, max: 30, color: "bg-warning" },
         { label: "31+ days overdue", min: 30, max: Infinity, color: "bg-destructive" },
     ];
-    const unpaid = db.invoices.filter((invoice) => invoice.status === "issued" || invoice.status === "overdue" || invoice.status === "partial");
+    const unpaid = agingInvoiceRows(db);
     const bucketed = buckets.map((b) => {
         const items = unpaid.filter((invoice) => {
-            const days = Math.floor((now - new Date(invoice.due_date).getTime()) / 86400000);
+            const days = invoice.daysOverdue;
             return days > b.min && days <= b.max;
         });
         return { ...b, count: items.length, value: items.reduce((n, invoice) => n + invoice.balance_amount, 0), items };
