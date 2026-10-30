@@ -102,7 +102,7 @@ SELECT 'master.contractorRates'::text AS collection, c.workspace_id, r->>'id' AS
  c.revision,c.updated_at,c.updated_by,r AS data
 FROM public.entity_master_contractors c
 CROSS JOIN LATERAL jsonb_array_elements(public.uc_contractor_rate_projection_rows(c.workspace_id,c.data)) r;
-REVOKE ALL ON public.entity_contractor_rate_read FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON public.entity_contractor_rate_read FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT ON public.entity_contractor_rate_read TO service_role;
 DO $guard$
 BEGIN

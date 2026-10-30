@@ -18,6 +18,8 @@ test("one stored capability source, no writable counters, unit integrity and cur
   const before = (await db.query<{data:Record<string,unknown>}>("SELECT data FROM entity_rate_cards WHERE collection='master.contractorRates' AND workspace_id='canonical-test'")).rows;
   expect(before).toHaveLength(1);
   await db.exec(migration("_canonical_partner_sources.sql"));
+  expect((await db.query<{allowed:boolean}>("SELECT has_table_privilege('service_role','public.entity_contractor_rate_read','INSERT') allowed")).rows[0].allowed).toBe(false);
+  expect((await db.query<{allowed:boolean}>("SELECT has_table_privilege('anon','public.entity_contractor_rate_read','SELECT') allowed")).rows[0].allowed).toBe(false);
   const read=(await db.query<{data:Record<string,unknown>}>("SELECT data FROM entity_contractor_rate_read WHERE workspace_id='canonical-test'")).rows;
   expect(read[0].data).toMatchObject({...before[0].data as object,trade:'Canonical Work · Canonical Type',work_subcategory_name:'Canonical Work',work_type_name:'Canonical Type'});
   await db.exec(`UPDATE entity_work_definitions SET data=jsonb_set(data,'{name}','"Renamed work"') WHERE workspace_id='canonical-test' AND id='sub' AND collection='master.workSubcategories'`);
