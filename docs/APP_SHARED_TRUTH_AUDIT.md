@@ -17,6 +17,20 @@ No application code, schema, business rows, permissions or deployment were chang
 by this audit. Findings below concern source paths capable of disagreement;
 actual live discrepancies have not been measured.
 
+## Resolution of confirmed findings
+
+A01–A06 are addressed in the audit-consistency change. `report-data.ts` shares
+invoice ageing (positive open balances, Indian business dates), receipt exports
+and canonical P&L export rows across CSV/print and screen source calculations.
+Data Export uses live vendor/contractor projections including current active job
+counts. `commissionSummary` drives both commission and referral totals, excluding
+cancelled history. `report-scope.ts` filters Work Required by customer and the
+selected job's work_required_ids, intersecting conflicting filters and failing
+closed for unknown jobs. No historical row or schema is rewritten.
+
+The source evidence below describes the original baseline, not current behavior.
+R01–R06 remain review items rather than confirmed defects resolved by this change.
+
 ## Confirmed source inconsistencies
 
 | ID | Priority | Evidence | Consequence | Correction target |

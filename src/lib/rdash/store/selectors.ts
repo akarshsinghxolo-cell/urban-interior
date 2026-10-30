@@ -175,3 +175,20 @@ export function contractorOutstandingTotal(db: RDashDatabase): number {
 export function inventoryValuation(db: RDashDatabase) {
     return db.inventory.reduce((n, i) => n + i.quantity * (i.rate || 0), 0);
 }
+
+/** Current financial projection; persisted master counters are historical hints. */
+export function contractorExposureRows(db: RDashDatabase) {
+    return db.master.contractors.map(contractor => ({ ...contractor,
+        outstanding: contractorOutstanding(db, contractor.id),
+        active_jobs: db.workOrders.filter(w => w.contractor_id === contractor.id &&
+            ["scheduled", "in_progress", "on_hold"].includes(w.status)).length,
+    }));
+}
+
+export function commissionSummary(commissions: RDashDatabase["commissions"]) {
+    const accrued = commissions.filter(c => c.status === "accrued" || c.status === "payable");
+    const paid = commissions.filter(c => c.status === "paid");
+    const outstanding = accrued.reduce((sum, c) => sum + c.amount, 0);
+    const paidAmount = paid.reduce((sum, c) => sum + c.amount, 0);
+    return { accrued, paid, outstanding, paidAmount, total: outstanding + paidAmount };
+}
