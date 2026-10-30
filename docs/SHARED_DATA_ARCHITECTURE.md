@@ -53,7 +53,7 @@ The first consolidation reduced 94 public tables to 73. This expansion moves 27 
 | File bytes and contextual links | master.fileAssets and shared resource links | Module attachments, uploads, media library, WhatsApp attachments |
 | Staff identity and operational history | master.staff and shared staff records | Staff, attendance, leave, payroll, protected document access |
 
-Modules use authoritative IDs rather than new module-specific copies of masters. Existing foundation deltas, scoped reads and navigation revalidation propagate live master changes through the shared workspace store. This expansion preserves those mechanisms; it does not add continuous cross-session polling. Embedded historical labels and independently entered overrides are not automatically rewritten.
+Modules use authoritative IDs rather than new module-specific copies of masters. Existing foundation deltas, scoped reads and navigation revalidation propagate live master changes through the shared workspace store. Idle visible sessions now consult the authenticated revision journal once per minute and on focus/reconnect. Remote updates defer while a form is dirty or a save/outbox operation is pending. Set NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED=0 at build time to disable this refresh. Embedded historical labels and independently entered overrides are not automatically rewritten.
 
 Payment schedules remain obligations, financial documents remain bills, and money movements remain actual cash. Payroll periods share physical document storage while retaining a separate collection; customer/vendor dashboard totals do not include payroll. Issued quotation revisions, agreed rates, tax snapshots and paid history retain their historical values.
 
@@ -87,3 +87,24 @@ All application business tables remain in `public`. The contact uniqueness helpe
 - Application CI passed 969 unit/PostgreSQL tests and 47 browser tests for the released PR head. The production browser reached the expected sign-in screen; private production UI verification requires a signed-in session.
 - Production migration history records expansion as `20261027103848` and FK hardening as `20261027103854` (MCP execution versions differ from the source file timestamps). Do not replay the files just because those timestamps differ.
 - Release checks found a redundant commercial-document index and an explicit 30-second upload-route limit. The guarded `shared_domain_index_cleanup` removes only the index with no dependencies, retains every FK and supports standalone reversal/full consolidation rollback. Upload actions now have a bounded 300-second invocation budget. The timed-out upload recovered through the existing retry path without recreating its file registry rows.
+
+## Shared business calculations, 30 October 2026
+
+Vendor exposure screens, CSV and print exports use `vendorExposureRows`, derived
+from the same approved/partly-paid/paid bills through `vendorBalance`. Stored
+Vendor master outstanding fields are not authoritative for these outputs. Report
+filters apply before this projection. No master or historical document is rewritten.
+
+GST screen, CSV and print also share `taxReportProjection`: customer invoices
+and approved/partly-paid/paid vendor bills, preserving current inclusion rules.
+Exports no longer substitute quotation tax for invoice/bill tax.
+
+Background refresh uses the existing authorized scoped delta API, workspace
+revision and row-version checks. It is eventual synchronization (one minute while
+idle/visible, plus focus/reconnect), not an immediate cross-device push. Hidden or
+offline sessions do not read; dirty forms and pending writes take precedence.
+Existing rollback/reload recovery and workspace/collection isolation remain active.
+
+Further work: audit other report/export pairs and independently stored master
+summary fields before removing them; preserve issued-document snapshots and
+distinct quotation, invoiced, scheduled and received measures.

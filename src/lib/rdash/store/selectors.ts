@@ -50,6 +50,35 @@ export function vendorBalance(db: RDashDatabase, vendorId: string) {
     };
 }
 
+/** One read-only projection for vendor screens and all export formats. */
+export function vendorExposureRows(db: RDashDatabase) {
+    return db.master.vendors.map(vendor => {
+        const balance = vendorBalance(db, vendor.id);
+        return { ...vendor, outstanding: balance.outstanding, billCount: balance.bills,
+            unpaid: balance.unpaid, onTimePct: vendor.on_time_pct || 0,
+            reliability: vendor.reliability_score || 0 };
+    }).sort((a, b) => b.outstanding - a.outstanding);
+}
+
+/** Tax report detail and totals share the same document/status selection. */
+export function taxReportProjection(db: RDashDatabase) {
+    const rows = [
+        ...db.invoices.filter(invoice => invoice.status !== "cancelled").map(invoice => ({
+            kind: "Customer invoice", documentNo: invoice.invoice_no,
+            party: invoice.customer_name || "Customer", outputTax: invoice.tax_amount,
+            inputTax: 0, status: invoice.status,
+        })),
+        ...db.vendorBills.filter(bill => ["approved", "partly_paid", "paid"].includes(bill.status)).map(bill => ({
+            kind: "Vendor bill", documentNo: bill.bill_no,
+            party: bill.vendor_name || "Vendor", outputTax: 0,
+            inputTax: bill.tax_amount || 0, status: bill.status,
+        })),
+    ];
+    const outputTax = rows.reduce((sum, row) => sum + row.outputTax, 0);
+    const inputTax = rows.reduce((sum, row) => sum + row.inputTax, 0);
+    return { rows, outputTax, inputTax, netTax: outputTax - inputTax };
+}
+
 export function customerBalance(db: RDashDatabase, customerId: string) {
     const invoices = db.invoices.filter((invoice) => invoice.customer_id === customerId && invoice.status !== "cancelled");
     const receivable = invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0);

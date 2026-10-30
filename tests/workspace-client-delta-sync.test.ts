@@ -222,7 +222,7 @@ describe("delta synchronization safety policy", () => {
     }
   });
 
-  test("browser orchestrator rechecks safety and stays disabled by default", async () => {
+  test("browser orchestrator rechecks safety with refresh enabled by default", async () => {
     const source = await testFile("src/components/urban-castle/WorkspaceDeltaSync.tsx").text();
     expect(source).toContain("awaitServerSync()");
     expect(source).toContain("currentRunIsSafe(pathname)");
@@ -241,9 +241,9 @@ describe("delta synchronization safety policy", () => {
     expectTokens(source, ["Delta journal did not advance"]);
     expect(source).toContain("visibilitychange");
     expect(source).toContain('window.addEventListener("online"');
-    expectTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"']);
-    expectTokens(source, ["DELTA_POLL_INTERVAL_MS = 15 * 60_000"]);
-    expectNoTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"']);
+    expectTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED !== "0"']);
+    expectTokens(source, ["DELTA_POLL_INTERVAL_MS = 60_000"]);
+    expectNoTokens(source, ['NEXT_PUBLIC_UC_DELTA_SYNC_ENABLED === "1"']);
     expect(source).not.toContain("initialTimer");
     expect(source).not.toContain("activeModuleId");
     expectNoTokens(source, ["DELTA_POLL_INTERVAL_MS = 30_000"]);
