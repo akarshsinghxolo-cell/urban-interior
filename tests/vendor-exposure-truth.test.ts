@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { buildSeedDatabase } from "../src/lib/rdash/seed";
-import { vendorExposureRows } from "../src/lib/rdash/store/selectors";
+import { vendorExposureRows, taxReportProjection } from "../src/lib/rdash/store/selectors";
 
 describe("shared vendor exposure", () => {
     test("ignores stale master totals and counts only payable bills without changing source records", () => {
@@ -27,3 +27,22 @@ describe("shared vendor exposure", () => {
         expect(vendorExposureRows(db).find(v => v.id === "v1")?.outstanding).toBe(110000);
     });
 });
+
+ test("tax detail and totals use invoices and approved bills, excluding quotes and cancelled documents", () => {
+    const db = buildSeedDatabase();
+    db.invoices = [
+        { invoice_no: "INV1", status: "issued", tax_amount: 18000 },
+        { invoice_no: "INV2", status: "cancelled", tax_amount: 90000 },
+    ] as never;
+    db.vendorBills = [
+        { bill_no: "B1", status: "approved", tax_amount: 6000 },
+        { bill_no: "B2", status: "partly_paid", tax_amount: 2000 },
+        { bill_no: "B3", status: "pending_approval", tax_amount: 70000 },
+        { bill_no: "B4", status: "disputed", tax_amount: 80000 },
+    ] as never;
+    const before = JSON.stringify(db);
+    const result = taxReportProjection(db);
+    expect(result.rows.map(r => r.documentNo)).toEqual(["INV1", "B1", "B2"]);
+    expect(result).toMatchObject({ outputTax: 18000, inputTax: 8000, netTax: 10000 });
+    expect(JSON.stringify(db)).toBe(before);
+ });

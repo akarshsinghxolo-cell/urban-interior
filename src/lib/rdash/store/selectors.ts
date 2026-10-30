@@ -60,6 +60,25 @@ export function vendorExposureRows(db: RDashDatabase) {
     }).sort((a, b) => b.outstanding - a.outstanding);
 }
 
+/** Tax report detail and totals share the same document/status selection. */
+export function taxReportProjection(db: RDashDatabase) {
+    const rows = [
+        ...db.invoices.filter(invoice => invoice.status !== "cancelled").map(invoice => ({
+            kind: "Customer invoice", documentNo: invoice.invoice_no,
+            party: invoice.customer_name || "Customer", outputTax: invoice.tax_amount,
+            inputTax: 0, status: invoice.status,
+        })),
+        ...db.vendorBills.filter(bill => ["approved", "partly_paid", "paid"].includes(bill.status)).map(bill => ({
+            kind: "Vendor bill", documentNo: bill.bill_no,
+            party: bill.vendor_name || "Vendor", outputTax: 0,
+            inputTax: bill.tax_amount || 0, status: bill.status,
+        })),
+    ];
+    const outputTax = rows.reduce((sum, row) => sum + row.outputTax, 0);
+    const inputTax = rows.reduce((sum, row) => sum + row.inputTax, 0);
+    return { rows, outputTax, inputTax, netTax: outputTax - inputTax };
+}
+
 export function customerBalance(db: RDashDatabase, customerId: string) {
     const invoices = db.invoices.filter((invoice) => invoice.customer_id === customerId && invoice.status !== "cancelled");
     const receivable = invoices.reduce((sum, invoice) => sum + invoice.balance_amount, 0);

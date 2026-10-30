@@ -1,6 +1,6 @@
 "use client";
 
-import { vendorExposureRows } from "@/lib/rdash/store/selectors";
+import { vendorExposureRows, taxReportProjection } from "@/lib/rdash/store/selectors";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { calculateQuotationMetrics, calculateSalesPipelineMetrics, collectWonWorkRequiredIds, isWonSalesStatus } from "@/lib/rdash/metrics";
@@ -261,8 +261,8 @@ function ReportsModuleContent({ reportId }: {
                 break;
             }
             case "taxReport": {
-                rows.push(["Quotation No", "Customer", "Subtotal", "Tax", "Total", "Status"]);
-                fdb.quotations.forEach((q) => rows.push([q.quotation_no, (q.customer_name || "Customer"), String(q.subtotal || 0), String(q.tax_amount || 0), String(q.total_amount), q.status]));
+                rows.push(["Document type", "Document No", "Party", "Output GST", "Input GST", "Status"]);
+                taxReportProjection(fdb).rows.forEach(r => rows.push([r.kind, r.documentNo, r.party, String(r.outputTax), String(r.inputTax), r.status]));
                 break;
             }
             case "staffProductivity": {
@@ -397,8 +397,8 @@ function ReportsModuleContent({ reportId }: {
                 break;
             }
             case "taxReport": {
-                headers.push("Quotation No", "Customer", "Subtotal", "Tax", "Total", "Status");
-                fdb.quotations.forEach((q) => dataRows.push([q.quotation_no, (q.customer_name || "Customer"), formatINR(q.subtotal || 0), formatINR(q.tax_amount || 0), formatINR(q.total_amount), titleCase(q.status)]));
+                headers.push("Document type", "Document No", "Party", "Output GST", "Input GST", "Status");
+                taxReportProjection(fdb).rows.forEach(r => dataRows.push([r.kind, r.documentNo, r.party, formatINR(r.outputTax), formatINR(r.inputTax), titleCase(r.status)]));
                 break;
             }
             case "staffProductivity": {
@@ -914,9 +914,7 @@ function TaxReport({ db: dbRaw, filter }: {
     filter?: { customerId?: string; workOrderId?: string; vendorId?: string; staffId?: string; reportId?: string } | null;
 }) {
     const db = applyReportFilter(dbRaw, filter);
-    const gstCollected = db.invoices.filter((invoice) => invoice.status !== "cancelled").reduce((n, invoice) => n + invoice.tax_amount, 0);
-    const gstPaid = db.vendorBills.filter((bill) => bill.status === "approved" || bill.status === "partly_paid" || bill.status === "paid").reduce((n, bill) => n + (bill.tax_amount || 0), 0);
-    const netGst = gstCollected - gstPaid;
+    const { outputTax: gstCollected, inputTax: gstPaid, netTax: netGst } = taxReportProjection(db);
     return (<div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MetricCard label="GST collected (output)" value={formatINRShort(gstCollected)} tone="success" icon={<TrendingUp className="h-4 w-4"/>}/>

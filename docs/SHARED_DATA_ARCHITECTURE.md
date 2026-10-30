@@ -95,6 +95,10 @@ from the same approved/partly-paid/paid bills through `vendorBalance`. Stored
 Vendor master outstanding fields are not authoritative for these outputs. Report
 filters apply before this projection. No master or historical document is rewritten.
 
+GST screen, CSV and print also share `taxReportProjection`: customer invoices
+and approved/partly-paid/paid vendor bills, preserving current inclusion rules.
+Exports no longer substitute quotation tax for invoice/bill tax.
+
 Background refresh uses the existing authorized scoped delta API, workspace
 revision and row-version checks. It is eventual synchronization (one minute while
 idle/visible, plus focus/reconnect), not an immediate cross-device push. Hidden or
