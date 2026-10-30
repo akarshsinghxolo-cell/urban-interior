@@ -42,6 +42,10 @@ test("expanding a Site card is presentation state, not an unsaved business chang
 test("Site coordinates use one reverse-geocode action and queued photos do not create nested dialogs", () => {
   expectTokens(customerSiteDraftCard, [
     "findAddressFromCoordinates",
+    "findAddressAtCoordinates",
+    "onPaste",
+    "Site address filled from pasted coordinates",
+    "Site address filled from map pin",
     'aria-label="Find address from coordinates"',
     "reverseGeocodeWithNominatim",
     "interactive={false}",

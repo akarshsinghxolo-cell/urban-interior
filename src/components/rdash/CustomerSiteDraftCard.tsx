@@ -130,20 +130,14 @@ export function CustomerSiteDraftCard({
     }
   };
 
-  const findAddressFromCoordinates = async () => {
-    const parsed = parseCoordinatePair(draft.coordinateInput);
-    const inputError = coordinateInputError(draft.coordinateInput);
-    if (!parsed || inputError) {
-      toast.error(inputError || "Enter latitude and longitude before searching");
-      return;
-    }
+  const findAddressAtCoordinates = async (latitude: number, longitude: number, successMessage: string) => {
     const sequence = ++locationSequenceRef.current;
-    applyCoordinates(parsed.latitude, parsed.longitude);
+    applyCoordinates(latitude, longitude);
     try {
       setReverseLookupLoading(true);
-      const filled = await fillAddressFromCoordinates(parsed.latitude, parsed.longitude, sequence, false);
+      const filled = await fillAddressFromCoordinates(latitude, longitude, sequence, false);
       if (sequence !== locationSequenceRef.current) return;
-      if (filled) toast.success("Site address filled from coordinates");
+      if (filled) toast.success(successMessage);
       else toast.error("No address was found for these coordinates");
     } catch (error) {
       if (sequence === locationSequenceRef.current) {
@@ -152,6 +146,16 @@ export function CustomerSiteDraftCard({
     } finally {
       setReverseLookupLoading(false);
     }
+  };
+
+  const findAddressFromCoordinates = async () => {
+    const parsed = parseCoordinatePair(draft.coordinateInput);
+    const inputError = coordinateInputError(draft.coordinateInput);
+    if (!parsed || inputError) {
+      toast.error(inputError || "Enter latitude and longitude before searching");
+      return;
+    }
+    await findAddressAtCoordinates(parsed.latitude, parsed.longitude, "Site address filled from coordinates");
   };
 
   const addPhotos = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,6 +279,12 @@ export function CustomerSiteDraftCard({
                   className="min-w-0 flex-1"
                   value={draft.coordinateInput}
                   onChange={(event) => updateCoordinates(event.target.value)}
+                  onPaste={(event) => {
+                    const parsed = parseCoordinatePair(event.clipboardData.getData("text"));
+                    if (!parsed) return;
+                    event.preventDefault();
+                    void findAddressAtCoordinates(parsed.latitude, parsed.longitude, "Site address filled from pasted coordinates");
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") { event.preventDefault(); void findAddressFromCoordinates(); }
                   }}
@@ -287,15 +297,14 @@ export function CustomerSiteDraftCard({
                 </Button>
               </div>
               <p className={cn("text-[10px]", coordinateInputError(draft.coordinateInput) ? "text-destructive" : "text-muted-foreground")}>
-                {coordinateInputError(draft.coordinateInput) || "Capture GPS, paste coordinates, or click the map, then Search to fill the address."}
+                {coordinateInputError(draft.coordinateInput) || "Address fills from GPS, pasted coordinates, or a map pin. Search retries the lookup."}
               </p>
               <MapView
                 title="Site pin placement"
                 points={draft.latitude != null && draft.longitude != null ? [{ id: draft.id, label: draft.name || "Site pin", latitude: draft.latitude, longitude: draft.longitude, status: "scheduled" }] : []}
                 fallbackCenter={{ latitude: 26.7606, longitude: 83.3732, label: "Map centre" }}
                 onMapClick={({ latitude, longitude }) => {
-                  locationSequenceRef.current += 1;
-                  applyCoordinates(latitude, longitude);
+                  void findAddressAtCoordinates(latitude, longitude, "Site address filled from map pin");
                 }}
                 className="h-48 min-h-[12rem]"
               />
