@@ -32,6 +32,7 @@ import { CustomerPortfolioDrawerContent } from "./modules/CustomerDesk";
 import { PartnerDetailContent } from "./modules/PartnerDetailContent";
 import { resolveRenderer } from "@/lib/rdash/modules";
 import { resolveThreadRecordEntityId, resolveThreadRecordEntityType } from "@/lib/rdash/entity-context";
+import { normalizeAttendancePolicy } from "@/lib/rdash/attendance-policy";
 type Tab = "overview" | "thread";
 export function DetailPanel() {
     const detail = useRDashStore((s) => s.detailPanel);
@@ -2300,6 +2301,10 @@ function VisitOverview({ v }: {
     const customer = db.customers.find((p) => p.id === v.customer_id);
     const site = v.site_id ? db.sites.find((entry) => entry.id === v.site_id) : undefined;
     const workOrder = v.work_order_id ? db.workOrders.find((j) => j.id === v.work_order_id) : undefined;
+    const assignedStaff = db.master.staff.find((staff) => staff.id === v.assigned_staff_id);
+    const visitGeofenceRadiusM = assignedStaff
+        ? normalizeAttendancePolicy(assignedStaff.attendance_policy).visit_geofence_radius_m
+        : undefined;
     const visitMapPoints: MapPoint[] = [{
             id: v.id,
             label: v.location_name,
@@ -2327,7 +2332,7 @@ function VisitOverview({ v }: {
         <Field label="Report" value={v.report_filed ? "Filed" : "Pending"}/>
       </div>
       <div className="mt-4">
-        <MapView points={routeMapPoints} title={`${titleCase(v.visit_type)} location map`} showRoute geofenceRadiusM={db.master.staff.find((staff) => staff.id === v.assigned_staff_id)?.attendance_policy.visit_geofence_radius_m} className="h-56 min-h-56"/>
+        <MapView points={routeMapPoints} title={`${titleCase(v.visit_type)} location map`} showRoute geofenceRadiusM={visitGeofenceRadiusM} className="h-56 min-h-56"/>
       </div>
       <div className="mt-4 space-y-1.5">
         {customer && <LinkedRow icon={<User className="h-3.5 w-3.5"/>} label="Customer" value={customer.name} onClick={() => openDetail("customer", customer.id)}/>}

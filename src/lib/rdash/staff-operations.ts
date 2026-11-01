@@ -1,5 +1,5 @@
 import type { RDashDatabase, Staff, Task, Visit, AttendanceRecord } from "./types";
-import { createDefaultAttendancePolicy } from "./attendance-policy";
+import { createDefaultAttendancePolicy, normalizeAttendancePolicy } from "./attendance-policy";
 
 export const STAFF_ROLE_KEYS = [
   "OWNER",
@@ -342,7 +342,7 @@ export function moduleForCollection(collection: string): string {
 function enrichStaffRecords(staff: Staff[]): Staff[] {
   return staff.map((member, index) => {
     const role_key = normalizeRoleKey((member as Staff & { role_key?: string }).role_key || member.role);
-    const policy = member.attendance_policy || createDefaultAttendancePolicy();
+    const policy = normalizeAttendancePolicy(member.attendance_policy);
     return {
       ...member,
       code: (member as Staff & { code?: string }).code || `STF-${String(index + 1).padStart(3, "0")}`,

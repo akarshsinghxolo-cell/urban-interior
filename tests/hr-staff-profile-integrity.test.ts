@@ -21,6 +21,19 @@ describe("Staff profile integrity", () => {
     expect((policy as any).id).toBeUndefined();
   });
 
+  test("every staff write and visit map normalizes legacy attendance policies", async () => {
+    const staffOperations = await testFile("src/lib/rdash/staff-operations.ts").text();
+    const procurement = await testFile("src/lib/rdash/store/slices/procurement.ts").text();
+    const masters = await testFile("src/lib/rdash/store/slices/masters.ts").text();
+    const detail = await testFile("src/components/rdash/DetailPanel.tsx").text();
+
+    expectTokens(staffOperations, ["normalizeAttendancePolicy(member.attendance_policy)"]);
+    expectTokens(procurement, ["normalizeAttendancePolicy(s.attendance_policy)"]);
+    expectTokens(masters, ["normalizeAttendancePolicy({ ...staff.attendance_policy, ...patch })"]);
+    expectTokens(detail, ["normalizeAttendancePolicy(assignedStaff.attendance_policy).visit_geofence_radius_m"]);
+    expectNoTokens(detail, ["attendance_policy.visit_geofence_radius_m"]);
+  });
+
   test("directory foundation refresh cannot erase a full Staff profile already loaded in HR", () => {
     const current = createEmptyWorkspaceDatabase();
     (current as any)._workspace_staff_projection = "full";

@@ -295,7 +295,7 @@ export function FieldModeModule() {
       </div>
       <div className="rounded-[var(--panel-radius)] border border-primary/20 bg-primary/[0.04] px-3 py-2.5 text-[11px] text-muted-foreground">
         <p className="font-semibold text-foreground">Automatic geofence active while this app is open</p>
-        <p className="mt-0.5">{attendancePolicy ? `It checks in after ${attendancePolicy.auto_entry_dwell_seconds}s inside the registered location and checks out after ${attendancePolicy.auto_exit_dwell_seconds}s beyond the exit boundary for your own staff policy.` : "Your staff-specific automatic geofence policy is unavailable."} If permission, accuracy, or background access fails, use the Manual Check-in / Check-out buttons below.</p>
+        <p className="mt-0.5">{attendancePolicy ? `It checks in after ${normalizedAttendancePolicy.auto_entry_dwell_seconds}s inside the registered location and checks out after ${normalizedAttendancePolicy.auto_exit_dwell_seconds}s beyond the exit boundary for your own staff policy.` : "Your staff-specific automatic geofence policy is unavailable."} If permission, accuracy, or background access fails, use the Manual Check-in / Check-out buttons below.</p>
       </div>
       {pendingReports.length > 0 && (<div className="rounded-[var(--panel-radius)] border border-warning/25 bg-warning/[0.06] p-3">
           <div className="mb-1.5 flex items-center gap-2">

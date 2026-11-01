@@ -33,7 +33,7 @@ import { formatINR } from "../../format";
 import { assertWorkOrderRelations, assertAreaBelongsToSite, normalizeReceiptItems, receivedQuantities, receiptPostsStock } from "../../business-rules";
 import { attachedFileById } from "../../file-attachments";
 import { eventMatchesPaymentTrigger } from "../finance-helpers";
-import { createDefaultAttendancePolicy } from "../../attendance-policy";
+import { normalizeAttendancePolicy } from "../../attendance-policy";
 import { deriveVendorPerformanceEvidenceExport } from "../../performance-reconciliation";
 import { normalizeRoleKey, roleLabel } from "../../staff-operations";
 import { indianMobileForWrite } from "../../phone-validation";
@@ -186,7 +186,7 @@ export function createProcurementSlice(ctx: StoreContext): ProcurementState {
                 temporary_password: s.temporary_password,
                 force_password_change: s.force_password_change,
                 gps_tracking_enabled: s.gps_tracking_enabled !== false,
-                attendance_policy: s.attendance_policy || createDefaultAttendancePolicy(),
+                attendance_policy: normalizeAttendancePolicy(s.attendance_policy),
             };
             commitState((st: any) => ({
                 db: {

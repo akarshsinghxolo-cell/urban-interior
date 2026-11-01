@@ -1,7 +1,7 @@
 import type { AttendancePolicy, AttendanceRecord, RDashDatabase, CommissionRule, SourcePartner, PayrollPeriod, PayrollLine, SalaryAdjustment, AutomationRule, AutomationAction, ApprovalPolicy } from "../../types";
 import type { MastersState } from "../types";
 import type { StoreContext } from "../context";
-import { attendancePolicyForStaff } from "../../attendance-policy";
+import { attendancePolicyForStaff, normalizeAttendancePolicy } from "../../attendance-policy";
 import { dateFromIso, isAtOrAfterMinutesFromTime, minutesLate, verifyOfficeExitGps, verifyOfficeGps, verifyVisitGps } from "../../gps";
 import { genId, nowIso, assertRole, businessDate } from "../helpers";
 import { indianMobileForWrite } from "../../phone-validation";
@@ -462,7 +462,7 @@ export function createMastersSlice(ctx: StoreContext): MastersState {
             const staff = get().db.master.staff.find((row: any) => row.id === staffId);
             if (!staff)
                 throw new Error("Select an active staff member before updating attendance policy.");
-            const next = { ...staff.attendance_policy, ...patch };
+            const next = normalizeAttendancePolicy({ ...staff.attendance_policy, ...patch });
             if (!Number.isFinite(next.geofence_radius_m) || next.geofence_radius_m < 20) {
                 throw new Error("Office geofence radius must be at least 20 m.");
             }

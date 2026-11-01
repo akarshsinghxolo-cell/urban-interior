@@ -42,6 +42,18 @@ describe("Attendance policy rendering", () => {
     expectNoTokens(mod, ["half_day_hours: 4"]);
     expect(mod).toContain("normalizeAttendancePolicy(policyStaff?.attendance_policy)");
   });
+
+  test("field mode renders legacy policy values through the normalized policy", async () => {
+    const mod = await source("src/components/rdash/modules/FieldModeModule.tsx");
+    expectTokens(mod, [
+      "normalizedAttendancePolicy.auto_entry_dwell_seconds",
+      "normalizedAttendancePolicy.auto_exit_dwell_seconds",
+    ]);
+    expectNoTokens(mod, [
+      "${attendancePolicy.auto_entry_dwell_seconds}",
+      "${attendancePolicy.auto_exit_dwell_seconds}",
+    ]);
+  });
 });
 
 describe("Record select-mode pills", () => {
