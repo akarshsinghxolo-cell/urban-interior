@@ -141,7 +141,7 @@ export function CustomerWorkRequiredDraftSection({
         const expanded = expandedIds.has(draft.id);
         return (
           <article key={draft.id} className="rounded-lg border border-border p-3">
-            <div className={expanded ? "mb-3 flex items-center gap-2" : "flex items-center gap-2"}>
+            <div className={expanded ? "mb-3 flex items-start gap-2" : "flex items-start gap-2"}>
               <Button
                 type="button"
                 size="icon"
@@ -158,7 +158,7 @@ export function CustomerWorkRequiredDraftSection({
                 {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </Button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold">{draft.title.trim() || `Work Required ${displayNumber}`}</p>
+                <p className="break-words whitespace-normal text-xs font-semibold leading-snug" title={draft.title.trim() || `Work Required ${displayNumber}`}>{draft.title.trim() || `Work Required ${displayNumber}`}</p>
                 {!expanded ? <p className="truncate text-[10px] text-muted-foreground">{site?.name || customerName || "Customer"} · {selectedAreaNames.length ? selectedAreaNames.join(", ") : "No Areas selected"} · {draft.workTypeIds.length} work type{draft.workTypeIds.length === 1 ? "" : "s"}</p> : null}
               </div>
               <select

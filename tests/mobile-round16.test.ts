@@ -29,6 +29,8 @@ describe("Mobile round 16 — drawer / dialog overflow fixes", () => {
   test("CustomerWorkRequiredDraftSection select shrinks instead of forcing a min-w-40 track", async () => {
     const section = await source("src/components/rdash/CustomerWorkRequiredDraftSection.tsx");
     expectTokens(section, ["w-auto min-w-0 max-w-full shrink basis-28"]);
+    expectTokens(section, ["break-words whitespace-normal text-xs font-semibold leading-snug"]);
+    expect(section).not.toContain('className="truncate text-xs font-semibold"');
     expect(section).not.toContain("min-w-40");
   });
 
