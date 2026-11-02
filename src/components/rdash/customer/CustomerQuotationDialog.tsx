@@ -184,23 +184,6 @@ export function CustomerQuotationDialog({ request, onClose }: {
         selectedWorkRequired = [{ ...(created || fallback), sourceWorkId: newId }];
       }
 
-      // Rooms can be quoted separately; only overlapping work/room coverage
-      // should lead back to an existing quotation.
-      const alreadyCovered = selectedWorkRequired.flatMap((work) => {
-        const quotation = activeQuotationForWork(db, work.sourceWorkId, work.area_ids, work.work_type_ids);
-        return quotation ? [{ work, quotation }] : [];
-      });
-      if (alreadyCovered.length) {
-        if (alreadyCovered.length === 1 && selectedWorkRequired.length === 1) {
-          toast.info(`${alreadyCovered[0].quotation.quotation_no} already covers some or all of the selected rooms for this work.`);
-          dirtyFormRegistry.markClean(formId);
-          openDetail("quotation", alreadyCovered[0].quotation.id);
-          onClose();
-          return true;
-        }
-        throw new Error(`Existing active quotation coverage: ${alreadyCovered.map(({ quotation }) => quotation.quotation_no).join(", ")}`);
-      }
-
       // Site-scoped coverage must be based on verified measurements for every
       // declared Area. This was previously only enforced by Site Execution,
       // which allowed Customer / Quotation Desk to create a different result.

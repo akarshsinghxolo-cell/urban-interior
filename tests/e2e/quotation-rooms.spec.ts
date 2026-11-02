@@ -103,11 +103,12 @@ test("individual types from one combined requirement control rooms and prices in
   await page.setViewportSize({ width: 1092, height: 986 });
   await page.screenshot({ path: "test-results/quotation-wrapped-names.png" });
 
-  // The other room can be quoted independently for the same Work Required.
+  // The same scope can be offered as a room-wise alternative. Only acceptance
+  // decides which quotation becomes active for the customer.
   await openCustomerQuotations();
   await page.getByRole("button", { name: "Add quotation Area/room wise", exact: true }).click();
   dialog = page.getByRole("dialog", { name: "Area/room wise quotation", exact: true });
-  await dialog.getByRole("region", { name: "Living Room", exact: true }).getByRole("button", { name: "Living Room", exact: true }).click();
+  await dialog.getByRole("region", { name: "Bedroom", exact: true }).getByRole("button", { name: "Bedroom", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -118,13 +119,13 @@ test("individual types from one combined requirement control rooms and prices in
   persisted = await quotes();
   const roomQuote = persisted.find((quote: any) => quote.grouping === "area");
   expect(persisted).toHaveLength(2);
-  expect(roomQuote.subtotal).toBe(3000);
-  expect(roomQuote.coverage.map((entry: any) => entry.area_ids)).toEqual([[living]]);
-  expect(roomQuote.scope_lines.map((line: any) => line.area_id)).toEqual([living, living]);
+  expect(roomQuote.subtotal).toBe(1500);
+  expect(roomQuote.coverage.map((entry: any) => entry.area_ids)).toEqual([[bedroom]]);
+  expect(roomQuote.scope_lines.map((line: any) => line.area_id)).toEqual([bedroom, bedroom]);
   await page.reload();
   await openCustomerQuotations();
   await page.getByRole("button", { name: new RegExp(roomQuote.quotation_no) }).click();
-  await expect(page.getByRole("heading", { name: "Living Room", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bedroom", exact: true })).toBeVisible();
 
   // Disabled quoted checkboxes must stay in the submitted data as well as the UI.
   await openCustomerQuotations();
@@ -141,7 +142,7 @@ test("individual types from one combined requirement control rooms and prices in
   expect((await saved).status()).toBe(200);
   await expect(customerForm).toHaveCount(0);
   const workRows = await (await request.get(`${base}/${COLLECTION_TO_TABLE.workRequired}?collection=eq.workRequired&id=eq.${works[0].id}`)).json();
-  expect(workRows[0].data.area_ids.sort()).toEqual([bedroom, living].sort());
+  expect(workRows[0].data.area_ids).toEqual([bedroom]);
 
   await openCustomerQuotations();
   await page.getByRole("button", { name: new RegExp(roomQuote.quotation_no) }).click();
@@ -153,5 +154,5 @@ test("individual types from one combined requirement control rooms and prices in
   await expect(page.getByRole("button", { name: "Remove work type Gypsum False Ceiling · Standard from this line", exact: true })).toBeVisible();
   const afterRemoval = (await quotes()).find((quote: any) => quote.id === roomQuote.id);
   expect(afterRemoval.scope_lines).toHaveLength(1);
-  expect(afterRemoval.subtotal).toBe(2000);
+  expect(afterRemoval.subtotal).toBe(1000);
 });

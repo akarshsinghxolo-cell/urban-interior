@@ -228,11 +228,6 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
     if (!selectedSite) return;
     const work = workRequired.find((row) => row.id === workId);
     if (!work) return;
-    const existing = activeQuotationForWork(db, work.id);
-    if (existing) {
-      openDetail("quotation", existing.id);
-      return;
-    }
     // CustomerQuotationDialog owns all measurement validation and coverage
     // serialization. Site Execution passes context only.
     openCreateDialog({
@@ -550,7 +545,7 @@ function WorkRow({ work, areas, measured, existingVisit, existingQuotation, onCa
   onOpenQuotation: (id: string) => void;
 }) {
   const db = useRDashStore((state) => state.db);
-  return <div className="rounded-md border border-border bg-background p-2.5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</p><p className="mt-1 text-[10px] text-muted-foreground">{work.area_ids.map((id: string) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "Area pending"}</p></div><StatusBadge label={work.status} className={workStatusStyle[work.status] || "bg-muted text-muted-foreground border-border"} /></div><div className="mt-2 flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={onCapture}>Capture detailed area</Button><Button size="sm" variant="outline" onClick={() => existingQuotation ? onOpenQuotation(existingQuotation.id) : measured ? onQuotation() : existingVisit ? onOpenMeasurement() : onMeasure()}>{existingQuotation ? "Open quotation" : measured ? "Prepare quotation" : existingVisit ? "Open measurement visit" : "Schedule measurement"}</Button></div></div>;
+  return <div className="rounded-md border border-border bg-background p-2.5"><div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-semibold">{workRequiredDisplayTitle(db.master.workSubcategories, work)}</p><p className="mt-1 text-[10px] text-muted-foreground">{work.area_ids.map((id: string) => areas.find((area) => area.id === id)?.name).filter(Boolean).join(", ") || "Area pending"}</p></div><StatusBadge label={work.status} className={workStatusStyle[work.status] || "bg-muted text-muted-foreground border-border"} /></div><div className="mt-2 flex flex-wrap justify-end gap-2"><Button size="sm" variant="outline" onClick={onCapture}>Capture detailed area</Button>{existingQuotation && <Button size="sm" variant="outline" onClick={() => onOpenQuotation(existingQuotation.id)}>Open quotation</Button>}<Button size="sm" variant="outline" onClick={() => measured ? onQuotation() : existingVisit ? onOpenMeasurement() : onMeasure()}>{measured ? existingQuotation ? "Prepare another quotation" : "Prepare quotation" : existingVisit ? "Open measurement visit" : "Schedule measurement"}</Button></div></div>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

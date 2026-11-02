@@ -77,6 +77,7 @@ describe("Customer Desk restored-feature contracts", () => {
     const siteExecution = await source("src/components/rdash/modules/SiteExecutionModule.tsx");
 
     expect(canonical).toContain("verifiedMeasurementRevisionIds");
+    expect(canonical).not.toContain("Existing active quotation coverage");
     expect(canonical).toContain("activeQuotationForWork");
     expect(canonical).toContain("const coverage = site");
     expect(canonical).toContain("addQuotation({");

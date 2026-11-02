@@ -66,7 +66,7 @@ describe("independent quotation work types", () => {
     expect(new Set(lines.map((line) => line.id)).size).toBe(4);
   });
 
-  test("an existing quotation for panels does not block ceiling for the same room", () => {
+  test("an existing quotation for panels does not hide a different work option", () => {
     const { db, work } = fixture();
     const lines = quotationChoiceLines(db, [quotationWorkChoices(db, [work])[0]], "work", () => "line");
     db.quotations = [{ id: "quote", status: "draft", coverage: [{ work_required_id: work.id, area_ids: work.area_ids }], scope_lines: lines }] as typeof db.quotations;
