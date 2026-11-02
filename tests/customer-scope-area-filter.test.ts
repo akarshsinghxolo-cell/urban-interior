@@ -35,6 +35,7 @@ describe("Customer Site / Area / Work Required ownership", () => {
     expect(siteExecution).toContain('label: "Scope Register"');
     expect(siteExecution).toContain("WorkRequiredCreateDialog");
     expect(siteExecution).toContain("CustomerWorkCaptureDialog");
+    expect(siteExecution).toContain('openDetail("site", site.id, "siteExecution")');
     expect(siteExecution).not.toContain("const addArea = useRDashStore");
     expect(siteExecution).not.toContain("const addWorkRequired = useRDashStore");
     expect(canonicalCreate).toContain("addArea");

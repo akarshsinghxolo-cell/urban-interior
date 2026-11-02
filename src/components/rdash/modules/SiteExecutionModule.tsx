@@ -459,7 +459,7 @@ export function SiteExecutionModule({ initialTab }: { initialTab?: string }) {
           <div className="space-y-2">
             {activeSites.map((site) => {
               const customer = db.customers.find((row) => row.id === site.customer_id);
-              return <button key={site.id} type="button" onClick={() => setSelectedSiteId(site.id)} className={cn("w-full rounded-lg border p-3 text-left transition-colors", selectedSiteId === site.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
+              return <button key={site.id} type="button" onClick={() => { setSelectedSiteId(site.id); openDetail("site", site.id, "siteExecution"); }} className={cn("w-full rounded-lg border p-3 text-left transition-colors", selectedSiteId === site.id ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50")}>
                 <div className="flex items-start justify-between gap-2"><p className="min-w-0 text-sm font-semibold leading-snug line-clamp-2">{site.name}</p><StatusBadge label={site.stage} className={cn("shrink-0", siteStageStyle[site.stage])} /></div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">{customer?.name || "Unknown Customer"} · {titleFromType(site.site_type)}</p>
                 {site.locality && <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"><MapPin className="h-3 w-3" />{site.locality}</p>}
